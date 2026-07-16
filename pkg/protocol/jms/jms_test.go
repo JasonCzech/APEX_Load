@@ -24,6 +24,32 @@ func TestJMSProtocolsAreRegistered(t *testing.T) {
 	}
 }
 
+func TestJMSInitEnforcesBrokerTargetPolicy(t *testing.T) {
+	p := &JMS{name: "jms-servicebus", provider: "servicebus"}
+	err := p.Init(context.Background(), map[string]any{
+		"broker_url":                   "Endpoint=sb://attacker.servicebus.windows.net/;SharedAccessKeyName=name;SharedAccessKey=secret",
+		protocol.TargetPolicyConfigKey: []string{"orders.servicebus.windows.net"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "attacker.servicebus.windows.net") || strings.Contains(err.Error(), "SharedAccessKey") {
+		t.Fatalf("Init policy error = %v, want sanitized Service Bus target rejection", err)
+	}
+}
+
+func TestJMSSidecarFailsClosedUnderCITargetPolicy(t *testing.T) {
+	t.Setenv(sidecarCommandEnv, "/opt/apexload/jms-sidecar")
+	p := &JMS{name: "jms-solace", provider: "solace"}
+	err := p.Init(context.Background(), map[string]any{
+		"broker_url": "smf://broker.example.test:55555",
+		"jms_properties": map[string]string{
+			"adapter": "sidecar",
+		},
+		protocol.TargetPolicyConfigKey: []string{"broker.example.test"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot enforce the CI runtime target policy") {
+		t.Fatalf("Init policy error = %v, want fail-closed sidecar rejection", err)
+	}
+}
+
 func TestJMSPublishFailureSetsSendFailureCount(t *testing.T) {
 	ctx := context.Background()
 	p := &JMS{name: "jms-solace", provider: "solace"}

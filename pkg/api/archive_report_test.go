@@ -1285,7 +1285,7 @@ func TestRunArchiveWriterPersistsThroughputGapSummary(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RecordIntervalSummary returned error: %v", err)
 	}
-	record, err := writer.Finalize("COMPLETE", time.Now(), "", false, nil)
+	record, err := writer.Finalize("COMPLETE", time.Now(), "", false, false, nil)
 	if err != nil {
 		t.Fatalf("Finalize returned error: %v", err)
 	}
@@ -1335,7 +1335,7 @@ func TestRunArchiveWriterFinalizesArtifactHashes(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RecordIntervalSummary returned error: %v", err)
 	}
-	record, err := writer.Finalize("COMPLETE", result.StartTime.Add(2*time.Second), "", false, nil)
+	record, err := writer.Finalize("COMPLETE", result.StartTime.Add(2*time.Second), "", false, false, nil)
 	if err != nil {
 		t.Fatalf("Finalize returned error: %v", err)
 	}
@@ -1416,7 +1416,7 @@ func TestRunArchiveWriterPersistsEnhancedResourceFields(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("RecordResourceSample returned error: %v", err)
 	}
-	record, err := writer.Finalize("COMPLETE", timestamp, "", false, nil)
+	record, err := writer.Finalize("COMPLETE", timestamp, "", false, false, nil)
 	if err != nil {
 		t.Fatalf("Finalize returned error: %v", err)
 	}
@@ -1514,7 +1514,7 @@ func TestRunArchiveReportSummarizesOracleDBExternalMetrics(t *testing.T) {
 			t.Fatalf("RecordIntervalSummary[%d] returned error: %v", i, err)
 		}
 	}
-	record, err := writer.Finalize("COMPLETE", start.Add(3*time.Minute), "", false, nil)
+	record, err := writer.Finalize("COMPLETE", start.Add(3*time.Minute), "", false, false, nil)
 	if err != nil {
 		t.Fatalf("Finalize returned error: %v", err)
 	}

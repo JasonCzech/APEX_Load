@@ -40,6 +40,7 @@ function classifyAuth(route: ApiEndpointCatalogRoute) {
     '/api/v1/auth/roles',
     '/api/v1/auth/policy',
     '/api/v1/auth/effective-access',
+    '/api/v1/auth/ci/github/exchange',
   ].includes(path)) {
     return classification([])
   }
@@ -199,6 +200,7 @@ export function classifyEndpointForDocs(route: ApiEndpointCatalogRoute): DocsVis
     case 'script-debug':
       return classifyRecording(route)
     case 'capacity':
+    case 'ci':
     case 'execution-plans':
     case 'run-calendar':
     case 'scenarios':

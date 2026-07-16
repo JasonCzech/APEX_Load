@@ -1,0 +1,26 @@
+version: "2"
+
+run:
+  timeout: 10m
+
+linters:
+  default: none
+  enable:
+    - govet
+    - misspell
+    - unconvert
+  exclusions:
+    rules:
+      # Unicode transliteration fixtures intentionally contain words such as
+      # "AEther" that the English-only spell checker treats as misspellings.
+      - linters:
+          - misspell
+        path: pkg/api/archive_report_pdf_ascii_test.go
+
+formatters:
+  enable:
+    - gofmt
+  settings:
+    gofmt:
+      # Match the repository's documented plain `gofmt` gate.
+      simplify: false

@@ -141,7 +141,7 @@ Service accounts are APEX Load-owned automation principals. Create one per autom
 Operational guidance:
 
 - Assign the narrowest global and project roles that the automation needs.
-- Assign token scopes as a second boundary. Use `automation:*` only for broad CI controllers; prefer narrower scopes such as `results:read`, `tests:run`, `scripts:write`, `system:read`, `settings:manage`, `service_accounts:manage`, or `audit:read` for single-purpose jobs.
+- Assign token scopes as a second boundary. Use `automation:*` only for broad CI controllers; prefer narrower scopes such as `results:read`, `tests:run`, `scripts:write`, `system:read`, `settings:manage`, `deployments:manage`, `service_accounts:manage`, or `audit:read` for single-purpose jobs. Ordinary deployment maintenance-lease keys use `deployments:manage`; they do not need `settings:manage`. The exceptional active-test override uses a separate, expiring service account with both `deployments:manage` and the exact `deployments:override-active-tests` scope; wildcard scopes do not satisfy that conditional override check.
 - Set an expiration date for temporary or vendor-owned automation.
 - Use the rotation interval to make key-age review visible in Settings.
 - Copy the API key immediately; it is returned only at creation or rotation time.

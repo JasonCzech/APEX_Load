@@ -90,8 +90,15 @@ func TestIsActiveTestListStatus(t *testing.T) {
 		want   bool
 	}{
 		{status: "RUNNING", want: true},
+		{status: "RESERVED", want: true},
+		{status: "QUEUED", want: true},
+		{status: "PENDING", want: true},
+		{status: "INITIALIZING", want: true},
+		{status: "STARTING", want: true},
 		{status: "shakeout", want: true},
+		{status: "SHAKEOUT_REVIEW", want: true},
 		{status: "PAUSED", want: true},
+		{status: "STOPPING", want: true},
 		{status: "COMPLETE", want: false},
 		{status: "FAILED", want: false},
 	}

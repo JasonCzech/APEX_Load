@@ -21,7 +21,13 @@ type ctlArgs struct {
 }
 
 func parseCtlArgs(args []string) ctlArgs {
-	c := ctlArgs{format: "text", timeout: 30 * time.Minute}
+	c := ctlArgs{
+		api:         strings.TrimSpace(os.Getenv("APEXLOAD_API")),
+		apiKey:      strings.TrimSpace(os.Getenv("APEXLOAD_API_KEY")),
+		bearerToken: strings.TrimSpace(os.Getenv("APEXLOAD_BEARER_TOKEN")),
+		format:      "text",
+		timeout:     30 * time.Minute,
+	}
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "--api":

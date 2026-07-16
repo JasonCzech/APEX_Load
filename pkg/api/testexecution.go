@@ -132,6 +132,9 @@ func (tr *TestRunner) startTestWithOptionsAndExpectedTerm(id string, opts StartT
 	if err := tr.validateExpectedStartTerm(expectedTerm); err != nil {
 		return err
 	}
+	if err := tr.validateCIRunPolicyForStart(id); err != nil {
+		return err
+	}
 	tr.mu.Lock()
 	id = tr.resolveRefKeyLocked(id)
 	blocked, err := tr.preflightStartBlocksLockedWithExpectedTerm(id, opts, expectedTerm)
@@ -160,6 +163,9 @@ func (tr *TestRunner) startTestWithOptionsAndExpectedTerm(id string, opts StartT
 	// before the durable INITIALIZING transition so a stale controller cannot
 	// overwrite takeover reconciliation.
 	if err := tr.validateExpectedStartTerm(expectedTerm); err != nil {
+		return err
+	}
+	if err := tr.validateCIRunPolicyForStart(id); err != nil {
 		return err
 	}
 
@@ -375,7 +381,7 @@ func (tr *TestRunner) beginScriptShakeoutIfNeededWithExpectedTerm(id string, opt
 	test.PendingReason = ""
 	test.QueuePosition = 0
 	test.Error = ""
-	if err := tr.saveManagedTestRecord(test); err != nil {
+	if err := tr.saveManagedTestStartRecord(test); err != nil {
 		test.Status = previousStatus
 		test.PendingSince = previousPendingSince
 		test.PendingReason = previousPendingReason
@@ -472,7 +478,7 @@ func (tr *TestRunner) prepareTestStartLockedWithExpectedTerm(id string, opts Sta
 	if err := tr.markTestInitializingLockedWithExpectedTerm(test, expectedTerm); err != nil {
 		return nil, err
 	}
-	if err := tr.saveManagedTestRecord(test); err != nil {
+	if err := tr.saveManagedTestStartRecord(test); err != nil {
 		if test.cancel != nil {
 			test.cancel()
 		}
@@ -555,6 +561,12 @@ func (tr *TestRunner) reloadAndReconcile() error {
 	if err := tr.reloadStoredTests(); err != nil {
 		return fmt.Errorf("reload tests: %w", err)
 	}
+	if err := tr.cleanupLeakedCIScriptSnapshots(); err != nil {
+		return fmt.Errorf("clean up leaked CI script snapshots: %w", err)
+	}
+	if err := tr.recoverQueuedCIRuns(); err != nil {
+		return fmt.Errorf("recover queued CI runs: %w", err)
+	}
 	if err := tr.reloadStoredScenarios(); err != nil {
 		return fmt.Errorf("reload scenarios: %w", err)
 	}
@@ -585,14 +597,22 @@ func (tr *TestRunner) lockedTestStatus(id string) (string, *ManagedTest, string,
 }
 
 func (tr *TestRunner) StopTest(id string) error {
-	return tr.stopTestWithContext(context.Background(), id, true)
+	return tr.stopTestWithContextAndCIReason(context.Background(), id, true, "")
 }
 
 func (tr *TestRunner) stopTest(id string, requireLeadership bool) error {
-	return tr.stopTestWithContext(context.Background(), id, requireLeadership)
+	return tr.stopTestWithContextAndCIReason(context.Background(), id, requireLeadership, "")
 }
 
 func (tr *TestRunner) stopTestWithContext(ctx context.Context, id string, requireLeadership bool) error {
+	return tr.stopTestWithContextAndCIReason(ctx, id, requireLeadership, "")
+}
+
+func (tr *TestRunner) AbortCIRun(id string, reason string) error {
+	return tr.stopTestWithContextAndCIReason(context.Background(), id, true, normalizeCIAbortReason(reason))
+}
+
+func (tr *TestRunner) stopTestWithContextAndCIReason(ctx context.Context, id string, requireLeadership bool, abortReason string) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -638,19 +658,31 @@ func (tr *TestRunner) stopTestWithContext(ctx context.Context, id string, requir
 	case "COMPLETE", "FAILED", "ABORTED":
 		tr.mu.Unlock()
 		return nil
+	}
+	previousError := test.Error
+	if abortReason != "" {
+		test.Error = "ci abort reason: " + abortReason
+	}
+	switch status {
 	case "STOPPING":
 		// A prior backend stop may have been known-not-applied while the
 		// controller's attempt to restore RUNNING/PAUSED failed durably. Keep the
 		// fail-closed STOPPING reservation, but retry idempotent backend teardown
 		// instead of telling operators that no work remains.
 		tr.cancelAllVUserScaleRampsLocked(test)
+		if test.Error != previousError {
+			if err := tr.saveManagedTestRecord(test); err != nil {
+				test.Error = previousError
+				tr.mu.Unlock()
+				return fmt.Errorf("persist CI abort reason: %w", err)
+			}
+		}
 	case "QUEUED", "PENDING", "RESERVED", "SHAKEOUT", "SHAKEOUT_REVIEW", "INITIALIZING":
 		now := time.Now().UTC()
 		previousPendingSince := cloneTimePtr(test.PendingSince)
 		previousPendingReason := test.PendingReason
 		previousQueuePosition := test.QueuePosition
 		previousEndedAt := cloneTimePtr(test.EndedAt)
-		previousError := test.Error
 		test.Status = "ABORTED"
 		test.PendingSince = nil
 		test.PendingReason = ""
@@ -695,6 +727,7 @@ func (tr *TestRunner) stopTestWithContext(ctx context.Context, id string, requir
 		test.Status = "STOPPING"
 		if err := tr.saveManagedTestRecord(test); err != nil {
 			test.Status = status
+			test.Error = previousError
 			tr.mu.Unlock()
 			return fmt.Errorf("persist stopping test state: %w", err)
 		}
@@ -744,8 +777,12 @@ func (tr *TestRunner) stopTestWithContext(ctx context.Context, id string, requir
 				tr.mu.Lock()
 				if test.Status == "STOPPING" {
 					test.Status = status
+					test.Error = previousError
 					if persistErr := tr.saveManagedTestRecord(test); persistErr != nil {
 						test.Status = "STOPPING"
+						if abortReason != "" {
+							test.Error = "ci abort reason: " + abortReason
+						}
 						tr.mu.Unlock()
 						tr.enqueueStopTeardownRetry(test.ID)
 						return errors.Join(stopErr, fmt.Errorf("persist stop rollback: %w", persistErr))
@@ -757,8 +794,12 @@ func (tr *TestRunner) stopTestWithContext(ctx context.Context, id string, requir
 			tr.mu.Lock()
 			if test.Status == "STOPPING" {
 				test.Status = status
+				test.Error = previousError
 				if persistErr := tr.saveManagedTestRecord(test); persistErr != nil {
 					test.Status = "STOPPING"
+					if abortReason != "" {
+						test.Error = "ci abort reason: " + abortReason
+					}
 					tr.mu.Unlock()
 					tr.enqueueStopTeardownRetry(test.ID)
 					return errors.Join(stopErr, fmt.Errorf("persist stop rollback: %w", persistErr))
@@ -787,6 +828,32 @@ func (tr *TestRunner) enqueueStopTeardownRetry(testID string) {
 
 func (tr *TestRunner) AbortTest(id string) error {
 	return tr.StopTest(id)
+}
+
+func (tr *TestRunner) MarkTestAbortReason(id string, reason string) error {
+	reason = normalizeCIAbortReason(reason)
+	if reason == "" {
+		return nil
+	}
+	tr.mu.Lock()
+	test, ok := tr.tests[id]
+	if !ok {
+		tr.mu.Unlock()
+		return fmt.Errorf("test not found: %s", id)
+	}
+	if isTerminalTestStatus(test.Status) {
+		tr.mu.Unlock()
+		return nil
+	}
+	previousError := test.Error
+	test.Error = "ci abort reason: " + reason
+	if err := tr.saveManagedTestRecord(test); err != nil {
+		test.Error = previousError
+		tr.mu.Unlock()
+		return fmt.Errorf("persist CI abort reason: %w", err)
+	}
+	tr.mu.Unlock()
+	return nil
 }
 
 func (tr *TestRunner) ScaleVUsers(id string, groupName string, targetVUsers int) error {
@@ -2497,17 +2564,25 @@ func (tr *TestRunner) failTestBeforeRunAndLog(test *ManagedTest, message string)
 }
 
 func (tr *TestRunner) completeTestRun(test *ManagedTest, finalStatus string, endTime time.Time, finalError string, archiveRecord *storage.RunArchiveRecord) error {
+	return tr.completeTestRunWithPendingPromotion(test, finalStatus, endTime, finalError, archiveRecord, true)
+}
+
+func (tr *TestRunner) completeTestRunWithPendingPromotion(test *ManagedTest, finalStatus string, endTime time.Time, finalError string, archiveRecord *storage.RunArchiveRecord, promotePending bool) error {
 	if tr == nil || test == nil {
 		return nil
 	}
 	unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
 	defer unlockArchiveCommit()
-	return tr.completeTestRunUnderArchiveFence(test, finalStatus, endTime, finalError, archiveRecord)
+	return tr.completeTestRunUnderArchiveFenceWithPendingPromotion(test, finalStatus, endTime, finalError, archiveRecord, promotePending)
 }
 
 // completeTestRunUnderArchiveFence performs the terminal row and archive-map
 // commit while the caller owns test.ID's archive commit fence.
 func (tr *TestRunner) completeTestRunUnderArchiveFence(test *ManagedTest, finalStatus string, endTime time.Time, finalError string, archiveRecord *storage.RunArchiveRecord) error {
+	return tr.completeTestRunUnderArchiveFenceWithPendingPromotion(test, finalStatus, endTime, finalError, archiveRecord, true)
+}
+
+func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test *ManagedTest, finalStatus string, endTime time.Time, finalError string, archiveRecord *storage.RunArchiveRecord, promotePending bool) error {
 	tr.mu.Lock()
 	if test == nil || tr.tests[test.ID] != test {
 		tr.mu.Unlock()
@@ -2557,7 +2632,9 @@ func (tr *TestRunner) completeTestRunUnderArchiveFence(test *ManagedTest, finalS
 	tr.captureUsageSnapshotForTerminalRun(test.ID, test.ProjectID)
 	if finalStatus == "FAILED" {
 		tr.broadcastEvent("test_failed", test)
-		tr.promotePendingTests()
+		if promotePending {
+			tr.promotePendingTests()
+		}
 		if err := tr.advanceExecutionPlanForTest(test, finalStatus); err != nil {
 			slog.Error("failed to durably advance execution plan after terminal test failure", "test_id", test.ID, "error", err)
 			return errors.Join(releaseErr, err)
@@ -2569,7 +2646,9 @@ func (tr *TestRunner) completeTestRunUnderArchiveFence(test *ManagedTest, finalS
 	} else {
 		tr.broadcastEvent("test_complete", test)
 	}
-	tr.promotePendingTests()
+	if promotePending {
+		tr.promotePendingTests()
+	}
 	if err := tr.advanceExecutionPlanForTest(test, finalStatus); err != nil {
 		slog.Error("failed to durably advance execution plan after terminal test completion", "test_id", test.ID, "error", err)
 		return errors.Join(releaseErr, err)
@@ -2612,6 +2691,21 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 			tr.mu.Unlock()
 			return nil
 		}
+		pendingID := pending.ID
+		tr.mu.Unlock()
+		if policyErr := tr.validateCIRunPolicyForStart(pendingID); policyErr != nil {
+			message := "controller refused pending CI run before execution: " + policyErr.Error()
+			if terminalErr := tr.failCIRunBeforeExecutionDuringPromotion(pendingID, message); terminalErr != nil {
+				return terminalErr
+			}
+			continue
+		}
+		tr.mu.Lock()
+		pending = tr.tests[pendingID]
+		if pending == nil || pending.Status != "PENDING" {
+			tr.mu.Unlock()
+			continue
+		}
 		// Queue promotion is the ownership boundary for pending rows recovered by
 		// a successor controller. Fail closed before any shakeout/status write.
 		if err := tr.claimTestExecutionFenceWithTerm(pending, leaseTerm); err != nil {
@@ -2630,7 +2724,7 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 			pending.PendingReason = ""
 			pending.QueuePosition = 0
 			pending.Error = ""
-			if err := tr.saveManagedTestRecord(pending); err != nil {
+			if err := tr.saveManagedTestStartRecord(pending); err != nil {
 				pending.Status = previousStatus
 				pending.PendingSince = previousPendingSince
 				pending.PendingReason = previousPendingReason
@@ -2683,6 +2777,20 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 				return err
 			}
 			tr.broadcastEvent("script_shakeout_passed", pending)
+			tr.mu.Unlock()
+			if policyErr := tr.validateCIRunPolicyForStart(pendingID); policyErr != nil {
+				message := "controller refused pending CI run after script shakeout: " + policyErr.Error()
+				if terminalErr := tr.failCIRunBeforeExecutionDuringPromotion(pendingID, message); terminalErr != nil {
+					return terminalErr
+				}
+				continue
+			}
+			tr.mu.Lock()
+			pending = tr.tests[pendingID]
+			if pending == nil || pending.Status != "PENDING" {
+				tr.mu.Unlock()
+				continue
+			}
 		}
 		previousStatus := pending.Status
 		previousPendingSince := cloneTimePtr(pending.PendingSince)
@@ -2697,7 +2805,7 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 			slog.Warn("pending test promotion lost execution leadership", "test_id", pending.ID, "error", err)
 			return err
 		}
-		if err := tr.saveManagedTestRecord(pending); err != nil {
+		if err := tr.saveManagedTestStartRecord(pending); err != nil {
 			if pending.cancel != nil {
 				pending.cancel()
 			}

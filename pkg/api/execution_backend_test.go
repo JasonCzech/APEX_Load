@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -25,6 +26,38 @@ import (
 
 type executionBackendSpy struct {
 	called chan string
+}
+
+func TestLocalExecutionFinalStatePreservesExplicitStop(t *testing.T) {
+	tests := []struct {
+		name, status, testError, wantStatus, wantError string
+		runErr                                         error
+	}{
+		{name: "normal completion", status: "RUNNING", wantStatus: "COMPLETE"},
+		{name: "stop with partial result and nil engine error", status: "STOPPING", wantStatus: "ABORTED"},
+		{name: "typed timeout", status: "STOPPING", testError: "ci abort reason: timed_out", wantStatus: "ABORTED", wantError: "ci abort reason: timed_out"},
+		{name: "leadership cancellation", status: "RUNNING", runErr: context.Canceled, wantStatus: "FAILED", wantError: context.Canceled.Error()},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			status, message := localExecutionFinalState(test.status, test.testError, test.runErr)
+			if status != test.wantStatus || message != test.wantError {
+				t.Fatalf("localExecutionFinalState = (%q, %q), want (%q, %q)", status, message, test.wantStatus, test.wantError)
+			}
+		})
+	}
+}
+
+func TestLocalExecutionRunErrorRejectsPartialResultAfterParentCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := localExecutionRunError(ctx, nil); !errors.Is(err, context.Canceled) {
+		t.Fatalf("localExecutionRunError = %v, want context.Canceled", err)
+	}
+	sentinel := errors.New("engine failure")
+	if err := localExecutionRunError(ctx, sentinel); !errors.Is(err, sentinel) {
+		t.Fatalf("localExecutionRunError replaced engine error: %v", err)
+	}
 }
 
 func (s *executionBackendSpy) Run(_ *TestRunner, test *ManagedTest) {
@@ -2653,11 +2686,11 @@ func TestDistributedExecutionBackendAdjustsDuration(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected managed test %q to exist", testRun.ID)
 		}
-		if started.Status == "RUNNING" {
+		if started.Status == "RUNNING" && started.remoteActivated && !started.remoteActivationPending {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("expected distributed backend to mark test running, got status %q", started.Status)
+			t.Fatalf("expected distributed backend activation, got status=%q activated=%t pending=%t", started.Status, started.remoteActivated, started.remoteActivationPending)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}

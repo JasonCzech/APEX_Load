@@ -17,6 +17,9 @@ func (n *Network) runDNS(ctx context.Context, action *protocol.Action) (*operati
 	if domain == "" {
 		return nil, errors.New("dns query target is required")
 	}
+	if err := protocol.ValidateTargetAddress(domain, n.allowedTargetHosts); err != nil {
+		return nil, err
+	}
 	recordType := strings.ToUpper(strings.TrimSpace(actionParamString(action.Params, "record_type")))
 	if recordType == "" {
 		recordType = "A"

@@ -189,7 +189,7 @@ func archiveDownloadFreeBytes(file *os.File) (int64, error) {
 		return int64(^uint64(0) >> 1), nil
 	}
 	available := stat.Bavail * blockSize
-	if available > uint64(^uint64(0)>>1) {
+	if available > ^uint64(0)>>1 {
 		return int64(^uint64(0) >> 1), nil
 	}
 	return int64(available), nil

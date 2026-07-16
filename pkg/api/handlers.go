@@ -170,7 +170,7 @@ func parseTestListOptions(w http.ResponseWriter, r *http.Request) (summary bool,
 
 func isActiveTestListStatus(status string) bool {
 	switch strings.ToUpper(strings.TrimSpace(status)) {
-	case "QUEUED", "PENDING", "INITIALIZING", "SHAKEOUT", "SHAKEOUT_REVIEW", "RUNNING", "PAUSED", "STOPPING":
+	case "RESERVED", "QUEUED", "PENDING", "INITIALIZING", "STARTING", "SHAKEOUT", "SHAKEOUT_REVIEW", "RUNNING", "PAUSED", "STOPPING":
 		return true
 	default:
 		return false

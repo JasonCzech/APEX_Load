@@ -40,6 +40,7 @@ type Server struct {
 	store            storage.Store
 	cache            CacheBackend
 	controllerID     string
+	haExecution      bool
 	authoringMu      sync.Mutex
 	// authoringMutationMu serializes session edits, deletion, correlation
 	// write-back, and approval within one controller. The storage CAS used by
@@ -80,6 +81,10 @@ type Server struct {
 	oidcMu            sync.Mutex
 	oidcRuntimeKey    string
 	oidcRuntime       *oidcRuntime
+	ciAuthMu          sync.Mutex
+	ciOIDCProviders   map[string]*ciOIDCProviderRuntime
+	ciOIDCExchanges   map[string]ciOIDCExchangeCacheEntry
+	ciChecksCancel    context.CancelFunc
 	// selfHealMu serializes replay/debug self-heal write-back. Both the browser
 	// replay and script debug managers fire completion hooks into the shared
 	// persistSelfHealToRepository, whose read-modify-write of the whole objects
@@ -247,6 +252,7 @@ func NewServer(cfg ServerConfig) *Server {
 		store:                   cfg.Store,
 		cache:                   cache,
 		controllerID:            controllerID,
+		haExecution:             cfg.HAExecutionLeadership,
 		authoring:               make(map[string]*storage.AuthoringSession),
 		libraryRemotes:          make(map[string]*LibraryRemote),
 		libraryLinks:            make(map[string]*librarySyncLink),
@@ -254,6 +260,8 @@ func NewServer(cfg ServerConfig) *Server {
 		slaWaivers:              make(map[string][]*storage.ReleaseSLAWaiver),
 		resultImports:           make(map[string]*storage.ExternalResultImport),
 		githubTokens:            make(map[string]githubCachedToken),
+		ciOIDCProviders:         make(map[string]*ciOIDCProviderRuntime),
+		ciOIDCExchanges:         make(map[string]ciOIDCExchangeCacheEntry),
 		collectorMetrics:        newCollectorMetricStore(),
 		fleetProvisioningActive: make(map[string]string),
 		leadership:              leadership,
@@ -332,6 +340,7 @@ func NewServer(cfg ServerConfig) *Server {
 	// Feed replay selector self-heals back to the bound object repository.
 	s.browserReplay.setCompletionHook(s.persistSelfHealToRepository)
 	s.scriptDebug.setCompletionHook(s.persistSelfHealToRepository)
+	runner.setTerminalObserver(s.handleCIRunTerminal)
 
 	s.loadLibraryState()
 	s.routes(cfg.AllowedOrigins)
@@ -352,6 +361,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	cors := corsMiddleware(allowedOrigins)
 	log := loggingMiddleware
 	auth := authMiddleware(func() AuthSettings { return s.runner.GetSystemSettings().Auth }, s.store, s.cache, withAuthAuditRecorder(s))
+	ciAuth := s.ciAuthMiddleware(auth)
 	recorderViewAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
 		s.store,
@@ -451,6 +461,13 @@ func (s *Server) routes(allowedOrigins []string) {
 		resolveBrowserRecordingSessionProjectID(s.browserRecording),
 		withAuthAuditRecorder(s),
 	)
+
+	// Controller-native GitHub Actions discovery, authentication, and run API.
+	s.mux.Handle("GET /.well-known/apexload-ci", cors(log(http.HandlerFunc(s.handleCIWellKnown))))
+	s.mux.Handle("POST /api/v1/auth/ci/github/exchange", cors(log(http.HandlerFunc(s.handleGitHubCIExchange))))
+	s.mux.Handle("POST /api/v1/ci/runs", cors(log(ciAuth(http.HandlerFunc(s.handleCreateCIRun)))))
+	s.mux.Handle("GET /api/v1/ci/runs/{id}", cors(log(ciAuth(http.HandlerFunc(s.handleGetCIRun)))))
+	s.mux.Handle("POST /api/v1/ci/runs/{id}/abort", cors(log(ciAuth(http.HandlerFunc(s.handleAbortCIRun)))))
 
 	// Test lifecycle and archive endpoints.
 	s.mux.Handle("POST /api/v1/domains", cors(log(auth(http.HandlerFunc(s.handleCreateDomain)))))
@@ -851,6 +868,10 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/system/usage/snapshots", cors(log(auth(http.HandlerFunc(s.handleListUsageAccountingSnapshots)))))
 	s.mux.Handle("POST /api/v1/system/usage/snapshots", cors(log(auth(http.HandlerFunc(s.handleCreateUsageAccountingSnapshot)))))
 	s.mux.Handle("GET /api/v1/system/parity-status", cors(log(auth(http.HandlerFunc(s.handleGetParityStatus)))))
+	s.mux.Handle("GET /api/v1/system/deployment-lease", cors(log(auth(http.HandlerFunc(s.handleGetDeploymentLease)))))
+	s.mux.Handle("POST /api/v1/system/deployment-lease/acquire", cors(log(auth(http.HandlerFunc(s.handleAcquireDeploymentLease)))))
+	s.mux.Handle("POST /api/v1/system/deployment-lease/renew", cors(log(auth(http.HandlerFunc(s.handleRenewDeploymentLease)))))
+	s.mux.Handle("POST /api/v1/system/deployment-lease/release", cors(log(auth(http.HandlerFunc(s.handleReleaseDeploymentLease)))))
 	s.mux.Handle("GET /api/v1/system/browser-benchmarks", cors(log(auth(http.HandlerFunc(s.handleGetBrowserBenchmarkEvidence)))))
 	s.mux.Handle("GET /api/v1/desktop/status", cors(log(auth(http.HandlerFunc(s.handleDesktopStatus)))))
 	s.mux.Handle("GET /api/v1/runtime-settings/support-matrix", cors(log(auth(http.HandlerFunc(s.handleRuntimeSettingsSupportMatrix)))))
@@ -1117,6 +1138,7 @@ func (s *Server) Start() (startErr error) {
 	s.startArchiveCleanupRetry()
 	s.startArchiveFinalizationRetry()
 	s.startAccessReviewNotifierCadence()
+	s.startCIGitHubCheckReconciliation()
 
 	if err := s.startMetricsListener(); err != nil {
 		return err
@@ -1368,6 +1390,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.accessReviewNotifyCancel != nil {
 		s.accessReviewNotifyCancel()
 		s.accessReviewNotifyCancel = nil
+	}
+	if s.ciChecksCancel != nil {
+		s.ciChecksCancel()
+		s.ciChecksCancel = nil
 	}
 	if s.fanoutCancel != nil {
 		s.fanoutCancel()

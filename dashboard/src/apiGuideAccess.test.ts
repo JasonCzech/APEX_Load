@@ -27,6 +27,10 @@ describe('apiGuideAccess docs visibility classification', () => {
     expect(examples.get('GET /api/v1/execution-plans')).toEqual(['view_tests'])
     expect(examples.get('POST /api/v1/auth/users/onboard')).toEqual(['manage_users'])
     expect(examples.get('POST /api/v1/auth/users/{id}/bindings')).toEqual(['manage_user_bindings'])
+    expect(examples.get('POST /api/v1/auth/ci/github/exchange')).toEqual([])
+    expect(examples.get('POST /api/v1/ci/runs')).toEqual(['manage_tests'])
+    expect(examples.get('GET /api/v1/ci/runs/{id}')).toEqual(['view_tests'])
+    expect(examples.get('POST /api/v1/ci/runs/{id}/abort')).toEqual(['manage_tests'])
   })
 
   it('fails closed for unclassified routes at runtime', () => {

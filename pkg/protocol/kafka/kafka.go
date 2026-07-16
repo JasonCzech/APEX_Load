@@ -103,33 +103,34 @@ type atomicTransactionCommitter interface {
 }
 
 type config struct {
-	Brokers           []string
-	Profile           string
-	MaxMessageBytes   int
-	SecurityProtocol  string
-	SASLMechanism     string
-	SASLUsername      string
-	SASLPassword      string
-	OAuthScope        string
-	ClientID          string
-	ConsumerGroup     string
-	Topic             string
-	Acks              string
-	Idempotence       string
-	TransactionalID   string
-	Compression       string
-	PartitionStrategy string
-	AutoOffsetReset   string
-	IsolationLevel    string
-	Partitions        int32
-	Timeout           time.Duration
-	Serialization     string
-	SchemaRegistryURL string
-	Subject           string
-	Schema            string
-	SchemaID          int
-	Properties        map[string]string
-	Mock              bool
+	Brokers            []string
+	Profile            string
+	MaxMessageBytes    int
+	SecurityProtocol   string
+	SASLMechanism      string
+	SASLUsername       string
+	SASLPassword       string
+	OAuthScope         string
+	ClientID           string
+	ConsumerGroup      string
+	Topic              string
+	Acks               string
+	Idempotence        string
+	TransactionalID    string
+	Compression        string
+	PartitionStrategy  string
+	AutoOffsetReset    string
+	IsolationLevel     string
+	Partitions         int32
+	Timeout            time.Duration
+	Serialization      string
+	SchemaRegistryURL  string
+	Subject            string
+	Schema             string
+	SchemaID           int
+	Properties         map[string]string
+	Mock               bool
+	AllowedTargetHosts []string
 
 	// TLS material (consumed by the franz-go adapter under the kafka_real build tag).
 	TLSInsecureSkipVerify bool
@@ -163,33 +164,34 @@ func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 		return err
 	}
 	k.cfg = config{
-		Brokers:           stringSliceValue(cfg, "kafka_brokers"),
-		Profile:           strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_profile"))),
-		MaxMessageBytes:   maxMessageBytes,
-		SecurityProtocol:  stringValue(cfg, "kafka_security_protocol"),
-		SASLMechanism:     stringValue(cfg, "kafka_sasl_mechanism"),
-		SASLUsername:      stringValue(cfg, "kafka_sasl_username"),
-		SASLPassword:      stringValue(cfg, "kafka_sasl_password"),
-		OAuthScope:        stringValue(cfg, "kafka_oauth_scope"),
-		ClientID:          stringValue(cfg, "kafka_client_id"),
-		ConsumerGroup:     stringValue(cfg, "kafka_consumer_group"),
-		Topic:             stringValue(cfg, "kafka_topic"),
-		Acks:              stringValue(cfg, "kafka_acks"),
-		Idempotence:       strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_idempotence"))),
-		TransactionalID:   stringValue(cfg, "kafka_transactional_id"),
-		Compression:       stringValue(cfg, "kafka_compression"),
-		PartitionStrategy: stringValue(cfg, "kafka_partition_strategy"),
-		AutoOffsetReset:   stringValue(cfg, "kafka_auto_offset_reset"),
-		IsolationLevel:    strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_isolation_level"))),
-		Partitions:        int32(partitions),
-		Timeout:           time.Duration(timeoutMS) * time.Millisecond,
-		Serialization:     strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_serialization"))),
-		SchemaRegistryURL: stringValue(cfg, "kafka_schema_registry_url"),
-		Subject:           stringValue(cfg, "kafka_subject"),
-		Schema:            stringValue(cfg, "kafka_schema"),
-		SchemaID:          schemaID,
-		Properties:        stringMapValue(cfg, "kafka_properties"),
-		Mock:              boolValue(cfg, "kafka_mock"),
+		Brokers:            stringSliceValue(cfg, "kafka_brokers"),
+		Profile:            strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_profile"))),
+		MaxMessageBytes:    maxMessageBytes,
+		SecurityProtocol:   stringValue(cfg, "kafka_security_protocol"),
+		SASLMechanism:      stringValue(cfg, "kafka_sasl_mechanism"),
+		SASLUsername:       stringValue(cfg, "kafka_sasl_username"),
+		SASLPassword:       stringValue(cfg, "kafka_sasl_password"),
+		OAuthScope:         stringValue(cfg, "kafka_oauth_scope"),
+		ClientID:           stringValue(cfg, "kafka_client_id"),
+		ConsumerGroup:      stringValue(cfg, "kafka_consumer_group"),
+		Topic:              stringValue(cfg, "kafka_topic"),
+		Acks:               stringValue(cfg, "kafka_acks"),
+		Idempotence:        strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_idempotence"))),
+		TransactionalID:    stringValue(cfg, "kafka_transactional_id"),
+		Compression:        stringValue(cfg, "kafka_compression"),
+		PartitionStrategy:  stringValue(cfg, "kafka_partition_strategy"),
+		AutoOffsetReset:    stringValue(cfg, "kafka_auto_offset_reset"),
+		IsolationLevel:     strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_isolation_level"))),
+		Partitions:         int32(partitions),
+		Timeout:            time.Duration(timeoutMS) * time.Millisecond,
+		Serialization:      strings.ToLower(strings.TrimSpace(stringValue(cfg, "kafka_serialization"))),
+		SchemaRegistryURL:  stringValue(cfg, "kafka_schema_registry_url"),
+		Subject:            stringValue(cfg, "kafka_subject"),
+		Schema:             stringValue(cfg, "kafka_schema"),
+		SchemaID:           schemaID,
+		Properties:         stringMapValue(cfg, "kafka_properties"),
+		Mock:               boolValue(cfg, "kafka_mock"),
+		AllowedTargetHosts: protocol.TargetPolicyHosts(cfg),
 
 		TLSInsecureSkipVerify: boolValue(cfg, "kafka_tls_insecure_skip_verify"),
 		TLSClientCertFile:     stringValue(cfg, "kafka_tls_client_cert_file"),
@@ -243,6 +245,18 @@ func (k *Kafka) Init(_ context.Context, cfg map[string]any) error {
 	}
 	if k.cfg.Timeout <= 0 {
 		k.cfg.Timeout = 5 * time.Second
+	}
+	if !k.cfg.Mock {
+		for _, broker := range k.cfg.Brokers {
+			if err := protocol.ValidateTargetAddress(broker, k.cfg.AllowedTargetHosts); err != nil {
+				return err
+			}
+		}
+	}
+	if k.cfg.SchemaRegistryURL != "" {
+		if err := protocol.ValidateTargetURL(k.cfg.SchemaRegistryURL, k.cfg.AllowedTargetHosts); err != nil {
+			return err
+		}
 	}
 	valueSerde, err := buildSerde(k.cfg)
 	if err != nil {
@@ -304,7 +318,7 @@ func schemaResolver(cfg config, format string) (schemaIDResolver, error) {
 	}
 	switch {
 	case cfg.SchemaRegistryURL != "":
-		return newSchemaRegistryClient(cfg.SchemaRegistryURL, cfg.Schema, registryType), nil
+		return newSchemaRegistryClient(cfg.SchemaRegistryURL, cfg.Schema, registryType, cfg.AllowedTargetHosts), nil
 	case cfg.SchemaID > 0:
 		return staticSchemaID(cfg.SchemaID), nil
 	default:

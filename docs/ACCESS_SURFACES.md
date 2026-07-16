@@ -39,16 +39,21 @@ make desktop-release
 
 Windows desktop distribution should likewise use an Authenticode-signed
 installer or executable from CI. The desktop release script can sign Windows
-executables with either `signtool` on Windows CI or `osslsigncode` on macOS/Linux
-CI:
+executables with either `signtool` on Windows CI or `osslsigncode` on
+macOS/Linux CI. Import a PFX through PowerShell's `SecureString` API first, then
+select the certificate-store thumbprint; the package script never accepts a PFX
+password on its command line:
 
 ```bash
 APEXLOAD_WINDOWS_CODESIGN=1 \
 APEXLOAD_WINDOWS_CODESIGN_TOOL=signtool \
-APEXLOAD_WINDOWS_CODESIGN_CERT_PATH="$WINDOWS_PFX_PATH" \
-APEXLOAD_WINDOWS_CODESIGN_PASSWORD="$WINDOWS_PFX_PASSWORD" \
+APEXLOAD_WINDOWS_CODESIGN_SHA1="$IMPORTED_CERTIFICATE_THUMBPRINT" \
 make desktop-release WAILS_PLATFORM=windows/amd64
 ```
+
+Cross-platform `osslsigncode` use requires protected certificate and
+unencrypted private-key files; password arguments are rejected because they are
+visible in the process list.
 
 `WAILS_PLATFORM` is passed to both `wails build -platform` and the desktop
 package script so the archive name matches the built app. When packaging an
@@ -82,7 +87,8 @@ Configure these repository secrets/variables to produce trusted downloads:
 | `APEXLOAD_MACOS_CODESIGN_IDENTITY` | Developer ID identity name passed to `codesign`. |
 | `APEXLOAD_MACOS_NOTARIZE` | Repository variable; set to `1` to require notarization. |
 | `APEXLOAD_MACOS_NOTARY_PROFILE` | Optional notarytool keychain profile name. |
-| `APEXLOAD_MACOS_NOTARY_APPLE_ID`, `APEXLOAD_MACOS_NOTARY_PASSWORD`, `APEXLOAD_MACOS_NOTARY_TEAM_ID` | Notarization credentials when not using a stored profile. |
+| `APEXLOAD_MACOS_NOTARY_KEY_P8_BASE64` | Protected release secret containing a base64-encoded App Store Connect API private key. |
+| `APEXLOAD_MACOS_NOTARY_KEY_PATH`, `APEXLOAD_MACOS_NOTARY_KEY_ID`, `APEXLOAD_MACOS_NOTARY_ISSUER_ID` | File-backed App Store Connect API-key authentication when not using a stored profile. The release workflow materializes the private key with mode `0600`; it never passes the private key or an Apple password in process arguments. |
 | `APEXLOAD_WINDOWS_CODESIGN_PFX_BASE64` | Base64-encoded Authenticode `.pfx`/`.p12` certificate. |
 | `APEXLOAD_WINDOWS_CODESIGN_PASSWORD` | Password for the Windows signing certificate. |
 | `APEXLOAD_GPG_PRIVATE_KEY` | Optional ASCII-armored private key for detached checksum signatures. |

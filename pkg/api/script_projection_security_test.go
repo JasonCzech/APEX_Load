@@ -48,9 +48,16 @@ func secretBearingScript(id, projectID string) *dsl.Script {
 				Headers:    map[string]string{"Authorization": "Bearer action-token", "X-API-Key": "action-api-key", "X-Custom-Token": "tiny", "X-Secret-Ref": "Bearer {{secret.action_token}}"},
 				HeaderList: dsl.HeaderList{{Name: "Cookie", Value: "session=action-cookie"}},
 				Body:       `{"password":"body-password","safe":"visible","token":"{{secret.body_token}}"}`,
-				Params:     map[string]any{"client_secret": "param-secret", "nested": map[string]any{"api_key": "nested-secret"}},
-				Metadata:   map[string]any{"authorization": "metadata-secret", "nested": map[string]any{"password": "nested-metadata-secret"}},
-				Auth:       &dsl.AuthConfig{Username: "action-user", Password: "action-password", Token: "action-auth-token"},
+				Params: map[string]any{
+					"client_secret": "param-secret",
+					"signature":     "short-signature",
+					"account_key":   "short-account-key",
+					"csrf":          "short-csrf",
+					"pwd":           "short-pwd",
+					"nested":        map[string]any{"api_key": "nested-secret"},
+				},
+				Metadata: map[string]any{"authorization": "metadata-secret", "nested": map[string]any{"password": "nested-metadata-secret"}},
+				Auth:     &dsl.AuthConfig{Username: "action-user", Password: "action-password", Token: "action-auth-token"},
 			}, {
 				Name: "fill password", Type: "input", Target: "password", Selector: "input[type=password]", Value: "short-action-password",
 			}}},
@@ -71,6 +78,7 @@ func TestMaskScriptSecretsProjectsEveryCredentialSurface(t *testing.T) {
 		"soap-password", "db-password", "ldap-password", "sap-password", "jms-password", "jms-client-secret",
 		"kafka-password", "schema-password", "eventhub-key", "browser-password", "certificate-passphrase",
 		"action-password", "action-token", "action-api-key", "action-cookie", "body-password", "param-secret",
+		"short-signature", "short-account-key", "short-csrf", "short-pwd",
 		"nested-secret", "metadata-secret", "nested-metadata-secret", "short-action-password", `"X-Custom-Secret":"short"`, `"X-Custom-Token":"tiny"`,
 	} {
 		if strings.Contains(text, forbidden) {
@@ -109,6 +117,26 @@ func TestMaskScriptSecretsPreservesPortableVariableBindings(t *testing.T) {
 	}
 	if script.Actions[0].Body != "aura.token={{var.corr_access_token}}&password=raw-secret&safe=yes" {
 		t.Fatalf("projection mutated runtime script: %q", script.Actions[0].Body)
+	}
+}
+
+func TestMaskScriptSecretsPreservesOAuthTokenEndpointLocator(t *testing.T) {
+	script := &dsl.Script{
+		ID: "oauth-locator", Name: "OAuth locator", Version: "1", Protocol: "http",
+		Init: []dsl.Action{{
+			Name: "token", Type: "http_oauth2_token",
+			Params: map[string]any{
+				"token_url":     "https://login.example.test/oauth/token",
+				"client_secret": "short-secret",
+			},
+		}},
+	}
+	masked := maskScriptSecrets(script)
+	if got := masked.Init[0].Params["token_url"]; got != "https://login.example.test/oauth/token" {
+		t.Fatalf("token_url locator = %#v", got)
+	}
+	if got := masked.Init[0].Params["client_secret"]; got != maskedScriptSecret {
+		t.Fatalf("client_secret = %#v, want redaction", got)
 	}
 }
 

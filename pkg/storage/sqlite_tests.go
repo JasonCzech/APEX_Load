@@ -1136,6 +1136,9 @@ func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
 	if _, err := tx.Exec(`DELETE FROM github_check_links WHERE test_id = ?`, id); err != nil {
 		return err
 	}
+	if _, err := tx.Exec(`DELETE FROM github_check_intents WHERE test_id = ?`, id); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(`DELETE FROM run_archives WHERE test_id = ?`, id); err != nil {
 		return err
 	}

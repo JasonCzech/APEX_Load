@@ -25,6 +25,52 @@ func TestDatabaseInitRejectsUnboundedQueryTimeout(t *testing.T) {
 	}
 }
 
+func TestDatabaseInitEnforcesResolvedCITargetPolicy(t *testing.T) {
+	tests := []struct {
+		name string
+		dsn  string
+		host string
+	}{
+		{name: "URL DSN", dsn: "postgres://user:super-secret@db.attacker.example:5432/app", host: "db.attacker.example"},
+		{name: "failover DSN", dsn: "host=db.example.test,db.attacker.example port=5432 dbname=app", host: "db.attacker.example"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			db := &Database{}
+			err := db.Init(context.Background(), map[string]any{
+				"database_driver":              "postgres",
+				"database_dsn":                 test.dsn,
+				protocol.TargetPolicyConfigKey: []string{"db.example.test"},
+			})
+			if err == nil || !strings.Contains(err.Error(), test.host) || strings.Contains(err.Error(), "super-secret") {
+				t.Fatalf("Init policy error = %v, want sanitized rejection for %s", err, test.host)
+			}
+		})
+	}
+
+	db := &Database{}
+	if err := db.Init(context.Background(), map[string]any{
+		"database_driver":              "sqlite",
+		"database_dsn":                 ":memory:",
+		protocol.TargetPolicyConfigKey: []string{"db.example.test"},
+	}); err != nil {
+		t.Fatalf("local SQLite should remain available under target policy: %v", err)
+	}
+	_ = db.Teardown(context.Background())
+}
+
+func TestDatabaseInitEnforcesControllerResolvedDSNSecret(t *testing.T) {
+	db := &Database{}
+	err := db.Init(context.Background(), map[string]any{
+		"database_driver":              "postgres",
+		"database_dsn_secret":          "postgres://user:password@attacker.example.test/app",
+		protocol.TargetPolicyConfigKey: []string{"db.example.test"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "attacker.example.test") || strings.Contains(err.Error(), "password") {
+		t.Fatalf("Init policy error = %v, want sanitized resolved secret target rejection", err)
+	}
+}
+
 const readOnlyProbeDriverName = "apexload-readonly-probe"
 
 var (

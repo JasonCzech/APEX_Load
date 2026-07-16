@@ -73,6 +73,26 @@ func TestValkeyBackendReportsValkeyLabelAndEndpoint(t *testing.T) {
 	}
 }
 
+func TestValkeyBackendAtomicLoadOrStore(t *testing.T) {
+	server := miniredis.RunT(t)
+	cache, err := newCacheBackend(cacheRuntimeConfig{
+		Backend: cacheBackendValkey, RedisURL: "redis://" + server.Addr() + "/0", KeyPrefix: "valkey-atomic", Timeout: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("new valkey cache: %v", err)
+	}
+	defer cache.Close()
+
+	actual, loaded, err := cache.LoadOrStoreValue(context.Background(), "exchange", []byte("first"), time.Minute)
+	if err != nil || loaded || string(actual) != "first" {
+		t.Fatalf("first valkey load-or-store = %q loaded=%v err=%v", actual, loaded, err)
+	}
+	actual, loaded, err = cache.LoadOrStoreValue(context.Background(), "exchange", []byte("second"), time.Minute)
+	if err != nil || !loaded || string(actual) != "first" {
+		t.Fatalf("second valkey load-or-store = %q loaded=%v err=%v", actual, loaded, err)
+	}
+}
+
 func TestCacheReadinessDetailsForRemoteBackend(t *testing.T) {
 	details := cacheReadinessDetails(CacheBackendInfo{
 		Backend:     cacheBackendValkey,

@@ -101,6 +101,9 @@ func (j *JavaVuser) Name() string {
 }
 
 func (j *JavaVuser) Init(_ context.Context, cfg map[string]any) error {
+	if len(protocol.TargetPolicyHosts(cfg)) > 0 {
+		return fmt.Errorf("java_vuser runner cannot enforce the CI runtime target policy")
+	}
 	// Enablement and the runner command/classpath/working-directory are
 	// operator-owned (resolved from process environment), NOT taken from the
 	// uploaded script. A script author cannot enable the runner or steer which

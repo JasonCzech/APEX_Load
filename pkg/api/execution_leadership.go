@@ -465,7 +465,7 @@ func sameStoreInstance(left, right any) bool {
 	}
 	lv := reflect.ValueOf(left)
 	rv := reflect.ValueOf(right)
-	return lv.Kind() == reflect.Ptr && rv.Kind() == reflect.Ptr && lv.Type() == rv.Type() && lv.Pointer() == rv.Pointer()
+	return lv.Kind() == reflect.Pointer && rv.Kind() == reflect.Pointer && lv.Type() == rv.Type() && lv.Pointer() == rv.Pointer()
 }
 
 // transitionToFollowerLocked records a leadership loss and enqueues its

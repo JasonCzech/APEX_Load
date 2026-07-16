@@ -48,16 +48,17 @@ func init() {
 }
 
 type config struct {
-	Namespace        string
-	EventHub         string
-	ConnectionString string
-	ConsumerGroup    string
-	PartitionKey     string
-	PartitionID      string
-	StartPosition    string // observer-probe start: "latest" (default) | "earliest"
-	AuthType         string // connection_string | aad
-	Timeout          time.Duration
-	Mock             bool
+	Namespace          string
+	EventHub           string
+	ConnectionString   string
+	ConsumerGroup      string
+	PartitionKey       string
+	PartitionID        string
+	StartPosition      string // observer-probe start: "latest" (default) | "earliest"
+	AuthType           string // connection_string | aad
+	Timeout            time.Duration
+	Mock               bool
+	AllowedTargetHosts []string
 }
 
 // EventHubs is a per-VUser Azure Event Hubs client.
@@ -80,16 +81,17 @@ func (e *EventHubs) Init(_ context.Context, cfg map[string]any) error {
 		return fmt.Errorf("eventhubs timeout_ms: %w", err)
 	}
 	e.cfg = config{
-		Namespace:        stringValue(cfg, "eventhubs_namespace"),
-		EventHub:         stringValue(cfg, "eventhubs_event_hub"),
-		ConnectionString: stringValue(cfg, "eventhubs_connection_string"),
-		ConsumerGroup:    stringValue(cfg, "eventhubs_consumer_group"),
-		PartitionKey:     stringValue(cfg, "eventhubs_partition_key"),
-		PartitionID:      stringValue(cfg, "eventhubs_partition_id"),
-		StartPosition:    strings.ToLower(strings.TrimSpace(stringValue(cfg, "eventhubs_start_position"))),
-		AuthType:         strings.ToLower(strings.TrimSpace(stringValue(cfg, "eventhubs_auth_type"))),
-		Timeout:          time.Duration(timeoutMS) * time.Millisecond,
-		Mock:             boolValue(cfg, "eventhubs_mock"),
+		Namespace:          stringValue(cfg, "eventhubs_namespace"),
+		EventHub:           stringValue(cfg, "eventhubs_event_hub"),
+		ConnectionString:   stringValue(cfg, "eventhubs_connection_string"),
+		ConsumerGroup:      stringValue(cfg, "eventhubs_consumer_group"),
+		PartitionKey:       stringValue(cfg, "eventhubs_partition_key"),
+		PartitionID:        stringValue(cfg, "eventhubs_partition_id"),
+		StartPosition:      strings.ToLower(strings.TrimSpace(stringValue(cfg, "eventhubs_start_position"))),
+		AuthType:           strings.ToLower(strings.TrimSpace(stringValue(cfg, "eventhubs_auth_type"))),
+		Timeout:            time.Duration(timeoutMS) * time.Millisecond,
+		Mock:               boolValue(cfg, "eventhubs_mock"),
+		AllowedTargetHosts: protocol.TargetPolicyHosts(cfg),
 	}
 	if e.cfg.ConnectionString == "" {
 		e.cfg.ConnectionString = stringValue(cfg, "eventhubs_connection_string_secret")
@@ -102,6 +104,16 @@ func (e *EventHubs) Init(_ context.Context, cfg map[string]any) error {
 	}
 	if e.cfg.Timeout <= 0 {
 		e.cfg.Timeout = defaultTimeout
+	}
+	if !e.cfg.Mock {
+		for _, target := range []string{e.cfg.Namespace, e.cfg.ConnectionString} {
+			if strings.TrimSpace(target) == "" {
+				continue
+			}
+			if err := protocol.ValidateTargetReference(target, e.cfg.AllowedTargetHosts); err != nil {
+				return err
+			}
+		}
 	}
 	if e.cfg.Mock {
 		namespace := stringValue(cfg, "runtime_mock_namespace")

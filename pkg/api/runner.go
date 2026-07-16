@@ -168,6 +168,7 @@ type fullWindowAtomicCapacityBindingPersistence interface {
 type TestRunner struct {
 	tests                 map[string]*ManagedTest
 	scripts               map[string]*StoredScript
+	privateCISnapshots    map[string]int
 	scenarios             map[string]*StoredScenario
 	archives              map[string]*storage.RunArchiveRecord
 	deletingProjects      map[string]struct{}
@@ -198,6 +199,7 @@ type TestRunner struct {
 	releaseStore          releasePersistence
 	historyStore          historyPersistence
 	archiveStore          archivePersistence
+	githubCheckStore      storage.GitHubEnterpriseStore
 	testNotesStore        testNotesPersistence
 	auditStore            auditPersistence
 	settingsStore         settingsPersistence
@@ -211,13 +213,15 @@ type TestRunner struct {
 	// execPlanRunStore persists sequential execution-plan run progress; seqMu
 	// guards the in-memory orchestration state (kept off tr.mu since advancing
 	// a plan calls CreateTest/StartTest, which take tr.mu).
-	execPlanRunStore executionPlanRunPersistence
-	seqMu            sync.Mutex
-	seqPlanRuns      map[string]*seqPlanRunState
-	seqPlanByTest    map[string]string
-	seqPlanRetrying  map[string]struct{}
-	terminalRetryMu  sync.Mutex
-	terminalRetrying map[string]struct{}
+	execPlanRunStore   executionPlanRunPersistence
+	seqMu              sync.Mutex
+	seqPlanRuns        map[string]*seqPlanRunState
+	seqPlanByTest      map[string]string
+	seqPlanRetrying    map[string]struct{}
+	terminalRetryMu    sync.Mutex
+	terminalRetrying   map[string]struct{}
+	terminalObserverMu sync.RWMutex
+	terminalObserver   func(string)
 	// archiveCommitGates serialize archive publication with deletion per test.
 	// Entries are reference-counted and removed after their last waiter exits.
 	archiveCommitMu    sync.Mutex
@@ -232,6 +236,10 @@ type TestRunner struct {
 	// test default), so behavior is unchanged unless election is wired in.
 	leadership            *executionLeadership
 	durableExecutionFence bool
+	// testOnlyAllowUnfencedDeploymentLeaseStart is never enabled by production
+	// construction. A test-only option defined in a _test.go file enables it for
+	// narrow fault-injection stores that intentionally implement only SaveTest.
+	testOnlyAllowUnfencedDeploymentLeaseStart bool
 	// beforeExecutionPlanStartMutation is a deterministic test barrier between
 	// an execution-plan caller's outer term check and the term-aware StartTest
 	// mutation. Production leaves it nil.
@@ -415,6 +423,9 @@ type ManagedTest struct {
 	liveErrorEvidence          map[string][]LiveErrorEvidence
 	vuserScaleRamps            map[string]*vuserScaleRamp
 	openWorkloadSheddingWarned bool
+	ciSLAEvaluated             bool
+	ciSLABreached              bool
+	ciSLADetails               []string
 }
 
 type TestSparklinePoint struct {
@@ -1059,7 +1070,7 @@ type archiveRecorder interface {
 	engine.ResultSink
 	RecordResourceSample(timestamp time.Time, activeVUsers int64, resources *engine.SystemResources) error
 	RecordIntervalSummary(live *LiveMetrics) error
-	Finalize(status string, completedAt time.Time, errStr string, slaBreached bool, slaDetails []string) (*storage.RunArchiveRecord, error)
+	Finalize(status string, completedAt time.Time, errStr string, slaEvaluated bool, slaBreached bool, slaDetails []string) (*storage.RunArchiveRecord, error)
 }
 
 type runArtifacts struct {
@@ -1068,6 +1079,9 @@ type runArtifacts struct {
 	recorder        archiveRecorder
 	saveRecord      func(record *storage.RunArchiveRecord) error
 	externalMetrics *externalMetricCollector
+	slaEvaluated    bool
+	slaBreached     bool
+	slaDetails      []string
 }
 
 // TestRunnerOption customizes a TestRunner at construction. Options are applied
@@ -1099,6 +1113,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 	tr := &TestRunner{
 		tests:                 make(map[string]*ManagedTest),
 		scripts:               make(map[string]*StoredScript),
+		privateCISnapshots:    make(map[string]int),
 		scenarios:             make(map[string]*StoredScenario),
 		archives:              make(map[string]*storage.RunArchiveRecord),
 		deletingProjects:      make(map[string]struct{}),
@@ -1129,6 +1144,9 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 		notifier:              newNotificationDispatcher(nil),
 		routeCache:            make(map[string]latencyRouteCacheEntry),
 	}
+	if githubStore, ok := store.(storage.GitHubEnterpriseStore); ok {
+		tr.githubCheckStore = githubStore
+	}
 	for _, opt := range opts {
 		if opt != nil {
 			opt(tr)
@@ -1144,6 +1162,14 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 	tr.loadStoredScenarios()
 	tr.loadStoredTests()
 	tr.initRefKeys()
+	if tr.holdsExecutionLeadership() {
+		if err := tr.cleanupLeakedCIScriptSnapshots(); err != nil {
+			slog.Warn("leaked CI script snapshot cleanup failed during startup", "error", err)
+		}
+	}
+	if err := tr.recoverQueuedCIRuns(); err != nil && !errors.Is(err, errNotExecutionLeader) {
+		slog.Warn("queued CI run recovery failed during startup", "error", err)
+	}
 	tr.ReconcilePendingTests()
 
 	return tr

@@ -35,6 +35,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "project name is required")
 		return
 	}
+	req.Settings.GitHub = normalizeGitHubProjectPolicy(req.Settings.GitHub)
 	if err := validateProjectSettings(req.Settings); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -42,6 +43,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	if !githubProjectPoliciesEqual(req.Settings.GitHub, storage.GitHubProjectPolicy{}) && !s.requireSystemAdminForGitHubPolicyMutation(w, r) {
 		return
 	}
+	req.Settings.GitHub.Actions = s.stampGitHubActionsPolicyUpdate(r, storage.GitHubActionsPolicy{}, req.Settings.GitHub.Actions)
 	domainID, categoryID, err := s.resolveProjectPlacement(stringPtrValue(req.DomainID), stringPtrValue(req.CategoryID))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid project placement: "+err.Error())
@@ -128,6 +130,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "project name is required")
 		return
 	}
+	req.Settings.GitHub = normalizeGitHubProjectPolicy(req.Settings.GitHub)
 	if err := validateProjectSettings(req.Settings); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -135,6 +138,7 @@ func (s *Server) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	if !githubProjectPoliciesEqual(project.Settings.GitHub, req.Settings.GitHub) && !s.requireSystemAdminForGitHubPolicyMutation(w, r) {
 		return
 	}
+	req.Settings.GitHub.Actions = s.stampGitHubActionsPolicyUpdate(r, project.Settings.GitHub.Actions, req.Settings.GitHub.Actions)
 	if req.DomainID != nil || req.CategoryID != nil {
 		domainID := project.DomainID
 		categoryID := project.CategoryID
@@ -296,11 +300,79 @@ func validateProjectSettings(settings storage.ProjectSettings) error {
 			settings.GitHub.RequirePullRequest = true
 		}
 	}
+	if err := validateGitHubActionsPolicy(settings.GitHub.Actions); err != nil {
+		return err
+	}
 	if len(settings.RedactionRules) == 0 {
 		return nil
 	}
 	if _, err := engine.NewRedactionConfig(settings.RedactionRules); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateGitHubActionsPolicy(policy storage.GitHubActionsPolicy) error {
+	policy = normalizeGitHubProjectPolicy(storage.GitHubProjectPolicy{Actions: policy}).Actions
+	if policy.MaxVUsers < 0 {
+		return errProjectSettings("github.actions.max_vusers must be greater than or equal to 0")
+	}
+	if policy.MaxVUsers > maxManagedTestVUsers {
+		return errProjectSettings(fmt.Sprintf("github.actions.max_vusers must not exceed %d", maxManagedTestVUsers))
+	}
+	if policy.MaxDurationMinutes < 0 {
+		return errProjectSettings("github.actions.max_duration_minutes must be greater than or equal to 0")
+	}
+	if _, ok := checkedDuration(policy.MaxDurationMinutes, time.Minute); !ok {
+		return errProjectSettings("github.actions.max_duration_minutes is too large")
+	}
+	if !policy.Enabled {
+		return nil
+	}
+	if err := validateGitHubActionsTrustURL("issuer", policy.Issuer); err != nil {
+		return errProjectSettings(err.Error())
+	}
+	if err := validateGitHubActionsTrustURL("server URL", policy.ServerURL); err != nil {
+		return errProjectSettings(err.Error())
+	}
+	if err := validateGitHubActionsIssuerServerPair(policy.Issuer, policy.ServerURL); err != nil {
+		return errProjectSettings(err.Error())
+	}
+	if policy.Audience != "" {
+		if err := validateCIOIDCAudience(policy.Audience); err != nil {
+			return errProjectSettings("github.actions.audience is invalid: " + err.Error())
+		}
+	}
+	if len(policy.AllowedRepositoryIDs) == 0 && len(policy.AllowedRepositories) == 0 {
+		return errProjectSettings("github.actions requires at least one allowed repository id or name")
+	}
+	for _, repo := range policy.AllowedRepositories {
+		if _, _, ok := splitOwnerRepo(repo); !ok && !strings.ContainsAny(repo, "*?[") {
+			return errProjectSettings("github.actions.allowed_repositories entries must be owner/repo or a glob")
+		}
+	}
+	if len(policy.AllowedRefs) == 0 {
+		return errProjectSettings("github.actions.allowed_refs must not be empty when Actions is enabled")
+	}
+	if len(policy.AllowedWorkflowRefs) == 0 {
+		return errProjectSettings("github.actions.allowed_workflow_refs must not be empty when Actions is enabled")
+	}
+	if policy.MaxVUsers == 0 {
+		return errProjectSettings("github.actions.max_vusers must be set when Actions is enabled")
+	}
+	if policy.MaxDurationMinutes == 0 {
+		return errProjectSettings("github.actions.max_duration_minutes must be set when Actions is enabled")
+	}
+	if len(policy.AllowedProtocols) == 0 {
+		return errProjectSettings("github.actions.allowed_protocols must not be empty when Actions is enabled")
+	}
+	if len(policy.AllowedTargetHosts) == 0 {
+		return errProjectSettings("github.actions.allowed_target_hosts must not be empty when Actions is enabled")
+	}
+	for _, host := range policy.AllowedTargetHosts {
+		if strings.Contains(host, "://") || strings.ContainsAny(host, "{}@/\\\r\n\x00") {
+			return errProjectSettings("github.actions.allowed_target_hosts entries must be host names or host globs without schemes, credentials, paths, or templates")
+		}
 	}
 	return nil
 }

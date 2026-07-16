@@ -498,7 +498,7 @@ func mergeRemoteArchiveManifest(tr *TestRunner, test *ManagedTest, bundles []rem
 		IntervalSummariesFile:        "interval_summaries.jsonl",
 		IntervalSummariesParquetFile: "interval_summaries.parquet",
 	}
-	manifest.SLABreached, manifest.SLADetails = distributedArchiveSLA(tr, test)
+	manifest.SLAEvaluated, manifest.SLABreached, manifest.SLADetails = distributedArchiveSLA(tr, test)
 	for index, bundle := range bundles {
 		if index == 0 || bundle.manifest.CreatedAt.Before(manifest.CreatedAt) {
 			manifest.CreatedAt = bundle.manifest.CreatedAt
@@ -510,55 +510,39 @@ func mergeRemoteArchiveManifest(tr *TestRunner, test *ManagedTest, bundles []rem
 	return manifest
 }
 
-func distributedArchiveSLA(tr *TestRunner, test *ManagedTest) (bool, []string) {
+func distributedArchiveSLA(tr *TestRunner, test *ManagedTest) (bool, bool, []string) {
 	if test == nil {
-		return false, nil
+		return false, false, nil
 	}
 	var goal *GoalStatus
+	var evaluated, breached bool
+	var details []string
 	if tr != nil {
 		tr.mu.RLock()
-		if current := tr.tests[test.ID]; current == test && test.LiveMetrics != nil && test.LiveMetrics.GoalStatus != nil {
-			goal = cloneGoalStatus(test.LiveMetrics.GoalStatus)
+		if current := tr.tests[test.ID]; current == test {
+			evaluated = test.ciSLAEvaluated
+			breached = test.ciSLABreached
+			details = append([]string(nil), test.ciSLADetails...)
+			if test.LiveMetrics != nil {
+				evaluated = evaluated || ciSLAEvidenceComplete(test.GoalConfig, test.LiveMetrics)
+				goal = cloneGoalStatus(test.LiveMetrics.GoalStatus)
+			}
 		}
 		tr.mu.RUnlock()
-	} else if test.LiveMetrics != nil && test.LiveMetrics.GoalStatus != nil {
-		goal = cloneGoalStatus(test.LiveMetrics.GoalStatus)
+	} else {
+		evaluated = test.ciSLAEvaluated
+		breached = test.ciSLABreached
+		details = append([]string(nil), test.ciSLADetails...)
+		if test.LiveMetrics != nil {
+			evaluated = evaluated || ciSLAEvidenceComplete(test.GoalConfig, test.LiveMetrics)
+			goal = cloneGoalStatus(test.LiveMetrics.GoalStatus)
+		}
 	}
 	if goal == nil {
-		return false, nil
+		return evaluated, breached, compactNonEmptyStrings(details...)
 	}
-	details := make([]string, 0, 10)
-	if goal.LatencyBreached {
-		details = append(details, "Latency breached")
-	}
-	if goal.ErrorBreached {
-		details = append(details, "Error rate breached")
-	}
-	if goal.ServerProcessingBreached {
-		details = append(details, "Server processing breached")
-	}
-	if goal.TransferBreached {
-		details = append(details, "Transfer time breached")
-	}
-	if goal.ErrorCountBreached {
-		details = append(details, "Total error count breached")
-	}
-	if goal.ThrottledRequestsBreached {
-		details = append(details, "Event Hubs throttled requests breached")
-	}
-	if goal.EndToEndLatencyBreached {
-		details = append(details, "Event Hubs end-to-end latency breached")
-	}
-	if goal.PartitionSkewBreached {
-		details = append(details, "Event Hubs partition skew breached")
-	}
-	if goal.RedeliveryRateBreached {
-		details = append(details, "Messaging redelivery rate breached")
-	}
-	if goal.DeadLetterRateBreached {
-		details = append(details, "Messaging dead-letter rate breached")
-	}
-	return len(details) > 0, details
+	currentBreached, currentDetails := ciLiveSLABreach(goal)
+	return evaluated, breached || currentBreached, compactNonEmptyStrings(append(details, currentDetails...)...)
 }
 
 func writeMergedRemoteArchiveFiles(rootDir string, manifest *RunArchiveManifest, bundles []remoteArchiveBundle) error {

@@ -515,7 +515,7 @@ async function build() {
       ["RBAC · service accounts · audit", "Implemented end-to-end", "Maps to domains/projects/roles", "="],
       ["Scheduling", "Cron + approvals + blackout windows", "+ capacity reservations & reserved pools", "="],
       ["Notifications", "Slack / Teams / Dynatrace webhooks", "No native email", "="],
-      ["CI/CD", "JUnit XML + GitHub/ADO/Jenkins + Git sync", "No maintained marketplace plugins", "▼"],
+      ["CI/CD", "GitHub Actions + signed action/release + JUnit/JSON", "No maintained cross-platform marketplace plugins", "▼"],
       ["Secrets / PKI", "Template refs + PII redaction", "No Vault, no mTLS", "▼"],
     ];
     const cw = (W - 2 * M - 0.3) / 2;

@@ -17,6 +17,7 @@ const (
 	storageViewerRole       = "viewer"
 	storageEditorRole       = "editor"
 	storageProjectAdminRole = "project_admin"
+	storageCIRunnerRole     = "ci_runner"
 	storageSystemAdminRole  = "system_admin"
 )
 
@@ -35,7 +36,7 @@ var ErrUserNotFound = errors.New("user not found")
 func normalizeAuthorizationRole(role string) (string, error) {
 	role = strings.ToLower(strings.TrimSpace(role))
 	switch role {
-	case storageViewerRole, storageEditorRole, storageProjectAdminRole, storageSystemAdminRole:
+	case storageViewerRole, storageEditorRole, storageProjectAdminRole, storageCIRunnerRole, storageSystemAdminRole:
 		return role, nil
 	case "":
 		return "", errors.New("authorization role is required")

@@ -24,6 +24,7 @@ const (
 	RoleProjectAdmin = "project_admin"
 	RoleEditor       = "editor"
 	RoleViewer       = "viewer"
+	RoleCIRunner     = "ci_runner"
 )
 
 var apiKeyRateLimitUnsetWarningLogged atomic.Bool
@@ -298,6 +299,11 @@ func enforceIdempotencyKey(w http.ResponseWriter, r *http.Request, store Idempot
 	if store == nil || !isMutatingMethod(r.Method) {
 		return true
 	}
+	// CI run creation owns its idempotency contract: the same key must return the
+	// same run rather than the generic mutation layer's duplicate-key conflict.
+	if r.Method == http.MethodPost && r.URL.Path == "/api/v1/ci/runs" {
+		return true
+	}
 	rawKey := strings.TrimSpace(r.Header.Get("Idempotency-Key"))
 	if rawKey == "" {
 		return true
@@ -456,7 +462,7 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 			}
 
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-APEXLoad-API-Key, X-APEXLoad-CSRF-Token, X-APEXLoad-Dev-View, X-APEXLoad-Dev-Project-ID")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-APEXLoad-API-Key, X-APEXLoad-CSRF-Token, X-APEXLoad-Dev-View, X-APEXLoad-Dev-Project-ID, X-APEXLoad-Deployment-Lease-Token")
 			w.Header().Set("Access-Control-Max-Age", "86400")
 
 			if r.Method == http.MethodOptions {

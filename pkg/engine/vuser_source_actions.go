@@ -100,8 +100,20 @@ func (vu *VUser) handleHTTPOAuth2TokenAction(ctx context.Context, action dsl.Act
 		Username:     paramString("username"),
 		Password:     paramString("password"),
 	}
+	var allowedTargetHosts []string
+	if vu.Script != nil && vu.Script.Metadata != nil && vu.Script.Metadata.RuntimePolicy != nil {
+		allowedTargetHosts = vu.Script.Metadata.RuntimePolicy.AllowedTargetHosts
+	}
+	if err := protocol.ValidateTargetURL(tokenReq.TokenURL, allowedTargetHosts); err != nil {
+		return fmt.Errorf("http_oauth2_token %q: %w", action.Name, err)
+	}
 	if httpProto, ok := vu.Proto.(*protocolhttp.HTTP); ok {
 		tokenReq.HTTPClient = httpProto.OAuthHTTPClient()
+	} else if len(allowedTargetHosts) > 0 {
+		// Other protocol wrappers do not expose an HTTP client whose proxy and
+		// redirect legs carry the CI policy. Fail closed rather than falling back
+		// to the process-global client and an ungoverned environment proxy.
+		return fmt.Errorf("http_oauth2_token %q cannot enforce the CI runtime target policy for protocol %T", action.Name, vu.Proto)
 	}
 	token, err := protocolhttp.FetchOAuth2Token(ctx, tokenReq)
 	if err != nil {

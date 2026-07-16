@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -63,6 +64,9 @@ func newGitHubHTTPClient(settings GitHubSettings, timeout time.Duration) (*http.
 			return nil, err
 		}
 	}
+	if !trustedGitHubAPIURL(settings.WebBaseURL, settings.APIBaseURL) {
+		return nil, fmt.Errorf("github.api_base_url must belong to the configured GitHub server")
+	}
 	tlsCfg, err := githubTLSConfig(settings)
 	if err != nil {
 		return nil, err
@@ -79,6 +83,7 @@ type githubClient struct {
 	webBase string
 	token   string
 	allowed map[string]struct{}
+	appID   int64
 }
 
 func newGitHubClient(settings GitHubSettings, token string, timeout time.Duration) (*githubClient, error) {
@@ -92,6 +97,7 @@ func newGitHubClient(settings GitHubSettings, token string, timeout time.Duratio
 		webBase: strings.TrimRight(settings.WebBaseURL, "/"),
 		token:   token,
 		allowed: githubAllowSet(settings),
+		appID:   settings.AppID,
 	}, nil
 }
 
@@ -470,12 +476,101 @@ func (c *githubClient) CreatePull(ctx context.Context, owner, repo, title, head,
 
 type githubCheckRun struct {
 	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	HeadSHA    string `json:"head_sha"`
 	HTMLURL    string `json:"html_url"`
 	Status     string `json:"status"`
 	Conclusion string `json:"conclusion"`
+	ExternalID string `json:"external_id"`
+	App        struct {
+		ID int64 `json:"id"`
+	} `json:"app"`
+}
+
+type githubCheckRuns struct {
+	TotalCount int64            `json:"total_count"`
+	CheckRuns  []githubCheckRun `json:"check_runs"`
+}
+
+type githubWorkflowRunRepository struct {
+	ID       int64  `json:"id"`
+	FullName string `json:"full_name"`
+}
+
+type githubWorkflowRunActor struct {
+	ID    int64  `json:"id"`
+	Login string `json:"login"`
+}
+
+type githubWorkflowRunPullRequestRef struct {
+	Ref  string                      `json:"ref"`
+	SHA  string                      `json:"sha"`
+	Repo githubWorkflowRunRepository `json:"repo"`
+}
+
+type githubWorkflowRunPullRequest struct {
+	Number         int64                           `json:"number"`
+	MergeCommitSHA string                          `json:"merge_commit_sha"`
+	Head           githubWorkflowRunPullRequestRef `json:"head"`
+	Base           githubWorkflowRunPullRequestRef `json:"base"`
+}
+
+type githubWorkflowRun struct {
+	ID             int64                          `json:"id"`
+	Event          string                         `json:"event"`
+	HeadBranch     string                         `json:"head_branch"`
+	HeadSHA        string                         `json:"head_sha"`
+	Path           string                         `json:"path"`
+	RunAttempt     int64                          `json:"run_attempt"`
+	Actor          githubWorkflowRunActor         `json:"actor"`
+	PullRequests   []githubWorkflowRunPullRequest `json:"pull_requests"`
+	HeadRepository githubWorkflowRunRepository    `json:"head_repository"`
+	Repository     githubWorkflowRunRepository    `json:"repository"`
+}
+
+func (c *githubClient) GetWorkflowRun(ctx context.Context, owner, repo, runID string) (*githubWorkflowRun, error) {
+	if err := validateGitHubRepositoryCoordinates(owner, repo); err != nil {
+		return nil, err
+	}
+	runID = strings.TrimSpace(runID)
+	if runID == "" || strings.Trim(runID, "0123456789") != "" {
+		return nil, fmt.Errorf("github workflow run id must be numeric")
+	}
+	apiPath := fmt.Sprintf("/repos/%s/%s/actions/runs/%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(runID))
+	var result githubWorkflowRun
+	if err := c.doJSON(ctx, http.MethodGet, apiPath, nil, nil, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// ListPullRequestsForCommit resolves pull-request metadata that is not reliably
+// populated in the workflow-run resource. In particular, GitHub.com can return
+// an empty workflow_run.pull_requests array even for pull_request runs.
+func (c *githubClient) ListPullRequestsForCommit(ctx context.Context, owner, repo, sha string) ([]githubWorkflowRunPullRequest, error) {
+	if err := validateGitHubRepositoryCoordinates(owner, repo); err != nil {
+		return nil, err
+	}
+	sha = strings.TrimSpace(sha)
+	if len(sha) != 40 || strings.Trim(sha, "0123456789abcdefABCDEF") != "" {
+		return nil, fmt.Errorf("github commit sha must contain 40 hexadecimal characters")
+	}
+	apiPath := fmt.Sprintf("/repos/%s/%s/commits/%s/pulls", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(sha))
+	var result []githubWorkflowRunPullRequest
+	if err := c.doJSON(ctx, http.MethodGet, apiPath, nil, nil, &result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (c *githubClient) CreateCheckRun(ctx context.Context, owner, repo, name, headSHA, status, conclusion, summary, detailsURL string) (*githubCheckRun, error) {
+	return c.CreateCheckRunWithExternalID(ctx, owner, repo, name, headSHA, status, conclusion, summary, detailsURL, "")
+}
+
+// CreateCheckRunWithExternalID creates a Check tied to a controller-owned
+// durable identifier. GitHub does not enforce uniqueness, so recovery also
+// queries this identifier before attempting another create.
+func (c *githubClient) CreateCheckRunWithExternalID(ctx context.Context, owner, repo, name, headSHA, status, conclusion, summary, detailsURL, externalID string) (*githubCheckRun, error) {
 	if err := validateGitHubRepositoryCoordinates(owner, repo); err != nil {
 		return nil, err
 	}
@@ -494,9 +589,91 @@ func (c *githubClient) CreateCheckRun(ctx context.Context, owner, repo, name, he
 	if detailsURL != "" {
 		body["details_url"] = detailsURL
 	}
+	if externalID = strings.TrimSpace(externalID); externalID != "" {
+		body["external_id"] = externalID
+	}
 	apiPath := fmt.Sprintf("/repos/%s/%s/check-runs", url.PathEscape(owner), url.PathEscape(repo))
 	var result githubCheckRun
 	if err := c.doJSON(ctx, http.MethodPost, apiPath, nil, body, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// FindCheckRunByExternalID finds a controller-owned Check on an exact commit.
+// The endpoint is available on GitHub.com and supported GHES releases; failing
+// the lookup is safer than creating a possible duplicate after a crash.
+func (c *githubClient) FindCheckRunByExternalID(ctx context.Context, owner, repo, ref, name, externalID string) (*githubCheckRun, error) {
+	if err := validateGitHubRepositoryCoordinates(owner, repo); err != nil {
+		return nil, err
+	}
+	ref = strings.TrimSpace(ref)
+	name = strings.TrimSpace(name)
+	externalID = strings.TrimSpace(externalID)
+	if ref == "" || name == "" || externalID == "" {
+		return nil, fmt.Errorf("github check ref, name, and external id are required")
+	}
+	query := url.Values{}
+	query.Set("check_name", name)
+	query.Set("filter", "all")
+	query.Set("per_page", "100")
+	apiPath := fmt.Sprintf("/repos/%s/%s/commits/%s/check-runs", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(ref))
+	const maxRecoveryPages = 1000
+	var (
+		activeMatch   *githubCheckRun
+		terminalMatch *githubCheckRun
+	)
+	for page := 1; page <= maxRecoveryPages; page++ {
+		query.Set("page", strconv.Itoa(page))
+		var result githubCheckRuns
+		if err := c.doJSON(ctx, http.MethodGet, apiPath, query, nil, &result); err != nil {
+			return nil, err
+		}
+		for i := range result.CheckRuns {
+			check := &result.CheckRuns[i]
+			if check.ExternalID == externalID && strings.EqualFold(strings.TrimSpace(check.Name), name) && (c.appID <= 0 || check.App.ID == c.appID) {
+				candidate := *check
+				status := strings.ToLower(strings.TrimSpace(candidate.Status))
+				if (status == "queued" || status == "in_progress") && strings.TrimSpace(candidate.Conclusion) == "" {
+					if activeMatch == nil || candidate.ID > activeMatch.ID {
+						activeMatch = &candidate
+					}
+				} else if terminalMatch == nil || candidate.ID > terminalMatch.ID {
+					terminalMatch = &candidate
+				}
+			}
+		}
+		if len(result.CheckRuns) < 100 || int64(page*100) >= result.TotalCount {
+			if activeMatch != nil {
+				return activeMatch, nil
+			}
+			return terminalMatch, nil
+		}
+	}
+	return nil, fmt.Errorf("github check recovery exceeded %d pages", maxRecoveryPages)
+}
+
+func (c *githubClient) UpdateCheckRun(ctx context.Context, owner, repo string, checkRunID int64, name, status, conclusion, summary, detailsURL string) (*githubCheckRun, error) {
+	if err := validateGitHubRepositoryCoordinates(owner, repo); err != nil {
+		return nil, err
+	}
+	if checkRunID <= 0 {
+		return nil, fmt.Errorf("github check run id is required")
+	}
+	body := map[string]any{
+		"name":   name,
+		"status": status,
+		"output": map[string]any{"title": name, "summary": summary},
+	}
+	if conclusion != "" {
+		body["conclusion"] = conclusion
+	}
+	if detailsURL != "" {
+		body["details_url"] = detailsURL
+	}
+	apiPath := fmt.Sprintf("/repos/%s/%s/check-runs/%d", url.PathEscape(owner), url.PathEscape(repo), checkRunID)
+	var result githubCheckRun
+	if err := c.doJSON(ctx, http.MethodPatch, apiPath, nil, body, &result); err != nil {
 		return nil, err
 	}
 	return &result, nil

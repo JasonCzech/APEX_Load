@@ -39,6 +39,35 @@ func TestNetworkProtocolDNSQuery(t *testing.T) {
 	}
 }
 
+func TestNetworkProtocolEnforcesFinalActionTargetPolicy(t *testing.T) {
+	netProto := &Network{}
+	if err := netProto.Init(context.Background(), map[string]any{
+		"network_timeout_ms":           float64(1000),
+		protocol.TargetPolicyConfigKey: []string{"allowed.example.test"},
+	}); err != nil {
+		t.Fatalf("init network: %v", err)
+	}
+	result, err := netProto.Execute(context.Background(), &protocol.Action{
+		Name: "blocked", Type: "tcp_request", Target: "attacker.example:443",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "attacker.example") {
+		t.Fatalf("network policy result = %#v", result)
+	}
+
+	result, err = netProto.Execute(context.Background(), &protocol.Action{
+		Name: "blocked DNS", Type: "dns_query", Target: "dns.attacker.example",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "dns.attacker.example") {
+		t.Fatalf("DNS policy result = %#v", result)
+	}
+}
+
 func TestNetworkProtocolTCPRequest(t *testing.T) {
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

@@ -86,6 +86,12 @@ spec:
               value: production
             - name: APEXLOAD_ADDR
               value: ":8080"
+            - name: APEXLOAD_PUBLIC_URL
+              value: {{ default (printf "https://%s" .Values.ingress.host) .Values.controller.publicURL | quote }}
+{{ if .Values.controller.ciOIDCAudience }}
+            - name: APEXLOAD_CI_OIDC_AUDIENCE
+              value: {{ .Values.controller.ciOIDCAudience | quote }}
+{{ end }}
             - name: APEXLOAD_ARCHIVE_DIR
               value: /var/lib/apexload/archives
             - name: APEXLOAD_EXPORT_DIR

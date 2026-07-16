@@ -176,6 +176,15 @@ func schemaCreateTableStatements() []string {
 			expires_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS deployment_leases (
+			name TEXT PRIMARY KEY,
+			owner_id TEXT NOT NULL,
+			token_hash TEXT NOT NULL,
+			acquired_at DATETIME NOT NULL,
+			expires_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			context_json TEXT NOT NULL DEFAULT '{}'
+		)`,
 		`CREATE TABLE IF NOT EXISTS scenario_scripts (
 			scenario_id TEXT NOT NULL,
 			sort_order INTEGER NOT NULL,
@@ -500,6 +509,7 @@ func schemaCreateTableStatements() []string {
 		)`,
 		`CREATE TABLE IF NOT EXISTS github_check_links (
 			id TEXT PRIMARY KEY,
+			kind TEXT,
 			test_id TEXT,
 			script_id TEXT,
 			owner TEXT,
@@ -509,8 +519,22 @@ func schemaCreateTableStatements() []string {
 			check_run_url TEXT,
 			status TEXT,
 			conclusion TEXT,
+			pending_conclusion TEXT,
 			published_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS github_check_intents (
+			test_id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			installation_id INTEGER NOT NULL,
+			owner TEXT NOT NULL,
+			repo TEXT NOT NULL,
+			commit_sha TEXT NOT NULL,
+			creation_claim TEXT,
+			creation_claim_expires_at DATETIME,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			FOREIGN KEY(project_id) REFERENCES projects(id)
 		)`,
 		`CREATE TABLE IF NOT EXISTS service_accounts (
 			id TEXT PRIMARY KEY,
@@ -938,6 +962,10 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "run_archives.ref_key", query: `ALTER TABLE run_archives ADD COLUMN ref_key TEXT`},
 		{name: "github_script_links.remote_blob_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_blob_sha TEXT`},
 		{name: "github_script_links.remote_commit_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_commit_sha TEXT`},
+		{name: "github_check_links.pending_conclusion", query: `ALTER TABLE github_check_links ADD COLUMN pending_conclusion TEXT`},
+		{name: "github_check_links.kind", query: `ALTER TABLE github_check_links ADD COLUMN kind TEXT`},
+		{name: "github_check_intents.creation_claim", query: `ALTER TABLE github_check_intents ADD COLUMN creation_claim TEXT`},
+		{name: "github_check_intents.creation_claim_expires_at", query: `ALTER TABLE github_check_intents ADD COLUMN creation_claim_expires_at DATETIME`},
 		{name: "execution_plan_approvals.plan_content_hash", query: `ALTER TABLE execution_plan_approvals ADD COLUMN plan_content_hash TEXT`},
 		{name: "execution_plans.revision", query: `ALTER TABLE execution_plans ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
 		{name: "execution_plan_runs.revision", query: `ALTER TABLE execution_plan_runs ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
@@ -990,6 +1018,10 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_correlation_rulesets_project ON correlation_rulesets(project_id)`, "idx_correlation_rulesets_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_monitoring_collectors_project ON monitoring_collectors(project_id)`, "idx_monitoring_collectors_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_reusable_blocks_project ON reusable_blocks(project_id)`, "idx_reusable_blocks_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_github_check_intents_updated ON github_check_intents(updated_at)`, "idx_github_check_intents_updated"},
+	{`CREATE INDEX IF NOT EXISTS idx_github_check_intents_project ON github_check_intents(project_id)`, "idx_github_check_intents_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_github_check_links_test ON github_check_links(test_id)`, "idx_github_check_links_test"},
+	{`CREATE INDEX IF NOT EXISTS idx_github_check_links_reconcile ON github_check_links(kind, updated_at)`, "idx_github_check_links_reconcile"},
 	// audit_events and usage_accounting_snapshots grow unbounded on a long-lived
 	// controller; index the hot ListAuditEvents path (ORDER BY created_at DESC plus
 	// frequent project/actor filters) and the retention-prune scan.
@@ -1014,6 +1046,9 @@ func (s *SQLiteStore) init() error {
 		return err
 	}
 	if err := s.backfillArchiveFinalizationIntentTokens(); err != nil {
+		return err
+	}
+	if err := s.backfillGitHubCheckLinkKinds(); err != nil {
 		return err
 	}
 	if _, err := s.db.Exec(`UPDATE github_script_links SET remote_blob_sha = last_commit_sha WHERE (remote_blob_sha IS NULL OR remote_blob_sha = '') AND last_commit_sha IS NOT NULL AND last_commit_sha != ''`); err != nil {
@@ -1071,6 +1106,43 @@ func (s *SQLiteStore) backfillArchiveFinalizationIntentTokens() error {
 		if _, err := s.db.Exec(`UPDATE archive_finalization_jobs SET intent_token = ?, updated_at = ?
 			WHERE test_id = ? AND (intent_token IS NULL OR TRIM(intent_token) = '')`, uuid.NewString(), time.Now().UTC(), id); err != nil {
 			return fmt.Errorf("upgrade legacy archive finalization intent %s: %w", id, err)
+		}
+	}
+	return nil
+}
+
+func (s *SQLiteStore) backfillGitHubCheckLinkKinds() error {
+	rows, err := s.db.Query(`SELECT l.id, COALESCE(l.test_id, '')
+		FROM github_check_links l
+		JOIN tests t ON t.id = l.test_id
+		WHERE (l.kind IS NULL OR TRIM(l.kind) = '')
+			AND t.materialization_key LIKE 'ci:v1:%'`)
+	if err != nil {
+		return fmt.Errorf("list legacy github check link kinds: %w", err)
+	}
+	ciLinkIDs := make([]string, 0)
+	for rows.Next() {
+		var id, testID string
+		if err := rows.Scan(&id, &testID); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan legacy github check link kind: %w", err)
+		}
+		expectedID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload-ci-check:"+testID)).String()
+		if id == expectedID {
+			ciLinkIDs = append(ciLinkIDs, id)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("list legacy github check link kinds: %w", err)
+	}
+	rows.Close()
+	if _, err := s.db.Exec(`UPDATE github_check_links SET kind = 'manual' WHERE kind IS NULL OR TRIM(kind) = ''`); err != nil {
+		return fmt.Errorf("backfill manual github check link kinds: %w", err)
+	}
+	for _, id := range ciLinkIDs {
+		if _, err := s.db.Exec(`UPDATE github_check_links SET kind = 'ci' WHERE id = ? AND kind = 'manual'`, id); err != nil {
+			return fmt.Errorf("backfill CI github check link kind %s: %w", id, err)
 		}
 	}
 	return nil

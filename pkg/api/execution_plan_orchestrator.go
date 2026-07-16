@@ -722,6 +722,7 @@ func (tr *TestRunner) advanceExecutionPlanForTest(test *ManagedTest, terminalSta
 	if test == nil {
 		return nil
 	}
+	tr.notifyTerminalObserver(test.ID)
 	// Most tests are not owned by an execution plan. Preserve the terminal hook's
 	// documented cheap no-op for those tests; failure to obtain a term matters
 	// only after a durable plan mapping has actually been established.
@@ -737,6 +738,21 @@ func (tr *TestRunner) advanceExecutionPlanForTest(test *ManagedTest, terminalSta
 		return errNotExecutionLeader
 	}
 	return tr.advanceExecutionPlanForTestWithTerm(test, terminalStatus, leaseTerm)
+}
+
+func (tr *TestRunner) setTerminalObserver(observer func(string)) {
+	tr.terminalObserverMu.Lock()
+	tr.terminalObserver = observer
+	tr.terminalObserverMu.Unlock()
+}
+
+func (tr *TestRunner) notifyTerminalObserver(testID string) {
+	tr.terminalObserverMu.RLock()
+	observer := tr.terminalObserver
+	tr.terminalObserverMu.RUnlock()
+	if observer != nil && strings.TrimSpace(testID) != "" {
+		observer(testID)
+	}
 }
 
 func (tr *TestRunner) advanceExecutionPlanForTestWithTerm(test *ManagedTest, terminalStatus string, leaseTerm executionLeaseTerm) error {

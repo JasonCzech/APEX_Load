@@ -100,8 +100,7 @@ For macOS release builds, configure Developer ID signing and notarization:
 ```bash
 xcrun notarytool store-credentials apexload-notary \
   --apple-id "$APPLE_ID" \
-  --team-id "$APPLE_TEAM_ID" \
-  --password "$APPLE_APP_SPECIFIC_PASSWORD"
+  --team-id "$APPLE_TEAM_ID"
 
 APEXLOAD_MACOS_CODESIGN_IDENTITY='Developer ID Application: Example Corp (TEAMID)' \
 APEXLOAD_MACOS_NOTARIZE=1 \
@@ -109,30 +108,37 @@ APEXLOAD_MACOS_NOTARY_PROFILE=apexload-notary \
 make package-recording-agent
 ```
 
+Enter the app-specific password at the interactive prompt so it is not exposed
+through the process list.
+
 The package script signs Darwin binaries with hardened runtime before archiving
 and submits a temporary ZIP to `notarytool` when notarization is enabled.
 
 For Windows release builds, configure Authenticode signing. On Windows CI with
-the Windows SDK installed, the script uses `signtool`:
+the Windows SDK installed, import the PFX through PowerShell's `SecureString`
+API, then select the certificate-store thumbprint with `signtool`:
 
 ```bash
 APEXLOAD_WINDOWS_CODESIGN=1 \
 APEXLOAD_WINDOWS_CODESIGN_TOOL=signtool \
-APEXLOAD_WINDOWS_CODESIGN_CERT_PATH="$WINDOWS_PFX_PATH" \
-APEXLOAD_WINDOWS_CODESIGN_PASSWORD="$WINDOWS_PFX_PASSWORD" \
+APEXLOAD_WINDOWS_CODESIGN_SHA1="$IMPORTED_CERTIFICATE_THUMBPRINT" \
 make package-recording-agent
 ```
 
-For cross-signing from macOS or Linux CI, install `osslsigncode` and use the
-same PFX/P12 certificate file:
+For cross-signing from macOS or Linux CI, install `osslsigncode` and use
+protected certificate and unencrypted private-key files:
 
 ```bash
 APEXLOAD_WINDOWS_CODESIGN=1 \
 APEXLOAD_WINDOWS_CODESIGN_TOOL=osslsigncode \
-APEXLOAD_WINDOWS_CODESIGN_CERT_PATH="$WINDOWS_PFX_PATH" \
-APEXLOAD_WINDOWS_CODESIGN_PASSWORD="$WINDOWS_PFX_PASSWORD" \
+APEXLOAD_WINDOWS_CODESIGN_CERT_PEM="$WINDOWS_CERTIFICATE_PEM" \
+APEXLOAD_WINDOWS_CODESIGN_KEY_PATH="$WINDOWS_PRIVATE_KEY_PEM" \
 make package-recording-agent
 ```
+
+The package scripts reject signing-password arguments because they are visible
+to other processes on the runner. Recording Agent notarization similarly
+requires a preconfigured `APEXLOAD_MACOS_NOTARY_PROFILE`.
 
 Unsigned Windows development packages can run, but SmartScreen or enterprise
 application-control policies may warn or block them. Broad user distribution

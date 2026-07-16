@@ -69,6 +69,9 @@ func (g *GRPC) Init(ctx context.Context, config map[string]any) error {
 	if g.target == "" {
 		return fmt.Errorf("grpc target or base_url is required")
 	}
+	if err := protocol.ValidateTargetAddress(g.target, protocol.TargetPolicyHosts(config)); err != nil {
+		return err
+	}
 	g.useReflect, _ = boolConfig(config, "grpc_use_reflection")
 	g.plainText, _ = boolConfig(config, "grpc_plain_text")
 	g.maxRecvBytes, _ = intConfig(config, "grpc_max_recv_msg_size")

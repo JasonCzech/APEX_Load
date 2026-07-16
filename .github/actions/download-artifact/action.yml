@@ -1,0 +1,24 @@
+name: Platform-compatible artifact download
+description: Uses the GitHub.com artifact service or the supported GHES artifact client.
+inputs:
+  name:
+    description: Exact artifact name.
+    required: true
+  path:
+    description: Destination directory.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Download on GitHub.com
+      if: github.server_url == 'https://github.com'
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ inputs.path }}
+    - name: Download on GHES
+      if: github.server_url != 'https://github.com'
+      uses: actions/download-artifact@246d7188e736d3686f6d19628d253ede9697bd55 # v3-node20
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ inputs.path }}

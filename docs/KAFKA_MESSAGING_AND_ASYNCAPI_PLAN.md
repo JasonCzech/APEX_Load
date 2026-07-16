@@ -140,7 +140,7 @@ Recommend **`github.com/twmb/franz-go`** over `segmentio/kafka-go`:
   / SCRAM-SHA-512 / OAUTHBEARER, TLS, transactions.
 - Strong load characteristics (batching, low allocation).
 
-`go.mod` currently has **no** Kafka dependency (clean add). Module targets Go 1.26.4.
+`go.mod` currently has **no** Kafka dependency (clean add). Module targets Go 1.26.5.
 
 ---
 

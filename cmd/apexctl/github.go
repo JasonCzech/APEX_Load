@@ -32,9 +32,11 @@ type githubCLIArgs struct {
 
 func parseGithubArgs(args []string) githubCLIArgs {
 	parsed := githubCLIArgs{
-		api:    firstNonEmptyCLI(os.Getenv("APEXLOAD_API"), "http://localhost:8080"),
-		kind:   "import",
-		format: "text",
+		api:         firstNonEmptyCLI(os.Getenv("APEXLOAD_API"), "http://localhost:8080"),
+		apiKey:      strings.TrimSpace(os.Getenv("APEXLOAD_API_KEY")),
+		bearerToken: strings.TrimSpace(os.Getenv("APEXLOAD_BEARER_TOKEN")),
+		kind:        "import",
+		format:      "text",
 	}
 	if len(args) > 0 {
 		parsed.command = args[0]

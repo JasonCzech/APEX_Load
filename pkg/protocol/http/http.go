@@ -35,6 +35,8 @@ type HTTP struct {
 	client                   *http.Client
 	oauthClient              *http.Client
 	transport                *http.Transport
+	oauthTransport           *http.Transport
+	allowedTargetHosts       []string
 	baseURL                  string
 	bufPool                  *httpBufferPool
 	contentChecks            []contentCheck
@@ -108,6 +110,7 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 		return err
 	}
 	h.baseURL, _ = config["base_url"].(string)
+	h.allowedTargetHosts = protocol.TargetPolicyHosts(config)
 	h.networkProfile, _ = config["web_network_profile_label"].(string)
 	h.traceparentEnabled = parseTraceparentEnabled(config)
 	h.traceparentSampled = parseTraceparentSampled(config)
@@ -125,6 +128,9 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	if err := applyProxy(h.transport, config); err != nil {
 		return err
 	}
+	if len(h.allowedTargetHosts) > 0 {
+		h.transport.Proxy = protocol.NewTargetPolicyProxy(h.transport.Proxy, h.allowedTargetHosts)
+	}
 
 	jar := buildCookieJar(config)
 	h.maxRedirects = parseMaxRedirects(config)
@@ -136,6 +142,15 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	}
 	applyRedirectPolicy(h.client, h.maxRedirects)
 	h.oauthClient = hardenedOAuthHTTPClient(h.client)
+	if h.oauthClient != nil {
+		h.oauthTransport, _ = h.oauthClient.Transport.(*http.Transport)
+	}
+	if len(h.allowedTargetHosts) > 0 {
+		h.client.Transport = protocol.NewTargetPolicyRoundTripper(h.client.Transport, h.allowedTargetHosts)
+		if h.oauthClient != nil {
+			h.oauthClient.Transport = protocol.NewTargetPolicyRoundTripper(h.oauthClient.Transport, h.allowedTargetHosts)
+		}
+	}
 
 	h.defaultHeaders = buildDefaultHeaders(config)
 	h.contentChecks = parseContentChecks(config)
@@ -903,10 +918,8 @@ func (h *HTTP) Teardown(_ context.Context) error {
 	if h.transport != nil {
 		h.transport.CloseIdleConnections()
 	}
-	if h.oauthClient != nil {
-		if transport, ok := h.oauthClient.Transport.(*http.Transport); ok && transport != h.transport {
-			transport.CloseIdleConnections()
-		}
+	if h.oauthTransport != nil && h.oauthTransport != h.transport {
+		h.oauthTransport.CloseIdleConnections()
 	}
 	return nil
 }

@@ -3,7 +3,9 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io/fs"
+	"sync"
 	"testing"
 	"time"
 
@@ -71,6 +73,123 @@ func TestMemoryCacheBackendIdempotencyAndRateLimit(t *testing.T) {
 	allowed, remaining, err = cache.AllowRateLimit(ctx, "api-key", 2, time.Minute)
 	if err != nil || allowed || remaining != 0 {
 		t.Fatalf("third rate-limit call = allowed %v remaining %d err %v", allowed, remaining, err)
+	}
+}
+
+func TestMemoryCacheBackendAtomicLoadOrStore(t *testing.T) {
+	cache := newMemoryCacheBackend(cacheRuntimeConfig{KeyPrefix: "test", FanoutChannel: "events"})
+	ctx := context.Background()
+	value := []byte("first")
+	actual, loaded, err := cache.LoadOrStoreValue(ctx, "exchange", value, time.Minute)
+	if err != nil || loaded || string(actual) != "first" {
+		t.Fatalf("first load-or-store = %q loaded=%v err=%v", actual, loaded, err)
+	}
+	value[0], actual[0] = 'x', 'y'
+	actual, loaded, err = cache.LoadOrStoreValue(ctx, "exchange", []byte("second"), time.Minute)
+	if err != nil || !loaded || string(actual) != "first" {
+		t.Fatalf("second load-or-store = %q loaded=%v err=%v", actual, loaded, err)
+	}
+
+	exerciseConcurrentLoadOrStore(t, []CacheBackend{cache}, "concurrent")
+
+	if _, _, err := cache.LoadOrStoreValue(ctx, "expires", []byte("old"), time.Nanosecond); err != nil {
+		t.Fatalf("store expiring value: %v", err)
+	}
+	time.Sleep(time.Millisecond)
+	actual, loaded, err = cache.LoadOrStoreValue(ctx, "expires", []byte("new"), time.Minute)
+	if err != nil || loaded || string(actual) != "new" {
+		t.Fatalf("post-expiry load-or-store = %q loaded=%v err=%v", actual, loaded, err)
+	}
+}
+
+func TestRedisCacheBackendAtomicLoadOrStoreAcrossClients(t *testing.T) {
+	server := miniredis.RunT(t)
+	newBackend := func() CacheBackend {
+		cache, err := newCacheBackend(cacheRuntimeConfig{
+			Backend: cacheBackendRedis, RedisURL: "redis://" + server.Addr() + "/0", KeyPrefix: "atomic-test",
+			Timeout: time.Second, DialTimeout: time.Second, ReadTimeout: time.Second, WriteTimeout: time.Second,
+		})
+		if err != nil {
+			t.Fatalf("new redis cache: %v", err)
+		}
+		t.Cleanup(func() { _ = cache.Close() })
+		return cache
+	}
+	caches := []CacheBackend{newBackend(), newBackend()}
+	exerciseConcurrentLoadOrStore(t, caches, "cross-controller")
+
+	actual, loaded, err := caches[0].LoadOrStoreValue(context.Background(), "ttl", []byte("old"), time.Second)
+	if err != nil || loaded || string(actual) != "old" {
+		t.Fatalf("first Redis TTL value = %q loaded=%v err=%v", actual, loaded, err)
+	}
+	server.FastForward(2 * time.Second)
+	actual, loaded, err = caches[1].LoadOrStoreValue(context.Background(), "ttl", []byte("new"), time.Minute)
+	if err != nil || loaded || string(actual) != "new" {
+		t.Fatalf("post-expiry Redis value = %q loaded=%v err=%v", actual, loaded, err)
+	}
+}
+
+func TestAtomicLoadOrStoreValidationAndUnavailableBackend(t *testing.T) {
+	cache := newMemoryCacheBackend(cacheRuntimeConfig{KeyPrefix: "test"})
+	if _, _, err := cache.LoadOrStoreValue(context.Background(), "", []byte("value"), time.Minute); err == nil {
+		t.Fatal("empty atomic key was accepted")
+	}
+	if _, _, err := cache.LoadOrStoreValue(context.Background(), "key", []byte("value"), 0); err == nil {
+		t.Fatal("non-positive atomic TTL was accepted")
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, _, err := cache.LoadOrStoreValue(cancelled, "key", []byte("value"), time.Minute); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancelled atomic operation error = %v, want context.Canceled", err)
+	}
+	unavailable := &unavailableCacheBackend{err: errors.New("cache unavailable")}
+	if _, _, err := unavailable.LoadOrStoreValue(context.Background(), "key", []byte("value"), time.Minute); err == nil {
+		t.Fatal("unavailable backend accepted atomic load-or-store")
+	}
+}
+
+func exerciseConcurrentLoadOrStore(t *testing.T, caches []CacheBackend, key string) {
+	t.Helper()
+	const goroutines = 64
+	type result struct {
+		actual []byte
+		loaded bool
+		err    error
+	}
+	results := make(chan result, goroutines)
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for index := 0; index < goroutines; index++ {
+		wg.Add(1)
+		go func(index int) {
+			defer wg.Done()
+			<-start
+			actual, loaded, err := caches[index%len(caches)].LoadOrStoreValue(context.Background(), key, []byte(fmt.Sprintf("candidate-%d", index)), time.Minute)
+			results <- result{actual: actual, loaded: loaded, err: err}
+		}(index)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	var authoritative string
+	stores := 0
+	for result := range results {
+		if result.err != nil {
+			t.Fatalf("concurrent atomic load-or-store: %v", result.err)
+		}
+		if authoritative == "" {
+			authoritative = string(result.actual)
+		}
+		if string(result.actual) != authoritative {
+			t.Fatalf("atomic callers observed different values: %q and %q", authoritative, result.actual)
+		}
+		if !result.loaded {
+			stores++
+		}
+	}
+	if stores != 1 {
+		t.Fatalf("successful stores = %d, want exactly 1", stores)
 	}
 }
 

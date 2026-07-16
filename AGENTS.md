@@ -59,7 +59,7 @@ deployments/
   azure/
     terraform/   — Azure IaC (AKS, ACR, PostgreSQL, Redis, Blob, Key Vault)
     appservice/  — Node.js launcher wrapper for Azure App Service deployments
-  ci/            — CI pipeline templates (GitHub Actions + Azure Pipelines) for AKS, on-prem registry, and App Service
+  ci/            — Retired legacy CI location; authoritative CI/CD workflows live under .github/workflows/
 ```
 
 ## Key Design Decisions

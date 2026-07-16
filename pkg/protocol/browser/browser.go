@@ -2,6 +2,7 @@ package browser
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -32,6 +33,7 @@ type Browser struct {
 	recordedResources          map[string]struct{}
 	downloadFilterMode         string
 	downloadFilterHosts        []string
+	allowedTargetHosts         []string
 	networkMode                string
 	networkPreset              string
 	networkBandwidthKB         int
@@ -165,6 +167,13 @@ func (b *Browser) Name() string { return "browser" }
 func (b *Browser) Init(ctx context.Context, config map[string]any) error {
 	if err := b.applyConfig(config); err != nil {
 		return err
+	}
+	if len(b.allowedTargetHosts) > 0 {
+		// Playwright routing does not intercept every redirect leg, and page init
+		// scripts do not run inside Dedicated/Shared Workers. Until browser egress
+		// is enforced below the Chromium process, accepting a CI host allowlist
+		// would provide a bypassable security boundary. Fail closed before launch.
+		return fmt.Errorf("browser execution is disabled while the CI target-host policy is active")
 	}
 	return b.openBrowserContext()
 }

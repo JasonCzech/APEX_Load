@@ -12,7 +12,7 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("postgresForeignKeySpecs returned error: %v", err)
 	}
-	if got, want := len(specs), 40; got != want {
+	if got, want := len(specs), 41; got != want {
 		t.Fatalf("foreign key count = %d, want %d", got, want)
 	}
 
@@ -41,6 +41,7 @@ func TestPostgresForeignKeySpecsCoverDeclaredSchema(t *testing.T) {
 		"tests.scenario_id":                               "scenarios.id",
 		"archive_finalization_jobs.test_id":               "tests.id",
 		"execution_plan_schedule_occurrences.schedule_id": "execution_plan_schedules.id",
+		"github_check_intents.project_id":                 "projects.id",
 	} {
 		got, ok := byColumn[key]
 		if !ok {

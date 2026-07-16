@@ -162,7 +162,7 @@ func TestTestManifestArchiveArtifactAndFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newRunArchiveWriter returned error: %v", err)
 	}
-	record, err := writer.Finalize("COMPLETE", completedAt, "", false, nil)
+	record, err := writer.Finalize("COMPLETE", completedAt, "", false, false, nil)
 	if err != nil {
 		t.Fatalf("Finalize returned error: %v", err)
 	}

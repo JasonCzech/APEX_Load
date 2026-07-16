@@ -2,7 +2,7 @@
 
 import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 
 import { useKeepAwakeDuringRuns } from './useKeepAwake'
 import type { WailsDesktopBridge } from './desktopBridge'
@@ -19,13 +19,13 @@ function Harness({ count }: { count: number }) {
 describe('useKeepAwakeDuringRuns', () => {
   let container: HTMLDivElement
   let root: Root
-  let setKeepAwake: ReturnType<typeof vi.fn>
+  let setKeepAwake: Mock<(active: boolean) => Promise<void>>
 
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    setKeepAwake = vi.fn().mockResolvedValue(undefined)
+    setKeepAwake = vi.fn<(active: boolean) => Promise<void>>().mockResolvedValue(undefined)
     ;(window as BridgeWindow).go = { main: { App: { SetKeepAwake: setKeepAwake } } }
   })
 

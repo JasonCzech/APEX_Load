@@ -118,14 +118,15 @@ func init() {
 }
 
 type JMS struct {
-	name          string
-	provider      string
-	cfg           config
-	adapter       brokerAdapter
-	session       *messaging.Session[message]
-	initialized   bool
-	mockNamespace string
-	mockRelease   *sync.Once
+	name               string
+	provider           string
+	cfg                config
+	adapter            brokerAdapter
+	session            *messaging.Session[message]
+	initialized        bool
+	mockNamespace      string
+	mockRelease        *sync.Once
+	allowedTargetHosts []string
 }
 
 type config struct {
@@ -757,6 +758,7 @@ func (j *JMS) Name() string {
 }
 
 func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
+	j.allowedTargetHosts = protocol.TargetPolicyHosts(cfg)
 	timeoutMS, err := boundedJMSInteger(cfg["jms_timeout_ms"], int((5*time.Second)/time.Millisecond), 0, int(MaxConfiguredTimeout/time.Millisecond))
 	if err != nil {
 		return fmt.Errorf("jms timeout_ms: %w", err)
@@ -800,6 +802,11 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 	}
 	if err := validateJMSConfigBounds(j.cfg); err != nil {
 		return err
+	}
+	if !j.cfg.Mock {
+		if err := protocol.ValidateTargetReference(j.cfg.BrokerURL, j.allowedTargetHosts); err != nil {
+			return err
+		}
 	}
 	j.session = messaging.New[message](messaging.ParseAckMode(j.cfg.Acknowledgement))
 	if !j.cfg.Mock && j.session.NeedsSettlement() {
@@ -853,6 +860,9 @@ func (j *JMS) selectAdapter() (brokerAdapter, error) {
 	}
 
 	if strings.EqualFold(strings.TrimSpace(j.cfg.Properties["adapter"]), "sidecar") {
+		if len(j.allowedTargetHosts) > 0 {
+			return nil, fmt.Errorf("JMS sidecar adapter cannot enforce the CI runtime target policy")
+		}
 		operatorCommand := strings.TrimSpace(os.Getenv(sidecarCommandEnv))
 		if operatorCommand == "" {
 			return nil, fmt.Errorf("jms adapter=sidecar requires the operator-owned %s to be set on the runner", sidecarCommandEnv)

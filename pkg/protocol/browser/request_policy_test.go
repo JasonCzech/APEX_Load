@@ -2,6 +2,7 @@ package browser
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
@@ -133,6 +134,29 @@ func TestRequestPolicyBlocksStaticResourcesOnlyWhenConfigured(t *testing.T) {
 	}
 	if b.shouldBlockRequestInfo("https://example.com/api", "xhr", false) {
 		t.Fatal("xhr request was blocked; non-static resources should continue")
+	}
+}
+
+func TestTargetPolicyBlocksServiceWorkerBypassPaths(t *testing.T) {
+	b := Browser{allowedTargetHosts: []string{"app.example.test"}, cacheEnabled: true, downloadResources: "all"}
+	if !b.shouldBlockRequestInfo("wss://attacker.example.test/socket", "websocket", false) {
+		t.Fatal("disallowed websocket request was not blocked by target policy")
+	}
+	if !b.shouldBlockRequestInfo("https://attacker.example.test/sw.js", "serviceworker", false) {
+		t.Fatal("disallowed service worker request was not blocked by target policy")
+	}
+	options := b.browserContextOptions()
+	if options.ServiceWorkers == nil || *options.ServiceWorkers != "block" {
+		t.Fatalf("service workers = %v, want block when CI target policy is active", options.ServiceWorkers)
+	}
+	script, err := browserTargetPolicyInitScript(b.allowedTargetHosts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"WebSocket", "WebTransport", "RTCPeerConnection", "app.example.test"} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("target policy init script missing %q: %s", want, script)
+		}
 	}
 }
 

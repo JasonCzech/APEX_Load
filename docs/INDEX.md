@@ -20,6 +20,9 @@ kept for planning or audit context only.
 | [BROWSER_AND_MOBILE_SUPPORT.md](BROWSER_AND_MOBILE_SUPPORT.md) | Current | Browser canaries, mobile emulation, client metrics, benchmark evidence |
 | [MESSAGING_SUPPORT.md](MESSAGING_SUPPORT.md) | Current | JMS, Kafka, AsyncAPI, and Event Hubs support summary |
 | [AUTH_RBAC_OPERATIONS_RUNBOOK.md](AUTH_RBAC_OPERATIONS_RUNBOOK.md) | Current | Auth/RBAC operations |
+| [GITHUB_ACTIONS_RELEASE_AND_DEPLOYMENT.md](GITHUB_ACTIONS_RELEASE_AND_DEPLOYMENT.md) | Current | Signed releases, protected deployments, and rollback operations |
+| [GHES_GITHUB_ACTIONS_COMPATIBILITY.md](GHES_GITHUB_ACTIONS_COMPATIBILITY.md) | Current | GHES capability matrix, mirroring, trust, and qualification |
+| [GITHUB_ACTIONS_CUTOVER.md](GITHUB_ACTIONS_CUTOVER.md) | Current | GitHub Actions enforcement and Jenkins retirement sequence |
 | [ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md](ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md) | Current | Enterprise storage/cache/archive operations |
 | [PROMETHEUS_METRICS.md](PROMETHEUS_METRICS.md) | Current | Prometheus scrape metrics |
 | [DYNATRACE_WEBHOOKS.md](DYNATRACE_WEBHOOKS.md) | Current | Dynatrace event webhook setup |

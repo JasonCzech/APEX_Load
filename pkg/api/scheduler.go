@@ -333,13 +333,13 @@ func nextCronRun(cronExpr, timezone string, from time.Time, allows func(candidat
 			candidate = nextCronLocalDateBoundary(candidate, local, location)
 			continue
 		}
-		if !cronFieldMatches(fields[1], int(local.Hour()), 0, 23) {
+		if !cronFieldMatches(fields[1], local.Hour(), 0, 23) {
 			// Re-evaluate on each local-hour boundary rather than walking every
 			// minute. Advancing in UTC keeps repeated/skipped DST hours correct.
 			candidate = candidate.Add(time.Duration(60-local.Minute()) * time.Minute)
 			continue
 		}
-		if !cronFieldMatches(fields[0], int(local.Minute()), 0, 59) {
+		if !cronFieldMatches(fields[0], local.Minute(), 0, 59) {
 			candidate = candidate.Add(time.Duration(nextCronMinuteDelta(fields[0], local.Minute())) * time.Minute)
 			continue
 		}

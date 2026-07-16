@@ -35,6 +35,20 @@ type conditionalScriptDeletePersistence interface {
 
 var errScriptConcurrentChange = errors.New("script changed concurrently; reload and retry")
 
+func validatePersistentLibraryScript(script *dsl.Script) error {
+	if isCIScriptSnapshot(script) {
+		return fmt.Errorf("generated_by value %q is reserved for private CI snapshots", script.GeneratedBy)
+	}
+	return nil
+}
+
+func (tr *TestRunner) rejectActivePrivateCISnapshotMutationLocked(id string) error {
+	if tr != nil && tr.privateCISnapshots[strings.TrimSpace(id)] > 0 {
+		return fmt.Errorf("script %q is a private CI execution snapshot", strings.TrimSpace(id))
+	}
+	return nil
+}
+
 func (tr *TestRunner) durableScriptForMutationLocked(id string) (*dsl.Script, error) {
 	if tr.scriptStore == nil {
 		stored := tr.scripts[id]
@@ -95,11 +109,17 @@ func (tr *TestRunner) StoreScriptDurable(script *dsl.Script) (*StoredScript, err
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
+	if err := validatePersistentLibraryScript(script); err != nil {
+		return nil, err
+	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 
 	if script.ID == "" {
 		script.ID = uuid.New().String()
+	}
+	if err := tr.rejectActivePrivateCISnapshotMutationLocked(script.ID); err != nil {
+		return nil, err
 	}
 	script.ProjectID = normalizeProjectID(script.ProjectID)
 	existing := tr.scripts[script.ID]
@@ -216,10 +236,16 @@ func (tr *TestRunner) CreateScriptDurable(script *dsl.Script) (*StoredScript, er
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
+	if err := validatePersistentLibraryScript(script); err != nil {
+		return nil, err
+	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if script.ID == "" {
 		script.ID = uuid.New().String()
+	}
+	if err := tr.rejectActivePrivateCISnapshotMutationLocked(script.ID); err != nil {
+		return nil, err
 	}
 	if err := reconcileMaskedScriptSecrets(script, nil); err != nil {
 		return nil, err
@@ -310,10 +336,16 @@ func (tr *TestRunner) UpdateScriptDurableIfUnchanged(script, expected *dsl.Scrip
 	if script == nil || expected == nil {
 		return nil, false, fmt.Errorf("script and expected durable version are required")
 	}
+	if err := validatePersistentLibraryScript(script); err != nil {
+		return nil, false, err
+	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if strings.TrimSpace(script.ID) == "" || script.ID != expected.ID {
 		return nil, false, fmt.Errorf("conditional script update requires a matching id")
+	}
+	if err := tr.rejectActivePrivateCISnapshotMutationLocked(script.ID); err != nil {
+		return nil, false, err
 	}
 	script.ProjectID = normalizeProjectID(script.ProjectID)
 	if script.ProjectID != normalizeProjectID(expected.ProjectID) {
@@ -386,6 +418,9 @@ func (tr *TestRunner) DeleteScriptDurableIfUnchanged(id string, expectedUpdatedA
 	if id == "" || expectedUpdatedAt.IsZero() {
 		return false, fmt.Errorf("script id and expected updated_at are required")
 	}
+	if err := tr.rejectActivePrivateCISnapshotMutationLocked(id); err != nil {
+		return false, err
+	}
 	deleted := false
 	if store, ok := tr.scriptStore.(conditionalScriptDeletePersistence); ok {
 		var err error
@@ -433,6 +468,9 @@ func (tr *TestRunner) GetScript(id string) (*StoredScript, bool) {
 	defer tr.mu.RUnlock()
 	id = tr.resolveRefKeyLocked(id)
 	s, ok := tr.scripts[id]
+	if ok && isStoredCIScriptSnapshot(s) {
+		return nil, false
+	}
 	return cloneStoredScriptForReadLocked(s), ok
 }
 
@@ -457,6 +495,9 @@ func (tr *TestRunner) GetScriptDurable(id string) (*StoredScript, bool, error) {
 		if err != nil {
 			return nil, false, err
 		}
+		if isCIScriptSnapshot(script) {
+			return nil, false, nil
+		}
 		createdAt := script.CreatedAt
 		if createdAt.IsZero() {
 			createdAt = time.Now()
@@ -475,6 +516,9 @@ func (tr *TestRunner) GetScriptDurable(id string) (*StoredScript, bool, error) {
 		return cloneStoredScriptForReadLocked(stored), true, nil
 	}
 	stored, ok := tr.scripts[id]
+	if ok && isStoredCIScriptSnapshot(stored) {
+		return nil, false, nil
+	}
 	return cloneStoredScriptForReadLocked(stored), ok, nil
 }
 
@@ -509,6 +553,9 @@ func (tr *TestRunner) ListScripts() []*StoredScript {
 	defer tr.mu.RUnlock()
 	out := make([]*StoredScript, 0, len(tr.scripts))
 	for _, s := range tr.scripts {
+		if isStoredCIScriptSnapshot(s) {
+			continue
+		}
 		out = append(out, cloneStoredScriptForReadLocked(s))
 	}
 	return out
@@ -521,6 +568,9 @@ func (tr *TestRunner) ListScriptsFiltered(projectID string, folderID *string) []
 	defer tr.mu.RUnlock()
 	out := make([]*StoredScript, 0, len(tr.scripts))
 	for _, s := range tr.scripts {
+		if isStoredCIScriptSnapshot(s) {
+			continue
+		}
 		if s.ProjectID != projectID {
 			continue
 		}
@@ -555,6 +605,9 @@ func (tr *TestRunner) MoveScriptDurableInProject(id string, folderID *string, ex
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = tr.resolveRefKeyLocked(id)
+	if err := tr.rejectActivePrivateCISnapshotMutationLocked(id); err != nil {
+		return false, err
+	}
 	cached := tr.scripts[id]
 	if cached == nil {
 		return false, nil
@@ -621,9 +674,15 @@ func (tr *TestRunner) UpdateScriptDurableInProject(id string, script *dsl.Script
 	if script == nil {
 		return nil, false, fmt.Errorf("script is required")
 	}
+	if err := validatePersistentLibraryScript(script); err != nil {
+		return nil, false, err
+	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = tr.resolveRefKeyLocked(id)
+	if err := tr.rejectActivePrivateCISnapshotMutationLocked(id); err != nil {
+		return nil, false, err
+	}
 	existing, ok := tr.scripts[id]
 	if !ok {
 		return nil, false, nil
@@ -722,6 +781,9 @@ func (tr *TestRunner) DeleteScriptDurableInProject(id string, expectedProjectID 
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	id = tr.resolveRefKeyLocked(id)
+	if err := tr.rejectActivePrivateCISnapshotMutationLocked(id); err != nil {
+		return false, err
+	}
 	cached := tr.scripts[id]
 	if cached == nil {
 		return false, nil
@@ -768,6 +830,9 @@ func (tr *TestRunner) ListScriptsWithUsage() []*StoredScript {
 	defer tr.mu.RUnlock()
 	out := make([]*StoredScript, 0, len(tr.scripts))
 	for _, script := range tr.scripts {
+		if isStoredCIScriptSnapshot(script) {
+			continue
+		}
 		out = append(out, tr.enrichScriptSummaryLocked(script))
 	}
 	return out

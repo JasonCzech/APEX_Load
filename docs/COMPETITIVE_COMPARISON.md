@@ -189,7 +189,7 @@ Legend: **▲ APEX leads** · **= parity** · **▼ APEX trails** · **▼▼ AP
 | Scheduling | Cron + approvals + blackout windows | Timeslot/calendar reservation | **=** |
 | Notifications | Slack/Teams/Dynatrace webhooks; no email | Email + integrations | **=** |
 | Secrets / PKI | Template refs + redaction; no Vault, no mTLS | CyberArk/Vault, client certs | **▼** |
-| CI/CD ecosystem | JUnit XML, GitHub Action, Azure DevOps, Jenkins; no maintained marketplace plugins | Maintained Jenkins/ADO plugins, Git sync | **▼** |
+| CI/CD ecosystem | GitHub Actions, signed canonical action, JUnit/JSON; no maintained cross-platform marketplace plugins | Maintained Jenkins/ADO plugins, Git sync | **▼** |
 
 **Architecture and Scale**
 
@@ -335,7 +335,7 @@ A comprehensive audit of APEX Load against enterprise performance testing platfo
 
 | Gap | Impact | Status |
 | --- | --- | --- |
-| CI/CD pipeline integration — JUnit XML, maintained marketplace plugins, Git script sync | Critical | JUnit + GitHub/ADO/Jenkins delivered; marketplace plugins pending |
+| CI/CD pipeline integration — JUnit XML, maintained marketplace plugins, Git script sync | Critical | GitHub Actions + JUnit/JSON delivered; cross-platform marketplace plugins out of scope |
 | Offline report depth — graph merge, per-txn drill-down, multi-run trend, PDF export | High | Archive + trend analysis, graph/drilldown API/dashboard UX, and executive/engineer PDF export delivered; heavier custom report tooling pending |
 | Correlation intelligence depth | High | Response-family rule packs + replay stale-literal evidence delivered; full VuGen-class parity pending |
 | Named load zones with benchmark envelopes | High | Named self-hosted zones delivered; benchmark envelopes pending |

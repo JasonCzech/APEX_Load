@@ -698,7 +698,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				return
 			}
 			*lines = append(*lines,
-				fmt.Sprintf("Samples: %s", formatPDFInt(int64(browser.Samples))),
+				fmt.Sprintf("Samples: %s", formatPDFInt(browser.Samples)),
 				fmt.Sprintf("Average FCP: %.1f ms", browser.AvgFCPMs),
 				fmt.Sprintf("Average LCP: %.1f ms", browser.AvgLCPMs),
 				fmt.Sprintf("Average CLS: %.3f", browser.AvgCLSScore),
@@ -711,7 +711,7 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 				return csvNote(write, "browser", "No browser metrics were captured for this run.")
 			}
 			rows := [][2]string{
-				{"samples", formatCSVInt(int64(browser.Samples))},
+				{"samples", formatCSVInt(browser.Samples)},
 				{"avg_fcp_ms", formatCSVFloat(browser.AvgFCPMs)},
 				{"avg_lcp_ms", formatCSVFloat(browser.AvgLCPMs)},
 				{"avg_cls_score", formatCSVFloat(browser.AvgCLSScore)},

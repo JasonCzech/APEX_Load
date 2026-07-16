@@ -249,16 +249,31 @@ func normalizeScriptFieldName(value string) string {
 
 func isSensitiveScriptKey(key string) bool {
 	normalized := normalizeScriptFieldName(key)
+	// OAuth token_url identifies the remote endpoint; it is not token material.
+	// Keep this explicit locator exception ahead of the shared component-aware
+	// vocabulary, which correctly treats the standalone "token" component as
+	// sensitive in otherwise opaque extension maps.
+	if normalized == "tokenurl" {
+		return false
+	}
+	// Keep script projection aligned with the shared credential vocabulary used
+	// by URL/body/archive scrubbers. Script-specific handling below deliberately
+	// adds usernames and common password aliases because source exports should
+	// not disclose even low-entropy static login material.
+	if scrub.SensitiveName(key) {
+		return true
+	}
 	switch normalized {
 	case "authorization", "proxyauthorization", "password", "passwd", "passphrase",
-		"username",
+		"pwd", "pass", "username",
 		"token", "accesstoken", "refreshtoken", "idtoken", "authtoken",
-		"apikey", "accesskey", "secretkey", "clientsecret", "privatekey",
+		"apikey", "accesskey", "accesskeyid", "secretkey", "secretaccesskey",
+		"awsaccesskeyid", "awssecretaccesskey", "clientsecret", "privatekey",
 		"credential", "credentials", "connectionstring", "dsn", "saslpassword",
 		"cookie", "setcookie", "session", "sessionid", "csrftoken", "xsrftoken":
 		return true
 	default:
-		for _, suffix := range []string{"authorization", "password", "passwd", "passphrase", "username", "token", "secret", "apikey", "credential", "cookie", "sessionid", "privatekey", "accesskey"} {
+		for _, suffix := range []string{"authorization", "password", "passwd", "passphrase", "username", "token", "secret", "apikey", "credential", "cookie", "sessionid", "privatekey", "accesskey", "accesskeyid", "secretaccesskey"} {
 			if strings.HasSuffix(normalized, suffix) {
 				return true
 			}

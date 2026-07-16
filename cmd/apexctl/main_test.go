@@ -71,6 +71,29 @@ func TestParseRunArgs_RuntimeOverrides(t *testing.T) {
 	}
 }
 
+func TestCommandArgsUseCredentialEnvironmentDefaults(t *testing.T) {
+	t.Setenv("APEXLOAD_API", "https://controller.example")
+	t.Setenv("APEXLOAD_API_KEY", "env-key")
+	t.Setenv("APEXLOAD_BEARER_TOKEN", "env-token")
+
+	run := parseRunArgs([]string{"--script", "example.json"})
+	if run.api != "https://controller.example" || run.apiKey != "env-key" || run.bearerToken != "env-token" {
+		t.Fatalf("run auth defaults = %#v", run)
+	}
+	ctl := parseCtlArgs([]string{"--test", "test-1"})
+	if ctl.api != "https://controller.example" || ctl.apiKey != "env-key" || ctl.bearerToken != "env-token" {
+		t.Fatalf("control auth defaults = %#v", ctl)
+	}
+	github := parseGithubArgs([]string{"diagnostics"})
+	if github.apiKey != "env-key" || github.bearerToken != "env-token" {
+		t.Fatalf("github auth defaults = %#v", github)
+	}
+	record := parseRecordArgs([]string{"--url", "https://example.com"})
+	if record.apiKey != "env-key" || record.bearerToken != "env-token" {
+		t.Fatalf("record auth defaults = %#v", record)
+	}
+}
+
 func TestParseScriptArgs(t *testing.T) {
 	args := parseScriptArgs([]string{"validate", "--script", "examples/web-api/ecommerce-http.json", "--format", "json"})
 	if args.command != "validate" || args.script != "examples/web-api/ecommerce-http.json" || args.format != "json" {
@@ -298,6 +321,7 @@ func TestEvaluateLocalSLAReportsBreaches(t *testing.T) {
 			ByAction: map[string]*engine.ActionMetrics{
 				"Checkout": {
 					ServerTelemetry: &engine.ServerTelemetrySummary{
+						Samples:               1,
 						AvgServerProcessingMs: 320,
 						AvgTransferMs:         130,
 					},
@@ -320,5 +344,27 @@ func TestEvaluateLocalSLAReportsBreaches(t *testing.T) {
 	}
 	if len(summary.Details) != 5 {
 		t.Fatalf("details = %#v, want 5 breach details", summary.Details)
+	}
+}
+
+func TestEvaluateLocalSLARequiresEvidenceForEveryConfiguredThreshold(t *testing.T) {
+	p95LatencyMs := 800.0
+	maxServerProcessingMs := 300.0
+	maxErrorPct := 2.0
+
+	partial := evaluateLocalSLA(&engine.RunResult{
+		TotalTransactions: 10,
+		FinalSnapshot:     engine.MetricsSnapshot{P95: 100 * time.Millisecond},
+	}, &api.GoalConfig{
+		P95LatencyMs:             &p95LatencyMs,
+		MaxAvgServerProcessingMs: &maxServerProcessingMs,
+	})
+	if partial == nil || partial.Evaluated {
+		t.Fatalf("partial SLA evidence = %#v, want not evaluated", partial)
+	}
+
+	allFailed := evaluateLocalSLA(&engine.RunResult{TotalErrors: 5}, &api.GoalConfig{MaxErrorPct: &maxErrorPct})
+	if allFailed == nil || !allFailed.Evaluated || !allFailed.Breached {
+		t.Fatalf("all-failed SLA evidence = %#v, want evaluated 100%% error-rate breach", allFailed)
 	}
 }

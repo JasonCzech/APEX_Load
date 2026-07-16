@@ -66,6 +66,10 @@ func TestValidateGitHubSettings(t *testing.T) {
 	if err := validateGitHubSettings(userinfo); err == nil {
 		t.Fatal("github URL userinfo should fail")
 	}
+	crossServer := GitHubSettings{Enabled: true, PATEnvVar: "GH_PAT", APIBaseURL: "https://api.attacker.example", WebBaseURL: "https://ghe"}
+	if err := validateGitHubSettings(crossServer); err == nil {
+		t.Fatal("github API URL from another server should fail")
+	}
 	ok := GitHubSettings{Enabled: true, ClientID: "x", ClientSecretEnvVar: "S", APIBaseURL: "https://ghe/api/v3", WebBaseURL: "https://ghe"}
 	if err := validateGitHubSettings(ok); err != nil {
 		t.Fatalf("valid enabled github should pass, got: %v", err)

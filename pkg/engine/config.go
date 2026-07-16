@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func buildProtoConfig(script *dsl.Script) map[string]any {
@@ -148,6 +149,9 @@ func injectNetworkSimulation(cfg map[string]any, profile dsl.NetworkProfileWeigh
 func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResolver) map[string]any {
 	cfg := map[string]any{
 		"base_url": script.Config.BaseURL,
+	}
+	if script.Metadata != nil && script.Metadata.RuntimePolicy != nil && len(script.Metadata.RuntimePolicy.AllowedTargetHosts) > 0 {
+		cfg[protocol.TargetPolicyConfigKey] = append([]string(nil), script.Metadata.RuntimePolicy.AllowedTargetHosts...)
 	}
 
 	appendHTTPConfig(cfg, script)

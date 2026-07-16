@@ -233,6 +233,16 @@
       "access": "Public (no authentication required)"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/auth/ci/github/exchange",
+      "operationId": "handleGitHubCIExchange",
+      "summary": "Git Hub C I Exchange",
+      "category": "Identity \u0026 Access",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/auth/diagnostics",
       "operationId": "handleGetAuthDiagnostics",
@@ -888,6 +898,36 @@
       "operationId": "handleRejectCapacityReservation",
       "summary": "Reject Capacity Reservation",
       "category": "Scheduling",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ci/runs",
+      "operationId": "handleCreateCIRun",
+      "summary": "Create C I Run",
+      "category": "Ci",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/ci/runs/{id}",
+      "operationId": "handleGetCIRun",
+      "summary": "Get C I Run",
+      "category": "Ci",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/ci/runs/{id}/abort",
+      "operationId": "handleAbortCIRun",
+      "summary": "Abort C I Run",
+      "category": "Ci",
       "public": false,
       "authenticated": true,
       "access": "Requires Authentication (Role based on specific entity)"
@@ -3831,6 +3871,46 @@
       "public": false,
       "authenticated": true,
       "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/system/deployment-lease",
+      "operationId": "handleGetDeploymentLease",
+      "summary": "Get Deployment Lease",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/deployment-lease/acquire",
+      "operationId": "handleAcquireDeploymentLease",
+      "summary": "Acquire Deployment Lease",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/deployment-lease/release",
+      "operationId": "handleReleaseDeploymentLease",
+      "summary": "Release Deployment Lease",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/deployment-lease/renew",
+      "operationId": "handleRenewDeploymentLease",
+      "summary": "Renew Deployment Lease",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
     },
     {
       "method": "GET",

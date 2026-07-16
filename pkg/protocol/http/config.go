@@ -17,6 +17,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"golang.org/x/net/http/httpproxy"
 )
 
 type transportConfig struct {
@@ -361,7 +362,7 @@ func applyProxy(transport *http.Transport, config map[string]any) error {
 		transport.Proxy = nil
 		return nil
 	case "system":
-		transport.Proxy = proxyWithNoProxy(http.ProxyFromEnvironment, parseNoProxyPatterns(config))
+		transport.Proxy = proxyWithNoProxy(systemProxyFromEnvironment(), parseNoProxyPatterns(config))
 		return nil
 	case "custom", "":
 		// Custom proxy stays URL-driven; empty mode preserves legacy behavior.
@@ -399,6 +400,21 @@ func applyProxy(transport *http.Transport, config map[string]any) error {
 
 	transport.Proxy = proxyWithNoProxy(http.ProxyURL(parsedProxy), parseNoProxyPatterns(config))
 	return nil
+}
+
+// systemProxyFromEnvironment snapshots the process proxy configuration when a
+// protocol instance is initialized. net/http.ProxyFromEnvironment caches the
+// first environment it observes for the lifetime of the process, which makes
+// later protocol instances depend on initialization order if an embedding host
+// updates its environment between runs.
+func systemProxyFromEnvironment() func(*http.Request) (*url.URL, error) {
+	proxyForURL := httpproxy.FromEnvironment().ProxyFunc()
+	return func(req *http.Request) (*url.URL, error) {
+		if req == nil || req.URL == nil {
+			return nil, nil
+		}
+		return proxyForURL(req.URL)
+	}
 }
 
 func proxyWithNoProxy(proxy func(*http.Request) (*url.URL, error), patterns []string) func(*http.Request) (*url.URL, error) {

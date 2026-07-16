@@ -43,6 +43,19 @@
         "generatorClientId": { "type": "string" }
       }
     },
+    "controller": {
+      "type": "object",
+      "properties": {
+        "publicURL": {
+          "type": "string",
+          "pattern": "^$|^https://\\S+$"
+        },
+        "ciOIDCAudience": {
+          "type": "string",
+          "pattern": "^$|^[^\\s\\u0000-\\u001F\\u007F]{1,512}$"
+        }
+      }
+    },
     "generator": {
       "type": "object",
       "properties": {

@@ -17,18 +17,21 @@ import (
 // only enumerate auth()-wrapped routes (a route registered with no auth() is invisible to
 // them, as the recording-agent download was).
 var intentionallyPublicAPIRoutes = map[string]bool{
-	"GET /api/v1/auth/login":                            true,
-	"GET /api/v1/auth/callback":                         true,
-	"POST /api/v1/auth/logout":                          true,
-	"GET /api/v1/auth/me":                               true,
-	"GET /api/v1/auth/diagnostics":                      true,
-	"GET /api/v1/auth/roles":                            true,
-	"GET /api/v1/auth/access-matrix":                    true,
-	"GET /api/v1/auth/policy":                           true,
-	"GET /api/v1/auth/effective-access":                 true,
-	"GET /api/v1/system/health":                         true,
-	"GET /api/v1/system/version":                        true,
-	"GET /api/v1/system/readiness":                      true,
+	"GET /api/v1/auth/login":            true,
+	"GET /api/v1/auth/callback":         true,
+	"POST /api/v1/auth/logout":          true,
+	"GET /api/v1/auth/me":               true,
+	"GET /api/v1/auth/diagnostics":      true,
+	"GET /api/v1/auth/roles":            true,
+	"GET /api/v1/auth/access-matrix":    true,
+	"GET /api/v1/auth/policy":           true,
+	"GET /api/v1/auth/effective-access": true,
+	"GET /api/v1/system/health":         true,
+	"GET /api/v1/system/version":        true,
+	"GET /api/v1/system/readiness":      true,
+	// The exchange is the pre-authentication boundary: it validates a signed
+	// GitHub Actions ID token and returns a short-lived project CI token.
+	"POST /api/v1/auth/ci/github/exchange":              true,
 	"POST /api/v1/integrations/github/webhook":          true,
 	"POST /api/v1/monitoring/collectors/{id}/heartbeat": true,
 }

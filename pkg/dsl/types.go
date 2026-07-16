@@ -42,7 +42,17 @@ type GoalConfig struct {
 }
 
 type ScriptMetadata struct {
-	Import *ImportMetadata `json:"import,omitempty"`
+	Import        *ImportMetadata      `json:"import,omitempty"`
+	RuntimePolicy *ScriptRuntimePolicy `json:"runtime_policy,omitempty"`
+}
+
+// ScriptRuntimePolicy is an execution-time, fail-closed boundary injected by a
+// trusted controller. It is serialized with distributed script snapshots so
+// generators enforce the same outbound-host policy after controller handoff.
+// Author-supplied values can only narrow execution; the CI API always replaces
+// them with the authoritative project policy before a run is materialized.
+type ScriptRuntimePolicy struct {
+	AllowedTargetHosts []string `json:"allowed_target_hosts,omitempty"`
 }
 
 type ImportMetadata struct {

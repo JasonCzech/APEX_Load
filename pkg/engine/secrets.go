@@ -529,6 +529,15 @@ func newDefaultSecretResolverForProject(projectID string) SecretResolver {
 	return newCachingSecretResolver(delegate)
 }
 
+// NewProjectSecretResolver returns the same project-scoped resolver used by
+// load execution. Controller preflight paths use this to validate security-
+// sensitive values (for example a secret-backed network target) without
+// replacing the reference in the persisted script or exposing the resolved
+// value to API responses.
+func NewProjectSecretResolver(projectID string) SecretResolver {
+	return newDefaultSecretResolverForProject(projectID)
+}
+
 func defaultSecretResolverForScript(script *dsl.Script) SecretResolver {
 	if script == nil {
 		return newDefaultSecretResolver()

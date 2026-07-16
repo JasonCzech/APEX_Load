@@ -33,6 +33,25 @@ func TestKafkaProtocolIsRegistered(t *testing.T) {
 	}
 }
 
+func TestKafkaInitEnforcesBrokerAndRegistryTargetPolicy(t *testing.T) {
+	tests := []map[string]any{
+		{"kafka_brokers": []string{"attacker.example:9092"}},
+		{
+			"kafka_brokers":             []string{"broker.example.test:9092"},
+			"kafka_serialization":       "json_schema",
+			"kafka_schema_registry_url": "https://registry.attacker.example",
+			"kafka_schema":              `{}`,
+		},
+	}
+	for _, cfg := range tests {
+		cfg[protocol.TargetPolicyConfigKey] = []string{"broker.example.test", "registry.example.test"}
+		k := &Kafka{name: "kafka"}
+		if err := k.Init(context.Background(), cfg); err == nil || !strings.Contains(err.Error(), "not allowed") {
+			t.Fatalf("Init policy error = %v for %#v", err, cfg)
+		}
+	}
+}
+
 func TestAddRecordExtractionsCapsKafkaBody(t *testing.T) {
 	result := &protocol.Result{Extractions: map[string]string{}}
 	if err := addRecordExtractions(result, kafkaRecord{Value: []byte(strings.Repeat("x", kafkaExtractionBodyLimit+10))}); err != nil {

@@ -365,8 +365,8 @@ func TestHandleGetAuthRoleCatalogReturnsBuiltInRoles(t *testing.T) {
 	if payload.ProviderModel != "upstream_gateway" {
 		t.Fatalf("provider model = %q, want upstream_gateway", payload.ProviderModel)
 	}
-	if len(payload.Roles) != 4 {
-		t.Fatalf("role count = %d, want 4", len(payload.Roles))
+	if len(payload.Roles) != 5 {
+		t.Fatalf("role count = %d, want 5", len(payload.Roles))
 	}
 	if payload.Roles[0].ID != RoleSystemAdmin || payload.Roles[0].Name != "System Admin" {
 		t.Fatalf("first role = %#v, want system admin descriptor", payload.Roles[0])
@@ -375,7 +375,10 @@ func TestHandleGetAuthRoleCatalogReturnsBuiltInRoles(t *testing.T) {
 		t.Fatalf("expected system admin capabilities, got %#v", payload.Roles[0].Capabilities)
 	}
 	if payload.Roles[3].ID != RoleViewer {
-		t.Fatalf("last role = %#v, want viewer descriptor", payload.Roles[3])
+		t.Fatalf("fourth role = %#v, want viewer descriptor", payload.Roles[3])
+	}
+	if payload.Roles[4].ID != RoleCIRunner || payload.Roles[4].Scope != "project" {
+		t.Fatalf("last role = %#v, want project-scoped CI runner descriptor", payload.Roles[4])
 	}
 }
 

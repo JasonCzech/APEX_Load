@@ -6,10 +6,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	protocolhttp "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
@@ -75,5 +77,32 @@ func TestHTTPOAuth2TokenActionUsesConfiguredHTTPClient(t *testing.T) {
 	}
 	if got := vu.Variables["oauth_token"]; got != "via-proxy" {
 		t.Fatalf("oauth_token = %q, want via-proxy", got)
+	}
+}
+
+func TestHTTPOAuth2TokenActionFailsClosedWithoutPolicyAwareProtocolClient(t *testing.T) {
+	vu := &VUser{
+		Proto: &stubProtocol{},
+		Script: &dsl.Script{Metadata: &dsl.ScriptMetadata{RuntimePolicy: &dsl.ScriptRuntimePolicy{
+			AllowedTargetHosts: []string{"tokens.example.test"},
+		}}},
+		Variables: map[string]string{},
+	}
+	err := vu.handleHTTPOAuth2TokenAction(context.Background(), dsl.Action{
+		Name: "oauth",
+		Type: "http_oauth2_token",
+		Params: map[string]any{
+			"token_url":     "https://tokens.example.test/oauth/token",
+			"grant_type":    "client_credentials",
+			"client_id":     "client",
+			"client_secret": "{{secret.oauth_client_secret}}",
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot enforce the CI runtime target policy") {
+		t.Fatalf("OAuth policy error = %v, want fail-closed protocol-client rejection", err)
+	}
+
+	if err := protocol.ValidateTargetURL("https://attacker.example.test/token", vu.Script.Metadata.RuntimePolicy.AllowedTargetHosts); err == nil {
+		t.Fatal("test policy unexpectedly allowed attacker target")
 	}
 }

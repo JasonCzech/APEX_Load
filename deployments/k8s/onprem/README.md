@@ -22,9 +22,11 @@ counterpart to `deployments/k8s/local` (dev) and the on-prem sibling of
 1. **Data platform** — PostgreSQL 16+, Redis/Valkey **with a password and TLS**
    (see `../ha/redis-valkey.example.yaml` for an in-cluster Valkey), and S3-compatible
    object storage (MinIO/Ceph RGW) or a shared RWX volume for archives.
-2. **Images** — build and push to your registry, ideally via the supply-chain
-   pipeline (`deployments/ci/github-actions-onprem-registry.yml`: SBOM, scan,
-   sign, push by digest), or `make docker-push REGISTRY=registry.example.internal/apexload`.
+2. **Images** — publish a signed semantic release through
+   [release.yml](../../../.github/workflows/release.yml), then mirror its exact
+   manifest digests with
+   [publish-onprem.yml](../../../.github/workflows/publish-onprem.yml). The
+   workflow scans and signs candidate digests before exposing release tags.
 3. **Certificates** — apply [certificates.example.yaml](certificates.example.yaml)
    (cert-manager) or provision `apexload-generator-grpc-tls` /
    `apexload-controller-grpc-tls` secrets from your PKI (`tls.crt`/`tls.key`/`ca.crt`).

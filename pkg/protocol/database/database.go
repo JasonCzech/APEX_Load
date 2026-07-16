@@ -55,6 +55,12 @@ func (d *Database) Name() string { return "database" }
 func (d *Database) Init(ctx context.Context, config map[string]any) error {
 	d.driver = normalizeDriver(protocol.ConfigString(config, "database_driver"))
 	d.dsn = strings.TrimSpace(protocol.ConfigString(config, "database_dsn"))
+	if d.dsn == "" {
+		// buildProtoConfigWithSecretResolver resolves controller-managed secret
+		// templates before protocol initialization and carries the result in the
+		// dedicated secret field. Apply the target policy to that final DSN too.
+		d.dsn = strings.TrimSpace(protocol.ConfigString(config, "database_dsn_secret"))
+	}
 	if d.driver == "" {
 		return errors.New("database driver is required")
 	}
@@ -71,6 +77,9 @@ func (d *Database) Init(ctx context.Context, config map[string]any) error {
 		if err := validateSQLiteMemoryDSN(d.dsn); err != nil {
 			return err
 		}
+	}
+	if err := protocol.ValidateTargetDSN(d.driver, d.dsn, protocol.TargetPolicyHosts(config)); err != nil {
+		return err
 	}
 	queryTimeout, err := protocol.BoundedMilliseconds(config["database_query_timeout_ms"], 30*time.Second, dsl.MaxConfiguredProtocolTimeout)
 	if err != nil {

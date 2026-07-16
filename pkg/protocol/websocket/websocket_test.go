@@ -24,6 +24,25 @@ func TestWebSocketInitRejectsOversizedMessageLimit(t *testing.T) {
 	}
 }
 
+func TestWebSocketEnforcesResolvedActionTargetPolicy(t *testing.T) {
+	ws := &WebSocket{}
+	if err := ws.Init(context.Background(), map[string]any{
+		"base_url":                     "wss://allowed.example.test/socket",
+		protocol.TargetPolicyConfigKey: []string{"allowed.example.test"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := ws.Execute(context.Background(), &protocol.Action{
+		Name: "blocked", Type: "ws_connect", Target: "wss://attacker.example/socket",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "attacker.example") {
+		t.Fatalf("WebSocket policy result = %#v", result)
+	}
+}
+
 func TestWebSocketRejectsUnboundedTimeouts(t *testing.T) {
 	ws := &WebSocket{}
 	err := ws.Init(context.Background(), map[string]any{

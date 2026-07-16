@@ -175,6 +175,10 @@ func TestMaskRuntimeSettingsRedactsHTTPSecrets(t *testing.T) {
 	if got := reconcileGroupRuntimeSecrets(maskRuntimeSettings(opaque), opaque).BaseURL; got != opaque.BaseURL {
 		t.Fatalf("opaque masked URL echo = %q, want prior value %q", got, opaque.BaseURL)
 	}
+	opaqueEnv := &RuntimeSettingsOverride{Env: map[string]string{"SERVICE_ENDPOINT": "user:password@example.test"}}
+	if got := maskRuntimeSettings(opaqueEnv).Env["SERVICE_ENDPOINT"]; got != scrub.Redacted {
+		t.Fatalf("opaque credential-like Env value = %q, want fail-closed redaction", got)
+	}
 }
 
 func TestMaskRuntimeSettingsRedactsURLQuerySecretsAndReconcilesEcho(t *testing.T) {

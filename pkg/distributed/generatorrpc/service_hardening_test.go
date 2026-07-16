@@ -707,7 +707,7 @@ func TestConfinedArchiveArtifactPath(t *testing.T) {
 }
 
 func TestServiceAssignWorkRejectsNegativeVUserCount(t *testing.T) {
-	service := NewService("generator-1", 50)
+	service := newIsolatedService(t, 50)
 	_, err := service.AssignWork(context.Background(), &pb.WorkAssignment{
 		TestId:     "test-1",
 		GroupName:  "Group A",
@@ -723,7 +723,7 @@ func TestServiceAssignWorkRejectsNegativeVUserCount(t *testing.T) {
 }
 
 func TestServiceAssignWorkIsIdempotentForSameGroup(t *testing.T) {
-	service := NewService("generator-1", 10)
+	service := newIsolatedService(t, 10)
 	if _, err := service.DistributeScript(context.Background(), &pb.ScriptPayload{ScriptId: "script-1", Content: []byte(`{"name":"demo"}`)}); err != nil {
 		t.Fatalf("DistributeScript: %v", err)
 	}
@@ -751,7 +751,7 @@ func TestServiceAssignWorkIsIdempotentForSameGroup(t *testing.T) {
 }
 
 func TestServiceConcurrentAdjustVUsersCannotExceedCapacity(t *testing.T) {
-	service := NewService("generator-1", 10)
+	service := newIsolatedService(t, 10)
 	if _, err := service.DistributeScript(context.Background(), &pb.ScriptPayload{ScriptId: "script-1", Content: []byte(`{"name":"demo"}`)}); err != nil {
 		t.Fatalf("DistributeScript: %v", err)
 	}
@@ -828,7 +828,7 @@ func TestServiceSerializesSameGroupEngineAdjustments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewMultiGroup: %v", err)
 	}
-	service := NewService("generator-1", 10, WithExecution())
+	service := newIsolatedService(t, 10, WithExecution())
 	service.assignments["test"] = assignedTest{
 		testID:       "test",
 		committed:    true,
@@ -904,7 +904,7 @@ func TestValidateArchiveTestIDRejectsTraversal(t *testing.T) {
 
 func TestFirstPositiveDurationOnExistingAssignmentStartsCompletionTimer(t *testing.T) {
 	t.Setenv(envGeneratorArchiveMinFree, "1")
-	service := NewService("late-duration-timer", 10)
+	service := newIsolatedService(t, 10)
 	content := []byte(`{"name":"timer","protocol":"http","config":{"base_url":"http://127.0.0.1"}}`)
 	if _, err := service.DistributeScript(context.Background(), &pb.ScriptPayload{ScriptId: "script", Content: content}); err != nil {
 		t.Fatalf("DistributeScript: %v", err)
@@ -942,7 +942,7 @@ func TestFirstPositiveDurationOnExistingAssignmentStartsCompletionTimer(t *testi
 }
 
 func TestServiceExecutionFailureCancelsSiblingsAndRetainsCapacityUntilTheyExit(t *testing.T) {
-	service := NewService("generator-1", 10, WithExecution())
+	service := newIsolatedService(t, 10, WithExecution())
 	siblingCanceled := make(chan struct{})
 	var cancelOnce sync.Once
 	service.assignments["test-1"] = assignedTest{
@@ -1009,7 +1009,7 @@ func TestServiceExecutionFailureCancelsSiblingsAndRetainsCapacityUntilTheyExit(t
 // AssignWork/StopTest writers. Before the fix the heartbeat read s.assignments
 // and the shared resCollector without synchronization. Run with -race.
 func TestServiceHeartbeatReadPathIsRaceFree(t *testing.T) {
-	service := NewService("generator-1", 1000)
+	service := newIsolatedService(t, 1000)
 
 	done := make(chan struct{})
 	var writerWG sync.WaitGroup

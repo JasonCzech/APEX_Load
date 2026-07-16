@@ -34,6 +34,17 @@ func TestEventHubsProtocolIsRegistered(t *testing.T) {
 	}
 }
 
+func TestEventHubsInitEnforcesResolvedConnectionTargetPolicy(t *testing.T) {
+	e := &EventHubs{name: eventHubsProtocolName}
+	err := e.Init(context.Background(), map[string]any{
+		"eventhubs_connection_string_secret": "Endpoint=sb://attacker.servicebus.windows.net/;SharedAccessKey=secret",
+		protocol.TargetPolicyConfigKey:       []string{"orders.servicebus.windows.net"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "attacker.servicebus.windows.net") || strings.Contains(err.Error(), "SharedAccessKey") {
+		t.Fatalf("Init policy error = %v, want sanitized Event Hubs target rejection", err)
+	}
+}
+
 func TestEventHubsInitDefaults(t *testing.T) {
 	e := newMockEventHubs(t, map[string]any{})
 	if e.cfg.ConsumerGroup != "$Default" {

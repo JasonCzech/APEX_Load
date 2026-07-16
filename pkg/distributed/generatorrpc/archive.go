@@ -1,6 +1,7 @@
 package generatorrpc
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -294,11 +295,11 @@ func generatorArchiveFreeBytes(path string) (int64, error) {
 	if err := unix.Statfs(path, &stat); err != nil {
 		return 0, err
 	}
-	if stat.Bavail > uint64(^uint64(0)/uint64(stat.Bsize)) {
+	if stat.Bavail > ^uint64(0)/uint64(stat.Bsize) {
 		return int64(^uint64(0) >> 1), nil
 	}
 	available := stat.Bavail * uint64(stat.Bsize)
-	if available > uint64(^uint64(0)>>1) {
+	if available > ^uint64(0)>>1 {
 		return int64(^uint64(0) >> 1), nil
 	}
 	return int64(available), nil
@@ -640,8 +641,9 @@ func (w *archiveRecorder) removeFinalizedRun() error {
 }
 
 const (
-	maxGeneratorArchiveNamespaceBytes = 255
-	maxGeneratorArchiveArtifactBytes  = 4 << 10
+	maxGeneratorArchiveNamespaceBytes   = 255
+	maxGeneratorArchiveArtifactBytes    = 4 << 10
+	maxGeneratorArchiveJSONLRecordBytes = 64 << 20
 )
 
 func validateArchiveTestID(testID string) error {
@@ -1090,13 +1092,11 @@ func streamJSONLToParquetAtWithBudget[In any, Out any](root *os.Root, inputName 
 		return err
 	}
 	pw.CompressionType = parquet.CompressionCodec_SNAPPY
-	decoder := json.NewDecoder(input)
-	for {
+	scanner := bufio.NewScanner(input)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxGeneratorArchiveJSONLRecordBytes)
+	for scanner.Scan() {
 		var item In
-		if err := decoder.Decode(&item); err != nil {
-			if err == io.EOF {
-				break
-			}
+		if err := json.Unmarshal(scanner.Bytes(), &item); err != nil {
 			_ = pw.WriteStop()
 			_ = fw.Close()
 			return err
@@ -1106,6 +1106,11 @@ func streamJSONLToParquetAtWithBudget[In any, Out any](root *os.Root, inputName 
 			_ = fw.Close()
 			return err
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		_ = pw.WriteStop()
+		_ = fw.Close()
+		return err
 	}
 	if err := pw.WriteStop(); err != nil {
 		_ = fw.Close()

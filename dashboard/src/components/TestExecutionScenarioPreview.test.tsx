@@ -185,7 +185,7 @@ describe('TestExecutionScenarioPreview', () => {
     expect(container.querySelector('[data-testid="mock-x-axis"]')?.getAttribute('data-label')).toBe('Elapsed time')
     expect(container.querySelector('[data-testid="mock-y-axis"]')?.getAttribute('data-label')).toBe('VUsers')
 
-    const nestingWarning = consoleErrorSpy.mock.calls.some(([message]) =>
+    const nestingWarning = consoleErrorSpy.mock.calls.some(([message]: unknown[]) =>
       typeof message === 'string' && message.includes('validateDOMNesting'),
     )
 

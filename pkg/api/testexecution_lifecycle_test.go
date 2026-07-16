@@ -379,7 +379,7 @@ func (b *lifecycleTransitionBackend) counts() (int, int) {
 }
 
 func TestStartTestDoesNotLaunchWhenInitializingPersistenceFails(t *testing.T) {
-	runner := NewTestRunner(1, NewHub(), nil)
+	runner := NewTestRunner(1, NewHub(), nil, withUnfencedDeploymentLeaseStartForFaultInjection())
 	backend := &lifecycleTransitionBackend{}
 	runner.setExecutionBackend(backend)
 	wantErr := errors.New("database unavailable")

@@ -102,6 +102,9 @@ func (b *Browser) browserContextOptions() playwright.BrowserNewContextOptions {
 		Screen:            viewport,
 		Viewport:          viewport,
 	}
+	if len(b.allowedTargetHosts) > 0 {
+		contextOptions.ServiceWorkers = playwright.ServiceWorkerPolicyBlock
+	}
 	if b.userAgent != "" {
 		contextOptions.UserAgent = playwright.String(b.userAgent)
 	}

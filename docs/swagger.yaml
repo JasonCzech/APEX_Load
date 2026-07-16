@@ -431,6 +431,21 @@ paths:
       security: []
       tags:
         - Auth
+  /api/v1/auth/ci/github/exchange:
+    post:
+      summary: Git Hub C I Exchange
+      description: |-
+        **Handler:** `handleGitHubCIExchange`
+
+        **Access Control:** Public (no authentication required)
+      operationId: handleGitHubCIExchange
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Public (no authentication required)
+      security: []
+      tags:
+        - Auth
   /api/v1/auth/diagnostics:
     get:
       summary: Get Auth Diagnostics
@@ -1619,6 +1634,60 @@ paths:
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
         - Capacity
+  /api/v1/ci/runs:
+    post:
+      summary: Create C I Run
+      description: |-
+        **Handler:** `handleCreateCIRun`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleCreateCIRun
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Ci
+  /api/v1/ci/runs/{id}:
+    get:
+      summary: Get C I Run
+      description: |-
+        **Handler:** `handleGetCIRun`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleGetCIRun
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Ci
+  /api/v1/ci/runs/{id}/abort:
+    post:
+      summary: Abort C I Run
+      description: |-
+        **Handler:** `handleAbortCIRun`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleAbortCIRun
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Ci
   /api/v1/correlation-rulesets:
     get:
       summary: List Correlation Rulesets
@@ -6782,6 +6851,62 @@ paths:
         "200":
           description: Successful operation
       x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+        - System
+  /api/v1/system/deployment-lease:
+    get:
+      summary: Get Deployment Lease
+      description: |-
+        **Handler:** `handleGetDeploymentLease`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleGetDeploymentLease
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      tags:
+        - System
+  /api/v1/system/deployment-lease/acquire:
+    post:
+      summary: Acquire Deployment Lease
+      description: |-
+        **Handler:** `handleAcquireDeploymentLease`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleAcquireDeploymentLease
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      tags:
+        - System
+  /api/v1/system/deployment-lease/release:
+    post:
+      summary: Release Deployment Lease
+      description: |-
+        **Handler:** `handleReleaseDeploymentLease`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleReleaseDeploymentLease
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
+      tags:
+        - System
+  /api/v1/system/deployment-lease/renew:
+    post:
+      summary: Renew Deployment Lease
+      description: |-
+        **Handler:** `handleRenewDeploymentLease`
+
+        **Access Control:** Roles: SystemAdmin
+      operationId: handleRenewDeploymentLease
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: SystemAdmin'
       tags:
         - System
   /api/v1/system/entitlements:

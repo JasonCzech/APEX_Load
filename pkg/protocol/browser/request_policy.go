@@ -1,11 +1,14 @@
 package browser
 
 import (
+	"encoding/json"
+	"fmt"
 	"net/url"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	playwright "github.com/playwright-community/playwright-go"
 )
 
@@ -113,6 +116,28 @@ func (b *Browser) installRequestPolicy(browserContext playwright.BrowserContext)
 	if !b.requestPolicyEnabled() {
 		return nil
 	}
+	if len(b.allowedTargetHosts) > 0 {
+		script, err := browserTargetPolicyInitScript(b.allowedTargetHosts)
+		if err != nil {
+			return err
+		}
+		if err := browserContext.AddInitScript(playwright.Script{Content: playwright.String(script)}); err != nil {
+			return err
+		}
+		if err := browserContext.RouteWebSocket("**/*", func(route playwright.WebSocketRoute) {
+			if route == nil || b.shouldBlockRequestInfo(route.URL(), "websocket", false) {
+				if route != nil {
+					route.Close()
+				}
+				return
+			}
+			if _, err := route.ConnectToServer(); err != nil {
+				route.Close()
+			}
+		}); err != nil {
+			return err
+		}
+	}
 	return browserContext.Route("**/*", func(route playwright.Route) {
 		request := route.Request()
 		if b.shouldBlockRequest(request) {
@@ -133,6 +158,65 @@ func (b *Browser) installRequestPolicy(browserContext playwright.BrowserContext)
 		}
 		_ = route.Continue()
 	})
+}
+
+func browserTargetPolicyInitScript(allowedHosts []string) (string, error) {
+	normalized := protocol.TargetPolicyHosts(map[string]any{protocol.TargetPolicyConfigKey: allowedHosts})
+	if len(normalized) == 0 {
+		return "", nil
+	}
+	raw, err := json.Marshal(normalized)
+	if err != nil {
+		return "", fmt.Errorf("encode browser target policy: %w", err)
+	}
+	return fmt.Sprintf(`(() => {
+  const allowedHosts = %s;
+  const hostAllowed = (host) => {
+    host = String(host || "").trim().toLowerCase().replace(/\.$/, "");
+    if (!host) return false;
+    return allowedHosts.some((pattern) => {
+      pattern = String(pattern || "").trim().toLowerCase().replace(/\.$/, "");
+      if (pattern === host) return true;
+      const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+      return new RegExp("^" + escaped + "$", "i").test(host);
+    });
+  };
+  const urlAllowed = (raw) => {
+    try {
+      const parsed = new URL(String(raw), globalThis.location && globalThis.location.href || "about:blank");
+      if (parsed.protocol === "about:" || parsed.protocol === "data:") return true;
+      if (parsed.protocol === "blob:") return urlAllowed(String(raw).replace(/^blob:/i, ""));
+      return ["http:", "https:", "ws:", "wss:"].includes(parsed.protocol) && hostAllowed(parsed.hostname);
+    } catch (_) {
+      return false;
+    }
+  };
+  if (typeof globalThis.WebSocket === "function") {
+    const NativeWebSocket = globalThis.WebSocket;
+    globalThis.WebSocket = new Proxy(NativeWebSocket, {
+      construct(target, args) {
+        if (!urlAllowed(args && args[0])) throw new DOMException("APEX Load blocked a WebSocket outside the approved CI target policy", "SecurityError");
+        return Reflect.construct(target, args);
+      },
+      apply(target, thisArg, args) {
+        if (!urlAllowed(args && args[0])) throw new DOMException("APEX Load blocked a WebSocket outside the approved CI target policy", "SecurityError");
+        return Reflect.apply(target, thisArg, args);
+      }
+    });
+  }
+  const blockRTC = () => { throw new DOMException("APEX Load disables WebRTC while CI target policy is active", "SecurityError"); };
+  if (typeof globalThis.RTCPeerConnection === "function") globalThis.RTCPeerConnection = blockRTC;
+  if (typeof globalThis.webkitRTCPeerConnection === "function") globalThis.webkitRTCPeerConnection = blockRTC;
+  if (typeof globalThis.WebTransport === "function") {
+    const NativeWebTransport = globalThis.WebTransport;
+    globalThis.WebTransport = new Proxy(NativeWebTransport, {
+      construct(target, args) {
+        if (!urlAllowed(args && args[0])) throw new DOMException("APEX Load blocked a WebTransport session outside the approved CI target policy", "SecurityError");
+        return Reflect.construct(target, args);
+      }
+    });
+  }
+})();`, string(raw)), nil
 }
 
 func (b *Browser) waitRouteNetworkLatency() bool {
@@ -158,7 +242,8 @@ func (b *Browser) waitRouteNetworkLatency() bool {
 }
 
 func (b *Browser) requestPolicyEnabled() bool {
-	return !b.cacheEnabled ||
+	return len(b.allowedTargetHosts) > 0 ||
+		!b.cacheEnabled ||
 		b.cacheContentURLRevalidationEnabled() ||
 		b.checkNewerVersions ||
 		b.downloadResources != "all" ||
@@ -178,6 +263,13 @@ func (b *Browser) shouldBlockRequest(request playwright.Request) bool {
 }
 
 func (b *Browser) shouldBlockRequestInfo(rawURL, resourceType string, isNavigation bool) bool {
+	if len(b.allowedTargetHosts) > 0 && !protocol.TargetURLAllowed(rawURL, b.allowedTargetHosts) {
+		return true
+	}
+	switch strings.ToLower(strings.TrimSpace(resourceType)) {
+	case "websocket", "eventsource", "serviceworker":
+		return len(b.allowedTargetHosts) > 0 && !protocol.TargetURLAllowed(rawURL, b.allowedTargetHosts)
+	}
 	if isNavigation || resourceType == "document" {
 		return false
 	}
