@@ -183,7 +183,9 @@ func TestApplicationDeploymentsConsumeReleaseArtifactsWithoutBuilding(t *testing
 			t.Fatalf("read %s: %v", name, err)
 		}
 		workflow := string(content)
-		for _, prohibited := range []string{"go build", "docker build", "npm run build", "az acr build"} {
+		// Match build commands, not inspection tooling such as
+		// `docker buildx imagetools inspect` or `docker buildx version`.
+		for _, prohibited := range []string{"go build ", "docker build ", "docker buildx build", "npm run build", "az acr build"} {
 			if strings.Contains(workflow, prohibited) {
 				t.Errorf("%s rebuilds application artifacts via %q", name, prohibited)
 			}
@@ -364,6 +366,9 @@ func TestOnPremRegistryCredentialsAreExplicitAndEphemeral(t *testing.T) {
 		`tag_state="$(./scripts/release/registry-reference-state.sh skopeo "${repository}:${release_tag}")"`,
 		"Checkout trusted tag verifier from protected main",
 		"needs: [verify-tag, mirror-candidates]",
+		"EXPECTED_RUNNER_IMAGE_DIGEST: ${{ vars.APEXLOAD_ONPREM_RUNNER_IMAGE_DIGEST }}",
+		`[[ "${APEXLOAD_RUNNER_IMAGE_DIGEST:-}" == "$EXPECTED_RUNNER_IMAGE_DIGEST" ]]`,
+		`[[ "$(skopeo --version)" == 'skopeo version 1.20.0' ]]`,
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Errorf("on-prem workflow missing registry security contract %q", required)
@@ -371,6 +376,9 @@ func TestOnPremRegistryCredentialsAreExplicitAndEphemeral(t *testing.T) {
 	}
 	if got := strings.Count(workflow, "- name: Remove registry credentials"); got != 2 {
 		t.Fatalf("on-prem workflow cleans registry credentials %d times, want both jobs", got)
+	}
+	if got := strings.Count(workflow, `[[ "$EXPECTED_RUNNER_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]`); got != 2 {
+		t.Fatalf("on-prem workflow validates the immutable runner image digest %d times, want both jobs", got)
 	}
 	if strings.Contains(workflow, `skopeo inspect --format '{{.Digest}}' "docker://${repository}:${release_tag}" 2>/dev/null || true`) {
 		t.Fatal("on-prem promotion still treats every final-tag inspection failure as absence")

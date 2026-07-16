@@ -157,8 +157,12 @@ database dump in the opposite direction if writes happened on AKS.
 - **Controller pods are disposable**: durable state is PostgreSQL + Blob +
   Redis; `/var/lib/apexload` is an emptyDir used for staging/exports only.
 - **Controller replicas**: the AKS base keeps one controller. Use the HA
-  example only with shared PostgreSQL so execution leadership and scheduler
-  leases have a durable store.
+  overlay only with shared PostgreSQL and Redis. The overlay creates a
+  selectorless `apexload-controller-active` Service whose EndpointSlice is
+  fenced by the durable execution-lease owner and generation. CI run mutations
+  and execution-readiness route through that Service; OIDC exchange,
+  dashboard, and read traffic remain on the all-replica controller Service.
+  The leader does not publish itself until its HTTP listener has bound.
 - **mTLS certificates**: use cert-manager with
   `certificates.cert-manager.yaml`, or sync `apexload-controller-grpc-tls` and
   `apexload-generator-grpc-tls` from Key Vault CSI. The base overlay assumes

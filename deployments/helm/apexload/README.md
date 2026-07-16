@@ -36,6 +36,14 @@ by policy. Production and HA controllers fail CI discovery/exchange closed when
 neither that value nor a valid `controller.publicURL`/`APEXLOAD_PUBLIC_URL` is
 available; a process-unique controller pod ID is never used as the audience.
 
+Set `controller.ha.enabled=true` before setting more than one controller
+replica; the chart fails rendering otherwise. HA also requires PostgreSQL and
+Redis. In HA, CI run mutations use the selectorless
+`apexload-controller-active` Service. Its EndpointSlice records the durable
+execution-lease owner/generation so an old leader cannot replace a successor;
+OIDC exchange and read traffic continue through the ordinary all-replica
+Service.
+
 Each generator ordinal receives a retained PVC for its execution-fencing
 high-water and generator-side run evidence awaiting controller ingestion.
 Configure `generator.statePersistence.storageClassName` when the cluster has no

@@ -32,6 +32,23 @@ var (
 	ErrPodMultipleMatches = errors.New("multiple pods matched")
 )
 
+// KubernetesAPIError preserves the response status for callers that need to
+// distinguish optimistic-concurrency conflicts from permanent API failures.
+// The response body is already bounded by maxKubernetesAPIResponseBytes.
+type KubernetesAPIError struct {
+	Method     string
+	Path       string
+	StatusCode int
+	Body       string
+}
+
+func (e *KubernetesAPIError) Error() string {
+	if e == nil {
+		return "Kubernetes API request failed"
+	}
+	return fmt.Sprintf("kubernetes API %s %s returned %d: %s", e.Method, e.Path, e.StatusCode, strings.TrimSpace(e.Body))
+}
+
 type Config struct {
 	Namespace         string
 	GeneratorSelector string
@@ -213,7 +230,12 @@ func (c *Client) do(ctx context.Context, method, path, contentType string, body 
 		}
 	}
 	if status < 200 || status >= 300 {
-		return nil, fmt.Errorf("kubernetes API %s %s returned %d: %s", method, path, status, strings.TrimSpace(string(payload)))
+		return nil, &KubernetesAPIError{
+			Method:     method,
+			Path:       path,
+			StatusCode: status,
+			Body:       string(payload),
+		}
 	}
 	return payload, nil
 }

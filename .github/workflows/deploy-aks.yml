@@ -84,6 +84,16 @@ jobs:
         with:
           version: v3.21.3
 
+      - name: Install checksum-pinned registry inspection
+        if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
+        env:
+          SKOPEO_RELEASE_BASE_URL: ${{ vars.SKOPEO_RELEASE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          tool_directory="$RUNNER_TEMP/apexload-tools"
+          ./scripts/ci/install-skopeo.sh "$tool_directory"
+          printf '%s\n' "$tool_directory" >> "$GITHUB_PATH"
+
       - name: Install cosign
         if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
         uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
@@ -96,6 +106,8 @@ jobs:
           [[ "$(kubectl version --client -o json | jq -r '.clientVersion.gitVersion')" == v1.34.9 ]]
           [[ "$(helm version --template '{{.Version}}')" == v3.21.3 ]]
           cosign version 2>&1 | grep -Eq 'GitVersion:[[:space:]]+v3\.1\.1([[:space:]]|$)'
+          command -v skopeo >/dev/null
+          [[ "$(skopeo --version)" == 'skopeo version 1.20.0' ]]
 
       - name: Validate release registry credentials
         env:
@@ -157,6 +169,7 @@ jobs:
       - name: Verify portable release and image signatures
         id: release
         env:
+          APEXLOAD_IMAGE_INSPECTOR: skopeo
           RELEASE_TAG: ${{ github.event.client_payload.release }}
           RELEASE_PUBLIC_KEY: ${{ vars.APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM }}
           COSIGN_PUBLIC_KEY: ${{ vars.COSIGN_PUBLIC_KEY }}

@@ -118,6 +118,9 @@ must be environment secrets or KMS/HSM key references.
 | --- | --- | --- |
 | Repository variable | `APEXLOAD_RELEASE_TAG_PUBLIC_KEYS` | Armored GPG public keys trusted to sign semantic release tags. |
 | Repository variables/secrets | `APEXLOAD_RELEASE_REGISTRY`, `APEXLOAD_RELEASE_REGISTRY_NAMESPACE`, `APEXLOAD_RELEASE_REGISTRY_USERNAME`, `APEXLOAD_RELEASE_REGISTRY_PASSWORD` | Release registry host, namespace, and optional explicit credentials. GitHub.com may omit credentials only for `ghcr.io`, where the workflow uses its scoped token. Custom and GHES registries must configure the username and protected password explicitly. |
+| Repository variable | `BUILDX_RELEASE_BASE_URL` | Optional HTTPS mirror for the reviewed Buildx 0.34.1 binaries. Release jobs verify the official architecture-specific SHA-256 value before installing the Docker CLI plugin; air-gapped runners may instead use the exact preinstalled version. |
+| Repository variable | `APEXLOAD_BUILDKIT_IMAGE` | Optional internal mirror of the reviewed BuildKit 0.31.1 image. It must remain an immutable digest reference ending in `sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a`; tag-only or changed-digest values fail before a privileged builder starts. |
+| Repository variable | `SKOPEO_RELEASE_BASE_URL` | Optional HTTPS mirror for the pinned Skopeo 1.20.0 deployment binary. The installer verifies architecture-specific SHA-256 checksums before execution. Air-gapped runners may instead use the reviewed preinstalled-tool path. |
 | `registry-release` variable/secret | `APEXLOAD_ENABLE_HOSTED_ATTESTATIONS`, `APEXLOAD_GITHUB_ATTESTATIONS_TOKEN` | Optional GitHub.com provenance. Enable only where the repository plan supports attestations and give the protected fine-grained/GitHub App token attestation write access. The workflow passes this token explicitly and does not declare the GHES-incompatible `attestations` permission key. Portable signatures remain mandatory and authoritative. |
 | `registry-release` variable | `APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM` | OpenSSL public key that verifies raw `SHA256SUMS.sig`. Every canonical action release, including prereleases, must bundle the same key as `release-signing-key.pem`; mirrored consumers may also supply it explicitly to the action. |
 | `registry-release` variable/secret | `APEXLOAD_RELEASE_SIGNER_PATH` or `APEXLOAD_RELEASE_SIGNING_KEY_PEM` | Prefer an absolute protected-runner executable that asks KMS/HSM to sign `SHA256SUMS` and writes an OpenSSL-verifiable signature. The exportable PEM is the fallback. |
@@ -313,6 +316,10 @@ compatibility but is not the production interface.
 `publish-onprem.yml` runs only on runners labeled `self-hosted`, `onprem`, and
 `trusted`. Keep those runners ephemeral or rebuilt from an immutable internal
 runner image; untrusted pull-request workflows must not reference these labels.
+Set the protected `APEXLOAD_ONPREM_RUNNER_IMAGE_DIGEST` environment variable to
+that image's immutable `sha256:` digest, and inject the same value as
+`APEXLOAD_RUNNER_IMAGE_DIGEST` when the runner starts. Publishing fails closed
+when the two values differ or when the exact reviewed Skopeo version is absent.
 The workflow treats `ONPREM_REGISTRY_HOST` and
 `ONPREM_REGISTRY_NAMESPACE` as different values. It mirrors release-manifest
 digests to non-release candidate tags, scans and signs the exact internal

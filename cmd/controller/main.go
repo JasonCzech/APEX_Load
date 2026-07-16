@@ -93,20 +93,25 @@ func runController() error {
 	if haLeaderElection {
 		slog.Info("HA execution leader election enabled; only the lease holder will run tests")
 	}
+	activeEndpointPublisher, err := activeEndpointPublisherFromEnv(haLeaderElection)
+	if err != nil {
+		return fmt.Errorf("configure active controller endpoint routing: %w", err)
+	}
 
 	server := api.NewServer(api.ServerConfig{
-		Addr:                  addr,
-		BindScope:             bindScope,
-		MetricsAddr:           strings.TrimSpace(os.Getenv("APEXLOAD_METRICS_ADDR")),
-		MetricsToken:          strings.TrimSpace(os.Getenv("APEXLOAD_METRICS_TOKEN")),
-		ProxyAddr:             recorderProxyAddr,
-		MaxConcurrent:         10,
-		Store:                 store,
-		GeneratorTargets:      generatorTargets,
-		GeneratorTimeout:      generatorTimeout,
-		K8sRestart:            k8sRestartSettings,
-		KubeRestarter:         restarter,
-		HAExecutionLeadership: haLeaderElection,
+		Addr:                    addr,
+		BindScope:               bindScope,
+		MetricsAddr:             strings.TrimSpace(os.Getenv("APEXLOAD_METRICS_ADDR")),
+		MetricsToken:            strings.TrimSpace(os.Getenv("APEXLOAD_METRICS_TOKEN")),
+		ProxyAddr:               recorderProxyAddr,
+		MaxConcurrent:           10,
+		Store:                   store,
+		GeneratorTargets:        generatorTargets,
+		GeneratorTimeout:        generatorTimeout,
+		K8sRestart:              k8sRestartSettings,
+		KubeRestarter:           restarter,
+		HAExecutionLeadership:   haLeaderElection,
+		ActiveEndpointPublisher: activeEndpointPublisher,
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -115,7 +120,9 @@ func runController() error {
 	background.Add(3)
 	go func() {
 		defer background.Done()
-		server.RunExecutionLeadership(ctx)
+		if waitForControllerListener(ctx, server, 25*time.Millisecond) {
+			server.RunExecutionLeadership(ctx)
+		}
 	}()
 	go func() {
 		defer background.Done()
@@ -158,6 +165,38 @@ func runController() error {
 type controllerLifecycle interface {
 	Start() error
 	Shutdown(context.Context) error
+}
+
+type controllerListenerState interface {
+	BoundAddrReady() bool
+}
+
+// waitForControllerListener keeps HA leadership and its active EndpointSlice
+// unpublished until the API listener has successfully bound. If startup fails,
+// serveController cancels ctx and the leadership worker exits without ever
+// advertising an unreachable pod.
+func waitForControllerListener(ctx context.Context, server controllerListenerState, pollInterval time.Duration) bool {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if server == nil {
+		return false
+	}
+	if pollInterval <= 0 {
+		pollInterval = 25 * time.Millisecond
+	}
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+	for {
+		if server.BoundAddrReady() {
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-ticker.C:
+		}
+	}
 }
 
 // serveController runs the blocking HTTP server until either a process signal
@@ -268,6 +307,42 @@ func parseGeneratorTimeout(raw string) time.Duration {
 
 func recorderProxyAddrFromEnv() string {
 	return strings.TrimSpace(os.Getenv("APEXLOAD_RECORDER_PROXY_ADDR"))
+}
+
+func activeEndpointPublisherFromEnv(haEnabled bool) (api.ExecutionEndpointPublisher, error) {
+	sliceName := strings.TrimSpace(os.Getenv("APEXLOAD_ACTIVE_ENDPOINT_SLICE"))
+	if sliceName == "" {
+		return nil, nil
+	}
+	if !haEnabled {
+		return nil, fmt.Errorf("APEXLOAD_ACTIVE_ENDPOINT_SLICE requires APEXLOAD_CONTROLLER_HA=true")
+	}
+	namespace := strings.TrimSpace(os.Getenv("APEXLOAD_POD_NAMESPACE"))
+	podName := strings.TrimSpace(os.Getenv("APEXLOAD_POD_NAME"))
+	podIP := strings.TrimSpace(os.Getenv("APEXLOAD_POD_IP"))
+	serviceName := strings.TrimSpace(os.Getenv("APEXLOAD_ACTIVE_ENDPOINT_SERVICE"))
+	if serviceName == "" {
+		serviceName = sliceName
+	}
+	tokenFile := strings.TrimSpace(os.Getenv("APEXLOAD_ACTIVE_ENDPOINT_TOKEN_FILE"))
+	caFile := strings.TrimSpace(os.Getenv("APEXLOAD_ACTIVE_ENDPOINT_CA_FILE"))
+	client, err := kubeops.NewInClusterClient(kubeops.Config{
+		Namespace: namespace,
+		TokenFile: tokenFile,
+		CAFile:    caFile,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return kubeops.NewActiveEndpointPublisher(client, kubeops.ActiveEndpointConfig{
+		Namespace:         namespace,
+		EndpointSliceName: sliceName,
+		ServiceName:       serviceName,
+		PodName:           podName,
+		PodIP:             podIP,
+		PortName:          "http",
+		Port:              8080,
+	})
 }
 
 type kubeRestarterAdapter struct {

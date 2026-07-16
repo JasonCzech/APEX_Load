@@ -753,15 +753,22 @@ jobs:
           ref: ${{ needs.metadata.outputs.commit }}
           persist-credentials: false
 
-      - name: Install pinned arm64 emulation
+      - name: Install pinned cross-architecture emulation
         uses: docker/setup-qemu-action@96fe6ef7f33517b61c61be40b68a1882f3264fb8 # v4.2.0
         with:
           image: docker.io/tonistiigi/binfmt@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
-          platforms: arm64
+          platforms: ${{ runner.arch == 'ARM64' && 'amd64' || 'arm64' }}
           cache-image: false
 
-      - name: Setup multi-platform builder
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Install checksum-pinned Buildx
+        if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
+        env:
+          BUILDX_RELEASE_BASE_URL: ${{ vars.BUILDX_RELEASE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          docker_config="$RUNNER_TEMP/apexload-docker-config"
+          ./scripts/ci/install-buildx.sh "$docker_config"
+          printf 'DOCKER_CONFIG=%s\n' "$docker_config" >> "$GITHUB_ENV"
 
       - name: Authenticate to release container registry
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
@@ -769,6 +776,31 @@ jobs:
           registry: ${{ vars.APEXLOAD_RELEASE_REGISTRY || 'ghcr.io' }}
           username: ${{ vars.APEXLOAD_RELEASE_REGISTRY_USERNAME || github.actor }}
           password: ${{ secrets.APEXLOAD_RELEASE_REGISTRY_PASSWORD || github.token }}
+
+      - name: Validate immutable BuildKit image
+        env:
+          BUILDKIT_IMAGE: ${{ vars.APEXLOAD_BUILDKIT_IMAGE || 'docker.io/moby/buildkit@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a' }}
+        run: ./scripts/ci/verify-buildx-toolchain.sh image "$BUILDKIT_IMAGE"
+
+      - name: Create pinned multi-platform builder
+        env:
+          BUILDER_NAME: apexload-release-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.component }}-${{ matrix.profile }}
+          BUILDKIT_IMAGE: ${{ vars.APEXLOAD_BUILDKIT_IMAGE || 'docker.io/moby/buildkit@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a' }}
+        run: |
+          set -euo pipefail
+          ./scripts/ci/verify-buildx-toolchain.sh binary
+          docker buildx create \
+            --name "$BUILDER_NAME" \
+            --driver docker-container \
+            --driver-opt "image=$BUILDKIT_IMAGE" \
+            --use \
+            --bootstrap
+
+      - name: Verify exact Buildx and BuildKit toolchain
+        env:
+          BUILDER_NAME: apexload-release-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.component }}-${{ matrix.profile }}
+          BUILDKIT_IMAGE: ${{ vars.APEXLOAD_BUILDKIT_IMAGE || 'docker.io/moby/buildkit@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a' }}
+        run: ./scripts/ci/verify-buildx-toolchain.sh builder "$BUILDER_NAME" "$BUILDKIT_IMAGE"
 
       - name: Install cosign
         if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
@@ -811,6 +843,7 @@ jobs:
         id: build
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
         with:
+          builder: apexload-release-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.component }}-${{ matrix.profile }}
           context: .
           file: Dockerfile
           platforms: linux/amd64,linux/arm64
@@ -1018,6 +1051,16 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+      - name: Remove release builder and isolated registry credentials
+        if: always()
+        env:
+          BUILDER_NAME: apexload-release-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.component }}-${{ matrix.profile }}
+        run: |
+          docker buildx rm "$BUILDER_NAME" >/dev/null 2>&1 || true
+          if [[ "${DOCKER_CONFIG:-}" == "$RUNNER_TEMP/apexload-docker-config" ]]; then
+            rm -rf -- "$DOCKER_CONFIG"
+          fi
+
   assemble:
     name: Assemble and sign immutable release bundle
     needs: [metadata, core-assets, clients, images]
@@ -1141,8 +1184,25 @@ jobs:
           printf '%s' "$RELEASE_PUBLIC_KEY" > "$public_key"
           ./scripts/release/verify-release.sh release "$RELEASE_TAG" "$public_key" "$RELEASE_COMMIT"
 
-      - name: Setup registry manifest tooling
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+      - name: Install checksum-pinned Buildx
+        if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
+        env:
+          BUILDX_RELEASE_BASE_URL: ${{ vars.BUILDX_RELEASE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          docker_config="$RUNNER_TEMP/apexload-docker-config"
+          ./scripts/ci/install-buildx.sh "$docker_config"
+          printf 'DOCKER_CONFIG=%s\n' "$docker_config" >> "$GITHUB_ENV"
+
+      - name: Install checksum-pinned registry inspection
+        if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
+        env:
+          SKOPEO_RELEASE_BASE_URL: ${{ vars.SKOPEO_RELEASE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          tool_directory="$RUNNER_TEMP/apexload-tools"
+          ./scripts/ci/install-skopeo.sh "$tool_directory"
+          printf '%s\n' "$tool_directory" >> "$GITHUB_PATH"
 
       - name: Authenticate to release container registry
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
@@ -1150,6 +1210,36 @@ jobs:
           registry: ${{ vars.APEXLOAD_RELEASE_REGISTRY || 'ghcr.io' }}
           username: ${{ vars.APEXLOAD_RELEASE_REGISTRY_USERNAME || github.actor }}
           password: ${{ secrets.APEXLOAD_RELEASE_REGISTRY_PASSWORD || github.token }}
+
+      - name: Validate immutable BuildKit image
+        env:
+          BUILDKIT_IMAGE: ${{ vars.APEXLOAD_BUILDKIT_IMAGE || 'docker.io/moby/buildkit@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a' }}
+        run: ./scripts/ci/verify-buildx-toolchain.sh image "$BUILDKIT_IMAGE"
+
+      - name: Create pinned registry manifest builder
+        env:
+          BUILDER_NAME: apexload-promote-${{ github.run_id }}-${{ github.run_attempt }}
+          BUILDKIT_IMAGE: ${{ vars.APEXLOAD_BUILDKIT_IMAGE || 'docker.io/moby/buildkit@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a' }}
+        run: |
+          set -euo pipefail
+          ./scripts/ci/verify-buildx-toolchain.sh binary
+          docker buildx create \
+            --name "$BUILDER_NAME" \
+            --driver docker-container \
+            --driver-opt "image=$BUILDKIT_IMAGE" \
+            --use \
+            --bootstrap
+
+      - name: Verify exact Buildx and BuildKit toolchain
+        env:
+          BUILDER_NAME: apexload-promote-${{ github.run_id }}-${{ github.run_attempt }}
+          BUILDKIT_IMAGE: ${{ vars.APEXLOAD_BUILDKIT_IMAGE || 'docker.io/moby/buildkit@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a' }}
+        run: ./scripts/ci/verify-buildx-toolchain.sh builder "$BUILDER_NAME" "$BUILDKIT_IMAGE"
+
+      - name: Verify exact registry inspection tool
+        run: |
+          set -euo pipefail
+          [[ "$(skopeo --version)" == 'skopeo version 1.20.0' ]]
 
       - name: Install cosign
         if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
@@ -1162,6 +1252,7 @@ jobs:
 
       - name: Verify all candidate digests and reserve final tags
         env:
+          APEXLOAD_IMAGE_INSPECTOR: skopeo
           RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
           COSIGN_PUBLIC_KEY: ${{ vars.COSIGN_PUBLIC_KEY }}
         run: |
@@ -1265,6 +1356,16 @@ jobs:
             echo 'remote signed release tag changed during image promotion' >&2
             exit 1
           }
+
+      - name: Remove manifest builder and isolated registry credentials
+        if: always()
+        env:
+          BUILDER_NAME: apexload-promote-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          docker buildx rm "$BUILDER_NAME" >/dev/null 2>&1 || true
+          if [[ "${DOCKER_CONFIG:-}" == "$RUNNER_TEMP/apexload-docker-config" ]]; then
+            rm -rf -- "$DOCKER_CONFIG"
+          fi
 
   publish:
     name: Publish verified Release

@@ -104,7 +104,7 @@ choose an uploader for consumer repositories.
 - Pin the base runner image by digest and verify required `skopeo`, Azure CLI,
   Helm, kubectl, OpenSSL, jq, and CA bundle versions during runner bootstrap.
 - The base image also needs GitHub CLI, GNU coreutils/find, Bash 5, Python 3,
-  Node 22, Docker/Buildx, Cosign, Go 1.26.5, JDK 21, npm, Terraform 1.15.8,
+  Node 22, Docker, Buildx 0.34.1, Cosign, Go 1.26.5, JDK 21, npm, Terraform 1.15.8,
   and the platform tools used by its lane. Trivy/Syft, Azure CLI, native Wails
   dependencies, and browser dependencies are required only by their matching
   scan/deploy/client/dashboard lanes. Fail runner-image validation if an exact
@@ -127,8 +127,17 @@ choose an uploader for consumer repositories.
 - Set protected repository variable `APEXLOAD_USE_PREINSTALLED_TOOLS=true` on
   air-gapped release, AKS, and Terraform runners. Network installer steps are
   skipped, but the workflows still verify exact Helm 3.21.3, kubectl 1.34.9,
-  Cosign 3.1.1, and Terraform 1.15.8 versions before using them. On-premises
-  publishing always requires preinstalled Skopeo 1.20.0 and Cosign 3.1.1.
+  Buildx 0.34.1, BuildKit 0.31.1, Skopeo 1.20.0, Cosign 3.1.1, and Terraform
+  1.15.8 versions before using them. Release builders additionally verify that
+  the running BuildKit container uses the reviewed immutable image digest.
+  On-premises publishing always requires preinstalled Skopeo 1.20.0 and Cosign
+  3.1.1.
+- Mirror `docker.io/moby/buildkit@sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a`
+  without changing its digest and set protected variable
+  `APEXLOAD_BUILDKIT_IMAGE` to the mirrored digest reference. Release jobs
+  reject tag-only, changed-digest, or wrong-version BuildKit images before
+  starting a privileged builder. Use the release registry for this mirror or
+  pre-authenticate the ephemeral runner to a separately hosted mirror.
 - Package-ecosystem traffic must use an approved transparent proxy/cache, or a
   pre-baked lane image with every tool and dependency already mirrored. Configure
   `GOPROXY`, npm registry/CA settings, Git, Docker registries, pip, apt/brew,
@@ -139,7 +148,9 @@ choose an uploader for consumer repositories.
   `PLAYWRIGHT_DOWNLOAD_HOST`, `ACTIONLINT_RELEASE_BASE_URL`,
   `SHELLCHECK_RELEASE_BASE_URL`, `ZIZMOR_WHEEL_URL`,
   `TERRAFORM_RELEASE_BASE_URL`, `KUBECTL_RELEASE_BASE_URL`,
-  `HELM_RELEASE_BASE_URL`, and `KUBECONFORM_RELEASE_BASE_URL` redirect the
+  `BUILDX_RELEASE_BASE_URL`,
+  `HELM_RELEASE_BASE_URL`, `KUBECONFORM_RELEASE_BASE_URL`, and
+  `SKOPEO_RELEASE_BASE_URL` redirect the
   explicitly downloaded ecosystems/tools. Set `RELEASE_PREBAKED_NATIVE_DEPS=true`
   when Wails native dependencies are already sealed into the release runner.
 

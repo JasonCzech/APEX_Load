@@ -38,10 +38,15 @@ counterpart to `deployments/k8s/local` (dev) and the on-prem sibling of
    hostname/TLS secret, object-store endpoint, and ingress/monitoring namespace
    names in `network-policy.yaml`.
 6. **Apply the base** — `kubectl apply -k deployments/k8s/onprem`
-7. **Optional autoscaling + Prometheus** — install the KEDA operator and
+7. **Optional controller HA** — with shared PostgreSQL and Redis configured,
+   apply `kubectl apply -k deployments/k8s/onprem-ha`. The HA overlay creates
+   a selectorless leader-only Service and a generation-fenced EndpointSlice for
+   CI mutations; authentication and read traffic remain available across all
+   ready replicas.
+8. **Optional autoscaling + Prometheus** — install the KEDA operator and
    kube-prometheus-stack, size KEDA `maxReplicaCount` for your nodes, then
    apply `kubectl apply -k deployments/k8s/onprem-autoscaling`.
-8. **Smoke test** — `kubectl -n apexload port-forward svc/apexload-controller 18080:8080`
+9. **Smoke test** — `kubectl -n apexload port-forward svc/apexload-controller 18080:8080`
    then `./deployments/k8s/smoke-test.sh`.
 
 ## Verify your CNI actually enforces NetworkPolicy

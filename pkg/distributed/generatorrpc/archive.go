@@ -15,13 +15,13 @@ import (
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
+	"github.com/jasonczech/apexload/pkg/internal/diskspace"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
 	local "github.com/xitongsys/parquet-go-source/local"
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/source"
 	"github.com/xitongsys/parquet-go/writer"
-	"golang.org/x/sys/unix"
 )
 
 const archiveSchemaVersion = "apexload.archive.v1"
@@ -291,18 +291,7 @@ func (f *generatorArchiveQuotaParquetFile) Create(name string) (source.ParquetFi
 }
 
 func generatorArchiveFreeBytes(path string) (int64, error) {
-	var stat unix.Statfs_t
-	if err := unix.Statfs(path, &stat); err != nil {
-		return 0, err
-	}
-	if stat.Bavail > ^uint64(0)/uint64(stat.Bsize) {
-		return int64(^uint64(0) >> 1), nil
-	}
-	available := stat.Bavail * uint64(stat.Bsize)
-	if available > ^uint64(0)>>1 {
-		return int64(^uint64(0) >> 1), nil
-	}
-	return int64(available), nil
+	return diskspace.AvailablePath(path)
 }
 
 type parquetTransactionEvent struct {

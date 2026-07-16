@@ -6937,6 +6937,21 @@ paths:
       x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
       tags:
         - System
+  /api/v1/system/execution-readiness:
+    get:
+      summary: Execution Readiness
+      description: |-
+        **Handler:** `handleExecutionReadiness`
+
+        **Access Control:** Public (no authentication required)
+      operationId: handleExecutionReadiness
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Public (no authentication required)
+      security: []
+      tags:
+        - System
   /api/v1/system/generators/drain:
     patch:
       summary: Set Generator Drain State
