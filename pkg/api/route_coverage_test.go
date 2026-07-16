@@ -29,6 +29,9 @@ var intentionallyPublicAPIRoutes = map[string]bool{
 	"GET /api/v1/system/health":         true,
 	"GET /api/v1/system/version":        true,
 	"GET /api/v1/system/readiness":      true,
+	// The leader-only Service and deployment smoke checks need an anonymous
+	// readiness probe; the response exposes only routing/leadership booleans.
+	"GET /api/v1/system/execution-readiness": true,
 	// The exchange is the pre-authentication boundary: it validates a signed
 	// GitHub Actions ID token and returns a short-lived project CI token.
 	"POST /api/v1/auth/ci/github/exchange":              true,

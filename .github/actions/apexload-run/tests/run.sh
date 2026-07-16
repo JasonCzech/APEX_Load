@@ -430,6 +430,80 @@ bad_junit="$(output_value junit-path "$bad_evidence_output")"
 test -f "$bad_json"
 test -f "$bad_junit"
 
+# Repository-controlled symbolic links must never redirect evidence writes on a
+# persistent self-hosted runner. Both a linked evidence directory and linked
+# output files fail closed into RUNNER_TEMP without modifying their targets.
+for linked_variant in exact trailing-slash trailing-dot ancestor; do
+  symlink_target="$tmp/symlink-target-$linked_variant"
+  mkdir -p "$symlink_target"
+  linked_evidence="$tmp/linked-evidence-$linked_variant"
+  ln -s "$symlink_target" "$linked_evidence"
+  case "$linked_variant" in
+    exact) requested_link="$linked_evidence" ;;
+    trailing-slash) requested_link="$linked_evidence/" ;;
+    trailing-dot) requested_link="$linked_evidence/." ;;
+    ancestor) requested_link="$linked_evidence/child" ;;
+  esac
+  linked_output="$tmp/linked-evidence-$linked_variant-output"
+  linked_summary="$tmp/linked-evidence-$linked_variant-summary"
+  GITHUB_OUTPUT="$linked_output" \
+  GITHUB_STEP_SUMMARY="$linked_summary" \
+  RUNNER_TEMP="$tmp" \
+  APEXLOAD_APEXCTL_BIN="$fake" \
+  APEXLOAD_INSTALL_STEP_OUTCOME=success \
+  APEXLOAD_INPUT_EVIDENCE_DIRECTORY="$requested_link" \
+  "$action_dir/run.sh"
+  assert_output outcome configuration_error "$linked_output"
+  assert_output status EVIDENCE_PATH_INVALID "$linked_output"
+  test ! -e "$symlink_target/apexload-result.json"
+  test ! -e "$symlink_target/apexload-results.xml"
+  test ! -e "$symlink_target/child/apexload-result.json"
+  test ! -e "$symlink_target/child/apexload-results.xml"
+  test -f "$(output_value json-path "$linked_output")"
+  test -f "$(output_value junit-path "$linked_output")"
+done
+
+newline_symlink_target="$tmp/newline-symlink-target"
+mkdir -p "$newline_symlink_target"
+newline_symlink="$tmp/"$'linked\ncomponent'
+ln -s "$newline_symlink_target" "$newline_symlink"
+newline_output="$tmp/newline-symlink-output"
+newline_summary="$tmp/newline-symlink-summary"
+GITHUB_OUTPUT="$newline_output" \
+GITHUB_STEP_SUMMARY="$newline_summary" \
+RUNNER_TEMP="$tmp" \
+APEXLOAD_APEXCTL_BIN="$fake" \
+APEXLOAD_INSTALL_STEP_OUTCOME=success \
+APEXLOAD_INPUT_EVIDENCE_DIRECTORY="$newline_symlink/child" \
+"$action_dir/run.sh"
+assert_output outcome configuration_error "$newline_output"
+assert_output status EVIDENCE_PATH_INVALID "$newline_output"
+test ! -e "$newline_symlink_target/child/apexload-result.json"
+test ! -e "$newline_symlink_target/child/apexload-results.xml"
+test -f "$(output_value json-path "$newline_output")"
+test -f "$(output_value junit-path "$newline_output")"
+
+linked_file_evidence="$tmp/linked-file-evidence"
+mkdir -p "$linked_file_evidence"
+linked_file_target="$tmp/linked-file-target"
+printf 'must remain unchanged\n' > "$linked_file_target"
+ln -s "$linked_file_target" "$linked_file_evidence/apexload-result.json"
+linked_file_output="$tmp/linked-file-output"
+linked_file_summary="$tmp/linked-file-summary"
+GITHUB_OUTPUT="$linked_file_output" \
+GITHUB_STEP_SUMMARY="$linked_file_summary" \
+RUNNER_TEMP="$tmp" \
+APEXLOAD_APEXCTL_BIN="$fake" \
+APEXLOAD_INSTALL_STEP_OUTCOME=success \
+APEXLOAD_INPUT_EVIDENCE_DIRECTORY="$linked_file_evidence" \
+"$action_dir/run.sh"
+assert_output outcome configuration_error "$linked_file_output"
+assert_output status EVIDENCE_PATH_INVALID "$linked_file_output"
+grep -Fx 'must remain unchanged' "$linked_file_target" >/dev/null
+test -L "$linked_file_evidence/apexload-result.json"
+test -f "$(output_value json-path "$linked_file_output")"
+test -f "$(output_value junit-path "$linked_file_output")"
+
 # Gate failure occurs only in the final conclusion helper.
 APEXLOAD_INSTALL_STEP_OUTCOME=success \
 APEXLOAD_RUN_STEP_OUTCOME=success \

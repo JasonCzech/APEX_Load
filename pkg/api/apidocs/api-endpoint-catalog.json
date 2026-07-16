@@ -3933,6 +3933,16 @@
       "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/system/execution-readiness",
+      "operationId": "handleExecutionReadiness",
+      "summary": "Execution Readiness",
+      "category": "System \u0026 Distribution",
+      "public": true,
+      "authenticated": false,
+      "access": "Public (no authentication required)"
+    },
+    {
       "method": "PATCH",
       "path": "/api/v1/system/generators/drain",
       "operationId": "handleSetGeneratorDrainState",

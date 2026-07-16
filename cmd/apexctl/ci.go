@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -14,19 +15,28 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 const (
+	maxCIScriptBytes            = 4 << 20
+	maxCIVariablesFileBytes     = 3 << 20
+	maxCIVariableEntries        = 128
+	maxCIVariableKeyBytes       = 128
+	maxCIVariableValueBytes     = 16 << 10
+	maxCIRunRequestBytes        = 4 << 20
 	ciOutcomePassed             = "passed"
 	ciOutcomeSLABreached        = "sla_breached"
 	ciOutcomeExecutionError     = "execution_error"
@@ -36,9 +46,15 @@ const (
 )
 
 var (
-	ciControllerRequestAttempts = 5
-	ciControllerRetryBaseDelay  = 50 * time.Millisecond
-	ciAbortConfirmationTimeout  = 3 * time.Second
+	// The active-controller EndpointSlice can legitimately be empty for the
+	// 30-second leadership lease during failover. Keep controller operations
+	// retrying beyond that interval, while bounding both attempts and elapsed
+	// retry time so a permanently unavailable controller still fails.
+	ciControllerRequestAttempts = 16
+	ciControllerRetryBaseDelay  = 250 * time.Millisecond
+	ciControllerRetryMaxDelay   = 5 * time.Second
+	ciControllerRetryWindow     = 40 * time.Second
+	ciAbortConfirmationTimeout  = 45 * time.Second
 )
 
 type ciConfigurationFailure struct {
@@ -238,6 +254,9 @@ func validateCIArgs(args ciArgs) error {
 	if strings.TrimSpace(args.jsonPath) == "" || strings.TrimSpace(args.junitPath) == "" {
 		return fmt.Errorf("--json and --junit evidence paths are required")
 	}
+	if err := validateDistinctCIOutputPaths(args); err != nil {
+		return err
+	}
 	if args.executionMode == "local" {
 		if args.scriptID != "" {
 			return fmt.Errorf("--script-id is only valid in controller mode")
@@ -263,6 +282,73 @@ func validateCIArgs(args ciArgs) error {
 		return fmt.Errorf("--auth-mode must be oidc or api-key")
 	}
 	return nil
+}
+
+func validateDistinctCIOutputPaths(args ciArgs) error {
+	paths := []struct {
+		name string
+		path string
+	}{
+		{name: "--json", path: args.jsonPath},
+		{name: "--junit", path: args.junitPath},
+		{name: "--github-output", path: args.githubOutput},
+		{name: "--github-summary", path: args.githubSummary},
+	}
+	for i := range paths {
+		if strings.TrimSpace(paths[i].path) == "" {
+			continue
+		}
+		first, err := canonicalCIOutputPath(paths[i].path)
+		if err != nil {
+			return fmt.Errorf("resolve %s path: %w", paths[i].name, err)
+		}
+		for j := 0; j < i; j++ {
+			if strings.TrimSpace(paths[j].path) == "" {
+				continue
+			}
+			second, err := canonicalCIOutputPath(paths[j].path)
+			if err != nil {
+				return fmt.Errorf("resolve %s path: %w", paths[j].name, err)
+			}
+			same := first == second
+			if runtime.GOOS == "windows" {
+				same = strings.EqualFold(first, second)
+			}
+			if !same {
+				firstInfo, firstErr := os.Stat(first)
+				secondInfo, secondErr := os.Stat(second)
+				same = firstErr == nil && secondErr == nil && os.SameFile(firstInfo, secondInfo)
+			}
+			if same {
+				return fmt.Errorf("%s and %s must use distinct files", paths[j].name, paths[i].name)
+			}
+		}
+	}
+	return nil
+}
+
+func canonicalCIOutputPath(path string) (string, error) {
+	absolute, err := filepath.Abs(strings.TrimSpace(path))
+	if err != nil {
+		return "", err
+	}
+	absolute = filepath.Clean(absolute)
+	current := absolute
+	suffix := make([]string, 0, 4)
+	for {
+		if resolved, err := filepath.EvalSymlinks(current); err == nil {
+			for i := len(suffix) - 1; i >= 0; i-- {
+				resolved = filepath.Join(resolved, suffix[i])
+			}
+			return filepath.Clean(resolved), nil
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return absolute, nil
+		}
+		suffix = append(suffix, filepath.Base(current))
+		current = parent
+	}
 }
 
 func validateCISLAThresholds(args ciArgs) error {
@@ -379,7 +465,7 @@ func ciCmd() {
 }
 
 func executeCI(ctx context.Context, args ciArgs) (CIResult, error) {
-	variables, err := loadCIVariables(args.variablesFile)
+	variables, err := loadTrustedCIVariables(ctx, args.variablesFile)
 	if err != nil {
 		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "INVALID"}, err
 	}
@@ -393,16 +479,32 @@ func executeLocalCI(ctx context.Context, args ciArgs, variables map[string]strin
 	if err := validateLocalCIGitHubTrust(); err != nil {
 		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "UNTRUSTED_SOURCE"}, err
 	}
+	rawScript, resolvedScriptPath, err := loadTrustedCIScriptSnapshot(ctx, args.scriptPath)
+	if err != nil {
+		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "UNTRUSTED_SOURCE"}, err
+	}
+	if err := validateGitHubLocalCIAssetIsolation(rawScript); err != nil {
+		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "UNTRUSTED_SOURCE"}, err
+	}
 	run := runArgs{
-		script: args.scriptPath, baseURL: args.baseURL, env: variables,
+		script: resolvedScriptPath, baseURL: args.baseURL, env: variables,
 		vusers: args.vusers, duration: args.duration, rampUp: args.rampUp,
 		p95LatencyMs: args.p95LatencyMs, maxErrorPct: args.maxErrorPct,
 		maxAvgServerProcessingMs: args.maxAvgServerProcessingMs,
 		maxAvgTransferMs:         args.maxAvgTransferMs, maxErrorCount: args.maxErrorCount,
 	}
-	script, err := loadScriptForRun(args.scriptPath, run)
+	script, err := loadScriptSnapshotForRun(resolvedScriptPath, rawScript, run)
 	if err != nil {
 		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "INVALID"}, fmt.Errorf("prepare script: %w", err)
+	}
+	localGoals := resolveGoalConfig(script, run)
+	if args.requireSLA && (localGoals == nil ||
+		(localGoals.P95LatencyMs == nil &&
+			localGoals.MaxErrorPct == nil &&
+			localGoals.MaxAvgServerProcessingMs == nil &&
+			localGoals.MaxAvgTransferMs == nil &&
+			localGoals.MaxErrorCount == nil)) {
+		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "MISSING_SLA"}, ciConfigurationErrorf("no SLA threshold was configured")
 	}
 	eng, err := engine.New(engine.Config{Script: script, VUsers: args.vusers, Duration: args.duration, RampUp: args.rampUp})
 	if err != nil {
@@ -416,7 +518,7 @@ func executeLocalCI(ctx context.Context, args ciArgs, variables map[string]strin
 		result.Transactions = runResult.TotalTransactions
 		result.Errors = runResult.TotalErrors
 		result.TPS = runResult.FinalSnapshot.TPS
-		sla := evaluateLocalSLA(runResult, resolveGoalConfig(script, run))
+		sla := evaluateLocalSLA(runResult, localGoals)
 		if sla != nil {
 			result.SLAEvaluated = sla.Evaluated
 			result.SLABreached = sla.Breached
@@ -433,12 +535,20 @@ func executeLocalCI(ctx context.Context, args ciArgs, variables map[string]strin
 }
 
 func validateLocalCIGitHubTrust() error {
+	return validateCIGitHubTrust("local")
+}
+
+func validateControllerCIGitHubTrust() error {
+	return validateCIGitHubTrust("controller-backed")
+}
+
+func validateCIGitHubTrust(mode string) error {
 	if !strings.EqualFold(strings.TrimSpace(os.Getenv("GITHUB_ACTIONS")), "true") {
 		return nil
 	}
 	eventName := strings.ToLower(strings.TrimSpace(os.Getenv("GITHUB_EVENT_NAME")))
 	if eventName == "pull_request_target" {
-		return ciConfigurationErrorf("local CI execution is prohibited for pull_request_target")
+		return ciConfigurationErrorf("%s CI execution is prohibited for pull_request_target", mode)
 	}
 	if eventName != "pull_request" {
 		return nil
@@ -449,25 +559,30 @@ func validateLocalCIGitHubTrust() error {
 	baseID := strings.TrimSpace(source.RepositoryID)
 	headID := strings.TrimSpace(source.HeadRepositoryID)
 	if baseName == "" || headName == "" || baseID == "" || headID == "" {
-		return ciConfigurationErrorf("local CI execution cannot verify the pull-request repository identity")
+		return ciConfigurationErrorf("%s CI execution cannot verify the pull-request repository identity from the trusted action context", mode)
 	}
 	if !strings.EqualFold(baseName, headName) || baseID != headID {
-		return ciConfigurationErrorf("local CI execution is prohibited for fork pull requests")
+		return ciConfigurationErrorf("%s CI execution is prohibited for fork pull requests", mode)
 	}
 	return nil
 }
 
 func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]string) (CIResult, error) {
-	clientAPIKey := ""
-	if args.authMode == "api-key" {
-		clientAPIKey = args.apiKey
+	if err := validateControllerCIGitHubTrust(); err != nil {
+		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "UNTRUSTED_SOURCE"}, err
 	}
-	client := NewApiClientWithAuth(args.controllerURL, clientAPIKey, "")
-	auth := &ciAuthSession{mode: strings.ToLower(args.authMode), projectID: args.projectID}
-	if err := auth.ensure(ctx, client); err != nil {
-		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciFailureOutcome(err), Status: "AUTH_FAILED"}, err
+	var rawScript []byte
+	if args.scriptPath != "" {
+		var err error
+		rawScript, _, err = loadTrustedCIScriptSnapshot(ctx, args.scriptPath)
+		if err != nil {
+			return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "UNTRUSTED_SOURCE"}, err
+		}
+		var object map[string]any
+		if err := json.Unmarshal(rawScript, &object); err != nil || object == nil {
+			return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "INVALID"}, fmt.Errorf("script must be a JSON object")
+		}
 	}
-
 	request := CIRunRequest{
 		ProjectID: args.projectID, Name: args.testName, ReleaseID: args.releaseID,
 		ScriptPath: args.scriptPath, ScriptID: args.scriptID,
@@ -480,26 +595,36 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 		},
 		Source: sourceFromEnvironment(), PublishCheck: args.publishCheck,
 	}
-	if args.scriptPath != "" {
-		raw, err := os.ReadFile(args.scriptPath)
-		if err != nil {
-			return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "INVALID"}, fmt.Errorf("read script: %w", err)
-		}
-		var object map[string]any
-		if err := json.Unmarshal(raw, &object); err != nil || object == nil {
-			return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "INVALID"}, fmt.Errorf("script must be a JSON object")
-		}
-		request.Script = json.RawMessage(raw)
+	if len(rawScript) > 0 {
+		request.Script = json.RawMessage(rawScript)
+	}
+	encodedRequest, err := json.Marshal(request)
+	if err != nil {
+		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "INVALID"}, fmt.Errorf("encode controller CI request: %w", err)
+	}
+	if len(encodedRequest) > maxCIRunRequestBytes {
+		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "INVALID"}, ciConfigurationErrorf("controller CI request exceeds the %d byte API limit", maxCIRunRequestBytes)
 	}
 	idempotencyKey := args.idempotencyKey
 	if idempotencyKey == "" {
 		idempotencyKey = deriveCIIdempotencyKey(request)
 	}
+	clientAPIKey := ""
+	if args.authMode == "api-key" {
+		clientAPIKey = args.apiKey
+	}
+	client := NewApiClientWithAuth(args.controllerURL, clientAPIKey, "")
+	auth := &ciAuthSession{mode: strings.ToLower(args.authMode), projectID: args.projectID}
 	created, err := retryControllerCIRequest(ctx, auth, client, func() (*CIRunResponse, error) {
 		return client.CreateCIRun(ctx, request, idempotencyKey)
 	})
 	if err != nil {
-		failure := CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciFailureOutcome(err), Status: "CREATE_FAILED", TestID: deterministicCITestID(args.projectID, idempotencyKey)}
+		status := "CREATE_FAILED"
+		var authFailure *ciControllerAuthFailure
+		if errors.As(err, &authFailure) {
+			status = "AUTH_FAILED"
+		}
+		failure := CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciFailureOutcome(err), Status: status, TestID: deterministicCITestID(args.projectID, idempotencyKey)}
 		if args.abortOnCancel && ctx.Err() != nil {
 			failure.Outcome, failure.Status = ciOutcomeCancelled, "CANCELLED"
 			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -552,6 +677,396 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 	}
 }
 
+type ciFileProvenance struct {
+	path        string
+	repository  string
+	gitPath     string
+	expectedOID string
+}
+
+func loadTrustedCIScriptSnapshot(ctx context.Context, path string) ([]byte, string, error) {
+	return loadTrustedCIFileSnapshot(ctx, path, maxCIScriptBytes, "script-path")
+}
+
+func loadTrustedCIFileSnapshot(ctx context.Context, path string, maxBytes int64, label string) ([]byte, string, error) {
+	provenance, err := prepareCIFileProvenance(ctx, path, label)
+	if err != nil {
+		return nil, "", err
+	}
+	if provenance.repository == "" {
+		raw, err := readCIFileLimited(provenance.path, maxBytes)
+		if err != nil {
+			return nil, "", fmt.Errorf("read %s: %w", label, err)
+		}
+		return raw, provenance.path, nil
+	}
+	sizeRaw, err := runCIGit(ctx, provenance.repository, nil, "cat-file", "-s", provenance.expectedOID)
+	if err != nil {
+		return nil, "", ciConfigurationErrorf("cannot inspect the GitHub %s snapshot at GITHUB_SHA: %v", label, err)
+	}
+	size, err := strconv.ParseInt(strings.TrimSpace(string(sizeRaw)), 10, 64)
+	if err != nil || size < 0 || size > maxBytes {
+		return nil, "", ciConfigurationErrorf("%s at GITHUB_SHA exceeds the %d byte CI limit", label, maxBytes)
+	}
+	raw, err := runCIGit(ctx, provenance.repository, nil, "cat-file", "blob", provenance.expectedOID)
+	if err != nil {
+		return nil, "", ciConfigurationErrorf("cannot read the GitHub %s snapshot at GITHUB_SHA: %v", label, err)
+	}
+	if int64(len(raw)) != size {
+		return nil, "", ciConfigurationErrorf("Git returned an incomplete %s snapshot at GITHUB_SHA", label)
+	}
+	return raw, provenance.path, nil
+}
+
+func readCIFileLimited(path string, maxBytes int64) ([]byte, error) {
+	if maxBytes <= 0 {
+		return nil, fmt.Errorf("invalid read limit")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("script-path must be a regular file")
+	}
+	if info.Size() > maxBytes {
+		return nil, fmt.Errorf("script exceeds the %d byte CI limit", maxBytes)
+	}
+	raw, err := io.ReadAll(io.LimitReader(file, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(raw)) > maxBytes {
+		return nil, fmt.Errorf("script exceeds the %d byte CI limit", maxBytes)
+	}
+	return raw, nil
+}
+
+// GitHub local mode is intentionally a deterministic smoke-test fallback. The
+// JSON script itself is loaded from GITHUB_SHA, but ParseFile normally opens
+// body files and other local assets from the mutable runner workspace. Reject
+// those file-backed inputs before parsing so an alternate checkout, untracked
+// file, or surviving process on a self-hosted runner cannot change execution
+// after the commit identity has been authenticated. Callers can inline smoke
+// data or use controller mode for governed project assets and secrets.
+func validateGitHubLocalCIAssetIsolation(raw []byte) error {
+	if !strings.EqualFold(strings.TrimSpace(os.Getenv("GITHUB_ACTIONS")), "true") {
+		return nil
+	}
+	script, err := decodeCIScriptDefinition(raw)
+	if err != nil {
+		return ciConfigurationErrorf("decode script for GitHub local CI asset validation: %v", err)
+	}
+	bodyFile, browserInputFile := inspectCILocalActions(script)
+	if bodyFile {
+		return ciConfigurationErrorf("GitHub local CI requires inline action bodies; body_file is not allowed")
+	}
+	if browserInputFile {
+		return ciConfigurationErrorf("GitHub local CI cannot execute browser_set_files from runner-local paths")
+	}
+	for _, source := range script.DataSources {
+		if strings.TrimSpace(source.Path) != "" || strings.TrimSpace(source.StorageRef) != "" || strings.TrimSpace(source.StagedAsset) != "" {
+			return ciConfigurationErrorf("GitHub local CI requires data_sources to use inline_data; runner-local and staged assets are not allowed")
+		}
+	}
+	if len(script.Config.GRPC.ProtoFiles) != 0 {
+		return ciConfigurationErrorf("GitHub local CI cannot load gRPC descriptor files from runner-local paths")
+	}
+	if hasCITLSFilePaths(script.Config.HTTP.TLS) {
+		return ciConfigurationErrorf("GitHub local CI cannot load HTTP TLS material from runner-local paths")
+	}
+	if script.Config.Kafka.TLS != nil && hasCITLSFilePaths(dsl.TLSConfig{
+		ClientCertFile: script.Config.Kafka.TLS.ClientCertFile,
+		ClientKeyFile:  script.Config.Kafka.TLS.ClientKeyFile,
+		CACertFile:     script.Config.Kafka.TLS.CACertFile,
+	}) {
+		return ciConfigurationErrorf("GitHub local CI cannot load Kafka TLS material from runner-local paths")
+	}
+	if script.Config.JMS.TLS != nil {
+		caMaterial := strings.TrimSpace(script.Config.JMS.TLS.CACertSecret)
+		if caMaterial != "" && !strings.Contains(caMaterial, "BEGIN CERTIFICATE") && !strings.Contains(caMaterial, "{{secret.") {
+			return ciConfigurationErrorf("GitHub local CI cannot load JMS TLS material from runner-local paths")
+		}
+	}
+	for _, certificate := range script.Config.Browser.ClientCertificates {
+		if strings.TrimSpace(certificate.CertPath) != "" || strings.TrimSpace(certificate.KeyPath) != "" || strings.TrimSpace(certificate.PfxPath) != "" {
+			return ciConfigurationErrorf("GitHub local CI cannot load browser client certificates from runner-local paths")
+		}
+	}
+	return nil
+}
+
+func decodeCIScriptDefinition(raw []byte) (*dsl.Script, error) {
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &root); err != nil {
+		return nil, err
+	}
+	payload := raw
+	if wrapped, ok := root["script"]; ok && len(wrapped) != 0 && string(wrapped) != "null" {
+		payload = wrapped
+	}
+	var script dsl.Script
+	if err := json.Unmarshal(payload, &script); err != nil {
+		return nil, err
+	}
+	return &script, nil
+}
+
+func inspectCILocalActions(script *dsl.Script) (bodyFile, browserInputFile bool) {
+	if script == nil {
+		return false, false
+	}
+	pending := make([]dsl.Action, 0, len(script.Init)+len(script.Actions)+len(script.Teardown))
+	pending = append(pending, script.Init...)
+	pending = append(pending, script.Actions...)
+	pending = append(pending, script.Teardown...)
+	for len(pending) != 0 {
+		index := len(pending) - 1
+		action := pending[index]
+		pending = pending[:index]
+		if strings.TrimSpace(action.BodyFile) != "" {
+			bodyFile = true
+		}
+		if strings.EqualFold(strings.TrimSpace(action.Type), "browser_set_files") {
+			browserInputFile = true
+		}
+		if action.Control != nil {
+			pending = append(pending, action.Control.Steps...)
+			pending = append(pending, action.Control.Else...)
+		}
+		if requests, ok := action.Params["requests"].([]any); ok {
+			for _, value := range requests {
+				child, ok := value.(map[string]any)
+				if !ok {
+					continue
+				}
+				if raw, ok := child["body_file"].(string); ok && strings.TrimSpace(raw) != "" {
+					bodyFile = true
+				}
+				if raw, ok := child["type"].(string); ok && strings.EqualFold(strings.TrimSpace(raw), "browser_set_files") {
+					browserInputFile = true
+				}
+			}
+		}
+	}
+	return bodyFile, browserInputFile
+}
+
+func hasCITLSFilePaths(config dsl.TLSConfig) bool {
+	return strings.TrimSpace(config.ClientCertFile) != "" ||
+		strings.TrimSpace(config.ClientKeyFile) != "" ||
+		strings.TrimSpace(config.CACertFile) != ""
+}
+
+func prepareCIFileProvenance(ctx context.Context, path, label string) (ciFileProvenance, error) {
+	label = strings.TrimSpace(label)
+	if label == "" {
+		label = "CI file"
+	}
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ciFileProvenance{}, ciConfigurationErrorf("%s is required", label)
+	}
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return ciFileProvenance{}, ciConfigurationErrorf("resolve %s: %v", label, err)
+	}
+	absolutePath = filepath.Clean(absolutePath)
+	if !strings.EqualFold(strings.TrimSpace(os.Getenv("GITHUB_ACTIONS")), "true") {
+		return ciFileProvenance{path: absolutePath}, nil
+	}
+
+	workspace := strings.TrimSpace(os.Getenv("GITHUB_WORKSPACE"))
+	claimedSHA := strings.TrimSpace(os.Getenv("GITHUB_SHA"))
+	if workspace == "" || !validCIGitObjectID(claimedSHA) {
+		return ciFileProvenance{}, ciConfigurationErrorf("GitHub %s provenance requires GITHUB_WORKSPACE and a valid GITHUB_SHA", label)
+	}
+	workspaceAbs, err := filepath.Abs(workspace)
+	if err != nil {
+		return ciFileProvenance{}, ciConfigurationErrorf("resolve GITHUB_WORKSPACE: %v", err)
+	}
+	workspaceAbs = filepath.Clean(workspaceAbs)
+	lexicalRelative, err := relativePathWithin(workspaceAbs, absolutePath)
+	if err != nil {
+		return ciFileProvenance{}, ciConfigurationErrorf("%s must remain inside GITHUB_WORKSPACE", label)
+	}
+	if err := rejectCISymlinkComponents(workspaceAbs, lexicalRelative, label); err != nil {
+		return ciFileProvenance{}, err
+	}
+	info, err := os.Lstat(absolutePath)
+	if err != nil {
+		return ciFileProvenance{}, ciConfigurationErrorf("inspect %s: %v", label, err)
+	}
+	if !info.Mode().IsRegular() {
+		return ciFileProvenance{}, ciConfigurationErrorf("%s must be a regular non-symlink file", label)
+	}
+
+	workspaceReal, err := filepath.EvalSymlinks(workspaceAbs)
+	if err != nil {
+		return ciFileProvenance{}, ciConfigurationErrorf("resolve GITHUB_WORKSPACE symlinks: %v", err)
+	}
+	fileReal, err := filepath.EvalSymlinks(absolutePath)
+	if err != nil {
+		return ciFileProvenance{}, ciConfigurationErrorf("resolve %s symlinks: %v", label, err)
+	}
+	workspaceReal = filepath.Clean(workspaceReal)
+	fileReal = filepath.Clean(fileReal)
+	if _, err := relativePathWithin(workspaceReal, fileReal); err != nil {
+		return ciFileProvenance{}, ciConfigurationErrorf("%s resolves outside GITHUB_WORKSPACE", label)
+	}
+
+	rootRaw, err := runCIGit(ctx, filepath.Dir(fileReal), nil, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return ciFileProvenance{}, ciConfigurationErrorf("%s is not inside a usable Git checkout: %v", label, err)
+	}
+	repositoryRoot, err := filepath.EvalSymlinks(strings.TrimSpace(string(rootRaw)))
+	if err != nil {
+		return ciFileProvenance{}, ciConfigurationErrorf("resolve Git repository root: %v", err)
+	}
+	repositoryRoot = filepath.Clean(repositoryRoot)
+	if _, err := relativePathWithin(workspaceReal, repositoryRoot); err != nil {
+		return ciFileProvenance{}, ciConfigurationErrorf("the Git repository containing %s must remain inside GITHUB_WORKSPACE", label)
+	}
+	headRaw, err := runCIGit(ctx, repositoryRoot, nil, "rev-parse", "--verify", "HEAD")
+	if err != nil {
+		return ciFileProvenance{}, ciConfigurationErrorf("resolve checked-out Git commit: %v", err)
+	}
+	if !strings.EqualFold(strings.TrimSpace(string(headRaw)), claimedSHA) {
+		return ciFileProvenance{}, ciConfigurationErrorf("checked-out Git HEAD does not match GITHUB_SHA")
+	}
+
+	relative, err := relativePathWithin(repositoryRoot, fileReal)
+	if err != nil {
+		return ciFileProvenance{}, ciConfigurationErrorf("%s is outside the checked-out repository", label)
+	}
+	gitPath := filepath.ToSlash(relative)
+	treeRaw, err := runCIGit(ctx, repositoryRoot, nil, "ls-tree", "-z", "--full-tree", claimedSHA, "--", gitPath)
+	if err != nil {
+		return ciFileProvenance{}, ciConfigurationErrorf("resolve %s at GITHUB_SHA: %v", label, err)
+	}
+	mode, objectType, expectedOID, recordedPath, ok := parseCIGitTreeRecord(treeRaw)
+	if !ok || (mode != "100644" && mode != "100755") || objectType != "blob" || recordedPath != gitPath || !validCIGitObjectID(expectedOID) {
+		return ciFileProvenance{}, ciConfigurationErrorf("%s is not a tracked regular file at GITHUB_SHA", label)
+	}
+	return ciFileProvenance{
+		path:        fileReal,
+		repository:  repositoryRoot,
+		gitPath:     gitPath,
+		expectedOID: expectedOID,
+	}, nil
+}
+
+func relativePathWithin(root, candidate string) (string, error) {
+	relative, err := filepath.Rel(filepath.Clean(root), filepath.Clean(candidate))
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return "", fmt.Errorf("path is outside root")
+	}
+	return relative, nil
+}
+
+func rejectCISymlinkComponents(root, relative, label string) error {
+	current := filepath.Clean(root)
+	for _, component := range strings.Split(filepath.Clean(relative), string(filepath.Separator)) {
+		if component == "" || component == "." {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if err != nil {
+			return ciConfigurationErrorf("inspect %s component: %v", label, err)
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return ciConfigurationErrorf("%s must not traverse symbolic links", label)
+		}
+	}
+	return nil
+}
+
+func runCIGit(ctx context.Context, repository string, stdin []byte, arguments ...string) ([]byte, error) {
+	commandArgs := append([]string{"-C", repository}, arguments...)
+	command := exec.CommandContext(ctx, "git", commandArgs...)
+	command.Env = make([]string, 0, len(os.Environ())+2)
+	for _, environment := range os.Environ() {
+		name, _, _ := strings.Cut(environment, "=")
+		if strings.HasPrefix(strings.ToUpper(name), "GIT_") {
+			continue
+		}
+		command.Env = append(command.Env, environment)
+	}
+	command.Env = append(command.Env, "GIT_NO_REPLACE_OBJECTS=1", "GIT_OPTIONAL_LOCKS=0")
+	if stdin != nil {
+		command.Stdin = bytes.NewReader(stdin)
+	}
+	output, err := command.Output()
+	if err != nil {
+		return nil, err
+	}
+	return output, nil
+}
+
+func sameCIFile(first, second string) (bool, error) {
+	firstInfo, err := os.Stat(first)
+	if err != nil {
+		return false, err
+	}
+	secondInfo, err := os.Stat(second)
+	if err != nil {
+		return false, err
+	}
+	return os.SameFile(firstInfo, secondInfo), nil
+}
+
+func parseCIGitTreeRecord(raw []byte) (mode, objectType, objectID, path string, ok bool) {
+	if len(raw) < 2 || raw[len(raw)-1] != 0 || bytes.IndexByte(raw[:len(raw)-1], 0) >= 0 {
+		return "", "", "", "", false
+	}
+	record := raw[:len(raw)-1]
+	header, pathBytes, found := bytes.Cut(record, []byte{'\t'})
+	if !found {
+		return "", "", "", "", false
+	}
+	fields := strings.Fields(string(header))
+	if len(fields) != 3 {
+		return "", "", "", "", false
+	}
+	return fields[0], fields[1], fields[2], string(pathBytes), true
+}
+
+func validCIGitObjectID(value string) bool {
+	if len(value) != 40 && len(value) != 64 {
+		return false
+	}
+	for _, character := range value {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", character) {
+			return false
+		}
+	}
+	return true
+}
+
+type ciControllerAuthFailure struct {
+	err error
+}
+
+func (e *ciControllerAuthFailure) Error() string {
+	if e == nil || e.err == nil {
+		return "controller CI authentication failed"
+	}
+	return fmt.Sprintf("controller CI authentication failed: %v", e.err)
+}
+
+func (e *ciControllerAuthFailure) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.err
+}
+
 func retryControllerCIRequest(ctx context.Context, auth *ciAuthSession, client *ApiClient, operation func() (*CIRunResponse, error)) (*CIRunResponse, error) {
 	if operation == nil {
 		return nil, fmt.Errorf("controller CI operation is required")
@@ -560,7 +1075,9 @@ func retryControllerCIRequest(ctx context.Context, auth *ciAuthSession, client *
 	if attempts < 1 {
 		attempts = 1
 	}
+	started := time.Now()
 	var lastErr error
+	lastFailureWasAuth := false
 	refreshedUnauthorized := false
 	for attempt := 0; attempt < attempts; attempt++ {
 		if err := ctx.Err(); err != nil {
@@ -569,12 +1086,14 @@ func retryControllerCIRequest(ctx context.Context, auth *ciAuthSession, client *
 		if auth != nil && client != nil {
 			if err := auth.ensure(ctx, client); err != nil {
 				lastErr = err
+				lastFailureWasAuth = true
 			} else {
 				response, err := operation()
 				if err == nil {
 					return response, nil
 				}
 				lastErr = err
+				lastFailureWasAuth = false
 				var apiErr *CIAPIError
 				if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized && auth.mode != "api-key" && !refreshedUnauthorized {
 					refreshedUnauthorized = true
@@ -585,18 +1104,77 @@ func retryControllerCIRequest(ctx context.Context, auth *ciAuthSession, client *
 			}
 		}
 		if !ciControllerRequestRetryable(lastErr) || attempt == attempts-1 {
-			return nil, lastErr
+			return nil, classifyControllerRetryError(lastErr, lastFailureWasAuth)
 		}
-		delay := ciControllerRetryBaseDelay * time.Duration(1<<attempt)
-		timer := time.NewTimer(delay)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return nil, ctx.Err()
-		case <-timer.C:
+		delay := ciControllerRetryDelay(attempt, lastErr)
+		if ciControllerRetryWindow > 0 {
+			remaining := ciControllerRetryWindow - time.Since(started)
+			if remaining <= 0 {
+				return nil, classifyControllerRetryError(lastErr, lastFailureWasAuth)
+			}
+			if delay > remaining {
+				delay = remaining
+			}
+		}
+		if err := waitForControllerCIRetry(ctx, delay); err != nil {
+			return nil, err
 		}
 	}
-	return nil, lastErr
+	return nil, classifyControllerRetryError(lastErr, lastFailureWasAuth)
+}
+
+func classifyControllerRetryError(err error, authentication bool) error {
+	if err == nil || !authentication {
+		return err
+	}
+	return &ciControllerAuthFailure{err: err}
+}
+
+func ciControllerRetryDelay(attempt int, err error) time.Duration {
+	delay := ciControllerRetryBaseDelay
+	if delay < 0 {
+		delay = 0
+	}
+	maxDelay := ciControllerRetryMaxDelay
+	if maxDelay > 0 {
+		for step := 0; step < attempt && delay < maxDelay; step++ {
+			if delay > maxDelay/2 {
+				delay = maxDelay
+				break
+			}
+			delay *= 2
+		}
+		if delay > maxDelay {
+			delay = maxDelay
+		}
+	} else {
+		for step := 0; step < attempt; step++ {
+			if delay >= time.Duration(1<<62) {
+				delay = time.Duration(1<<63 - 1)
+				break
+			}
+			delay *= 2
+		}
+	}
+	var apiErr *CIAPIError
+	if errors.As(err, &apiErr) && apiErr.RetryAfter > delay {
+		delay = apiErr.RetryAfter
+	}
+	return delay
+}
+
+func waitForControllerCIRetry(ctx context.Context, delay time.Duration) error {
+	if delay <= 0 {
+		return ctx.Err()
+	}
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func ciControllerRequestRetryable(err error) bool {
@@ -620,45 +1198,47 @@ func abortControllerCIRun(parent context.Context, auth *ciAuthSession, client *A
 	}
 	abortCtx, cancel := context.WithTimeout(parent, ciAbortConfirmationTimeout)
 	defer cancel()
-	ticker := time.NewTicker(200 * time.Millisecond)
-	defer ticker.Stop()
-	for {
+	for attempt := 0; ; attempt++ {
+		if err := abortCtx.Err(); err != nil {
+			return err
+		}
+		var retryErr error
 		if err := auth.ensure(abortCtx, client); err != nil {
-			if !ciAbortRetryable(err) {
-				return err
-			}
+			retryErr = err
 		} else {
 			response, err := client.AbortCIRunWithReason(abortCtx, testID, reason)
 			if err == nil {
 				if response != nil && isTerminalCIStatus(response.Status) {
 					return nil
 				}
-				for {
-					status, statusErr := client.GetCIRun(abortCtx, testID)
-					if statusErr == nil && status != nil && isTerminalCIResponse(status) {
+				status, statusErr := client.GetCIRun(abortCtx, testID)
+				if statusErr == nil {
+					if status != nil && isTerminalCIResponse(status) {
 						return nil
 					}
-					if statusErr != nil && !ciAbortRetryable(statusErr) {
-						return statusErr
-					}
-					select {
-					case <-abortCtx.Done():
-						return abortCtx.Err()
-					case <-ticker.C:
-					}
+					retryErr = errCIAbortConfirmationPending
+				} else {
+					retryErr = statusErr
 				}
+			} else {
+				retryErr = err
 			}
-			if !ciAbortRetryable(err) {
-				return err
+			var apiErr *CIAPIError
+			if errors.As(retryErr, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized && auth.mode != "api-key" {
+				client.BearerToken = ""
+				auth.expiresAt = time.Time{}
 			}
 		}
-		select {
-		case <-abortCtx.Done():
-			return abortCtx.Err()
-		case <-ticker.C:
+		if !ciAbortRetryable(retryErr) {
+			return retryErr
+		}
+		if err := waitForControllerCIRetry(abortCtx, ciControllerRetryDelay(attempt, retryErr)); err != nil {
+			return err
 		}
 	}
 }
+
+var errCIAbortConfirmationPending = errors.New("controller has not confirmed CI run abort")
 
 func isTerminalCIStatus(status string) bool {
 	switch strings.ToUpper(strings.TrimSpace(status)) {
@@ -680,6 +1260,9 @@ func ciAbortReason(err error) string {
 }
 
 func ciAbortRetryable(err error) bool {
+	if errors.Is(err, errCIAbortConfirmationPending) {
+		return true
+	}
 	var apiErr *CIAPIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
 		return true
@@ -798,15 +1381,43 @@ func loadCIVariables(path string) (map[string]string, error) {
 	if strings.TrimSpace(path) == "" {
 		return nil, nil
 	}
-	raw, err := os.ReadFile(path)
+	raw, err := readCIFileLimited(path, maxCIVariablesFileBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read variables file: %w", err)
 	}
+	return decodeCIVariables(raw)
+}
+
+func loadTrustedCIVariables(ctx context.Context, path string) (map[string]string, error) {
+	if strings.TrimSpace(path) == "" {
+		return nil, nil
+	}
+	raw, _, err := loadTrustedCIFileSnapshot(ctx, path, maxCIVariablesFileBytes, "variables-file")
+	if err != nil {
+		return nil, err
+	}
+	return decodeCIVariables(raw)
+}
+
+func decodeCIVariables(raw []byte) (map[string]string, error) {
 	var variables map[string]string
 	if err := json.Unmarshal(raw, &variables); err != nil {
 		return nil, fmt.Errorf("variables file must be a JSON object of string values: %w", err)
 	}
+	if variables == nil {
+		return nil, fmt.Errorf("variables file must be a JSON object of string values")
+	}
+	if len(variables) > maxCIVariableEntries {
+		return nil, fmt.Errorf("variables file exceeds %d entries", maxCIVariableEntries)
+	}
 	for key, value := range variables {
+		trimmed := strings.TrimSpace(key)
+		if trimmed == "" || len(trimmed) > maxCIVariableKeyBytes || strings.ContainsAny(trimmed, "\r\n=\x00") {
+			return nil, fmt.Errorf("variables file contains an invalid key")
+		}
+		if len(value) > maxCIVariableValueBytes || strings.ContainsRune(value, '\x00') {
+			return nil, fmt.Errorf("variables file entry %q is invalid or exceeds %d bytes", key, maxCIVariableValueBytes)
+		}
 		if sensitiveCIVariableKey(key) || sensitiveCIVariableValue(value) {
 			return nil, fmt.Errorf("variables file entry %q looks sensitive; use a controller-managed {{secret.*}} reference", key)
 		}
@@ -868,17 +1479,17 @@ func sourceFromEnvironment() CISource {
 	source := CISource{
 		Provider: "github", ServerURL: os.Getenv("GITHUB_SERVER_URL"), APIURL: os.Getenv("GITHUB_API_URL"),
 		Repository: os.Getenv("GITHUB_REPOSITORY"), RepositoryID: os.Getenv("GITHUB_REPOSITORY_ID"),
-		HeadRepository: os.Getenv("GITHUB_HEAD_REPOSITORY"), HeadRepositoryID: os.Getenv("GITHUB_HEAD_REPOSITORY_ID"),
+		HeadRepository: os.Getenv("APEXLOAD_GITHUB_HEAD_REPOSITORY"), HeadRepositoryID: os.Getenv("APEXLOAD_GITHUB_HEAD_REPOSITORY_ID"),
 		Ref: os.Getenv("GITHUB_REF"), SHA: os.Getenv("GITHUB_SHA"), WorkflowRef: os.Getenv("GITHUB_WORKFLOW_REF"),
 		JobWorkflowRef: os.Getenv("GITHUB_JOB_WORKFLOW_REF"),
 		RunID:          os.Getenv("GITHUB_RUN_ID"), RunAttempt: os.Getenv("GITHUB_RUN_ATTEMPT"), Actor: os.Getenv("GITHUB_ACTOR"),
 		EventName: os.Getenv("GITHUB_EVENT_NAME"), Environment: os.Getenv("GITHUB_ENVIRONMENT"), RunnerEnvironment: os.Getenv("RUNNER_ENVIRONMENT"),
-		HeadRef: os.Getenv("GITHUB_HEAD_REF"), HeadSHA: os.Getenv("GITHUB_HEAD_SHA"),
+		HeadRef: os.Getenv("GITHUB_HEAD_REF"), HeadSHA: os.Getenv("APEXLOAD_GITHUB_HEAD_SHA"),
 	}
 	if !strings.EqualFold(os.Getenv("GITHUB_ACTIONS"), "true") {
 		source.Provider = "local"
+		populatePullRequestSource(&source, os.Getenv("GITHUB_EVENT_PATH"))
 	}
-	populatePullRequestSource(&source, os.Getenv("GITHUB_EVENT_PATH"))
 	return source
 }
 
@@ -886,7 +1497,7 @@ func populatePullRequestSource(source *CISource, eventPath string) {
 	if source == nil || strings.TrimSpace(eventPath) == "" {
 		return
 	}
-	raw, err := os.ReadFile(eventPath)
+	raw, err := readCIFileLimited(eventPath, 1<<20)
 	if err != nil {
 		return
 	}

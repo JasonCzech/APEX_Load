@@ -89,8 +89,12 @@ func (c *ApiClient) doContextWithHeaders(ctx context.Context, method string, pat
 				return fmt.Errorf("refusing HTTPS-to-HTTP redirect to %s", next.URL.Redacted())
 			}
 			if !sameHTTPOrigin(origin, next.URL) {
-				next.Header.Del("X-APEXLoad-API-Key")
-				next.Header.Del("Authorization")
+				// A 307/308 redirect replays the original method and body. Merely
+				// stripping authentication headers would still disclose credential
+				// bodies such as the GitHub OIDC ID-token exchange payload, along
+				// with inline CI scripts and variables. Controller API redirects
+				// therefore remain confined to the configured origin.
+				return fmt.Errorf("refusing cross-origin redirect from %s to %s", origin.Redacted(), next.URL.Redacted())
 			}
 		}
 		if baseRedirectPolicy != nil {

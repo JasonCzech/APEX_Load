@@ -524,6 +524,33 @@ func TestParseFileResolvesBodyFile(t *testing.T) {
 	}
 }
 
+func TestParseFileSnapshotUsesSuppliedBytesAndResolvesLocalReferences(t *testing.T) {
+	dir := t.TempDir()
+	payload := "{\n  \"sku\": \"SNAPSHOT-1\"\n}\n"
+	if err := os.WriteFile(filepath.Join(dir, "order.json"), []byte(payload), 0o644); err != nil {
+		t.Fatalf("write payload: %v", err)
+	}
+	path := filepath.Join(dir, "script.json")
+	if err := os.WriteFile(path, []byte(`{"name":"on-disk-file-is-not-the-snapshot"}`), 0o644); err != nil {
+		t.Fatalf("write on-disk script: %v", err)
+	}
+	snapshot := []byte(`{"script":{"name":"trusted-snapshot","protocol":"http","config":{"base_url":"https://example.test"},"actions":[{"name":"create","type":"POST","target":"/orders","body_file":"order.json"}]}}`)
+
+	script, err := ParseFileSnapshot(path, snapshot)
+	if err != nil {
+		t.Fatalf("ParseFileSnapshot: %v", err)
+	}
+	if script.Name != "trusted-snapshot" {
+		t.Fatalf("name = %q, want trusted-snapshot", script.Name)
+	}
+	if got := script.Actions[0].Body; got != payload {
+		t.Fatalf("body = %q, want %q", got, payload)
+	}
+	if script.Actions[0].BodyFile != "" {
+		t.Fatalf("body_file = %q, want cleared", script.Actions[0].BodyFile)
+	}
+}
+
 func TestParseFileResolvesRelativeDataSourcePath(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "users.csv"), []byte("name\nalice\n"), 0o644); err != nil {

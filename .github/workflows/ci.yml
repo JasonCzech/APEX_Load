@@ -323,6 +323,7 @@ jobs:
           bi=github.com/jasonczech/apexload/pkg/buildinfo
           ldflags="-s -w -X ${bi}.Version=${BUILD_VERSION} -X ${bi}.Commit=${BUILD_COMMIT} -X ${bi}.BuildTime=${BUILD_TIME}"
           go build -trimpath -ldflags "${ldflags}" ./cmd/...
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "${ldflags}" ./cmd/...
           VERSION="${BUILD_VERSION}" COMMIT="${BUILD_COMMIT}" BUILD_TIME="${BUILD_TIME}" make build
 
       - name: Smoke-test command surfaces

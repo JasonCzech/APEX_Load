@@ -95,7 +95,7 @@ inputs:
     required: false
     default: ""
   evidence-directory:
-    description: Directory for JSON and JUnit evidence files.
+    description: Directory under the workspace or runner temp for JSON and JUnit evidence; symbolic-link traversal is rejected.
     required: false
     default: .apexload
   apexctl-version:
@@ -213,6 +213,12 @@ runs:
         APEXLOAD_INPUT_ABORT_ON_CANCEL: ${{ inputs.abort-on-cancel }}
         APEXLOAD_INPUT_PUBLISH_CHECK: ${{ inputs.publish-check }}
         APEXLOAD_INPUT_EVIDENCE_DIRECTORY: ${{ inputs.evidence-directory }}
+        # These values come from GitHub's immutable workflow expression
+        # context. apexctl deliberately does not trust the mutable event JSON
+        # file for pull-request repository identity.
+        APEXLOAD_GITHUB_HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+        APEXLOAD_GITHUB_HEAD_REPOSITORY_ID: ${{ github.event.pull_request.head.repo.id }}
+        APEXLOAD_GITHUB_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
       run: '"$GITHUB_ACTION_PATH/run.sh"'
 
     - name: Conclude APEX Load performance gate

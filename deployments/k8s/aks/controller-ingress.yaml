@@ -29,6 +29,24 @@ spec:
     - host: apexload.example.com # CHANGE-ME: your DNS name
       http:
         paths:
+          # Controller-native CI mutations must reach the admitted execution
+          # leader in HA. OIDC exchange and other read/shared-state traffic use
+          # the ordinary all-replica Service below so authentication remains
+          # available during leader failover.
+          - path: /api/v1/ci
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/system/execution-readiness
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
           - path: /
             pathType: Prefix
             backend:

@@ -74,18 +74,101 @@ write_fallback() {
   fi
 }
 
+prepare_evidence_dir() {
+  local candidate="$1"
+  local anchor
+  local relative
+  local resolved
+  local probe
+
+  if [[ "$candidate" == /* ]]; then
+    anchor=""
+    for trusted_root in "${GITHUB_WORKSPACE:-}" "${RUNNER_TEMP:-}" "$PWD"; do
+      trusted_root="${trusted_root%/}"
+      [[ -n "$trusted_root" ]] || continue
+      if [[ "$candidate" == "$trusted_root" ]]; then
+        anchor="$trusted_root"
+        relative=""
+        break
+      fi
+      if [[ "$candidate" == "$trusted_root/"* ]]; then
+        anchor="$trusted_root"
+        relative="${candidate#"$trusted_root"/}"
+        break
+      fi
+    done
+    [[ -n "$anchor" ]] || return 1
+  else
+    anchor="$PWD"
+    relative="$candidate"
+  fi
+
+  evidence_path_components_are_safe "$anchor" "$relative" || return 1
+
+  mkdir -p -- "$candidate" 2>/dev/null || return 1
+  evidence_path_components_are_safe "$anchor" "$relative" || return 1
+  [[ -d "$candidate" ]] || return 1
+  resolved="$(cd "$candidate" && pwd -P)" || return 1
+  probe="$(mktemp "$resolved/.apexload-write-probe.XXXXXX")" || return 1
+  rm -f -- "$probe" || return 1
+  printf '%s' "$resolved"
+}
+
+evidence_path_components_are_safe() {
+  local current="$1"
+  local remaining="$2"
+  local component
+
+  # Split only on literal slash characters. Line-oriented splitting would
+  # mis-parse a legal filename containing a newline and could miss a symlink.
+  while :; do
+    if [[ "$remaining" == */* ]]; then
+      component="${remaining%%/*}"
+      remaining="${remaining#*/}"
+    else
+      component="$remaining"
+      remaining=""
+    fi
+    case "$component" in
+      ""|.) ;;
+      ..) return 1 ;;
+      *)
+        current="${current%/}/$component"
+        [[ ! -L "$current" ]] || return 1
+        ;;
+    esac
+    [[ -n "$remaining" ]] || break
+  done
+}
+
+evidence_outputs_are_safe() {
+  local root="$1"
+  local output
+  for output in "$root/apexload-result.json" "$root/apexload-results.xml"; do
+    [[ ! -L "$output" ]] || return 1
+    if [[ -e "$output" && ! -f "$output" ]]; then
+      return 1
+    fi
+  done
+}
+
+umask 077
 requested_evidence_dir="${APEXLOAD_INPUT_EVIDENCE_DIRECTORY:-.apexload}"
-evidence_dir="$requested_evidence_dir"
 evidence_path_error=false
-if ! mkdir -p -- "$evidence_dir" 2>/dev/null; then
+if evidence_dir="$(prepare_evidence_dir "$requested_evidence_dir")" \
+  && evidence_outputs_are_safe "$evidence_dir"; then
+  :
+else
   evidence_path_error=true
-  evidence_dir="${RUNNER_TEMP:?RUNNER_TEMP is required}/apexload-evidence-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-${RANDOM}-${RANDOM}"
-  mkdir -p -- "$evidence_dir" || {
-    printf 'apexload action: cannot create requested or fallback evidence directory\n' >&2
+  fallback_evidence_dir="${RUNNER_TEMP:?RUNNER_TEMP is required}/apexload-evidence-${GITHUB_RUN_ID:-local}-${GITHUB_RUN_ATTEMPT:-1}-${RANDOM}-${RANDOM}"
+  if evidence_dir="$(prepare_evidence_dir "$fallback_evidence_dir")" \
+    && evidence_outputs_are_safe "$evidence_dir"; then
+    :
+  else
+    printf 'apexload action: cannot create a safe fallback evidence directory\n' >&2
     exit 2
-  }
+  fi
 fi
-evidence_dir="$(cd "$evidence_dir" && pwd -P)" || exit 2
 json_path="$evidence_dir/apexload-result.json"
 junit_path="$evidence_dir/apexload-results.xml"
 

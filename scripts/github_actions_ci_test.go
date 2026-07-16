@@ -154,6 +154,7 @@ func TestAuthoritativeCIWorkflowContract(t *testing.T) {
 		"expected_skipped=",
 		"go test",
 		"-race -shuffle=on -count=1",
+		"CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build",
 		"jms_servicebus_real",
 		"npm run lint:a11y",
 		"npm audit --audit-level=high",

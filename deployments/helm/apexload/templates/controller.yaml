@@ -6,6 +6,12 @@ kind: Service
 {{- if and .Values.controller.ha.enabled (ne .Values.dataPlatform.cacheBackend "redis") }}
 {{- fail "controller.ha.enabled requires dataPlatform.cacheBackend=redis" }}
 {{- end }}
+{{- if and (gt (int .Values.controller.replicas) 1) (not .Values.controller.ha.enabled) }}
+{{- fail "controller.replicas greater than 1 requires controller.ha.enabled=true" }}
+{{- end }}
+{{- if and .Values.controller.ha.enabled (not (has .Values.controller.ha.endpointAddressType (list "IPv4" "IPv6"))) }}
+{{- fail "controller.ha.endpointAddressType must be IPv4 or IPv6" }}
+{{- end }}
 metadata:
   name: apexload-controller
   namespace: {{ include "apexload.namespace" . }}
@@ -23,6 +29,80 @@ spec:
     - name: metrics
       port: 9091
       targetPort: metrics
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: apexload-controller-active
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: active-controller
+{{ include "apexload.labels" . | indent 4 }}
+spec:
+{{- if not .Values.controller.ha.enabled }}
+  selector:
+    app.kubernetes.io/name: apexload-controller
+{{- end }}
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+{{- if .Values.controller.ha.enabled }}
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: apexload-controller-active
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+    kubernetes.io/service-name: apexload-controller-active
+    endpointslice.kubernetes.io/managed-by: apexload-controller
+{{ include "apexload.labels" . | indent 4 }}
+  annotations:
+    apexload.io/execution-lease-owner: ""
+    apexload.io/execution-lease-generation: "0"
+addressType: {{ .Values.controller.ha.endpointAddressType | quote }}
+ports:
+  - name: http
+    protocol: TCP
+    port: 8080
+endpoints: []
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: apexload-controller-active-endpoint
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+{{ include "apexload.labels" . | indent 4 }}
+rules:
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+    resourceNames:
+      - apexload-controller-active
+    verbs:
+      - get
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: apexload-controller-active-endpoint
+  namespace: {{ include "apexload.namespace" . }}
+  labels:
+{{ include "apexload.labels" . | indent 4 }}
+subjects:
+  - kind: ServiceAccount
+    name: {{ .Values.controller.serviceAccountName }}
+    namespace: {{ include "apexload.namespace" . }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: apexload-controller-active-endpoint
+{{- end }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -99,6 +179,26 @@ spec:
 {{- if .Values.controller.ha.enabled }}
             - name: APEXLOAD_CONTROLLER_HA
               value: "true"
+            - name: APEXLOAD_ACTIVE_ENDPOINT_SLICE
+              value: apexload-controller-active
+            - name: APEXLOAD_ACTIVE_ENDPOINT_SERVICE
+              value: apexload-controller-active
+            - name: APEXLOAD_ACTIVE_ENDPOINT_TOKEN_FILE
+              value: /var/run/secrets/apexload-active-endpoint/token
+            - name: APEXLOAD_ACTIVE_ENDPOINT_CA_FILE
+              value: /var/run/secrets/apexload-active-endpoint/ca.crt
+            - name: APEXLOAD_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: APEXLOAD_POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: APEXLOAD_POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
 {{- end }}
           envFrom:
             - configMapRef:
@@ -113,6 +213,11 @@ spec:
             - name: grpc-tls
               mountPath: /etc/apexload/grpc-tls
               readOnly: true
+{{- if .Values.controller.ha.enabled }}
+            - name: active-endpoint-identity
+              mountPath: /var/run/secrets/apexload-active-endpoint
+              readOnly: true
+{{- end }}
           readinessProbe:
             httpGet:
               path: /api/v1/system/readiness
@@ -138,3 +243,17 @@ spec:
         - name: grpc-tls
           secret:
             secretName: {{ .Values.controller.grpcTlsSecretName }}
+{{- if .Values.controller.ha.enabled }}
+        - name: active-endpoint-identity
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+{{- end }}

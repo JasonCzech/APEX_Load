@@ -68,6 +68,9 @@ controller:
   ciOIDCAudience: ""
   ha:
     enabled: false
+    # EndpointSlice address family for the leader-only controller Service.
+    # Set IPv6 for IPv6-only clusters.
+    endpointAddressType: IPv4
   serviceAccountName: apexload-controller
   grpcTlsSecretName: apexload-controller-grpc-tls
   resources:

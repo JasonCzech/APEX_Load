@@ -22,6 +22,20 @@ spec:
     - host: {{ include "apexload.requiredCleanValue" (list "ingress.host" .Values.ingress.host) }}
       http:
         paths:
+          - path: /api/v1/ci
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/system/execution-readiness
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
           - path: /
             pathType: Prefix
             backend:

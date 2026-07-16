@@ -3,6 +3,7 @@ kind: Kustomization
 namespace: apexload
 resources:
   - ../aks
+  - active-controller-endpoint.yaml
 patches:
   - target:
       kind: Deployment
@@ -16,3 +17,71 @@ patches:
         value:
           name: APEXLOAD_CONTROLLER_HA
           value: "true"
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APEXLOAD_ACTIVE_ENDPOINT_SLICE
+          value: apexload-controller-active
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APEXLOAD_ACTIVE_ENDPOINT_SERVICE
+          value: apexload-controller-active
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APEXLOAD_ACTIVE_ENDPOINT_TOKEN_FILE
+          value: /var/run/secrets/apexload-active-endpoint/token
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APEXLOAD_ACTIVE_ENDPOINT_CA_FILE
+          value: /var/run/secrets/apexload-active-endpoint/ca.crt
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APEXLOAD_POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APEXLOAD_POD_NAMESPACE
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.namespace
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value:
+          name: APEXLOAD_POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+      - op: add
+        path: /spec/template/spec/containers/0/volumeMounts/-
+        value:
+          name: active-endpoint-identity
+          mountPath: /var/run/secrets/apexload-active-endpoint
+          readOnly: true
+      - op: add
+        path: /spec/template/spec/volumes/-
+        value:
+          name: active-endpoint-identity
+          projected:
+            defaultMode: 288
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+  - target:
+      kind: Service
+      name: apexload-controller-active
+    patch: |-
+      - op: remove
+        path: /spec/selector

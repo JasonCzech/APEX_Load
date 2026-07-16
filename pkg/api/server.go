@@ -95,6 +95,12 @@ type Server struct {
 	fleetProvisioningMu       sync.Mutex
 	fleetProvisioningActive   map[string]string
 	leadership                *executionLeadership
+	activeEndpointPublisher   ExecutionEndpointPublisher
+	activeEndpointMu          sync.RWMutex
+	activeEndpointPublished   bool
+	activeEndpointOwnerID     string
+	activeEndpointGeneration  uint64
+	activeEndpointLastAttempt time.Time
 	mux                       *http.ServeMux
 	backgroundMu              sync.Mutex
 	backgroundStopping        bool
@@ -173,6 +179,11 @@ type ServerConfig struct {
 	// performs test execution. Requires a store that supports scheduler leases
 	// (SQLite or PostgreSQL). Off by default (single-active controller).
 	HAExecutionLeadership bool
+	// ActiveEndpointPublisher maintains the selectorless Kubernetes Service used
+	// for leader-only execution/CI traffic. It is configured only for HA
+	// Kubernetes deployments; ordinary read traffic continues to use the
+	// all-replica Service.
+	ActiveEndpointPublisher ExecutionEndpointPublisher
 }
 
 // NewServer wires the HTTP server, test runner, websocket hub, recorder, and routes.
@@ -222,15 +233,6 @@ func NewServer(cfg ServerConfig) *Server {
 		runnerOpts = append(runnerOpts, WithExecutionBackend(distributedBackend))
 	}
 	runner := NewTestRunner(cfg.MaxConcurrent, hub, cfg.Store, runnerOpts...)
-	if leadership != nil {
-		leadership.setOnLoss(func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			defer cancel()
-			if err := runner.teardownActiveTestsAfterLeadershipLoss(ctx); err != nil {
-				slog.Error("failed to tear down stale runtimes after execution leadership loss", "err", err)
-			}
-		})
-	}
 	runner.setLiveStateStore(cache)
 	var discovery *generatorDiscovery
 	if distributedBackend != nil && len(discoverySpecs) > 0 {
@@ -265,6 +267,7 @@ func NewServer(cfg ServerConfig) *Server {
 		collectorMetrics:        newCollectorMetricStore(),
 		fleetProvisioningActive: make(map[string]string),
 		leadership:              leadership,
+		activeEndpointPublisher: cfg.ActiveEndpointPublisher,
 		mux:                     http.NewServeMux(),
 		desktopMode:             cfg.DesktopMode,
 		bridgeMode:              cfg.BridgeMode,
@@ -284,6 +287,14 @@ func NewServer(cfg ServerConfig) *Server {
 		staticFS:                StaticFS,
 	}
 	if leadership != nil {
+		leadership.setOnLoss(func() {
+			s.clearActiveExecutionEndpoint()
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+			defer cancel()
+			if err := runner.teardownActiveTestsAfterLeadershipLoss(ctx); err != nil {
+				slog.Error("failed to tear down stale runtimes after execution leadership loss", "err", err)
+			}
+		})
 		leadership.setOnAcquire(func() {
 			for leadership.IsLeader() {
 				if err := runner.reloadAndReconcile(); err != nil {
@@ -315,6 +326,7 @@ func NewServer(cfg ServerConfig) *Server {
 			}
 		})
 		leadership.setOnAdmit(func() {
+			s.publishActiveExecutionEndpoint()
 			s.launchBackground(func() {
 				runner.ReconcilePendingTests()
 				s.wakeArchiveFinalizationRetry()
@@ -851,6 +863,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/system/health", cors(log(http.HandlerFunc(s.handleHealthCheck))))
 	s.mux.Handle("GET /api/v1/system/version", cors(log(http.HandlerFunc(s.handleSystemVersion))))
 	s.mux.Handle("GET /api/v1/system/readiness", cors(log(http.HandlerFunc(s.handleSystemReadiness))))
+	s.mux.Handle("GET /api/v1/system/execution-readiness", cors(log(http.HandlerFunc(s.handleExecutionReadiness))))
 	s.mux.Handle("GET /api/v1/downloads/recording-agent/latest", cors(log(auth(http.HandlerFunc(s.handleDownloadRecordingAgent)))))
 	s.mux.Handle("GET /api/v1/downloads/recording-agent/latest/checksum", cors(log(auth(http.HandlerFunc(s.handleRecordingAgentChecksum)))))
 	s.mux.Handle("GET /api/v1/downloads/desktop/latest", cors(log(auth(http.HandlerFunc(s.handleDownloadDesktopApp)))))
@@ -1689,6 +1702,14 @@ func (s *Server) RunExecutionLeadership(ctx context.Context) {
 	if s == nil || s.leadership == nil {
 		return
 	}
+	var activeEndpointDone chan struct{}
+	if s.activeEndpointPublisher != nil {
+		activeEndpointDone = make(chan struct{})
+		go func() {
+			defer close(activeEndpointDone)
+			s.runActiveExecutionEndpointPublisher(ctx)
+		}()
+	}
 	// A generator will not revive an expired execution generation. Keep the
 	// current durable term alive across the configured fleet even while no test
 	// is running, otherwise the first run after a long idle period would be
@@ -1708,6 +1729,9 @@ func (s *Server) RunExecutionLeadership(ctx context.Context) {
 	keeperCancel()
 	if keeperDone != nil {
 		<-keeperDone
+	}
+	if activeEndpointDone != nil {
+		<-activeEndpointDone
 	}
 }
 
