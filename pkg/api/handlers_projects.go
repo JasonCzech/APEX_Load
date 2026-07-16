@@ -329,14 +329,19 @@ func validateGitHubActionsPolicy(policy storage.GitHubActionsPolicy) error {
 	if !policy.Enabled {
 		return nil
 	}
-	if err := validateOIDCSecureURL("GitHub Actions issuer", policy.Issuer); err != nil {
+	if err := validateGitHubActionsTrustURL("issuer", policy.Issuer); err != nil {
 		return errProjectSettings(err.Error())
 	}
-	if err := validateOIDCSecureURL("GitHub Actions server URL", policy.ServerURL); err != nil {
+	if err := validateGitHubActionsTrustURL("server URL", policy.ServerURL); err != nil {
 		return errProjectSettings(err.Error())
 	}
-	if policy.Audience != "" && (len(policy.Audience) > 512 || strings.ContainsAny(policy.Audience, "\r\n\x00")) {
-		return errProjectSettings("github.actions.audience is invalid")
+	if err := validateGitHubActionsIssuerServerPair(policy.Issuer, policy.ServerURL); err != nil {
+		return errProjectSettings(err.Error())
+	}
+	if policy.Audience != "" {
+		if err := validateCIOIDCAudience(policy.Audience); err != nil {
+			return errProjectSettings("github.actions.audience is invalid: " + err.Error())
+		}
 	}
 	if len(policy.AllowedRepositoryIDs) == 0 && len(policy.AllowedRepositories) == 0 {
 		return errProjectSettings("github.actions requires at least one allowed repository id or name")

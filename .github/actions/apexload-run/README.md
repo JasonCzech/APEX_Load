@@ -42,6 +42,9 @@ Local mode is an explicit smoke-test fallback:
 The action does not upload artifacts itself because GitHub.com and GHES support
 different artifact-action generations. Upload the `json-path` and `junit-path`
 outputs in the caller using the action version supported by that server.
+Because the default evidence directory is `.apexload`, set the uploader's
+`include-hidden-files: true` input for those explicit output paths; do not enable
+hidden files for broad or untrusted directories.
 When the action downloads `apexctl`, its pinned `actions/setup-node` step
 provides Node 22 for strict signed-manifest validation; mirror that action and
 toolcache on air-gapped GHES runners.

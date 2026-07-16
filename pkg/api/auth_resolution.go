@@ -535,6 +535,7 @@ var serviceAccountScopeRules = []serviceAccountScopeRule{
 	{method: http.MethodDelete, exact: "/api/v1/system/settings", scope: "settings:manage"},
 	{method: http.MethodPatch, exact: "/api/v1/system/generators/drain", scope: "settings:manage"},
 	{prefix: "/api/v1/system/restarts", scope: "settings:manage"},
+	{method: http.MethodPost, prefix: "/api/v1/system/deployment-lease/", scope: "deployments:manage"},
 	{prefix: "/api/v1/system/", scope: "system:read"},
 	{method: http.MethodGet, prefix: "/api/v1/results", scope: "results:read"},
 	{method: http.MethodHead, prefix: "/api/v1/results", scope: "results:read"},

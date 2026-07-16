@@ -6,11 +6,13 @@ die() {
   exit 1
 }
 
+root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$root_dir/scripts/release/semver.sh"
 tag="${1:-}"
 expected_commit="${2:-}"
 
-[[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]] \
-  || die "tag must be a semantic release tag (vMAJOR.MINOR.PATCH[-prerelease])"
+is_apex_release_tag "$tag" \
+  || die "tag must be a canonical semantic release tag (vMAJOR.MINOR.PATCH[-prerelease])"
 [[ "$expected_commit" =~ ^[0-9a-f]{40}$ ]] || die "expected commit must be a full lowercase SHA"
 
 [[ "$(git cat-file -t "refs/tags/${tag}" 2>/dev/null || true)" == tag ]] \

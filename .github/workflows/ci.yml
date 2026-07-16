@@ -2,6 +2,11 @@ name: CI
 
 on:
   workflow_call:
+    inputs:
+      checkout-ref:
+        description: Exact already-trusted commit to validate for a release call.
+        required: false
+        type: string
   pull_request:
   push:
     branches:
@@ -26,8 +31,11 @@ env:
 jobs:
   fork-static:
     name: Fork static DSL validation
-    if: github.event_name == 'pull_request' && (github.event.pull_request.head.repo.id != github.event.repository.id || github.event.pull_request.head.repo.full_name != github.repository)
-    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'apexload-ci-unprivileged' }}
+    # Never check out contributor-controlled bytes onto a GHES self-hosted
+    # runner. GitHub.com can safely provide an isolated hosted runner for this
+    # deliberately static-only fork validation.
+    if: github.server_url == 'https://github.com' && github.event_name == 'pull_request' && (github.event.pull_request.head.repo.id != github.event.repository.id || github.event.pull_request.head.repo.full_name != github.repository)
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
       contents: read
@@ -35,6 +43,7 @@ jobs:
       - name: Checkout untrusted pull request
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -43,6 +52,37 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: git diff --check "${BASE_SHA}" "${HEAD_SHA}"
+
+      - name: Enforce the static-only fork change boundary
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          disallowed=()
+          while IFS= read -r -d '' file; do
+            case "${file}" in
+              *.md|LICENSE|NOTICE|examples/*.json)
+                entry=$(git ls-tree "${HEAD_SHA}" -- "${file}")
+                case "${entry}" in
+                  ""|100644\ blob\ *|100755\ blob\ *)
+                    ;;
+                  *)
+                    disallowed+=("${file}")
+                    ;;
+                esac
+                ;;
+              *)
+                disallowed+=("${file}")
+                ;;
+            esac
+          done < <(git diff --no-renames --name-only -z "${BASE_SHA}" "${HEAD_SHA}")
+          if (( ${#disallowed[@]} > 0 )); then
+            echo "Fork pull requests may change only documentation and static JSON examples." >&2
+            echo "Import source, workflow, container, dashboard, or test changes onto a same-repository review branch for full CI." >&2
+            printf 'disallowed path: %q\n' "${disallowed[@]}" >&2
+            exit 1
+          fi
 
       - name: Validate changed JSON and DSL syntax without executing repository code
         env:
@@ -58,7 +98,7 @@ jobs:
             fi
             jq empty -- "${file}"
             checked=$((checked + 1))
-          done < <(git diff --name-only --diff-filter=ACMR -z "${BASE_SHA}" "${HEAD_SHA}" -- '*.json')
+          done < <(git diff --name-only --diff-filter=ACMRT -z "${BASE_SHA}" "${HEAD_SHA}" -- '*.json')
           printf 'validated %d changed JSON file(s)\n' "${checked}"
 
   workflow-policy:
@@ -70,6 +110,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
           persist-credentials: false
 
       - name: Install pinned actionlint
@@ -116,7 +157,7 @@ jobs:
           wheel="${RUNNER_TEMP}/zizmor-${ZIZMOR_VERSION}-py3-none-manylinux_2_28_x86_64.whl"
           curl --fail --silent --show-error --location --retry 3 --output "${wheel}" "${ZIZMOR_URL}"
           printf '%s  %s\n' "${ZIZMOR_SHA256}" "${wheel}" | sha256sum --check --strict
-          python3 -m pip install --disable-pip-version-check --no-input --user "${wheel}"
+          python3 -m pip install --disable-pip-version-check --no-input --no-deps --user "${wheel}"
           "${HOME}/.local/bin/zizmor" --version
 
       - name: Enforce repository workflow policy
@@ -124,7 +165,7 @@ jobs:
 
       - name: Validate workflow syntax
         run: |
-          "${RUNNER_TEMP}/bin/actionlint" -color
+          "${RUNNER_TEMP}/bin/actionlint" -color -shellcheck="${RUNNER_TEMP}/bin/shellcheck"
 
       - name: Audit workflow security
         run: |
@@ -156,6 +197,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
           persist-credentials: false
 
       - name: Setup Go from go.mod
@@ -187,13 +229,21 @@ jobs:
         run: |
           set -euo pipefail
           go mod tidy
-          git diff --exit-code -- go.mod go.sum
+          changes="$(git status --porcelain=v1 --untracked-files=all -- go.mod go.sum)"
+          if [[ -n "$changes" ]]; then
+            printf 'go mod tidy changed dependency files:\n%s\n' "$changes" >&2
+            exit 1
+          fi
 
       - name: Verify generated artifacts are current
         run: |
           set -euo pipefail
           go generate ./...
-          git diff --exit-code
+          changes="$(git status --porcelain=v1 --untracked-files=all)"
+          if [[ -n "$changes" ]]; then
+            printf 'go generate left stale, deleted, or untracked generated artifacts:\n%s\n' "$changes" >&2
+            exit 1
+          fi
 
   go-tests:
     name: Go race tests
@@ -204,6 +254,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
           persist-credentials: false
 
       - name: Setup Go from go.mod
@@ -246,6 +297,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -264,7 +316,7 @@ jobs:
       - name: Build all Go commands with deterministic metadata
         env:
           BUILD_VERSION: 0.0.0-ci
-          BUILD_COMMIT: ${{ github.sha }}
+          BUILD_COMMIT: ${{ inputs.checkout-ref || github.sha }}
           BUILD_TIME: "1970-01-01T00:00:00Z"
         run: |
           set -euo pipefail
@@ -322,6 +374,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
           persist-credentials: false
 
       - name: Setup Go from go.mod
@@ -357,6 +410,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
           persist-credentials: false
 
       - name: Setup Node 22
@@ -376,9 +430,9 @@ jobs:
         working-directory: dashboard
         run: npm ci --ignore-scripts
 
-      - name: Audit production dependencies
+      - name: Audit all dependencies
         working-directory: dashboard
-        run: npm audit --omit=dev --audit-level=high
+        run: npm audit --audit-level=high
 
       - name: Type check
         working-directory: dashboard
@@ -407,9 +461,15 @@ jobs:
           npm run build
           npm run bundle:check
 
-      - name: Install Chromium for Playwright
+      - name: Install Chromium and hosted-runner dependencies
+        if: github.server_url == 'https://github.com'
         working-directory: dashboard
-        run: npx playwright install --with-deps chromium
+        run: ./node_modules/.bin/playwright install --with-deps chromium
+
+      - name: Install Chromium from the GHES browser mirror
+        if: github.server_url != 'https://github.com'
+        working-directory: dashboard
+        run: ./node_modules/.bin/playwright install chromium
 
       - name: Browser smoke against the embedded controller dashboard
         env:
@@ -460,6 +520,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
           persist-credentials: false
 
       - name: Install verified deployment CLIs
@@ -525,13 +586,51 @@ jobs:
           terraform -chdir=deployments/azure/terraform init -backend=false -input=false -lockfile=readonly
           terraform -chdir=deployments/azure/terraform validate
 
+      - name: Install checksum-pinned custom resource schemas
+        env:
+          # CRDs-catalog snapshot 34cef0fc2698bbb611f475515e555a2d7ca85b6c.
+          # GHES installations can mirror this exact directory internally.
+          CRD_SCHEMA_BASE_URL: ${{ vars.KUBERNETES_CRD_SCHEMA_BASE_URL || 'https://raw.githubusercontent.com/datreeio/CRDs-catalog/34cef0fc2698bbb611f475515e555a2d7ca85b6c' }}
+        run: |
+          set -euo pipefail
+          [[ "$CRD_SCHEMA_BASE_URL" == https://* ]] || {
+            printf 'CRD schema mirror must use HTTPS: %s\n' "$CRD_SCHEMA_BASE_URL" >&2
+            exit 1
+          }
+          schema_root="${RUNNER_TEMP}/crd-schemas"
+          mkdir -p \
+            "${schema_root}/keda.sh" \
+            "${schema_root}/cert-manager.io" \
+            "${schema_root}/monitoring.coreos.com"
+          schemas=(
+            'keda.sh/scaledobject_v1alpha1.json|keda.sh/ScaledObject_v1alpha1.json|f0e0801dd04d22c875ab14b2de908143d0b293430b8c2d5d71bafcf1a4e05b4e'
+            'keda.sh/triggerauthentication_v1alpha1.json|keda.sh/TriggerAuthentication_v1alpha1.json|6dc3be31e2517d33c178015e0a943c281ab9eedaa55701ef2eadddaf7b169c36'
+            'cert-manager.io/certificate_v1.json|cert-manager.io/Certificate_v1.json|d3128cf7805dd289beb96e808e0e03294ef11affac7022fa955c370df1a767ac'
+            'cert-manager.io/issuer_v1.json|cert-manager.io/Issuer_v1.json|d92fc87966a07c2315f3745a2072cb5b408d989e3b12028b4bdb6c3af0afe2a5'
+            'monitoring.coreos.com/servicemonitor_v1.json|monitoring.coreos.com/ServiceMonitor_v1.json|8978f86e2a7cb281a9ca7bc30d857e0553666658dfe062078c51e99d3f20cd14'
+            'monitoring.coreos.com/prometheusrule_v1.json|monitoring.coreos.com/PrometheusRule_v1.json|9cd71d75b714b541a0be960b46bd961dbf1f0106071381cd88f54dfe80b8bd9d'
+          )
+          for entry in "${schemas[@]}"; do
+            IFS='|' read -r remote_path local_path checksum <<<"$entry"
+            destination="${schema_root}/${local_path}"
+            partial="${destination}.partial"
+            curl --fail --silent --show-error --location \
+              --connect-timeout 10 --max-time 60 --retry 3 --retry-all-errors \
+              --output "$partial" "${CRD_SCHEMA_BASE_URL%/}/${remote_path}"
+            printf '%s  %s\n' "$checksum" "$partial" | sha256sum --check --strict
+            mv "$partial" "$destination"
+          done
+
       - name: Validate every Kustomize overlay
         run: |
           set -euo pipefail
           while IFS= read -r overlay; do
             output="${RUNNER_TEMP}/kustomize-$(printf '%s' "${overlay}" | tr '/' '-').yaml"
             kubectl kustomize "${overlay}" >"${output}"
-            "${RUNNER_TEMP}/bin/kubeconform" -strict -ignore-missing-schemas "${output}"
+            "${RUNNER_TEMP}/bin/kubeconform" -strict \
+              -schema-location default \
+              -schema-location "${RUNNER_TEMP}/crd-schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+              "${output}"
           done < <(find deployments/k8s -name kustomization.yaml -exec dirname {} \; | sort)
 
       - name: Validate the AKS renderer
@@ -545,7 +644,10 @@ jobs:
         run: |
           set -euo pipefail
           scripts/render-aks-manifests.sh --output "${RUNNER_TEMP}/apexload-aks-rendered.yaml"
-          "${RUNNER_TEMP}/bin/kubeconform" -strict -ignore-missing-schemas "${RUNNER_TEMP}/apexload-aks-rendered.yaml"
+          "${RUNNER_TEMP}/bin/kubeconform" -strict \
+            -schema-location default \
+            -schema-location "${RUNNER_TEMP}/crd-schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+            "${RUNNER_TEMP}/apexload-aks-rendered.yaml"
 
       - name: Validate Helm chart
         run: |
@@ -560,7 +662,10 @@ jobs:
           )
           helm lint deployments/helm/apexload "${values[@]}"
           helm template apexload deployments/helm/apexload --namespace apexload "${values[@]}" >"${RUNNER_TEMP}/apexload-helm.yaml"
-          "${RUNNER_TEMP}/bin/kubeconform" -strict -ignore-missing-schemas "${RUNNER_TEMP}/apexload-helm.yaml"
+          "${RUNNER_TEMP}/bin/kubeconform" -strict \
+            -schema-location default \
+            -schema-location "${RUNNER_TEMP}/crd-schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+            "${RUNNER_TEMP}/apexload-helm.yaml"
           if grep -Ein 'changeme|change-me' "${RUNNER_TEMP}/apexload-helm.yaml"; then
             echo "rendered Helm manifest contains unresolved placeholder values" >&2
             exit 1
@@ -570,10 +675,12 @@ jobs:
         run: |
           set -euo pipefail
           docker compose --file compose.yaml config --quiet
-          docker run --rm --volume "${PWD}/deployments/docker/prometheus:/etc/apexload:ro" \
-            "${PROMETHEUS_IMAGE}" promtool check config /etc/apexload/prometheus.yml
-          docker run --rm --volume "${PWD}/deployments/docker/prometheus:/etc/apexload:ro" \
-            "${PROMETHEUS_IMAGE}" promtool check rules /etc/apexload/apexload-rules.yml
+          docker run --rm --entrypoint /bin/promtool \
+            --volume "${PWD}/deployments/docker/prometheus:/etc/apexload:ro" \
+            "${PROMETHEUS_IMAGE}" check config /etc/apexload/prometheus.yml
+          docker run --rm --entrypoint /bin/promtool \
+            --volume "${PWD}/deployments/docker/prometheus:/etc/apexload:ro" \
+            "${PROMETHEUS_IMAGE}" check rules /etc/apexload/apexload-rules.yml
 
   containers:
     name: Container (${{ matrix.binary }}, ${{ matrix.profile }})
@@ -596,6 +703,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
           persist-credentials: false
 
       - name: Setup Docker Buildx
@@ -612,7 +720,7 @@ jobs:
           build-args: |
             BINARY=${{ matrix.binary }}
             GO_BUILD_TAGS=${{ matrix.profile }}
-            VERSION=ci
+            VERSION=0.0.0-ci-smoke
             COMMIT=0000000000000000000000000000000000000000
             BUILD_TIME=1970-01-01T00:00:00Z
 
@@ -658,6 +766,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
           persist-credentials: false
 
       - name: Review dependency changes
@@ -675,6 +784,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
           persist-credentials: false
 
       - name: Setup Go from go.mod
@@ -701,6 +811,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
           persist-credentials: false
 
       - name: Initialize CodeQL
@@ -714,6 +825,19 @@ jobs:
         uses: github/codeql-action/analyze@f58f0d11ebf5dedd870fab2f999275f7602cfa46 # codeql-bundle-v2.26.0
         with:
           category: /language:go-javascript-typescript
+
+  ghes-fork-block:
+    name: GHES fork policy block
+    if: github.server_url != 'https://github.com' && github.event_name == 'pull_request' && (github.event.pull_request.head.repo.id != github.event.repository.id || github.event.pull_request.head.repo.full_name != github.repository)
+    # This label must never be assigned to a runner. Keeping this job queued
+    # leaves the stable Required check pending if GHES fork Actions are enabled
+    # contrary to the compatibility runbook, without exposing a self-hosted
+    # runner to a fork-modified workflow.
+    runs-on: apexload-ci-fork-blocked
+    timeout-minutes: 1
+    steps:
+      - name: Fail closed if the sentinel label is ever provisioned
+        run: exit 1
 
   required:
     name: Required
@@ -731,6 +855,7 @@ jobs:
       - dependency-review
       - govulncheck
       - codeql
+      - ghes-fork-block
     runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'apexload-ci-unprivileged' }}
     timeout-minutes: 5
     steps:
@@ -751,10 +876,10 @@ jobs:
 
           if [[ "${IS_UNTRUSTED_PR}" == "true" ]]; then
             expected_success=(fork-static)
-            expected_skipped=("${full_ci_jobs[@]}" dependency-review)
+            expected_skipped=("${full_ci_jobs[@]}" dependency-review ghes-fork-block)
           else
             expected_success=("${full_ci_jobs[@]}")
-            expected_skipped=(fork-static)
+            expected_skipped=(fork-static ghes-fork-block)
             if [[ "${IS_PULL_REQUEST}" == "true" ]]; then
               expected_success+=(dependency-review)
             else
@@ -763,18 +888,22 @@ jobs:
           fi
 
           failures=()
-          for job in "${expected_success[@]}"; do
-            result=$(jq -r --arg job "${job}" '.[$job].result // "missing"' <<< "${JOB_RESULTS}")
-            if [[ "${result}" != "success" ]]; then
-              failures+=("${job}=${result}; expected success")
-            fi
-          done
-          for job in "${expected_skipped[@]}"; do
-            result=$(jq -r --arg job "${job}" '.[$job].result // "missing"' <<< "${JOB_RESULTS}")
-            if [[ "${result}" != "skipped" ]]; then
-              failures+=("${job}=${result}; expected skipped")
-            fi
-          done
+          if (( ${#expected_success[@]} > 0 )); then
+            for job in "${expected_success[@]}"; do
+              result=$(jq -r --arg job "${job}" '.[$job].result // "missing"' <<< "${JOB_RESULTS}")
+              if [[ "${result}" != "success" ]]; then
+                failures+=("${job}=${result}; expected success")
+              fi
+            done
+          fi
+          if (( ${#expected_skipped[@]} > 0 )); then
+            for job in "${expected_skipped[@]}"; do
+              result=$(jq -r --arg job "${job}" '.[$job].result // "missing"' <<< "${JOB_RESULTS}")
+              if [[ "${result}" != "skipped" ]]; then
+                failures+=("${job}=${result}; expected skipped")
+              fi
+            done
+          fi
 
           if (( ${#failures[@]} > 0 )); then
             printf 'Required CI job contract failed:\n' >&2

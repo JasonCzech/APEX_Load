@@ -13,6 +13,9 @@ inputs:
   retention-days:
     description: Artifact retention in days.
     default: "0"
+  include-hidden-files:
+    description: Include reviewed hidden evidence directories such as .apexload. Disable for broad or untrusted paths.
+    default: "false"
 runs:
   using: composite
   steps:
@@ -24,6 +27,7 @@ runs:
         path: ${{ inputs.path }}
         if-no-files-found: ${{ inputs.if-no-files-found }}
         retention-days: ${{ inputs.retention-days }}
+        include-hidden-files: ${{ inputs.include-hidden-files }}
     - name: Upload on GHES
       if: github.server_url != 'https://github.com'
       uses: actions/upload-artifact@c6a3b2bd78b3985e4b2f15397fec357f0fd808de # v3.2.2-node20
@@ -32,3 +36,4 @@ runs:
         path: ${{ inputs.path }}
         if-no-files-found: ${{ inputs.if-no-files-found }}
         retention-days: ${{ inputs.retention-days }}
+        include-hidden-files: ${{ inputs.include-hidden-files }}

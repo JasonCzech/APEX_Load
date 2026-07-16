@@ -8,10 +8,14 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/golang-jwt/jwt/v5"
@@ -64,7 +68,10 @@ type githubActionsOIDCClaims struct {
 }
 
 func (c githubActionsOIDCClaims) effectiveWorkflowRef() string {
-	return firstNonEmpty(strings.TrimSpace(c.WorkflowRef), strings.TrimSpace(c.JobWorkflowRef))
+	// For a reusable workflow, workflow_ref describes the caller while
+	// job_workflow_ref identifies the called workflow that actually defines and
+	// executes this job. Trust the executable workflow when GitHub supplies it.
+	return firstNonEmpty(strings.TrimSpace(c.JobWorkflowRef), strings.TrimSpace(c.WorkflowRef))
 }
 
 type ciBearerClaims struct {
@@ -75,6 +82,7 @@ type ciBearerClaims struct {
 	Ref               string   `json:"ref"`
 	SHA               string   `json:"sha"`
 	WorkflowRef       string   `json:"workflow_ref"`
+	JobWorkflowRef    string   `json:"job_workflow_ref,omitempty"`
 	Environment       string   `json:"environment,omitempty"`
 	RunnerEnvironment string   `json:"runner_environment,omitempty"`
 	RunID             string   `json:"run_id"`
@@ -96,23 +104,76 @@ func withCIClaims(r *http.Request, claims *ciBearerClaims) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), ciClaimsContextKey{}, claims))
 }
 
-func (s *Server) ciOIDCAudience() string {
+func (s *Server) ciOIDCAudience() (string, error) {
 	if configured := strings.TrimSpace(os.Getenv("APEXLOAD_CI_OIDC_AUDIENCE")); configured != "" {
-		return configured
+		if err := validateCIOIDCAudience(configured); err != nil {
+			return "", err
+		}
+		return configured, nil
 	}
-	controllerID := strings.TrimSpace(s.controllerID)
-	if controllerID == "" {
-		controllerID = "controller"
+	// A public controller URL is shared by every replica and remains stable
+	// across restarts, unlike the process-unique controller ID. Hashing its
+	// canonical form produces a deployment-specific audience without exposing
+	// internal host or path details in GitHub's OIDC token.
+	if strings.TrimSpace(os.Getenv("APEXLOAD_PUBLIC_URL")) != "" {
+		publicBase, err := ciPublicBaseURL()
+		if err != nil {
+			return "", fmt.Errorf("derive CI OIDC audience from APEXLOAD_PUBLIC_URL: %w", err)
+		}
+		parsed, err := url.Parse(publicBase)
+		if err != nil {
+			return "", fmt.Errorf("derive CI OIDC audience: %w", err)
+		}
+		parsed.Scheme = strings.ToLower(parsed.Scheme)
+		host := strings.ToLower(parsed.Hostname())
+		port := parsed.Port()
+		if port == "443" {
+			port = ""
+		}
+		if port != "" {
+			host = net.JoinHostPort(host, port)
+		} else if strings.Contains(host, ":") {
+			host = "[" + host + "]"
+		}
+		parsed.Host = host
+		sum := sha256.Sum256([]byte(parsed.String()))
+		return "apexload://ci/" + hex.EncodeToString(sum[:16]), nil
 	}
-	return "apexload://" + controllerID
+	if productionMode() || (s != nil && s.haExecution) {
+		return "", fmt.Errorf("APEXLOAD_CI_OIDC_AUDIENCE or APEXLOAD_PUBLIC_URL is required for a stable deployment-specific CI OIDC audience")
+	}
+	return "apexload://ci-development", nil
+}
+
+func validateCIOIDCAudience(audience string) error {
+	if audience == "" || strings.TrimSpace(audience) != audience || len(audience) > 512 {
+		return fmt.Errorf("CI OIDC audience is empty, padded, or exceeds 512 bytes")
+	}
+	if audience == "apexload://ci" {
+		return fmt.Errorf("legacy generic CI OIDC audience is not allowed; configure a deployment-specific audience")
+	}
+	if audience == "apexload://ci-development" {
+		return fmt.Errorf("development CI OIDC audience is reserved for the automatic single-controller fallback and cannot be configured explicitly")
+	}
+	for _, character := range audience {
+		if unicode.IsSpace(character) || unicode.IsControl(character) {
+			return fmt.Errorf("CI OIDC audience contains whitespace or control characters")
+		}
+	}
+	return nil
 }
 
 func (s *Server) handleCIWellKnown(w http.ResponseWriter, _ *http.Request) {
+	audience, err := s.ciOIDCAudience()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "CI OIDC audience is unavailable: "+err.Error())
+		return
+	}
 	w.Header().Set("Cache-Control", "public, max-age=300")
 	writeJSON(w, http.StatusOK, map[string]any{
 		"schema_version": 1,
 		"controller_id":  strings.TrimSpace(s.controllerID),
-		"oidc_audience":  s.ciOIDCAudience(),
+		"oidc_audience":  audience,
 		"ci_api_version": ciAPIVersion,
 		"auth_modes":     []string{"oidc", "api-key"},
 	})
@@ -165,7 +226,17 @@ func (s *Server) handleGitHubCIExchange(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusUnauthorized, "GitHub Actions authentication denied")
 		return
 	}
-	audience := s.ciOIDCAudience()
+	if err := validateGitHubActionsIssuerServerPair(policy.Issuer, policy.ServerURL); err != nil {
+		s.recordCIExchangeAudit(r, "denied", "trust_configuration_invalid", req.ProjectID, githubActionsOIDCClaims{})
+		writeError(w, http.StatusServiceUnavailable, "GitHub Actions OIDC trust is misconfigured")
+		return
+	}
+	audience, err := s.ciOIDCAudience()
+	if err != nil {
+		s.recordCIExchangeAudit(r, "denied", "audience_configuration_invalid", req.ProjectID, githubActionsOIDCClaims{})
+		writeError(w, http.StatusServiceUnavailable, "GitHub Actions OIDC audience is unavailable")
+		return
+	}
 	if policy.Audience != "" && policy.Audience != audience {
 		s.recordCIExchangeAudit(r, "denied", "audience_configuration_mismatch", req.ProjectID, githubActionsOIDCClaims{})
 		writeError(w, http.StatusServiceUnavailable, "GitHub Actions OIDC audience is misconfigured")
@@ -185,6 +256,15 @@ func (s *Server) handleGitHubCIExchange(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusUnauthorized, "GitHub Actions authentication denied")
 		return
 	}
+	// go-oidc's ClientID check is intentionally membership-based: it accepts a
+	// token when the requested audience is one member of a multi-valued aud
+	// claim. GitHub Actions issues this controller token for one exact audience,
+	// so enforce that stronger contract independently.
+	if len(idToken.Audience) != 1 || idToken.Audience[0] != audience {
+		s.recordCIExchangeAudit(r, "denied", "invalid_audience", req.ProjectID, githubActionsOIDCClaims{})
+		writeError(w, http.StatusUnauthorized, "GitHub Actions authentication denied")
+		return
+	}
 	var claims githubActionsOIDCClaims
 	if err := idToken.Claims(&claims); err != nil {
 		s.recordCIExchangeAudit(r, "denied", "invalid_claims", req.ProjectID, githubActionsOIDCClaims{})
@@ -192,12 +272,17 @@ func (s *Server) handleGitHubCIExchange(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	claims.Subject = firstNonEmpty(claims.Subject, idToken.Subject)
+	if err := validateBoundedGitHubActionsClaim("jti", claims.JTI, 512, true); err != nil {
+		s.recordCIExchangeAudit(r, "denied", "invalid_jti", req.ProjectID, claims)
+		writeError(w, http.StatusUnauthorized, "GitHub Actions authentication denied")
+		return
+	}
 	if err := validateGitHubActionsIdentity(policy, claims); err != nil {
 		s.recordCIExchangeAudit(r, "denied", "policy_rejected", req.ProjectID, claims)
 		writeError(w, http.StatusForbidden, "GitHub Actions identity is not allowed by project policy")
 		return
 	}
-	if err := s.verifyGitHubActionsPullRequestOrigin(r.Context(), project.Settings.GitHub, claims); err != nil {
+	if err := s.verifyGitHubActionsPullRequestOrigin(r.Context(), project.Settings.GitHub, policy, claims); err != nil {
 		s.recordCIExchangeAudit(r, "denied", "fork_or_unverifiable_pull_request", req.ProjectID, claims)
 		writeError(w, http.StatusForbidden, "pull request origin could not be trusted")
 		return
@@ -210,6 +295,11 @@ func (s *Server) handleGitHubCIExchange(w http.ResponseWriter, r *http.Request) 
 	fingerprintSum := sha256.Sum256([]byte(strings.TrimSpace(req.IDToken)))
 	fingerprint := hex.EncodeToString(fingerprintSum[:])
 	cacheKey := ciOIDCExchangeKey(policy.Issuer, req.ProjectID, claims.JTI)
+	if s.ciExchangeRequiresRemoteCache() {
+		s.recordCIExchangeAudit(r, "denied", "exchange_cache_not_ha_safe", req.ProjectID, claims)
+		writeError(w, http.StatusServiceUnavailable, "CI authentication replay protection requires Redis or Valkey when controller HA is enabled")
+		return
+	}
 	if cached, ok, replay := s.cachedCIExchange(cacheKey, fingerprint); ok {
 		if replay {
 			s.recordCIExchangeAudit(r, "denied", "jti_replay", req.ProjectID, claims)
@@ -248,6 +338,16 @@ func (s *Server) handleGitHubCIExchange(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, githubCIExchangeResponse{AccessToken: actual.Token, TokenType: "Bearer", ExpiresIn: maxInt64(0, int64(time.Until(actual.ExpiresAt).Seconds())), ExpiresAt: actual.ExpiresAt})
 }
 
+func (s *Server) ciExchangeRequiresRemoteCache() bool {
+	if s == nil || !s.haExecution {
+		return false
+	}
+	if s.cache == nil {
+		return true
+	}
+	return !cacheBackendIsRemote(s.cache.Info().Backend)
+}
+
 func (s *Server) allowGitHubCIExchange(w http.ResponseWriter, r *http.Request) bool {
 	if s == nil || s.cache == nil {
 		return true
@@ -272,7 +372,7 @@ func (s *Server) allowGitHubCIExchange(w http.ResponseWriter, r *http.Request) b
 
 func (s *Server) githubActionsOIDCProvider(ctx context.Context, issuer string) (*ciOIDCProviderRuntime, error) {
 	issuer = strings.TrimRight(strings.TrimSpace(issuer), "/")
-	if err := validateOIDCSecureURL("GitHub Actions issuer", issuer); err != nil {
+	if err := validateGitHubActionsTrustURL("issuer", issuer); err != nil {
 		return nil, err
 	}
 	s.ciAuthMu.Lock()
@@ -331,15 +431,94 @@ func newGitHubActionsOIDCHTTPClient() (*http.Client, error) {
 	return &http.Client{Timeout: defaultOIDCDiscoveryTimeout, Transport: oidcBoundedRoundTripper{base: transport}, CheckRedirect: sameOriginRedirectPolicy}, nil
 }
 
+func validateGitHubActionsTrustURL(label, raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Hostname() == "" || parsed.User != nil || parsed.Opaque != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return fmt.Errorf("GitHub Actions %s must be an absolute URL without credentials, query, or fragment", label)
+	}
+	if parsed.Scheme == "https" {
+		return nil
+	}
+	if parsed.Scheme == "http" && !productionMode() {
+		host := parsed.Hostname()
+		if strings.EqualFold(host, "localhost") || net.ParseIP(host).IsLoopback() || envBool(githubAllowInsecureHTTPEnv) {
+			return nil
+		}
+	}
+	return fmt.Errorf("GitHub Actions %s must use HTTPS", label)
+}
+
+func validateGitHubActionsIssuerServerPair(issuerRaw, serverRaw string) error {
+	issuerRaw = strings.TrimSpace(issuerRaw)
+	serverRaw = strings.TrimSpace(serverRaw)
+	if err := validateGitHubActionsTrustURL("issuer", issuerRaw); err != nil {
+		return err
+	}
+	if err := validateGitHubActionsTrustURL("server URL", serverRaw); err != nil {
+		return err
+	}
+	issuer, issuerErr := url.Parse(issuerRaw)
+	server, serverErr := url.Parse(serverRaw)
+	if issuerErr != nil || serverErr != nil {
+		return fmt.Errorf("GitHub Actions issuer and server URL must be valid absolute URLs")
+	}
+	if server.Path != "" && server.Path != "/" {
+		return fmt.Errorf("GitHub Actions server URL must identify the GitHub origin without a path")
+	}
+	if server.RawPath != "" && server.EscapedPath() != "/" {
+		return fmt.Errorf("GitHub Actions server URL must identify the GitHub origin without an encoded path")
+	}
+	if strings.EqualFold(server.Hostname(), "github.com") {
+		if serverRaw != "https://github.com" || issuerRaw != defaultGitHubActionsOIDCIssuer {
+			return fmt.Errorf("GitHub.com Actions requires server URL https://github.com and issuer %s", defaultGitHubActionsOIDCIssuer)
+		}
+		return nil
+	}
+	if !sameGitHubActionsURLOrigin(issuer, server) {
+		return fmt.Errorf("GHES Actions issuer and server URL must use the same origin")
+	}
+	if issuer.Path != "/_services/token" || issuer.EscapedPath() != "/_services/token" {
+		return fmt.Errorf("GHES Actions issuer path must be exactly /_services/token")
+	}
+	return nil
+}
+
+func sameGitHubActionsURLOrigin(left, right *url.URL) bool {
+	if left == nil || right == nil || left.Hostname() == "" || right.Hostname() == "" {
+		return false
+	}
+	if !strings.EqualFold(left.Scheme, right.Scheme) || !strings.EqualFold(left.Hostname(), right.Hostname()) {
+		return false
+	}
+	return effectiveGitHubActionsURLPort(left) == effectiveGitHubActionsURLPort(right)
+}
+
+func effectiveGitHubActionsURLPort(parsed *url.URL) string {
+	if parsed == nil {
+		return ""
+	}
+	if port := parsed.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "https":
+		return "443"
+	case "http":
+		return "80"
+	default:
+		return ""
+	}
+}
+
 func validateGitHubActionsIdentity(policy storage.GitHubActionsPolicy, claims githubActionsOIDCClaims) error {
 	if !policy.Enabled {
 		return fmt.Errorf("GitHub Actions policy is disabled")
 	}
+	if err := validateGitHubActionsClaimShape(claims); err != nil {
+		return err
+	}
 	repository := strings.ToLower(strings.TrimSpace(claims.Repository))
 	repositoryID := strings.TrimSpace(claims.RepositoryID)
-	if repository == "" || repositoryID == "" || strings.TrimSpace(claims.Ref) == "" || strings.TrimSpace(claims.SHA) == "" || claims.effectiveWorkflowRef() == "" || strings.TrimSpace(claims.RunID) == "" || strings.TrimSpace(claims.RunAttempt) == "" || strings.TrimSpace(claims.EventName) == "" {
-		return fmt.Errorf("required GitHub Actions identity claims are missing")
-	}
 	if len(policy.AllowedRepositoryIDs) > 0 && !stringSetContains(policy.AllowedRepositoryIDs, repositoryID, false) {
 		return fmt.Errorf("repository id is not allowed")
 	}
@@ -364,11 +543,134 @@ func validateGitHubActionsIdentity(policy storage.GitHubActionsPolicy, claims gi
 	return nil
 }
 
+func validateGitHubActionsClaimShape(claims githubActionsOIDCClaims) error {
+	bounded := []struct {
+		name     string
+		value    string
+		maxBytes int
+		required bool
+	}{
+		{"repository", claims.Repository, 256, true},
+		{"repository_id", claims.RepositoryID, 32, true},
+		{"ref", claims.Ref, 1024, true},
+		{"sha", claims.SHA, 64, true},
+		{"workflow_ref", claims.WorkflowRef, 2048, false},
+		{"job_workflow_ref", claims.JobWorkflowRef, 2048, false},
+		{"environment", claims.Environment, 256, false},
+		{"runner_environment", claims.RunnerEnvironment, 64, false},
+		{"run_id", claims.RunID, 32, true},
+		{"run_attempt", claims.RunAttempt, 20, true},
+		{"actor", claims.Actor, 256, true},
+		{"event_name", claims.EventName, 128, true},
+	}
+	for _, claim := range bounded {
+		if err := validateBoundedGitHubActionsClaim(claim.name, claim.value, claim.maxBytes, claim.required); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(claims.effectiveWorkflowRef()) == "" {
+		return fmt.Errorf("required GitHub Actions workflow identity claim is missing")
+	}
+	owner, repo, ok := splitOwnerRepo(claims.Repository)
+	if !ok || validateGitHubRepositoryCoordinates(owner, repo) != nil {
+		return fmt.Errorf("repository claim is invalid")
+	}
+	if !validPositiveGitHubActionsNumber(claims.RepositoryID) {
+		return fmt.Errorf("repository_id claim must be a positive decimal integer")
+	}
+	if !validPositiveGitHubActionsNumber(claims.RunID) {
+		return fmt.Errorf("run_id claim must be a positive decimal integer")
+	}
+	if !validPositiveGitHubActionsNumber(claims.RunAttempt) {
+		return fmt.Errorf("run_attempt claim must be a positive decimal integer")
+	}
+	if !validGitHubActionsSHA(claims.SHA) {
+		return fmt.Errorf("sha claim must be a 40- or 64-character hexadecimal object id")
+	}
+	if !validGitHubActionsRef(claims.Ref) {
+		return fmt.Errorf("ref claim is invalid")
+	}
+	if claims.WorkflowRef != "" && !validGitHubActionsWorkflowRef(claims.WorkflowRef) {
+		return fmt.Errorf("workflow_ref claim is invalid")
+	}
+	if claims.JobWorkflowRef != "" && !validGitHubActionsWorkflowRef(claims.JobWorkflowRef) {
+		return fmt.Errorf("job_workflow_ref claim is invalid")
+	}
+	return nil
+}
+
+func validateBoundedGitHubActionsClaim(name, value string, maxBytes int, required bool) error {
+	if value == "" {
+		if required {
+			return fmt.Errorf("required GitHub Actions identity claim %s is missing", name)
+		}
+		return nil
+	}
+	if strings.TrimSpace(value) != value || len(value) > maxBytes {
+		return fmt.Errorf("GitHub Actions identity claim %s is invalid or exceeds %d bytes", name, maxBytes)
+	}
+	for _, character := range value {
+		if character < 0x20 || character == 0x7f {
+			return fmt.Errorf("GitHub Actions identity claim %s contains control characters", name)
+		}
+	}
+	return nil
+}
+
+func validPositiveGitHubActionsNumber(value string) bool {
+	parsed, err := strconv.ParseUint(value, 10, 63)
+	return err == nil && parsed > 0
+}
+
+func validGitHubActionsSHA(value string) bool {
+	if len(value) != 40 && len(value) != 64 {
+		return false
+	}
+	for _, character := range value {
+		if !strings.ContainsRune("0123456789abcdefABCDEF", character) {
+			return false
+		}
+	}
+	return true
+}
+
+func validGitHubActionsRef(value string) bool {
+	if !strings.HasPrefix(value, "refs/") || strings.HasSuffix(value, "/") || strings.HasSuffix(value, ".") ||
+		strings.Contains(value, "//") || strings.Contains(value, "..") || strings.Contains(value, "@{") ||
+		strings.ContainsAny(value, " ~^:?*[\\") {
+		return false
+	}
+	return true
+}
+
+func validGitHubActionsWorkflowRef(value string) bool {
+	at := strings.LastIndex(value, "@")
+	if at <= 0 || at == len(value)-1 || !validGitHubActionsRef(value[at+1:]) {
+		return false
+	}
+	path := value[:at]
+	marker := "/.github/workflows/"
+	markerIndex := strings.Index(path, marker)
+	if markerIndex <= 0 || strings.Contains(path[markerIndex+len(marker):], "/") {
+		return false
+	}
+	owner, repo, ok := splitOwnerRepo(path[:markerIndex])
+	if !ok || validateGitHubRepositoryCoordinates(owner, repo) != nil {
+		return false
+	}
+	workflowFile := path[markerIndex+len(marker):]
+	if workflowFile == "" || strings.ContainsAny(workflowFile, `\\?#`) || workflowFile == "." || workflowFile == ".." {
+		return false
+	}
+	lower := strings.ToLower(workflowFile)
+	return strings.HasSuffix(lower, ".yml") || strings.HasSuffix(lower, ".yaml")
+}
+
 // GitHub's OIDC token identifies the base repository but does not carry an
 // immutable head-repository id for pull requests. Verify the workflow-run record
 // through the controller App before exchanging a PR token, and fail closed when
 // that record cannot prove the head repository equals the base repository.
-func (s *Server) verifyGitHubActionsPullRequestOrigin(ctx context.Context, projectPolicy storage.GitHubProjectPolicy, claims githubActionsOIDCClaims) error {
+func (s *Server) verifyGitHubActionsPullRequestOrigin(ctx context.Context, projectPolicy storage.GitHubProjectPolicy, actionsPolicy storage.GitHubActionsPolicy, claims githubActionsOIDCClaims) error {
 	event := strings.ToLower(strings.TrimSpace(claims.EventName))
 	if event == "pull_request_target" {
 		return fmt.Errorf("pull_request_target is prohibited")
@@ -381,6 +683,9 @@ func (s *Server) verifyGitHubActionsPullRequestOrigin(ctx context.Context, proje
 		return fmt.Errorf("invalid repository claim")
 	}
 	settings := s.currentGitHubSettings()
+	if !sameURLOrigin(settings.WebBaseURL, actionsPolicy.ServerURL) || !trustedGitHubAPIURL(actionsPolicy.ServerURL, settings.APIBaseURL) {
+		return fmt.Errorf("GitHub App server does not match the GitHub Actions policy server")
+	}
 	if !settings.Enabled || !settings.appConfigured() || projectPolicy.AppInstallationID <= 0 {
 		return fmt.Errorf("GitHub App verification is required for pull requests")
 	}
@@ -444,7 +749,7 @@ func (s *Server) issueCIBearerToken(projectID string, policy storage.GitHubActio
 	claims := ciBearerClaims{
 		ProjectID: projectID, PolicyRevision: policy.Revision,
 		Repository: strings.ToLower(strings.TrimSpace(identity.Repository)), RepositoryID: strings.TrimSpace(identity.RepositoryID),
-		Ref: strings.TrimSpace(identity.Ref), SHA: strings.TrimSpace(identity.SHA), WorkflowRef: identity.effectiveWorkflowRef(),
+		Ref: strings.TrimSpace(identity.Ref), SHA: strings.TrimSpace(identity.SHA), WorkflowRef: strings.TrimSpace(identity.WorkflowRef), JobWorkflowRef: strings.TrimSpace(identity.JobWorkflowRef),
 		Environment: strings.TrimSpace(identity.Environment), RunnerEnvironment: strings.TrimSpace(identity.RunnerEnvironment),
 		RunID: strings.TrimSpace(identity.RunID), RunAttempt: strings.TrimSpace(identity.RunAttempt), Actor: strings.TrimSpace(identity.Actor), EventName: strings.TrimSpace(identity.EventName),
 		Scopes: []string{"tests:run", "results:read"},
@@ -499,7 +804,10 @@ func (s *Server) verifyCIBearer(raw string) (*ciBearerClaims, error) {
 	if !policy.Enabled || policy.Revision != claims.PolicyRevision {
 		return nil, fmt.Errorf("CI token was invalidated by a project policy change")
 	}
-	identity := githubActionsOIDCClaims{Repository: claims.Repository, RepositoryID: claims.RepositoryID, Ref: claims.Ref, SHA: claims.SHA, WorkflowRef: claims.WorkflowRef, Environment: claims.Environment, RunnerEnvironment: claims.RunnerEnvironment, RunID: claims.RunID, RunAttempt: claims.RunAttempt, EventName: claims.EventName}
+	if err := validateGitHubActionsIssuerServerPair(policy.Issuer, policy.ServerURL); err != nil {
+		return nil, fmt.Errorf("CI token project policy has invalid GitHub Actions trust configuration")
+	}
+	identity := githubActionsOIDCClaims{Repository: claims.Repository, RepositoryID: claims.RepositoryID, Ref: claims.Ref, SHA: claims.SHA, WorkflowRef: claims.WorkflowRef, JobWorkflowRef: claims.JobWorkflowRef, Environment: claims.Environment, RunnerEnvironment: claims.RunnerEnvironment, RunID: claims.RunID, RunAttempt: claims.RunAttempt, Actor: claims.Actor, EventName: claims.EventName}
 	if err := validateGitHubActionsIdentity(policy, identity); err != nil {
 		return nil, fmt.Errorf("CI token no longer satisfies project policy")
 	}
@@ -539,6 +847,12 @@ func (s *Server) ciAuthMiddleware(fallback func(http.Handler) http.Handler) func
 }
 
 func (s *Server) cachedCIExchange(key, fingerprint string) (ciOIDCExchangeCacheEntry, bool, bool) {
+	// An HA replica must confirm every exchange against the shared atomic
+	// backend. A locally cached success must not keep authentication available
+	// after Redis/Valkey becomes unreachable or is replaced.
+	if s == nil || s.haExecution {
+		return ciOIDCExchangeCacheEntry{}, false, false
+	}
 	now := time.Now().UTC()
 	s.ciAuthMu.Lock()
 	defer s.ciAuthMu.Unlock()
@@ -620,6 +934,10 @@ func (s *Server) recordCIExchangeAudit(r *http.Request, status, reason, projectI
 	}
 	if claims.effectiveWorkflowRef() != "" {
 		details["workflow_ref"] = claims.effectiveWorkflowRef()
+	}
+	if claims.WorkflowRef != "" && claims.JobWorkflowRef != "" {
+		details["caller_workflow_ref"] = claims.WorkflowRef
+		details["job_workflow_ref"] = claims.JobWorkflowRef
 	}
 	if claims.RunID != "" {
 		details["run_id"] = claims.RunID

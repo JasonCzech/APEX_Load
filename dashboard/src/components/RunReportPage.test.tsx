@@ -2,7 +2,7 @@
 
 import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 
 import type { TestSummary } from '../types'
 import RunReportPage from './RunReportPage'
@@ -121,9 +121,9 @@ function buildTest(status: TestSummary['status'], archive = true): TestSummary {
 describe('RunReportPage', () => {
   let container: HTMLDivElement
   let root: Root
-  let onOpenCommandCenter: ReturnType<typeof vi.fn>
-  let onOpenLegacyArchive: ReturnType<typeof vi.fn>
-  let onNavigateReport: ReturnType<typeof vi.fn>
+  let onOpenCommandCenter: Mock<(id?: string) => void>
+  let onOpenLegacyArchive: Mock<(id: string) => void>
+  let onNavigateReport: Mock<(next: { lens?: 'executive' | 'engineer' | 'audit'; compare?: string }) => void>
 
   beforeEach(() => {
     mocks.api.getTestReportAnnotations.mockResolvedValue({
@@ -147,9 +147,9 @@ describe('RunReportPage', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    onOpenCommandCenter = vi.fn()
-    onOpenLegacyArchive = vi.fn()
-    onNavigateReport = vi.fn()
+    onOpenCommandCenter = vi.fn<(id?: string) => void>()
+    onOpenLegacyArchive = vi.fn<(id: string) => void>()
+    onNavigateReport = vi.fn<(next: { lens?: 'executive' | 'engineer' | 'audit'; compare?: string }) => void>()
   })
 
   afterEach(async () => {

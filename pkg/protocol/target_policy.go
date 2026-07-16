@@ -55,19 +55,31 @@ func TargetURLAllowed(raw string, allowedHosts []string) bool {
 	if len(allowedHosts) == 0 {
 		return true
 	}
-	parsed, err := url.Parse(strings.TrimSpace(raw))
-	if err != nil {
-		return false
-	}
-	switch strings.ToLower(parsed.Scheme) {
-	case "http", "https", "ws", "wss":
-		return TargetHostAllowed(parsed.Hostname(), allowedHosts)
-	case "about", "data":
-		return true
-	case "blob":
-		return TargetURLAllowed(strings.TrimPrefix(strings.TrimSpace(raw), "blob:"), allowedHosts)
-	default:
-		return false
+	raw = strings.TrimSpace(raw)
+	// blob URLs embed another URL after the scheme. Unwrap them iteratively:
+	// URL schemes are case-insensitive, so a case-sensitive TrimPrefix followed
+	// by recursion would never make progress for BLOB:... and could exhaust the
+	// stack. The input shrinks on every pass, which also safely bounds nested
+	// blob:blob:... values by their configured URL length.
+	for {
+		parsed, err := url.Parse(raw)
+		if err != nil {
+			return false
+		}
+		switch strings.ToLower(parsed.Scheme) {
+		case "http", "https", "ws", "wss":
+			return TargetHostAllowed(parsed.Hostname(), allowedHosts)
+		case "about", "data":
+			return true
+		case "blob":
+			colon := strings.IndexByte(raw, ':')
+			if colon < 0 || colon+1 >= len(raw) {
+				return false
+			}
+			raw = strings.TrimSpace(raw[colon+1:])
+		default:
+			return false
+		}
 	}
 }
 
@@ -236,6 +248,14 @@ func TargetDSNHosts(driver, dsn string) ([]string, error) {
 			}
 			if err := addAddress(authority); err != nil {
 				return nil, err
+			}
+			query := parsed.Query()
+			for _, key := range []string{"host", "hostaddr", "hostname", "server", "endpoint"} {
+				for _, value := range query[key] {
+					if err := addAddress(value); err != nil {
+						return nil, err
+					}
+				}
 			}
 		}
 	}

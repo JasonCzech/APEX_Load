@@ -223,7 +223,7 @@ func cleanupControlTestRun(t *testing.T, server *Server, testID string) {
 		}
 	}
 	if testRun.Status == "STOPPING" || testRun.Status == "RUNNING" {
-		waitForStatusAny(t, server.runner, testID, 5*time.Second, "COMPLETE", "FAILED")
+		waitForStatusAny(t, server.runner, testID, 5*time.Second, "COMPLETE", "FAILED", "ABORTED")
 	}
 	server.runner.DeleteTest(testID)
 }
@@ -607,7 +607,7 @@ func TestHandleMoveScaleAdjustAndDeleteTestWriteAuditEvents(t *testing.T) {
 	if err := server.runner.StopTest(testRun.ID); err != nil {
 		t.Fatalf("StopTest returned error: %v", err)
 	}
-	waitForStatusAny(t, server.runner, testRun.ID, 5*time.Second, "COMPLETE", "FAILED")
+	waitForStatusAny(t, server.runner, testRun.ID, 5*time.Second, "COMPLETE", "FAILED", "ABORTED")
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/tests/"+testRun.ID, nil)
 	deleteResp := httptest.NewRecorder()

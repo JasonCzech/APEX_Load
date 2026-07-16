@@ -8,6 +8,10 @@ fi
 
 image=$1
 port=${APEXLOAD_SMOKE_PORT:-18080}
+expected_revision=0000000000000000000000000000000000000000
+expected_commit=${expected_revision:0:7}
+expected_version=0.0.0-ci-smoke
+expected_build_time=1970-01-01T00:00:00Z
 name="apexload-ci-smoke-${RANDOM}-$$"
 workdir=$(mktemp -d)
 
@@ -60,13 +64,19 @@ curl --silent --show-error --fail "${base_url}/" \
 
 jq -e '.status == "ok" or .status == "healthy"' "${workdir}/health.json" >/dev/null
 jq -e '.status == "ready" or .status == "degraded"' "${workdir}/readiness.json" >/dev/null
-jq -e '.version == "ci" and .commit == "0000000000000000000000000000000000000000"' \
+jq -e --arg revision "${expected_revision}" --arg commit "${expected_commit}" \
+  --arg version "${expected_version}" \
+  --arg build_time "${expected_build_time}" \
+  '.version == $version and .revision == $revision and .commit == $commit and .build_time == $build_time' \
   "${workdir}/version.json" >/dev/null
 
-python3 - "${base_url}" "${workdir}/index.html" <<'PY'
+python3 - "${base_url}" "${workdir}/index.html" "${expected_version}" "${expected_build_time}" <<'PY'
+import datetime
+import re
 import sys
 import urllib.parse
 import urllib.request
+from collections import deque
 from html.parser import HTMLParser
 
 
@@ -83,7 +93,7 @@ class AssetParser(HTMLParser):
             self.assets.add(values["href"])
 
 
-base_url, index_path = sys.argv[1:]
+base_url, index_path, expected_version, expected_build_time = sys.argv[1:]
 parser = AssetParser()
 with open(index_path, encoding="utf-8") as index:
     parser.feed(index.read())
@@ -92,13 +102,41 @@ if not parser.assets:
     raise SystemExit("embedded dashboard index does not reference any assets")
 
 base_host = urllib.parse.urlparse(base_url).netloc
-for asset in sorted(parser.assets):
-    url = urllib.parse.urljoin(base_url + "/", asset)
+expected_dashboard_build_time = (
+    datetime.datetime.fromisoformat(expected_build_time.replace("Z", "+00:00"))
+    .isoformat(timespec="milliseconds")
+    .replace("+00:00", "Z")
+    .encode()
+)
+dashboard_build_time_seen = False
+dashboard_version_seen = False
+asset_reference = re.compile(
+    rb"(?:/assets/|\./)[A-Za-z0-9_.-]+\.(?:css|gif|jpe?g|js|png|svg|webp|woff2?)"
+)
+pending = deque(urllib.parse.urljoin(base_url + "/", asset) for asset in sorted(parser.assets))
+visited = set()
+while pending:
+    url = pending.popleft()
+    if url in visited:
+        continue
+    visited.add(url)
     if urllib.parse.urlparse(url).netloc != base_host:
         continue
     with urllib.request.urlopen(url, timeout=10) as response:
-        if response.status != 200 or not response.read(1):
+        content = response.read()
+        if response.status != 200 or not content:
             raise SystemExit(f"dashboard asset is unavailable: {url}")
+        if expected_dashboard_build_time in content:
+            dashboard_build_time_seen = True
+        if expected_version.encode() in content:
+            dashboard_version_seen = True
+        for reference in asset_reference.findall(content):
+            pending.append(urllib.parse.urljoin(url, reference.decode("ascii")))
+
+if not dashboard_build_time_seen:
+    raise SystemExit("embedded dashboard does not contain the deterministic release build time")
+if not dashboard_version_seen:
+    raise SystemExit("embedded dashboard does not contain the deterministic release version")
 PY
 
-echo "controller image passed health, readiness, build-metadata, and dashboard asset checks"
+echo "controller image passed health, readiness, build-metadata, and deterministic dashboard asset checks"

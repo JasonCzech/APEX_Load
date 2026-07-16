@@ -321,6 +321,7 @@ func TestEvaluateLocalSLAReportsBreaches(t *testing.T) {
 			ByAction: map[string]*engine.ActionMetrics{
 				"Checkout": {
 					ServerTelemetry: &engine.ServerTelemetrySummary{
+						Samples:               1,
 						AvgServerProcessingMs: 320,
 						AvgTransferMs:         130,
 					},
@@ -343,5 +344,27 @@ func TestEvaluateLocalSLAReportsBreaches(t *testing.T) {
 	}
 	if len(summary.Details) != 5 {
 		t.Fatalf("details = %#v, want 5 breach details", summary.Details)
+	}
+}
+
+func TestEvaluateLocalSLARequiresEvidenceForEveryConfiguredThreshold(t *testing.T) {
+	p95LatencyMs := 800.0
+	maxServerProcessingMs := 300.0
+	maxErrorPct := 2.0
+
+	partial := evaluateLocalSLA(&engine.RunResult{
+		TotalTransactions: 10,
+		FinalSnapshot:     engine.MetricsSnapshot{P95: 100 * time.Millisecond},
+	}, &api.GoalConfig{
+		P95LatencyMs:             &p95LatencyMs,
+		MaxAvgServerProcessingMs: &maxServerProcessingMs,
+	})
+	if partial == nil || partial.Evaluated {
+		t.Fatalf("partial SLA evidence = %#v, want not evaluated", partial)
+	}
+
+	allFailed := evaluateLocalSLA(&engine.RunResult{TotalErrors: 5}, &api.GoalConfig{MaxErrorPct: &maxErrorPct})
+	if allFailed == nil || !allFailed.Evaluated || !allFailed.Breached {
+		t.Fatalf("all-failed SLA evidence = %#v, want evaluated 100%% error-rate breach", allFailed)
 	}
 }

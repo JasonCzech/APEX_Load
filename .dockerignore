@@ -9,6 +9,7 @@ output/
 dashboard/node_modules/
 dashboard/dist/
 dashboard/.vite/
+pkg/api/static/
 desktop/build/
 dist/recording-agent/
 pkg/**/artifacts/

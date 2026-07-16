@@ -14,11 +14,12 @@ import re
 import sys
 
 
-SCHEMA_VERSION = 1
-TERRAFORM_VERSION = "1.13.4"
+SCHEMA_VERSION = 2
+TERRAFORM_VERSION = "1.15.8"
 MAX_AGE = datetime.timedelta(days=7)
-CONTEXT = b"apexload/terraform-plan-handoff/v1\0"
+CONTEXT = b"apexload/terraform-plan-handoff/v2\0"
 EXPECTED_FILES = {"apexload.tfplan.enc", "plan-handoff.json", "plan-handoff.hmac"}
+AZURE_ID_PATTERN = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 
 
 def fail(message: str) -> "NoReturn":
@@ -64,10 +65,15 @@ def create(args: argparse.Namespace) -> int:
     validate_coordinate(args.commit, r"[0-9a-f]{40}", "source commit")
     validate_coordinate(args.run_id, r"[1-9][0-9]*", "run ID")
     validate_coordinate(args.run_attempt, r"[1-9][0-9]*", "run attempt")
+    validate_coordinate(args.azure_tenant_id, AZURE_ID_PATTERN, "Azure tenant ID")
+    validate_coordinate(args.azure_subscription_id, AZURE_ID_PATTERN, "Azure subscription ID")
+    validate_coordinate(args.azure_plan_client_id, AZURE_ID_PATTERN, "Azure plan client ID")
+    validate_coordinate(args.azure_apply_client_id, AZURE_ID_PATTERN, "Azure apply client ID")
+    validate_coordinate(args.azure_auth_mode, r"oidc|managed-identity", "Azure auth mode")
     if args.terraform_version != TERRAFORM_VERSION:
         fail(f"Terraform version must be {TERRAFORM_VERSION}")
-    if not args.plan.is_file() or not args.encrypted.is_file():
-        fail("plain and encrypted plan files are required")
+    if not args.plan.is_file() or not args.encrypted.is_file() or not args.backend_config.is_file():
+        fail("plain plan, encrypted plan, and backend configuration files are required")
     args.output.mkdir(parents=True, exist_ok=True)
     if any(args.output.iterdir()):
         fail("output directory must be empty")
@@ -80,9 +86,16 @@ def create(args: argparse.Namespace) -> int:
         "source_ref": "refs/heads/main",
         "source_commit": args.commit,
         "workflow": ".github/workflows/infra-azure.yml",
+        "operation": "plan",
         "workflow_run_id": args.run_id,
         "workflow_run_attempt": args.run_attempt,
         "terraform_version": args.terraform_version,
+        "azure_tenant_id": args.azure_tenant_id.lower(),
+        "azure_subscription_id": args.azure_subscription_id.lower(),
+        "azure_auth_mode": args.azure_auth_mode,
+        "azure_plan_client_id": args.azure_plan_client_id.lower(),
+        "azure_apply_client_id": args.azure_apply_client_id.lower(),
+        "backend_config_sha256": sha256(args.backend_config),
         "plan_sha256": sha256(args.plan),
         "encrypted_plan_sha256": sha256(encrypted_output),
         "created_at": datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0).isoformat(),
@@ -101,6 +114,13 @@ def verify(args: argparse.Namespace) -> int:
     validate_coordinate(args.repository, r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", "repository")
     validate_coordinate(args.run_id, r"[1-9][0-9]*", "run ID")
     validate_coordinate(args.run_attempt, r"[1-9][0-9]*", "run attempt")
+    validate_coordinate(args.azure_tenant_id, AZURE_ID_PATTERN, "Azure tenant ID")
+    validate_coordinate(args.azure_subscription_id, AZURE_ID_PATTERN, "Azure subscription ID")
+    validate_coordinate(args.azure_plan_client_id, AZURE_ID_PATTERN, "Azure plan client ID")
+    validate_coordinate(args.azure_apply_client_id, AZURE_ID_PATTERN, "Azure apply client ID")
+    validate_coordinate(args.azure_auth_mode, r"oidc|managed-identity", "Azure auth mode")
+    if not args.backend_config.is_file():
+        fail("backend configuration file is required")
     if not args.directory.is_dir():
         fail("handoff directory does not exist")
     actual_files = {path.name for path in args.directory.iterdir() if path.is_file()}
@@ -125,9 +145,16 @@ def verify(args: argparse.Namespace) -> int:
         "source_ref",
         "source_commit",
         "workflow",
+        "operation",
         "workflow_run_id",
         "workflow_run_attempt",
         "terraform_version",
+        "azure_tenant_id",
+        "azure_subscription_id",
+        "azure_auth_mode",
+        "azure_plan_client_id",
+        "azure_apply_client_id",
+        "backend_config_sha256",
         "plan_sha256",
         "encrypted_plan_sha256",
         "created_at",
@@ -140,9 +167,16 @@ def verify(args: argparse.Namespace) -> int:
         "source_repository": args.repository,
         "source_ref": "refs/heads/main",
         "workflow": ".github/workflows/infra-azure.yml",
+        "operation": "plan",
         "workflow_run_id": args.run_id,
         "workflow_run_attempt": args.run_attempt,
         "terraform_version": TERRAFORM_VERSION,
+        "azure_tenant_id": args.azure_tenant_id.lower(),
+        "azure_subscription_id": args.azure_subscription_id.lower(),
+        "azure_auth_mode": args.azure_auth_mode,
+        "azure_plan_client_id": args.azure_plan_client_id.lower(),
+        "azure_apply_client_id": args.azure_apply_client_id.lower(),
+        "backend_config_sha256": sha256(args.backend_config),
     }
     if any(metadata.get(key) != value for key, value in expected.items()):
         fail("metadata does not match the requested plan run")
@@ -174,6 +208,12 @@ def main() -> int:
     create_parser.add_argument("--run-id", required=True)
     create_parser.add_argument("--run-attempt", required=True)
     create_parser.add_argument("--terraform-version", required=True)
+    create_parser.add_argument("--azure-tenant-id", required=True)
+    create_parser.add_argument("--azure-subscription-id", required=True)
+    create_parser.add_argument("--azure-auth-mode", required=True)
+    create_parser.add_argument("--azure-plan-client-id", required=True)
+    create_parser.add_argument("--azure-apply-client-id", required=True)
+    create_parser.add_argument("--backend-config", required=True, type=pathlib.Path)
     create_parser.add_argument("--plan", required=True, type=pathlib.Path)
     create_parser.add_argument("--encrypted", required=True, type=pathlib.Path)
     create_parser.add_argument("--output", required=True, type=pathlib.Path)
@@ -184,6 +224,12 @@ def main() -> int:
     verify_parser.add_argument("--repository", required=True)
     verify_parser.add_argument("--run-id", required=True)
     verify_parser.add_argument("--run-attempt", required=True)
+    verify_parser.add_argument("--azure-tenant-id", required=True)
+    verify_parser.add_argument("--azure-subscription-id", required=True)
+    verify_parser.add_argument("--azure-auth-mode", required=True)
+    verify_parser.add_argument("--azure-plan-client-id", required=True)
+    verify_parser.add_argument("--azure-apply-client-id", required=True)
+    verify_parser.add_argument("--backend-config", required=True, type=pathlib.Path)
     verify_parser.add_argument("--directory", required=True, type=pathlib.Path)
     verify_parser.set_defaults(handler=verify)
     args = parser.parse_args()

@@ -7,6 +7,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -88,6 +89,287 @@ func newCIContractTestServer(t *testing.T, policy storage.GitHubActionsPolicy) (
 	return server, store
 }
 
+func TestCIOIDCAudienceIsStableAndDeploymentSpecific(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "")
+	t.Setenv("APEXLOAD_REQUIRE_AUTH", "")
+	t.Setenv("APEXLOAD_CI_OIDC_AUDIENCE", "")
+	t.Setenv("APEXLOAD_PUBLIC_URL", "https://APEX.Example.Test:443/controller/")
+
+	first, err := (&Server{}).ciOIDCAudience()
+	if err != nil {
+		t.Fatalf("ciOIDCAudience: %v", err)
+	}
+	t.Setenv("APEXLOAD_PUBLIC_URL", "https://apex.example.test/controller")
+	second, err := (&Server{}).ciOIDCAudience()
+	if err != nil {
+		t.Fatalf("ciOIDCAudience after canonical-equivalent URL: %v", err)
+	}
+	if first != second || !strings.HasPrefix(first, "apexload://ci/") {
+		t.Fatalf("deployment audience = %q then %q, want one stable deployment-specific value", first, second)
+	}
+	t.Setenv("APEXLOAD_PUBLIC_URL", "https://other.example.test/controller")
+	other, err := (&Server{}).ciOIDCAudience()
+	if err != nil {
+		t.Fatalf("ciOIDCAudience for other deployment: %v", err)
+	}
+	if other == first {
+		t.Fatalf("different controller deployments shared audience %q", first)
+	}
+}
+
+func TestCIOIDCAudienceFailsClosedWithoutStableProductionIdentity(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "production")
+	t.Setenv("APEXLOAD_REQUIRE_AUTH", "")
+	t.Setenv("APEXLOAD_CI_OIDC_AUDIENCE", "")
+	t.Setenv("APEXLOAD_PUBLIC_URL", "")
+	server := &Server{controllerID: "process-specific-controller"}
+	if _, err := server.ciOIDCAudience(); err == nil {
+		t.Fatal("production CI audience fell back to a generic or process-specific value")
+	}
+	rec := httptest.NewRecorder()
+	server.handleCIWellKnown(rec, httptest.NewRequest(http.MethodGet, "/.well-known/apexload-ci", nil))
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("well-known status = %d, want 503 when production audience is unstable", rec.Code)
+	}
+	t.Setenv("APEXLOAD_ENV", "")
+	haServer := &Server{controllerID: "process-specific-controller", haExecution: true}
+	if _, err := haServer.ciOIDCAudience(); err == nil {
+		t.Fatal("HA CI audience fell back to a generic or process-specific value")
+	}
+	t.Setenv("APEXLOAD_CI_OIDC_AUDIENCE", "apexload://ci-development")
+	if _, err := haServer.ciOIDCAudience(); err == nil {
+		t.Fatal("HA CI audience accepted the explicit development fallback")
+	}
+	t.Setenv("APEXLOAD_ENV", "production")
+	if _, err := (&Server{}).ciOIDCAudience(); err == nil {
+		t.Fatal("production CI audience accepted the explicit development fallback")
+	}
+}
+
+func TestValidateCIOIDCAudienceRejectsFailLatePolicyValues(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "")
+	policy := ciTestActionsPolicy()
+	for _, audience := range []string{
+		"apexload://ci",
+		"apexload://ci-development",
+		"apexload://ci contract",
+		"apexload://ci\u00a0contract",
+		"apexload://ci\ncontract",
+		strings.Repeat("a", 513),
+	} {
+		t.Run(fmt.Sprintf("%q", audience), func(t *testing.T) {
+			if err := validateCIOIDCAudience(audience); err == nil {
+				t.Fatal("invalid runtime audience was accepted")
+			}
+			policy.Audience = audience
+			if err := validateGitHubActionsPolicy(policy); err == nil {
+				t.Fatal("project policy saved an audience that the OIDC runtime rejects")
+			}
+		})
+	}
+	policy.Audience = "apexload://ci/2f4a8a2db6259f3e"
+	if err := validateGitHubActionsPolicy(policy); err != nil {
+		t.Fatalf("deployment-specific audience rejected: %v", err)
+	}
+}
+
+func TestValidateGitHubActionsTrustURLRequiresTLS(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "")
+	t.Setenv("APEXLOAD_REQUIRE_AUTH", "")
+	t.Setenv(githubAllowInsecureHTTPEnv, "")
+	for _, test := range []struct {
+		name string
+		raw  string
+		ok   bool
+	}{
+		{name: "https github", raw: "https://token.actions.githubusercontent.com", ok: true},
+		{name: "https ghes issuer", raw: "https://github.example.test/_services/token", ok: true},
+		{name: "loopback development", raw: "http://127.0.0.1:8080/issuer", ok: true},
+		{name: "external plaintext", raw: "http://github.example.test/_services/token"},
+		{name: "credentials", raw: "https://user:password@github.example.test/_services/token"},
+		{name: "query", raw: "https://github.example.test/_services/token?key=value"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateGitHubActionsTrustURL("issuer", test.raw)
+			if test.ok && err != nil {
+				t.Fatalf("trusted URL rejected: %v", err)
+			}
+			if !test.ok && err == nil {
+				t.Fatal("untrusted GitHub Actions URL was accepted")
+			}
+		})
+	}
+	t.Setenv("APEXLOAD_ENV", "production")
+	if err := validateGitHubActionsTrustURL("issuer", "http://127.0.0.1:8080/issuer"); err == nil {
+		t.Fatal("production accepted a plaintext loopback OIDC issuer")
+	}
+}
+
+func TestValidateGitHubActionsIssuerServerPair(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "")
+	t.Setenv("APEXLOAD_REQUIRE_AUTH", "")
+	t.Setenv(githubAllowInsecureHTTPEnv, "")
+	tests := []struct {
+		name      string
+		issuer    string
+		serverURL string
+		wantOK    bool
+	}{
+		{
+			name:      "github dot com canonical",
+			issuer:    defaultGitHubActionsOIDCIssuer,
+			serverURL: "https://github.com",
+			wantOK:    true,
+		},
+		{
+			name:      "github dot com rejects custom issuer",
+			issuer:    "https://issuer.example.test/_services/token",
+			serverURL: "https://github.com",
+		},
+		{
+			name:      "ghes same origin",
+			issuer:    "https://github.example.test/_services/token",
+			serverURL: "https://github.example.test",
+			wantOK:    true,
+		},
+		{
+			name:      "ghes default ports are equivalent",
+			issuer:    "https://github.example.test:443/_services/token",
+			serverURL: "https://github.example.test",
+			wantOK:    true,
+		},
+		{
+			name:      "ghes wrong issuer origin",
+			issuer:    "https://issuer.example.test/_services/token",
+			serverURL: "https://github.example.test",
+		},
+		{
+			name:      "ghes wrong issuer path",
+			issuer:    "https://github.example.test/actions/token",
+			serverURL: "https://github.example.test",
+		},
+		{
+			name:      "ghes encoded issuer path",
+			issuer:    "https://github.example.test/_%73ervices/token",
+			serverURL: "https://github.example.test",
+		},
+		{
+			name:      "server URL path",
+			issuer:    "https://github.example.test/_services/token",
+			serverURL: "https://github.example.test/enterprise",
+		},
+		{
+			name:      "loopback development",
+			issuer:    "http://127.0.0.1:8080/_services/token",
+			serverURL: "http://127.0.0.1:8080",
+			wantOK:    true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateGitHubActionsIssuerServerPair(test.issuer, test.serverURL)
+			if test.wantOK && err != nil {
+				t.Fatalf("issuer/server pair rejected: %v", err)
+			}
+			if !test.wantOK && err == nil {
+				t.Fatal("untrusted issuer/server pair was accepted")
+			}
+
+			policy := ciTestActionsPolicy()
+			policy.Issuer = test.issuer
+			policy.ServerURL = test.serverURL
+			err = validateGitHubActionsPolicy(policy)
+			if test.wantOK && err != nil {
+				t.Fatalf("project policy rejected issuer/server pair: %v", err)
+			}
+			if !test.wantOK && err == nil {
+				t.Fatal("project policy saved an untrusted issuer/server pair")
+			}
+		})
+	}
+}
+
+func TestVerifyGitHubActionsPullRequestOriginRequiresMatchingAppServer(t *testing.T) {
+	server, _ := newCIContractTestServer(t, ciTestActionsPolicy())
+	settings := server.runner.GetSystemSettings()
+	settings.GitHub = GitHubSettings{
+		Enabled:             true,
+		AppID:               1,
+		AppPrivateKeyEnvVar: "APEXLOAD_TEST_GITHUB_APP_KEY",
+		APIBaseURL:          "https://github.enterprise.example/api/v3",
+		WebBaseURL:          "https://github.enterprise.example",
+	}
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatalf("UpdateSystemSettings: %v", err)
+	}
+	claims := ciTestIdentity()
+	claims.EventName = "pull_request"
+	err := server.verifyGitHubActionsPullRequestOrigin(
+		context.Background(),
+		storage.GitHubProjectPolicy{AppInstallationID: 42},
+		ciTestActionsPolicy(),
+		claims,
+	)
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("mismatched GitHub App server was not rejected before lookup: %v", err)
+	}
+
+	server.runner.mu.Lock()
+	server.runner.settings.GitHub.WebBaseURL = "https://github.com"
+	server.runner.settings.GitHub.APIBaseURL = "https://api.github.com.evil.example"
+	server.runner.mu.Unlock()
+	err = server.verifyGitHubActionsPullRequestOrigin(
+		context.Background(),
+		storage.GitHubProjectPolicy{AppInstallationID: 42},
+		ciTestActionsPolicy(),
+		claims,
+	)
+	if err == nil || !strings.Contains(err.Error(), "does not match") {
+		t.Fatalf("mismatched GitHub App API server was not rejected before lookup: %v", err)
+	}
+}
+
+func TestCIExchangeReplayProtectionFailsClosedInHAWithoutAnAvailableSharedCache(t *testing.T) {
+	server := &Server{
+		haExecution: true,
+		ciOIDCExchanges: map[string]ciOIDCExchangeCacheEntry{
+			"exchange": {
+				Token: "apxci_local-only", Fingerprint: "fingerprint",
+				ExpiresAt: time.Now().UTC().Add(time.Minute),
+			},
+		},
+	}
+	if !server.ciExchangeRequiresRemoteCache() {
+		t.Fatal("HA exchange accepted a missing shared replay cache")
+	}
+	if _, ok, _ := server.cachedCIExchange("exchange", "fingerprint"); ok {
+		t.Fatal("HA exchange trusted a replica-local replay cache entry")
+	}
+
+	server.cache = newMemoryCacheBackend(cacheRuntimeConfig{KeyPrefix: "ci-ha-local"})
+	if !server.ciExchangeRequiresRemoteCache() {
+		t.Fatal("HA exchange accepted a process-local replay cache backend")
+	}
+
+	server.cache = &unavailableCacheBackend{
+		info: CacheBackendInfo{Backend: cacheBackendRedis},
+		err:  errors.New("shared cache unavailable"),
+	}
+	if server.ciExchangeRequiresRemoteCache() {
+		t.Fatal("configured Redis backend was misclassified as process-local")
+	}
+	if _, ok, _ := server.cachedCIExchange("exchange", "fingerprint"); ok {
+		t.Fatal("HA exchange bypassed unavailable Redis with a local cached result")
+	}
+	candidate := ciOIDCExchangeCacheEntry{
+		Token: "apxci_candidate", Fingerprint: "fingerprint",
+		ExpiresAt: time.Now().UTC().Add(time.Minute),
+	}
+	if _, _, err := server.loadOrStoreCIExchange(context.Background(), "exchange", candidate); err == nil {
+		t.Fatal("HA exchange succeeded while the shared replay cache was unavailable")
+	}
+}
+
 func TestValidateGitHubActionsIdentityPolicyAllowAndDeny(t *testing.T) {
 	basePolicy := ciTestActionsPolicy()
 	baseClaims := ciTestIdentity()
@@ -100,6 +382,13 @@ func TestValidateGitHubActionsIdentityPolicyAllowAndDeny(t *testing.T) {
 		{name: "job workflow fallback", mutate: func(_ *storage.GitHubActionsPolicy, claims *githubActionsOIDCClaims) {
 			claims.JobWorkflowRef, claims.WorkflowRef = claims.WorkflowRef, ""
 		}, wantOK: true},
+		{name: "allowed reusable workflow takes precedence over caller", mutate: func(_ *storage.GitHubActionsPolicy, claims *githubActionsOIDCClaims) {
+			claims.JobWorkflowRef = claims.WorkflowRef
+			claims.WorkflowRef = "octo/apex/.github/workflows/caller.yml@refs/heads/main"
+		}, wantOK: true},
+		{name: "disallowed reusable workflow cannot inherit caller trust", mutate: func(_ *storage.GitHubActionsPolicy, claims *githubActionsOIDCClaims) {
+			claims.JobWorkflowRef = "octo/apex/.github/workflows/untrusted.yml@refs/heads/main"
+		}, wantOK: false},
 		{name: "disabled", mutate: func(policy *storage.GitHubActionsPolicy, _ *githubActionsOIDCClaims) { policy.Enabled = false }},
 		{name: "missing immutable claim", mutate: func(_ *storage.GitHubActionsPolicy, claims *githubActionsOIDCClaims) { claims.SHA = "" }},
 		{name: "repository id", mutate: func(_ *storage.GitHubActionsPolicy, claims *githubActionsOIDCClaims) { claims.RepositoryID = "999" }},
@@ -137,12 +426,52 @@ func TestValidateGitHubActionsIdentityPolicyAllowAndDeny(t *testing.T) {
 	}
 }
 
+func TestValidateGitHubActionsIdentityRejectsMalformedOrUnboundedClaims(t *testing.T) {
+	tests := []struct {
+		name   string
+		mutate func(*storage.GitHubActionsPolicy, *githubActionsOIDCClaims)
+	}{
+		{name: "non-numeric repository id", mutate: func(policy *storage.GitHubActionsPolicy, claims *githubActionsOIDCClaims) {
+			policy.AllowedRepositoryIDs = nil
+			claims.RepositoryID = "repository-id"
+		}},
+		{name: "zero run id", mutate: func(_ *storage.GitHubActionsPolicy, claims *githubActionsOIDCClaims) { claims.RunID = "0" }},
+		{name: "non-numeric run attempt", mutate: func(_ *storage.GitHubActionsPolicy, claims *githubActionsOIDCClaims) { claims.RunAttempt = "retry" }},
+		{name: "malformed sha", mutate: func(_ *storage.GitHubActionsPolicy, claims *githubActionsOIDCClaims) { claims.SHA = "not-a-git-object" }},
+		{name: "malformed ref", mutate: func(policy *storage.GitHubActionsPolicy, claims *githubActionsOIDCClaims) {
+			policy.AllowedRefs = []string{"*"}
+			claims.Ref = "main"
+		}},
+		{name: "malformed workflow ref", mutate: func(policy *storage.GitHubActionsPolicy, claims *githubActionsOIDCClaims) {
+			policy.AllowedWorkflowRefs = []string{"*"}
+			claims.WorkflowRef = "octo/apex/build.yml@refs/heads/main"
+		}},
+		{name: "missing actor", mutate: func(_ *storage.GitHubActionsPolicy, claims *githubActionsOIDCClaims) { claims.Actor = "" }},
+		{name: "oversized event", mutate: func(_ *storage.GitHubActionsPolicy, claims *githubActionsOIDCClaims) {
+			claims.EventName = strings.Repeat("e", 129)
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			policy := ciTestActionsPolicy()
+			claims := ciTestIdentity()
+			test.mutate(&policy, &claims)
+			if err := validateGitHubActionsIdentity(policy, claims); err == nil {
+				t.Fatal("malformed GitHub Actions identity was accepted")
+			}
+		})
+	}
+}
+
 func TestCIBearerSigningExpiryAndPolicyInvalidation(t *testing.T) {
 	t.Setenv("APEXLOAD_CI_TOKEN_KEY", ciTestSigningKey)
 	policy := ciTestActionsPolicy()
 	server, store := newCIContractTestServer(t, policy)
+	identity := ciTestIdentity()
+	identity.JobWorkflowRef = identity.WorkflowRef
+	identity.WorkflowRef = "octo/apex/.github/workflows/caller.yml@refs/heads/main"
 
-	token, expiresAt, err := server.issueCIBearerToken("project-ci", policy, ciTestIdentity())
+	token, expiresAt, err := server.issueCIBearerToken("project-ci", policy, identity)
 	if err != nil {
 		t.Fatalf("issueCIBearerToken: %v", err)
 	}
@@ -153,7 +482,8 @@ func TestCIBearerSigningExpiryAndPolicyInvalidation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("verifyCIBearer: %v", err)
 	}
-	if claims.ProjectID != "project-ci" || claims.PolicyRevision != policy.Revision || len(claims.Scopes) != 2 {
+	if claims.ProjectID != "project-ci" || claims.PolicyRevision != policy.Revision || len(claims.Scopes) != 2 ||
+		claims.WorkflowRef != identity.WorkflowRef || claims.JobWorkflowRef != identity.JobWorkflowRef {
 		t.Fatalf("unexpected CI bearer claims: %#v", claims)
 	}
 
@@ -265,9 +595,9 @@ func newCIOIDCTestIssuer(t *testing.T) *ciOIDCTestIssuer {
 	issuer.rotate(t, "key-1")
 	mux := http.NewServeMux()
 	issuer.server = httptest.NewServer(mux)
-	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/_services/token/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
-			"issuer": issuer.server.URL, "jwks_uri": issuer.server.URL + "/jwks",
+			"issuer": issuer.issuerURL(), "jwks_uri": issuer.server.URL + "/jwks",
 			"authorization_endpoint": issuer.server.URL + "/authorize", "token_endpoint": issuer.server.URL + "/token",
 			"response_types_supported": []string{"id_token"}, "subject_types_supported": []string{"public"},
 			"id_token_signing_alg_values_supported": []string{"RS256"},
@@ -283,6 +613,10 @@ func newCIOIDCTestIssuer(t *testing.T) *ciOIDCTestIssuer {
 	return issuer
 }
 
+func (issuer *ciOIDCTestIssuer) issuerURL() string {
+	return issuer.server.URL + "/_services/token"
+}
+
 func (issuer *ciOIDCTestIssuer) rotate(t *testing.T, kid string) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -294,13 +628,13 @@ func (issuer *ciOIDCTestIssuer) rotate(t *testing.T, kid string) {
 	issuer.mu.Unlock()
 }
 
-func (issuer *ciOIDCTestIssuer) sign(t *testing.T, audience, tokenIssuer string, claims githubActionsOIDCClaims, expiresAt time.Time, nonce string) string {
+func (issuer *ciOIDCTestIssuer) sign(t *testing.T, audience any, tokenIssuer string, claims githubActionsOIDCClaims, expiresAt time.Time, nonce string) string {
 	t.Helper()
 	issuer.mu.RLock()
 	key, kid := issuer.key, issuer.kid
 	issuer.mu.RUnlock()
 	if tokenIssuer == "" {
-		tokenIssuer = issuer.server.URL
+		tokenIssuer = issuer.issuerURL()
 	}
 	now := time.Now().UTC()
 	payload := jwtv5.MapClaims{
@@ -351,7 +685,7 @@ func TestGitHubCIExchangeOIDCValidationReplayAndKeyRotation(t *testing.T) {
 	t.Setenv("APEXLOAD_CI_OIDC_AUDIENCE", "apexload://ci-contract-tests")
 	issuer := newCIOIDCTestIssuer(t)
 	policy := ciTestActionsPolicy()
-	policy.Issuer = issuer.server.URL
+	policy.Issuer = issuer.issuerURL()
 	policy.ServerURL = issuer.server.URL
 	server, _ := newCIContractTestServer(t, policy)
 
@@ -373,18 +707,22 @@ func TestGitHubCIExchangeOIDCValidationReplayAndKeyRotation(t *testing.T) {
 
 	tests := []struct {
 		name        string
-		audience    string
+		audience    any
 		tokenIssuer string
 		mutate      func(*githubActionsOIDCClaims)
 		expiresAt   time.Time
 		wantStatus  int
 	}{
 		{name: "wrong audience", audience: "apexload://wrong", expiresAt: now.Add(5 * time.Minute), wantStatus: http.StatusUnauthorized},
+		{name: "multiple audiences", audience: []string{policy.Audience, "apexload://other"}, expiresAt: now.Add(5 * time.Minute), wantStatus: http.StatusUnauthorized},
 		{name: "wrong issuer", audience: policy.Audience, tokenIssuer: "https://issuer.invalid", expiresAt: now.Add(5 * time.Minute), wantStatus: http.StatusUnauthorized},
 		{name: "wrong repository", audience: policy.Audience, mutate: func(claims *githubActionsOIDCClaims) { claims.Repository = "octo/other" }, expiresAt: now.Add(5 * time.Minute), wantStatus: http.StatusForbidden},
 		{name: "wrong ref", audience: policy.Audience, mutate: func(claims *githubActionsOIDCClaims) { claims.Ref = "refs/heads/feature" }, expiresAt: now.Add(5 * time.Minute), wantStatus: http.StatusForbidden},
 		{name: "wrong workflow", audience: policy.Audience, mutate: func(claims *githubActionsOIDCClaims) {
 			claims.WorkflowRef = "octo/apex/.github/workflows/other.yml@refs/heads/main"
+		}, expiresAt: now.Add(5 * time.Minute), wantStatus: http.StatusForbidden},
+		{name: "wrong reusable workflow", audience: policy.Audience, mutate: func(claims *githubActionsOIDCClaims) {
+			claims.JobWorkflowRef = "octo/apex/.github/workflows/untrusted.yml@refs/heads/main"
 		}, expiresAt: now.Add(5 * time.Minute), wantStatus: http.StatusForbidden},
 		{name: "expired", audience: policy.Audience, expiresAt: now.Add(-2 * time.Minute), wantStatus: http.StatusUnauthorized},
 	}
@@ -416,7 +754,7 @@ func TestGitHubCIExchangeConcurrentIdenticalTokenReturnsOneBearer(t *testing.T) 
 	t.Setenv("APEXLOAD_CI_OIDC_AUDIENCE", "apexload://ci-contract-tests")
 	issuer := newCIOIDCTestIssuer(t)
 	policy := ciTestActionsPolicy()
-	policy.Issuer = issuer.server.URL
+	policy.Issuer = issuer.issuerURL()
 	policy.ServerURL = issuer.server.URL
 	server, _ := newCIContractTestServer(t, policy)
 	idToken := issuer.sign(t, policy.Audience, "", ciTestIdentity(), time.Now().Add(5*time.Minute), "concurrent")
@@ -464,7 +802,7 @@ func TestGitHubCIExchangeSharedRedisCoordinatesControllers(t *testing.T) {
 	t.Setenv("APEXLOAD_CI_OIDC_AUDIENCE", "apexload://ci-contract-tests")
 	issuer := newCIOIDCTestIssuer(t)
 	policy := ciTestActionsPolicy()
-	policy.Issuer = issuer.server.URL
+	policy.Issuer = issuer.issuerURL()
 	policy.ServerURL = issuer.server.URL
 	serverA, store := newCIContractTestServer(t, policy)
 	redisServer := miniredis.RunT(t)
@@ -541,7 +879,7 @@ func TestGitHubCIExchangeSharedRedisCoordinatesControllers(t *testing.T) {
 	}
 
 	for _, key := range redisServer.Keys() {
-		if strings.Contains(key, identity.JTI) || strings.Contains(key, "project-ci") || strings.Contains(key, issuer.server.URL) {
+		if strings.Contains(key, identity.JTI) || strings.Contains(key, "project-ci") || strings.Contains(key, issuer.issuerURL()) {
 			t.Fatalf("Redis cache key exposes trusted exchange input: %q", key)
 		}
 	}

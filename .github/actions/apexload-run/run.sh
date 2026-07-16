@@ -137,11 +137,11 @@ cmd=("$apexctl" ci run
   --ramp-up "${APEXLOAD_INPUT_RAMP_UP:-0s}"
   --base-url "${APEXLOAD_INPUT_BASE_URL:-}"
   --variables-file "${APEXLOAD_INPUT_VARIABLES_FILE:-}"
-  --require-sla "${APEXLOAD_INPUT_REQUIRE_SLA:-true}"
-  --require-results "${APEXLOAD_INPUT_REQUIRE_RESULTS:-true}"
+  --require-sla="${APEXLOAD_INPUT_REQUIRE_SLA:-true}"
+  --require-results="${APEXLOAD_INPUT_REQUIRE_RESULTS:-true}"
   --timeout "${APEXLOAD_INPUT_TIMEOUT:-30m}"
-  --abort-on-cancel "${APEXLOAD_INPUT_ABORT_ON_CANCEL:-true}"
-  --publish-check "$publish_check")
+  --abort-on-cancel="${APEXLOAD_INPUT_ABORT_ON_CANCEL:-true}"
+  --publish-check="$publish_check")
 
 [[ -n "${APEXLOAD_INPUT_P95_LATENCY_MS:-}" ]] && cmd+=(--p95-latency-ms "$APEXLOAD_INPUT_P95_LATENCY_MS")
 [[ -n "${APEXLOAD_INPUT_MAX_ERROR_PCT:-}" ]] && cmd+=(--max-error-pct "$APEXLOAD_INPUT_MAX_ERROR_PCT")

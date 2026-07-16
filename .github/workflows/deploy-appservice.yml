@@ -1,57 +1,74 @@
 name: Deploy App Service Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      release:
-        description: Exact signed semantic release tag.
-        required: true
-        type: string
-      environment:
-        description: Protected deployment environment.
-        required: true
-        type: choice
-        options:
-          - staging
-          - production
+  repository_dispatch:
+    types:
+      - deploy-appservice-release
 
 permissions:
   contents: read
 
 concurrency:
-  group: deploy-appservice-${{ inputs.environment }}
+  # Both protected environments mutate the same staging slot. Serialize them
+  # so a staging dispatch cannot replace the package between production
+  # validation and the slot swap.
+  group: deploy-appservice
   cancel-in-progress: false
 
 jobs:
   deploy:
-    name: Deploy verified package through slot
+    name: Deploy verified package to App Service
     runs-on: ${{ fromJSON(vars.APPSERVICE_RUNNER_LABELS || '["ubuntu-24.04"]') }}
     timeout-minutes: 90
-    environment: appservice-${{ inputs.environment }}
+    environment: ${{ github.event.client_payload.environment == 'production' && 'appservice-production' || 'appservice-staging' }}
+    env:
+      APEXLOAD_DEPLOYMENT_LEASE_TTL_SECONDS: "3600"
     permissions:
       contents: read
       id-token: write
     steps:
-      - name: Checkout deployment tooling
+      - name: Checkout trusted tag verifier from protected main
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ inputs.release }}
+          ref: refs/heads/main
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify dispatch ref and signed deployment tooling
+      - name: Verify exact remote signed release tag
+        id: verified
         env:
-          RELEASE_TAG: ${{ inputs.release }}
-          DISPATCH_REF: ${{ github.ref }}
-          RELEASE_COMMIT: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.client_payload.release }}
+          DEPLOYMENT_ENVIRONMENT: ${{ github.event.client_payload.environment }}
+          REPOSITORY: ${{ github.repository }}
           APEXLOAD_RELEASE_TAG_PUBLIC_KEYS: ${{ vars.APEXLOAD_RELEASE_TAG_PUBLIC_KEYS }}
         run: |
           set -euo pipefail
-          [[ "$DISPATCH_REF" == "refs/tags/${RELEASE_TAG}" ]] || {
-            echo 'run this deployment workflow at the exact release tag ref' >&2
-            exit 1
-          }
-          ./scripts/release/verify-tag.sh "$RELEASE_TAG" "$RELEASE_COMMIT"
+          [[ "$DEPLOYMENT_ENVIRONMENT" == staging || "$DEPLOYMENT_ENVIRONMENT" == production ]]
+          ./scripts/release/semver.sh tag "$RELEASE_TAG"
+          git fetch --force --no-tags origin \
+            "+refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          release_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          release_tag_object="$(git rev-parse "refs/tags/${RELEASE_TAG}")"
+          ./scripts/release/verify-tag.sh "$RELEASE_TAG" "$release_commit"
+          server_url="${GITHUB_SERVER_URL:-https://github.com}"
+          export GH_HOST="${server_url#https://}"
+          [[ "$GH_HOST" == github.com ]] || export GH_ENTERPRISE_TOKEN="$GH_TOKEN"
+          remote_ref="$(gh api "repos/${REPOSITORY}/git/ref/tags/${RELEASE_TAG}")"
+          [[ "$(jq -er 'select(.object.type == "tag") | .object.sha' <<< "$remote_ref")" == "$release_tag_object" ]]
+          remote_tag="$(gh api "repos/${REPOSITORY}/git/tags/${release_tag_object}")"
+          [[ "$(jq -er 'select(.object.type == "commit") | .object.sha' <<< "$remote_tag")" == "$release_commit" ]]
+          {
+            printf 'commit=%s\n' "$release_commit"
+            printf 'tag-object=%s\n' "$release_tag_object"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout verified signed deployment tooling
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ steps.verified.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Authenticate to Azure with environment identity
         if: vars.AZURE_AUTH_MODE != 'managed-identity'
@@ -72,21 +89,26 @@ jobs:
 
       - name: Validate release input
         env:
-          RELEASE_TAG: ${{ inputs.release }}
-        run: |
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]
+          RELEASE_TAG: ${{ github.event.client_payload.release }}
+        run: bash ./scripts/release/semver.sh tag "$RELEASE_TAG"
 
       - name: Download published release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release }}
+          RELEASE_TAG: ${{ github.event.client_payload.release }}
           REPOSITORY: ${{ github.repository }}
-        run: ./scripts/release/download-release.sh "$RELEASE_TAG" "$RUNNER_TEMP/release" "$REPOSITORY"
+          VERIFIED_TAG_OBJECT: ${{ steps.verified.outputs.tag-object }}
+        run: |
+          ./scripts/release/download-release.sh \
+            "$RELEASE_TAG" \
+            "$RUNNER_TEMP/release" \
+            "$REPOSITORY" \
+            "$VERIFIED_TAG_OBJECT"
 
       - name: Verify portable signature and exact App Service package
         id: release
         env:
-          RELEASE_TAG: ${{ inputs.release }}
+          RELEASE_TAG: ${{ github.event.client_payload.release }}
           RELEASE_PUBLIC_KEY: ${{ vars.APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM }}
         run: |
           set -euo pipefail
@@ -112,11 +134,46 @@ jobs:
           {
             printf 'package=%s\n' "$package"
             printf 'commit=%s\n' "$(jq -r '.commit' "$manifest")"
+            printf 'version=%s\n' "$(jq -r '.version' "$manifest")"
+            printf 'build-time=%s\n' "$(jq -r '.build_time' "$manifest")"
             printf 'public-key=%s\n' "$public_key"
             printf 'apexctl-path=%s\n' "$RUNNER_TEMP/release/$apexctl_asset"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Require deployment-slot plan and capture current production
+      - name: Validate slot-bound public URLs before deployment
+        env:
+          RESOURCE_GROUP: ${{ vars.APPSERVICE_RESOURCE_GROUP }}
+          APP_NAME: ${{ vars.APPSERVICE_NAME }}
+          SLOT_NAME: ${{ vars.APPSERVICE_STAGING_SLOT }}
+          DEPLOYMENT_ENVIRONMENT: ${{ github.event.client_payload.environment }}
+          STAGING_URL: ${{ vars.APPSERVICE_STAGING_URL }}
+          PRODUCTION_URL: ${{ github.event.client_payload.environment == 'production' && vars.APPSERVICE_PRODUCTION_URL || '' }}
+        run: |
+          ./scripts/deploy/appservice-public-url-preflight.sh \
+            "$RESOURCE_GROUP" \
+            "$APP_NAME" \
+            "$SLOT_NAME" \
+            "$STAGING_URL" \
+            "$DEPLOYMENT_ENVIRONMENT" \
+            "$PRODUCTION_URL"
+
+      - name: Refuse deployment while performance tests are active
+        env:
+          APEXLOAD_CONTROLLER_URL: ${{ github.event.client_payload.environment == 'production' && vars.APPSERVICE_PRODUCTION_URL || vars.APPSERVICE_STAGING_URL }}
+          APEXLOAD_DEPLOY_API_KEY: ${{ secrets.APEXLOAD_DEPLOY_API_KEY }}
+          APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL: ${{ secrets.APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL }}
+          APEXLOAD_ACTIVE_RUN_OVERRIDE_API_KEY: ${{ secrets.APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL != '' && secrets.APEXLOAD_ACTIVE_RUN_OVERRIDE_API_KEY || '' }}
+          APEXLOAD_DEPLOY_RELEASE: ${{ github.event.client_payload.release }}
+          APEXLOAD_DEPLOY_ENVIRONMENT: ${{ github.event.client_payload.environment == 'production' && 'appservice-production' || 'appservice-staging' }}
+          APEXLOAD_DEPLOY_ACTOR: ${{ github.actor }}
+          APEXLOAD_DEPLOY_REPOSITORY: ${{ github.repository }}
+          APEXLOAD_DEPLOY_SERVER_URL: ${{ github.server_url }}
+          APEXLOAD_DEPLOY_RUN_ID: ${{ github.run_id }}
+          APEXLOAD_DEPLOY_RUN_ATTEMPT: ${{ github.run_attempt }}
+        run: ./scripts/deploy/active-runs-preflight.sh
+
+      - name: Capture lease-protected production rollback baseline
+        if: github.event.client_payload.environment == 'production'
         id: prior
         env:
           RESOURCE_GROUP: ${{ vars.APPSERVICE_RESOURCE_GROUP }}
@@ -130,29 +187,31 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --name "$APP_NAME" \
             --query "[?name=='${SLOT_NAME}'] | length(@)" -o tsv | grep -qx 1
-          prior_commit="$(curl --fail --silent --show-error --retry 3 \
-            "${PRODUCTION_URL%/}/api/v1/system/health" | jq -r '.commit // empty')"
+          prior_health="$(curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            --connect-timeout 5 --max-time 30 \
+            "${PRODUCTION_URL%/}/api/v1/system/health")"
+          prior_commit="$(jq -r '.revision // empty' <<< "$prior_health")"
+          prior_version="$(jq -r '.version // empty' <<< "$prior_health")"
+          prior_build_time="$(jq -r '.build_time // empty' <<< "$prior_health")"
           [[ "$prior_commit" =~ ^[0-9a-f]{40}$ ]] || {
             echo 'could not capture a verifiable production commit for automatic rollback' >&2
             exit 1
           }
-          printf 'commit=%s\n' "$prior_commit" >> "$GITHUB_OUTPUT"
+          bash ./scripts/release/semver.sh version "$prior_version" || {
+            echo 'could not capture a verifiable production version for automatic rollback' >&2
+            exit 1
+          }
+          [[ "$prior_build_time" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || {
+            echo 'could not capture a verifiable production build time for automatic rollback' >&2
+            exit 1
+          }
+          {
+            printf 'commit=%s\n' "$prior_commit"
+            printf 'version=%s\n' "$prior_version"
+            printf 'build-time=%s\n' "$prior_build_time"
+          } >> "$GITHUB_OUTPUT"
 
-      - name: Refuse deployment while performance tests are active
-        env:
-          APEXLOAD_CONTROLLER_URL: ${{ vars.APPSERVICE_PRODUCTION_URL }}
-          APEXLOAD_DEPLOY_API_KEY: ${{ secrets.APEXLOAD_DEPLOY_API_KEY }}
-          APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL: ${{ secrets.APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL }}
-          APEXLOAD_DEPLOY_RELEASE: ${{ inputs.release }}
-          APEXLOAD_DEPLOY_ENVIRONMENT: appservice-${{ inputs.environment }}
-          APEXLOAD_DEPLOY_ACTOR: ${{ github.actor }}
-          APEXLOAD_DEPLOY_REPOSITORY: ${{ github.repository }}
-          APEXLOAD_DEPLOY_SERVER_URL: ${{ github.server_url }}
-          APEXLOAD_DEPLOY_RUN_ID: ${{ github.run_id }}
-          APEXLOAD_DEPLOY_RUN_ATTEMPT: ${{ github.run_attempt }}
-        run: ./scripts/deploy/active-runs-preflight.sh
-
-      - name: Deploy to staging, validate, swap, and revalidate
+      - name: Deploy and validate the selected App Service environment
         id: slot-deploy
         env:
           RESOURCE_GROUP: ${{ vars.APPSERVICE_RESOURCE_GROUP }}
@@ -160,20 +219,17 @@ jobs:
           SLOT_NAME: ${{ vars.APPSERVICE_STAGING_SLOT }}
           PACKAGE: ${{ steps.release.outputs.package }}
           RELEASE_COMMIT: ${{ steps.release.outputs.commit }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_BUILD_TIME: ${{ steps.release.outputs.build-time }}
+          DEPLOYMENT_ENVIRONMENT: ${{ github.event.client_payload.environment }}
           STAGING_URL: ${{ vars.APPSERVICE_STAGING_URL }}
-          PRODUCTION_URL: ${{ vars.APPSERVICE_PRODUCTION_URL }}
+          PRODUCTION_URL: ${{ github.event.client_payload.environment == 'production' && vars.APPSERVICE_PRODUCTION_URL || '' }}
           APEXLOAD_DEPLOY_API_KEY: ${{ secrets.APEXLOAD_DEPLOY_API_KEY }}
-          APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL: ${{ secrets.APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL }}
-          APEXLOAD_DEPLOY_RELEASE: ${{ inputs.release }}
-          APEXLOAD_DEPLOY_ENVIRONMENT: appservice-${{ inputs.environment }}
-          APEXLOAD_DEPLOY_ACTOR: ${{ github.actor }}
-          APEXLOAD_DEPLOY_REPOSITORY: ${{ github.repository }}
-          APEXLOAD_DEPLOY_SERVER_URL: ${{ github.server_url }}
-          APEXLOAD_DEPLOY_RUN_ID: ${{ github.run_id }}
-          APEXLOAD_DEPLOY_RUN_ATTEMPT: ${{ github.run_attempt }}
           SWAP_STATE_FILE: ${{ runner.temp }}/apexload-appservice-swap.state
         run: |
-          ./scripts/deploy/appservice-deploy.sh \
+          ./scripts/deploy/deployment-lease.sh renew
+          timeout --foreground --signal=TERM --kill-after=60s 24m \
+            ./scripts/deploy/appservice-deploy.sh \
             "$RESOURCE_GROUP" \
             "$APP_NAME" \
             "$SLOT_NAME" \
@@ -181,7 +237,38 @@ jobs:
             "$RELEASE_COMMIT" \
             "$STAGING_URL" \
             "$PRODUCTION_URL" \
-            "$SWAP_STATE_FILE"
+            "$SWAP_STATE_FILE" \
+            "$RELEASE_VERSION" \
+            "$RELEASE_BUILD_TIME" \
+            "$DEPLOYMENT_ENVIRONMENT"
+
+      - name: Renew deployment lease before post-deploy URL validation
+        env:
+          APEXLOAD_DEPLOY_API_KEY: ${{ secrets.APEXLOAD_DEPLOY_API_KEY }}
+        run: ./scripts/deploy/deployment-lease.sh renew
+
+      - name: Revalidate slot-bound public URLs after deployment
+        timeout-minutes: 10
+        env:
+          RESOURCE_GROUP: ${{ vars.APPSERVICE_RESOURCE_GROUP }}
+          APP_NAME: ${{ vars.APPSERVICE_NAME }}
+          SLOT_NAME: ${{ vars.APPSERVICE_STAGING_SLOT }}
+          DEPLOYMENT_ENVIRONMENT: ${{ github.event.client_payload.environment }}
+          STAGING_URL: ${{ vars.APPSERVICE_STAGING_URL }}
+          PRODUCTION_URL: ${{ github.event.client_payload.environment == 'production' && vars.APPSERVICE_PRODUCTION_URL || '' }}
+        run: |
+          ./scripts/deploy/appservice-public-url-preflight.sh \
+            "$RESOURCE_GROUP" \
+            "$APP_NAME" \
+            "$SLOT_NAME" \
+            "$STAGING_URL" \
+            "$DEPLOYMENT_ENVIRONMENT" \
+            "$PRODUCTION_URL"
+
+      - name: Renew deployment lease before App Service execution smoke
+        env:
+          APEXLOAD_DEPLOY_API_KEY: ${{ secrets.APEXLOAD_DEPLOY_API_KEY }}
+        run: ./scripts/deploy/deployment-lease.sh renew
 
       - name: Run authenticated App Service execution smoke
         id: execution-smoke
@@ -190,34 +277,25 @@ jobs:
           APEXLOAD_API_KEY: ${{ vars.APEXLOAD_CI_AUTH_MODE == 'api-key' && secrets.APEXLOAD_CI_RUNNER_API_KEY || '' }}
         with:
           execution-mode: controller
-          controller-url: ${{ vars.APPSERVICE_PRODUCTION_URL }}
+          controller-url: ${{ github.event.client_payload.environment == 'production' && vars.APPSERVICE_PRODUCTION_URL || vars.APPSERVICE_STAGING_URL }}
           project-id: ${{ vars.APEXLOAD_SMOKE_PROJECT_ID }}
           script-id: ${{ vars.APEXLOAD_SMOKE_SCRIPT_ID }}
-          test-name: App Service ${{ inputs.environment }} deployment smoke
-          release-id: ${{ inputs.release }}
+          test-name: App Service ${{ github.event.client_payload.environment }} deployment smoke
+          release-id: ${{ github.event.client_payload.release }}
           auth-mode: ${{ vars.APEXLOAD_CI_AUTH_MODE || 'oidc' }}
           vusers: "1"
           duration: 30s
           ramp-up: 0s
-          require-sla: "true"
+          require-sla: "false"
           require-results: "true"
           publish-check: "true"
           timeout: 10m
           apexctl-path: ${{ steps.release.outputs.apexctl-path }}
           evidence-directory: .apexload/deployment-smoke
 
-      - name: Upload deployment smoke evidence
-        if: always()
-        uses: ./.github/actions/upload-artifact
-        with:
-          name: appservice-${{ inputs.environment }}-${{ inputs.release }}-evidence
-          path: .apexload/deployment-smoke/
-          if-no-files-found: error
-          retention-days: 90
-
       - name: Swap back after post-deploy gate failure
-        if: ${{ (failure() || cancelled()) && steps.slot-deploy.outcome != 'skipped' }}
-        timeout-minutes: 20
+        if: ${{ github.event.client_payload.environment == 'production' && (failure() || cancelled()) && steps.slot-deploy.outcome != 'skipped' }}
+        timeout-minutes: 25
         env:
           RESOURCE_GROUP: ${{ vars.APPSERVICE_RESOURCE_GROUP }}
           APP_NAME: ${{ vars.APPSERVICE_NAME }}
@@ -226,9 +304,19 @@ jobs:
           STAGING_URL: ${{ vars.APPSERVICE_STAGING_URL }}
           SWAP_STATE_FILE: ${{ runner.temp }}/apexload-appservice-swap.state
           PRIOR_COMMIT: ${{ steps.prior.outputs.commit }}
+          PRIOR_VERSION: ${{ steps.prior.outputs.version }}
+          PRIOR_BUILD_TIME: ${{ steps.prior.outputs.build-time }}
           RELEASE_COMMIT: ${{ steps.release.outputs.commit }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_BUILD_TIME: ${{ steps.release.outputs.build-time }}
+          APEXLOAD_DEPLOY_API_KEY: ${{ secrets.APEXLOAD_DEPLOY_API_KEY }}
         run: |
-          ./scripts/deploy/rollback-appservice.sh \
+          if ! timeout --foreground --signal=TERM --kill-after=15s 1m \
+            ./scripts/deploy/deployment-lease.sh renew; then
+            echo 'warning: candidate controller could not renew the lease; proceeding with captured rollback ownership' >&2
+          fi
+          timeout --foreground --signal=TERM --kill-after=30s 23m \
+            ./scripts/deploy/rollback-appservice.sh \
             "$RESOURCE_GROUP" \
             "$APP_NAME" \
             "$SLOT_NAME" \
@@ -236,4 +324,24 @@ jobs:
             "$PRIOR_COMMIT" \
             "$RELEASE_COMMIT" \
             "$STAGING_URL" \
-            "$SWAP_STATE_FILE"
+            "$SWAP_STATE_FILE" \
+            "$PRIOR_VERSION" \
+            "$PRIOR_BUILD_TIME" \
+            "$RELEASE_VERSION" \
+            "$RELEASE_BUILD_TIME"
+
+      - name: Release deployment lease
+        if: always()
+        env:
+          APEXLOAD_DEPLOY_API_KEY: ${{ secrets.APEXLOAD_DEPLOY_API_KEY }}
+        run: ./scripts/deploy/deployment-lease.sh release
+
+      - name: Upload deployment smoke evidence
+        if: always()
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: appservice-${{ github.event.client_payload.environment }}-${{ github.event.client_payload.release }}-evidence
+          path: .apexload/deployment-smoke/
+          if-no-files-found: error
+          retention-days: 90
+          include-hidden-files: true

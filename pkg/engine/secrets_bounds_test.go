@@ -143,7 +143,7 @@ func TestProjectScopedSecretsDoNotCrossProjectsOrFallbackToGlobal(t *testing.T) 
 	t.Setenv("APEXLOAD_SECRET_DB_PASSWORD", "legacy-global")
 	t.Setenv(ProjectSecretEnvironmentName("project-a", "db.password"), "project-a-value")
 
-	projectA := newDefaultSecretResolverForProject("project-a")
+	projectA := NewProjectSecretResolver("project-a")
 	if value, ok := projectA.Resolve("db.password"); !ok || value != "project-a-value" {
 		t.Fatalf("project A resolution = %q/%v", value, ok)
 	}

@@ -2,7 +2,9 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SEMVER_RE='^v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z][0-9A-Za-z.-]*)?$'
+SEMVER_NUMBER='(0|[1-9][0-9]*)'
+SEMVER_IDENTIFIER='(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)'
+SEMVER_RE="^v?${SEMVER_NUMBER}\\.${SEMVER_NUMBER}\\.${SEMVER_NUMBER}(-${SEMVER_IDENTIFIER}(\\.${SEMVER_IDENTIFIER})*)?$"
 RAW_BUILD_RE='^[0-9a-fA-F]{12,64}$'
 
 trim_v() {

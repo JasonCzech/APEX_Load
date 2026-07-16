@@ -6,12 +6,14 @@ die() {
   exit 1
 }
 
+root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$root_dir/scripts/release/semver.sh"
 release_dir="${1:-}"
 expected_tag="${2:-}"
 public_key="${3:-}"
+expected_commit="${4:-}"
 [[ -d "$release_dir" ]] || die "release directory does not exist"
-[[ "$expected_tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]] \
-  || die "expected tag is not semantic"
+is_apex_release_tag "$expected_tag" || die "expected tag is not canonical semantic version"
 [[ -f "$public_key" ]] || die "portable release public key does not exist"
 for required in release-manifest.json SHA256SUMS SHA256SUMS.sig; do
   [[ -f "$release_dir/$required" ]] || die "$required is missing"
@@ -20,6 +22,41 @@ done
 openssl dgst -sha256 -verify "$public_key" \
   -signature "$release_dir/SHA256SUMS.sig" "$release_dir/SHA256SUMS" >/dev/null \
   || die "SHA256SUMS signature is invalid"
+
+checksum_names="$(mktemp)"
+checksum_names_sorted="$(mktemp)"
+checksum_names_unique="$(mktemp)"
+actual_names="$(mktemp)"
+trap 'rm -f "$checksum_names" "$checksum_names_sorted" "$checksum_names_unique" "$actual_names"' EXIT
+checksum_line_pattern='^[0-9a-f]{64}  ([A-Za-z0-9][A-Za-z0-9._+-]*)$'
+while IFS= read -r checksum_line || [[ -n "$checksum_line" ]]; do
+  [[ "$checksum_line" =~ $checksum_line_pattern ]] \
+    || die "SHA256SUMS contains an unsafe or malformed asset entry"
+  asset_name="${BASH_REMATCH[1]}"
+  case "$asset_name" in
+    SHA256SUMS|SHA256SUMS.sig) die "SHA256SUMS must not authenticate itself or its signature" ;;
+  esac
+  printf '%s\n' "$asset_name" >> "$checksum_names"
+done < "$release_dir/SHA256SUMS"
+[[ -s "$checksum_names" ]] || die "SHA256SUMS does not authenticate any release assets"
+LC_ALL=C sort "$checksum_names" > "$checksum_names_sorted"
+LC_ALL=C sort -u "$checksum_names" > "$checksum_names_unique"
+cmp "$checksum_names_sorted" "$checksum_names_unique" >/dev/null \
+  || die "SHA256SUMS contains duplicate asset entries"
+shopt -s nullglob dotglob
+for release_entry in "$release_dir"/*; do
+  [[ -f "$release_entry" && ! -L "$release_entry" ]] \
+    || die "release bundle contains a non-regular entry"
+  release_name="${release_entry##*/}"
+  case "$release_name" in
+    SHA256SUMS|SHA256SUMS.sig|.release-tag-commit) continue ;;
+  esac
+  printf '%s\n' "$release_name" >> "$actual_names"
+done
+shopt -u nullglob dotglob
+LC_ALL=C sort -o "$actual_names" "$actual_names"
+cmp "$checksum_names_sorted" "$actual_names" >/dev/null \
+  || die "release asset set does not exactly match signed SHA256SUMS"
 (
   cd "$release_dir"
   sha256sum --check --strict SHA256SUMS
@@ -28,6 +65,14 @@ openssl dgst -sha256 -verify "$public_key" \
 manifest="$release_dir/release-manifest.json"
 [[ "$(jq -r '.schema_version' "$manifest")" == 1 ]] || die "unsupported manifest schema"
 [[ "$(jq -r '.tag' "$manifest")" == "$expected_tag" ]] || die "manifest tag mismatch"
+if [[ -z "$expected_commit" && -f "$release_dir/.release-tag-commit" ]]; then
+  expected_commit="$(tr -d '[:space:]' < "$release_dir/.release-tag-commit")"
+fi
+if [[ -n "$expected_commit" ]]; then
+  [[ "$expected_commit" =~ ^[0-9a-f]{40}$ ]] || die "expected release commit is invalid"
+  [[ "$(jq -r '.commit' "$manifest")" == "$expected_commit" ]] \
+    || die "manifest commit does not match the verified release tag commit"
+fi
 [[ "$(jq -r '.canonical_apexctl_version' "$manifest")" == "$expected_tag" ]] \
   || die "canonical apexctl version mismatch"
 jq -e '

@@ -2,7 +2,7 @@
 
 import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 
 import {
   DESKTOP_NOTIFICATIONS_PREF_KEY,
@@ -37,14 +37,14 @@ describe('buildTestNotification', () => {
 describe('useDesktopNotifications', () => {
   let container: HTMLDivElement
   let root: Root
-  let notifySpy: ReturnType<typeof vi.fn>
+  let notifySpy: Mock<(title: string, body: string) => Promise<void>>
 
   beforeEach(async () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
     window.localStorage.clear()
-    notifySpy = vi.fn().mockResolvedValue(undefined)
+    notifySpy = vi.fn<(title: string, body: string) => Promise<void>>().mockResolvedValue(undefined)
     ;(window as BridgeWindow).go = { main: { App: { Notify: notifySpy } } }
     // Default: window is not focused so notifications fire.
     document.hasFocus = vi.fn().mockReturnValue(false)

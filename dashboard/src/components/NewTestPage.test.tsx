@@ -384,7 +384,7 @@ describe('NewTestPage', () => {
 
     expect(apiMock.listScenarios).toHaveBeenCalledWith('project-1')
 
-    const duplicateKeyWarning = consoleErrorSpy.mock.calls.some(([message]) =>
+    const duplicateKeyWarning = consoleErrorSpy.mock.calls.some(([message]: unknown[]) =>
       typeof message === 'string' && message.includes('Encountered two children with the same key'),
     )
 

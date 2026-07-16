@@ -61,6 +61,11 @@ controller:
   # Keep one active controller unless HA is explicitly enabled below. Replicas
   # above one require APEXLOAD_CONTROLLER_HA plus shared PostgreSQL/Redis.
   replicas: 1
+  # Stable externally reachable HTTPS URL. The controller hashes this into its
+  # deployment-specific GitHub Actions OIDC audience unless ciOIDCAudience is
+  # set explicitly. Empty derives https://<ingress.host>.
+  publicURL: ""
+  ciOIDCAudience: ""
   ha:
     enabled: false
   serviceAccountName: apexload-controller

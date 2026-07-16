@@ -104,6 +104,22 @@ if GITHUB_OUTPUT="$bad_path_output" \
 fi
 assert_output failure-outcome configuration_error "$bad_path_output"
 
+# Release lookup only accepts canonical SemVer tags. In particular, a dot
+# directly after PATCH, empty prerelease identifiers, and leading-zero numeric
+# identifiers must fail before any network request is attempted.
+for invalid_version in \
+  1.2.3.foo v01.2.3 v1.02.3 v1.2.03 v1.2.3-01 v1.2.3-alpha..1 v1.2.3-alpha. v1.2.3+build; do
+  invalid_version_output="$tmp/invalid-version-${invalid_version//\//_}"
+  if GITHUB_OUTPUT="$invalid_version_output" \
+    APEXLOAD_INPUT_APEXCTL_PATH="" \
+    APEXLOAD_INPUT_APEXCTL_VERSION="$invalid_version" \
+    "$action_dir/install.sh"; then
+    printf 'invalid apexctl version %s unexpectedly passed\n' "$invalid_version" >&2
+    exit 1
+  fi
+  assert_output failure-outcome configuration_error "$invalid_version_output"
+done
+
 # Network/download failures are typed execution failures without trusting a
 # partial asset.
 download_bin="$tmp/download-bin"
@@ -228,7 +244,14 @@ APEXLOAD_INPUT_EVIDENCE_DIRECTORY="$evidence" \
 [[ ! -e "$sentinel" ]] || { echo "injection-shaped input executed" >&2; exit 1; }
 grep -Fx "$script" "$capture" >/dev/null
 grep -Fx "\$(touch $sentinel)" "$capture" >/dev/null
-grep -Fx false "$capture" >/dev/null
+grep -Fx -- "--require-sla=false" "$capture" >/dev/null
+grep -Fx -- "--require-results=false" "$capture" >/dev/null
+grep -Fx -- "--abort-on-cancel=true" "$capture" >/dev/null
+grep -Fx -- "--publish-check=false" "$capture" >/dev/null
+if grep -Fx -- "--require-sla" "$capture" >/dev/null || grep -Fx -- "--publish-check" "$capture" >/dev/null; then
+  echo "boolean flags must be passed as --flag=value for Go flag parsing" >&2
+  exit 1
+fi
 test -f "$evidence/apexload-result.json"
 test -f "$evidence/apexload-results.xml"
 assert_output outcome passed "$run_output"

@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -62,6 +63,9 @@ func newGitHubHTTPClient(settings GitHubSettings, timeout time.Duration) (*http.
 		if err := validateCredentialTransportURL(label, raw, githubAllowInsecureHTTPEnv); err != nil {
 			return nil, err
 		}
+	}
+	if !trustedGitHubAPIURL(settings.WebBaseURL, settings.APIBaseURL) {
+		return nil, fmt.Errorf("github.api_base_url must belong to the configured GitHub server")
 	}
 	tlsCfg, err := githubTLSConfig(settings)
 	if err != nil {
@@ -614,17 +618,39 @@ func (c *githubClient) FindCheckRunByExternalID(ctx context.Context, owner, repo
 	query.Set("filter", "all")
 	query.Set("per_page", "100")
 	apiPath := fmt.Sprintf("/repos/%s/%s/commits/%s/check-runs", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(ref))
-	var result githubCheckRuns
-	if err := c.doJSON(ctx, http.MethodGet, apiPath, query, nil, &result); err != nil {
-		return nil, err
-	}
-	for i := range result.CheckRuns {
-		check := &result.CheckRuns[i]
-		if check.ExternalID == externalID && strings.EqualFold(strings.TrimSpace(check.Name), name) && (c.appID <= 0 || check.App.ID == c.appID) {
-			return check, nil
+	const maxRecoveryPages = 1000
+	var (
+		activeMatch   *githubCheckRun
+		terminalMatch *githubCheckRun
+	)
+	for page := 1; page <= maxRecoveryPages; page++ {
+		query.Set("page", strconv.Itoa(page))
+		var result githubCheckRuns
+		if err := c.doJSON(ctx, http.MethodGet, apiPath, query, nil, &result); err != nil {
+			return nil, err
+		}
+		for i := range result.CheckRuns {
+			check := &result.CheckRuns[i]
+			if check.ExternalID == externalID && strings.EqualFold(strings.TrimSpace(check.Name), name) && (c.appID <= 0 || check.App.ID == c.appID) {
+				candidate := *check
+				status := strings.ToLower(strings.TrimSpace(candidate.Status))
+				if (status == "queued" || status == "in_progress") && strings.TrimSpace(candidate.Conclusion) == "" {
+					if activeMatch == nil || candidate.ID > activeMatch.ID {
+						activeMatch = &candidate
+					}
+				} else if terminalMatch == nil || candidate.ID > terminalMatch.ID {
+					terminalMatch = &candidate
+				}
+			}
+		}
+		if len(result.CheckRuns) < 100 || int64(page*100) >= result.TotalCount {
+			if activeMatch != nil {
+				return activeMatch, nil
+			}
+			return terminalMatch, nil
 		}
 	}
-	return nil, nil
+	return nil, fmt.Errorf("github check recovery exceeded %d pages", maxRecoveryPages)
 }
 
 func (c *githubClient) UpdateCheckRun(ctx context.Context, owner, repo string, checkRunID int64, name, status, conclusion, summary, detailsURL string) (*githubCheckRun, error) {

@@ -2389,18 +2389,20 @@ func buildServiceAccount(req AuthServiceAccountRequest) (*storage.ServiceAccount
 
 func normalizeServiceAccountScopes(scopes []string) ([]string, error) {
 	allowed := map[string]struct{}{
-		"*":                       {},
-		"automation:*":            {},
-		"read":                    {},
-		"write":                   {},
-		"tests:run":               {},
-		"scripts:write":           {},
-		"results:read":            {},
-		"results:write":           {},
-		"system:read":             {},
-		"settings:manage":         {},
-		"service_accounts:manage": {},
-		"audit:read":              {},
+		"*":                                {},
+		"automation:*":                     {},
+		"read":                             {},
+		"write":                            {},
+		"tests:run":                        {},
+		"scripts:write":                    {},
+		"results:read":                     {},
+		"results:write":                    {},
+		"system:read":                      {},
+		"settings:manage":                  {},
+		"deployments:manage":               {},
+		deploymentActiveTestsOverrideScope: {},
+		"service_accounts:manage":          {},
+		"audit:read":                       {},
 	}
 	if len(scopes) == 0 {
 		return nil, fmt.Errorf("at least one service account scope is required")

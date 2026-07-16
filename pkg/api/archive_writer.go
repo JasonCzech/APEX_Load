@@ -360,7 +360,7 @@ func (w *runArchiveWriter) RecordIntervalSummary(live *LiveMetrics) error {
 	return nil
 }
 
-func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr string, slaBreached bool, slaDetails []string) (*storage.RunArchiveRecord, error) {
+func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr string, slaEvaluated bool, slaBreached bool, slaDetails []string) (*storage.RunArchiveRecord, error) {
 	w.stopFlushLoop()
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -370,6 +370,7 @@ func (w *runArchiveWriter) Finalize(status string, completedAt time.Time, errStr
 	w.manifest.Status = status
 	w.manifest.CompletedAt = completedAt
 	w.manifest.Error = errStr
+	w.manifest.SLAEvaluated = slaEvaluated
 	w.manifest.SLABreached = slaBreached
 	w.manifest.SLADetails = slaDetails
 

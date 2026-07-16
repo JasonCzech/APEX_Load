@@ -1,26 +1,16 @@
 name: Deploy AKS Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      release:
-        description: Exact signed semantic release tag.
-        required: true
-        type: string
-      environment:
-        description: Protected deployment environment.
-        required: true
-        type: choice
-        options:
-          - staging
-          - production
+  repository_dispatch:
+    types:
+      - deploy-aks-release
 
 permissions:
   contents: read
   packages: read
 
 concurrency:
-  group: deploy-aks-${{ inputs.environment }}
+  group: deploy-aks-${{ github.event.client_payload.environment == 'production' && 'production' || 'staging' }}
   cancel-in-progress: false
 
 jobs:
@@ -28,44 +18,71 @@ jobs:
     name: Deploy verified digests to AKS
     runs-on: ${{ fromJSON(vars.AKS_RUNNER_LABELS || '["ubuntu-24.04"]') }}
     timeout-minutes: 120
-    environment: aks-${{ inputs.environment }}
+    environment: ${{ github.event.client_payload.environment == 'production' && 'aks-production' || 'aks-staging' }}
+    env:
+      APEXLOAD_DEPLOYMENT_LEASE_TTL_SECONDS: "3600"
     permissions:
       contents: read
       packages: read
       id-token: write
     steps:
-      - name: Checkout deployment tooling
+      - name: Initialize isolated cluster credential path
+        run: printf 'KUBECONFIG=%s\n' "$RUNNER_TEMP/apexload-kubeconfig" >> "$GITHUB_ENV"
+
+      - name: Checkout trusted tag verifier from protected main
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ inputs.release }}
+          ref: refs/heads/main
           fetch-depth: 0
           persist-credentials: false
 
-      - name: Verify dispatch ref and signed deployment tooling
+      - name: Verify exact remote signed release tag
+        id: verified
         env:
-          RELEASE_TAG: ${{ inputs.release }}
-          DISPATCH_REF: ${{ github.ref }}
-          RELEASE_COMMIT: ${{ github.sha }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.client_payload.release }}
+          DEPLOYMENT_ENVIRONMENT: ${{ github.event.client_payload.environment }}
+          REPOSITORY: ${{ github.repository }}
           APEXLOAD_RELEASE_TAG_PUBLIC_KEYS: ${{ vars.APEXLOAD_RELEASE_TAG_PUBLIC_KEYS }}
         run: |
           set -euo pipefail
-          [[ "$DISPATCH_REF" == "refs/tags/${RELEASE_TAG}" ]] || {
-            echo 'run this deployment workflow at the exact release tag ref' >&2
-            exit 1
-          }
-          ./scripts/release/verify-tag.sh "$RELEASE_TAG" "$RELEASE_COMMIT"
+          [[ "$DEPLOYMENT_ENVIRONMENT" == staging || "$DEPLOYMENT_ENVIRONMENT" == production ]]
+          ./scripts/release/semver.sh tag "$RELEASE_TAG"
+          git fetch --force --no-tags origin \
+            "+refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          release_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          release_tag_object="$(git rev-parse "refs/tags/${RELEASE_TAG}")"
+          ./scripts/release/verify-tag.sh "$RELEASE_TAG" "$release_commit"
+          server_url="${GITHUB_SERVER_URL:-https://github.com}"
+          export GH_HOST="${server_url#https://}"
+          [[ "$GH_HOST" == github.com ]] || export GH_ENTERPRISE_TOKEN="$GH_TOKEN"
+          remote_ref="$(gh api "repos/${REPOSITORY}/git/ref/tags/${RELEASE_TAG}")"
+          [[ "$(jq -er 'select(.object.type == "tag") | .object.sha' <<< "$remote_ref")" == "$release_tag_object" ]]
+          remote_tag="$(gh api "repos/${REPOSITORY}/git/tags/${release_tag_object}")"
+          [[ "$(jq -er 'select(.object.type == "commit") | .object.sha' <<< "$remote_tag")" == "$release_commit" ]]
+          {
+            printf 'commit=%s\n' "$release_commit"
+            printf 'tag-object=%s\n' "$release_tag_object"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout verified signed deployment tooling
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ steps.verified.outputs.commit }}
+          fetch-depth: 0
+          persist-credentials: false
 
       - name: Setup kubectl
         if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
         uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
         with:
-          version: v1.34.1
+          version: v1.34.9
 
       - name: Setup Helm
         if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
         uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
         with:
-          version: v3.19.0
+          version: v3.21.3
 
       - name: Install cosign
         if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
@@ -76,9 +93,24 @@ jobs:
       - name: Verify exact deployment toolchain
         run: |
           set -euo pipefail
-          [[ "$(kubectl version --client -o json | jq -r '.clientVersion.gitVersion')" == v1.34.1 ]]
-          [[ "$(helm version --template '{{.Version}}')" == v3.19.0 ]]
+          [[ "$(kubectl version --client -o json | jq -r '.clientVersion.gitVersion')" == v1.34.9 ]]
+          [[ "$(helm version --template '{{.Version}}')" == v3.21.3 ]]
           cosign version 2>&1 | grep -Eq 'GitVersion:[[:space:]]+v3\.1\.1([[:space:]]|$)'
+
+      - name: Validate release registry credentials
+        env:
+          RELEASE_REGISTRY: ${{ vars.APEXLOAD_RELEASE_REGISTRY || 'ghcr.io' }}
+          RELEASE_REGISTRY_USERNAME: ${{ vars.APEXLOAD_RELEASE_REGISTRY_USERNAME }}
+          RELEASE_REGISTRY_PASSWORD: ${{ secrets.APEXLOAD_RELEASE_REGISTRY_PASSWORD }}
+          GITHUB_SERVER: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_SERVER" != https://github.com || "$RELEASE_REGISTRY" != ghcr.io ]]; then
+            [[ -n "$RELEASE_REGISTRY_USERNAME" && -n "$RELEASE_REGISTRY_PASSWORD" ]] || {
+              echo 'custom/GHES release registries require explicit username and password configuration' >&2
+              exit 1
+            }
+          fi
 
       - name: Authenticate to the release registry
         uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
@@ -106,21 +138,26 @@ jobs:
 
       - name: Validate release input
         env:
-          RELEASE_TAG: ${{ inputs.release }}
-        run: |
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]
+          RELEASE_TAG: ${{ github.event.client_payload.release }}
+        run: bash ./scripts/release/semver.sh tag "$RELEASE_TAG"
 
       - name: Download published release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release }}
+          RELEASE_TAG: ${{ github.event.client_payload.release }}
           REPOSITORY: ${{ github.repository }}
-        run: ./scripts/release/download-release.sh "$RELEASE_TAG" "$RUNNER_TEMP/release" "$REPOSITORY"
+          VERIFIED_TAG_OBJECT: ${{ steps.verified.outputs.tag-object }}
+        run: |
+          ./scripts/release/download-release.sh \
+            "$RELEASE_TAG" \
+            "$RUNNER_TEMP/release" \
+            "$REPOSITORY" \
+            "$VERIFIED_TAG_OBJECT"
 
       - name: Verify portable release and image signatures
         id: release
         env:
-          RELEASE_TAG: ${{ inputs.release }}
+          RELEASE_TAG: ${{ github.event.client_payload.release }}
           RELEASE_PUBLIC_KEY: ${{ vars.APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM }}
           COSIGN_PUBLIC_KEY: ${{ vars.COSIGN_PUBLIC_KEY }}
         run: |
@@ -155,6 +192,7 @@ jobs:
             printf 'generator-platforms=%s\n' "$generator_platforms"
             printf 'commit=%s\n' "$(jq -r '.commit' "$manifest")"
             printf 'version=%s\n' "$(jq -r '.version' "$manifest")"
+            printf 'build-time=%s\n' "$(jq -r '.build_time' "$manifest")"
             printf 'chart=%s\n' "$RUNNER_TEMP/release/$(jq -r '.helm.asset' "$manifest")"
             printf 'public-key=%s\n' "$release_public_key"
             printf 'apexctl-path=%s\n' "$RUNNER_TEMP/release/$apexctl_asset"
@@ -166,6 +204,8 @@ jobs:
           AKS_CLUSTER_NAME: ${{ vars.AKS_CLUSTER_NAME }}
         run: |
           set -euo pipefail
+          umask 077
+          : > "$KUBECONFIG"
           az aks get-credentials \
             --resource-group "$AKS_RESOURCE_GROUP" \
             --name "$AKS_CLUSTER_NAME" \
@@ -186,7 +226,26 @@ jobs:
           umask 077
           printf '%s\n' "$HELM_VALUES_YAML" > "$RUNNER_TEMP/apexload-values.yaml"
 
-      - name: Capture rollback revision
+      - name: Validate cluster and active-run prerequisites
+        env:
+          KUBE_NAMESPACE: ${{ vars.APEXLOAD_NAMESPACE }}
+          APEXLOAD_CONTROLLER_URL: ${{ vars.APEXLOAD_CONTROLLER_URL }}
+          APEXLOAD_DEPLOY_API_KEY: ${{ secrets.APEXLOAD_DEPLOY_API_KEY }}
+          APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL: ${{ secrets.APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL }}
+          APEXLOAD_ACTIVE_RUN_OVERRIDE_API_KEY: ${{ secrets.APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL != '' && secrets.APEXLOAD_ACTIVE_RUN_OVERRIDE_API_KEY || '' }}
+          APEXLOAD_DEPLOY_RELEASE: ${{ github.event.client_payload.release }}
+          APEXLOAD_DEPLOY_ENVIRONMENT: ${{ github.event.client_payload.environment == 'production' && 'aks-production' || 'aks-staging' }}
+          APEXLOAD_DEPLOY_ACTOR: ${{ github.actor }}
+          APEXLOAD_DEPLOY_REPOSITORY: ${{ github.repository }}
+          APEXLOAD_DEPLOY_SERVER_URL: ${{ github.server_url }}
+          APEXLOAD_DEPLOY_RUN_ID: ${{ github.run_id }}
+          APEXLOAD_DEPLOY_RUN_ATTEMPT: ${{ github.run_attempt }}
+          APEXLOAD_REQUIRED_KUBERNETES_SECRETS: ${{ vars.APEXLOAD_REQUIRED_KUBERNETES_SECRETS }}
+          APEXLOAD_INGRESS_TLS_SECRET: ${{ vars.APEXLOAD_INGRESS_TLS_SECRET }}
+          APEXLOAD_GRPC_TLS_SECRETS: ${{ vars.APEXLOAD_GRPC_TLS_SECRETS }}
+        run: ./scripts/deploy/kubernetes-preflight.sh "$KUBE_NAMESPACE"
+
+      - name: Capture lease-protected rollback baseline
         id: prior
         env:
           HELM_RELEASE: ${{ vars.APEXLOAD_HELM_RELEASE }}
@@ -197,36 +256,75 @@ jobs:
           revision="$(helm status "$HELM_RELEASE" --namespace "$KUBE_NAMESPACE" -o json 2>/dev/null | jq -r '.version // 0' || printf '0')"
           [[ "$revision" =~ ^(0|[1-9][0-9]*)$ ]]
           prior_commit=''
+          prior_version=''
+          prior_build_time=''
+          prior_controller_image=''
+          prior_generator_image=''
+          prior_controller_image_ids='{}'
+          prior_generator_image_ids='{}'
           if [[ "$revision" != 0 ]]; then
-            prior_commit="$(curl --fail --silent --show-error --retry 3 \
-              "${CONTROLLER_URL%/}/api/v1/system/health" | jq -r '.commit // empty')"
+            prior_health="$(curl --fail --silent --show-error --retry 3 --retry-all-errors \
+              --connect-timeout 5 --max-time 30 \
+              "${CONTROLLER_URL%/}/api/v1/system/health")"
+            prior_commit="$(jq -r '.revision // empty' <<< "$prior_health")"
+            prior_version="$(jq -r '.version // empty' <<< "$prior_health")"
+            prior_build_time="$(jq -r '.build_time // empty' <<< "$prior_health")"
+            prior_controller_image="$(kubectl --namespace "$KUBE_NAMESPACE" get deployment apexload-controller \
+              -o jsonpath='{.spec.template.spec.containers[?(@.name=="controller")].image}')"
+            prior_generator_image="$(kubectl --namespace "$KUBE_NAMESPACE" get statefulset apexload-generator \
+              -o jsonpath='{.spec.template.spec.containers[?(@.name=="generator")].image}')"
+            nodes="$(kubectl get nodes -o json)"
+            capture_image_ids() {
+              local selector="$1"
+              local container="$2"
+              kubectl --namespace "$KUBE_NAMESPACE" get pods -l "$selector" -o json \
+                | jq -ce --arg container "$container" --argjson nodes "$nodes" '
+                  def node_arch($name):
+                    ([ $nodes.items[]
+                      | select(.metadata.name == $name)
+                      | .metadata.labels["kubernetes.io/arch"] ]
+                    | if length == 1 then .[0] else error("pod node architecture is unavailable") end);
+                  reduce .items[] as $pod ({};
+                    node_arch($pod.spec.nodeName) as $arch |
+                    ([ $pod.status.containerStatuses[]?
+                      | select(.name == $container)
+                      | .imageID ]
+                    | if length == 1 and (.[0] | test("sha256:[0-9a-f]{64}$")) then .[0]
+                      else error("pod imageID is unavailable") end) as $image_id |
+                    if .[$arch] == null or .[$arch] == $image_id then .[$arch] = $image_id
+                    else error("multiple imageIDs observed for one architecture") end
+                  ) | if length > 0 then . else error("no workload pods found") end
+                '
+            }
+            prior_controller_image_ids="$(capture_image_ids 'app.kubernetes.io/name=apexload-controller' controller)"
+            prior_generator_image_ids="$(capture_image_ids 'app.kubernetes.io/name=apexload-generator' generator)"
             [[ "$prior_commit" =~ ^[0-9a-f]{40}$ ]] || {
               echo 'could not capture a verifiable controller commit for automatic rollback' >&2
+              exit 1
+            }
+            bash ./scripts/release/semver.sh version "$prior_version" || {
+              echo 'could not capture a verifiable controller version for automatic rollback' >&2
+              exit 1
+            }
+            [[ "$prior_build_time" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || {
+              echo 'could not capture a verifiable controller build time for automatic rollback' >&2
+              exit 1
+            }
+            [[ -n "$prior_controller_image" && -n "$prior_generator_image" ]] || {
+              echo 'could not capture prior workload images for automatic rollback' >&2
               exit 1
             }
           fi
           {
             printf 'revision=%s\n' "$revision"
             printf 'commit=%s\n' "$prior_commit"
+            printf 'version=%s\n' "$prior_version"
+            printf 'build-time=%s\n' "$prior_build_time"
+            printf 'controller-image=%s\n' "$prior_controller_image"
+            printf 'generator-image=%s\n' "$prior_generator_image"
+            printf 'controller-image-ids=%s\n' "$prior_controller_image_ids"
+            printf 'generator-image-ids=%s\n' "$prior_generator_image_ids"
           } >> "$GITHUB_OUTPUT"
-
-      - name: Validate cluster and active-run prerequisites
-        env:
-          KUBE_NAMESPACE: ${{ vars.APEXLOAD_NAMESPACE }}
-          APEXLOAD_CONTROLLER_URL: ${{ vars.APEXLOAD_CONTROLLER_URL }}
-          APEXLOAD_DEPLOY_API_KEY: ${{ secrets.APEXLOAD_DEPLOY_API_KEY }}
-          APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL: ${{ secrets.APEXLOAD_ACTIVE_RUN_OVERRIDE_APPROVAL }}
-          APEXLOAD_DEPLOY_RELEASE: ${{ inputs.release }}
-          APEXLOAD_DEPLOY_ENVIRONMENT: aks-${{ inputs.environment }}
-          APEXLOAD_DEPLOY_ACTOR: ${{ github.actor }}
-          APEXLOAD_DEPLOY_REPOSITORY: ${{ github.repository }}
-          APEXLOAD_DEPLOY_SERVER_URL: ${{ github.server_url }}
-          APEXLOAD_DEPLOY_RUN_ID: ${{ github.run_id }}
-          APEXLOAD_DEPLOY_RUN_ATTEMPT: ${{ github.run_attempt }}
-          APEXLOAD_REQUIRED_KUBERNETES_SECRETS: ${{ vars.APEXLOAD_REQUIRED_KUBERNETES_SECRETS }}
-          APEXLOAD_INGRESS_TLS_SECRET: ${{ vars.APEXLOAD_INGRESS_TLS_SECRET }}
-          APEXLOAD_GRPC_TLS_SECRETS: ${{ vars.APEXLOAD_GRPC_TLS_SECRETS }}
-        run: ./scripts/deploy/kubernetes-preflight.sh "$KUBE_NAMESPACE"
 
       - name: Render, diff, deploy atomically, and verify
         id: helm-deploy
@@ -239,9 +337,14 @@ jobs:
           CONTROLLER_PLATFORMS: ${{ steps.release.outputs.controller-platforms }}
           GENERATOR_PLATFORMS: ${{ steps.release.outputs.generator-platforms }}
           RELEASE_COMMIT: ${{ steps.release.outputs.commit }}
+          RELEASE_VERSION: ${{ steps.release.outputs.version }}
+          RELEASE_BUILD_TIME: ${{ steps.release.outputs.build-time }}
           CONTROLLER_URL: ${{ vars.APEXLOAD_CONTROLLER_URL }}
+          APEXLOAD_DEPLOY_API_KEY: ${{ secrets.APEXLOAD_DEPLOY_API_KEY }}
         run: |
-          ./scripts/deploy/kubernetes-deploy.sh \
+          ./scripts/deploy/deployment-lease.sh renew
+          timeout --foreground --signal=TERM --kill-after=60s 24m \
+            ./scripts/deploy/kubernetes-deploy.sh \
             "$HELM_RELEASE" \
             "$KUBE_NAMESPACE" \
             "$CHART" \
@@ -251,7 +354,14 @@ jobs:
             "$RELEASE_COMMIT" \
             "$CONTROLLER_URL" \
             "$CONTROLLER_PLATFORMS" \
-            "$GENERATOR_PLATFORMS"
+            "$GENERATOR_PLATFORMS" \
+            "$RELEASE_VERSION" \
+            "$RELEASE_BUILD_TIME"
+
+      - name: Renew deployment lease before distributed release smoke
+        env:
+          APEXLOAD_DEPLOY_API_KEY: ${{ secrets.APEXLOAD_DEPLOY_API_KEY }}
+        run: ./scripts/deploy/deployment-lease.sh renew
 
       - name: Run authenticated distributed release smoke
         id: distributed-smoke
@@ -263,41 +373,70 @@ jobs:
           controller-url: ${{ vars.APEXLOAD_CONTROLLER_URL }}
           project-id: ${{ vars.APEXLOAD_SMOKE_PROJECT_ID }}
           script-id: ${{ vars.APEXLOAD_SMOKE_SCRIPT_ID }}
-          test-name: AKS ${{ inputs.environment }} deployment smoke
-          release-id: ${{ inputs.release }}
+          test-name: AKS ${{ github.event.client_payload.environment }} deployment smoke
+          release-id: ${{ github.event.client_payload.release }}
           auth-mode: ${{ vars.APEXLOAD_CI_AUTH_MODE || 'oidc' }}
           vusers: "1"
           duration: 30s
           ramp-up: 0s
-          require-sla: "true"
+          require-sla: "false"
           require-results: "true"
           publish-check: "true"
           timeout: 10m
           apexctl-path: ${{ steps.release.outputs.apexctl-path }}
           evidence-directory: .apexload/deployment-smoke
 
-      - name: Upload deployment smoke evidence
-        if: always()
-        uses: ./.github/actions/upload-artifact
-        with:
-          name: aks-${{ inputs.environment }}-${{ inputs.release }}-evidence
-          path: .apexload/deployment-smoke/
-          if-no-files-found: error
-          retention-days: 90
-
       - name: Roll back after post-deploy gate failure
         if: ${{ (failure() || cancelled()) && steps.helm-deploy.outcome != 'skipped' }}
-        timeout-minutes: 20
+        timeout-minutes: 25
         env:
           HELM_RELEASE: ${{ vars.APEXLOAD_HELM_RELEASE }}
           KUBE_NAMESPACE: ${{ vars.APEXLOAD_NAMESPACE }}
           PREVIOUS_REVISION: ${{ steps.prior.outputs.revision }}
           PREVIOUS_COMMIT: ${{ steps.prior.outputs.commit }}
+          PREVIOUS_VERSION: ${{ steps.prior.outputs.version }}
+          PREVIOUS_BUILD_TIME: ${{ steps.prior.outputs.build-time }}
+          PREVIOUS_CONTROLLER_IMAGE: ${{ steps.prior.outputs.controller-image }}
+          PREVIOUS_GENERATOR_IMAGE: ${{ steps.prior.outputs.generator-image }}
+          PREVIOUS_CONTROLLER_IMAGE_IDS: ${{ steps.prior.outputs.controller-image-ids }}
+          PREVIOUS_GENERATOR_IMAGE_IDS: ${{ steps.prior.outputs.generator-image-ids }}
           CONTROLLER_URL: ${{ vars.APEXLOAD_CONTROLLER_URL }}
+          APEXLOAD_DEPLOY_API_KEY: ${{ secrets.APEXLOAD_DEPLOY_API_KEY }}
         run: |
-          ./scripts/deploy/rollback-helm.sh \
+          if ! timeout --foreground --signal=TERM --kill-after=15s 1m \
+            ./scripts/deploy/deployment-lease.sh renew; then
+            echo 'warning: candidate controller could not renew the lease; proceeding with captured rollback ownership' >&2
+          fi
+          timeout --foreground --signal=TERM --kill-after=30s 23m \
+            ./scripts/deploy/rollback-helm.sh \
             "$HELM_RELEASE" \
             "$KUBE_NAMESPACE" \
             "$PREVIOUS_REVISION" \
             "$CONTROLLER_URL" \
-            "$PREVIOUS_COMMIT"
+            "$PREVIOUS_COMMIT" \
+            "$PREVIOUS_VERSION" \
+            "$PREVIOUS_BUILD_TIME" \
+            "$PREVIOUS_CONTROLLER_IMAGE" \
+            "$PREVIOUS_GENERATOR_IMAGE" \
+            "$PREVIOUS_CONTROLLER_IMAGE_IDS" \
+            "$PREVIOUS_GENERATOR_IMAGE_IDS"
+
+      - name: Release deployment lease
+        if: always()
+        env:
+          APEXLOAD_DEPLOY_API_KEY: ${{ secrets.APEXLOAD_DEPLOY_API_KEY }}
+        run: ./scripts/deploy/deployment-lease.sh release
+
+      - name: Remove cluster and Helm credentials
+        if: always()
+        run: rm -f "$KUBECONFIG" "$RUNNER_TEMP/apexload-values.yaml"
+
+      - name: Upload deployment smoke evidence
+        if: always()
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: aks-${{ github.event.client_payload.environment }}-${{ github.event.client_payload.release }}-evidence
+          path: .apexload/deployment-smoke/
+          if-no-files-found: error
+          retention-days: 90
+          include-hidden-files: true

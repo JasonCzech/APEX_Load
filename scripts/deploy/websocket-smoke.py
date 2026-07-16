@@ -65,8 +65,8 @@ def validate_upgrade(response: bytes, key: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("url")
-    parser.add_argument("--token", default="")
     args = parser.parse_args()
+    token = os.environ.get("APEXLOAD_WEBSOCKET_SMOKE_TOKEN", "").strip()
     parsed = urllib.parse.urlparse(args.url)
     if parsed.scheme not in {"ws", "wss"} or not parsed.hostname:
         raise SystemExit("websocket smoke: URL must use ws:// or wss://")
@@ -88,8 +88,8 @@ def main() -> int:
         f"Sec-WebSocket-Key: {key}",
         "Sec-WebSocket-Version: 13",
     ]
-    if args.token:
-        headers.append(f"Authorization: Bearer {args.token}")
+    if token:
+        headers.append(f"Authorization: Bearer {token}")
     try:
         connection.sendall(("\r\n".join(headers) + "\r\n\r\n").encode("ascii"))
         response = read_http_headers(connection)

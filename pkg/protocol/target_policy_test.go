@@ -11,12 +11,27 @@ import (
 
 func TestTargetURLAllowed(t *testing.T) {
 	allowed := []string{"api.example.test", "*.assets.example.test"}
-	for _, raw := range []string{"https://api.example.test/path", "wss://cdn.assets.example.test/socket", "about:blank", "data:text/plain,ok", "blob:https://api.example.test/id"} {
+	for _, raw := range []string{
+		"https://api.example.test/path",
+		"wss://cdn.assets.example.test/socket",
+		"about:blank",
+		"data:text/plain,ok",
+		"blob:https://api.example.test/id",
+		"BLOB:https://api.example.test/id",
+		"blob:BLOB:https://api.example.test/id",
+	} {
 		if !TargetURLAllowed(raw, allowed) {
 			t.Errorf("TargetURLAllowed(%q) = false", raw)
 		}
 	}
-	for _, raw := range []string{"https://attacker.example/path", "blob:https://attacker.example/id", "file:///etc/passwd", "not-a-url"} {
+	for _, raw := range []string{
+		"https://attacker.example/path",
+		"blob:https://attacker.example/id",
+		"BLOB:https://attacker.example/id",
+		"blob:",
+		"file:///etc/passwd",
+		"not-a-url",
+	} {
 		if TargetURLAllowed(raw, allowed) {
 			t.Errorf("TargetURLAllowed(%q) = true", raw)
 		}
@@ -47,6 +62,7 @@ func TestTargetAddressAndDSNHostExtraction(t *testing.T) {
 		want   []string
 	}{
 		{driver: "postgres", dsn: "postgres://user:password@db.example.test:5432/app", want: []string{"db.example.test"}},
+		{driver: "postgres", dsn: "postgres://user:password@db.example.test:5432/app?host=override.example.test", want: []string{"db.example.test", "override.example.test"}},
 		{driver: "postgres", dsn: "host=db-a.example.test,db-b.example.test port=5432 dbname=app", want: []string{"db-a.example.test", "db-b.example.test"}},
 		{driver: "mysql", dsn: "user:password@tcp(mysql.example.test:3306)/app", want: []string{"mysql.example.test"}},
 		{driver: "odbc", dsn: "Server=tcp:sql.example.test,1433;Database=app", want: []string{"sql.example.test"}},

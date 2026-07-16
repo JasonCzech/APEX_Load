@@ -6,8 +6,9 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"encoding/xml"
+	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -18,7 +19,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -28,6 +31,11 @@ const (
 	ciRunMaxNameBytes   = 256
 	ciRunMaxVariables   = 128
 	ciRunMaxValueBytes  = 16 << 10
+
+	ciExternalErrorMaxBytes     = 32 << 10
+	ciExternalSLADetailMaxBytes = 4 << 10
+	ciExternalSLADetailLimit    = 32
+	ciExternalTruncatedSuffix   = "\n[TRUNCATED]"
 )
 
 type ciRunExecutionRequest struct {
@@ -68,6 +76,7 @@ type ciRunSource struct {
 	Ref               string `json:"ref"`
 	SHA               string `json:"sha"`
 	WorkflowRef       string `json:"workflow_ref"`
+	JobWorkflowRef    string `json:"job_workflow_ref,omitempty"`
 	RunID             string `json:"run_id"`
 	RunAttempt        string `json:"run_attempt"`
 	Actor             string `json:"actor,omitempty"`
@@ -99,16 +108,21 @@ func (r ciRunCreateRequest) shouldPublishCheck() bool {
 }
 
 type ciRunMetadata struct {
-	SchemaVersion       int         `json:"schema_version"`
-	Source              ciRunSource `json:"source"`
-	ScriptPath          string      `json:"script_path,omitempty"`
-	ScriptIdentity      string      `json:"script_identity"`
-	RequireSLA          bool        `json:"require_sla"`
-	RequireResults      bool        `json:"require_results"`
-	PublishCheck        bool        `json:"publish_check"`
-	CheckInstallationID int64       `json:"check_installation_id,omitempty"`
-	PolicyRevision      int64       `json:"policy_revision"`
-	IdempotencySHA      string      `json:"idempotency_sha256"`
+	SchemaVersion           int                   `json:"schema_version"`
+	Source                  ciRunSource           `json:"source"`
+	Name                    string                `json:"name,omitempty"`
+	ReleaseID               string                `json:"release_id,omitempty"`
+	ScriptPath              string                `json:"script_path,omitempty"`
+	ScriptIdentity          string                `json:"script_identity"`
+	Execution               ciRunExecutionRequest `json:"execution"`
+	Goals                   ciRunGoalsRequest     `json:"goals"`
+	RequireSLA              bool                  `json:"require_sla"`
+	RequireResults          bool                  `json:"require_results"`
+	PublishCheck            bool                  `json:"publish_check"`
+	CheckInstallationID     int64                 `json:"check_installation_id,omitempty"`
+	PolicyRevision          int64                 `json:"policy_revision"`
+	IdempotencySHA          string                `json:"idempotency_sha256"`
+	DeploymentLeaseTokenSHA string                `json:"deployment_lease_token_sha256,omitempty"`
 }
 
 type ciRunResponse struct {
@@ -128,6 +142,13 @@ type ciRunResponse struct {
 	ReportURL      string   `json:"report_url"`
 	CheckURL       string   `json:"check_url,omitempty"`
 	Error          string   `json:"error,omitempty"`
+
+	terminalEvidenceChecked  bool `json:"-"`
+	terminalEvidenceVerified bool `json:"-"`
+}
+
+type ciAbortRequest struct {
+	Reason string `json:"reason,omitempty"`
 }
 
 func resolveCIRunCreateProjectID(r *http.Request, _ storage.Store) (string, int, string) {
@@ -162,15 +183,22 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if claims, ok := ciClaimsFromContext(r.Context()); ok {
+		// Job environment is not exposed as a default GitHub environment
+		// variable, and caller-supplied values are not an identity assertion. Bind
+		// the accepted run to the verified token claims before comparing and
+		// persisting its source metadata.
+		req.Source.Environment = claims.Environment
+		req.Source.RunnerEnvironment = claims.RunnerEnvironment
+		req.Source.JobWorkflowRef = claims.JobWorkflowRef
 		if err := claims.matchCIRunSource(req.ProjectID, req.Source); err != nil {
 			writeError(w, http.StatusForbidden, err.Error())
 			return
 		}
-		// Persist and enforce the cryptographically verified claims, never
-		// caller-supplied environment or runner metadata.
-		req.Source.Environment = claims.Environment
-		req.Source.RunnerEnvironment = claims.RunnerEnvironment
-	} else if _, ok := AuthenticatedServiceAccountFromContext(r.Context()); ok {
+	} else if account, ok := AuthenticatedServiceAccountFromContext(r.Context()); ok {
+		if err := s.validateCIRunnerServiceAccount(account, req.ProjectID); err != nil {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
 		verifiedSource, verifyErr := s.verifyAPIKeyCISource(r.Context(), githubPolicy, req.Source)
 		if verifyErr != nil {
 			writeError(w, http.StatusForbidden, "GitHub API-key fallback verification failed: "+verifyErr.Error())
@@ -190,21 +218,49 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	script, scriptIdentity, inline, err := s.resolveCIRunScript(req)
+	scriptIdentity, inline, err := ciRunScriptSelectorIdentity(req)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := validateCIRunRequest(req, policy, script); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	testID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload-ci-run:"+req.ProjectID+":"+idempotencyKey)).String()
+	deploymentLeaseToken := strings.TrimSpace(r.Header.Get(deploymentLeaseTokenHeader))
+	if deploymentLeaseToken != "" && !deploymentLeaseTokenPattern.MatchString(deploymentLeaseToken) {
+		writeError(w, http.StatusBadRequest, "invalid deployment lease authorization header")
 		return
 	}
-	testID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload-ci-run:"+req.ProjectID+":"+idempotencyKey)).String()
-	metadata := ciRunMetadata{SchemaVersion: ciRunSchemaVersion, Source: req.Source, ScriptPath: firstNonEmpty(req.ScriptPath, req.Source.ScriptPath), ScriptIdentity: scriptIdentity, RequireSLA: req.Goals.RequireSLA, RequireResults: req.Goals.RequireResults, PublishCheck: req.shouldPublishCheck(), CheckInstallationID: githubPolicy.AppInstallationID, PolicyRevision: policy.Revision, IdempotencySHA: sha256String(idempotencyKey)}
+	deploymentLeaseTokenSHA := ""
+	if deploymentLeaseToken != "" {
+		deploymentLeaseTokenSHA = deploymentLeaseTokenHash(deploymentLeaseToken)
+	}
+	metadata := ciRunMetadata{SchemaVersion: ciRunSchemaVersion, Source: req.Source, Name: strings.TrimSpace(req.Name), ReleaseID: strings.TrimSpace(req.ReleaseID), ScriptPath: firstNonEmpty(req.ScriptPath, req.Source.ScriptPath), ScriptIdentity: scriptIdentity, Execution: req.Execution, Goals: req.Goals, RequireSLA: req.Goals.RequireSLA, RequireResults: req.Goals.RequireResults, PublishCheck: req.shouldPublishCheck(), CheckInstallationID: githubPolicy.AppInstallationID, PolicyRevision: policy.Revision, IdempotencySHA: sha256String(idempotencyKey), DeploymentLeaseTokenSHA: deploymentLeaseTokenSHA}
 	existing, existingOK := s.runner.GetTest(testID)
 	if existingOK {
 		if err := validateExistingCIRun(existing, req.ProjectID, metadata); err != nil {
 			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+	}
+	// An accepted attempt is bound to the immutable request metadata above. Do
+	// not reload a mutable library script before returning that run: an editor
+	// may update, move, or delete the source after its approved snapshot was
+	// compiled, but an exact idempotent retry must still recover the original
+	// attempt. New attempts continue through current script/policy validation.
+	var script *dsl.Script
+	if !existingOK {
+		var resolvedIdentity string
+		var resolvedInline bool
+		script, resolvedIdentity, resolvedInline, err = s.resolveCIRunScript(req)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if resolvedIdentity != scriptIdentity || resolvedInline != inline {
+			writeError(w, http.StatusConflict, "CI script selection changed while the run was being created")
+			return
+		}
+		if err := validateCIRunRequest(req, policy, script, engine.NewProjectSecretResolver(req.ProjectID)); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 	}
@@ -231,6 +287,9 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 				if _, exists := s.runner.GetTest(testID); exists {
 					return
 				}
+				if stored, err := s.store.GetTest(testID); err == nil && stored != nil {
+					return
+				}
 				s.deleteCIGitHubCheckIntent(testID)
 			}
 		}()
@@ -242,6 +301,17 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
+		if strings.EqualFold(strings.TrimSpace(existing.Status), "QUEUED") && existing.StartedAt == nil {
+			if err := s.runner.StartTest(existing.ID); err != nil {
+				s.respondFailedCIRunStart(w, r, existing, "controller could not start recovered CI run", err)
+				return
+			}
+			actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+			if actorType == "user" || actorType == "service_account" {
+				s.runner.AttributeTestStarted(existing.ID, actorSubject, actorDisplayName)
+			}
+			existing, _ = s.runner.GetTest(existing.ID)
+		}
 		response, _ := s.buildCIRunResponse(r.Context(), existing)
 		writeJSON(w, http.StatusAccepted, response)
 		return
@@ -252,34 +322,39 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 	// update cannot change the already-approved CI execution snapshot.
 	script = cloneScriptDefinition(script)
 	applyCIRuntimeTargetPolicy(script, policy)
-	script.ID = uuid.NewSHA1(uuid.NameSpaceOID, []byte("apexload-ci-script:"+testID)).String()
+	// The snapshot ID is process-private and intentionally unpredictable. Its
+	// stable identity lives in CI metadata; making the transient cache key
+	// deterministic would let a concurrent library write target the compiler's
+	// approved snapshot by guessing the run ID and script identity.
+	script.ID = uuid.NewString()
 	script.ProjectID = req.ProjectID
 	script.FolderID = nil
 	if inline {
-		script.GeneratedBy = "github-actions-ci-inline"
+		script.GeneratedBy = ciInlineScriptGenerator
 	} else {
-		script.GeneratedBy = "github-actions-ci-library-snapshot"
+		script.GeneratedBy = ciLibraryScriptGenerator
 	}
-	stored, storeErr := s.runner.StoreScriptDurable(script)
+	stored, storeErr := s.runner.acquirePrivateCIScriptSnapshot(script)
 	if storeErr != nil {
 		writeError(w, http.StatusInternalServerError, "failed to snapshot CI script: "+storeErr.Error())
 		return
 	}
 	effectiveScriptID := stored.ID
-	defer func() {
-		if _, cleanupErr := s.runner.DeleteScriptDurableInProject(stored.ID, req.ProjectID); cleanupErr != nil {
-			slogWarnCIScriptCleanup(stored.ID, cleanupErr)
-		}
-	}()
+	defer s.runner.releasePrivateCIScriptSnapshot(stored.ID)
 	materializationKey, err := encodeCIRunMetadata(metadata)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to encode CI run metadata")
 		return
 	}
+	goalConfig := req.Goals.goalConfig()
+	scenarioMode := ""
+	if goalConfig != nil {
+		scenarioMode = "goal_oriented"
+	}
 	create := CreateTestRequest{
 		Name: firstNonEmpty(strings.TrimSpace(req.Name), defaultCIRunName(req.Source, script)), RequestedTestID: testID, MaterializationKey: materializationKey,
 		Duration: strings.TrimSpace(req.Execution.Duration), ReleaseID: strings.TrimSpace(req.ReleaseID), ProjectID: req.ProjectID,
-		ScriptID: effectiveScriptID, VUsers: req.Execution.VUsers, RampUp: strings.TrimSpace(req.Execution.RampUp), GoalConfig: req.Goals.goalConfig(),
+		ScriptID: effectiveScriptID, VUsers: req.Execution.VUsers, RampUp: strings.TrimSpace(req.Execution.RampUp), ScenarioMode: scenarioMode, GoalConfig: goalConfig,
 		RuntimeSettings: &RuntimeSettingsOverride{BaseURL: strings.TrimSpace(req.Execution.BaseURL), Env: cloneCIStringMap(req.Execution.Variables)},
 	}
 	test, err := s.runner.CreateTest(create)
@@ -292,6 +367,13 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 						writeError(w, http.StatusBadGateway, "failed to recover required GitHub Check: "+checkErr.Error())
 						return
 					}
+				}
+				if strings.EqualFold(strings.TrimSpace(existing.Status), "QUEUED") && existing.StartedAt == nil {
+					if startErr := s.runner.StartTest(existing.ID); startErr != nil {
+						s.respondFailedCIRunStart(w, r, existing, "controller could not start recovered CI run", startErr)
+						return
+					}
+					existing, _ = s.runner.GetTest(existing.ID)
 				}
 				response, _ := s.buildCIRunResponse(r.Context(), existing)
 				writeJSON(w, http.StatusAccepted, response)
@@ -308,17 +390,17 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 	}
 	if metadata.PublishCheck {
 		if _, err := s.createCIGitHubCheck(r.Context(), checkClient, githubPolicy, test, metadata); err != nil {
-			_ = s.runner.AbortTest(test.ID)
+			// The durable Check intent was written before materialization. A lost
+			// GitHub response can therefore be ambiguous: GitHub may have accepted
+			// the Check even though this request observed an error. Keep the run
+			// queued so an exact retry or the outbox reconciler can recover the
+			// authoritative Check and only then start execution.
 			writeError(w, http.StatusBadGateway, "failed to create required GitHub Check: "+err.Error())
 			return
 		}
 	}
 	if err := s.runner.StartTest(test.ID); err != nil {
-		_ = s.runner.AbortTest(test.ID)
-		if latest, ok := s.runner.GetTest(test.ID); ok {
-			_, _ = s.buildCIRunResponse(r.Context(), latest)
-		}
-		writeError(w, http.StatusBadRequest, "failed to start CI run: "+err.Error())
+		s.respondFailedCIRunStart(w, r, test, "controller could not start CI run", err)
 		return
 	}
 	if actorType == "user" || actorType == "service_account" {
@@ -327,6 +409,25 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 	test, _ = s.runner.GetTest(test.ID)
 	response, _ := s.buildCIRunResponse(r.Context(), test)
 	s.recordAuditEvent(r, "ci.run.create", "success", "test", test.ID, test.ProjectID, map[string]any{"repository": req.Source.Repository, "workflow_ref": req.Source.WorkflowRef, "run_id": req.Source.RunID, "run_attempt": req.Source.RunAttempt, "script_identity": scriptIdentity, "publish_check": metadata.PublishCheck})
+	writeJSON(w, http.StatusAccepted, response)
+}
+
+func (s *Server) respondFailedCIRunStart(w http.ResponseWriter, r *http.Request, test *ManagedTest, prefix string, startErr error) {
+	if s == nil || s.runner == nil || test == nil {
+		writeError(w, http.StatusInternalServerError, "failed to persist CI run start failure")
+		return
+	}
+	message := strings.TrimSpace(prefix) + ": " + startErr.Error()
+	if err := s.runner.failCIRunBeforeExecution(test.ID, message); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to persist CI run start failure: "+err.Error())
+		return
+	}
+	latest, ok := s.runner.GetTest(test.ID)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, "failed CI run is unavailable")
+		return
+	}
+	response, _ := s.buildCIRunResponse(r.Context(), latest)
 	writeJSON(w, http.StatusAccepted, response)
 }
 
@@ -346,15 +447,23 @@ func (s *Server) handleGetCIRun(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, "CI token is not bound to this run")
 			return
 		}
+	} else if account, ok := AuthenticatedServiceAccountFromContext(r.Context()); ok {
+		if err := s.validateCIRunnerServiceAccount(account, test.ProjectID); err != nil {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
 	}
 	response, syncErr := s.buildCIRunResponse(r.Context(), test)
 	if syncErr != nil && metadata.PublishCheck {
-		response.Error = firstNonEmpty(response.Error, "GitHub Check update failed: "+syncErr.Error())
+		response.Error = sanitizeCIExternalText(firstNonEmpty(response.Error, "GitHub Check update failed: "+syncErr.Error()), ciExternalErrorMaxBytes)
 	}
 	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleAbortCIRun(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	test, ok := s.runner.GetTest(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "CI run not found")
@@ -370,10 +479,24 @@ func (s *Server) handleAbortCIRun(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusForbidden, "CI token is not bound to this run")
 			return
 		}
+	} else if account, ok := AuthenticatedServiceAccountFromContext(r.Context()); ok {
+		if err := s.validateCIRunnerServiceAccount(account, test.ProjectID); err != nil {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
 	}
+	var abortReq ciAbortRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&abortReq)
+	}
+	abortReason := normalizeCIAbortReason(abortReq.Reason)
 	if !ciRunTerminal(test.Status) {
-		if err := s.runner.AbortTest(test.ID); err != nil {
-			writeError(w, http.StatusConflict, "failed to abort CI run: "+err.Error())
+		if err := s.runner.AbortCIRun(test.ID, abortReason); err != nil {
+			status := http.StatusConflict
+			if errors.Is(err, errNotExecutionLeader) {
+				status = http.StatusServiceUnavailable
+			}
+			writeError(w, status, "failed to abort CI run: "+err.Error())
 			return
 		}
 		_, actorSubject, actorDisplayName := s.resolveAuditActor(r)
@@ -381,36 +504,47 @@ func (s *Server) handleAbortCIRun(w http.ResponseWriter, r *http.Request) {
 	}
 	latest, _ := s.runner.GetTest(test.ID)
 	response, _ := s.buildCIRunResponse(r.Context(), latest)
-	s.recordAuditEvent(r, "ci.run.abort", "success", "test", test.ID, test.ProjectID, map[string]any{"repository": metadata.Source.Repository, "run_id": metadata.Source.RunID})
+	s.recordAuditEvent(r, "ci.run.abort", "success", "test", test.ID, test.ProjectID, map[string]any{"repository": metadata.Source.Repository, "run_id": metadata.Source.RunID, "reason": abortReason})
 	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) resolveCIRunScript(req ciRunCreateRequest) (*dsl.Script, string, bool, error) {
-	raw := strings.TrimSpace(string(req.Script))
-	hasInline := raw != "" && raw != "null"
-	hasID := strings.TrimSpace(req.ScriptID) != ""
-	if hasInline == hasID {
-		return nil, "", false, fmt.Errorf("exactly one of script or script_id is required")
+	identity, inline, err := ciRunScriptSelectorIdentity(req)
+	if err != nil {
+		return nil, "", false, err
 	}
-	if hasInline {
+	if inline {
 		script, err := dsl.Parse(req.Script)
 		if err != nil {
 			return nil, "", false, fmt.Errorf("invalid inline script: %w", err)
 		}
-		digest := sha256.Sum256(req.Script)
-		return script, "inline:sha256:" + hex.EncodeToString(digest[:]), true, nil
+		return script, identity, true, nil
 	}
-	stored, ok := s.runner.GetScript(req.ScriptID)
+	stored, ok := s.runner.GetScript(strings.TrimSpace(req.ScriptID))
 	if !ok || stored == nil || stored.Script == nil {
 		return nil, "", false, fmt.Errorf("script_id was not found")
 	}
 	if normalizeProjectID(stored.ProjectID) != normalizeProjectID(req.ProjectID) {
 		return nil, "", false, fmt.Errorf("script_id does not belong to project_id")
 	}
-	return cloneScriptDefinition(stored.Script), "script_id:" + stored.ID, false, nil
+	return cloneScriptDefinition(stored.Script), identity, false, nil
 }
 
-func validateCIRunRequest(req ciRunCreateRequest, policy storage.GitHubActionsPolicy, script *dsl.Script) error {
+func ciRunScriptSelectorIdentity(req ciRunCreateRequest) (string, bool, error) {
+	raw := strings.TrimSpace(string(req.Script))
+	hasInline := raw != "" && raw != "null"
+	hasID := strings.TrimSpace(req.ScriptID) != ""
+	if hasInline == hasID {
+		return "", false, fmt.Errorf("exactly one of script or script_id is required")
+	}
+	if hasInline {
+		digest := sha256.Sum256(req.Script)
+		return "inline:sha256:" + hex.EncodeToString(digest[:]), true, nil
+	}
+	return "script_id:" + strings.TrimSpace(req.ScriptID), false, nil
+}
+
+func validateCIRunRequest(req ciRunCreateRequest, policy storage.GitHubActionsPolicy, script *dsl.Script, resolvers ...engine.SecretResolver) error {
 	if script == nil {
 		return fmt.Errorf("script is required")
 	}
@@ -441,11 +575,10 @@ func validateCIRunRequest(req ciRunCreateRequest, policy storage.GitHubActionsPo
 	}
 	for key, value := range req.Execution.Variables {
 		trimmed := strings.TrimSpace(key)
-		lower := strings.ToLower(trimmed)
 		if trimmed == "" || len(trimmed) > 128 || strings.ContainsAny(trimmed, "\r\n=\x00") {
 			return fmt.Errorf("execution.variables contains an invalid key")
 		}
-		if strings.Contains(lower, "secret") || strings.Contains(lower, "password") || strings.Contains(lower, "token") || strings.Contains(lower, "api_key") {
+		if sensitiveEnvKey(trimmed) || sensitiveEnvValue(value) {
 			return fmt.Errorf("execution.variables is for non-secret overrides; %q must be a controller-managed project secret", key)
 		}
 		if len(value) > ciRunMaxValueBytes || strings.ContainsRune(value, '\x00') {
@@ -464,24 +597,103 @@ func validateCIRunRequest(req ciRunCreateRequest, policy storage.GitHubActionsPo
 	if err := validateCIScriptAssets(script); err != nil {
 		return err
 	}
-	return validateCIScriptPolicy(policy, script, req.Execution.BaseURL)
+	if err := validateCIScriptUsesRealExternalProtocols(script); err != nil {
+		return err
+	}
+	var resolver engine.SecretResolver
+	if len(resolvers) > 0 {
+		resolver = resolvers[0]
+	}
+	if err := validateCIScriptPolicy(policy, script, req.Execution.BaseURL, resolver); err != nil {
+		return err
+	}
+	if strings.EqualFold(strings.TrimSpace(script.Protocol), "browser") {
+		return fmt.Errorf("browser protocol is disabled for controller-backed CI until browser-process egress enforcement is available")
+	}
+	return nil
+}
+
+func (s *Server) validateCIRunnerServiceAccount(account *AuthenticatedServiceAccount, projectID string) error {
+	if account == nil || strings.TrimSpace(account.ID) == "" {
+		return fmt.Errorf("controller-backed CI runs require a ci_runner API key")
+	}
+	stored, err := s.store.GetServiceAccount(account.ID)
+	if err != nil || stored == nil || !stored.Active {
+		return fmt.Errorf("controller-backed CI runs require an active ci_runner API key")
+	}
+	if stored.ExpiresAt == nil || !stored.ExpiresAt.After(time.Now().UTC()) {
+		return fmt.Errorf("controller-backed CI fallback keys must be expiring ci_runner keys")
+	}
+	if len(stored.GlobalRoles) > 0 || len(stored.DomainRoles) > 0 || len(stored.RepositoryRoles) > 0 {
+		return fmt.Errorf("controller-backed CI fallback keys must not carry broad roles")
+	}
+	if len(stored.ProjectRoles) != 1 {
+		return fmt.Errorf("controller-backed CI fallback keys must be bound to exactly one project")
+	}
+	roles := map[string]struct{}{}
+	for _, role := range stored.ProjectRoles[normalizeProjectID(projectID)] {
+		roles[strings.ToLower(strings.TrimSpace(role))] = struct{}{}
+	}
+	if _, ok := roles[RoleCIRunner]; !ok || len(roles) != 1 {
+		return fmt.Errorf("controller-backed CI fallback keys require only the ci_runner project role")
+	}
+	allowedScopes := map[string]struct{}{"tests:run": {}, "results:read": {}}
+	seen := map[string]struct{}{}
+	for _, scope := range stored.Scopes {
+		normalized := strings.ToLower(strings.TrimSpace(scope))
+		if normalized == "" {
+			continue
+		}
+		if _, ok := allowedScopes[normalized]; !ok {
+			return fmt.Errorf("controller-backed CI fallback keys are limited to tests:run and results:read scopes")
+		}
+		seen[normalized] = struct{}{}
+	}
+	if _, ok := seen["tests:run"]; !ok {
+		return fmt.Errorf("controller-backed CI fallback keys require tests:run scope")
+	}
+	if _, ok := seen["results:read"]; !ok {
+		return fmt.Errorf("controller-backed CI fallback keys require results:read scope")
+	}
+	return nil
 }
 
 func validateCIGoals(goals ciRunGoalsRequest) error {
-	if goals.P95LatencyMs != nil && *goals.P95LatencyMs < 0 {
-		return fmt.Errorf("goals.p95_latency_ms must be non-negative")
+	if goals.P95LatencyMs != nil && *goals.P95LatencyMs <= 0 {
+		return fmt.Errorf("goals.p95_latency_ms must be greater than zero")
 	}
 	if goals.MaxErrorPct != nil && (*goals.MaxErrorPct < 0 || *goals.MaxErrorPct > 100) {
 		return fmt.Errorf("goals.max_error_pct must be between 0 and 100")
 	}
-	if goals.MaxAvgServerProcessingMs != nil && *goals.MaxAvgServerProcessingMs < 0 {
-		return fmt.Errorf("goals.max_avg_server_processing_ms must be non-negative")
+	if goals.MaxAvgServerProcessingMs != nil && *goals.MaxAvgServerProcessingMs <= 0 {
+		return fmt.Errorf("goals.max_avg_server_processing_ms must be greater than zero")
 	}
-	if goals.MaxAvgTransferMs != nil && *goals.MaxAvgTransferMs < 0 {
-		return fmt.Errorf("goals.max_avg_transfer_ms must be non-negative")
+	if goals.MaxAvgTransferMs != nil && *goals.MaxAvgTransferMs <= 0 {
+		return fmt.Errorf("goals.max_avg_transfer_ms must be greater than zero")
 	}
 	if goals.MaxErrorCount != nil && *goals.MaxErrorCount < 0 {
 		return fmt.Errorf("goals.max_error_count must be non-negative")
+	}
+	return nil
+}
+
+func validateCIScriptUsesRealExternalProtocols(script *dsl.Script) error {
+	if script == nil {
+		return nil
+	}
+	switch strings.ToLower(strings.TrimSpace(script.Protocol)) {
+	case "kafka":
+		if script.Config.Kafka.Mock {
+			return fmt.Errorf("controller-backed CI requires kafka_real execution; config.kafka.mock cannot be true")
+		}
+	case "eventhubs":
+		if script.Config.EventHubs.Mock {
+			return fmt.Errorf("controller-backed CI requires eventhubs_real execution; config.eventhubs.mock cannot be true")
+		}
+	case "jms", "jms-solace", "jms-ibmmq", "jms-servicebus":
+		if script.Config.JMS.Mock {
+			return fmt.Errorf("controller-backed CI requires real JMS execution; config.jms.mock cannot be true")
+		}
 	}
 	return nil
 }
@@ -496,7 +708,7 @@ func validateCIRunSource(policy storage.GitHubActionsPolicy, source ciRunSource)
 	if source.APIURL != "" && !trustedGitHubAPIURL(policy.ServerURL, source.APIURL) {
 		return fmt.Errorf("source.api_url is not trusted for the configured GitHub server")
 	}
-	identity := githubActionsOIDCClaims{Repository: source.Repository, RepositoryID: source.RepositoryID, Ref: source.Ref, SHA: source.SHA, WorkflowRef: source.WorkflowRef, RunID: source.RunID, RunAttempt: source.RunAttempt, Actor: source.Actor, EventName: source.EventName, Environment: source.Environment, RunnerEnvironment: source.RunnerEnvironment}
+	identity := githubActionsOIDCClaims{Repository: source.Repository, RepositoryID: source.RepositoryID, Ref: source.Ref, SHA: source.SHA, WorkflowRef: source.WorkflowRef, JobWorkflowRef: source.JobWorkflowRef, RunID: source.RunID, RunAttempt: source.RunAttempt, Actor: source.Actor, EventName: source.EventName, Environment: source.Environment, RunnerEnvironment: source.RunnerEnvironment}
 	if err := validateGitHubActionsIdentity(policy, identity); err != nil {
 		return fmt.Errorf("source metadata is not allowed by project policy: %w", err)
 	}
@@ -560,6 +772,7 @@ func (s *Server) verifyAPIKeyCISource(ctx context.Context, projectPolicy storage
 	// them keeps audit records explicit about what the controller proved.
 	source.Environment = ""
 	source.RunnerEnvironment = ""
+	source.JobWorkflowRef = ""
 	return source, nil
 }
 
@@ -671,8 +884,15 @@ func (claims *ciBearerClaims) matchCIRunSource(projectID string, source ciRunSou
 		return fmt.Errorf("CI token project does not match")
 	}
 	checks := [][3]string{
-		{"repository", claims.Repository, source.Repository}, {"repository_id", claims.RepositoryID, source.RepositoryID}, {"ref", claims.Ref, source.Ref}, {"sha", claims.SHA, source.SHA},
-		{"workflow_ref", claims.WorkflowRef, source.WorkflowRef}, {"run_id", claims.RunID, source.RunID}, {"run_attempt", claims.RunAttempt, source.RunAttempt}, {"event_name", claims.EventName, source.EventName},
+		{"repository_id", claims.RepositoryID, source.RepositoryID}, {"ref", claims.Ref, source.Ref}, {"sha", claims.SHA, source.SHA},
+		{"workflow_ref", claims.WorkflowRef, source.WorkflowRef}, {"job_workflow_ref", claims.JobWorkflowRef, source.JobWorkflowRef}, {"run_id", claims.RunID, source.RunID}, {"run_attempt", claims.RunAttempt, source.RunAttempt}, {"event_name", claims.EventName, source.EventName},
+		{"environment", claims.Environment, source.Environment}, {"runner_environment", claims.RunnerEnvironment, source.RunnerEnvironment},
+	}
+	if !strings.EqualFold(strings.TrimSpace(claims.Repository), strings.TrimSpace(source.Repository)) {
+		return fmt.Errorf("source.repository does not match the exchanged GitHub identity")
+	}
+	if !strings.EqualFold(strings.TrimSpace(claims.Actor), strings.TrimSpace(source.Actor)) {
+		return fmt.Errorf("source.actor does not match the exchanged GitHub identity")
 	}
 	for _, check := range checks {
 		if strings.TrimSpace(check[1]) != strings.TrimSpace(check[2]) {
@@ -714,18 +934,15 @@ func walkCIScriptSecrets(value any, fieldPath string) error {
 			lower := strings.ToLower(strings.TrimSpace(key))
 			nextPath := fieldPath + "." + key
 			if stringValue, ok := child.(string); ok && strings.TrimSpace(stringValue) != "" {
-				if isSensitiveScriptKey(lower) && !isSecretReferenceKey(lower) && !isCISecretTemplate(stringValue) {
-					return fmt.Errorf("%s contains plaintext credential material; use a controller-managed {{secret.*}} reference", nextPath)
+				if err := validateCICredentialBinding(lower, stringValue, nextPath); err != nil {
+					return err
 				}
-				if (lower == "body" || lower == "value") && (strings.HasPrefix(strings.TrimSpace(stringValue), "{") || strings.HasPrefix(strings.TrimSpace(stringValue), "[")) {
-					var embedded any
-					if json.Unmarshal([]byte(stringValue), &embedded) == nil {
-						if err := walkCIScriptSecrets(embedded, nextPath); err != nil {
-							return err
-						}
+				if lower == "body" || lower == "value" {
+					if err := validateCIEmbeddedCredentialMaterial(stringValue, nextPath); err != nil {
+						return err
 					}
 				}
-				if strings.Contains(stringValue, "://") && maskScriptURL(stringValue) != stringValue {
+				if strings.Contains(stringValue, "://") && ciURLContainsCredentialMaterial(stringValue) {
 					return fmt.Errorf("%s embeds credentials in a URL; use a controller-managed {{secret.*}} reference", nextPath)
 				}
 			}
@@ -745,7 +962,302 @@ func walkCIScriptSecrets(value any, fieldPath string) error {
 
 func isCISecretTemplate(value string) bool {
 	trimmed := strings.TrimSpace(value)
-	return strings.HasPrefix(trimmed, "{{secret.") && strings.HasSuffix(trimmed, "}}") && strings.Count(trimmed, "{{") == 1
+	if !strings.HasPrefix(trimmed, "{{") || !strings.HasSuffix(trimmed, "}}") {
+		return false
+	}
+	expression := strings.TrimSpace(trimmed[2 : len(trimmed)-2])
+	if strings.Contains(expression, "{{") || strings.Contains(expression, "}}") || !strings.HasPrefix(expression, "secret.") {
+		return false
+	}
+	return validCISecretName(strings.TrimSpace(strings.TrimPrefix(expression, "secret.")))
+}
+
+func validCISecretName(name string) bool {
+	if name == "" || len(name) > 256 {
+		return false
+	}
+	for _, character := range name {
+		if (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') ||
+			(character >= '0' && character <= '9') || strings.ContainsRune("_.:/@-", character) {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+func isCINonCredentialReferenceKey(key string) bool {
+	switch normalizeScriptFieldName(key) {
+	case "cacertsecret", "truststoreref", "credentialref", "storageref":
+		return true
+	default:
+		return false
+	}
+}
+
+func requiresCIFullSecretTemplate(key string) bool {
+	if isCINonCredentialReferenceKey(key) {
+		return false
+	}
+	normalized := normalizeScriptFieldName(key)
+	switch normalized {
+	case "dsnsecret", "saslpasswordsecret", "connectionstringsecret":
+		return true
+	default:
+		// Unknown extension fields ending in `_secret` are credential-bearing by
+		// default. Public certificate and governed asset references are explicitly
+		// exempted above instead of making every `*_secret` value a trusted reference.
+		return strings.HasSuffix(normalized, "secret")
+	}
+}
+
+func isCIControllerSecretBinding(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if isCISecretTemplate(trimmed) {
+		return true
+	}
+	scheme, remainder, ok := strings.Cut(trimmed, " ")
+	if !ok {
+		return false
+	}
+	switch strings.ToLower(scheme) {
+	case "bearer", "basic", "apikey":
+		return isCISecretTemplate(strings.TrimSpace(remainder))
+	default:
+		return false
+	}
+}
+
+func validateCICredentialBinding(key, value, fieldPath string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || isCINonCredentialReferenceKey(key) {
+		return nil
+	}
+	if requiresCIFullSecretTemplate(key) {
+		if isCISecretTemplate(trimmed) {
+			return nil
+		}
+		return fmt.Errorf("%s contains plaintext credential material; use a controller-managed {{secret.*}} reference", fieldPath)
+	}
+	if !isSensitiveScriptKey(key) && !looksLikeCIPlaintextSecretValue(key, trimmed) {
+		return nil
+	}
+	if isCIControllerSecretBinding(trimmed) {
+		return nil
+	}
+	return fmt.Errorf("%s contains plaintext credential material; use a controller-managed {{secret.*}} reference", fieldPath)
+}
+
+func ciSecretTemplateName(value string) (string, bool) {
+	trimmed := strings.TrimSpace(value)
+	if !isCISecretTemplate(trimmed) {
+		return "", false
+	}
+	expression := strings.TrimSpace(trimmed[2 : len(trimmed)-2])
+	name := strings.TrimSpace(strings.TrimPrefix(expression, "secret."))
+	if name == "" || strings.ContainsAny(name, "{}\r\n\x00") {
+		return "", false
+	}
+	return name, true
+}
+
+func validateCIEmbeddedCredentialMaterial(value, fieldPath string) error {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || isCISecretTemplate(trimmed) {
+		return nil
+	}
+	if strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
+		var embedded any
+		if json.Unmarshal([]byte(trimmed), &embedded) == nil {
+			return walkCIScriptSecrets(embedded, fieldPath)
+		}
+	}
+	if strings.HasPrefix(trimmed, "<") {
+		return validateCIXMLCredentialMaterial(trimmed, fieldPath)
+	}
+	if strings.Contains(trimmed, "=") {
+		if err := validateCIFormCredentialMaterial(trimmed, fieldPath); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateCIFormCredentialMaterial(body, fieldPath string) error {
+	checkCandidate := func(key, candidate string) error {
+		normalizedKey := strings.ToLower(strings.TrimSpace(key))
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			return nil
+		}
+		if err := validateCICredentialBinding(normalizedKey, candidate, fieldPath); err != nil {
+			return err
+		}
+		if strings.HasPrefix(candidate, "{") || strings.HasPrefix(candidate, "[") {
+			var embedded any
+			if json.Unmarshal([]byte(candidate), &embedded) == nil {
+				if err := walkCIScriptSecrets(embedded, fieldPath+"."+key); err != nil {
+					return err
+				}
+			}
+		}
+		return nil
+	}
+	values, _ := url.ParseQuery(body)
+	for key, candidates := range values {
+		for _, candidate := range candidates {
+			if err := checkCandidate(key, candidate); err != nil {
+				return err
+			}
+		}
+	}
+	// ParseQuery deliberately rejects raw semicolons. Inspect each pair as a
+	// defense-in-depth fallback so malformed/nonstandard form bodies cannot use
+	// one bad separator to hide otherwise obvious credential fields.
+	for _, pair := range strings.FieldsFunc(body, func(r rune) bool { return r == '&' || r == ';' || r == '\n' || r == '\r' }) {
+		key, candidate, found := strings.Cut(pair, "=")
+		if !found {
+			continue
+		}
+		if decoded, err := url.QueryUnescape(key); err == nil {
+			key = decoded
+		}
+		if decoded, err := url.QueryUnescape(candidate); err == nil {
+			candidate = decoded
+		}
+		if err := checkCandidate(key, candidate); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type ciXMLCredentialElement struct {
+	key       string
+	binding   bool
+	truncated bool
+	text      strings.Builder
+}
+
+func validateCIXMLCredentialMaterial(body, fieldPath string) error {
+	const maxXMLCredentialDepth = 256
+	decoder := xml.NewDecoder(strings.NewReader(body))
+	stack := make([]*ciXMLCredentialElement, 0, 8)
+	checkValue := func(key, value string) error {
+		return validateCICredentialBinding(key, value, fieldPath)
+	}
+	checkOpenElements := func() error {
+		for _, element := range stack {
+			if err := checkValue(element.key, element.text.String()); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	appendText := func(element *ciXMLCredentialElement, data []byte) error {
+		if element == nil || element.truncated || len(data) == 0 {
+			return nil
+		}
+		remaining := ciRunMaxValueBytes - element.text.Len()
+		if remaining <= 0 || len(data) > remaining {
+			if element.binding {
+				return fmt.Errorf("%s contains plaintext credential material; use a controller-managed {{secret.*}} reference", fieldPath)
+			}
+			if remaining > 0 {
+				element.text.Write(data[:remaining])
+			}
+			element.truncated = true
+			return nil
+		}
+		element.text.Write(data)
+		return nil
+	}
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			// Body validity belongs to the protocol. This boundary only rejects
+			// credential material, including text observed before malformed XML ended.
+			return checkOpenElements()
+		}
+		switch typed := token.(type) {
+		case xml.StartElement:
+			if len(stack) >= maxXMLCredentialDepth {
+				return fmt.Errorf("%s XML nesting exceeds the CI credential scan limit of %d", fieldPath, maxXMLCredentialDepth)
+			}
+			key := strings.ToLower(strings.TrimSpace(typed.Name.Local))
+			for _, attribute := range typed.Attr {
+				attributeKey := strings.ToLower(strings.TrimSpace(attribute.Name.Local))
+				if err := checkValue(attributeKey, attribute.Value); err != nil {
+					return err
+				}
+			}
+			stack = append(stack, &ciXMLCredentialElement{key: key, binding: requiresCIFullSecretTemplate(key) || (isSensitiveScriptKey(key) && !isCINonCredentialReferenceKey(key))})
+		case xml.CharData:
+			if strings.Contains(string(typed), "=") {
+				if err := validateCIFormCredentialMaterial(string(typed), fieldPath); err != nil {
+					return err
+				}
+			}
+			for index, element := range stack {
+				if element.binding || index == len(stack)-1 {
+					if err := appendText(element, []byte(typed)); err != nil {
+						return err
+					}
+				}
+			}
+		case xml.EndElement:
+			if len(stack) == 0 {
+				continue
+			}
+			element := stack[len(stack)-1]
+			stack = stack[:len(stack)-1]
+			if err := checkValue(element.key, element.text.String()); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func looksLikeCIPlaintextSecretValue(key string, value string) bool {
+	trimmed := strings.TrimSpace(value)
+	lowerValue := strings.ToLower(trimmed)
+	if trimmed == "" {
+		return false
+	}
+	if key == "authorization" || strings.HasSuffix(normalizeScriptFieldName(key), "authorization") {
+		return true
+	}
+	if strings.HasPrefix(lowerValue, "bearer ") || strings.HasPrefix(lowerValue, "basic ") || strings.HasPrefix(lowerValue, "apikey ") {
+		return true
+	}
+	if strings.Contains(lowerValue, "sharedaccesskey=") || strings.Contains(lowerValue, "accountkey=") || strings.Contains(lowerValue, "sig=") {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "AKIA") || strings.HasPrefix(trimmed, "ASIA") {
+		return len(trimmed) >= 16
+	}
+	return false
+}
+
+func ciURLContainsCredentialMaterial(value string) bool {
+	if maskScriptURL(value) != value {
+		return true
+	}
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return false
+	}
+	for key, values := range parsed.Query() {
+		normalized := normalizeScriptFieldName(key)
+		if isSensitiveScriptKey(normalized) || normalized == "sig" || strings.HasSuffix(normalized, "signature") {
+			for _, candidate := range values {
+				if strings.TrimSpace(candidate) != "" && !isCISecretTemplate(candidate) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func validateCIScriptAssets(script *dsl.Script) error {
@@ -861,12 +1373,12 @@ func browserSetFilesHasPath(action dsl.Action) bool {
 	return false
 }
 
-func validateCIScriptPolicy(policy storage.GitHubActionsPolicy, script *dsl.Script, baseURLOverride string) error {
+func validateCIScriptPolicy(policy storage.GitHubActionsPolicy, script *dsl.Script, baseURLOverride string, resolver engine.SecretResolver) error {
 	protocol := strings.ToLower(strings.TrimSpace(script.Protocol))
 	if !githubPolicyAllowsPattern(protocol, policy.AllowedProtocols, true) {
 		return fmt.Errorf("script protocol %q is not allowed by project policy", protocol)
 	}
-	hosts, deferredTarget, err := collectCITargetHosts(script, baseURLOverride)
+	hosts, deferredTarget, err := collectCITargetHosts(script, baseURLOverride, resolver)
 	if err != nil {
 		return err
 	}
@@ -891,23 +1403,51 @@ func applyCIRuntimeTargetPolicy(script *dsl.Script, policy storage.GitHubActions
 	script.Metadata.RuntimePolicy = &dsl.ScriptRuntimePolicy{AllowedTargetHosts: append([]string(nil), policy.AllowedTargetHosts...)}
 }
 
-func collectCITargetHosts(script *dsl.Script, baseURLOverride string) ([]string, bool, error) {
+func collectCITargetHosts(script *dsl.Script, baseURLOverride string, resolvers ...engine.SecretResolver) ([]string, bool, error) {
 	set := map[string]struct{}{}
 	deferredTarget := false
+	var resolver engine.SecretResolver
+	if len(resolvers) > 0 {
+		resolver = resolvers[0]
+	}
 	add := func(raw, label string, required bool) error {
 		raw = strings.TrimSpace(raw)
 		if raw == "" {
 			return nil
 		}
-		if isCISecretTemplate(raw) {
-			deferredTarget = true
-			return nil
+		resolvedFromSecret := false
+		if secretName, secretReference := ciSecretTemplateName(raw); secretReference {
+			if resolver == nil {
+				return fmt.Errorf("%s uses a controller-managed target secret that could not be resolved", label)
+			}
+			resolved, ok := resolver.Resolve(secretName)
+			if !ok || strings.TrimSpace(resolved) == "" {
+				return fmt.Errorf("%s uses a controller-managed target secret that could not be resolved", label)
+			}
+			raw = strings.TrimSpace(resolved)
+			resolvedFromSecret = true
 		}
 		if strings.Contains(raw, "{{") || strings.Contains(raw, "}}") {
-			return fmt.Errorf("%s constructs a dynamic target; use a concrete policy-approved target", label)
+			if resolvedFromSecret {
+				return fmt.Errorf("%s resolved to a dynamic target; use a concrete policy-approved target", label)
+			}
+			hosts, ok := concreteTemplatedTargetHosts(raw)
+			if !ok {
+				if required || strings.HasPrefix(raw, "{{") {
+					return fmt.Errorf("%s constructs a dynamic target; use a concrete policy-approved target", label)
+				}
+				return nil
+			}
+			for _, host := range hosts {
+				set[host] = struct{}{}
+			}
+			return nil
 		}
 		hosts, err := protocol.TargetReferenceHosts(raw)
 		if err != nil {
+			if resolvedFromSecret {
+				return fmt.Errorf("%s controller-managed target is not a valid concrete target", label)
+			}
 			if required {
 				return fmt.Errorf("%s is not a valid concrete target: %w", label, err)
 			}
@@ -923,15 +1463,26 @@ func collectCITargetHosts(script *dsl.Script, baseURLOverride string) ([]string,
 		if raw == "" {
 			return nil
 		}
-		if isCISecretTemplate(raw) {
-			deferredTarget = true
-			return nil
+		resolvedFromSecret := false
+		if secretName, secretReference := ciSecretTemplateName(raw); secretReference {
+			if resolver == nil {
+				return fmt.Errorf("%s uses a controller-managed target secret that could not be resolved", label)
+			}
+			resolved, ok := resolver.Resolve(secretName)
+			if !ok || strings.TrimSpace(resolved) == "" {
+				return fmt.Errorf("%s uses a controller-managed target secret that could not be resolved", label)
+			}
+			raw = strings.TrimSpace(resolved)
+			resolvedFromSecret = true
 		}
 		if strings.Contains(raw, "{{") || strings.Contains(raw, "}}") {
 			return fmt.Errorf("%s constructs a dynamic target; use a controller-managed DSN secret", label)
 		}
 		hosts, err := protocol.TargetDSNHosts(script.Config.Database.Driver, raw)
 		if err != nil {
+			if resolvedFromSecret {
+				return fmt.Errorf("%s controller-managed target is not a valid concrete DSN", label)
+			}
 			return fmt.Errorf("%s is not a valid concrete target: %w", label, err)
 		}
 		for _, host := range hosts {
@@ -947,7 +1498,12 @@ func collectCITargetHosts(script *dsl.Script, baseURLOverride string) ([]string,
 		return nil, false, err
 	}
 	if strings.TrimSpace(script.Config.Database.DSNSecret) != "" {
-		deferredTarget = true
+		if _, ok := ciSecretTemplateName(script.Config.Database.DSNSecret); !ok {
+			return nil, false, fmt.Errorf("config.database.dsn_secret must use a controller-managed {{secret.*}} reference")
+		}
+		if err := addDSN(script.Config.Database.DSNSecret, "config.database.dsn_secret"); err != nil {
+			return nil, false, err
+		}
 	}
 	for _, entry := range []struct{ raw, label string }{
 		{script.Config.JMS.BrokerURL, "config.jms.broker_url"}, {script.Config.EventHubs.Namespace, "config.eventhubs.namespace"},
@@ -961,7 +1517,12 @@ func collectCITargetHosts(script *dsl.Script, baseURLOverride string) ([]string,
 		}
 	}
 	if strings.TrimSpace(script.Config.EventHubs.ConnectionStringSecret) != "" {
-		deferredTarget = true
+		if _, ok := ciSecretTemplateName(script.Config.EventHubs.ConnectionStringSecret); !ok {
+			return nil, false, fmt.Errorf("config.eventhubs.connection_string_secret must use a controller-managed {{secret.*}} reference")
+		}
+		if err := add(script.Config.EventHubs.ConnectionStringSecret, "config.eventhubs.connection_string_secret", true); err != nil {
+			return nil, false, err
+		}
 	}
 	for i, broker := range script.Config.Kafka.Brokers {
 		if err := add(broker, fmt.Sprintf("config.kafka.brokers[%d]", i), true); err != nil {
@@ -1037,6 +1598,22 @@ func collectCITargetHosts(script *dsl.Script, baseURLOverride string) ([]string,
 	return hosts, deferredTarget, nil
 }
 
+func concreteTemplatedTargetHosts(raw string) ([]string, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return nil, false
+	}
+	if strings.Contains(parsed.Scheme, "{{") || strings.Contains(parsed.Scheme, "}}") ||
+		strings.Contains(parsed.Host, "{{") || strings.Contains(parsed.Host, "}}") {
+		return nil, false
+	}
+	host, err := protocol.TargetAddressHost(parsed.Host)
+	if err != nil || host == "" {
+		return nil, false
+	}
+	return []string{host}, true
+}
+
 func ciActionParamString(params map[string]any, key string) string {
 	if len(params) == 0 {
 		return ""
@@ -1095,7 +1672,12 @@ func validateExistingCIRun(test *ManagedTest, projectID string, expected ciRunMe
 		return fmt.Errorf("idempotency key is already bound to a different project run")
 	}
 	actual, err := decodeCIRunMetadata(test.MaterializationKey)
-	if err != nil || actual.IdempotencySHA != expected.IdempotencySHA || actual.ScriptIdentity != expected.ScriptIdentity || actual.Source.RepositoryID != expected.Source.RepositoryID || actual.Source.WorkflowRef != expected.Source.WorkflowRef || actual.Source.RunID != expected.Source.RunID || actual.Source.RunAttempt != expected.Source.RunAttempt {
+	if err != nil {
+		return fmt.Errorf("idempotency key is already bound to different CI run metadata")
+	}
+	actualJSON, actualErr := json.Marshal(actual)
+	expectedJSON, expectedErr := json.Marshal(expected)
+	if actualErr != nil || expectedErr != nil || string(actualJSON) != string(expectedJSON) {
 		return fmt.Errorf("idempotency key is already bound to different CI run metadata")
 	}
 	return nil
@@ -1115,22 +1697,21 @@ func (s *Server) buildCIRunResponse(ctx context.Context, test *ManagedTest) (ciR
 	response.TestID = test.ID
 	response.Status = strings.ToUpper(strings.TrimSpace(test.Status))
 	response.StatusURL = ciPublicURL("/api/v1/ci/runs/" + url.PathEscape(test.ID))
-	response.ReportURL = ciPublicURL("/tests/" + url.PathEscape(test.ID))
-	response.SLAEvaluated = test.GoalConfig != nil
+	if !ciRunTerminal(response.Status) {
+		response.ReportURL = ciPublicURL("/tests/" + url.PathEscape(test.ID))
+	}
+	response.SLAEvaluated = test.ciSLAEvaluated
+	response.SLABreached = test.ciSLABreached
+	response.SLADetails = append([]string(nil), test.ciSLADetails...)
 	if test.LiveMetrics != nil {
 		response.Transactions = test.LiveMetrics.TotalTx
 		response.Errors = test.LiveMetrics.TotalErrors
 		response.TPS = test.LiveMetrics.TPS
-		response.SLABreached, response.SLADetails = ciLiveSLABreach(test.LiveMetrics.GoalStatus)
+		response.SLAEvaluated = response.SLAEvaluated || ciSLAEvidenceComplete(test.GoalConfig, test.LiveMetrics)
+		breached, details := ciLiveSLABreach(test.LiveMetrics.GoalStatus)
+		response.SLABreached = response.SLABreached || breached
+		response.SLADetails = compactNonEmptyStrings(append(response.SLADetails, details...)...)
 	}
-	if ciRunTerminal(response.Status) {
-		if manifest, manifestErr := s.runner.GetRunArchiveManifest(test.ID); manifestErr == nil && manifest != nil {
-			response.Transactions = manifest.TransactionCount
-			response.SLABreached = manifest.SLABreached
-			response.SLADetails = append([]string(nil), manifest.SLADetails...)
-		}
-	}
-	response.ResultsPresent = response.Transactions > 0
 	if test.StartedAt != nil {
 		end := time.Now().UTC()
 		if test.EndedAt != nil {
@@ -1140,20 +1721,54 @@ func (s *Server) buildCIRunResponse(ctx context.Context, test *ManagedTest) (ciR
 			response.DurationMs = end.Sub(test.StartedAt.UTC()).Milliseconds()
 		}
 	}
-	response.Outcome = ciRunOutcome(response.Status, response.SLABreached, response.ResultsPresent, metadata)
 	response.Error = strings.TrimSpace(test.Error)
+	if ciRunTerminal(response.Status) {
+		evidence, evidenceErr := s.validatedCIRunArchiveEvidence(ctx, test)
+		applyCITerminalEvidence(&response, evidence, evidenceErr)
+	}
+	response.Error = sanitizeCIExternalText(response.Error, ciExternalErrorMaxBytes)
+	response.SLADetails = sanitizeCIExternalDetails(response.SLADetails)
+	response.ResultsPresent = response.Transactions > 0
+	if !strings.EqualFold(response.Status, "COMPLETE") || response.terminalEvidenceVerified {
+		response.Outcome = ciRunOutcome(response.Status, response.SLABreached, response.SLAEvaluated, response.ResultsPresent, metadata, response.Error)
+	}
 	checkURL, syncErr := s.syncCIGitHubCheck(ctx, test, metadata, response)
 	response.CheckURL = checkURL
 	return response, syncErr
 }
 
-func ciRunOutcome(status string, breached, resultsPresent bool, metadata ciRunMetadata) string {
+func sanitizeCIExternalText(value string, maxBytes int) string {
+	value = scrub.Value(strings.ToValidUTF8(value, "\uFFFD"), scrub.Policy{})
+	return truncateCIUTF8WithSuffix(value, maxBytes, ciExternalTruncatedSuffix)
+}
+
+func sanitizeCIExternalDetails(details []string) []string {
+	if len(details) == 0 {
+		return nil
+	}
+	limit := len(details)
+	if limit > ciExternalSLADetailLimit {
+		limit = ciExternalSLADetailLimit
+	}
+	sanitized := make([]string, 0, limit+1)
+	for _, detail := range details[:limit] {
+		if detail = strings.TrimSpace(sanitizeCIExternalText(detail, ciExternalSLADetailMaxBytes)); detail != "" {
+			sanitized = append(sanitized, detail)
+		}
+	}
+	if len(details) > limit {
+		sanitized = append(sanitized, fmt.Sprintf("%d additional SLA details were truncated", len(details)-limit))
+	}
+	return sanitized
+}
+
+func ciRunOutcome(status string, breached, slaEvaluated, resultsPresent bool, metadata ciRunMetadata, testError string) string {
 	switch strings.ToUpper(strings.TrimSpace(status)) {
 	case "COMPLETE":
 		if breached {
 			return "sla_breached"
 		}
-		if metadata.RequireSLA && !resultsPresent {
+		if metadata.RequireSLA && !slaEvaluated {
 			return "execution_error"
 		}
 		if metadata.RequireResults && !resultsPresent {
@@ -1163,12 +1778,35 @@ func ciRunOutcome(status string, breached, resultsPresent bool, metadata ciRunMe
 	case "FAILED":
 		return "execution_error"
 	case "ABORTED":
+		if ciAbortReasonFromError(testError) == "timed_out" {
+			return "timed_out"
+		}
 		return "cancelled"
 	case "QUEUED", "SCHEDULED", "INITIALIZING":
 		return "queued"
 	default:
 		return "running"
 	}
+}
+
+func normalizeCIAbortReason(reason string) string {
+	switch strings.ToLower(strings.TrimSpace(reason)) {
+	case "timed_out", "timeout", "deadline_exceeded":
+		return "timed_out"
+	case "cancelled", "canceled", "workflow_cancelled":
+		return "cancelled"
+	default:
+		return ""
+	}
+}
+
+func ciAbortReasonFromError(testError string) string {
+	const prefix = "ci abort reason: "
+	trimmed := strings.TrimSpace(testError)
+	if !strings.HasPrefix(trimmed, prefix) {
+		return ""
+	}
+	return normalizeCIAbortReason(strings.TrimPrefix(trimmed, prefix))
 }
 
 func ciRunTerminal(status string) bool {
@@ -1191,6 +1829,9 @@ func ciLiveSLABreach(status *GoalStatus) (bool, []string) {
 	}{
 		{status.LatencyBreached, "P95 latency breached threshold"}, {status.ErrorBreached, "Error percentage breached threshold"},
 		{status.ErrorCountBreached, "Total error count breached threshold"}, {status.ServerProcessingBreached, "Server processing time breached threshold"}, {status.TransferBreached, "Transfer time breached threshold"},
+		{status.LCPBreached, "Largest Contentful Paint breached threshold"}, {status.INPBreached, "Interaction to Next Paint breached threshold"}, {status.CLSBreached, "Cumulative Layout Shift breached threshold"},
+		{status.ThrottledRequestsBreached, "Event Hubs throttled requests breached threshold"}, {status.EndToEndLatencyBreached, "Event Hubs end-to-end latency breached threshold"}, {status.PartitionSkewBreached, "Event Hubs partition skew breached threshold"},
+		{status.RedeliveryRateBreached, "Messaging redelivery rate breached threshold"}, {status.DeadLetterRateBreached, "Messaging dead-letter rate breached threshold"},
 	}
 	for _, check := range checks {
 		if check.breached {
@@ -1198,6 +1839,62 @@ func ciLiveSLABreach(status *GoalStatus) (bool, []string) {
 		}
 	}
 	return len(details) > 0 || status.BreachActive, details
+}
+
+func ciSLAEvidenceComplete(config *GoalConfig, live *LiveMetrics) bool {
+	if config == nil || live == nil {
+		return false
+	}
+	configured := false
+	if config.P95LatencyMs != nil {
+		configured = true
+		if live.TotalTx <= 0 {
+			return false
+		}
+	}
+	if config.MaxErrorPct != nil {
+		configured = true
+		if live.TotalTx+live.TotalErrors <= 0 {
+			return false
+		}
+	}
+	if config.MaxAvgServerProcessingMs != nil {
+		configured = true
+		if _, ok := ciGitHubCheckMaxServerTelemetry(live, func(summary *ServerTelemetrySummary) float64 {
+			return summary.AvgServerProcessingMs
+		}); !ok {
+			return false
+		}
+	}
+	if config.MaxAvgTransferMs != nil {
+		configured = true
+		if _, ok := ciGitHubCheckMaxServerTelemetry(live, func(summary *ServerTelemetrySummary) float64 {
+			return summary.AvgTransferMs
+		}); !ok {
+			return false
+		}
+	}
+	if config.MaxErrorCount != nil {
+		configured = true
+	}
+	return configured
+}
+
+// recordCISLAStateLocked retains evidence and breaches across interval windows.
+// The caller holds TestRunner.mu. Final archive materialization makes this
+// process-private accumulator durable.
+func recordCISLAStateLocked(test *ManagedTest, live *LiveMetrics) {
+	if test == nil || live == nil {
+		return
+	}
+	if ciSLAEvidenceComplete(test.GoalConfig, live) {
+		test.ciSLAEvaluated = true
+	}
+	breached, details := ciLiveSLABreach(live.GoalStatus)
+	if breached {
+		test.ciSLABreached = true
+		test.ciSLADetails = compactNonEmptyStrings(append(test.ciSLADetails, details...)...)
+	}
 }
 
 func ciPublicURL(relative string) string {
@@ -1239,8 +1936,4 @@ func cloneCIStringMap(values map[string]string) map[string]string {
 func sha256String(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])
-}
-
-func slogWarnCIScriptCleanup(scriptID string, err error) {
-	slog.Warn("failed to remove ephemeral CI script snapshot", "script_id", scriptID, "error", err)
 }

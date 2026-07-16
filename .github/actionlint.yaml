@@ -2,3 +2,6 @@ self-hosted-runner:
   labels:
     - onprem
     - trusted
+    # Deliberately unprovisioned. This only teaches actionlint about the
+    # fail-closed GHES fork sentinel; no runner may carry this label.
+    - apexload-ci-fork-blocked

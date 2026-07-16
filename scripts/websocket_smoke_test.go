@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -15,10 +16,22 @@ func TestWebSocketSmokeValidatesRFC6455Handshake(t *testing.T) {
 	tests := []struct {
 		name        string
 		response    func(string) string
+		token       string
 		wantSuccess bool
 	}{
 		{
 			name: "valid handshake",
+			response: func(key string) string {
+				accept := sha1.Sum([]byte(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")) // #nosec G401 -- RFC 6455.
+				return "HTTP/1.1 101 Switching Protocols\r\n" +
+					"Upgrade: websocket\r\nConnection: keep-alive, Upgrade\r\n" +
+					"Sec-WebSocket-Accept: " + base64.StdEncoding.EncodeToString(accept[:]) + "\r\n\r\n"
+			},
+			wantSuccess: true,
+		},
+		{
+			name:  "valid authenticated handshake",
+			token: "deployment-smoke-secret",
 			response: func(key string) string {
 				accept := sha1.Sum([]byte(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")) // #nosec G401 -- RFC 6455.
 				return "HTTP/1.1 101 Switching Protocols\r\n" +
@@ -59,6 +72,7 @@ func TestWebSocketSmokeValidatesRFC6455Handshake(t *testing.T) {
 				defer connection.Close()
 				reader := bufio.NewReader(connection)
 				key := ""
+				authorization := ""
 				for {
 					line, readErr := reader.ReadString('\n')
 					if readErr != nil {
@@ -68,6 +82,9 @@ func TestWebSocketSmokeValidatesRFC6455Handshake(t *testing.T) {
 					if strings.HasPrefix(strings.ToLower(line), "sec-websocket-key:") {
 						key = strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
 					}
+					if strings.HasPrefix(strings.ToLower(line), "authorization:") {
+						authorization = strings.TrimSpace(strings.SplitN(line, ":", 2)[1])
+					}
 					if line == "\r\n" {
 						break
 					}
@@ -76,11 +93,20 @@ func TestWebSocketSmokeValidatesRFC6455Handshake(t *testing.T) {
 					done <- fmt.Errorf("request did not contain Sec-WebSocket-Key")
 					return
 				}
+				expectedAuthorization := ""
+				if test.token != "" {
+					expectedAuthorization = "Bearer " + test.token
+				}
+				if authorization != expectedAuthorization {
+					done <- fmt.Errorf("Authorization = %q, want %q", authorization, expectedAuthorization)
+					return
+				}
 				_, writeErr := connection.Write([]byte(test.response(key)))
 				done <- writeErr
 			}()
 
 			command := exec.Command("python3", "deploy/websocket-smoke.py", "ws://"+listener.Addr().String()+"/api/v1/ws")
+			command.Env = append(os.Environ(), "APEXLOAD_WEBSOCKET_SMOKE_TOKEN="+test.token)
 			output, commandErr := command.CombinedOutput()
 			if serverErr := <-done; serverErr != nil {
 				t.Fatalf("fake websocket server: %v", serverErr)

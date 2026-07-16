@@ -29,7 +29,7 @@ documented exception is approved; unsupported legacy releases are out of scope.
 | Release/action assets | Public Release assets | Mirror release assets to an internal HTTPS endpoint without changing bytes or names. Verify `SHA256SUMS.sig` after mirroring. |
 | Workflow actions | Public actions pinned to full commit SHAs | Mirror every action internally at the reviewed commit or pin an internal OCI action by digest. |
 | Workflow artifacts | `upload-artifact@v4` / `download-artifact@v4` | Checked-in wrappers select pinned v3-node20 clients on GHES because `v4+` is not supported there. Mirror those exact commits internally. |
-| Hosted artifact attestations | Emitted when GitHub.com supports them | Optional; portable OpenSSL/Cosign signatures remain mandatory. Use KMS/HSM signing. |
+| Hosted artifact attestations | Optional. Set `APEXLOAD_ENABLE_HOSTED_ATTESTATIONS=true` only on a plan/repository where the feature is available, and provide a protected fine-grained or GitHub App token in `APEXLOAD_GITHUB_ATTESTATIONS_TOKEN` with attestation write access. Portable OpenSSL/Cosign signatures remain authoritative. | Disabled. The portable release workflow deliberately omits the `attestations` workflow-permission key because supported GHES lines may reject that key while parsing the workflow. Use KMS/HSM-backed portable signatures and mirror the signed bytes unchanged. |
 | Azure federation | GitHub issuer reachable by Entra | If Entra cannot reach the private issuer, use managed identity from an Azure-hosted ephemeral runner. Do not introduce long-lived Azure client secrets. |
 | Private PKI/proxy | Public roots | Install the enterprise CA in runner, Git, container, Go, Node, Azure CLI, and controller trust stores; configure `HTTPS_PROXY`/`NO_PROXY` explicitly. |
 
@@ -66,20 +66,28 @@ choose an uploader for consumer repositories.
 
 ## Network and runner topology
 
-- Controller-backed load gates run on trusted same-repository refs. Fork pull
-  requests receive only the authoritative CI workflow's `fork-static` DSL
-  syntax validation job. It uses runner-provided `git` and `jq` and never
-  executes checked-out source, tests, binaries, or scripts. On GitHub.com that
-  job uses an ephemeral GitHub-hosted runner; on GHES it uses only the dedicated
-  `apexload-ci-unprivileged` runner label. It never receives controller,
-  registry, cloud, metadata-service, production network, or trusted runner-group
-  access.
+- Release, deployment, infrastructure, and protected manual protocol automation
+  is started through a narrowly scoped `repository_dispatch` credential. This
+  guarantees GHES loads the privileged workflow from protected `main`.
+  Release/deployment candidate tags are checked out only after their exact
+  annotated tag objects and commits have been verified through the GHES API;
+  infrastructure and protocol workflows pin the immutable default-branch event
+  SHA and reject unexpected payload keys. Do not replace this with tag-push
+  execution or branch-selectable `workflow_dispatch`.
+- Controller-backed load gates run on trusted same-repository refs. On
+  GitHub.com, fork pull requests receive only the authoritative CI workflow's
+  `fork-static` syntax validation job on an ephemeral GitHub-hosted runner; it
+  never executes checked-out source, tests, binaries, or scripts.
+- GHES must disable Actions execution from fork pull requests. GHES has no
+  hosted-runner isolation boundary, and a fork can modify the workflow version
+  associated with its merge commit; assigning even a nominally unprivileged
+  self-hosted runner would violate the no-untrusted-code-on-self-hosted-runner
+  rule. A maintainer must import the proposed commit onto a same-repository
+  review branch before `CI / Required` can run. The checked-in `fork-static`
+  job is therefore GitHub.com-only and has no GHES self-hosted fallback.
 - Provision `apexload-ci-unprivileged` as an ephemeral, one-job GHES runner
-  pool before enabling required checks. Give it no runner-local credentials or
+  pool for trusted same-repository CI. Give it no runner-local credentials or
   persistent caches and limit egress to reviewed source/tool/module mirrors.
-  If this pool is absent or offline, fork `CI / Required` remains queued; that
-  GHES installation is not CI-qualified. There is deliberately no fallback to
-  a trusted runner label.
 - Restrict every trusted self-hosted runner group to explicitly selected
   workflows pinned to protected branches, protected tags, or reviewed SHAs.
   Do not grant those groups generic repository access or access from pull
@@ -96,7 +104,7 @@ choose an uploader for consumer repositories.
 - Pin the base runner image by digest and verify required `skopeo`, Azure CLI,
   Helm, kubectl, OpenSSL, jq, and CA bundle versions during runner bootstrap.
 - The base image also needs GitHub CLI, GNU coreutils/find, Bash 5, Python 3,
-  Node 22, Docker/Buildx, Cosign, Go 1.26.5, JDK 21, npm, Terraform 1.13.4,
+  Node 22, Docker/Buildx, Cosign, Go 1.26.5, JDK 21, npm, Terraform 1.15.8,
   and the platform tools used by its lane. Trivy/Syft, Azure CLI, native Wails
   dependencies, and browser dependencies are required only by their matching
   scan/deploy/client/dashboard lanes. Fail runner-image validation if an exact
@@ -118,8 +126,8 @@ choose an uploader for consumer repositories.
   `AZURE_INFRA_RUNNER_LABELS`. Example: `["self-hosted","linux","x64","trusted-ci"]`.
 - Set protected repository variable `APEXLOAD_USE_PREINSTALLED_TOOLS=true` on
   air-gapped release, AKS, and Terraform runners. Network installer steps are
-  skipped, but the workflows still verify exact Helm 3.19.0, kubectl 1.34.1,
-  Cosign 3.1.1, and Terraform 1.13.4 versions before using them. On-premises
+  skipped, but the workflows still verify exact Helm 3.21.3, kubectl 1.34.9,
+  Cosign 3.1.1, and Terraform 1.15.8 versions before using them. On-premises
   publishing always requires preinstalled Skopeo 1.20.0 and Cosign 3.1.1.
 - Package-ecosystem traffic must use an approved transparent proxy/cache, or a
   pre-baked lane image with every tool and dependency already mirrored. Configure

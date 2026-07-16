@@ -46,6 +46,7 @@ type RunArchiveManifest struct {
 	TransactionCount             int64                `json:"transaction_count"`
 	ResourceSampleCount          int64                `json:"resource_sample_count"`
 	IntervalSummaryCount         int64                `json:"interval_summary_count"`
+	SLAEvaluated                 bool                 `json:"sla_evaluated,omitempty"`
 	SLABreached                  bool                 `json:"sla_breached"`
 	SLADetails                   []string             `json:"sla_details,omitempty"`
 }

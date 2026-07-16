@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -64,6 +66,7 @@ type CISource struct {
 	Ref               string `json:"ref,omitempty"`
 	SHA               string `json:"sha,omitempty"`
 	WorkflowRef       string `json:"workflow_ref,omitempty"`
+	JobWorkflowRef    string `json:"job_workflow_ref,omitempty"`
 	RunID             string `json:"run_id,omitempty"`
 	RunAttempt        string `json:"run_attempt,omitempty"`
 	Actor             string `json:"actor,omitempty"`
@@ -117,8 +120,13 @@ type CIRunResponse struct {
 }
 
 type CIAbortResponse struct {
-	Status string `json:"status"`
-	TestID string `json:"test_id"`
+	SchemaVersion int    `json:"schema_version"`
+	Status        string `json:"status"`
+	TestID        string `json:"test_id"`
+}
+
+type CIAbortRequest struct {
+	Reason string `json:"reason,omitempty"`
 }
 
 // CIAPIError is a deliberately body-free controller error. Controller error
@@ -169,12 +177,23 @@ func (c *ApiClient) CreateCIRun(ctx context.Context, request CIRunRequest, idemp
 	if strings.TrimSpace(idempotencyKey) != "" {
 		headers.Set("Idempotency-Key", strings.TrimSpace(idempotencyKey))
 	}
+	if leaseToken := strings.TrimSpace(os.Getenv("APEXLOAD_DEPLOYMENT_LEASE_TOKEN")); leaseToken != "" {
+		if len(leaseToken) != 64 {
+			return nil, fmt.Errorf("deployment lease token has invalid length")
+		}
+		for _, char := range leaseToken {
+			if !strings.ContainsRune("0123456789abcdefABCDEF", char) {
+				return nil, fmt.Errorf("deployment lease token has invalid format")
+			}
+		}
+		headers.Set("X-APEXLoad-Deployment-Lease-Token", leaseToken)
+	}
 	var out CIRunResponse
 	if err := c.ciJSON(ctx, http.MethodPost, "/api/v1/ci/runs", request, headers, http.StatusAccepted, &out); err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(out.TestID) == "" {
-		return nil, fmt.Errorf("controller CI run response is missing test_id")
+	if err := validateCIRunAPIResponse(&out, ""); err != nil {
+		return nil, fmt.Errorf("controller returned an invalid CI run response: %w", err)
 	}
 	return &out, nil
 }
@@ -185,16 +204,85 @@ func (c *ApiClient) GetCIRun(ctx context.Context, testID string) (*CIRunResponse
 	if err := c.ciJSON(ctx, http.MethodGet, path, nil, nil, http.StatusOK, &out); err != nil {
 		return nil, err
 	}
+	if err := validateCIRunAPIResponse(&out, strings.TrimSpace(testID)); err != nil {
+		return nil, fmt.Errorf("controller returned an invalid CI run response: %w", err)
+	}
 	return &out, nil
 }
 
+func validateCIRunAPIResponse(response *CIRunResponse, expectedTestID string) error {
+	if response == nil || response.SchemaVersion != ciSchemaVersion {
+		return fmt.Errorf("unsupported schema version")
+	}
+	testID := strings.TrimSpace(response.TestID)
+	if testID == "" {
+		return fmt.Errorf("test_id is missing")
+	}
+	if expectedTestID != "" && testID != expectedTestID {
+		return fmt.Errorf("test_id does not match the requested run")
+	}
+	status := strings.ToUpper(strings.TrimSpace(response.Status))
+	switch status {
+	case "QUEUED", "SCHEDULED", "PENDING", "SHAKEOUT", "SHAKEOUT_REVIEW", "INITIALIZING", "RUNNING", "PAUSED", "STOPPING", "COMPLETE", "FAILED", "ABORTED":
+	default:
+		return fmt.Errorf("status is missing or unsupported")
+	}
+	outcome := strings.ToLower(strings.TrimSpace(response.Outcome))
+	switch outcome {
+	case "", "queued", "running", ciOutcomePassed, ciOutcomeSLABreached, ciOutcomeExecutionError, ciOutcomeConfigurationError, ciOutcomeTimedOut, ciOutcomeCancelled:
+	default:
+		return fmt.Errorf("outcome is unsupported")
+	}
+	terminal := status == "COMPLETE" || status == "FAILED" || status == "ABORTED"
+	if terminal {
+		valid := (status == "COMPLETE" && (outcome == ciOutcomePassed || outcome == ciOutcomeSLABreached || outcome == ciOutcomeExecutionError)) ||
+			(status == "FAILED" && outcome == ciOutcomeExecutionError) ||
+			(status == "ABORTED" && (outcome == ciOutcomeCancelled || outcome == ciOutcomeTimedOut))
+		if !valid {
+			return fmt.Errorf("terminal status and outcome are inconsistent")
+		}
+	} else if outcome != "" && outcome != "queued" && outcome != "running" {
+		return fmt.Errorf("nonterminal status cannot carry a terminal outcome")
+	}
+	if response.Transactions < 0 || response.Errors < 0 || response.DurationMS < 0 || response.TPS < 0 || math.IsNaN(response.TPS) || math.IsInf(response.TPS, 0) {
+		return fmt.Errorf("metrics are invalid")
+	}
+	if response.Metrics.Transactions < 0 || response.Metrics.Errors < 0 || response.Metrics.DurationMS < 0 || response.Metrics.TPS < 0 || math.IsNaN(response.Metrics.TPS) || math.IsInf(response.Metrics.TPS, 0) {
+		return fmt.Errorf("nested metrics are invalid")
+	}
+	return nil
+}
+
 func (c *ApiClient) AbortCIRun(ctx context.Context, testID string) (*CIAbortResponse, error) {
+	return c.AbortCIRunWithReason(ctx, testID, "")
+}
+
+func (c *ApiClient) AbortCIRunWithReason(ctx context.Context, testID string, reason string) (*CIAbortResponse, error) {
 	var out CIAbortResponse
 	path := "/api/v1/ci/runs/" + url.PathEscape(strings.TrimSpace(testID)) + "/abort"
-	if err := c.ciJSON(ctx, http.MethodPost, path, struct{}{}, nil, http.StatusOK, &out); err != nil {
+	payload := CIAbortRequest{Reason: strings.TrimSpace(reason)}
+	if err := c.ciJSON(ctx, http.MethodPost, path, payload, nil, http.StatusOK, &out); err != nil {
 		return nil, err
 	}
+	if err := validateCIAbortAPIResponse(&out, strings.TrimSpace(testID)); err != nil {
+		return nil, fmt.Errorf("controller returned an invalid CI abort response: %w", err)
+	}
 	return &out, nil
+}
+
+func validateCIAbortAPIResponse(response *CIAbortResponse, expectedTestID string) error {
+	if response == nil || response.SchemaVersion != ciSchemaVersion {
+		return fmt.Errorf("unsupported schema version")
+	}
+	if strings.TrimSpace(response.TestID) == "" || strings.TrimSpace(response.TestID) != strings.TrimSpace(expectedTestID) {
+		return fmt.Errorf("test_id does not match the requested run")
+	}
+	switch strings.ToUpper(strings.TrimSpace(response.Status)) {
+	case "QUEUED", "SCHEDULED", "PENDING", "SHAKEOUT", "SHAKEOUT_REVIEW", "INITIALIZING", "RUNNING", "PAUSED", "STOPPING", "COMPLETE", "FAILED", "ABORTED":
+		return nil
+	default:
+		return fmt.Errorf("status is missing or unsupported")
+	}
 }
 
 func (c *ApiClient) ciJSON(ctx context.Context, method, path string, payload any, headers http.Header, wantStatus int, out any) error {
@@ -228,8 +316,35 @@ func (c *ApiClient) ciJSON(ctx context.Context, method, path string, payload any
 	if out == nil {
 		return nil
 	}
-	if err := json.NewDecoder(io.LimitReader(response.Body, 2<<20)).Decode(out); err != nil {
+	if err := decodeBoundedSingleJSON(response.Body, 2<<20, out); err != nil {
 		return fmt.Errorf("decode %s response: %w", path, err)
+	}
+	return nil
+}
+
+func decodeBoundedSingleJSON(reader io.Reader, maxBytes int64, out any) error {
+	if reader == nil {
+		return fmt.Errorf("response body is unavailable")
+	}
+	if maxBytes < 1 {
+		return fmt.Errorf("response size limit is invalid")
+	}
+	body, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
+	if err != nil {
+		return err
+	}
+	if int64(len(body)) > maxBytes {
+		return fmt.Errorf("response exceeds %d bytes", maxBytes)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(body))
+	if err := decoder.Decode(out); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("response must contain one JSON object")
+		}
+		return fmt.Errorf("response has trailing data: %w", err)
 	}
 	return nil
 }

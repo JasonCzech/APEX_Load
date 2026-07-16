@@ -54,6 +54,16 @@ func TestParseCIArgsControllerAndLocalValidation(t *testing.T) {
 	}); err == nil || !strings.Contains(err.Error(), "exactly one") {
 		t.Fatalf("both script sources error = %v", err)
 	}
+	for _, args := range [][]string{
+		{"--controller-url", "https://controller.example", "--project-id", "project-1", "--script-id", "script-1", "--p95-latency-ms", "0"},
+		{"--controller-url", "https://controller.example", "--project-id", "project-1", "--script-id", "script-1", "--max-error-pct", "101"},
+		{"--controller-url", "https://controller.example", "--project-id", "project-1", "--script-id", "script-1", "--max-avg-transfer-ms", "-1"},
+		{"--controller-url", "https://controller.example", "--project-id", "project-1", "--script-id", "script-1", "--max-error-count", "-1"},
+	} {
+		if _, err := parseCIArgs(args); err == nil {
+			t.Fatalf("invalid SLA args unexpectedly passed: %v", args)
+		}
+	}
 }
 
 func TestValidateControllerURLFailsClosed(t *testing.T) {
@@ -70,6 +80,44 @@ func TestValidateControllerURLFailsClosed(t *testing.T) {
 	}
 	if err := validateControllerURL("http://127.0.0.1:8080"); err != nil {
 		t.Fatalf("localhost development URL rejected: %v", err)
+	}
+}
+
+func TestDecodeBoundedSingleJSONRejectsOversizedAndTrailingResponses(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		body    string
+		max     int64
+		want    string
+		wantErr string
+	}{
+		{name: "valid", body: `{"value":"token"}`, max: 64, want: "token"},
+		{name: "trailing object", body: `{"value":"token"}{"value":"forged"}`, max: 64, wantErr: "one JSON object"},
+		{name: "trailing garbage", body: `{"value":"token"}garbage`, max: 64, wantErr: "trailing data"},
+		{name: "oversized after valid prefix", body: `{"value":"token"}` + strings.Repeat(" ", 64), max: 32, wantErr: "exceeds 32 bytes"},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			var decoded struct {
+				Value string `json:"value"`
+			}
+			err := decodeBoundedSingleJSON(strings.NewReader(test.body), test.max, &decoded)
+			if test.wantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+					t.Fatalf("decode error = %v, want substring %q", err, test.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if decoded.Value != test.want {
+				t.Fatalf("decoded value = %q, want %q", decoded.Value, test.want)
+			}
+		})
 	}
 }
 
@@ -140,6 +188,35 @@ func TestCreateCIRunContractAndIdempotencyHeader(t *testing.T) {
 	}
 }
 
+func TestValidateCIRunAPIResponseFailsClosed(t *testing.T) {
+	validRunning := &CIRunResponse{SchemaVersion: ciSchemaVersion, TestID: "test-1", Status: "RUNNING", Outcome: "running", Transactions: 5, TPS: 1.5}
+	validComplete := &CIRunResponse{SchemaVersion: ciSchemaVersion, TestID: "test-1", Status: "COMPLETE", Outcome: ciOutcomePassed, Transactions: 5, TPS: 1.5}
+	for _, test := range []struct {
+		name     string
+		response *CIRunResponse
+		expected string
+		wantOK   bool
+	}{
+		{name: "running", response: validRunning, expected: "test-1", wantOK: true},
+		{name: "complete", response: validComplete, expected: "test-1", wantOK: true},
+		{name: "wrong schema", response: &CIRunResponse{SchemaVersion: 2, TestID: "test-1", Status: "RUNNING", Outcome: "running"}},
+		{name: "wrong test", response: validRunning, expected: "test-2"},
+		{name: "early pass", response: &CIRunResponse{SchemaVersion: 1, TestID: "test-1", Status: "RUNNING", Outcome: ciOutcomePassed, Transactions: 5}},
+		{name: "terminal queued", response: &CIRunResponse{SchemaVersion: 1, TestID: "test-1", Status: "COMPLETE", Outcome: "queued", Transactions: 5}},
+		{name: "negative metrics", response: &CIRunResponse{SchemaVersion: 1, TestID: "test-1", Status: "RUNNING", Outcome: "running", Transactions: -1}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateCIRunAPIResponse(test.response, test.expected)
+			if test.wantOK && err != nil {
+				t.Fatalf("valid response rejected: %v", err)
+			}
+			if !test.wantOK && err == nil {
+				t.Fatal("invalid response was accepted")
+			}
+		})
+	}
+}
+
 func TestCIAPIErrorIsTypedAndDoesNotLeakResponseBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
@@ -185,6 +262,56 @@ func TestCIFailureOutcomeClassifiesControllerAndTransportErrors(t *testing.T) {
 	}
 }
 
+func TestValidateLocalCIGitHubTrustRejectsUntrustedPullRequests(t *testing.T) {
+	t.Setenv("GITHUB_ACTIONS", "true")
+	t.Setenv("GITHUB_REPOSITORY", "octo/apex")
+	t.Setenv("GITHUB_REPOSITORY_ID", "123")
+	t.Run("pull request target", func(t *testing.T) {
+		t.Setenv("GITHUB_EVENT_NAME", "pull_request_target")
+		if err := validateLocalCIGitHubTrust(); err == nil {
+			t.Fatal("pull_request_target was allowed to execute local load")
+		}
+	})
+	t.Run("fork pull request", func(t *testing.T) {
+		t.Setenv("GITHUB_EVENT_NAME", "pull_request")
+		t.Setenv("GITHUB_HEAD_REPOSITORY", "mallory/apex")
+		t.Setenv("GITHUB_HEAD_REPOSITORY_ID", "999")
+		if err := validateLocalCIGitHubTrust(); err == nil {
+			t.Fatal("fork pull request was allowed to execute local load")
+		}
+	})
+	t.Run("same repository pull request", func(t *testing.T) {
+		t.Setenv("GITHUB_EVENT_NAME", "pull_request")
+		t.Setenv("GITHUB_HEAD_REPOSITORY", "Octo/Apex")
+		t.Setenv("GITHUB_HEAD_REPOSITORY_ID", "123")
+		if err := validateLocalCIGitHubTrust(); err != nil {
+			t.Fatalf("same-repository pull request rejected: %v", err)
+		}
+	})
+}
+
+func TestLoadCIVariablesRejectsSensitiveKeysAndValues(t *testing.T) {
+	for _, variables := range []map[string]string{
+		{"authorization": "opaque"},
+		{"AWS_ACCESS_KEY_ID": "AKIAIOSFODNN7EXAMPLE"},
+		{"header": "Bearer short"},
+		{"endpoint": "https://user:password@example.test/path"},
+		{"endpoint": "https://example.test/path?sig=short"},
+	} {
+		raw, err := json.Marshal(variables)
+		if err != nil {
+			t.Fatal(err)
+		}
+		path := filepath.Join(t.TempDir(), "variables.json")
+		if err := os.WriteFile(path, raw, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := loadCIVariables(path); err == nil {
+			t.Fatalf("sensitive variables were accepted: %#v", variables)
+		}
+	}
+}
+
 func TestExecuteControllerCIMapsCreateHTTPFailures(t *testing.T) {
 	script := filepath.Join(t.TempDir(), "script.json")
 	if err := os.WriteFile(script, []byte(`{"name":"ci","protocol":"http","actions":[{"name":"home","type":"request","method":"GET","target":"https://example.com"}]}`), 0o600); err != nil {
@@ -211,6 +338,9 @@ func TestExecuteControllerCIMapsCreateHTTPFailures(t *testing.T) {
 			args := defaultCIArgs()
 			args.controllerURL, args.projectID, args.scriptPath = server.URL, "project-1", script
 			args.authMode, args.apiKey = "api-key", "key-1"
+			evidenceDir := t.TempDir()
+			args.jsonPath = filepath.Join(evidenceDir, "result.json")
+			args.junitPath = filepath.Join(evidenceDir, "results.xml")
 			result, err := executeControllerCI(context.Background(), args, nil)
 			if err == nil || result.Outcome != test.want || result.Status != "CREATE_FAILED" {
 				t.Fatalf("result=%#v err=%v", result, err)
@@ -219,6 +349,42 @@ func TestExecuteControllerCIMapsCreateHTTPFailures(t *testing.T) {
 				t.Fatalf("controller body leaked: %v", err)
 			}
 		})
+	}
+}
+
+func TestExecuteControllerCIRetryableCreateFailureDoesNotAbortAcceptedRun(t *testing.T) {
+	oldAttempts := ciControllerRequestAttempts
+	ciControllerRequestAttempts = 1
+	t.Cleanup(func() { ciControllerRequestAttempts = oldAttempts })
+	var abortCalls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/ci/runs":
+			http.Error(w, "GitHub Check response was lost", http.StatusBadGateway)
+		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/abort"):
+			abortCalls.Add(1)
+			_, _ = io.WriteString(w, `{"test_id":"unexpected","status":"ABORTED"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	script := filepath.Join(t.TempDir(), "script.json")
+	if err := os.WriteFile(script, []byte(`{"name":"ci","protocol":"http","actions":[{"name":"home","type":"request","method":"GET","target":"https://example.com"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args := defaultCIArgs()
+	args.controllerURL, args.projectID, args.scriptPath = server.URL, "project-1", script
+	args.authMode, args.apiKey = "api-key", "key-1"
+	args.abortOnCancel = true
+
+	result, err := executeControllerCI(context.Background(), args, nil)
+	if err == nil || result.Status != "CREATE_FAILED" || result.Outcome != ciOutcomeExecutionError {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	if got := abortCalls.Load(); got != 0 {
+		t.Fatalf("retryable create failure attempted %d destructive aborts", got)
 	}
 }
 
@@ -359,7 +525,7 @@ func TestExecuteControllerCIAbortsOnCancellation(t *testing.T) {
 			_, _ = io.WriteString(w, `{"schema_version":1,"test_id":"test-1","status":"RUNNING"}`)
 		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/ci/runs/test-1/abort":
 			aborted <- struct{}{}
-			_, _ = io.WriteString(w, `{"test_id":"test-1","status":"ABORTED"}`)
+			_, _ = io.WriteString(w, `{"schema_version":1,"test_id":"test-1","status":"ABORTED"}`)
 		default:
 			http.NotFound(w, r)
 		}
@@ -370,10 +536,12 @@ func TestExecuteControllerCIAbortsOnCancellation(t *testing.T) {
 	args := defaultCIArgs()
 	args.controllerURL, args.projectID, args.scriptPath = server.URL, "project-1", script
 	args.authMode, args.apiKey = "api-key", "key-1"
+	args.jsonPath = filepath.Join(filepath.Dir(script), "cancel-result.json")
+	args.junitPath = filepath.Join(filepath.Dir(script), "cancel-result.xml")
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	result, err := executeControllerCI(ctx, args, nil)
-	if err == nil || result.TestID != "" {
+	if err == nil || result.TestID == "" || result.Outcome != ciOutcomeCancelled || result.Status != "CANCELLED" {
 		t.Fatalf("pre-cancelled result=%#v err=%v", result, err)
 	}
 
@@ -390,6 +558,132 @@ func TestExecuteControllerCIAbortsOnCancellation(t *testing.T) {
 	case <-aborted:
 	case <-time.After(time.Second):
 		t.Fatal("controller abort endpoint was not called")
+	}
+}
+
+func TestAbortCIRunRejectsMismatchedControllerIdentity(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/v1/ci/runs/test-1/abort" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"schema_version":1,"test_id":"different-run","status":"ABORTED"}`)
+	}))
+	defer server.Close()
+	client := NewApiClientWithAuth(server.URL, "api-key", "")
+	if _, err := client.AbortCIRunWithReason(context.Background(), "test-1", "cancelled"); err == nil || !strings.Contains(err.Error(), "test_id") {
+		t.Fatalf("mismatched abort response error = %v", err)
+	}
+}
+
+func TestExecuteControllerCIStatusFailureDoesNotAbortRemoteRun(t *testing.T) {
+	oldPoll := ciPollInterval
+	oldAttempts := ciControllerRequestAttempts
+	ciPollInterval = time.Millisecond
+	ciControllerRequestAttempts = 1
+	t.Cleanup(func() {
+		ciPollInterval = oldPoll
+		ciControllerRequestAttempts = oldAttempts
+	})
+
+	for _, test := range []struct {
+		name       string
+		abort      bool
+		wantAborts int32
+	}{
+		{name: "disabled", abort: false, wantAborts: 0},
+		{name: "enabled for cancellation only", abort: true, wantAborts: 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var abortCalls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case r.Method == http.MethodPost && r.URL.Path == "/api/v1/ci/runs":
+					w.WriteHeader(http.StatusAccepted)
+					_, _ = io.WriteString(w, `{"schema_version":1,"test_id":"test-1","status":"RUNNING"}`)
+				case r.Method == http.MethodGet && r.URL.Path == "/api/v1/ci/runs/test-1":
+					http.Error(w, "temporary controller failure", http.StatusInternalServerError)
+				case r.Method == http.MethodPost && r.URL.Path == "/api/v1/ci/runs/test-1/abort":
+					abortCalls.Add(1)
+					_, _ = io.WriteString(w, `{"test_id":"test-1","status":"ABORTED"}`)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer server.Close()
+
+			script := filepath.Join(t.TempDir(), "script.json")
+			if err := os.WriteFile(script, []byte(`{"name":"ci","protocol":"http","actions":[{"name":"home","type":"request","method":"GET","target":"https://example.com"}]}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			args := defaultCIArgs()
+			args.controllerURL, args.projectID, args.scriptPath = server.URL, "project-1", script
+			args.authMode, args.apiKey = "api-key", "key-1"
+			args.abortOnCancel = test.abort
+			args.jsonPath = filepath.Join(filepath.Dir(script), "status-failure.json")
+			args.junitPath = filepath.Join(filepath.Dir(script), "status-failure.xml")
+
+			result, err := executeControllerCI(context.Background(), args, nil)
+			if err == nil || result.Status != "STATUS_FAILED" || result.Outcome != ciOutcomeExecutionError {
+				t.Fatalf("result=%#v err=%v", result, err)
+			}
+			if got := abortCalls.Load(); got != test.wantAborts {
+				t.Fatalf("abort calls = %d, want %d", got, test.wantAborts)
+			}
+		})
+	}
+}
+
+func TestExecuteControllerCIAbortsDeterministicRunAfterTimedOutCreate(t *testing.T) {
+	aborted := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/ci/runs":
+			time.Sleep(100 * time.Millisecond)
+			w.WriteHeader(http.StatusAccepted)
+			_, _ = io.WriteString(w, `{"schema_version":1,"test_id":"late","status":"RUNNING"}`)
+		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/ci/runs/") && strings.HasSuffix(r.URL.Path, "/abort"):
+			aborted <- strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/v1/ci/runs/"), "/abort")
+			_, _ = io.WriteString(w, `{"test_id":"aborted","status":"ABORTED"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	script := filepath.Join(t.TempDir(), "script.json")
+	if err := os.WriteFile(script, []byte(`{"name":"ci","protocol":"http","actions":[{"name":"home","type":"request","method":"GET","target":"https://example.com"}]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	args := defaultCIArgs()
+	args.controllerURL, args.projectID, args.scriptPath = server.URL, "project-1", script
+	args.authMode, args.apiKey = "api-key", "key-1"
+	args.jsonPath = filepath.Join(filepath.Dir(script), "timeout-result.json")
+	args.junitPath = filepath.Join(filepath.Dir(script), "timeout-result.xml")
+	request := CIRunRequest{
+		ProjectID: args.projectID, ScriptPath: args.scriptPath,
+		Execution: CIExecution{VUsers: args.vusers, Duration: args.duration.String(), RampUp: args.rampUp.String()},
+		Goals:     CIGoals{RequireSLA: args.requireSLA, RequireResults: args.requireResults},
+		Source:    sourceFromEnvironment(), PublishCheck: args.publishCheck,
+	}
+	raw, _ := os.ReadFile(script)
+	request.Script = json.RawMessage(raw)
+	idempotencyKey := deriveCIIdempotencyKey(request)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	result, err := executeControllerCI(ctx, args, nil)
+	if err == nil || result.Outcome != ciOutcomeTimedOut || result.Status != "TIMED_OUT" {
+		t.Fatalf("result=%#v err=%v", result, err)
+	}
+	select {
+	case got := <-aborted:
+		if got != deterministicCITestID(args.projectID, idempotencyKey) {
+			t.Fatalf("abort test id = %q, want deterministic CI id", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed-out create did not attempt deterministic abort")
 	}
 }
 

@@ -35,6 +35,13 @@ die() {
 
 explicit_path="${APEXLOAD_INPUT_APEXCTL_PATH:-}"
 requested_version="${APEXLOAD_INPUT_APEXCTL_VERSION:-}"
+semver_number='(0|[1-9][0-9]*)'
+semver_identifier='(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)'
+semver_pattern="^v?${semver_number}\\.${semver_number}\\.${semver_number}(-${semver_identifier}(\\.${semver_identifier})*)?$"
+
+if [[ -n "$requested_version" && ! "$requested_version" =~ $semver_pattern ]]; then
+  die configuration_error "apexctl-version is not a canonical semantic version"
+fi
 
 if [[ -n "$explicit_path" ]]; then
   [[ -f "$explicit_path" && -x "$explicit_path" ]] || die configuration_error "apexctl-path is not an executable file"
@@ -53,7 +60,7 @@ fi
 if [[ -z "$requested_version" ]]; then
   requested_version="$(tr -d '[:space:]' < "${GITHUB_ACTION_PATH:?}/apexctl-version")"
 fi
-[[ "$requested_version" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$ ]] || die configuration_error "apexctl-version is not a semantic version"
+[[ "$requested_version" =~ $semver_pattern ]] || die configuration_error "apexctl-version is not a canonical semantic version"
 version_number="${requested_version#v}"
 version_tag="v${version_number}"
 
@@ -90,13 +97,21 @@ manifest="$install_dir/release-manifest.json"
 download_asset() {
   local url="$1"
   local output="$2"
+  local max_bytes="$3"
+  local partial="${output}.partial"
+  rm -f -- "$partial"
   curl --fail --silent --show-error --location --proto '=https' --tlsv1.2 \
-    "$url" --output "$output" || die execution_error "failed to download a required signed release asset"
+    --connect-timeout 10 --max-time 120 --retry 3 --retry-delay 2 --retry-all-errors \
+    --max-filesize "$max_bytes" "$url" --output "$partial" \
+    || die execution_error "failed to download a required signed release asset"
+  [[ "$(wc -c < "$partial" | tr -d '[:space:]')" -le "$max_bytes" ]] \
+    || die execution_error "downloaded release asset exceeds its size limit"
+  mv -f -- "$partial" "$output" || die execution_error "failed to install a downloaded release asset"
 }
 
-download_asset "$release_url/SHA256SUMS" "$checksums"
-download_asset "$release_url/$asset" "$binary"
-download_asset "$release_url/release-manifest.json" "$manifest"
+download_asset "$release_url/SHA256SUMS" "$checksums" $((4 * 1024 * 1024))
+download_asset "$release_url/$asset" "$binary" $((512 * 1024 * 1024))
+download_asset "$release_url/release-manifest.json" "$manifest" $((16 * 1024 * 1024))
 
 signing_key="${APEXLOAD_INPUT_RELEASE_PUBLIC_KEY:-}"
 if [[ -z "$signing_key" && -f "$GITHUB_ACTION_PATH/release-signing-key.pem" ]]; then
@@ -105,7 +120,7 @@ fi
 if [[ -n "$signing_key" ]]; then
   [[ -f "$signing_key" ]] || die configuration_error "release-public-key does not exist"
   signature="$install_dir/SHA256SUMS.sig"
-  download_asset "$release_url/SHA256SUMS.sig" "$signature"
+  download_asset "$release_url/SHA256SUMS.sig" "$signature" $((1024 * 1024))
   openssl dgst -sha256 -verify "$signing_key" -signature "$signature" "$checksums" >/dev/null \
     || die execution_error "release checksum signature verification failed"
 else

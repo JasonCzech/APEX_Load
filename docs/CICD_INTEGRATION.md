@@ -81,15 +81,25 @@ GitHub App before accepting a load. Because that API cannot prove job-scoped
 environment or runner claims, a project policy that requires either claim must
 use OIDC rather than the API-key fallback.
 
+Production and HA controllers must expose one stable, deployment-specific OIDC
+audience. Set `APEXLOAD_PUBLIC_URL` to the canonical external HTTPS controller
+URL (the controller derives an opaque audience from it), or set the explicit
+`APEXLOAD_CI_OIDC_AUDIENCE` override and configure the same value in each
+project Actions policy. Discovery and token exchange return `503` rather than
+falling back to a generic or per-pod audience when neither value is available.
+GitHub.com and GHES issuer/server policy URLs must use HTTPS; plaintext HTTP is
+accepted only for explicit non-production development.
+
 ## Supported integration
 
 | System | File | Notes |
 | --- | --- | --- |
 | GitHub Actions | [`.github/actions/apexload-run/action.yml`](../.github/actions/apexload-run/action.yml) | Canonical versioned composite action; emits JSON/JUnit paths for a caller-selected artifact action. |
 
-GitHub Actions is the supported CI/CD path. Older Azure Pipelines material is
-retained only as migration reference and is not part of the production release
-or deployment qualification matrix.
+GitHub Actions is the sole supported CI/CD path. Obsolete Jenkins, Azure
+Pipelines, and copy-to-activate workflow templates have been removed so the
+canonical action and active workflows remain the only executable integration
+contract.
 
 ## Copy-ready GitHub Actions gates
 
@@ -138,6 +148,7 @@ jobs:
             ${{ steps.apexload.outputs.json-path }}
             ${{ steps.apexload.outputs.junit-path }}
           if-no-files-found: error
+          include-hidden-files: true
 ```
 
 Pin regulated consumers to the immutable semantic action tag or full commit
@@ -188,6 +199,7 @@ jobs:
             ${{ steps.apexload.outputs.json-path }}
             ${{ steps.apexload.outputs.junit-path }}
           if-no-files-found: error
+          include-hidden-files: true
 ```
 
 The canonical action provisions Node 22 for signed-manifest validation. An
@@ -241,7 +253,7 @@ consumer checkouts and not rebuilt application artifacts).
 | GitHub Actions | [`.github/workflows/deploy-aks.yml`](../.github/workflows/deploy-aks.yml) | AKS | Signed manifest and image-digest Helm deployment with rollback. |
 | GitHub Actions | [`.github/workflows/deploy-appservice.yml`](../.github/workflows/deploy-appservice.yml) | Azure App Service | Verified release zip, staging validation, slot swap, and swap-back. |
 | GitHub Actions | [`.github/workflows/publish-onprem.yml`](../.github/workflows/publish-onprem.yml) | On-prem registry | Mirror, scan, sign, then expose immutable release tags. |
-| GitHub Actions | [`.github/workflows/infra-azure.yml`](../.github/workflows/infra-azure.yml) | Azure infrastructure | Encrypted saved-plan handoff with independent apply approval. |
+| GitHub Actions | [`.github/workflows/infra-azure.yml`](../.github/workflows/infra-azure.yml) | Azure infrastructure | Default-branch `repository_dispatch`; encrypted saved-plan handoff with independent apply approval. |
 
 ### App Service deployment notes
 
@@ -257,6 +269,7 @@ Required app settings beyond the standard controller env vars:
 | --- | --- |
 | `APEXLOAD_STORE` | `postgres` (SQLite file locking is unsafe on the CIFS-backed `/home` share) |
 | `APEXLOAD_DATABASE_URL` | Key Vault reference → Terraform output `apexload_database_url` |
+| `APEXLOAD_PUBLIC_URL` | Canonical `https://<app>.azurewebsites.net` or custom-domain URL; required for stable CI OIDC discovery and Check links. Mark it as a deployment-slot setting, with distinct staging and production values matching the protected workflow URLs. |
 | `APEXLOAD_GENERATORS` | Static comma-separated `ip:9090` list of internal-LB generator endpoints |
 | `APEXLOAD_GRPC_AUTH_TOKEN` | Key Vault reference (same value as the AKS secret) |
 | `SCM_DO_BUILD_DURING_DEPLOYMENT` | `false` (prebuilt zip; Oryx must not re-run npm/go) |

@@ -38,6 +38,15 @@ func (s *scriptedTestPersistence) SaveTest(test *storage.TestRecord) error {
 	return s.testPersistence.SaveTest(test)
 }
 
+func (s *scriptedTestPersistence) SaveTestStartIfNoDeploymentLease(test *storage.TestRecord, _ string, _ string, _ string) error {
+	return s.SaveTest(test)
+}
+
+func (s *scriptedTestPersistence) SaveTestStartIfExecutionLeaseHeldAndNoDeploymentLease(test *storage.TestRecord, _ string, _ string, _ string, _ string, _ string) (bool, error) {
+	err := s.SaveTest(test)
+	return err == nil, err
+}
+
 func (s *scriptedTestPersistence) UpdateTestStatus(id, status string, endedAt *time.Time, detail string) error {
 	s.mu.Lock()
 	s.updateCalls++

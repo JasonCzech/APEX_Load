@@ -1,30 +1,66 @@
 name: Publish On-Premises Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      release:
-        description: Exact signed semantic release tag.
-        required: true
-        type: string
-      environment:
-        description: Protected registry environment.
-        required: true
-        type: choice
-        options:
-          - onprem-registry
+  repository_dispatch:
+    types:
+      - publish-onprem-release
 
 permissions:
   contents: read
   packages: read
 
 concurrency:
-  group: publish-onprem-${{ inputs.environment }}
+  group: publish-onprem-onprem-registry
   cancel-in-progress: false
 
 jobs:
+  verify-tag:
+    name: Verify exact remote signed release tag
+    runs-on: [self-hosted, onprem, trusted]
+    timeout-minutes: 15
+    outputs:
+      commit: ${{ steps.verified.outputs.commit }}
+      tag-object: ${{ steps.verified.outputs.tag-object }}
+    steps:
+      - name: Checkout trusted tag verifier from protected main
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: refs/heads/main
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Verify exact remote signed release tag
+        id: verified
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.event.client_payload.release }}
+          REQUESTED_ENVIRONMENT: ${{ github.event.client_payload.environment }}
+          REPOSITORY: ${{ github.repository }}
+          APEXLOAD_RELEASE_TAG_PUBLIC_KEYS: ${{ vars.APEXLOAD_RELEASE_TAG_PUBLIC_KEYS }}
+        run: |
+          set -euo pipefail
+          [[ "$REQUESTED_ENVIRONMENT" == onprem-registry ]]
+          ./scripts/release/semver.sh tag "$RELEASE_TAG"
+          git fetch --force --no-tags origin \
+            "+refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          release_commit="$(git rev-parse "refs/tags/${RELEASE_TAG}^{commit}")"
+          release_tag_object="$(git rev-parse "refs/tags/${RELEASE_TAG}")"
+          ./scripts/release/verify-tag.sh "$RELEASE_TAG" "$release_commit"
+          server_url="${GITHUB_SERVER_URL:-https://github.com}"
+          export GH_HOST="${server_url#https://}"
+          [[ "$GH_HOST" == github.com ]] || export GH_ENTERPRISE_TOKEN="$GH_TOKEN"
+          remote_ref="$(gh api "repos/${REPOSITORY}/git/ref/tags/${RELEASE_TAG}")"
+          [[ "$(jq -er 'select(.object.type == "tag") | .object.sha' <<< "$remote_ref")" == "$release_tag_object" ]]
+          remote_tag="$(gh api "repos/${REPOSITORY}/git/tags/${release_tag_object}")"
+          [[ "$(jq -er 'select(.object.type == "commit") | .object.sha' <<< "$remote_tag")" == "$release_commit" ]]
+          {
+            printf 'commit=%s\n' "$release_commit"
+            printf 'tag-object=%s\n' "$release_tag_object"
+          } >> "$GITHUB_OUTPUT"
+
   mirror-candidates:
     name: Verify and stage ${{ matrix.component }} (${{ matrix.profile }})
+    needs: verify-tag
     runs-on: [self-hosted, onprem, trusted]
     timeout-minutes: 90
     environment: onprem-registry
@@ -34,26 +70,19 @@ jobs:
         component: [controller, generator]
         profile: [standard, enterprise]
     steps:
+      - name: Initialize isolated registry credential paths
+        run: |
+          {
+            printf 'REGISTRY_AUTH_FILE=%s\n' "$RUNNER_TEMP/apexload-containers-auth.json"
+            printf 'DOCKER_CONFIG=%s\n' "$RUNNER_TEMP/apexload-docker-config"
+          } >> "$GITHUB_ENV"
+
       - name: Checkout publishing tooling
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ inputs.release }}
+          ref: ${{ needs.verify-tag.outputs.commit }}
           fetch-depth: 0
           persist-credentials: false
-
-      - name: Verify dispatch ref and signed publishing tooling
-        env:
-          RELEASE_TAG: ${{ inputs.release }}
-          DISPATCH_REF: ${{ github.ref }}
-          RELEASE_COMMIT: ${{ github.sha }}
-          APEXLOAD_RELEASE_TAG_PUBLIC_KEYS: ${{ vars.APEXLOAD_RELEASE_TAG_PUBLIC_KEYS }}
-        run: |
-          set -euo pipefail
-          [[ "$DISPATCH_REF" == "refs/tags/${RELEASE_TAG}" ]] || {
-            echo 'run this publishing workflow at the exact release tag ref' >&2
-            exit 1
-          }
-          ./scripts/release/verify-tag.sh "$RELEASE_TAG" "$RELEASE_COMMIT"
 
       - name: Require hardened internal runner tools
         run: |
@@ -66,12 +95,12 @@ jobs:
 
       - name: Validate registry coordinates
         env:
-          RELEASE_TAG: ${{ inputs.release }}
+          RELEASE_TAG: ${{ github.event.client_payload.release }}
           REGISTRY_HOST: ${{ vars.ONPREM_REGISTRY_HOST }}
           REGISTRY_NAMESPACE: ${{ vars.ONPREM_REGISTRY_NAMESPACE }}
         run: |
           set -euo pipefail
-          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]]
+          bash ./scripts/release/semver.sh tag "$RELEASE_TAG"
           [[ "$REGISTRY_HOST" =~ ^[A-Za-z0-9.-]+(:[0-9]+)?$ ]]
           [[ "$REGISTRY_NAMESPACE" =~ ^[a-z0-9]+([._/-][a-z0-9]+)*$ ]]
 
@@ -80,29 +109,48 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_ACTOR: ${{ github.actor }}
           SOURCE_REGISTRY: ${{ vars.APEXLOAD_RELEASE_REGISTRY || 'ghcr.io' }}
+          SOURCE_REGISTRY_USERNAME: ${{ vars.APEXLOAD_RELEASE_REGISTRY_USERNAME }}
+          SOURCE_REGISTRY_PASSWORD: ${{ secrets.APEXLOAD_RELEASE_REGISTRY_PASSWORD }}
+          GITHUB_SERVER: ${{ github.server_url }}
           REGISTRY_HOST: ${{ vars.ONPREM_REGISTRY_HOST }}
           REGISTRY_USERNAME: ${{ secrets.ONPREM_REGISTRY_USERNAME }}
           REGISTRY_PASSWORD: ${{ secrets.ONPREM_REGISTRY_PASSWORD }}
         run: |
           set -euo pipefail
-          printf '%s' "$GH_TOKEN" | skopeo login --username "$GH_ACTOR" --password-stdin "$SOURCE_REGISTRY"
+          umask 077
+          mkdir -p "$DOCKER_CONFIG"
+          printf '{}\n' > "$REGISTRY_AUTH_FILE"
+          source_username="${SOURCE_REGISTRY_USERNAME:-$GH_ACTOR}"
+          source_password="${SOURCE_REGISTRY_PASSWORD:-$GH_TOKEN}"
+          if [[ "$GITHUB_SERVER" != https://github.com || "$SOURCE_REGISTRY" != ghcr.io ]]; then
+            [[ -n "$SOURCE_REGISTRY_USERNAME" && -n "$SOURCE_REGISTRY_PASSWORD" ]] || {
+              echo 'custom/GHES source registries require explicit release registry credentials' >&2
+              exit 1
+            }
+          fi
+          printf '%s' "$source_password" | skopeo login --username "$source_username" --password-stdin "$SOURCE_REGISTRY"
           printf '%s' "$REGISTRY_PASSWORD" | skopeo login --username "$REGISTRY_USERNAME" --password-stdin "$REGISTRY_HOST"
-          printf '%s' "$GH_TOKEN" | cosign login --username "$GH_ACTOR" --password-stdin "$SOURCE_REGISTRY"
+          printf '%s' "$source_password" | cosign login --username "$source_username" --password-stdin "$SOURCE_REGISTRY"
           printf '%s' "$REGISTRY_PASSWORD" | cosign login --username "$REGISTRY_USERNAME" --password-stdin "$REGISTRY_HOST"
 
       - name: Download and verify signed release
         id: release
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release }}
+          RELEASE_TAG: ${{ github.event.client_payload.release }}
           REPOSITORY: ${{ github.repository }}
           RELEASE_PUBLIC_KEY: ${{ vars.APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM }}
           SOURCE_COSIGN_PUBLIC_KEY: ${{ vars.COSIGN_PUBLIC_KEY }}
           COMPONENT: ${{ matrix.component }}
           PROFILE: ${{ matrix.profile }}
+          VERIFIED_TAG_OBJECT: ${{ needs.verify-tag.outputs.tag-object }}
         run: |
           set -euo pipefail
-          ./scripts/release/download-release.sh "$RELEASE_TAG" "$RUNNER_TEMP/release" "$REPOSITORY"
+          ./scripts/release/download-release.sh \
+            "$RELEASE_TAG" \
+            "$RUNNER_TEMP/release" \
+            "$REPOSITORY" \
+            "$VERIFIED_TAG_OBJECT"
           release_key="$RUNNER_TEMP/release-signing.pub"
           source_cosign_key="$RUNNER_TEMP/source-cosign.pub"
           printf '%s' "$RELEASE_PUBLIC_KEY" > "$release_key"
@@ -127,14 +175,17 @@ jobs:
           REGISTRY_NAMESPACE: ${{ vars.ONPREM_REGISTRY_NAMESPACE }}
           COMPONENT: ${{ matrix.component }}
           PROFILE: ${{ matrix.profile }}
-          RELEASE_TAG: ${{ inputs.release }}
+          RELEASE_TAG: ${{ github.event.client_payload.release }}
           WORKFLOW_RUN_ID: ${{ github.run_id }}
           WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
           RELEASE_MANIFEST: ${{ runner.temp }}/release/release-manifest.json
         run: |
           set -euo pipefail
           repository="${REGISTRY_HOST}/${REGISTRY_NAMESPACE}/apexload-${COMPONENT}"
-          candidate_tag="${RELEASE_TAG}-${PROFILE}-candidate-${WORKFLOW_RUN_ID}-${WORKFLOW_RUN_ATTEMPT}"
+          # Candidate coordinates are stable across a rerun of failed jobs. A
+          # rerun increments GITHUB_RUN_ATTEMPT without rerunning successful
+          # matrix legs, so including the attempt would orphan their images.
+          candidate_tag="${RELEASE_TAG}-${PROFILE}-candidate-${WORKFLOW_RUN_ID}"
           skopeo copy --all "docker://${SOURCE_IMAGE}" "docker://${repository}:${candidate_tag}"
           digest="$(skopeo inspect --format '{{.Digest}}' "docker://${repository}:${candidate_tag}")"
           source_digest="${SOURCE_IMAGE##*@}"
@@ -193,10 +244,27 @@ jobs:
           ignore-unfixed: false
           vuln-type: os,library
 
-      - name: Sign and attest exact internal digest
+      - name: Validate internal signing identity mode
         env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.ONPREM_COSIGN_PRIVATE_KEY }}
-          COSIGN_PASSWORD: ${{ secrets.ONPREM_COSIGN_PASSWORD }}
+          COSIGN_PRIVATE_KEY_PRESENT: ${{ secrets.ONPREM_COSIGN_PRIVATE_KEY != '' }}
+          COSIGN_PASSWORD_PRESENT: ${{ secrets.ONPREM_COSIGN_PASSWORD != '' }}
+          COSIGN_KEY_REF: ${{ vars.ONPREM_COSIGN_KEY_REF }}
+          ONPREM_COSIGN_PUBLIC_KEY: ${{ vars.ONPREM_COSIGN_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          [[ -n "$ONPREM_COSIGN_PUBLIC_KEY" ]]
+          if [[ -n "$COSIGN_KEY_REF" ]]; then
+            [[ "$COSIGN_PRIVATE_KEY_PRESENT" != true && "$COSIGN_PASSWORD_PRESENT" != true ]] || {
+              echo 'do not configure ONPREM_COSIGN_PRIVATE_KEY or ONPREM_COSIGN_PASSWORD in KMS/HSM mode' >&2
+              exit 1
+            }
+          else
+            [[ "$COSIGN_PRIVATE_KEY_PRESENT" == true && "$COSIGN_PASSWORD_PRESENT" == true ]]
+          fi
+
+      - name: Sign and attest exact internal digest with KMS or HSM key
+        if: vars.ONPREM_COSIGN_KEY_REF != ''
+        env:
           COSIGN_KEY_REF: ${{ vars.ONPREM_COSIGN_KEY_REF }}
           ONPREM_COSIGN_PUBLIC_KEY: ${{ vars.ONPREM_COSIGN_PUBLIC_KEY }}
           IMAGE_REPOSITORY: ${{ steps.candidate.outputs.repository }}
@@ -207,23 +275,17 @@ jobs:
           PROFILE: ${{ matrix.profile }}
         run: |
           set -euo pipefail
-          [[ -n "$ONPREM_COSIGN_PUBLIC_KEY" ]]
-          if [[ -z "$COSIGN_KEY_REF" ]]; then
-            [[ -n "$COSIGN_PRIVATE_KEY" && -n "$COSIGN_PASSWORD" ]]
-          fi
           exact_image="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
           sbom_amd64="$RUNNER_TEMP/release/sbom-apexload-${COMPONENT}-${PROFILE}-linux-amd64.spdx.json"
           sbom_arm64="$RUNNER_TEMP/release/sbom-apexload-${COMPONENT}-${PROFILE}-linux-arm64.spdx.json"
-          key=env://COSIGN_PRIVATE_KEY
-          [[ -n "$COSIGN_KEY_REF" ]] && key="$COSIGN_KEY_REF"
-          cosign sign --yes --key "$key" "$exact_image"
+          cosign sign --yes --key "$COSIGN_KEY_REF" --tlog-upload=false --use-signing-config=false "$exact_image"
           for platform in amd64 arm64; do
             digest_variable="${platform^^}_DIGEST"
             sbom_variable="sbom_${platform}"
             digest="${!digest_variable}"
             sbom="${!sbom_variable}"
-            cosign sign --yes --key "$key" "${IMAGE_REPOSITORY}@${digest}"
-            cosign attest --yes --key "$key" --type spdxjson --predicate "$sbom" \
+            cosign sign --yes --key "$COSIGN_KEY_REF" --tlog-upload=false --use-signing-config=false "${IMAGE_REPOSITORY}@${digest}"
+            cosign attest --yes --key "$COSIGN_KEY_REF" --tlog-upload=false --use-signing-config=false --type spdxjson --predicate "$sbom" \
               "${IMAGE_REPOSITORY}@${digest}"
           done
           public_key="$RUNNER_TEMP/onprem-cosign.pub"
@@ -231,17 +293,69 @@ jobs:
           ./scripts/release/verify-registry-image-evidence.sh \
             "$exact_image" "$public_key" "$sbom_amd64" "$sbom_arm64"
 
+      - name: Sign and attest exact internal digest with protected software key
+        if: vars.ONPREM_COSIGN_KEY_REF == ''
+        env:
+          COSIGN_PRIVATE_KEY: ${{ secrets.ONPREM_COSIGN_PRIVATE_KEY }}
+          COSIGN_PASSWORD: ${{ secrets.ONPREM_COSIGN_PASSWORD }}
+          ONPREM_COSIGN_PUBLIC_KEY: ${{ vars.ONPREM_COSIGN_PUBLIC_KEY }}
+          IMAGE_REPOSITORY: ${{ steps.candidate.outputs.repository }}
+          IMAGE_DIGEST: ${{ steps.candidate.outputs.digest }}
+          AMD64_DIGEST: ${{ steps.candidate.outputs.amd64-digest }}
+          ARM64_DIGEST: ${{ steps.candidate.outputs.arm64-digest }}
+          COMPONENT: ${{ matrix.component }}
+          PROFILE: ${{ matrix.profile }}
+        run: |
+          set -euo pipefail
+          exact_image="${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
+          sbom_amd64="$RUNNER_TEMP/release/sbom-apexload-${COMPONENT}-${PROFILE}-linux-amd64.spdx.json"
+          sbom_arm64="$RUNNER_TEMP/release/sbom-apexload-${COMPONENT}-${PROFILE}-linux-arm64.spdx.json"
+          key=env://COSIGN_PRIVATE_KEY
+          cosign sign --yes --key "$key" --tlog-upload=false --use-signing-config=false "$exact_image"
+          for platform in amd64 arm64; do
+            digest_variable="${platform^^}_DIGEST"
+            sbom_variable="sbom_${platform}"
+            digest="${!digest_variable}"
+            sbom="${!sbom_variable}"
+            cosign sign --yes --key "$key" --tlog-upload=false --use-signing-config=false "${IMAGE_REPOSITORY}@${digest}"
+            cosign attest --yes --key "$key" --tlog-upload=false --use-signing-config=false --type spdxjson --predicate "$sbom" \
+              "${IMAGE_REPOSITORY}@${digest}"
+          done
+          public_key="$RUNNER_TEMP/onprem-cosign.pub"
+          printf '%s' "$ONPREM_COSIGN_PUBLIC_KEY" > "$public_key"
+          ./scripts/release/verify-registry-image-evidence.sh \
+            "$exact_image" "$public_key" "$sbom_amd64" "$sbom_arm64"
+
+      - name: Remove registry credentials
+        if: always()
+        run: |
+          set +e
+          rm -f "$REGISTRY_AUTH_FILE"
+          auth_status=$?
+          rm -rf "$DOCKER_CONFIG"
+          config_status=$?
+          set -e
+          (( auth_status == 0 && config_status == 0 ))
+          [[ ! -e "$REGISTRY_AUTH_FILE" && ! -e "$DOCKER_CONFIG" ]]
+
   promote:
     name: Expose release tags only after all candidates pass
-    needs: mirror-candidates
+    needs: [verify-tag, mirror-candidates]
     runs-on: [self-hosted, onprem, trusted]
     timeout-minutes: 30
     environment: onprem-registry
     steps:
+      - name: Initialize isolated registry credential paths
+        run: |
+          {
+            printf 'REGISTRY_AUTH_FILE=%s\n' "$RUNNER_TEMP/apexload-containers-auth.json"
+            printf 'DOCKER_CONFIG=%s\n' "$RUNNER_TEMP/apexload-docker-config"
+          } >> "$GITHUB_ENV"
+
       - name: Checkout publishing tooling
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
-          ref: ${{ inputs.release }}
+          ref: ${{ needs.verify-tag.outputs.commit }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -257,12 +371,17 @@ jobs:
       - name: Download and verify the promotion contract
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ inputs.release }}
+          RELEASE_TAG: ${{ github.event.client_payload.release }}
           REPOSITORY: ${{ github.repository }}
           RELEASE_PUBLIC_KEY: ${{ vars.APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM }}
+          VERIFIED_TAG_OBJECT: ${{ needs.verify-tag.outputs.tag-object }}
         run: |
           set -euo pipefail
-          ./scripts/release/download-release.sh "$RELEASE_TAG" "$RUNNER_TEMP/release" "$REPOSITORY"
+          ./scripts/release/download-release.sh \
+            "$RELEASE_TAG" \
+            "$RUNNER_TEMP/release" \
+            "$REPOSITORY" \
+            "$VERIFIED_TAG_OBJECT"
           release_key="$RUNNER_TEMP/release-signing.pub"
           printf '%s' "$RELEASE_PUBLIC_KEY" > "$release_key"
           ./scripts/release/verify-release.sh "$RUNNER_TEMP/release" "$RELEASE_TAG" "$release_key"
@@ -274,6 +393,9 @@ jobs:
           REGISTRY_PASSWORD: ${{ secrets.ONPREM_REGISTRY_PASSWORD }}
         run: |
           set -euo pipefail
+          umask 077
+          mkdir -p "$DOCKER_CONFIG"
+          printf '{}\n' > "$REGISTRY_AUTH_FILE"
           printf '%s' "$REGISTRY_PASSWORD" | skopeo login --username "$REGISTRY_USERNAME" --password-stdin "$REGISTRY_HOST"
           printf '%s' "$REGISTRY_PASSWORD" | cosign login --username "$REGISTRY_USERNAME" --password-stdin "$REGISTRY_HOST"
 
@@ -281,7 +403,7 @@ jobs:
         env:
           REGISTRY_HOST: ${{ vars.ONPREM_REGISTRY_HOST }}
           REGISTRY_NAMESPACE: ${{ vars.ONPREM_REGISTRY_NAMESPACE }}
-          RELEASE_TAG: ${{ inputs.release }}
+          RELEASE_TAG: ${{ github.event.client_payload.release }}
           WORKFLOW_RUN_ID: ${{ github.run_id }}
           WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
           ONPREM_COSIGN_PUBLIC_KEY: ${{ vars.ONPREM_COSIGN_PUBLIC_KEY }}
@@ -293,7 +415,7 @@ jobs:
           for component in controller generator; do
             for profile in standard enterprise; do
               repository="${REGISTRY_HOST}/${REGISTRY_NAMESPACE}/apexload-${component}"
-              candidate_tag="${RELEASE_TAG}-${profile}-candidate-${WORKFLOW_RUN_ID}-${WORKFLOW_RUN_ATTEMPT}"
+              candidate_tag="${RELEASE_TAG}-${profile}-candidate-${WORKFLOW_RUN_ID}"
               release_tag="${RELEASE_TAG}-${profile}"
               digest="$(skopeo inspect --format '{{.Digest}}' "docker://${repository}:${candidate_tag}")"
               expected_digest="$(jq -er --arg component "$component" --arg profile "$profile" '
@@ -308,26 +430,52 @@ jobs:
               sbom_arm64="$RUNNER_TEMP/release/sbom-apexload-${component}-${profile}-linux-arm64.spdx.json"
               ./scripts/release/verify-registry-image-evidence.sh \
                 "${repository}@${digest}" "$public_key" "$sbom_amd64" "$sbom_arm64"
-              if existing_digest="$(skopeo inspect --format '{{.Digest}}' "docker://${repository}:${release_tag}" 2>/dev/null)"; then
+              tag_state="$(./scripts/release/registry-reference-state.sh skopeo "${repository}:${release_tag}")"
+              if [[ "$tag_state" == present ]]; then
+                existing_digest="$(skopeo inspect --format '{{.Digest}}' "docker://${repository}:${release_tag}")"
                 [[ "$existing_digest" == "$digest" ]] || {
                   printf 'immutable release tag already points at a different digest: %s:%s\n' "$repository" "$release_tag" >&2
                   exit 1
                 }
+              else
+                [[ "$tag_state" == absent ]]
               fi
             done
           done
           for component in controller generator; do
             for profile in standard enterprise; do
               repository="${REGISTRY_HOST}/${REGISTRY_NAMESPACE}/apexload-${component}"
-              candidate_tag="${RELEASE_TAG}-${profile}-candidate-${WORKFLOW_RUN_ID}-${WORKFLOW_RUN_ATTEMPT}"
+              candidate_tag="${RELEASE_TAG}-${profile}-candidate-${WORKFLOW_RUN_ID}"
               release_tag="${RELEASE_TAG}-${profile}"
               digest="$(skopeo inspect --format '{{.Digest}}' "docker://${repository}:${candidate_tag}")"
-              existing_digest="$(skopeo inspect --format '{{.Digest}}' "docker://${repository}:${release_tag}" 2>/dev/null || true)"
-              if [[ -z "$existing_digest" ]]; then
+              expected_digest="$(jq -er --arg component "$component" --arg profile "$profile" '
+                [.images[] | select(.component == $component and .profile == $profile)]
+                | if length == 1 then .[0].digest else error("missing release image") end
+              ' "$RELEASE_MANIFEST")"
+              [[ "$digest" == "$expected_digest" ]] || {
+                printf 'candidate changed before promotion: %s != %s\n' "$digest" "$expected_digest" >&2
+                exit 1
+              }
+              tag_state="$(./scripts/release/registry-reference-state.sh skopeo "${repository}:${release_tag}")"
+              if [[ "$tag_state" == absent ]]; then
                 skopeo copy --all "docker://${repository}@${digest}" "docker://${repository}:${release_tag}"
+              else
+                [[ "$tag_state" == present ]]
               fi
               promoted_digest="$(skopeo inspect --format '{{.Digest}}' "docker://${repository}:${release_tag}")"
               [[ "$promoted_digest" == "$digest" ]]
               printf '%s:%s -> %s@%s\n' "$repository" "$release_tag" "$repository" "$digest" >> "$GITHUB_STEP_SUMMARY"
             done
           done
+
+      - name: Remove registry credentials
+        if: always()
+        run: |
+          set +e
+          rm -f "$REGISTRY_AUTH_FILE"
+          auth_status=$?
+          rm -rf "$DOCKER_CONFIG"
+          config_status=$?
+          set -e
+          (( auth_status == 0 && config_status == 0 ))
+          [[ ! -e "$REGISTRY_AUTH_FILE" && ! -e "$DOCKER_CONFIG" ]]

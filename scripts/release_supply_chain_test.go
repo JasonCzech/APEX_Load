@@ -150,6 +150,37 @@ printf 'not a signature' > "$2"
 	}
 }
 
+func TestVerifyReleaseRejectsUnsignedExtraAsset(t *testing.T) {
+	workingDir := t.TempDir()
+	releaseDir := filepath.Join(workingDir, "release")
+	if err := os.MkdirAll(releaseDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeSupplyChainFile(t, releaseDir, "release-manifest.json", []byte(`{"schema_version":1}`))
+	writeSupplyChainFile(t, releaseDir, "apexctl-test", []byte("verified release bytes\n"))
+	privateKey := filepath.Join(workingDir, "private.pem")
+	publicKey := filepath.Join(workingDir, "public.pem")
+	if output, err := exec.Command("openssl", "genrsa", "-out", privateKey, "2048").CombinedOutput(); err != nil {
+		t.Fatalf("generate signing key: %v\n%s", err, output)
+	}
+	if output, err := exec.Command("openssl", "rsa", "-in", privateKey, "-pubout", "-out", publicKey).CombinedOutput(); err != nil {
+		t.Fatalf("derive verification key: %v\n%s", err, output)
+	}
+	if output, err := runSupplyChainCommand(t, "release/sign-release.sh",
+		[]string{releaseDir, privateKey, publicKey}, nil); err != nil {
+		t.Fatalf("sign release fixture: %v\n%s", err, output)
+	}
+	writeSupplyChainFile(t, releaseDir, "unsigned-extra.bin", []byte("must not be ignored\n"))
+	output, err := runSupplyChainCommand(t, "release/verify-release.sh",
+		[]string{releaseDir, "v1.2.3", publicKey}, nil)
+	if err == nil {
+		t.Fatalf("release verifier accepted an unsigned extra asset:\n%s", output)
+	}
+	if !strings.Contains(output, "asset set does not exactly match signed SHA256SUMS") {
+		t.Fatalf("unsigned-extra failure was not explicit:\n%s", output)
+	}
+}
+
 func TestVerifyImageEvidenceRejectsWrongSBOMDigestAndIncompletePlatforms(t *testing.T) {
 	toolDir := installFakeSupplyChainTools(t, false)
 	workingDir := t.TempDir()
@@ -278,34 +309,41 @@ func TestVerifyRegistryImageEvidenceRejectsMissingPlatform(t *testing.T) {
 	}
 }
 
-func TestReleaseArtifactNormalizationSupportsMergedAndNestedLayouts(t *testing.T) {
+func TestReleaseArtifactNormalizationSupportsActualGitHubArtifactLayouts(t *testing.T) {
 	workflowBytes, err := os.ReadFile("../.github/workflows/release.yml")
 	if err != nil {
 		t.Fatalf("read release workflow: %v", err)
 	}
-	normalizeScript := extractWorkflowRunStep(t, string(workflowBytes), "Normalize artifact layout")
+	if !strings.Contains(string(workflowBytes), "python3 scripts/release/normalize-release-inputs.py staging") {
+		t.Fatal("release workflow does not use collision-safe artifact normalization")
+	}
+	normalizer, err := filepath.Abs("release/normalize-release-inputs.py")
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	tests := []struct {
 		name  string
 		files map[string]string
 	}{
 		{
-			name: "GitHub.com merged artifacts",
+			name: "GitHub.com upload-artifact v4",
 			files: map[string]string{
-				"staging/apexctl_1.2.3_linux_amd64":                                      "apexctl",
-				"staging/assets/sbom-apexload-controller-standard-linux-amd64.spdx.json": "sbom",
-				"staging/dist/desktop/apexload-desktop-linux-amd64.tar.gz":               "desktop",
-				"staging/image-metadata/controller-standard.json":                        "metadata",
+				"staging/release-core-assets/apexload-server_1.2.3_linux_amd64.tar.gz":                                     "server",
+				"staging/release-client-linux-amd64/release/assets/apexctl_1.2.3_linux_amd64":                              "apexctl",
+				"staging/release-client-linux-amd64/dist/desktop/apexload-desktop-1.2.3-linux-amd64.tar.gz":                "desktop",
+				"staging/release-image-controller-standard/assets/sbom-apexload-controller-standard-linux-amd64.spdx.json": "sbom",
+				"staging/release-image-controller-standard/image-metadata/controller-standard.json":                        "metadata",
 			},
 		},
 		{
-			name: "GHES nested artifacts",
+			name: "GHES upload-artifact v3",
 			files: map[string]string{
-				"staging/release-core-assets/release/assets/apexload-controller_1.2.3_linux_amd64.tar.gz":                          "server",
-				"staging/release-client-linux-amd64/release/assets/apexctl_1.2.3_linux_amd64":                                      "apexctl",
-				"staging/release-client-linux-amd64/dist/desktop/apexload-desktop-linux-amd64.tar.gz":                              "desktop",
-				"staging/release-image-controller-standard/release/assets/sbom-apexload-controller-standard-linux-amd64.spdx.json": "sbom",
-				"staging/release-image-controller-standard/release/image-metadata/controller-standard.json":                        "metadata",
+				"staging/release-core-assets/apexload-server_1.2.3_linux_arm64.tar.gz":                                       "server",
+				"staging/release-client-linux-arm64/release/assets/apexctl_1.2.3_linux_arm64":                                "apexctl",
+				"staging/release-client-linux-arm64/dist/desktop/apexload-desktop-1.2.3-linux-arm64.tar.gz":                  "desktop",
+				"staging/release-image-generator-enterprise/assets/sbom-apexload-generator-enterprise-linux-arm64.spdx.json": "sbom",
+				"staging/release-image-generator-enterprise/image-metadata/generator-enterprise.json":                        "metadata",
 			},
 		},
 	}
@@ -313,16 +351,30 @@ func TestReleaseArtifactNormalizationSupportsMergedAndNestedLayouts(t *testing.T
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			workingDir := t.TempDir()
+			for _, artifact := range []string{
+				"release-core-assets",
+				"release-client-linux-amd64",
+				"release-client-linux-arm64",
+				"release-client-macos-amd64",
+				"release-client-macos-arm64",
+				"release-client-windows-amd64",
+				"release-image-controller-standard",
+				"release-image-controller-enterprise",
+				"release-image-generator-standard",
+				"release-image-generator-enterprise",
+			} {
+				if err := os.MkdirAll(filepath.Join(workingDir, "staging", artifact), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
 			for name, content := range test.files {
 				writeSupplyChainFile(t, workingDir, name, []byte(content))
 			}
-			toolDir := installPortableMove(t)
-			command := exec.Command("bash", "-c", normalizeScript)
+			command := exec.Command("python3", normalizer, "staging")
 			command.Dir = workingDir
-			command.Env = append(os.Environ(), "PATH="+toolDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 			output, err := command.CombinedOutput()
 			if err != nil {
-				t.Fatalf("normalize artifact layout: %v\n%s\nscript:\n%s", err, output, normalizeScript)
+				t.Fatalf("normalize artifact layout: %v\n%s", err, output)
 			}
 
 			for name, content := range test.files {
@@ -341,6 +393,71 @@ func TestReleaseArtifactNormalizationSupportsMergedAndNestedLayouts(t *testing.T
 				}
 			}
 		})
+	}
+}
+
+func TestReleaseInputDownloaderKeepsExactArtifactsSeparated(t *testing.T) {
+	content, err := os.ReadFile("../.github/actions/download-release-inputs/action.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	action := string(content)
+	if strings.Contains(action, "pattern: release-*") || strings.Contains(action, "merge-multiple: true") {
+		t.Fatal("release input downloader can overwrite colliding files before bundle normalization")
+	}
+	for _, name := range []string{
+		"release-core-assets",
+		"release-client-linux-amd64",
+		"release-client-linux-arm64",
+		"release-client-macos-amd64",
+		"release-client-macos-arm64",
+		"release-client-windows-amd64",
+		"release-image-controller-standard",
+		"release-image-controller-enterprise",
+		"release-image-generator-standard",
+		"release-image-generator-enterprise",
+	} {
+		if got := strings.Count(action, "name: "+name); got != 2 {
+			t.Errorf("exact release input %s is downloaded %d times, want once per platform path", name, got)
+		}
+		if got := strings.Count(action, "path: ${{ inputs.path }}/"+name); got != 2 {
+			t.Errorf("release input %s uses a shared destination %d times, want separate GitHub.com/GHES paths", name, got)
+		}
+	}
+}
+
+func TestReleaseArtifactNormalizationRejectsDuplicateBasenames(t *testing.T) {
+	workingDir := t.TempDir()
+	for _, artifact := range []string{
+		"release-core-assets",
+		"release-client-linux-amd64",
+		"release-client-linux-arm64",
+		"release-client-macos-amd64",
+		"release-client-macos-arm64",
+		"release-client-windows-amd64",
+		"release-image-controller-standard",
+		"release-image-controller-enterprise",
+		"release-image-generator-standard",
+		"release-image-generator-enterprise",
+	} {
+		if err := os.MkdirAll(filepath.Join(workingDir, "staging", artifact), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeSupplyChainFile(t, workingDir, "staging/release-core-assets/apexctl_1.2.3_linux_amd64", []byte("first"))
+	writeSupplyChainFile(t, workingDir, "staging/release-client-linux-amd64/release/assets/apexctl_1.2.3_linux_amd64", []byte("second"))
+	normalizer, err := filepath.Abs("release/normalize-release-inputs.py")
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := exec.Command("python3", normalizer, "staging")
+	command.Dir = workingDir
+	output, err := command.CombinedOutput()
+	if err == nil {
+		t.Fatalf("duplicate release artifact filenames were overwritten:\n%s", output)
+	}
+	if !strings.Contains(string(output), "duplicate artifact filename apexctl_1.2.3_linux_amd64") {
+		t.Fatalf("collision failure was not explicit:\n%s", output)
 	}
 }
 

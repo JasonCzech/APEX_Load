@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -118,17 +119,17 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	}
 
 	result, err := mge.Run(ctx)
+	err = localExecutionRunError(ctx, err)
 
 	close(metricsDone)
 	<-metricsStopped
 
 	endTime := time.Now()
-	finalStatus := "COMPLETE"
-	finalError := ""
-	if err != nil {
-		finalStatus = "FAILED"
-		finalError = err.Error()
-	}
+	tr.mu.RLock()
+	testStatus := test.Status
+	testError := test.Error
+	tr.mu.RUnlock()
+	finalStatus, finalError := localExecutionFinalState(testStatus, testError, err)
 
 	unlockArchiveCommit := tr.lockArchiveCommitFence(test.ID)
 	archiveRecord, finalStatus, finalError := artifacts.finalize(test, finalStatus, endTime, finalError)
@@ -152,6 +153,29 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		"errors", totalErrors,
 		"duration", resultDuration,
 	)
+}
+
+func localExecutionRunError(ctx context.Context, runErr error) error {
+	if runErr != nil || ctx == nil {
+		return runErr
+	}
+	return ctx.Err()
+}
+
+func localExecutionFinalState(testStatus, testError string, runErr error) (string, string) {
+	testStatus = strings.ToUpper(strings.TrimSpace(testStatus))
+	testError = strings.TrimSpace(testError)
+	if testStatus == "STOPPING" {
+		return "ABORTED", testError
+	}
+	if runErr == nil {
+		return "COMPLETE", ""
+	}
+	if (errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded)) &&
+		strings.HasPrefix(testError, "ci abort reason: ") {
+		return "ABORTED", testError
+	}
+	return "FAILED", runErr.Error()
 }
 
 func newRunArtifacts(tr *TestRunner, test *ManagedTest, saveRecord func(record *storage.RunArchiveRecord) error) (*runArtifacts, error) {
@@ -371,6 +395,18 @@ func (a *runArtifacts) recordLiveMetrics(test *ManagedTest, live *LiveMetrics) {
 	if err := a.recorder.RecordResourceSample(live.Timestamp, live.ActiveVUsers, live.Resources); err != nil {
 		slog.Warn("failed to record resource sample", "test_id", test.ID, "error", err)
 	}
+	if live != nil {
+		var config *GoalConfig
+		if test != nil {
+			config = test.GoalConfig
+		}
+		a.slaEvaluated = a.slaEvaluated || ciSLAEvidenceComplete(config, live)
+		breached, details := ciLiveSLABreach(live.GoalStatus)
+		if breached {
+			a.slaBreached = true
+			a.slaDetails = compactNonEmptyStrings(append(a.slaDetails, details...)...)
+		}
+	}
 }
 
 func (a *runArtifacts) enrichLiveMetrics(test *ManagedTest, live *LiveMetrics) {
@@ -386,60 +422,30 @@ func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime t
 		return nil, finalStatus, finalError
 	}
 
-	// Determine SLA Status
-	slaBreached := false
-	var slaDetails []string
+	slaEvaluated := a.slaEvaluated
+	slaBreached := a.slaBreached
+	slaDetails := append([]string(nil), a.slaDetails...)
 	var goalStatus *GoalStatus
 	if test != nil && a.runner != nil {
 		a.runner.mu.RLock()
 		if a.runner.tests[test.ID] == test && test.LiveMetrics != nil {
 			goalStatus = cloneGoalStatus(test.LiveMetrics.GoalStatus)
+			slaEvaluated = slaEvaluated || test.ciSLAEvaluated || ciSLAEvidenceComplete(test.GoalConfig, test.LiveMetrics)
+			slaBreached = slaBreached || test.ciSLABreached
+			slaDetails = compactNonEmptyStrings(append(slaDetails, test.ciSLADetails...)...)
 		}
 		a.runner.mu.RUnlock()
 	} else if test != nil && test.LiveMetrics != nil {
 		goalStatus = cloneGoalStatus(test.LiveMetrics.GoalStatus)
+		slaEvaluated = slaEvaluated || test.ciSLAEvaluated || ciSLAEvidenceComplete(test.GoalConfig, test.LiveMetrics)
+		slaBreached = slaBreached || test.ciSLABreached
+		slaDetails = compactNonEmptyStrings(append(slaDetails, test.ciSLADetails...)...)
 	}
 	if goalStatus != nil {
-		gs := goalStatus
-		if gs.LatencyBreached {
+		breached, details := ciLiveSLABreach(goalStatus)
+		if breached {
 			slaBreached = true
-			slaDetails = append(slaDetails, "Latency breached")
-		}
-		if gs.ErrorBreached {
-			slaBreached = true
-			slaDetails = append(slaDetails, "Error rate breached")
-		}
-		if gs.ServerProcessingBreached {
-			slaBreached = true
-			slaDetails = append(slaDetails, "Server processing breached")
-		}
-		if gs.TransferBreached {
-			slaBreached = true
-			slaDetails = append(slaDetails, "Transfer time breached")
-		}
-		if gs.ErrorCountBreached {
-			slaBreached = true
-			slaDetails = append(slaDetails, "Total error count breached")
-		}
-		if gs.ThrottledRequestsBreached {
-			slaBreached = true
-			slaDetails = append(slaDetails, "Event Hubs throttled requests breached")
-		}
-		if gs.EndToEndLatencyBreached {
-			slaBreached = true
-			slaDetails = append(slaDetails, "Event Hubs end-to-end latency breached")
-		}
-		if gs.PartitionSkewBreached {
-			slaBreached = true
-			slaDetails = append(slaDetails, "Event Hubs partition skew breached")
-		}
-		if gs.RedeliveryRateBreached {
-			slaBreached = true
-			slaDetails = append(slaDetails, "Messaging redelivery rate breached")
-		}
-		if gs.DeadLetterRateBreached {
-			slaBreached = true
-			slaDetails = append(slaDetails, "Messaging dead-letter rate breached")
+			slaDetails = compactNonEmptyStrings(append(slaDetails, details...)...)
 		}
 	}
 
@@ -448,7 +454,7 @@ func (a *runArtifacts) finalize(test *ManagedTest, finalStatus string, endTime t
 			refresher.RefreshProvenance(buildRunArchiveProvenance(a.runner, test))
 		}
 	}
-	archiveRecord, archiveErr := a.recorder.Finalize(finalStatus, endTime, finalError, slaBreached, slaDetails)
+	archiveRecord, archiveErr := a.recorder.Finalize(finalStatus, endTime, finalError, slaEvaluated, slaBreached, slaDetails)
 	if archiveRecord != nil && test != nil && archiveRecord.RefKey == "" {
 		archiveRecord.RefKey = test.RefKey
 	}

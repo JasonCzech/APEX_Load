@@ -111,7 +111,7 @@ inputs:
     required: false
     default: ""
   release-public-key:
-    description: Optional PEM public key used to verify SHA256SUMS.sig. A key bundled with the action is preferred when present.
+    description: PEM public key used to verify SHA256SUMS.sig when the action release does not bundle release-signing-key.pem.
     required: false
     default: ""
 

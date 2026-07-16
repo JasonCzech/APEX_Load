@@ -30,13 +30,34 @@ func TestControllerStreamJSONLToParquetAcceptsLargeSnapshotRecord(t *testing.T) 
 		t.Fatal(err)
 	}
 
-	err = streamJSONLToParquet(inputPath, outputPath, func(item TransactionEvent) parquetTransactionEvent {
+	count, err := streamJSONLToParquet(inputPath, outputPath, func(item TransactionEvent) parquetTransactionEvent {
 		return toParquetTransactions([]TransactionEvent{item})[0]
 	})
 	if err != nil {
 		t.Fatalf("streamJSONLToParquet rejected valid >2MiB record: %v", err)
 	}
+	if count != 1 {
+		t.Fatalf("streamJSONLToParquet count = %d, want 1", count)
+	}
 	if info, err := os.Stat(outputPath); err != nil || info.Size() == 0 {
 		t.Fatalf("parquet output missing or empty: info=%v err=%v", info, err)
+	}
+}
+
+func TestControllerStreamJSONLToParquetRejectsOversizedRecord(t *testing.T) {
+	dir := t.TempDir()
+	inputPath := filepath.Join(dir, "transactions.jsonl")
+	outputPath := filepath.Join(dir, "transactions.parquet")
+	if err := os.WriteFile(inputPath, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Truncate(inputPath, int64(maxArchiveJSONLRecordBytes)+1); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := streamJSONLToParquet(inputPath, outputPath, func(item TransactionEvent) parquetTransactionEvent {
+		return toParquetTransactions([]TransactionEvent{item})[0]
+	}); err == nil {
+		t.Fatal("streamJSONLToParquet accepted an archive record above the memory-safety ceiling")
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
@@ -20,7 +21,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 const (
@@ -30,6 +33,12 @@ const (
 	ciOutcomeConfigurationError = "configuration_error"
 	ciOutcomeTimedOut           = "timed_out"
 	ciOutcomeCancelled          = "cancelled"
+)
+
+var (
+	ciControllerRequestAttempts = 5
+	ciControllerRetryBaseDelay  = 50 * time.Millisecond
+	ciAbortConfirmationTimeout  = 3 * time.Second
 )
 
 type ciConfigurationFailure struct {
@@ -105,6 +114,9 @@ func (o optionalFloat) Set(raw string) error {
 	parsed, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 	if err != nil {
 		return err
+	}
+	if math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+		return fmt.Errorf("must be a finite number")
 	}
 	*o.value = &parsed
 	return nil
@@ -220,6 +232,9 @@ func validateCIArgs(args ciArgs) error {
 	if args.rampUp > args.duration {
 		return fmt.Errorf("--ramp-up cannot exceed --duration")
 	}
+	if err := validateCISLAThresholds(args); err != nil {
+		return err
+	}
 	if strings.TrimSpace(args.jsonPath) == "" || strings.TrimSpace(args.junitPath) == "" {
 		return fmt.Errorf("--json and --junit evidence paths are required")
 	}
@@ -246,6 +261,25 @@ func validateCIArgs(args ciArgs) error {
 		}
 	default:
 		return fmt.Errorf("--auth-mode must be oidc or api-key")
+	}
+	return nil
+}
+
+func validateCISLAThresholds(args ciArgs) error {
+	if args.p95LatencyMs != nil && *args.p95LatencyMs <= 0 {
+		return fmt.Errorf("--p95-latency-ms must be greater than zero")
+	}
+	if args.maxErrorPct != nil && (*args.maxErrorPct < 0 || *args.maxErrorPct > 100) {
+		return fmt.Errorf("--max-error-pct must be between 0 and 100")
+	}
+	if args.maxAvgServerProcessingMs != nil && *args.maxAvgServerProcessingMs <= 0 {
+		return fmt.Errorf("--max-avg-server-processing-ms must be greater than zero")
+	}
+	if args.maxAvgTransferMs != nil && *args.maxAvgTransferMs <= 0 {
+		return fmt.Errorf("--max-avg-transfer-ms must be greater than zero")
+	}
+	if args.maxErrorCount != nil && *args.maxErrorCount < 0 {
+		return fmt.Errorf("--max-error-count must be non-negative")
 	}
 	return nil
 }
@@ -356,6 +390,9 @@ func executeCI(ctx context.Context, args ciArgs) (CIResult, error) {
 }
 
 func executeLocalCI(ctx context.Context, args ciArgs, variables map[string]string) (CIResult, error) {
+	if err := validateLocalCIGitHubTrust(); err != nil {
+		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciOutcomeConfigurationError, Status: "UNTRUSTED_SOURCE"}, err
+	}
 	run := runArgs{
 		script: args.scriptPath, baseURL: args.baseURL, env: variables,
 		vusers: args.vusers, duration: args.duration, rampUp: args.rampUp,
@@ -393,6 +430,31 @@ func executeLocalCI(ctx context.Context, args ciArgs, variables map[string]strin
 	}
 	classifyCIResult(&result)
 	return result, nil
+}
+
+func validateLocalCIGitHubTrust() error {
+	if !strings.EqualFold(strings.TrimSpace(os.Getenv("GITHUB_ACTIONS")), "true") {
+		return nil
+	}
+	eventName := strings.ToLower(strings.TrimSpace(os.Getenv("GITHUB_EVENT_NAME")))
+	if eventName == "pull_request_target" {
+		return ciConfigurationErrorf("local CI execution is prohibited for pull_request_target")
+	}
+	if eventName != "pull_request" {
+		return nil
+	}
+	source := sourceFromEnvironment()
+	baseName := strings.TrimSpace(source.Repository)
+	headName := strings.TrimSpace(source.HeadRepository)
+	baseID := strings.TrimSpace(source.RepositoryID)
+	headID := strings.TrimSpace(source.HeadRepositoryID)
+	if baseName == "" || headName == "" || baseID == "" || headID == "" {
+		return ciConfigurationErrorf("local CI execution cannot verify the pull-request repository identity")
+	}
+	if !strings.EqualFold(baseName, headName) || baseID != headID {
+		return ciConfigurationErrorf("local CI execution is prohibited for fork pull requests")
+	}
+	return nil
 }
 
 func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]string) (CIResult, error) {
@@ -433,9 +495,20 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 	if idempotencyKey == "" {
 		idempotencyKey = deriveCIIdempotencyKey(request)
 	}
-	created, err := client.CreateCIRun(ctx, request, idempotencyKey)
+	created, err := retryControllerCIRequest(ctx, auth, client, func() (*CIRunResponse, error) {
+		return client.CreateCIRun(ctx, request, idempotencyKey)
+	})
 	if err != nil {
-		return CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciFailureOutcome(err), Status: "CREATE_FAILED"}, err
+		failure := CIResult{SchemaVersion: ciSchemaVersion, Outcome: ciFailureOutcome(err), Status: "CREATE_FAILED", TestID: deterministicCITestID(args.projectID, idempotencyKey)}
+		if args.abortOnCancel && ctx.Err() != nil {
+			failure.Outcome, failure.Status = ciOutcomeCancelled, "CANCELLED"
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				failure.Outcome, failure.Status = ciOutcomeTimedOut, "TIMED_OUT"
+			}
+			persistCICoreEvidenceBeforeAbort(args, failure)
+			_ = abortControllerCIRun(context.Background(), auth, client, deterministicCITestID(args.projectID, idempotencyKey), ciAbortReason(ctx.Err()))
+		}
+		return failure, err
 	}
 	result := ciResultFromResponse(created)
 
@@ -449,28 +522,169 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 		}
 		select {
 		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				result.Outcome = ciOutcomeTimedOut
+				result.Status = "TIMED_OUT"
+			} else {
+				result.Outcome = ciOutcomeCancelled
+				result.Status = "CANCELLED"
+			}
 			if args.abortOnCancel {
-				abortCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				_ = auth.ensure(abortCtx, client)
-				_, _ = client.AbortCIRun(abortCtx, created.TestID)
-				cancel()
+				persistCICoreEvidenceBeforeAbort(args, result)
+				_ = abortControllerCIRun(context.Background(), auth, client, created.TestID, ciAbortReason(ctx.Err()))
 			}
 			return result, ctx.Err()
 		case <-time.After(ciPollInterval):
 		}
-		if err := auth.ensure(ctx, client); err != nil {
-			result.Outcome = ciFailureOutcome(err)
-			result.Status = "AUTH_REFRESH_FAILED"
-			return result, fmt.Errorf("refresh controller authentication: %w", err)
-		}
-		created, err = client.GetCIRun(ctx, created.TestID)
+		created, err = retryControllerCIRequest(ctx, auth, client, func() (*CIRunResponse, error) {
+			return client.GetCIRun(ctx, created.TestID)
+		})
 		if err != nil {
 			result.Outcome = ciFailureOutcome(err)
 			result.Status = "STATUS_FAILED"
+			persistCICoreEvidenceBeforeAbort(args, result)
+			// A polling/transport failure is not workflow cancellation. The
+			// controller continues to own the run and its Check lifecycle, so do
+			// not turn a temporary observation failure into a destructive abort.
 			return result, err
 		}
 		result = ciResultFromResponse(created)
 	}
+}
+
+func retryControllerCIRequest(ctx context.Context, auth *ciAuthSession, client *ApiClient, operation func() (*CIRunResponse, error)) (*CIRunResponse, error) {
+	if operation == nil {
+		return nil, fmt.Errorf("controller CI operation is required")
+	}
+	attempts := ciControllerRequestAttempts
+	if attempts < 1 {
+		attempts = 1
+	}
+	var lastErr error
+	refreshedUnauthorized := false
+	for attempt := 0; attempt < attempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if auth != nil && client != nil {
+			if err := auth.ensure(ctx, client); err != nil {
+				lastErr = err
+			} else {
+				response, err := operation()
+				if err == nil {
+					return response, nil
+				}
+				lastErr = err
+				var apiErr *CIAPIError
+				if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized && auth.mode != "api-key" && !refreshedUnauthorized {
+					refreshedUnauthorized = true
+					client.BearerToken = ""
+					auth.expiresAt = time.Time{}
+					continue
+				}
+			}
+		}
+		if !ciControllerRequestRetryable(lastErr) || attempt == attempts-1 {
+			return nil, lastErr
+		}
+		delay := ciControllerRetryBaseDelay * time.Duration(1<<attempt)
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		case <-timer.C:
+		}
+	}
+	return nil, lastErr
+}
+
+func ciControllerRequestRetryable(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return false
+	}
+	var configurationFailure *ciConfigurationFailure
+	if errors.As(err, &configurationFailure) {
+		return false
+	}
+	var apiErr *CIAPIError
+	if !errors.As(err, &apiErr) {
+		return true
+	}
+	return apiErr.StatusCode == http.StatusRequestTimeout || apiErr.StatusCode == http.StatusTooManyRequests || apiErr.StatusCode >= 500
+}
+
+func abortControllerCIRun(parent context.Context, auth *ciAuthSession, client *ApiClient, testID string, reason string) error {
+	if strings.TrimSpace(testID) == "" || auth == nil || client == nil {
+		return nil
+	}
+	abortCtx, cancel := context.WithTimeout(parent, ciAbortConfirmationTimeout)
+	defer cancel()
+	ticker := time.NewTicker(200 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := auth.ensure(abortCtx, client); err != nil {
+			if !ciAbortRetryable(err) {
+				return err
+			}
+		} else {
+			response, err := client.AbortCIRunWithReason(abortCtx, testID, reason)
+			if err == nil {
+				if response != nil && isTerminalCIStatus(response.Status) {
+					return nil
+				}
+				for {
+					status, statusErr := client.GetCIRun(abortCtx, testID)
+					if statusErr == nil && status != nil && isTerminalCIResponse(status) {
+						return nil
+					}
+					if statusErr != nil && !ciAbortRetryable(statusErr) {
+						return statusErr
+					}
+					select {
+					case <-abortCtx.Done():
+						return abortCtx.Err()
+					case <-ticker.C:
+					}
+				}
+			}
+			if !ciAbortRetryable(err) {
+				return err
+			}
+		}
+		select {
+		case <-abortCtx.Done():
+			return abortCtx.Err()
+		case <-ticker.C:
+		}
+	}
+}
+
+func isTerminalCIStatus(status string) bool {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "COMPLETE", "FAILED", "ABORTED", "TIMED_OUT", "CANCELLED":
+		return true
+	default:
+		return false
+	}
+}
+
+func ciAbortReason(err error) string {
+	if errors.Is(err, context.DeadlineExceeded) {
+		return "timed_out"
+	}
+	if errors.Is(err, context.Canceled) {
+		return "cancelled"
+	}
+	return ""
+}
+
+func ciAbortRetryable(err error) bool {
+	var apiErr *CIAPIError
+	if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+		return true
+	}
+	return ciControllerRequestRetryable(err)
 }
 
 type ciAuthSession struct {
@@ -554,7 +768,7 @@ func requestGitHubIDToken(ctx context.Context, audience string) (string, error) 
 	var out struct {
 		Value string `json:"value"`
 	}
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil || strings.TrimSpace(out.Value) == "" {
+	if err := decodeBoundedSingleJSON(resp.Body, 1<<20, &out); err != nil || strings.TrimSpace(out.Value) == "" {
 		return "", fmt.Errorf("GitHub OIDC endpoint returned an invalid token response")
 	}
 	return out.Value, nil
@@ -592,15 +806,62 @@ func loadCIVariables(path string) (map[string]string, error) {
 	if err := json.Unmarshal(raw, &variables); err != nil {
 		return nil, fmt.Errorf("variables file must be a JSON object of string values: %w", err)
 	}
-	for key := range variables {
-		normalized := strings.ToLower(key)
-		for _, sensitive := range []string{"password", "passwd", "secret", "token", "credential", "api_key", "apikey"} {
-			if strings.Contains(normalized, sensitive) {
-				return nil, fmt.Errorf("variables file key %q looks sensitive; use a controller-managed {{secret.*}} reference", key)
-			}
+	for key, value := range variables {
+		if sensitiveCIVariableKey(key) || sensitiveCIVariableValue(value) {
+			return nil, fmt.Errorf("variables file entry %q looks sensitive; use a controller-managed {{secret.*}} reference", key)
 		}
 	}
 	return variables, nil
+}
+
+func sensitiveCIVariableKey(name string) bool {
+	if scrub.SensitiveName(name) {
+		return true
+	}
+	normalized := strings.NewReplacer("-", "_", ".", "_", " ", "_").Replace(strings.ToLower(strings.TrimSpace(name)))
+	for _, marker := range []string{"database_url", "db_url", "jdbc_url", "redis_url", "cache_url", "broker_url", "amqp_url", "dsn", "connection_string"} {
+		if normalized == marker || strings.HasSuffix(normalized, "_"+marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func sensitiveCIVariableValue(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return false
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "bearer ") || strings.HasPrefix(lower, "basic ") || strings.HasPrefix(lower, "apikey ") ||
+		strings.Contains(lower, "sharedaccesskey=") || strings.Contains(lower, "accountkey=") || strings.Contains(lower, "sig=") {
+		return true
+	}
+	if (strings.HasPrefix(trimmed, "AKIA") || strings.HasPrefix(trimmed, "ASIA")) && len(trimmed) >= 16 {
+		return true
+	}
+	if scrub.Value(trimmed, scrub.Policy{}) != trimmed {
+		return true
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return false
+	}
+	if parsed.User != nil {
+		return true
+	}
+	for key, values := range parsed.Query() {
+		normalized := strings.ToLower(strings.TrimSpace(key))
+		if !scrub.SensitiveName(key) && normalized != "sig" && !strings.HasSuffix(normalized, "signature") {
+			continue
+		}
+		for _, candidate := range values {
+			if strings.TrimSpace(candidate) != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func sourceFromEnvironment() CISource {
@@ -609,7 +870,8 @@ func sourceFromEnvironment() CISource {
 		Repository: os.Getenv("GITHUB_REPOSITORY"), RepositoryID: os.Getenv("GITHUB_REPOSITORY_ID"),
 		HeadRepository: os.Getenv("GITHUB_HEAD_REPOSITORY"), HeadRepositoryID: os.Getenv("GITHUB_HEAD_REPOSITORY_ID"),
 		Ref: os.Getenv("GITHUB_REF"), SHA: os.Getenv("GITHUB_SHA"), WorkflowRef: os.Getenv("GITHUB_WORKFLOW_REF"),
-		RunID: os.Getenv("GITHUB_RUN_ID"), RunAttempt: os.Getenv("GITHUB_RUN_ATTEMPT"), Actor: os.Getenv("GITHUB_ACTOR"),
+		JobWorkflowRef: os.Getenv("GITHUB_JOB_WORKFLOW_REF"),
+		RunID:          os.Getenv("GITHUB_RUN_ID"), RunAttempt: os.Getenv("GITHUB_RUN_ATTEMPT"), Actor: os.Getenv("GITHUB_ACTOR"),
 		EventName: os.Getenv("GITHUB_EVENT_NAME"), Environment: os.Getenv("GITHUB_ENVIRONMENT"), RunnerEnvironment: os.Getenv("RUNNER_ENVIRONMENT"),
 		HeadRef: os.Getenv("GITHUB_HEAD_REF"), HeadSHA: os.Getenv("GITHUB_HEAD_SHA"),
 	}
@@ -667,6 +929,10 @@ func deriveCIIdempotencyKey(request CIRunRequest) string {
 	}, "\x00")
 	hash := sha256.Sum256([]byte(raw))
 	return "apexload-ci-v1-" + hex.EncodeToString(hash[:])
+}
+
+func deterministicCITestID(projectID, idempotencyKey string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload-ci-run:"+strings.TrimSpace(projectID)+":"+strings.TrimSpace(idempotencyKey))).String()
 }
 
 func ciResultFromResponse(response *CIRunResponse) CIResult {
@@ -792,29 +1058,8 @@ func finalizeCIResult(args ciArgs, result CIResult) error {
 	if result.SchemaVersion == 0 {
 		result.SchemaVersion = ciSchemaVersion
 	}
-	if err := ensureEvidenceParent(args.jsonPath); err != nil {
-		return err
-	}
-	if err := ensureEvidenceParent(args.junitPath); err != nil {
-		return err
-	}
-	encoded, err := json.MarshalIndent(result, "", "  ")
+	encoded, err := writeCICoreEvidence(args, result)
 	if err != nil {
-		return err
-	}
-	encoded = append(encoded, '\n')
-	if err := os.WriteFile(args.jsonPath, encoded, 0o600); err != nil {
-		return fmt.Errorf("write JSON evidence: %w", err)
-	}
-	var runErr error
-	if result.Outcome != ciOutcomePassed && result.Outcome != ciOutcomeSLABreached {
-		runErr = errors.New(firstNonEmptyCLI(result.Message, result.Outcome))
-	}
-	sla := &SLASummary{Evaluated: result.SLAEvaluated, Breached: result.SLABreached, Details: result.SLADetails}
-	if err := writeJUnitReport(args.junitPath, junitInput{
-		suiteName: "apexload:ci", classname: "apexload", duration: time.Duration(result.DurationMS) * time.Millisecond,
-		transactions: result.Transactions, errors: result.Errors, tps: result.TPS, runErr: runErr, sla: sla,
-	}); err != nil {
 		return err
 	}
 	if args.githubSummary != "" {
@@ -832,6 +1077,44 @@ func finalizeCIResult(args ciArgs, result CIResult) error {
 	}
 	fmt.Print(string(encoded))
 	return nil
+}
+
+func persistCICoreEvidenceBeforeAbort(args ciArgs, result CIResult) {
+	if result.SchemaVersion == 0 {
+		result.SchemaVersion = ciSchemaVersion
+	}
+	if _, err := writeCICoreEvidence(args, result); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to persist partial CI evidence before remote abort: %v\n", err)
+	}
+}
+
+func writeCICoreEvidence(args ciArgs, result CIResult) ([]byte, error) {
+	if err := ensureEvidenceParent(args.jsonPath); err != nil {
+		return nil, err
+	}
+	if err := ensureEvidenceParent(args.junitPath); err != nil {
+		return nil, err
+	}
+	encoded, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return nil, err
+	}
+	encoded = append(encoded, '\n')
+	if err := os.WriteFile(args.jsonPath, encoded, 0o600); err != nil {
+		return nil, fmt.Errorf("write JSON evidence: %w", err)
+	}
+	var runErr error
+	if result.Outcome != ciOutcomePassed && result.Outcome != ciOutcomeSLABreached {
+		runErr = errors.New(firstNonEmptyCLI(result.Message, result.Outcome))
+	}
+	sla := &SLASummary{Evaluated: result.SLAEvaluated, Breached: result.SLABreached, Details: result.SLADetails}
+	if err := writeJUnitReport(args.junitPath, junitInput{
+		suiteName: "apexload:ci", classname: "apexload", duration: time.Duration(result.DurationMS) * time.Millisecond,
+		transactions: result.Transactions, errors: result.Errors, tps: result.TPS, runErr: runErr, sla: sla,
+	}); err != nil {
+		return nil, err
+	}
+	return encoded, nil
 }
 
 func ensureEvidenceParent(path string) error {

@@ -5,6 +5,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func requireGitHubAnchors(t *testing.T, store *SQLiteStore, projectID string, scriptIDs, testIDs []string) {
@@ -191,15 +193,116 @@ func TestGitHubEnterpriseStoreCRUD(t *testing.T) {
 	if err != nil || len(checks) != 1 || checks[0].CheckRunID != 99 {
 		t.Fatalf("ListGitHubCheckLinks = (%#v, %v)", checks, err)
 	}
+	ciCheckID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload-ci-check:test-1")).String()
 	if err := store.SaveGitHubCheckLink(&GitHubCheckLink{
-		ID: "check-2", TestID: "test-1", ScriptID: "script-1", Owner: "octo", Repo: "scripts", CommitSHA: "commit2",
+		ID: ciCheckID, Kind: "ci", TestID: "test-1", Owner: "octo", Repo: "scripts", CommitSHA: "commit2",
 		CheckRunID: 100, CheckRunURL: "https://ghe/octo/scripts/runs/100", Status: "in_progress",
 	}); err != nil {
 		t.Fatalf("Save incomplete GitHubCheckLink: %v", err)
 	}
 	incomplete, err := store.ListIncompleteGitHubCheckLinks(10)
-	if err != nil || len(incomplete) != 1 || incomplete[0].ID != "check-2" {
+	if err != nil || len(incomplete) != 1 || incomplete[0].ID != ciCheckID {
 		t.Fatalf("ListIncompleteGitHubCheckLinks = (%#v, %v)", incomplete, err)
+	}
+}
+
+func TestGitHubCheckKindMigrationRecoversLegacyCIBacklog(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "apexload.db")
+	store, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireGitHubAnchors(t, store, "project-ci-kind", []string{"manual-script"}, []string{"ci-test", "manual-test"})
+	if _, err := store.db.Exec(`UPDATE tests SET total_vusers = 1, duration_ns = 0, error = '', groups_json = '[]' WHERE id IN (?, ?)`, "ci-test", "manual-test"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`UPDATE tests SET materialization_key = ? WHERE id = ?`, "ci:v1:legacy-metadata", "ci-test"); err != nil {
+		t.Fatal(err)
+	}
+	legacyCIID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload-ci-check:ci-test")).String()
+	for _, link := range []*GitHubCheckLink{
+		{ID: legacyCIID, Kind: "ci", TestID: "ci-test", Owner: "octo", Repo: "apex", CheckRunID: 10, Status: "in_progress"},
+		{ID: "legacy-manual", Kind: "manual", TestID: "manual-test", ScriptID: "manual-script", Owner: "octo", Repo: "apex", CheckRunID: 11, Status: "in_progress"},
+		{ID: "legacy-manual-on-ci", Kind: "manual", TestID: "ci-test", Owner: "octo", Repo: "apex", CheckRunID: 12, Status: "in_progress"},
+	} {
+		if err := store.SaveGitHubCheckLink(link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := store.db.Exec(`UPDATE github_check_links SET kind = NULL`); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err = NewSQLiteStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	ciLink, err := store.GetGitHubCheckLink(legacyCIID)
+	if err != nil || ciLink == nil || ciLink.Kind != "ci" {
+		t.Fatalf("legacy CI link kind = %#v, %v", ciLink, err)
+	}
+	manualLink, err := store.GetGitHubCheckLink("legacy-manual")
+	if err != nil || manualLink == nil || manualLink.Kind != "manual" {
+		t.Fatalf("legacy manual link kind = %#v, %v", manualLink, err)
+	}
+	ambiguousManual, err := store.GetGitHubCheckLink("legacy-manual-on-ci")
+	if err != nil || ambiguousManual == nil || ambiguousManual.Kind != "manual" {
+		t.Fatalf("legacy manual link on CI test kind = %#v, %v", ambiguousManual, err)
+	}
+	backlog, err := store.ListIncompleteGitHubCheckLinks(10)
+	if err != nil || len(backlog) != 1 || backlog[0].ID != legacyCIID {
+		t.Fatalf("legacy CI reconciliation backlog = %#v, %v", backlog, err)
+	}
+}
+
+func TestIncompleteGitHubCheckBacklogIsTerminalOnlyAndRotatesRetries(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	requireGitHubAnchors(t, store, "project-check-queue", []string{"manual-script"}, []string{"terminal-a", "terminal-b", "running", "manual"})
+	if _, err := store.db.Exec(`UPDATE tests SET status = 'RUNNING' WHERE id = ?`, "running"); err != nil {
+		t.Fatal(err)
+	}
+	linkA := uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload-ci-check:terminal-a")).String()
+	linkB := uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload-ci-check:terminal-b")).String()
+	linkRunning := uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload-ci-check:running")).String()
+	for _, link := range []*GitHubCheckLink{
+		{ID: linkA, Kind: "ci", TestID: "terminal-a", Owner: "octo", Repo: "apex", CheckRunID: 1, Status: "in_progress"},
+		{ID: linkB, Kind: "ci", TestID: "terminal-b", Owner: "octo", Repo: "apex", CheckRunID: 2, Status: "in_progress"},
+		{ID: linkRunning, Kind: "ci", TestID: "running", Owner: "octo", Repo: "apex", CheckRunID: 3, Status: "in_progress"},
+		{ID: "link-manual", Kind: "manual", TestID: "manual", ScriptID: "manual-script", Owner: "octo", Repo: "apex", CheckRunID: 4, Status: "in_progress"},
+	} {
+		if err := store.SaveGitHubCheckLink(link); err != nil {
+			t.Fatal(err)
+		}
+	}
+	base := time.Now().UTC().Add(-time.Hour)
+	for i, id := range []string{linkA, linkB, linkRunning, "link-manual"} {
+		if _, err := store.db.Exec(`UPDATE github_check_links SET updated_at = ? WHERE id = ?`, base.Add(time.Duration(i)*time.Minute), id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	backlog, err := store.ListIncompleteGitHubCheckLinks(1)
+	if err != nil || len(backlog) != 1 || backlog[0].ID != linkA {
+		t.Fatalf("initial terminal Check backlog = %#v, %v", backlog, err)
+	}
+	rotatedAt := time.Now().UTC()
+	if err := store.TouchGitHubCheckLink(linkA, rotatedAt); err != nil {
+		t.Fatal(err)
+	}
+	backlog, err = store.ListIncompleteGitHubCheckLinks(1)
+	if err != nil || len(backlog) != 1 || backlog[0].ID != linkB {
+		t.Fatalf("rotated terminal Check backlog = %#v, %v", backlog, err)
+	}
+	rotated, err := store.GetGitHubCheckLink(linkA)
+	if err != nil || rotated == nil || rotated.Status != "in_progress" || rotated.Conclusion != "" || !rotated.UpdatedAt.Equal(rotatedAt) {
+		t.Fatalf("rotated Check state = %#v, %v", rotated, err)
 	}
 }
 
@@ -234,6 +337,32 @@ func TestGitHubCheckIntentAndTerminalClaimSurviveRestart(t *testing.T) {
 	forged.CommitSHA = "ffffffffffffffffffffffffffffffffffffffff"
 	if err := store.SaveGitHubCheckIntent(&forged); err == nil {
 		t.Fatal("SaveGitHubCheckIntent changed immutable CI metadata")
+	}
+	const claimant = "controller-a"
+	creationClaimed, err := store.ClaimGitHubCheckCreation(intent.TestID, claimant, time.Minute)
+	if err != nil || !creationClaimed {
+		t.Fatalf("first creation claim = %t, %v", creationClaimed, err)
+	}
+	creationClaimed, err = store.ClaimGitHubCheckCreation(intent.TestID, "controller-b", time.Minute)
+	if err != nil || creationClaimed {
+		t.Fatalf("competing creation claim = %t, %v", creationClaimed, err)
+	}
+	if err := store.ReleaseGitHubCheckCreation(intent.TestID, "controller-b"); err != nil {
+		t.Fatal(err)
+	}
+	creationClaimed, err = store.ClaimGitHubCheckCreation(intent.TestID, "controller-b", time.Minute)
+	if err != nil || creationClaimed {
+		t.Fatalf("foreign release cleared creation claim: claimed=%t err=%v", creationClaimed, err)
+	}
+	if err := store.ReleaseGitHubCheckCreation(intent.TestID, claimant); err != nil {
+		t.Fatal(err)
+	}
+	creationClaimed, err = store.ClaimGitHubCheckCreation(intent.TestID, "controller-b", time.Minute)
+	if err != nil || !creationClaimed {
+		t.Fatalf("claim after owner release = %t, %v", creationClaimed, err)
+	}
+	if err := store.ReleaseGitHubCheckCreation(intent.TestID, "controller-b"); err != nil {
+		t.Fatal(err)
 	}
 
 	now := time.Now().UTC()
@@ -311,6 +440,94 @@ func TestGitHubCheckIntentAndTerminalClaimSurviveRestart(t *testing.T) {
 	if remaining, err := store.GetGitHubCheckIntent(intent.TestID); err != nil || remaining != nil {
 		t.Fatalf("test deletion left GitHub Check intent = %#v, %v", remaining, err)
 	}
+	if err := store.TouchGitHubCheckIntent(intent.TestID, time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if remaining, err := store.GetGitHubCheckIntent(intent.TestID); err != nil || remaining != nil {
+		t.Fatalf("retry rotation recreated a deleted GitHub Check intent = %#v, %v", remaining, err)
+	}
+}
+
+func TestGitHubCheckCreationClaimRenewalAndOwnedCommit(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "github-check-renewal.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	requireProjectFixtures(t, store, "project-checks")
+
+	intent := &GitHubCheckIntent{
+		TestID: "renewed-test", ProjectID: "project-checks", InstallationID: 42,
+		Owner: "octo", Repo: "apex", CommitSHA: "0123456789abcdef0123456789abcdef01234567",
+	}
+	if err := store.SaveGitHubCheckIntent(intent); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if _, err := store.db.Exec(`INSERT INTO tests (id, name, status, project_id, start_time) VALUES (?, ?, ?, ?, ?)`, intent.TestID, "renewed-test", "QUEUED", intent.ProjectID, now); err != nil {
+		t.Fatal(err)
+	}
+
+	const claimant = "controller-a"
+	lease := time.Minute
+	if claimed, err := store.ClaimGitHubCheckCreation(intent.TestID, claimant, lease); err != nil || !claimed {
+		t.Fatalf("initial creation claim = %t, %v", claimed, err)
+	}
+	if renewed, err := store.RenewGitHubCheckCreation(intent.TestID, "controller-b", lease); err != nil || renewed {
+		t.Fatalf("foreign renewal = %t, %v", renewed, err)
+	}
+	if renewed, err := store.RenewGitHubCheckCreation(intent.TestID, claimant, lease); err != nil || !renewed {
+		t.Fatalf("owner renewal = %t, %v", renewed, err)
+	}
+	if claimed, err := store.ClaimGitHubCheckCreation(intent.TestID, "controller-b", lease); err != nil || claimed {
+		t.Fatalf("competitor stole renewed claim = %t, %v", claimed, err)
+	}
+
+	link := &GitHubCheckLink{
+		ID:   uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload-ci-check:"+intent.TestID)).String(),
+		Kind: "ci", TestID: intent.TestID, Owner: intent.Owner, Repo: intent.Repo, CommitSHA: intent.CommitSHA,
+		CheckRunID: 99, CheckRunURL: "https://github.example/octo/apex/runs/99", Status: "in_progress",
+	}
+	if saved, err := store.SaveGitHubCheckLinkIfCreationClaimHeld(link, "controller-b"); err != nil || saved {
+		t.Fatalf("foreign claimed commit = %t, %v", saved, err)
+	}
+	if stored, err := store.GetGitHubCheckLink(link.ID); err != nil || stored != nil {
+		t.Fatalf("foreign claimant persisted Check = %#v, %v", stored, err)
+	}
+	if saved, err := store.SaveGitHubCheckLinkIfCreationClaimHeld(link, claimant); err != nil || !saved {
+		t.Fatalf("owner claimed commit = %t, %v", saved, err)
+	}
+
+	expired := &GitHubCheckIntent{
+		TestID: "expired-test", ProjectID: "project-checks", InstallationID: 42,
+		Owner: "octo", Repo: "apex", CommitSHA: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	}
+	if err := store.SaveGitHubCheckIntent(expired); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`INSERT INTO tests (id, name, status, project_id, start_time) VALUES (?, ?, ?, ?, ?)`, expired.TestID, "expired-test", "QUEUED", expired.ProjectID, now); err != nil {
+		t.Fatal(err)
+	}
+	if claimed, err := store.ClaimGitHubCheckCreation(expired.TestID, claimant, lease); err != nil || !claimed {
+		t.Fatalf("expiring claim = %t, %v", claimed, err)
+	}
+	if _, err := store.db.Exec(`UPDATE github_check_intents SET creation_claim_expires_at = ? WHERE test_id = ?`, time.Unix(0, 0).UTC(), expired.TestID); err != nil {
+		t.Fatal(err)
+	}
+	expiredLink := &GitHubCheckLink{
+		ID:   uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload-ci-check:"+expired.TestID)).String(),
+		Kind: "ci", TestID: expired.TestID, Owner: expired.Owner, Repo: expired.Repo, CommitSHA: expired.CommitSHA,
+		CheckRunID: 100, CheckRunURL: "https://github.example/octo/apex/runs/100", Status: "in_progress",
+	}
+	if saved, err := store.SaveGitHubCheckLinkIfCreationClaimHeld(expiredLink, claimant); err != nil || saved {
+		t.Fatalf("expired claimed commit = %t, %v", saved, err)
+	}
+	if renewed, err := store.RenewGitHubCheckCreation(expired.TestID, claimant, time.Minute); err != nil || renewed {
+		t.Fatalf("expired renewal = %t, %v", renewed, err)
+	}
+	if claimed, err := store.ClaimGitHubCheckCreation(expired.TestID, "controller-b", time.Minute); err != nil || !claimed {
+		t.Fatalf("claim after expiry = %t, %v", claimed, err)
+	}
 }
 
 func TestGitHubOwnedRowsRejectMissingOrRelocatedAnchors(t *testing.T) {
@@ -353,6 +570,12 @@ func TestGitHubOwnedRowsRejectMissingOrRelocatedAnchors(t *testing.T) {
 	}
 	if err := store.SaveGitHubCheckLink(&GitHubCheckLink{ID: "cross-project-check", TestID: "test-a", ScriptID: "script-b"}); err == nil {
 		t.Fatal("SaveGitHubCheckLink accepted cross-project anchors")
+	}
+	if err := store.SaveGitHubCheckLink(&GitHubCheckLink{ID: "noncanonical-ci-check", Kind: "ci", TestID: "test-a"}); err == nil {
+		t.Fatal("SaveGitHubCheckLink accepted a noncanonical controller CI link")
+	}
+	if err := store.SaveGitHubCheckLink(&GitHubCheckLink{ID: "unknown-check-kind", Kind: "unknown", TestID: "test-a"}); err == nil {
+		t.Fatal("SaveGitHubCheckLink accepted an unknown kind")
 	}
 	if err := store.SaveGitHubCheckLink(&GitHubCheckLink{ID: "missing-check", TestID: "missing-test"}); err == nil {
 		t.Fatal("SaveGitHubCheckLink accepted a missing test")

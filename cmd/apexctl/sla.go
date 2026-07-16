@@ -134,37 +134,61 @@ func evaluateLocalSLA(result *engine.RunResult, goalConfig *api.GoalConfig) *SLA
 	if result == nil || goalConfig == nil {
 		return nil
 	}
-	summary := &SLASummary{Evaluated: true}
+	summary := &SLASummary{}
+	configured := 0
+	evaluated := 0
 
 	if goalConfig.P95LatencyMs != nil {
-		p95Ms := float64(result.FinalSnapshot.P95) / float64(time.Millisecond)
-		if p95Ms > *goalConfig.P95LatencyMs {
-			summary.Details = append(summary.Details, fmt.Sprintf("P95 latency %.1fms exceeded %.1fms", p95Ms, *goalConfig.P95LatencyMs))
+		configured++
+		if result.TotalTransactions > 0 {
+			evaluated++
+			p95Ms := float64(result.FinalSnapshot.P95) / float64(time.Millisecond)
+			if p95Ms > *goalConfig.P95LatencyMs {
+				summary.Details = append(summary.Details, fmt.Sprintf("P95 latency %.1fms exceeded %.1fms", p95Ms, *goalConfig.P95LatencyMs))
+			}
 		}
 	}
-	if goalConfig.MaxErrorPct != nil && result.TotalTransactions > 0 {
-		errorPct := float64(result.TotalErrors) * 100 / float64(result.TotalTransactions)
-		if errorPct > *goalConfig.MaxErrorPct {
-			summary.Details = append(summary.Details, fmt.Sprintf("Error rate %.2f%% exceeded %.2f%%", errorPct, *goalConfig.MaxErrorPct))
+	if goalConfig.MaxErrorPct != nil {
+		configured++
+		attempts := result.TotalTransactions + result.TotalErrors
+		if attempts > 0 {
+			evaluated++
+			errorPct := float64(result.TotalErrors) * 100 / float64(attempts)
+			if errorPct > *goalConfig.MaxErrorPct {
+				summary.Details = append(summary.Details, fmt.Sprintf("Error rate %.2f%% exceeded %.2f%%", errorPct, *goalConfig.MaxErrorPct))
+			}
 		}
 	}
-	if goalConfig.MaxErrorCount != nil && result.TotalErrors > int64(*goalConfig.MaxErrorCount) {
-		summary.Details = append(summary.Details, fmt.Sprintf("Error count %d exceeded %d", result.TotalErrors, *goalConfig.MaxErrorCount))
+	if goalConfig.MaxErrorCount != nil {
+		configured++
+		evaluated++
+		if result.TotalErrors > int64(*goalConfig.MaxErrorCount) {
+			summary.Details = append(summary.Details, fmt.Sprintf("Error count %d exceeded %d", result.TotalErrors, *goalConfig.MaxErrorCount))
+		}
 	}
 	if goalConfig.MaxAvgServerProcessingMs != nil {
+		configured++
 		if actionName, value, ok := maxServerTelemetryMetric(result.FinalSnapshot.ByAction, func(metrics *engine.ServerTelemetrySummary) float64 {
 			return metrics.AvgServerProcessingMs
-		}); ok && value > *goalConfig.MaxAvgServerProcessingMs {
-			summary.Details = append(summary.Details, fmt.Sprintf("Server processing %.1fms exceeded %.1fms on %s", value, *goalConfig.MaxAvgServerProcessingMs, actionName))
+		}); ok {
+			evaluated++
+			if value > *goalConfig.MaxAvgServerProcessingMs {
+				summary.Details = append(summary.Details, fmt.Sprintf("Server processing %.1fms exceeded %.1fms on %s", value, *goalConfig.MaxAvgServerProcessingMs, actionName))
+			}
 		}
 	}
 	if goalConfig.MaxAvgTransferMs != nil {
+		configured++
 		if actionName, value, ok := maxServerTelemetryMetric(result.FinalSnapshot.ByAction, func(metrics *engine.ServerTelemetrySummary) float64 {
 			return metrics.AvgTransferMs
-		}); ok && value > *goalConfig.MaxAvgTransferMs {
-			summary.Details = append(summary.Details, fmt.Sprintf("Transfer time %.1fms exceeded %.1fms on %s", value, *goalConfig.MaxAvgTransferMs, actionName))
+		}); ok {
+			evaluated++
+			if value > *goalConfig.MaxAvgTransferMs {
+				summary.Details = append(summary.Details, fmt.Sprintf("Transfer time %.1fms exceeded %.1fms on %s", value, *goalConfig.MaxAvgTransferMs, actionName))
+			}
 		}
 	}
+	summary.Evaluated = configured > 0 && configured == evaluated
 	summary.Breached = len(summary.Details) > 0
 	return summary
 }
@@ -183,7 +207,7 @@ func maxServerTelemetryMetric(byAction map[string]*engine.ActionMetrics, selecto
 	found := false
 	for _, name := range actionNames {
 		metrics := byAction[name]
-		if metrics == nil || metrics.ServerTelemetry == nil {
+		if metrics == nil || metrics.ServerTelemetry == nil || metrics.ServerTelemetry.Samples <= 0 {
 			continue
 		}
 		value := selector(metrics.ServerTelemetry)

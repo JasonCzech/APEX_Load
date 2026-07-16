@@ -117,6 +117,14 @@ func (tr *TestRunner) reloadStoredScripts() error {
 		tr.mu.Unlock()
 		return nil
 	}
+	// Private CI snapshots exist only long enough for synchronous test
+	// compilation. Preserve them across an HA read refresh; they are deliberately
+	// absent from the durable script listing used to build loaded.
+	for id, references := range tr.privateCISnapshots {
+		if references > 0 && tr.scripts[id] != nil {
+			loaded[id] = tr.scripts[id]
+		}
+	}
 	for _, script := range tr.scripts {
 		if script != nil {
 			tr.removeRefKeyLocked(script.RefKey)

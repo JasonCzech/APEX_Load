@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 func (s *SQLiteStore) SaveGitHubConnection(conn *GitHubConnection) error {
@@ -537,70 +539,128 @@ func (s *SQLiteStore) ListGitHubWebhookDeliveries(limit int) ([]*GitHubWebhookDe
 }
 
 func (s *SQLiteStore) SaveGitHubCheckLink(link *GitHubCheckLink) error {
+	_, err := s.saveGitHubCheckLink(link, "")
+	return err
+}
+
+// SaveGitHubCheckLinkIfCreationClaimHeld atomically verifies that claimant
+// still owns an unexpired creation claim before persisting the controller-owned
+// CI Check identity. This prevents a replica whose lease expired during a slow
+// GitHub request from committing a stale or duplicate remote Check.
+func (s *SQLiteStore) SaveGitHubCheckLinkIfCreationClaimHeld(link *GitHubCheckLink, claimant string) (bool, error) {
+	claimant = strings.TrimSpace(claimant)
+	if claimant == "" {
+		return false, fmt.Errorf("github check creation claimant is required")
+	}
+	return s.saveGitHubCheckLink(link, claimant)
+}
+
+func (s *SQLiteStore) saveGitHubCheckLink(link *GitHubCheckLink, creationClaimant string) (bool, error) {
 	if link == nil || strings.TrimSpace(link.ID) == "" {
-		return fmt.Errorf("github check link requires an id")
+		return false, fmt.Errorf("github check link requires an id")
 	}
 	link.ID = strings.TrimSpace(link.ID)
+	link.Kind = strings.ToLower(strings.TrimSpace(link.Kind))
+	if link.Kind == "" {
+		link.Kind = "manual"
+	}
 	link.TestID = strings.TrimSpace(link.TestID)
 	link.ScriptID = strings.TrimSpace(link.ScriptID)
+	switch link.Kind {
+	case "manual":
+	case "ci":
+		if link.TestID == "" || link.ScriptID != "" {
+			return false, fmt.Errorf("controller CI github check links require a test-only anchor")
+		}
+		expectedID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload-ci-check:"+link.TestID)).String()
+		if link.ID != expectedID {
+			return false, fmt.Errorf("controller CI github check link id does not match its test")
+		}
+	default:
+		return false, fmt.Errorf("github check link kind must be manual or ci")
+	}
+	if creationClaimant != "" && link.Kind != "ci" {
+		return false, fmt.Errorf("github check creation claims apply only to controller CI links")
+	}
 	if link.TestID == "" && link.ScriptID == "" {
-		return fmt.Errorf("github check link requires a test or script anchor")
+		return false, fmt.Errorf("github check link requires a test or script anchor")
 	}
 	projectID := ""
 	if link.TestID != "" {
 		var err error
 		projectID, err = s.githubAnchorProject("tests", link.TestID)
 		if err != nil {
-			return fmt.Errorf("load github check test anchor: %w", err)
+			return false, fmt.Errorf("load github check test anchor: %w", err)
 		}
 	}
 	if link.ScriptID != "" {
 		scriptProjectID, err := s.githubAnchorProject("scripts", link.ScriptID)
 		if err != nil {
-			return fmt.Errorf("load github check script anchor: %w", err)
+			return false, fmt.Errorf("load github check script anchor: %w", err)
 		}
 		if projectID != "" && projectID != scriptProjectID {
-			return fmt.Errorf("github check test and script anchors belong to different projects")
+			return false, fmt.Errorf("github check test and script anchors belong to different projects")
 		}
 		projectID = scriptProjectID
 	}
-	now := time.Now()
+	now := time.Now().UTC()
 	if link.PublishedAt.IsZero() {
 		link.PublishedAt = now
 	}
 	link.UpdatedAt = now
 	tx, err := s.db.Begin()
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer tx.Rollback()
 	if _, err := lockProjectForOwnedMutation(tx, projectID); err != nil {
-		return err
+		return false, err
 	}
 	if link.TestID != "" {
 		if err := lockGitHubAnchor(tx, "tests", link.TestID, projectID); err != nil {
-			return err
+			return false, err
 		}
 	}
 	if link.ScriptID != "" {
 		if err := lockGitHubAnchor(tx, "scripts", link.ScriptID, projectID); err != nil {
-			return err
+			return false, err
 		}
 	}
-	var currentTestID, currentScriptID, currentStatus, currentConclusion, currentPendingConclusion string
-	err = tx.QueryRow(`SELECT COALESCE(test_id, ''), COALESCE(script_id, ''), COALESCE(status, ''), COALESCE(conclusion, ''), COALESCE(pending_conclusion, '') FROM github_check_links WHERE id = ?`, link.ID).
-		Scan(&currentTestID, &currentScriptID, &currentStatus, &currentConclusion, &currentPendingConclusion)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
+	if creationClaimant != "" {
+		query := `SELECT project_id, COALESCE(creation_claim, ''), creation_claim_expires_at FROM github_check_intents WHERE test_id = ?`
+		if s.db.dialect == storeDialectPostgres {
+			query += ` FOR UPDATE`
+		}
+		var claimProjectID, currentClaim string
+		var currentExpiry sql.NullTime
+		if err := tx.QueryRow(query, link.TestID).Scan(&claimProjectID, &currentClaim, &currentExpiry); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return false, nil
+			}
+			return false, err
+		}
+		databaseNow, err := preciseDatabaseTime(tx, s.db.dialect)
+		if err != nil {
+			return false, fmt.Errorf("read github check creation database clock: %w", err)
+		}
+		if claimProjectID != projectID || currentClaim != creationClaimant || !currentExpiry.Valid || !currentExpiry.Time.After(databaseNow) {
+			return false, nil
+		}
 	}
-	if err == nil && (currentTestID != link.TestID || currentScriptID != link.ScriptID) {
-		return fmt.Errorf("github check link %q belongs to different anchors", link.ID)
+	var currentKind, currentTestID, currentScriptID, currentStatus, currentConclusion, currentPendingConclusion string
+	err = tx.QueryRow(`SELECT COALESCE(kind, ''), COALESCE(test_id, ''), COALESCE(script_id, ''), COALESCE(status, ''), COALESCE(conclusion, ''), COALESCE(pending_conclusion, '') FROM github_check_links WHERE id = ?`, link.ID).
+		Scan(&currentKind, &currentTestID, &currentScriptID, &currentStatus, &currentConclusion, &currentPendingConclusion)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return false, err
+	}
+	if err == nil && (currentTestID != link.TestID || currentScriptID != link.ScriptID || (currentKind != "" && !strings.EqualFold(currentKind, link.Kind))) {
+		return false, fmt.Errorf("github check link %q belongs to different anchors", link.ID)
 	}
 	if err == nil && strings.EqualFold(strings.TrimSpace(currentStatus), "completed") && strings.TrimSpace(currentConclusion) != "" &&
 		(!strings.EqualFold(strings.TrimSpace(link.Status), "completed") ||
 			!strings.EqualFold(strings.TrimSpace(link.Conclusion), strings.TrimSpace(currentConclusion)) ||
 			strings.TrimSpace(link.PendingConclusion) != "") {
-		return fmt.Errorf("github check link %q already has immutable terminal conclusion %q", link.ID, currentConclusion)
+		return false, fmt.Errorf("github check link %q already has immutable terminal conclusion %q", link.ID, currentConclusion)
 	}
 	if err == nil && strings.TrimSpace(currentPendingConclusion) != "" {
 		completesClaim := strings.EqualFold(strings.TrimSpace(link.Status), "completed") &&
@@ -608,13 +668,14 @@ func (s *SQLiteStore) SaveGitHubCheckLink(link *GitHubCheckLink) error {
 			strings.TrimSpace(link.PendingConclusion) == ""
 		preservesClaim := strings.EqualFold(strings.TrimSpace(link.PendingConclusion), strings.TrimSpace(currentPendingConclusion))
 		if !completesClaim && !preservesClaim {
-			return fmt.Errorf("github check link %q has pending terminal conclusion %q", link.ID, currentPendingConclusion)
+			return false, fmt.Errorf("github check link %q has pending terminal conclusion %q", link.ID, currentPendingConclusion)
 		}
 	}
 	result, err := tx.Exec(`INSERT INTO github_check_links
-		(id, test_id, script_id, owner, repo, commit_sha, check_run_id, check_run_url, status, conclusion, pending_conclusion, published_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		(id, kind, test_id, script_id, owner, repo, commit_sha, check_run_id, check_run_url, status, conclusion, pending_conclusion, published_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
+			kind=excluded.kind,
 			owner=excluded.owner,
 			repo=excluded.repo,
 			commit_sha=excluded.commit_sha,
@@ -624,28 +685,32 @@ func (s *SQLiteStore) SaveGitHubCheckLink(link *GitHubCheckLink) error {
 			conclusion=excluded.conclusion,
 			pending_conclusion=excluded.pending_conclusion,
 			updated_at=excluded.updated_at
-		WHERE COALESCE(github_check_links.test_id, '') = excluded.test_id
+		WHERE COALESCE(github_check_links.kind, excluded.kind) = excluded.kind
+			AND COALESCE(github_check_links.test_id, '') = excluded.test_id
 			AND COALESCE(github_check_links.script_id, '') = excluded.script_id`,
-		link.ID, link.TestID, link.ScriptID, link.Owner, link.Repo, link.CommitSHA, link.CheckRunID, link.CheckRunURL,
+		link.ID, link.Kind, link.TestID, link.ScriptID, link.Owner, link.Repo, link.CommitSHA, link.CheckRunID, link.CheckRunURL,
 		link.Status, link.Conclusion, link.PendingConclusion, link.PublishedAt, link.UpdatedAt)
 	if err != nil {
-		return err
+		return false, err
 	}
 	affected, err := result.RowsAffected()
 	if err != nil {
-		return err
+		return false, err
 	}
 	if affected != 1 {
-		return fmt.Errorf("github check link %q belongs to different anchors", link.ID)
+		return false, fmt.Errorf("github check link %q belongs to different anchors", link.ID)
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *SQLiteStore) GetGitHubCheckLink(id string) (*GitHubCheckLink, error) {
 	link := &GitHubCheckLink{}
-	err := s.db.QueryRow(`SELECT id, test_id, script_id, owner, repo, commit_sha, check_run_id, check_run_url, status, conclusion, COALESCE(pending_conclusion, ''), published_at, updated_at
+	err := s.db.QueryRow(`SELECT id, COALESCE(kind, ''), test_id, script_id, owner, repo, commit_sha, check_run_id, check_run_url, status, conclusion, COALESCE(pending_conclusion, ''), published_at, updated_at
 		FROM github_check_links WHERE id = ?`, id).
-		Scan(&link.ID, &link.TestID, &link.ScriptID, &link.Owner, &link.Repo, &link.CommitSHA, &link.CheckRunID,
+		Scan(&link.ID, &link.Kind, &link.TestID, &link.ScriptID, &link.Owner, &link.Repo, &link.CommitSHA, &link.CheckRunID,
 			&link.CheckRunURL, &link.Status, &link.Conclusion, &link.PendingConclusion, &link.PublishedAt, &link.UpdatedAt)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -660,7 +725,7 @@ func (s *SQLiteStore) ListGitHubCheckLinks(testID string, scriptID string, limit
 	if limit <= 0 || limit > 100 {
 		limit = 50
 	}
-	query := `SELECT id, test_id, script_id, owner, repo, commit_sha, check_run_id, check_run_url, status, conclusion, COALESCE(pending_conclusion, ''), published_at, updated_at FROM github_check_links`
+	query := `SELECT id, COALESCE(kind, ''), test_id, script_id, owner, repo, commit_sha, check_run_id, check_run_url, status, conclusion, COALESCE(pending_conclusion, ''), published_at, updated_at FROM github_check_links`
 	args := []any{}
 	filters := []string{}
 	if strings.TrimSpace(testID) != "" {
@@ -684,7 +749,7 @@ func (s *SQLiteStore) ListGitHubCheckLinks(testID string, scriptID string, limit
 	out := []*GitHubCheckLink{}
 	for rows.Next() {
 		link := &GitHubCheckLink{}
-		if err := rows.Scan(&link.ID, &link.TestID, &link.ScriptID, &link.Owner, &link.Repo, &link.CommitSHA, &link.CheckRunID,
+		if err := rows.Scan(&link.ID, &link.Kind, &link.TestID, &link.ScriptID, &link.Owner, &link.Repo, &link.CommitSHA, &link.CheckRunID,
 			&link.CheckRunURL, &link.Status, &link.Conclusion, &link.PendingConclusion, &link.PublishedAt, &link.UpdatedAt); err != nil {
 			return nil, err
 		}
@@ -695,12 +760,15 @@ func (s *SQLiteStore) ListGitHubCheckLinks(testID string, scriptID string, limit
 
 func (s *SQLiteStore) ListIncompleteGitHubCheckLinks(limit int) ([]*GitHubCheckLink, error) {
 	if limit <= 0 || limit > 1000 {
-		limit = 100
+		limit = 1000
 	}
-	rows, err := s.db.Query(`SELECT id, test_id, script_id, owner, repo, commit_sha, check_run_id, check_run_url, status, conclusion, COALESCE(pending_conclusion, ''), published_at, updated_at
-		FROM github_check_links
-		WHERE LOWER(status) != 'completed' OR TRIM(conclusion) = ''
-		ORDER BY published_at ASC LIMIT ?`, limit)
+	rows, err := s.db.Query(`SELECT l.id, COALESCE(l.kind, ''), l.test_id, l.script_id, l.owner, l.repo, l.commit_sha, l.check_run_id, l.check_run_url, l.status, l.conclusion, COALESCE(l.pending_conclusion, ''), l.published_at, l.updated_at
+		FROM github_check_links l
+		JOIN tests t ON t.id = l.test_id
+		WHERE (LOWER(l.status) != 'completed' OR TRIM(l.conclusion) = '')
+			AND LOWER(COALESCE(l.kind, '')) = 'ci'
+			AND UPPER(TRIM(t.status)) IN ('COMPLETE', 'FAILED', 'ABORTED')
+		ORDER BY l.updated_at ASC, l.published_at ASC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -708,13 +776,40 @@ func (s *SQLiteStore) ListIncompleteGitHubCheckLinks(limit int) ([]*GitHubCheckL
 	out := make([]*GitHubCheckLink, 0)
 	for rows.Next() {
 		link := &GitHubCheckLink{}
-		if err := rows.Scan(&link.ID, &link.TestID, &link.ScriptID, &link.Owner, &link.Repo, &link.CommitSHA, &link.CheckRunID,
+		if err := rows.Scan(&link.ID, &link.Kind, &link.TestID, &link.ScriptID, &link.Owner, &link.Repo, &link.CommitSHA, &link.CheckRunID,
 			&link.CheckRunURL, &link.Status, &link.Conclusion, &link.PendingConclusion, &link.PublishedAt, &link.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, link)
 	}
 	return out, rows.Err()
+}
+
+// TouchGitHubCheckLink rotates a failed reconciliation attempt to the back of
+// the oldest-first queue without changing its durable status or claimed
+// conclusion.
+func (s *SQLiteStore) TouchGitHubCheckLink(id string, updatedAt time.Time) error {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return fmt.Errorf("github check link id is required")
+	}
+	if updatedAt.IsZero() {
+		updatedAt = time.Now().UTC()
+	} else {
+		updatedAt = updatedAt.UTC()
+	}
+	result, err := s.db.Exec(`UPDATE github_check_links SET updated_at = ? WHERE id = ?`, updatedAt, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return fmt.Errorf("github check link %q was not found", id)
+	}
+	return nil
 }
 
 // ClaimGitHubCheckConclusion atomically chooses the sole terminal conclusion
@@ -751,13 +846,13 @@ func (s *SQLiteStore) ClaimGitHubCheckConclusion(id string, conclusion string) (
 	if err := lockGitHubAnchor(tx, "tests", initial.TestID, projectID); err != nil {
 		return nil, err
 	}
-	query := `SELECT id, test_id, script_id, owner, repo, commit_sha, check_run_id, check_run_url, status, conclusion, COALESCE(pending_conclusion, ''), published_at, updated_at
+	query := `SELECT id, COALESCE(kind, ''), test_id, script_id, owner, repo, commit_sha, check_run_id, check_run_url, status, conclusion, COALESCE(pending_conclusion, ''), published_at, updated_at
 		FROM github_check_links WHERE id = ?`
 	if s.db.dialect == storeDialectPostgres {
 		query += ` FOR UPDATE`
 	}
 	link := &GitHubCheckLink{}
-	if err := tx.QueryRow(query, id).Scan(&link.ID, &link.TestID, &link.ScriptID, &link.Owner, &link.Repo, &link.CommitSHA,
+	if err := tx.QueryRow(query, id).Scan(&link.ID, &link.Kind, &link.TestID, &link.ScriptID, &link.Owner, &link.Repo, &link.CommitSHA,
 		&link.CheckRunID, &link.CheckRunURL, &link.Status, &link.Conclusion, &link.PendingConclusion, &link.PublishedAt, &link.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, fmt.Errorf("github check link %q was not found", id)
@@ -836,29 +931,36 @@ func (s *SQLiteStore) SaveGitHubCheckIntent(intent *GitHubCheckIntent) error {
 
 func (s *SQLiteStore) GetGitHubCheckIntent(testID string) (*GitHubCheckIntent, error) {
 	intent := &GitHubCheckIntent{}
-	err := s.db.QueryRow(`SELECT test_id, project_id, installation_id, owner, repo, commit_sha, created_at, updated_at
+	var claim sql.NullString
+	var claimExpires sql.NullTime
+	err := s.db.QueryRow(`SELECT test_id, project_id, installation_id, owner, repo, commit_sha, creation_claim, creation_claim_expires_at, created_at, updated_at
 		FROM github_check_intents WHERE test_id = ?`, strings.TrimSpace(testID)).
-		Scan(&intent.TestID, &intent.ProjectID, &intent.InstallationID, &intent.Owner, &intent.Repo, &intent.CommitSHA, &intent.CreatedAt, &intent.UpdatedAt)
+		Scan(&intent.TestID, &intent.ProjectID, &intent.InstallationID, &intent.Owner, &intent.Repo, &intent.CommitSHA, &claim, &claimExpires, &intent.CreatedAt, &intent.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, err
 	}
+	intent.CreationClaim = claim.String
+	if claimExpires.Valid {
+		expires := claimExpires.Time
+		intent.CreationClaimExpiresAt = &expires
+	}
 	return intent, nil
 }
 
 func (s *SQLiteStore) ListPendingGitHubCheckIntents(limit int) ([]*GitHubCheckIntent, error) {
 	if limit <= 0 || limit > 1000 {
-		limit = 100
+		limit = 1000
 	}
 	// Only materialized tests are actionable. Pre-materialization intents remain
 	// durable for request retry, but cannot occupy the reconciliation page and
 	// starve newer runs if a controller crashed before creating their tests.
-	rows, err := s.db.Query(`SELECT i.test_id, i.project_id, i.installation_id, i.owner, i.repo, i.commit_sha, i.created_at, i.updated_at
+	rows, err := s.db.Query(`SELECT i.test_id, i.project_id, i.installation_id, i.owner, i.repo, i.commit_sha, i.creation_claim, i.creation_claim_expires_at, i.created_at, i.updated_at
 		FROM github_check_intents i
 		JOIN tests t ON t.id = i.test_id
-		ORDER BY i.created_at ASC LIMIT ?`, limit)
+		ORDER BY i.updated_at ASC, i.created_at ASC LIMIT ?`, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -866,12 +968,177 @@ func (s *SQLiteStore) ListPendingGitHubCheckIntents(limit int) ([]*GitHubCheckIn
 	intents := make([]*GitHubCheckIntent, 0)
 	for rows.Next() {
 		intent := &GitHubCheckIntent{}
-		if err := rows.Scan(&intent.TestID, &intent.ProjectID, &intent.InstallationID, &intent.Owner, &intent.Repo, &intent.CommitSHA, &intent.CreatedAt, &intent.UpdatedAt); err != nil {
+		var claim sql.NullString
+		var claimExpires sql.NullTime
+		if err := rows.Scan(&intent.TestID, &intent.ProjectID, &intent.InstallationID, &intent.Owner, &intent.Repo, &intent.CommitSHA, &claim, &claimExpires, &intent.CreatedAt, &intent.UpdatedAt); err != nil {
 			return nil, err
+		}
+		intent.CreationClaim = claim.String
+		if claimExpires.Valid {
+			expires := claimExpires.Time
+			intent.CreationClaimExpiresAt = &expires
 		}
 		intents = append(intents, intent)
 	}
 	return intents, rows.Err()
+}
+
+// TouchGitHubCheckIntent rotates an existing failed intent without recreating
+// an outbox row that a concurrent successful Check creation already deleted.
+func (s *SQLiteStore) TouchGitHubCheckIntent(testID string, updatedAt time.Time) error {
+	testID = strings.TrimSpace(testID)
+	if testID == "" {
+		return fmt.Errorf("github check intent test id is required")
+	}
+	if updatedAt.IsZero() {
+		updatedAt = time.Now().UTC()
+	} else {
+		updatedAt = updatedAt.UTC()
+	}
+	_, err := s.db.Exec(`UPDATE github_check_intents SET updated_at = ? WHERE test_id = ?`, updatedAt, testID)
+	return err
+}
+
+// ClaimGitHubCheckCreation grants one controller replica a bounded lease around
+// the remote Find/Create/save sequence. GitHub does not enforce external_id
+// uniqueness, so the process-local mutex alone cannot prevent duplicate Check
+// runs when HA replicas reconcile the same durable intent concurrently.
+func (s *SQLiteStore) ClaimGitHubCheckCreation(testID string, claimant string, lease time.Duration) (bool, error) {
+	testID = strings.TrimSpace(testID)
+	claimant = strings.TrimSpace(claimant)
+	if testID == "" || claimant == "" || lease <= 0 {
+		return false, fmt.Errorf("github check creation claim requires test id, claimant, and positive lease")
+	}
+	intent, err := s.GetGitHubCheckIntent(testID)
+	if err != nil {
+		return false, err
+	}
+	if intent == nil {
+		return false, fmt.Errorf("github check intent %q was not found", testID)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if _, err := lockProjectForOwnedMutation(tx, intent.ProjectID); err != nil {
+		return false, err
+	}
+	query := `SELECT COALESCE(creation_claim, ''), creation_claim_expires_at FROM github_check_intents WHERE test_id = ?`
+	if s.db.dialect == storeDialectPostgres {
+		query += ` FOR UPDATE`
+	}
+	var currentClaim string
+	var currentExpiry sql.NullTime
+	if err := tx.QueryRow(query, testID).Scan(&currentClaim, &currentExpiry); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, fmt.Errorf("github check intent %q was not found", testID)
+		}
+		return false, err
+	}
+	now, err := preciseDatabaseTime(tx, s.db.dialect)
+	if err != nil {
+		return false, fmt.Errorf("read github check creation database clock: %w", err)
+	}
+	if currentClaim != "" && currentClaim != claimant && currentExpiry.Valid && currentExpiry.Time.After(now) {
+		if err := tx.Commit(); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	expiresAt := now.Add(lease)
+	if _, err := tx.Exec(`UPDATE github_check_intents SET creation_claim = ?, creation_claim_expires_at = ?, updated_at = ? WHERE test_id = ?`, claimant, expiresAt, now, testID); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// RenewGitHubCheckCreation extends only a currently held, unexpired creation
+// claim. An expired claimant must recover through the durable external-id lookup
+// rather than silently reacquiring ownership after another replica may have won.
+func (s *SQLiteStore) RenewGitHubCheckCreation(testID string, claimant string, lease time.Duration) (bool, error) {
+	testID = strings.TrimSpace(testID)
+	claimant = strings.TrimSpace(claimant)
+	if testID == "" || claimant == "" || lease <= 0 {
+		return false, fmt.Errorf("github check creation renewal requires test id, claimant, and positive lease")
+	}
+	intent, err := s.GetGitHubCheckIntent(testID)
+	if err != nil {
+		return false, err
+	}
+	if intent == nil {
+		return false, nil
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if _, err := lockProjectForOwnedMutation(tx, intent.ProjectID); err != nil {
+		return false, err
+	}
+	query := `SELECT COALESCE(creation_claim, ''), creation_claim_expires_at FROM github_check_intents WHERE test_id = ?`
+	if s.db.dialect == storeDialectPostgres {
+		query += ` FOR UPDATE`
+	}
+	var currentClaim string
+	var currentExpiry sql.NullTime
+	if err := tx.QueryRow(query, testID).Scan(&currentClaim, &currentExpiry); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	now, err := preciseDatabaseTime(tx, s.db.dialect)
+	if err != nil {
+		return false, fmt.Errorf("read github check creation database clock: %w", err)
+	}
+	if currentClaim != claimant || !currentExpiry.Valid || !currentExpiry.Time.After(now) {
+		return false, nil
+	}
+	expiresAt := now.Add(lease)
+	result, err := tx.Exec(`UPDATE github_check_intents SET creation_claim_expires_at = ?, updated_at = ? WHERE test_id = ? AND creation_claim = ?`, expiresAt, now, testID, claimant)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if affected != 1 {
+		return false, nil
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *SQLiteStore) ReleaseGitHubCheckCreation(testID string, claimant string) error {
+	testID = strings.TrimSpace(testID)
+	claimant = strings.TrimSpace(claimant)
+	if testID == "" || claimant == "" {
+		return nil
+	}
+	intent, err := s.GetGitHubCheckIntent(testID)
+	if err != nil || intent == nil {
+		return err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := lockProjectForOwnedMutation(tx, intent.ProjectID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(`UPDATE github_check_intents SET creation_claim = NULL, creation_claim_expires_at = NULL, updated_at = ? WHERE test_id = ? AND creation_claim = ?`, time.Now().UTC(), testID, claimant); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) DeleteGitHubCheckIntent(testID string) error {

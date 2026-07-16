@@ -18,8 +18,9 @@ complete only after observed parity, not merely after workflow files merge.
 5. Publish the signed stable release, move the protected signed `v1` action tag,
    and activate production environment reviewers and tag restrictions.
 6. Confirm no workflow, documentation example, or deployment path invokes
-   Jenkins. Dormant copy-to-activate GitHub deployment templates and the Jenkins
-   example were removed when the active workflows replaced them.
+   Jenkins or Azure Pipelines. Dormant copy-to-activate GitHub deployment
+   templates, Azure Pipelines templates, and the Jenkins example were removed
+   when the active workflows replaced them.
 
 Fork pull requests remain untrusted. The authoritative workflow routes them to
 only `fork-static`, which runs patch-whitespace checks and changed JSON/DSL

@@ -21,7 +21,7 @@ func TestRunArchiveWriterFinalizeClosesAllFilesAfterFlushFailure(t *testing.T) {
 		txFile: files[0], resourceFile: files[1], summaryFile: files[2],
 		flushErr: flushErr,
 	}
-	if _, err := writer.Finalize("FAILED", time.Now().UTC(), "", false, nil); !errors.Is(err, flushErr) {
+	if _, err := writer.Finalize("FAILED", time.Now().UTC(), "", false, false, nil); !errors.Is(err, flushErr) {
 		t.Fatalf("Finalize error = %v, want injected flush failure", err)
 	}
 	assertArchiveWriterFilesClosed(t, files)
@@ -40,7 +40,7 @@ func TestRunArchiveWriterFinalizeClosesRemainingFilesAfterSyncFailure(t *testing
 		t.Fatal(err)
 	}
 	writer := &runArchiveWriter{txFile: files[0], resourceFile: files[1], summaryFile: files[2]}
-	if _, err := writer.Finalize("FAILED", time.Now().UTC(), "", false, nil); err == nil {
+	if _, err := writer.Finalize("FAILED", time.Now().UTC(), "", false, false, nil); err == nil {
 		t.Fatal("Finalize succeeded with an already-closed archive file")
 	}
 	assertArchiveWriterFilesClosed(t, files)

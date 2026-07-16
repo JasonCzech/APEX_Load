@@ -27,6 +27,80 @@ state_dir="${FAKE_GH_STATE_DIR:?}"
   printf '\n'
 } >> "$state_dir/calls.tsv"
 
+if [[ "${1:-}" == api ]]; then
+  shift
+  endpoint=''
+  while (( $# > 0 )); do
+    case "$1" in
+      -H|--header)
+        shift 2
+        ;;
+      *)
+        endpoint="$1"
+        shift
+        ;;
+    esac
+  done
+  case "$endpoint" in
+    repos/*/immutable-releases)
+      jq -nc '{enabled:true}'
+      ;;
+    repos/*/releases/tags/*)
+      tag="${endpoint##*/}"
+      draft="$(<"$state_dir/draft")"
+      body="$(<"$state_dir/body")"
+      immutable=false
+      [[ "$draft" == false ]] && immutable=true
+      assets='[]'
+      shopt -s nullglob
+      for asset in "$state_dir/remote"/*; do
+        name="${asset##*/}"
+        size="$(stat -c '%s' "$asset" 2>/dev/null || stat -f '%z' "$asset")"
+        digest="sha256:$(sha256sum "$asset" | awk '{print $1}')"
+        assets="$(jq -c \
+          --arg name "$name" \
+          --argjson size "$size" \
+          --arg digest "$digest" \
+          '. + [{name:$name,size:$size,digest:$digest,state:"uploaded"}]' \
+          <<< "$assets")"
+      done
+      jq -n -c \
+        --argjson draft "$draft" \
+        --argjson immutable "$immutable" \
+        --arg tag "$tag" \
+        --arg body "$body" \
+        --argjson assets "$assets" \
+        '{draft:$draft,immutable:$immutable,tag_name:$tag,body:$body,assets:$assets}'
+      ;;
+    repos/*/git/ref/tags/*)
+      count=0
+      [[ ! -f "$state_dir/tag-ref-count" ]] || count="$(<"$state_dir/tag-ref-count")"
+      object_sha="$(<"$state_dir/remote-tag-object")"
+      if (( count > 0 )) && [[ -f "$state_dir/mutate-tag-object" ]]; then
+        object_sha="$(<"$state_dir/mutate-tag-object")"
+      fi
+      printf '%s\n' "$((count + 1))" > "$state_dir/tag-ref-count"
+      jq -n -c --arg sha "$object_sha" \
+        '{object:{type:"tag",sha:$sha}}'
+      ;;
+    repos/*/git/tags/*)
+      count=0
+      [[ ! -f "$state_dir/tag-api-count" ]] || count="$(<"$state_dir/tag-api-count")"
+      commit="$(<"$state_dir/remote-commit")"
+      if (( count > 0 )) && [[ -f "$state_dir/mutate-commit" ]]; then
+        commit="$(<"$state_dir/mutate-commit")"
+      fi
+      printf '%s\n' "$((count + 1))" > "$state_dir/tag-api-count"
+      jq -n -c --arg commit "$commit" '{object:{type:"commit",sha:$commit}}'
+      ;;
+    *)
+      printf 'fake gh: unexpected api endpoint %s\n' "$endpoint" >&2
+      exit 89
+      ;;
+  esac
+  exit 0
+fi
+
 [[ "${1:-}" == release ]] || {
   printf 'fake gh: expected release command\n' >&2
   exit 90
@@ -105,7 +179,7 @@ esac
 const fakeReleaseVerifier = `#!/usr/bin/env bash
 set -euo pipefail
 state_dir="${FAKE_GH_STATE_DIR:?}"
-printf '%s\t%s\t%s\n' "${1:?}" "${2:?}" "${3:?}" >> "$state_dir/verifier-calls.tsv"
+printf '%s\t%s\t%s\t%s\n' "${1:?}" "${2:?}" "${3:?}" "${4:?}" >> "$state_dir/verifier-calls.tsv"
 `
 
 const portableFind = `#!/usr/bin/env bash
@@ -128,6 +202,7 @@ type publishReleaseFixture struct {
 	stateDir   string
 	toolDir    string
 	tag        string
+	tagObject  string
 	commit     string
 	repository string
 }
@@ -149,6 +224,7 @@ func TestPublishReleaseUploadsEmptyAuthenticatedDraftAndPublishes(t *testing.T) 
 	fixture.assertRemoteMatchesLocal(t)
 	fixture.assertUploaded(t, []string{"SHA256SUMS", "release-manifest.json"})
 	fixture.assertVerifierCallCount(t, 2)
+	fixture.assertVerifierCommitBinding(t)
 }
 
 func TestPublishReleaseResumesMatchingPartialDraft(t *testing.T) {
@@ -168,6 +244,7 @@ func TestPublishReleaseResumesMatchingPartialDraft(t *testing.T) {
 	fixture.assertRemoteMatchesLocal(t)
 	fixture.assertUploaded(t, []string{"release-manifest.json"})
 	fixture.assertVerifierCallCount(t, 2)
+	fixture.assertVerifierCommitBinding(t)
 }
 
 func TestPublishReleaseRejectsMismatchedExistingAsset(t *testing.T) {
@@ -215,6 +292,63 @@ func TestPublishReleaseRejectsAlreadyPublishedRelease(t *testing.T) {
 	fixture.assertVerifierCallCount(t, 1)
 }
 
+func TestPublishReleaseRejectsRemoteTagMovedBeforePublication(t *testing.T) {
+	fixture := newPublishReleaseFixture(t, true, map[string]string{
+		"SHA256SUMS":            "signed checksums\n",
+		"release-manifest.json": "{\"schema_version\":1}\n",
+	}, nil)
+	writePublishReleaseFile(t, fixture.stateDir, "remote-commit", strings.Repeat("c", 40)+"\n", 0o644)
+
+	output, err := fixture.run(t)
+	if err == nil {
+		t.Fatalf("moved remote release tag was accepted:\n%s", output)
+	}
+	if !strings.Contains(output, "remote release tag moved") {
+		t.Fatalf("moved-tag failure was not explicit:\n%s", output)
+	}
+	fixture.assertPublished(t, false)
+	fixture.assertUploaded(t, nil)
+	fixture.assertVerifierCallCount(t, 1)
+}
+
+func TestPublishReleaseRechecksRemoteTagImmediatelyBeforeExposure(t *testing.T) {
+	fixture := newPublishReleaseFixture(t, true, map[string]string{
+		"SHA256SUMS":            "signed checksums\n",
+		"release-manifest.json": "{\"schema_version\":1}\n",
+	}, nil)
+	writePublishReleaseFile(t, fixture.stateDir, "mutate-commit", strings.Repeat("c", 40)+"\n", 0o644)
+
+	output, err := fixture.run(t)
+	if err == nil {
+		t.Fatalf("remote tag mutation during publication was accepted:\n%s", output)
+	}
+	if !strings.Contains(output, "remote release tag moved") {
+		t.Fatalf("mid-publication moved-tag failure was not explicit:\n%s", output)
+	}
+	fixture.assertPublished(t, false)
+	fixture.assertRemoteMatchesLocal(t)
+	fixture.assertVerifierCallCount(t, 2)
+}
+
+func TestPublishReleaseRechecksAnnotatedTagObjectImmediatelyBeforeExposure(t *testing.T) {
+	fixture := newPublishReleaseFixture(t, true, map[string]string{
+		"SHA256SUMS":            "signed checksums\n",
+		"release-manifest.json": "{\"schema_version\":1}\n",
+	}, nil)
+	writePublishReleaseFile(t, fixture.stateDir, "mutate-tag-object", strings.Repeat("d", 40)+"\n", 0o644)
+
+	output, err := fixture.run(t)
+	if err == nil {
+		t.Fatalf("annotated tag object mutation during publication was accepted:\n%s", output)
+	}
+	if !strings.Contains(output, "remote annotated release tag object changed") {
+		t.Fatalf("tag-object mutation failure was not explicit:\n%s", output)
+	}
+	fixture.assertPublished(t, false)
+	fixture.assertRemoteMatchesLocal(t)
+	fixture.assertVerifierCallCount(t, 2)
+}
+
 func newPublishReleaseFixture(t *testing.T, draft bool, local, remote map[string]string) *publishReleaseFixture {
 	t.Helper()
 	root := t.TempDir()
@@ -234,6 +368,7 @@ func newPublishReleaseFixture(t *testing.T, draft bool, local, remote map[string
 	}
 
 	tag := "v1.2.3"
+	tagObject := strings.Repeat("b", 40)
 	commit := strings.Repeat("a", 40)
 	repository := "apexload/project"
 	marker := "<!-- apexload-release:" + repository + ":" + tag + ":" + commit + " -->\n"
@@ -243,6 +378,8 @@ func newPublishReleaseFixture(t *testing.T, draft bool, local, remote map[string
 	}
 	writePublishReleaseFile(t, stateDir, "draft", draftValue, 0o644)
 	writePublishReleaseFile(t, stateDir, "body", marker, 0o644)
+	writePublishReleaseFile(t, stateDir, "remote-tag-object", tagObject+"\n", 0o644)
+	writePublishReleaseFile(t, stateDir, "remote-commit", commit+"\n", 0o644)
 	publicKey := writePublishReleaseFile(t, root, "release-signing-key.pem", "test public key\n", 0o644)
 	verifier := writePublishReleaseFile(t, toolDir, "verify-release", fakeReleaseVerifier, 0o755)
 	writePublishReleaseFile(t, toolDir, "gh", fakeGitHubCLI, 0o755)
@@ -255,6 +392,7 @@ func newPublishReleaseFixture(t *testing.T, draft bool, local, remote map[string
 		stateDir:   stateDir,
 		toolDir:    toolDir,
 		tag:        tag,
+		tagObject:  tagObject,
 		commit:     commit,
 		repository: repository,
 	}
@@ -268,6 +406,7 @@ func (fixture *publishReleaseFixture) run(t *testing.T) (string, error) {
 		fixture.repository,
 		fixture.releaseDir,
 		fixture.publicKey,
+		fixture.tagObject,
 		fixture.verifier,
 	)
 	command.Env = append(os.Environ(),
@@ -325,6 +464,20 @@ func (fixture *publishReleaseFixture) assertVerifierCallCount(t *testing.T, want
 	got := len(strings.Split(strings.TrimSpace(string(content)), "\n"))
 	if got != want {
 		t.Errorf("verifier call count = %d, want %d", got, want)
+	}
+}
+
+func (fixture *publishReleaseFixture) assertVerifierCommitBinding(t *testing.T) {
+	t.Helper()
+	content, err := os.ReadFile(filepath.Join(fixture.stateDir, "verifier-calls.tsv"))
+	if err != nil {
+		t.Fatalf("read verifier calls: %v", err)
+	}
+	for _, line := range strings.Split(strings.TrimSpace(string(content)), "\n") {
+		fields := strings.Split(line, "\t")
+		if len(fields) != 4 || fields[3] != fixture.commit {
+			t.Fatalf("release verifier call was not bound to commit %s: %q", fixture.commit, line)
+		}
 	}
 }
 

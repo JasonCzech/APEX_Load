@@ -169,6 +169,13 @@ func TestAccessRequirementSnapshotStable(t *testing.T) {
 // accessRequirementGolden is the captured pre-refactor authz fingerprint for
 // each characterization case. See TestAccessRequirementSnapshotStable.
 var accessRequirementGolden = map[string]string{
+	// Deployment maintenance lease. Human callers require system_admin; the
+	// deployment service-account path is independently pinned by the exact-scope
+	// characterization tests.
+	"GET /api/v1/system/deployment-lease":          "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/system/deployment-lease/acquire": "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=32768",
+	"POST /api/v1/system/deployment-lease/renew":   "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=32768",
+	"POST /api/v1/system/deployment-lease/release": "auth=false global=system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=32768",
 	// Capacity reservations (timeslots). Approve/reject are project-admin-gated so
 	// approval cannot be self-granted by an editor.
 	"POST /api/v1/capacity/timeslots":                   "auth=false global=editor,project_admin,system_admin project=editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=65536",

@@ -917,6 +917,9 @@ func validateGitHubSettings(settings GitHubSettings) error {
 			return err
 		}
 	}
+	if !trustedGitHubAPIURL(settings.WebBaseURL, settings.APIBaseURL) {
+		return fmt.Errorf("github.api_base_url must belong to github.web_base_url")
+	}
 	return nil
 }
 

@@ -788,6 +788,7 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned.ComparisonBaseline = cloneRunComparisonBaseline(test.ComparisonBaseline)
 	cloned.Archive = cloneRunArchiveRecord(test.Archive)
 	cloned.TelemetryHealth = cloneTelemetryRunHealth(test.TelemetryHealth)
+	cloned.ciSLADetails = append([]string(nil), test.ciSLADetails...)
 	return &cloned
 }
 

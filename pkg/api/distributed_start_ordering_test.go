@@ -19,14 +19,14 @@ import (
 )
 
 type delayedFirstRunningStore struct {
-	storage.Store
+	*storage.SQLiteStore
 	delay   time.Duration
 	once    sync.Once
 	endedAt atomic.Int64
 }
 
 type delayedBarrierPersistenceStore struct {
-	storage.Store
+	*storage.SQLiteStore
 	mu           sync.Mutex
 	runningSaves int
 	delayCall    int
@@ -45,7 +45,7 @@ func (s *delayedBarrierPersistenceStore) SaveTest(record *storage.TestRecord) er
 			s.delayedEnd.Store(time.Now().UnixNano())
 		}
 	}
-	return s.Store.SaveTest(record)
+	return s.SQLiteStore.SaveTest(record)
 }
 
 func (s *delayedFirstRunningStore) SaveTest(record *storage.TestRecord) error {
@@ -55,7 +55,7 @@ func (s *delayedFirstRunningStore) SaveTest(record *storage.TestRecord) error {
 			s.endedAt.Store(time.Now().UnixNano())
 		})
 	}
-	return s.Store.SaveTest(record)
+	return s.SQLiteStore.SaveTest(record)
 }
 
 type delayedSetupGeneratorClient struct {
@@ -165,7 +165,7 @@ func TestDistributedCommitBarrierIsChosenAfterSlowRunningPersistence(t *testing.
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	t.Cleanup(func() { _ = baseStore.Close() })
-	store := &delayedFirstRunningStore{Store: baseStore, delay: 800 * time.Millisecond}
+	store := &delayedFirstRunningStore{SQLiteStore: baseStore, delay: 800 * time.Millisecond}
 	runner, test := newDistributedOrderingHarness(t, timeout, store, nil)
 	started := waitDistributedActivation(t, runner, test.ID)
 	persistedAt := time.Unix(0, store.endedAt.Load())
@@ -194,7 +194,7 @@ func TestDistributedCommitBarrierIsRepersistedWhenSaveConsumesLead(t *testing.T)
 	}
 	t.Cleanup(func() { _ = baseStore.Close() })
 	store := &delayedBarrierPersistenceStore{
-		Store: baseStore, delayCall: 2, delay: 700 * time.Millisecond,
+		SQLiteStore: baseStore, delayCall: 2, delay: 700 * time.Millisecond,
 	}
 	runner, test := newDistributedOrderingHarness(t, timeout, store, nil)
 	started := waitDistributedActivation(t, runner, test.ID)

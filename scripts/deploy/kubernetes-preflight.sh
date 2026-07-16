@@ -22,7 +22,6 @@ for permission in \
   'patch deployments.apps' \
   'get statefulsets.apps' \
   'patch statefulsets.apps' \
-  'create secrets' \
   'get secrets'; do
   read -r verb resource <<< "$permission"
   [[ "$(kubectl auth can-i "$verb" "$resource" --namespace "$namespace")" == yes ]] \

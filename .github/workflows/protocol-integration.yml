@@ -3,7 +3,9 @@ name: Protected Protocol Integration
 on:
   schedule:
     - cron: "0 5 * * 0"
-  workflow_dispatch:
+  repository_dispatch:
+    types:
+      - protocol-integration
 
 permissions:
   contents: read
@@ -19,6 +21,7 @@ env:
 jobs:
   live-protocol:
     name: Live ${{ matrix.profile }} integration
+    if: github.ref == 'refs/heads/main'
     runs-on: ${{ fromJSON(vars.PROTOCOL_RUNNER_LABELS || '["ubuntu-24.04"]') }}
     timeout-minutes: 30
     environment: protocol-integration
@@ -39,9 +42,41 @@ jobs:
             tags: eventhubs_real
             package: ./pkg/protocol/eventhubs
     steps:
-      - name: Checkout
+      - name: Validate trusted scheduled or manual trigger
+        env:
+          CLIENT_PAYLOAD: ${{ toJSON(github.event.client_payload) }}
+          TRIGGER_ACTION: ${{ github.event.action }}
+          TRIGGER_EVENT: ${{ github.event_name }}
+          TRIGGER_REF: ${{ github.ref }}
+          TRIGGER_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$TRIGGER_REF" == refs/heads/main && "$TRIGGER_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+            echo 'protected protocol integration must run from the protected default branch' >&2
+            exit 1
+          }
+          case "$TRIGGER_EVENT" in
+            schedule)
+              [[ -z "$TRIGGER_ACTION" ]]
+              jq -e '. == null' <<< "$CLIENT_PAYLOAD" >/dev/null
+              ;;
+            repository_dispatch)
+              [[ "$TRIGGER_ACTION" == protocol-integration ]]
+              jq -e 'type == "object" and keys == []' <<< "$CLIENT_PAYLOAD" >/dev/null || {
+                echo 'protocol-integration does not accept client payload fields' >&2
+                exit 1
+              }
+              ;;
+            *)
+              echo "unsupported protected protocol integration trigger: $TRIGGER_EVENT" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Checkout immutable protected-main integration revision
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Setup Go from go.mod

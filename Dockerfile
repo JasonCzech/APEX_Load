@@ -1,13 +1,24 @@
+ARG PLAYWRIGHT_DRIVER_VERSION=1.57.0
+
 FROM node:22.22.0-alpine3.23@sha256:e4bf2a82ad0a4037d28035ae71529873c069b13eb0455466ae0bc13363826e34 AS dashboard-builder
+
+ARG PLAYWRIGHT_DRIVER_VERSION
+ARG VERSION=dev
+ARG BUILD_TIME=
 
 WORKDIR /src
 COPY dashboard/package.json dashboard/package-lock.json ./dashboard/
 RUN npm --prefix dashboard ci --ignore-scripts
+RUN actual="$(node -p "require('./dashboard/node_modules/playwright-core-go/package.json').version")" \
+	&& test "${actual}" = "${PLAYWRIGHT_DRIVER_VERSION}" \
+	|| { echo "locked playwright-core driver ${actual} does not match ${PLAYWRIGHT_DRIVER_VERSION}" >&2; exit 1; }
+COPY docs/API_USER_GUIDE.md ./docs/API_USER_GUIDE.md
 COPY dashboard/ ./dashboard/
 # The dashboard build deliberately writes to /src/pkg/api/static, matching the
 # go:embed path used by the controller. Building it here makes image contents
 # independent from any locally generated or committed frontend bundle.
-RUN npm --prefix dashboard run build
+RUN APEXLOAD_UX_VERSION="${VERSION}" APEXLOAD_UX_BUILD_TIME="${BUILD_TIME}" \
+	npm --prefix dashboard run build
 
 FROM golang:1.26.5-alpine3.24@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS builder
 
@@ -35,10 +46,10 @@ RUN case "${GO_BUILD_TAGS}" in \
 
 FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 ARG BINARY=generator
+ARG PLAYWRIGHT_DRIVER_VERSION
 # PLAYWRIGHT_DRIVER_VERSION must match playwrightCliVersion in
 # playwright-community/playwright-go (see go.mod) — playwright.Run() refuses
 # to start with a mismatched driver.
-ARG PLAYWRIGHT_DRIVER_VERSION=1.57.0
 RUN apk add --no-cache ca-certificates \
 	&& if [ "$BINARY" = "generator" ] || [ "$BINARY" = "controller" ]; then \
 		apk add --no-cache chromium nodejs nss freetype harfbuzz ttf-freefont; \
@@ -47,16 +58,12 @@ RUN apk add --no-cache ca-certificates \
 		elif [ -x /usr/bin/chromium ]; then \
 			ln -sf /usr/bin/chromium /usr/bin/google-chrome; \
 		fi; \
-		# Playwright driver = the playwright-core npm package, laid out as
-		# $PLAYWRIGHT_DRIVER_PATH/package/cli.js. Playwright's own driver zip
-		# bundles a glibc Node that cannot run on musl, so we install the
-		# package via npm and point PLAYWRIGHT_NODEJS_PATH at Alpine's Node.
-		apk add --no-cache --virtual .driver-build npm; \
-		mkdir -p /opt/playwright-driver; \
-		npm install --prefix /opt/playwright-driver-npm "playwright-core@${PLAYWRIGHT_DRIVER_VERSION}"; \
-		ln -s /opt/playwright-driver-npm/node_modules/playwright-core /opt/playwright-driver/package; \
-		node /opt/playwright-driver/package/cli.js --version; \
-		apk del .driver-build; \
+	fi
+COPY --from=dashboard-builder /src/dashboard/node_modules/playwright-core-go/ /opt/playwright-driver/package/
+RUN if [ "$BINARY" = "generator" ] || [ "$BINARY" = "controller" ]; then \
+		actual="$(node /opt/playwright-driver/package/cli.js --version)"; \
+		test "${actual}" = "Version ${PLAYWRIGHT_DRIVER_VERSION}" \
+		|| { echo "runtime Playwright driver ${actual} does not match Version ${PLAYWRIGHT_DRIVER_VERSION}" >&2; exit 1; }; \
 	fi
 COPY --from=builder /app /usr/local/bin/app
 # Browser runtime wiring (controller and generator images; inert elsewhere):
@@ -69,7 +76,7 @@ ENV PLAYWRIGHT_DRIVER_PATH=/opt/playwright-driver \
 	APEXLOAD_BROWSER_EXECUTABLE=/usr/bin/google-chrome \
 	APEXLOAD_ADDR=0.0.0.0:8080 \
 	HOME=/tmp
-RUN mkdir -p /data /tmp /opt/playwright-driver /opt/playwright-driver-npm \
-	&& chown -R 65532:65532 /data /tmp /opt/playwright-driver /opt/playwright-driver-npm
+RUN mkdir -p /data /tmp /opt/playwright-driver \
+	&& chown -R 65532:65532 /data /tmp
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/app"]

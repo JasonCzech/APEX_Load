@@ -60,6 +60,10 @@ spec:
               value: production
             - name: APEXLOAD_ADDR
               value: ":8080"
+            # Stable external identity for GitHub Actions OIDC and Check links.
+            # Change this to the production ingress URL before deployment.
+            - name: APEXLOAD_PUBLIC_URL
+              value: https://apexload.example.com
             # Local staging/scratch only; durable state lives in PostgreSQL,
             # object storage, and Redis — pods are fully disposable.
             - name: APEXLOAD_ARCHIVE_DIR

@@ -2,7 +2,7 @@
 
 import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 
 import { useDockBadge } from './useDockBadge'
 import type { WailsDesktopBridge } from './desktopBridge'
@@ -19,13 +19,13 @@ function Harness({ count }: { count: number }) {
 describe('useDockBadge', () => {
   let container: HTMLDivElement
   let root: Root
-  let setDockBadge: ReturnType<typeof vi.fn>
+  let setDockBadge: Mock<(label: string) => Promise<void>>
 
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
-    setDockBadge = vi.fn().mockResolvedValue(undefined)
+    setDockBadge = vi.fn<(label: string) => Promise<void>>().mockResolvedValue(undefined)
     ;(window as BridgeWindow).go = { main: { App: { SetDockBadge: setDockBadge } } }
   })
 

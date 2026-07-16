@@ -3874,6 +3874,46 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/system/deployment-lease",
+      "operationId": "handleGetDeploymentLease",
+      "summary": "Get Deployment Lease",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/deployment-lease/acquire",
+      "operationId": "handleAcquireDeploymentLease",
+      "summary": "Acquire Deployment Lease",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/deployment-lease/release",
+      "operationId": "handleReleaseDeploymentLease",
+      "summary": "Release Deployment Lease",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/system/deployment-lease/renew",
+      "operationId": "handleRenewDeploymentLease",
+      "summary": "Renew Deployment Lease",
+      "category": "System \u0026 Distribution",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: SystemAdmin"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/system/entitlements",
       "operationId": "handleGetEntitlements",
       "summary": "Get Entitlements",

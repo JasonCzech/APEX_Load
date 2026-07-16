@@ -148,6 +148,12 @@ func (s *metricsStoreSpy) SaveTest(test *storage.TestRecord) error {
 	s.savedTests = append(s.savedTests, test)
 	return nil
 }
+func (s *metricsStoreSpy) SaveTestStartIfNoDeploymentLease(test *storage.TestRecord, _ string, _ string, _ string) error {
+	return s.SaveTest(test)
+}
+func (s *metricsStoreSpy) SaveTestStartIfExecutionLeaseHeldAndNoDeploymentLease(test *storage.TestRecord, _ string, _ string, _ string, _ string, _ string) (bool, error) {
+	return true, s.SaveTest(test)
+}
 func (s *metricsStoreSpy) GetTest(id string) (*storage.TestRecord, error) { return nil, nil }
 func (s *metricsStoreSpy) ListTests(projectID string, folderID *string) ([]*storage.TestRecord, error) {
 	return s.listedTests, nil
@@ -855,7 +861,7 @@ func (s *archiveRecorderStub) RecordIntervalSummary(live *LiveMetrics) error {
 	s.recordedLive = live
 	return nil
 }
-func (s *archiveRecorderStub) Finalize(status string, completedAt time.Time, errStr string, slaBreached bool, slaDetails []string) (*storage.RunArchiveRecord, error) {
+func (s *archiveRecorderStub) Finalize(status string, completedAt time.Time, errStr string, slaEvaluated bool, slaBreached bool, slaDetails []string) (*storage.RunArchiveRecord, error) {
 	return s.finalizeRecord, s.finalizeErr
 }
 
@@ -7155,7 +7161,7 @@ func TestDeleteTestRejectsPausedRuns(t *testing.T) {
 	if err := runner.StopTest(test.ID); err != nil {
 		t.Fatalf("StopTest returned error: %v", err)
 	}
-	waitForStatusAny(t, runner, test.ID, 5*time.Second, "FAILED", "COMPLETE")
+	waitForStatusAny(t, runner, test.ID, 5*time.Second, "FAILED", "COMPLETE", "ABORTED")
 	if !runner.DeleteTest(test.ID) {
 		t.Fatal("expected DeleteTest to succeed once run is no longer active")
 	}

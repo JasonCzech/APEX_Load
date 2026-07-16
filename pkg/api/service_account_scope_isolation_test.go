@@ -9,7 +9,7 @@ import (
 func TestNarrowServiceAccountScopesDoNotImplyGenericAccess(t *testing.T) {
 	narrowScopes := []string{
 		"results:read", "system:read", "audit:read", "scripts:write", "tests:run",
-		"results:write", "settings:manage", "service_accounts:manage",
+		"results:write", "settings:manage", "deployments:manage", deploymentActiveTestsOverrideScope, "service_accounts:manage",
 	}
 	for _, scope := range narrowScopes {
 		t.Run(scope+"_read", func(t *testing.T) {
@@ -38,6 +38,28 @@ func TestNarrowServiceAccountScopesDoNotImplyGenericAccess(t *testing.T) {
 	}
 }
 
+func TestActiveTestDeploymentOverrideRequiresBothDeploymentScopes(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/system/deployment-lease/acquire", nil)
+	overrideOnly := &AuthenticatedServiceAccount{ID: "override-only", Scopes: []string{deploymentActiveTestsOverrideScope}}
+	if serviceAccountAllowsRequest(overrideOnly, request) {
+		t.Fatal("active-test override scope implied ordinary deployment lease authority")
+	}
+	if !serviceAccountHasExplicitScope(overrideOnly, deploymentActiveTestsOverrideScope) {
+		t.Fatal("explicit active-test override scope was not recognized")
+	}
+	ordinary := &AuthenticatedServiceAccount{ID: "ordinary", Scopes: []string{"deployments:manage"}}
+	if serviceAccountHasExplicitScope(ordinary, deploymentActiveTestsOverrideScope) {
+		t.Fatal("ordinary deployment scope implied active-test override authority")
+	}
+	elevated := &AuthenticatedServiceAccount{ID: "elevated", Scopes: []string{"deployments:manage", deploymentActiveTestsOverrideScope}}
+	if !serviceAccountAllowsRequest(elevated, request) || !serviceAccountHasExplicitScope(elevated, deploymentActiveTestsOverrideScope) {
+		t.Fatal("separately scoped active-test override credential was rejected")
+	}
+	if _, err := normalizeServiceAccountScopes(elevated.Scopes); err != nil {
+		t.Fatalf("active-test override service-account scopes were rejected: %v", err)
+	}
+}
+
 func TestSpecializedRoutesUseExactServiceAccountScopes(t *testing.T) {
 	tests := []struct {
 		scope  string
@@ -51,6 +73,7 @@ func TestSpecializedRoutesUseExactServiceAccountScopes(t *testing.T) {
 		{scope: "tests:run", method: http.MethodPost, path: "/api/v1/execution-plans"},
 		{scope: "results:write", method: http.MethodPost, path: "/api/v1/results/import"},
 		{scope: "settings:manage", method: http.MethodPut, path: "/api/v1/system/settings"},
+		{scope: "deployments:manage", method: http.MethodPost, path: "/api/v1/system/deployment-lease/acquire"},
 		{scope: "service_accounts:manage", method: http.MethodGet, path: "/api/v1/auth/users"},
 	}
 	for _, test := range tests {

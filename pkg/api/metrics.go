@@ -476,6 +476,7 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	live.Telemetry.HistoryPoints = min(len(test.History)+1, maxManagedTestHistory)
 	installedLive := cloneLiveMetrics(live)
 	normalizePausedLiveVUsers(test, installedLive)
+	recordCISLAStateLocked(test, installedLive)
 	test.LiveMetrics = installedLive
 	appendManagedTestHistoryWithLimits(test, installedLive, maxManagedTestHistory, maxManagedTestHistoryBytes)
 	if installedLive.Telemetry != nil {

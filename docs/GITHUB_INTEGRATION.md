@@ -118,6 +118,7 @@ jobs:
           path: |
             ${{ steps.apexload.outputs.json-path }}
             ${{ steps.apexload.outputs.junit-path }}
+          include-hidden-files: true
 ```
 
 The action downloads a released `apexctl`; the consumer repository does not
@@ -132,6 +133,19 @@ workflow ref, ref/environment, project, target hosts, protocols, VUsers, and
 duration. Pull-request source repository identity is sent separately from the
 base repository and is rejected when it is not trusted. Do not use
 `pull_request_target` to check out or execute contributor-controlled content.
+
+Target-bearing `{{secret.*}}` references are resolved by the controller before
+a CI run is accepted, and the resolved host must match the project allowlist.
+Keep the same project-scoped binding available to the controller and every load
+generator; the resolved value is used only for preflight/runtime enforcement
+and is not written into the stored CI metadata or returned in API responses.
+
+Controller-backed CI currently rejects the `browser` protocol. Browser routing
+hooks cannot enforce the target-host boundary across every Chromium redirect
+and worker transport, so browser load remains disabled until egress is enforced
+below the browser process. Use HTTP/protocol scripts for authoritative gates;
+runner-local browser execution is suitable only for explicitly trusted smoke
+tests on a network-isolated runner.
 
 ## CLI And MCP
 

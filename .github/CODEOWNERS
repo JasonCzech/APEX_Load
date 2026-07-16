@@ -1,13 +1,17 @@
 # Changes to executable supply-chain and deployment boundaries require an
 # explicit repository-owner review.
 /.github/workflows/ @JasonCzech
+/.github/CODEOWNERS @JasonCzech
 /.github/actionlint.yaml @JasonCzech
 /.github/approved-actions.json @JasonCzech
 /.github/actions/ @JasonCzech
 /.github/dependabot.yml @JasonCzech
 /Dockerfile @JasonCzech
+/.dockerignore @JasonCzech
 /compose.yaml @JasonCzech
 /deployments/ @JasonCzech
 /scripts/ci/ @JasonCzech
 /scripts/release/ @JasonCzech
 /scripts/deploy/ @JasonCzech
+/scripts/package-desktop.sh @JasonCzech
+/scripts/package-recording-agent.sh @JasonCzech

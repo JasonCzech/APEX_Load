@@ -1,10 +1,13 @@
 import { configDefaults, defineConfig } from 'vitest/config'
 import react from '@vitejs/plugin-react'
 import { createRequire } from 'node:module'
+import { fileURLToPath } from 'node:url'
 
 const require = createRequire(import.meta.url)
 const dashboardPackage = require('./package.json') as { version?: string }
 const vitePackage = require('vite/package.json') as { version?: string }
+const dashboardRoot = fileURLToPath(new URL('.', import.meta.url))
+const docsRoot = fileURLToPath(new URL('../docs', import.meta.url))
 
 function resolveBuildTime(explicit?: string) {
   const raw = explicit || process.env.SOURCE_DATE_EPOCH
@@ -65,6 +68,11 @@ export default defineConfig({
   },
   server: {
     port: Number(process.env.PORT) || 3000,
+    fs: {
+      // The dashboard intentionally embeds reviewed repository documentation.
+      // Keep Vite's file-serving boundary to the package and that directory.
+      allow: [dashboardRoot, docsRoot],
+    },
     proxy: {
       '/api': {
         target: process.env.APEXLOAD_API_PROXY || 'http://localhost:8080',

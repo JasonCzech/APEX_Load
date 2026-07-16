@@ -68,11 +68,43 @@ func sensitiveEnvValue(value string) bool {
 	if trimmed == "" {
 		return false
 	}
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(lower, "bearer ") || strings.HasPrefix(lower, "basic ") || strings.HasPrefix(lower, "apikey ") ||
+		strings.Contains(lower, "sharedaccesskey=") || strings.Contains(lower, "accountkey=") || strings.Contains(lower, "sig=") {
+		return true
+	}
+	if (strings.HasPrefix(trimmed, "AKIA") || strings.HasPrefix(trimmed, "ASIA")) && len(trimmed) >= 16 {
+		return true
+	}
 	if scrub.Value(trimmed, scrub.Policy{}) != trimmed {
 		return true
 	}
+	// net/url represents scheme-less userinfo strings such as
+	// "user:password@example.test" as opaque URLs with no parsed User field.
+	// They are still credential-bearing and maskURLUserinfo deliberately treats
+	// them fail-closed. Reuse that boundary for Env projections too.
+	if maskURLUserinfo(trimmed) != trimmed {
+		return true
+	}
 	parsed, err := url.Parse(trimmed)
-	return err == nil && parsed.User != nil
+	if err != nil {
+		return false
+	}
+	if parsed.User != nil {
+		return true
+	}
+	for key, values := range parsed.Query() {
+		normalized := strings.ToLower(strings.TrimSpace(key))
+		if !scrub.SensitiveName(key) && normalized != "sig" && !strings.HasSuffix(normalized, "signature") {
+			continue
+		}
+		for _, candidate := range values {
+			if strings.TrimSpace(candidate) != "" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // maskRuntimeSettings returns a clone of the override with sensitive Env values

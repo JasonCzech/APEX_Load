@@ -69,10 +69,29 @@ CI_DEPENDENCY_REVIEW_GUARD = (
     "github.event.pull_request.head.repo.full_name == github.repository"
 )
 CI_FORK_PR_GUARD = (
-    "if: github.event_name == 'pull_request' && "
+    "if: github.server_url == 'https://github.com' && "
+    "github.event_name == 'pull_request' && "
     "(github.event.pull_request.head.repo.id != github.event.repository.id || "
     "github.event.pull_request.head.repo.full_name != github.repository)"
 )
+CI_FORK_HOSTED_RUNNER = "runs-on: ubuntu-24.04"
+CI_GHES_FORK_BLOCK_GUARD = (
+    "if: github.server_url != 'https://github.com' && "
+    "github.event_name == 'pull_request' && "
+    "(github.event.pull_request.head.repo.id != github.event.repository.id || "
+    "github.event.pull_request.head.repo.full_name != github.repository)"
+)
+CI_GHES_FORK_BLOCK_RUNNER = "runs-on: apexload-ci-fork-blocked"
+TRUSTED_MAIN_GUARD = "if: github.ref == 'refs/heads/main'"
+PRIVILEGED_REPOSITORY_DISPATCH_EVENTS = {
+    pathlib.Path(".github/workflows/infra-azure.yml"): (
+        "azure-infra-plan",
+        "azure-infra-apply",
+    ),
+    pathlib.Path(".github/workflows/protocol-integration.yml"): (
+        "protocol-integration",
+    ),
+}
 CI_UNPRIVILEGED_RUNNER = (
     "runs-on: ${{ github.server_url == 'https://github.com' && "
     "'ubuntu-24.04' || 'apexload-ci-unprivileged' }}"
@@ -261,8 +280,8 @@ def check_authoritative_ci_fork_policy(
     require_line("fork-static", CI_FORK_PR_GUARD, "run only for untrusted pull requests")
     require_line(
         "fork-static",
-        CI_UNPRIVILEGED_RUNNER,
-        "use the explicit GitHub.com/GHES unprivileged runner mapping",
+        CI_FORK_HOSTED_RUNNER,
+        "use only a GitHub.com hosted runner with no GHES self-hosted fallback",
     )
     fork_job = require_job("fork-static")
     if fork_job is not None:
@@ -270,12 +289,22 @@ def check_authoritative_ci_fork_policy(
         fork_text = "\n".join(block)
         for marker in (
             "git diff --check",
-            "git diff --name-only --diff-filter=ACMR -z",
+            "git diff --name-only --diff-filter=ACMRT -z",
             "jq empty --",
         ):
             if marker not in fork_text:
                 errors.append(
                     f".github/workflows/ci.yml:{start + 1}: fork-static is missing non-executing validation marker {marker!r}"
+                )
+        for marker in (
+            "git diff --no-renames --name-only -z",
+            'git ls-tree "${HEAD_SHA}" -- "${file}"',
+            'disallowed+=("${file}")',
+            "Fork pull requests may change only documentation and static JSON examples.",
+        ):
+            if marker not in fork_text:
+                errors.append(
+                    f".github/workflows/ci.yml:{start + 1}: fork-static is missing static-only fork change boundary marker {marker!r}"
                 )
         for prohibited in (
             "go test",
@@ -309,6 +338,25 @@ def check_authoritative_ci_fork_policy(
         )
 
     require_line(
+        "workflow-policy",
+        '"${RUNNER_TEMP}/bin/actionlint" -color -shellcheck="${RUNNER_TEMP}/bin/shellcheck"',
+        "run actionlint with the checksum-pinned ShellCheck binary for inline workflow scripts",
+    )
+
+    deployment_artifacts = require_job("deployment-artifacts")
+    if deployment_artifacts is not None:
+        start, block = deployment_artifacts
+        deployment_text = "\n".join(block)
+        if deployment_text.count("docker run --rm --entrypoint /bin/promtool") != 2:
+            errors.append(
+                f".github/workflows/ci.yml:{start + 1}: deployment-artifacts must override the pinned Prometheus image entrypoint for both promtool checks"
+            )
+        if '${PROMETHEUS_IMAGE}" promtool check' in deployment_text:
+            errors.append(
+                f".github/workflows/ci.yml:{start + 1}: deployment-artifacts must not pass promtool through the image's /bin/prometheus entrypoint"
+            )
+
+    require_line(
         "dependency-review",
         CI_DEPENDENCY_REVIEW_GUARD,
         "run only for trusted same-repository pull requests",
@@ -318,6 +366,21 @@ def check_authoritative_ci_fork_policy(
         CI_UNPRIVILEGED_RUNNER,
         "use the explicit GitHub.com/GHES unprivileged runner mapping",
     )
+    require_line("ghes-fork-block", CI_GHES_FORK_BLOCK_GUARD, "run only for GHES fork pull requests")
+    require_line(
+        "ghes-fork-block",
+        CI_GHES_FORK_BLOCK_RUNNER,
+        "use the deliberately unprovisioned fail-closed runner label",
+    )
+    require_line("ghes-fork-block", "run: exit 1", "fail if the sentinel runner label is ever provisioned")
+    ghes_fork_block = require_job("ghes-fork-block")
+    if ghes_fork_block is not None:
+        start, block = ghes_fork_block
+        if any(re.match(r"^\s*(?:-\s*)?uses:", line) for line in block):
+            errors.append(
+                f".github/workflows/ci.yml:{start + 1}: ghes-fork-block must not check out or execute repository actions"
+            )
+
     require_line("required", "if: always()", "always publish the stable aggregate")
     require_line(
         "required",
@@ -329,7 +392,14 @@ def check_authoritative_ci_fork_policy(
     if required is not None:
         start, block = required
         required_text = "\n".join(block)
-        for marker in ("- fork-static", "IS_UNTRUSTED_PR:", "expected_success=()", "expected_skipped=()"):
+        for marker in (
+            "- fork-static",
+            "- ghes-fork-block",
+            "IS_UNTRUSTED_PR:",
+            "expected_success=()",
+            "expected_skipped=()",
+            "ghes-fork-block",
+        ):
             if marker not in required_text:
                 errors.append(
                     f".github/workflows/ci.yml:{start + 1}: Required must enforce event-specific fork aggregation marker {marker!r}"
@@ -356,12 +426,78 @@ def check_client_package_fork_policy(
             )
 
 
+def check_protected_scheduled_workflow_policy(
+    path: pathlib.Path,
+    lines: list[str],
+    errors: list[str],
+) -> None:
+    relative = path.relative_to(ROOT)
+    required_jobs = {
+        pathlib.Path(".github/workflows/protocol-integration.yml"): ("live-protocol",),
+        pathlib.Path(".github/workflows/security.yml"): ("govulncheck", "dashboard-audit"),
+    }.get(relative)
+    if required_jobs is None:
+        return
+
+    jobs = workflow_job_blocks(lines)
+    for job_id in required_jobs:
+        job = jobs.get(job_id)
+        if job is None:
+            errors.append(f"{relative}: missing protected scheduled job {job_id!r}")
+            continue
+        start, block = job
+        if not any(line.strip() == TRUSTED_MAIN_GUARD for line in block):
+            errors.append(
+                f"{relative}:{start + 1}: job {job_id!r} must restrict protected scheduled/manual runs with {TRUSTED_MAIN_GUARD}"
+            )
+
+
+def check_privileged_repository_dispatch_policy(
+    path: pathlib.Path,
+    lines: list[str],
+    errors: list[str],
+) -> None:
+    relative = path.relative_to(ROOT)
+    required_events = PRIVILEGED_REPOSITORY_DISPATCH_EVENTS.get(relative)
+    if required_events is None:
+        return
+
+    text = "\n".join(lines)
+    if re.search(r"(?m)^\s*workflow_dispatch\s*:", text):
+        errors.append(
+            f"{relative}: privileged manual execution must use default-branch repository_dispatch, not workflow_dispatch"
+        )
+    if not re.search(r"(?m)^  repository_dispatch\s*:", text):
+        errors.append(f"{relative}: missing required default-branch repository_dispatch trigger")
+    for event_type in required_events:
+        if not re.search(rf"(?m)^\s+- {re.escape(event_type)}\s*$", text):
+            errors.append(f"{relative}: missing reviewed repository_dispatch event {event_type!r}")
+    if "ref: ${{ github.sha }}" not in text:
+        errors.append(f"{relative}: privileged checkout must pin the immutable default-branch event SHA")
+
+    payload_contracts = {
+        pathlib.Path(".github/workflows/infra-azure.yml"): (
+            'keys == ["environment"]',
+            'keys == ["environment", "plan_run_attempt", "plan_run_id"]',
+        ),
+        pathlib.Path(".github/workflows/protocol-integration.yml"): (
+            "keys == []",
+        ),
+    }
+    for contract in payload_contracts[relative]:
+        if contract not in text:
+            errors.append(f"{relative}: missing strict client_payload contract {contract!r}")
+
+
 def check_workflow(
     path: pathlib.Path,
     errors: list[str],
     approved: set[tuple[str, str, str]],
 ) -> None:
-    lines = path.read_text(encoding="utf-8").splitlines()
+    raw = path.read_text(encoding="utf-8")
+    if "\t" in raw:
+        errors.append(f"{path.relative_to(ROOT)}: YAML indentation must not contain tab characters")
+    lines = raw.splitlines()
     text = "\n".join(lines)
     if re.search(r"(?m)^\s*pull_request_target\s*:", text):
         errors.append(f"{path.relative_to(ROOT)}: pull_request_target is prohibited")
@@ -376,6 +512,8 @@ def check_workflow(
     check_job_timeouts(path, lines, errors)
     check_authoritative_ci_fork_policy(path, lines, errors)
     check_client_package_fork_policy(path, lines, errors)
+    check_protected_scheduled_workflow_policy(path, lines, errors)
+    check_privileged_repository_dispatch_policy(path, lines, errors)
 
 
 def main() -> int:
@@ -385,7 +523,10 @@ def main() -> int:
     for path in paths:
         check_workflow(path, errors, approved)
     for path in sorted((GITHUB / "actions").glob("*/action.y*ml")):
-        lines = path.read_text(encoding="utf-8").splitlines()
+        raw = path.read_text(encoding="utf-8")
+        if "\t" in raw:
+            errors.append(f"{path.relative_to(ROOT)}: YAML indentation must not contain tab characters")
+        lines = raw.splitlines()
         check_uses(path, lines, errors, approved)
         check_run_expressions(path, lines, errors)
     if errors:

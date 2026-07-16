@@ -210,9 +210,10 @@ func TestStageRemoteArchiveUsesControllerTerminalStateAndFinalManifestParity(t *
 		Duration:              5 * time.Minute,
 		DurationStr:           "5m",
 		TotalVUsers:           5,
+		GoalConfig:            &GoalConfig{P95LatencyMs: ptr(250.0)},
 		GeneratorShards:       []GeneratorShardSummary{{Group: "checkout", Target: "generator-a", VUsers: 5}},
 		Groups:                []TestGroup{{Name: "checkout", ScriptID: "script-a", ScriptName: "Checkout", Protocol: "http", VUsers: 5}},
-		LiveMetrics:           &LiveMetrics{GoalStatus: &GoalStatus{LatencyBreached: true, ErrorCountBreached: true}},
+		LiveMetrics:           &LiveMetrics{TotalTx: 1, GoalStatus: &GoalStatus{LatencyBreached: true, ErrorCountBreached: true}},
 		remoteTarget:          "generator-a",
 		remoteClient:          client,
 		remoteClientsByTarget: map[string]generatorClient{"generator-a": client},
@@ -260,6 +261,9 @@ func TestStageRemoteArchiveUsesControllerTerminalStateAndFinalManifestParity(t *
 	}
 	if !manifest.SLABreached || len(manifest.SLADetails) != 2 {
 		t.Fatalf("SLA snapshot = breached:%v details:%#v", manifest.SLABreached, manifest.SLADetails)
+	}
+	if !manifest.SLAEvaluated {
+		t.Fatal("distributed archive did not retain evaluated SLA evidence")
 	}
 	if manifest.TestManifestFile != testRunManifestFileName || manifest.TestNotesFile != testNotesArchiveFileName {
 		t.Fatalf("persisted adjunct files = %q / %q", manifest.TestManifestFile, manifest.TestNotesFile)
@@ -316,6 +320,84 @@ func TestFetchRemoteArchiveRejectsManifestForDifferentTest(t *testing.T) {
 	if streamCalls != 1 {
 		t.Fatalf("stream calls = %d, want manifest only before rejection", streamCalls)
 	}
+}
+
+func TestStageRemoteArchiveRejectsGeneratorManifestCountMismatch(t *testing.T) {
+	archiveRoot := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveRoot)
+	sourceDir := t.TempDir()
+	testID := "distributed-count-mismatch"
+	write := func(name string, content []byte) string {
+		t.Helper()
+		path := filepath.Join(sourceDir, name)
+		if err := os.WriteFile(path, content, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	manifestBytes, err := json.Marshal(RunArchiveManifest{
+		SchemaVersion: archiveSchemaVersion, TestID: testID,
+		TransactionsFile: "transactions.jsonl", ResourceSamplesFile: "resources.jsonl", IntervalSummariesFile: "summaries.jsonl",
+		TransactionCount: 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client := &archiveStreamingFakeClient{artifacts: map[string]string{
+		runArchiveManifestFileName: write("manifest.json", manifestBytes),
+		"transactions.jsonl":       write("transactions.jsonl", nil),
+		"resources.jsonl":          write("resources.jsonl", nil),
+		"summaries.jsonl":          write("summaries.jsonl", nil),
+	}}
+	backend := newDistributedExecutionBackend([]string{"generator-a"}, time.Second, nil)
+	test := &ManagedTest{
+		ID: testID, Name: "Count mismatch", CreatedAt: time.Now().UTC(),
+		remoteTarget: "generator-a", remoteClient: client,
+		remoteClientsByTarget: map[string]generatorClient{"generator-a": client},
+	}
+	if _, err := backend.stageRemoteArchive(nil, test, "COMPLETE", "", time.Now().UTC(), true); err == nil || !strings.Contains(err.Error(), "transaction archive count is 0, want 1") {
+		t.Fatalf("stageRemoteArchive count mismatch error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(archiveRoot, "remote", testID, runArchiveManifestFileName)); !os.IsNotExist(err) {
+		t.Fatalf("count-mismatched archive was committed: %v", err)
+	}
+}
+
+func TestDistributedArchiveSLASnapshotIsRaceSafe(t *testing.T) {
+	runner := &TestRunner{tests: make(map[string]*ManagedTest)}
+	test := &ManagedTest{
+		ID:             "distributed-sla-race",
+		GoalConfig:     &GoalConfig{P95LatencyMs: ptr(100.0)},
+		ciSLAEvaluated: true,
+		ciSLADetails:   []string{"P95 latency breached threshold"},
+		LiveMetrics: &LiveMetrics{
+			TotalTx:    1,
+			GoalStatus: &GoalStatus{},
+		},
+	}
+	runner.tests[test.ID] = test
+
+	const iterations = 1_000
+	var writers sync.WaitGroup
+	writers.Add(1)
+	go func() {
+		defer writers.Done()
+		for index := range iterations {
+			runner.mu.Lock()
+			test.ciSLAEvaluated = true
+			test.ciSLABreached = index%2 == 0
+			test.ciSLADetails = []string{"P95 latency breached threshold"}
+			test.LiveMetrics.GoalStatus.LatencyBreached = index%2 == 0
+			runner.mu.Unlock()
+		}
+	}()
+	for range iterations {
+		evaluated, _, details := distributedArchiveSLA(runner, test)
+		if !evaluated || len(details) == 0 {
+			t.Fatalf("distributed SLA snapshot lost evaluated evidence: evaluated=%t details=%#v", evaluated, details)
+		}
+	}
+	writers.Wait()
 }
 
 func TestFetchRemoteArchivesStartsTargetsInParallelAndCancelsAsAGroup(t *testing.T) {

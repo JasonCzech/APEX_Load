@@ -490,6 +490,7 @@ type GitHubWebhookDelivery struct {
 
 type GitHubCheckLink struct {
 	ID          string `json:"id"`
+	Kind        string `json:"kind,omitempty"`
 	TestID      string `json:"test_id"`
 	ScriptID    string `json:"script_id,omitempty"`
 	Owner       string `json:"owner"`
@@ -512,14 +513,16 @@ type GitHubCheckLink struct {
 // backed CI test is materialized. It closes the crash window between accepting
 // a required Check and persisting the GitHub Check link.
 type GitHubCheckIntent struct {
-	TestID         string    `json:"test_id"`
-	ProjectID      string    `json:"project_id"`
-	InstallationID int64     `json:"installation_id"`
-	Owner          string    `json:"owner"`
-	Repo           string    `json:"repo"`
-	CommitSHA      string    `json:"commit_sha"`
-	CreatedAt      time.Time `json:"created_at"`
-	UpdatedAt      time.Time `json:"updated_at"`
+	TestID                 string     `json:"test_id"`
+	ProjectID              string     `json:"project_id"`
+	InstallationID         int64      `json:"installation_id"`
+	Owner                  string     `json:"owner"`
+	Repo                   string     `json:"repo"`
+	CommitSHA              string     `json:"commit_sha"`
+	CreationClaim          string     `json:"-"`
+	CreationClaimExpiresAt *time.Time `json:"-"`
+	CreatedAt              time.Time  `json:"created_at"`
+	UpdatedAt              time.Time  `json:"updated_at"`
 }
 
 type GitHubEnterpriseStore interface {
@@ -533,13 +536,19 @@ type GitHubEnterpriseStore interface {
 	GetGitHubWebhookDelivery(deliveryID string) (*GitHubWebhookDelivery, error)
 	ListGitHubWebhookDeliveries(limit int) ([]*GitHubWebhookDelivery, error)
 	SaveGitHubCheckLink(link *GitHubCheckLink) error
+	SaveGitHubCheckLinkIfCreationClaimHeld(link *GitHubCheckLink, claimant string) (bool, error)
 	GetGitHubCheckLink(id string) (*GitHubCheckLink, error)
 	ListGitHubCheckLinks(testID string, scriptID string, limit int) ([]*GitHubCheckLink, error)
 	ListIncompleteGitHubCheckLinks(limit int) ([]*GitHubCheckLink, error)
+	TouchGitHubCheckLink(id string, updatedAt time.Time) error
 	ClaimGitHubCheckConclusion(id string, conclusion string) (*GitHubCheckLink, error)
 	SaveGitHubCheckIntent(intent *GitHubCheckIntent) error
 	GetGitHubCheckIntent(testID string) (*GitHubCheckIntent, error)
 	ListPendingGitHubCheckIntents(limit int) ([]*GitHubCheckIntent, error)
+	TouchGitHubCheckIntent(testID string, updatedAt time.Time) error
+	ClaimGitHubCheckCreation(testID string, claimant string, lease time.Duration) (bool, error)
+	RenewGitHubCheckCreation(testID string, claimant string, lease time.Duration) (bool, error)
+	ReleaseGitHubCheckCreation(testID string, claimant string) error
 	DeleteGitHubCheckIntent(testID string) error
 }
 

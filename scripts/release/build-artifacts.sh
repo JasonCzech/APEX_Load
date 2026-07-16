@@ -7,14 +7,14 @@ die() {
 }
 
 root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+source "$root_dir/scripts/release/semver.sh"
 output_dir="${1:-}"
 version="${2:-}"
 commit="${3:-}"
 build_time="${4:-}"
 
 [[ -n "$output_dir" ]] || die "output directory is required"
-[[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$ ]] \
-  || die "version must not include the v prefix"
+is_apex_semver "$version" || die "version must be canonical semantic version without the v prefix"
 [[ "$commit" =~ ^[0-9a-f]{40}$ ]] || die "commit must be a full lowercase SHA"
 [[ "$build_time" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] \
   || die "build time must be UTC RFC3339 without fractional seconds"

@@ -958,6 +958,7 @@ func (s *Server) handlePublishGitHubCheckRun(w http.ResponseWriter, r *http.Requ
 	if store, ok := s.githubEnterpriseStore(); ok {
 		if err := store.SaveGitHubCheckLink(&storage.GitHubCheckLink{
 			ID:          checkID,
+			Kind:        "manual",
 			TestID:      testID,
 			ScriptID:    scriptID,
 			Owner:       req.Owner,

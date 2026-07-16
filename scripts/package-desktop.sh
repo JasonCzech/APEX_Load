@@ -25,9 +25,9 @@ WORKDIR="$DIST_DIR/$PACKAGE"
 MACOS_CODESIGN_IDENTITY="${APEXLOAD_MACOS_CODESIGN_IDENTITY:-${MACOS_CODESIGN_IDENTITY:-}}"
 MACOS_NOTARIZE="${APEXLOAD_MACOS_NOTARIZE:-${MACOS_NOTARIZE:-0}}"
 MACOS_NOTARY_PROFILE="${APEXLOAD_MACOS_NOTARY_PROFILE:-${MACOS_NOTARY_PROFILE:-}}"
-MACOS_NOTARY_APPLE_ID="${APEXLOAD_MACOS_NOTARY_APPLE_ID:-${MACOS_NOTARY_APPLE_ID:-}}"
-MACOS_NOTARY_PASSWORD="${APEXLOAD_MACOS_NOTARY_PASSWORD:-${MACOS_NOTARY_PASSWORD:-}}"
-MACOS_NOTARY_TEAM_ID="${APEXLOAD_MACOS_NOTARY_TEAM_ID:-${MACOS_NOTARY_TEAM_ID:-}}"
+MACOS_NOTARY_KEY_PATH="${APEXLOAD_MACOS_NOTARY_KEY_PATH:-${MACOS_NOTARY_KEY_PATH:-}}"
+MACOS_NOTARY_KEY_ID="${APEXLOAD_MACOS_NOTARY_KEY_ID:-${MACOS_NOTARY_KEY_ID:-}}"
+MACOS_NOTARY_ISSUER_ID="${APEXLOAD_MACOS_NOTARY_ISSUER_ID:-${MACOS_NOTARY_ISSUER_ID:-}}"
 WINDOWS_CODESIGN="${APEXLOAD_WINDOWS_CODESIGN:-${WINDOWS_CODESIGN:-0}}"
 WINDOWS_CODESIGN_TOOL="${APEXLOAD_WINDOWS_CODESIGN_TOOL:-${WINDOWS_CODESIGN_TOOL:-auto}}"
 WINDOWS_SIGNTOOL="${APEXLOAD_WINDOWS_SIGNTOOL:-${WINDOWS_SIGNTOOL:-signtool}}"
@@ -147,15 +147,15 @@ notarize_macos_package() {
     fi
   )
 
-  local submit_args=(notarytool submit "$zip_path" --wait)
+  local submit_args=(notarytool submit "$zip_path" --wait --timeout 30m)
   if [[ -n "$MACOS_NOTARY_PROFILE" ]]; then
     submit_args+=(--keychain-profile "$MACOS_NOTARY_PROFILE")
   else
-    if [[ -z "$MACOS_NOTARY_APPLE_ID" || -z "$MACOS_NOTARY_PASSWORD" || -z "$MACOS_NOTARY_TEAM_ID" ]]; then
-      echo "Set APEXLOAD_MACOS_NOTARY_PROFILE or APEXLOAD_MACOS_NOTARY_APPLE_ID/APEXLOAD_MACOS_NOTARY_PASSWORD/APEXLOAD_MACOS_NOTARY_TEAM_ID for notarization." >&2
+    if [[ ! -f "$MACOS_NOTARY_KEY_PATH" || -z "$MACOS_NOTARY_KEY_ID" || -z "$MACOS_NOTARY_ISSUER_ID" ]]; then
+      echo "Set APEXLOAD_MACOS_NOTARY_PROFILE or APEXLOAD_MACOS_NOTARY_KEY_PATH/APEXLOAD_MACOS_NOTARY_KEY_ID/APEXLOAD_MACOS_NOTARY_ISSUER_ID for notarization." >&2
       exit 1
     fi
-    submit_args+=(--apple-id "$MACOS_NOTARY_APPLE_ID" --password "$MACOS_NOTARY_PASSWORD" --team-id "$MACOS_NOTARY_TEAM_ID")
+    submit_args+=(--key "$MACOS_NOTARY_KEY_PATH" --key-id "$MACOS_NOTARY_KEY_ID" --issuer "$MACOS_NOTARY_ISSUER_ID")
   fi
   xcrun "${submit_args[@]}"
 
@@ -228,16 +228,15 @@ sign_windows_with_signtool() {
     sign_args+=(/tr "$WINDOWS_CODESIGN_TIMESTAMP_URL")
   fi
   if [[ -n "$WINDOWS_CODESIGN_CERT_PATH" ]]; then
-    sign_args+=(/f "$WINDOWS_CODESIGN_CERT_PATH")
-    if [[ -n "$WINDOWS_CODESIGN_PASSWORD" ]]; then
-      sign_args+=(/p "$WINDOWS_CODESIGN_PASSWORD")
-    fi
+    echo "signtool PFX/P12 signing is disabled because its password would be exposed in process arguments. Import the certificate into the CurrentUser certificate store and set APEXLOAD_WINDOWS_CODESIGN_SHA1." >&2
+    exit 1
   elif [[ -n "$WINDOWS_CODESIGN_SHA1" ]]; then
-    sign_args+=(/sha1 "$WINDOWS_CODESIGN_SHA1")
+    sign_args+=(/s My /sha1 "$WINDOWS_CODESIGN_SHA1")
   elif [[ -n "$WINDOWS_CODESIGN_SUBJECT" ]]; then
     sign_args+=(/n "$WINDOWS_CODESIGN_SUBJECT")
   else
-    sign_args+=(/a)
+    echo "signtool signing requires APEXLOAD_WINDOWS_CODESIGN_SHA1 or APEXLOAD_WINDOWS_CODESIGN_SUBJECT; automatic certificate selection is not permitted." >&2
+    exit 1
   fi
 
   "$sign_tool" "${sign_args[@]}" "$binary_path"
@@ -265,9 +264,10 @@ sign_windows_with_osslsigncode() {
   else
     sign_args+=(-certs "$WINDOWS_CODESIGN_CERT_PEM" -key "$WINDOWS_CODESIGN_KEY_PATH")
   fi
-  if [[ -n "$WINDOWS_CODESIGN_PASSWORD" ]]; then
-    sign_args+=(-pass "$WINDOWS_CODESIGN_PASSWORD")
-  fi
+  [[ -z "$WINDOWS_CODESIGN_PASSWORD" ]] || {
+    echo "osslsigncode password arguments are disabled because they expose credentials in the process list. Use an unencrypted protected key file or a certificate-store signing lane." >&2
+    exit 1
+  }
 
   rm -f "$signed_path"
   osslsigncode "${sign_args[@]}"
@@ -288,14 +288,12 @@ sign_windows_binary() {
 
   case "$WINDOWS_CODESIGN_TOOL" in
     auto)
-      if [[ -n "$WINDOWS_CODESIGN_CERT_PEM" || -n "$WINDOWS_CODESIGN_KEY_PATH" ]]; then
-        sign_windows_with_osslsigncode "$binary_path"
-      elif command -v signtool >/dev/null 2>&1; then
+      if [[ -n "$WINDOWS_CODESIGN_SHA1" || -n "$WINDOWS_CODESIGN_SUBJECT" ]]; then
         sign_windows_with_signtool "$binary_path"
-      elif command -v osslsigncode >/dev/null 2>&1; then
+      elif [[ -n "$WINDOWS_CODESIGN_CERT_PEM" || -n "$WINDOWS_CODESIGN_KEY_PATH" || -n "$WINDOWS_CODESIGN_CERT_PATH" ]]; then
         sign_windows_with_osslsigncode "$binary_path"
       else
-        echo "APEXLOAD_WINDOWS_CODESIGN is enabled, but neither signtool nor osslsigncode was found." >&2
+        echo "APEXLOAD_WINDOWS_CODESIGN is enabled, but no explicit certificate thumbprint, subject, or osslsigncode key material was configured." >&2
         exit 1
       fi
       ;;

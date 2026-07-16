@@ -40,6 +40,7 @@ type Server struct {
 	store            storage.Store
 	cache            CacheBackend
 	controllerID     string
+	haExecution      bool
 	authoringMu      sync.Mutex
 	// authoringMutationMu serializes session edits, deletion, correlation
 	// write-back, and approval within one controller. The storage CAS used by
@@ -251,6 +252,7 @@ func NewServer(cfg ServerConfig) *Server {
 		store:                   cfg.Store,
 		cache:                   cache,
 		controllerID:            controllerID,
+		haExecution:             cfg.HAExecutionLeadership,
 		authoring:               make(map[string]*storage.AuthoringSession),
 		libraryRemotes:          make(map[string]*LibraryRemote),
 		libraryLinks:            make(map[string]*librarySyncLink),
@@ -866,6 +868,10 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/system/usage/snapshots", cors(log(auth(http.HandlerFunc(s.handleListUsageAccountingSnapshots)))))
 	s.mux.Handle("POST /api/v1/system/usage/snapshots", cors(log(auth(http.HandlerFunc(s.handleCreateUsageAccountingSnapshot)))))
 	s.mux.Handle("GET /api/v1/system/parity-status", cors(log(auth(http.HandlerFunc(s.handleGetParityStatus)))))
+	s.mux.Handle("GET /api/v1/system/deployment-lease", cors(log(auth(http.HandlerFunc(s.handleGetDeploymentLease)))))
+	s.mux.Handle("POST /api/v1/system/deployment-lease/acquire", cors(log(auth(http.HandlerFunc(s.handleAcquireDeploymentLease)))))
+	s.mux.Handle("POST /api/v1/system/deployment-lease/renew", cors(log(auth(http.HandlerFunc(s.handleRenewDeploymentLease)))))
+	s.mux.Handle("POST /api/v1/system/deployment-lease/release", cors(log(auth(http.HandlerFunc(s.handleReleaseDeploymentLease)))))
 	s.mux.Handle("GET /api/v1/system/browser-benchmarks", cors(log(auth(http.HandlerFunc(s.handleGetBrowserBenchmarkEvidence)))))
 	s.mux.Handle("GET /api/v1/desktop/status", cors(log(auth(http.HandlerFunc(s.handleDesktopStatus)))))
 	s.mux.Handle("GET /api/v1/runtime-settings/support-matrix", cors(log(auth(http.HandlerFunc(s.handleRuntimeSettingsSupportMatrix)))))

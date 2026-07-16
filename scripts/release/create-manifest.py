@@ -11,7 +11,12 @@ import re
 import sys
 
 
-SEMVER = re.compile(r"^v(?P<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?)$")
+SEMVER_NUMBER = r"(?:0|[1-9][0-9]*)"
+SEMVER_IDENTIFIER = rf"(?:{SEMVER_NUMBER}|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
+SEMVER = re.compile(
+    rf"^v(?P<version>{SEMVER_NUMBER}\.{SEMVER_NUMBER}\.{SEMVER_NUMBER}"
+    rf"(?:-{SEMVER_IDENTIFIER}(?:\.{SEMVER_IDENTIFIER})*)?)$"
+)
 APEXCTL = re.compile(
     r"^apexctl_(?P<version>[^_]+)_(?P<os>linux|darwin|windows)_(?P<arch>amd64|arm64)(?P<exe>\.exe)?$"
 )
