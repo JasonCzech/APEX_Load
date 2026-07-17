@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
-	playwright "github.com/playwright-community/playwright-go"
+	playwright "github.com/mxschmitt/playwright-go"
 )
 
 func (b *Browser) clickAction(ctx context.Context, action *protocol.Action, selector string) error {

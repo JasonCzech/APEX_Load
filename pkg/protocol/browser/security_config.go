@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/fileasset"
-	playwright "github.com/playwright-community/playwright-go"
+	playwright "github.com/mxschmitt/playwright-go"
 )
 
 const (

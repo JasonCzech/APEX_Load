@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
-	playwright "github.com/playwright-community/playwright-go"
+	playwright "github.com/mxschmitt/playwright-go"
 )
 
 func (b *Browser) dispatchSetGeolocation(action *protocol.Action, result *protocol.Result) (error, bool) {
