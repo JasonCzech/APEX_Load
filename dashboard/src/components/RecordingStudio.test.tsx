@@ -1573,20 +1573,23 @@ describe('RecordingStudio', () => {
         active: null,
       },
     })
-    apiFetchMock
-      .mockResolvedValueOnce({
+    apiFetchMock.mockImplementation(async (input: string) => {
+      if (input === '/downloads/recording-agent/latest/checksum?platform=linux-amd64') {
+        return {
+          ok: true,
+          headers: new Headers({ 'content-type': 'application/json' }),
+          json: vi.fn().mockResolvedValue({
+            algorithm: 'sha-256',
+            filename: 'apexload-recording-agent-0.1.0-linux-amd64.tar.gz',
+            sha256: 'd8df2adeb0f3718d0beeebb225572273e1677b6208cef613c2378f3b3f41f3b2',
+          }),
+        }
+      }
+      return {
         ok: false,
         headers: new Headers({ 'content-type': 'application/json' }),
         json: vi.fn().mockResolvedValue({ error: 'checksum not staged' }),
-      })
-      .mockResolvedValueOnce({
-      ok: true,
-      headers: new Headers({ 'content-type': 'application/json' }),
-      json: vi.fn().mockResolvedValue({
-        algorithm: 'sha-256',
-        filename: 'apexload-recording-agent-0.1.0-linux-amd64.tar.gz',
-        sha256: 'd8df2adeb0f3718d0beeebb225572273e1677b6208cef613c2378f3b3f41f3b2',
-      }),
+      }
     })
 
     await act(async () => {
@@ -1648,21 +1651,19 @@ describe('RecordingStudio', () => {
         active: null,
       },
     })
-    apiFetchMock
-      .mockResolvedValueOnce({
+    apiFetchMock.mockImplementation(async (input: string) => {
+      if (input === '/downloads/recording-agent/latest?platform=linux-amd64') {
+        return {
+          ok: true,
+          headers: new Headers({ 'content-type': 'text/html; charset=utf-8' }),
+          blob: vi.fn().mockResolvedValue(new Blob(['<html>dashboard</html>'])),
+        }
+      }
+      return {
         ok: false,
         headers: new Headers({ 'content-type': 'application/json' }),
         json: vi.fn().mockResolvedValue({ error: 'checksum not staged' }),
-      })
-      .mockResolvedValueOnce({
-        ok: false,
-        headers: new Headers({ 'content-type': 'application/json' }),
-        json: vi.fn().mockResolvedValue({ error: 'checksum not staged' }),
-      })
-      .mockResolvedValueOnce({
-      ok: true,
-      headers: new Headers({ 'content-type': 'text/html; charset=utf-8' }),
-      blob: vi.fn().mockResolvedValue(new Blob(['<html>dashboard</html>'])),
+      }
     })
 
     await act(async () => {

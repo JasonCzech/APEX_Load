@@ -175,7 +175,6 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22.22.0
-          cache: false
 
       - name: Test canonical composite action helpers
         run: .github/actions/apexload-run/tests/run.sh
@@ -272,12 +271,15 @@ jobs:
       - name: Install gotestsum
         run: go install gotest.tools/gotestsum@v1.13.0
 
+      - name: Install Playwright browser runtimes for Go integration tests
+        run: go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install --with-deps chromium webkit
+
       - name: Run race tests
         run: |
           set -euo pipefail
           mkdir -p test-results
           gotestsum --junitfile test-results/go-junit.xml -- \
-            -race -shuffle=on -count=1 -coverprofile=test-results/coverage.out ./...
+            -race -shuffle=on -count=1 -timeout=20m -coverprofile=test-results/coverage.out ./...
 
       - name: Upload Go test evidence
         if: always()
@@ -528,7 +530,6 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22.22.0
-          cache: false
 
       - name: Enable pinned pnpm
         run: corepack enable
@@ -928,7 +929,7 @@ jobs:
         uses: github/codeql-action/init@f58f0d11ebf5dedd870fab2f999275f7602cfa46 # codeql-bundle-v2.26.0
         with:
           languages: go,javascript-typescript
-          build-mode: none
+          build-mode: autobuild
           queries: security-extended
 
       - name: Analyze

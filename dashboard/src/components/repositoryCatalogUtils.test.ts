@@ -56,7 +56,7 @@ function buildRows() {
         scripts: [{ order: 1, script_id: 'script-1', script_name: 'Checkout Smoke', protocol: 'http', vusers: 25 }],
         data_pools: [{ alias: 'users', pool_id: 'pool-1', pool_name: 'Checkout Users', access_mode: 'read_only', selection_strategy: 'sequential' }],
         created_at: '2026-01-08T00:00:00Z',
-        updated_at: '2026-01-09T00:00:00Z',
+        updated_at: '2026-01-08T00:00:00Z',
         script_count: 1,
         result_count: 3,
         associated_releases: [{ id: 'release-1', application_id: 'app-1', name: '2026.05' }],

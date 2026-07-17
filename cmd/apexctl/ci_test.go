@@ -19,6 +19,15 @@ import (
 	"time"
 )
 
+func TestMain(m *testing.M) {
+	// Tests must not inherit the outer GitHub Actions checkout provenance. Tests
+	// that exercise trusted GitHub inputs set their own isolated repository and
+	// commit explicitly.
+	_ = os.Unsetenv("GITHUB_WORKSPACE")
+	_ = os.Unsetenv("GITHUB_SHA")
+	os.Exit(m.Run())
+}
+
 func TestParseCIArgsControllerAndLocalValidation(t *testing.T) {
 	t.Setenv("APEXLOAD_API_KEY", "env-key")
 	controller, err := parseCIArgs([]string{
