@@ -8,6 +8,9 @@ stringData:
   # Always set a Redis/Valkey password (ha/redis-valkey.example.yaml enforces
   # requirepass); prefer rediss:// (TLS, e.g. port 6380) when the cache supports it.
   APEXLOAD_REDIS_URL: redis://:change-me@apexload-redis.apexload.svc:6379/0
+  # Shared wrapping key for encrypted database-backed Project Secrets and
+  # encrypted Bruno source artifacts. Generate with: openssl rand -base64 32
+  APEXLOAD_WRAPPING_MASTER_KEY: change-me-base64-encoded-32-byte-key
   APEXLOAD_PROMETHEUS_REMOTE_WRITE_URL: https://mimir.example.com/api/v1/push
   APEXLOAD_PROMETHEUS_TENANT_ID: apexload
 ---

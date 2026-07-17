@@ -18,6 +18,14 @@ func ParseFile(path string) (*Script, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read script file: %w", err)
 	}
+	return ParseFileSnapshot(path, data)
+}
+
+// ParseFileSnapshot parses caller-supplied bytes using path only as the trusted
+// base directory for local body/data references. CI callers use this after
+// binding the exact bytes to a source-control commit, avoiding a second file
+// read that could otherwise race the provenance check.
+func ParseFileSnapshot(path string, data []byte) (*Script, error) {
 	script, err := parseScript(data)
 	if err != nil {
 		return nil, err

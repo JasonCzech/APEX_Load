@@ -2,6 +2,7 @@ import { Fragment } from 'react'
 
 import { AuthoringHealthInput, GitHubScriptStatus, StoredScript, TestSummary } from '../types'
 import { LibraryCatalogItem, LibrarySourceFilter } from '../types/library'
+import { type ScriptSecretStatus } from '../types/secrets'
 import { formatLibraryDateTime, shortLibraryHash } from './libraryFederationUtils'
 import { SortIndicator } from './SortIndicator'
 import { ScriptLibrarySortField, ScriptRunSortField } from './useScriptsLibraryModel'
@@ -47,6 +48,19 @@ interface Props {
   onCreate?: () => void
   federation?: ScriptLibraryFederation
   github?: ScriptLibraryGitHub
+  secretStatusByScript?: Record<string, ScriptSecretStatus>
+  secretStatusStateByScript?: Record<string, 'loading' | 'ready' | 'error'>
+  onConfigureSecrets?: (script: StoredScript) => void
+  onRetrySecretStatus?: (script: StoredScript) => void
+}
+
+function scriptContainsSecretReferences(script: StoredScript): boolean {
+  if (!script.script) return false
+  try {
+    return JSON.stringify(script.script).includes('{{secret.')
+  } catch {
+    return false
+  }
 }
 
 function formatDate(value?: string) {
@@ -207,6 +221,10 @@ export default function ScriptsLibraryTable({
   onCreate,
   federation,
   github,
+  secretStatusByScript = {},
+  secretStatusStateByScript = {},
+  onConfigureSecrets,
+  onRetrySecretStatus,
 }: Props) {
   const showSource = Boolean(federation)
   const columnCount = (showSource ? 1 : 0) + 7
@@ -232,6 +250,11 @@ export default function ScriptsLibraryTable({
         <tbody>
           {localScripts.map((script) => {
             const healthSummary = authoringHealthSummary(script)
+            const secretStatus = secretStatusByScript[script.id]
+            const secretStatusState = secretStatusStateByScript[script.id]
+            const requiresSecrets = (secretStatus?.required.length || 0) > 0 || scriptContainsSecretReferences(script)
+            const secretStatusUnknown = requiresSecrets && secretStatusState !== undefined && secretStatusState !== 'ready'
+            const configureSecretsAvailable = onConfigureSecrets && ((secretStatus?.missing.length || 0) > 0 || secretStatusUnknown)
             const hostItem = federation?.hostItemForLocal(script.id)
             const syncStatus = federation?.syncStatusForLocal(script.id) || 'local only'
             const conflict = syncStatus === 'conflict'
@@ -268,12 +291,26 @@ export default function ScriptsLibraryTable({
                     </div>
                   </td>
                   <td aria-label="Scenario usage">
-                    <span className={`protocol-badge ${authoringHealthClass(script)}`}>{authoringHealthLabel(script)}</span>
-                    {script.authoring_health && (
+                    <span className={`protocol-badge ${secretStatusUnknown ? 'warning' : authoringHealthClass(script)}`}>
+                      {secretStatusUnknown
+                        ? secretStatusState === 'loading' ? 'Checking secrets' : 'Secret status unavailable'
+                        : authoringHealthLabel(script)}
+                    </span>
+                    {(script.authoring_health || (secretStatus?.missing.length || 0) > 0 || secretStatusUnknown) && (
                       <div className="script-health-inline">
-                        {healthSummary.blockers > 0 && <span className="script-health-token danger">{healthSummary.blockers} blockers</span>}
-                        {healthSummary.warnings > 0 && <span className="script-health-token warning">{healthSummary.warnings} warnings</span>}
-                        {healthSummary.blockers === 0 && healthSummary.warnings === 0 && <span className="script-health-token healthy">ready</span>}
+                        {!secretStatusUnknown && script.authoring_health && healthSummary.blockers > 0 && <span className="script-health-token danger">{healthSummary.blockers} blockers</span>}
+                        {!secretStatusUnknown && script.authoring_health && healthSummary.warnings > 0 && <span className="script-health-token warning">{healthSummary.warnings} warnings</span>}
+                        {!secretStatusUnknown && script.authoring_health && healthSummary.blockers === 0 && healthSummary.warnings === 0 && <span className="script-health-token healthy">ready</span>}
+                        {secretStatusUnknown && (
+                          <span className="script-health-token warning">
+                            {secretStatusState === 'loading' ? 'secret status pending' : 'secret status unknown'}
+                          </span>
+                        )}
+                        {(secretStatus?.missing.length || 0) > 0 && (
+                          <span className="script-health-token warning">
+                            {secretStatus.missing.length} secret{secretStatus.missing.length === 1 ? '' : 's'} missing
+                          </span>
+                        )}
                       </div>
                     )}
                   </td>
@@ -294,6 +331,12 @@ export default function ScriptsLibraryTable({
                     {canManageScripts ? (
                       <>
                         <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); onEdit(script.id) }}>Edit</button>
+                        {configureSecretsAvailable && (
+                          <button className="btn btn-sm btn-secondary" onClick={(event) => { event.stopPropagation(); onConfigureSecrets?.(script) }}>Configure secrets</button>
+                        )}
+                        {secretStatusUnknown && secretStatusState === 'error' && onRetrySecretStatus && (
+                          <button className="btn btn-sm btn-ghost" onClick={(event) => { event.stopPropagation(); onRetrySecretStatus(script) }}>Retry secret check</button>
+                        )}
                         <button className="btn btn-sm btn-ghost" style={{ color: 'var(--danger)' }} onClick={(event) => { event.stopPropagation(); onDelete(script.id) }}>Delete</button>
                         {github?.enabled && (
                           <button
@@ -341,6 +384,43 @@ export default function ScriptsLibraryTable({
                             <div className="cell-muted">{healthSummary.summaryInput?.summary}</div>
                           </div>
                         ) : null}
+                        {(secretStatus?.missing.length || 0) > 0 && (
+                          <div className="script-health-detail">
+                            <span className="results-compare-label">Missing Project Secrets</span>
+                            <div className="archive-report-badges">
+                              {secretStatus.missing.map(name => <span key={name} className="archive-chip danger">{name}</span>)}
+                            </div>
+                            {onConfigureSecrets && (
+                              <button className="btn btn-secondary btn-sm" type="button" onClick={() => onConfigureSecrets(script)}>
+                                Configure secrets
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {secretStatusUnknown && (
+                          <div className="script-health-detail" role="status">
+                            <span className="results-compare-label">
+                              {secretStatusState === 'loading' ? 'Checking Project Secrets' : 'Project Secret Status Unavailable'}
+                            </span>
+                            <div className="cell-muted">
+                              {secretStatusState === 'loading'
+                                ? 'Credential configuration is still being checked. This script is not considered ready until the check completes.'
+                                : 'Credential configuration could not be verified. Retry the check or open Project Secrets to configure values.'}
+                            </div>
+                            <div className="settings-inline-actions">
+                              {onConfigureSecrets && (
+                                <button className="btn btn-secondary btn-sm" type="button" onClick={() => onConfigureSecrets(script)}>
+                                  Configure secrets
+                                </button>
+                              )}
+                              {secretStatusState === 'error' && onRetrySecretStatus && (
+                                <button className="btn btn-secondary btn-sm" type="button" onClick={() => onRetrySecretStatus(script)}>
+                                  Retry secret check
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
                         {(scriptRuns[script.id] || []).length === 0 ? (
                           <div className="cell-muted">No linked scenario runs for this script yet.</div>
                         ) : (

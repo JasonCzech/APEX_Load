@@ -32,13 +32,27 @@ const (
 // of a VUser goroutine so it runs last and also contains panics raised by the
 // goroutine's other deferred cleanup (e.g. protocol Teardown). The deferred
 // wg.Done()/cleanup at the call site still run during unwinding.
-func recoverVUserGoroutine(vuserID int) {
+func recoverVUserGoroutine(vuserID int, providers ...func() *RedactionConfig) {
 	if r := recover(); r != nil {
 		slog.Error("vuser goroutine panicked; recovered to protect the process",
 			"vuser", vuserID,
-			"panic", recoveredPanicLogText(r),
+			"panic", recoveredPanicLogTextWithConfig(r, currentRedactionConfig(providers...)),
 			"stack", boundedtext.TruncateUTF8(string(debug.Stack()), maxRecoveredStackLogBytes))
 	}
+}
+
+func currentRedactionConfig(providers ...func() *RedactionConfig) (config *RedactionConfig) {
+	defer func() {
+		if recover() != nil {
+			config = nil
+		}
+	}()
+	for _, provider := range providers {
+		if provider != nil {
+			return provider()
+		}
+	}
+	return nil
 }
 
 // recoveredPanicLogText treats panic values as untrusted adapter output. A
@@ -46,6 +60,10 @@ func recoverVUserGoroutine(vuserID int) {
 // credentials; emitting that value verbatim would bypass normal result/error
 // redaction and persist the secret in generator logs.
 func recoveredPanicLogText(value any) string {
-	raw := boundedtext.TruncateUTF8(fmt.Sprintf("%v", value), maxRecoveredPanicLogBytes)
-	return scrubSensitiveText(raw)
+	return recoveredPanicLogTextWithConfig(value, nil)
+}
+
+func recoveredPanicLogTextWithConfig(value any, config *RedactionConfig) string {
+	scrubbed := scrubSensitiveTextWithConfig(fmt.Sprintf("%v", value), config)
+	return boundedtext.TruncateUTF8(scrubbed, maxRecoveredPanicLogBytes)
 }

@@ -34,15 +34,15 @@ func (vu *VUser) renderErrorMessage(action dsl.Action) string {
 	args := errorMessageArgs(action.Params)
 	if len(args) == 0 {
 		if format != "" {
-			return format
+			return scrubSensitiveTextWithConfig(format, vu.RedactionConfig)
 		}
-		return action.Name
+		return scrubSensitiveTextWithConfig(action.Name, vu.RedactionConfig)
 	}
 	values := make([]any, 0, len(args))
 	for _, arg := range args {
 		values = append(values, vu.interpolateAny(arg))
 	}
-	return renderPrintfLikeMessage(format, values)
+	return scrubSensitiveTextWithConfig(renderPrintfLikeMessage(format, values), vu.RedactionConfig)
 }
 
 func errorMessageArgs(params map[string]any) []any {

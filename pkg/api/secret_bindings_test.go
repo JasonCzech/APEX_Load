@@ -99,6 +99,45 @@ func TestDiscoverSecretBindingRequirementsFindsExecutableValuesOnly(t *testing.T
 	}
 }
 
+func TestImportBatchSecretSuggestionsDoNotImplicitlyReuseCredentials(t *testing.T) {
+	script := func(id, existingReference string) map[string]any {
+		raw, err := scriptAsJSONValue(&dsl.Script{
+			ID: id, Name: "Login flow", Protocol: "http",
+			Config: dsl.ScriptConfig{
+				BaseURL: "https://example.test",
+				HTTP:    dsl.HTTPConfig{Auth: dsl.AuthConfig{Type: "bearer", Token: existingReference}},
+			},
+			Actions: []dsl.Action{{
+				Name:    "Login",
+				Type:    "request",
+				Target:  "/login",
+				Headers: map[string]string{"Authorization": "Bearer " + maskedScriptSecret},
+			}},
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw.(map[string]any)
+	}
+
+	requirements := secretBindingRequirementsForImportScripts([]any{
+		script("first", "{{secret.login-token}}"),
+		script("second", ""),
+	})
+	if len(requirements) != 2 {
+		t.Fatalf("requirements = %#v, want two redacted credentials", requirements)
+	}
+	if requirements[0].SuggestedName != "LOGIN_TOKEN_2" || requirements[1].SuggestedName != "LOGIN_TOKEN_3" {
+		t.Fatalf("suggested names = %q, %q; want existing canonical name and batch suggestions reserved",
+			requirements[0].SuggestedName, requirements[1].SuggestedName)
+	}
+	if requirements[0].SuggestedName == requirements[1].SuggestedName ||
+		!strings.Contains(requirements[0].Replacement, "{{secret.LOGIN_TOKEN_2}}") ||
+		!strings.Contains(requirements[1].Replacement, "{{secret.LOGIN_TOKEN_3}}") {
+		t.Fatalf("batch requirements implicitly reused a credential: %#v", requirements)
+	}
+}
+
 func TestDiscoverSecretBindingRequirementsSkipsIdentityAndReviewOnlyActions(t *testing.T) {
 	folderID := maskedScriptSecret
 	script := &dsl.Script{
@@ -178,10 +217,20 @@ func TestApplySecretBindingsUsesRequirementIDsAndExactOccurrences(t *testing.T) 
 		t.Fatalf("remaining requirements = %d, want config password and target: %#v", len(remaining), remaining)
 	}
 
-	for _, invalidName := range []string{"not a valid name", "lowercase", "FOO.BAR", "FOO-BAR"} {
+	for _, invalidName := range []string{"not a valid name", "FOO/BAR", "FOO@BAR"} {
 		if _, _, err := applySecretBindings(script, 4, []secretBindingSelection{{RequirementID: password.ID, SecretName: invalidName}}); err == nil {
 			t.Errorf("invalid logical secret name %q was accepted", invalidName)
 		}
+	}
+	aliasResolved, _, err := applySecretBindings(script, 4, []secretBindingSelection{{
+		RequirementID: password.ID,
+		SecretName:    "login.password-key",
+	}})
+	if err != nil {
+		t.Fatalf("compatible alias logical name: %v", err)
+	}
+	if got := aliasResolved.Actions[0].Body; !strings.Contains(got, "{{secret.LOGIN_PASSWORD_KEY}}") {
+		t.Fatalf("compatible alias was not canonicalized in script: %q", got)
 	}
 	if _, _, err := applySecretBindings(script, 4, []secretBindingSelection{{RequirementID: "secret-binding-unknown", SecretName: "LOGIN_PASSWORD"}}); err == nil {
 		t.Fatal("unknown requirement id was accepted")
@@ -378,6 +427,141 @@ func TestCreateScriptReturnsStructuredSecretBindingRequirements(t *testing.T) {
 	}
 	if got := server.runner.ListScripts(); len(got) != 1 || got[0].Script.Config.HTTP.Auth.Password != "{{secret.HTTP_PASSWORD}}" || got[0].Script.Config.HTTP.Proxy.Password != "{{secret.PROXY_PASSWORD}}" {
 		t.Fatalf("stored resolved scripts = %#v", got)
+	}
+}
+
+func TestCreateScriptReturnsBindingRequirementForInlineCredentialWithoutSentinel(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	script := &dsl.Script{
+		Name:     "Inline credential",
+		Protocol: "http",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.test",
+			HTTP: dsl.HTTPConfig{
+				Auth: dsl.AuthConfig{Type: "basic", Password: "raw-password-without-sentinel"},
+			},
+		},
+		Actions: []dsl.Action{{Name: "Ping", Type: "request", Target: "/ping"}},
+	}
+
+	response := postSecretBindingJSON(t, server, "/api/v1/scripts", map[string]any{"script": script})
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 body=%s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "raw-password-without-sentinel") {
+		t.Fatalf("binding response disclosed inline credential: %s", response.Body.String())
+	}
+	var blocked struct {
+		Code         string                     `json:"code"`
+		Requirements []SecretBindingRequirement `json:"secret_binding_requirements"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &blocked); err != nil {
+		t.Fatal(err)
+	}
+	if blocked.Code != secretBindingsRequiredCode || len(blocked.Requirements) != 1 {
+		t.Fatalf("blocked response = %+v body=%s", blocked, response.Body.String())
+	}
+	if got := server.runner.ListScripts(); len(got) != 0 {
+		t.Fatalf("inline credential was persisted: %#v", got)
+	}
+}
+
+func TestUpdateScriptReturnsBindingRequirementForNewInlineCredential(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name: "Safe stored script", Protocol: "http",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.test",
+			HTTP:    dsl.HTTPConfig{Auth: dsl.AuthConfig{Type: "basic", Password: "{{secret.EXISTING_PASSWORD}}"}},
+		},
+		Actions: []dsl.Action{{Name: "Ping", Type: "request", Target: "/ping"}},
+	})
+	incoming := cloneScriptDefinition(stored.Script)
+	incoming.Config.HTTP.Proxy.Password = "new-inline-proxy-password"
+	body, err := json.Marshal(map[string]any{"script": incoming})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/scripts/"+stored.ID, bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, request)
+
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422 body=%s", response.Code, response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "new-inline-proxy-password") {
+		t.Fatalf("binding response disclosed update credential: %s", response.Body.String())
+	}
+	var blocked struct {
+		Code         string                     `json:"code"`
+		Requirements []SecretBindingRequirement `json:"secret_binding_requirements"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &blocked); err != nil {
+		t.Fatal(err)
+	}
+	if blocked.Code != secretBindingsRequiredCode || len(blocked.Requirements) != 1 || blocked.Requirements[0].Path != "/config/http/proxy/password" {
+		t.Fatalf("blocked response = %+v body=%s", blocked, response.Body.String())
+	}
+	unchanged, ok := server.runner.GetScript(stored.ID)
+	if !ok || unchanged.Script.Config.HTTP.Proxy.Password != "" || unchanged.Script.Config.HTTP.Auth.Password != "{{secret.EXISTING_PASSWORD}}" {
+		t.Fatalf("blocked update changed durable script: %#v", unchanged)
+	}
+}
+
+func TestCreateAndUpdatePersistProjectedReviewMetadata(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	const createSecret = "create-review-secret-never-store"
+	script := &dsl.Script{
+		Name: "Projected review evidence", Protocol: "http",
+		Config: dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{
+			{Name: "Ping", Type: "request", Target: "/ping"},
+			{Name: "Source review", Type: "source_review", Target: "review", Metadata: map[string]any{
+				"authorization": "Bearer " + createSecret,
+			}},
+		},
+	}
+	create := postSecretBindingJSON(t, server, "/api/v1/scripts", map[string]any{"script": script})
+	if create.Code != http.StatusCreated {
+		t.Fatalf("create status = %d body=%s", create.Code, create.Body.String())
+	}
+	storedScripts := server.runner.ListScripts()
+	if len(storedScripts) != 1 {
+		t.Fatalf("stored scripts = %#v", storedScripts)
+	}
+	storedPayload, err := json.Marshal(storedScripts[0].Script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(storedPayload), createSecret) || !strings.Contains(string(storedPayload), maskedScriptSecret) {
+		t.Fatalf("create persisted unprojected review metadata: %s", storedPayload)
+	}
+
+	const updateSecret = "update-review-secret-never-store"
+	incoming := cloneScriptDefinition(storedScripts[0].Script)
+	incoming.Actions[1].Metadata["authorization"] = "Bearer " + updateSecret
+	body, err := json.Marshal(map[string]any{"script": incoming})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/scripts/"+storedScripts[0].ID, bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("update status = %d body=%s", response.Code, response.Body.String())
+	}
+	updated, ok := server.runner.GetScript(storedScripts[0].ID)
+	if !ok {
+		t.Fatal("updated script not found")
+	}
+	updatedPayload, err := json.Marshal(updated.Script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(updatedPayload), updateSecret) || !strings.Contains(string(updatedPayload), maskedScriptSecret) {
+		t.Fatalf("update persisted unprojected review metadata: %s", updatedPayload)
 	}
 }
 

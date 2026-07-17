@@ -101,6 +101,55 @@ func (f replayDebugControllerFunc) BeforeAction(ctx context.Context, action Repl
 	return f(ctx, action)
 }
 
+func TestReplayDebugActionsAreScrubbedBeforeControllersAndProgressCallbacks(t *testing.T) {
+	const secret = "inline-debug-target-secret"
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true}, nil
+	})
+	script := &dsl.Script{
+		Name: "debug-action-redaction", Protocol: protocolName,
+		Actions: []dsl.Action{{
+			Name:   "request-" + secret,
+			Type:   "request",
+			Method: "GET",
+			Target: "https://example.test/?api_key=" + secret,
+		}},
+	}
+	var controllerAction ReplayDebugAction
+	var progressAction *ReplayDebugAction
+	_, err := ReplayScript(context.Background(), script, ReplayOptions{
+		IgnoreThinkTime: true,
+		RedactionRules:  []RedactionRule{{Pattern: secret}},
+		DebugController: replayDebugControllerFunc(func(_ context.Context, action ReplayDebugAction) error {
+			controllerAction = action
+			return nil
+		}),
+		OnProgress: func(event ReplayProgressEvent) {
+			if event.Type == ReplayProgressActionStarted {
+				progressAction = event.Action
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for label, action := range map[string]*ReplayDebugAction{
+		"controller": &controllerAction,
+		"progress":   progressAction,
+	} {
+		if action == nil {
+			t.Fatalf("%s action was not observed", label)
+		}
+		encoded, err := json.Marshal(action)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(string(encoded), secret) || !strings.Contains(string(encoded), redactedPayloadValue) {
+			t.Fatalf("%s action was not disclosure-safe: %s", label, encoded)
+		}
+	}
+}
+
 func TestReplayScriptRunsAllPhasesAndInterpolatesExtractions(t *testing.T) {
 	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
 		switch action.Name {
@@ -142,11 +191,11 @@ func TestReplayScriptRunsAllPhasesAndInterpolatesExtractions(t *testing.T) {
 	if len(report.Events) != 4 {
 		t.Fatalf("event count = %d, want 4", len(report.Events))
 	}
-	if report.Events[2].Target != "/users/abc123" {
-		t.Fatalf("profile target = %q, want /users/abc123", report.Events[2].Target)
+	if report.Events[2].Target != "/users/[REDACTED]" {
+		t.Fatalf("profile target = %q, want /users/[REDACTED]", report.Events[2].Target)
 	}
-	if got := report.FinalVariables["token"]; got != "abc123" {
-		t.Fatalf("final token = %q, want abc123", got)
+	if got := report.FinalVariables["token"]; got != redactedPayloadValue {
+		t.Fatalf("final token = %q, want redacted", got)
 	}
 	if report.Events[1].Phase != "action" || report.Events[3].Phase != "teardown" {
 		t.Fatalf("unexpected phases: %#v", report.Events)
@@ -658,6 +707,41 @@ func TestReplayScriptCarriesBrowserArtifacts(t *testing.T) {
 	}
 }
 
+func TestReplaySensitiveSeedValuesAreRedactedFromEventsAndScreenshots(t *testing.T) {
+	const seedSecret = "tiny-seed-value"
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{
+			ActionName:       action.Name,
+			Success:          true,
+			PageURL:          "https://example.test/" + seedSecret,
+			ScreenshotBase64: "opaque-image",
+			Snapshot:         &protocol.ErrorSnapshot{ScreenshotBase64: "opaque-snapshot-image"},
+		}, nil
+	})
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name:     "Sensitive seed replay",
+		Protocol: protocolName,
+		Actions:  []dsl.Action{{Name: "seed", Type: "request", Target: "https://example.test/{{var.password}}"}},
+	}, ReplayOptions{
+		IgnoreThinkTime: true,
+		Variables:       map[string]string{"password": seedSecret},
+	})
+	if err != nil {
+		t.Fatalf("ReplayScript: %v", err)
+	}
+	if len(report.Events) != 1 {
+		t.Fatalf("events = %d, want 1", len(report.Events))
+	}
+	event := report.Events[0]
+	serialized, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(serialized), seedSecret) || event.Screenshot != "" || event.Snapshot != nil && event.Snapshot.ScreenshotBase64 != "" {
+		t.Fatalf("replay exposed sensitive seed evidence: %s", serialized)
+	}
+}
+
 func TestReplayScriptAppliesCustomRedactionRulesToEventsAndSnapshots(t *testing.T) {
 	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
 		return &protocol.Result{
@@ -776,8 +860,8 @@ func TestReplayScriptExpandsHTTPSequenceChildren(t *testing.T) {
 	if !report.Events[1].Success {
 		t.Fatalf("c_use failed (correlation not threaded): %q", report.Events[1].ErrorMessage)
 	}
-	if report.Events[1].Target != "/use/S9" {
-		t.Fatalf("c_use target=%q want /use/S9 (child->child correlation)", report.Events[1].Target)
+	if report.Events[1].Target != "/use/[REDACTED]" {
+		t.Fatalf("c_use target=%q want /use/[REDACTED] (child->child correlation)", report.Events[1].Target)
 	}
 	if report.Events[0].EventID == report.Events[1].EventID {
 		t.Fatalf("child event IDs not distinct: %q", report.Events[0].EventID)

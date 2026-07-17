@@ -201,7 +201,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Go from go.mod
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: true
@@ -258,13 +258,13 @@ jobs:
           persist-credentials: false
 
       - name: Setup Go from go.mod
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: false
 
       - name: Setup JDK 21
-        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
         with:
           distribution: temurin
           java-version: "21"
@@ -302,13 +302,13 @@ jobs:
           persist-credentials: false
 
       - name: Setup Go from go.mod
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Setup JDK 21
-        uses: actions/setup-java@c5195efecf7bdfc987ee8bae7a71cb8b11521c00 # v4.7.1
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5.5.0
         with:
           distribution: temurin
           java-version: "21"
@@ -323,6 +323,7 @@ jobs:
           bi=github.com/jasonczech/apexload/pkg/buildinfo
           ldflags="-s -w -X ${bi}.Version=${BUILD_VERSION} -X ${bi}.Commit=${BUILD_COMMIT} -X ${bi}.BuildTime=${BUILD_TIME}"
           go build -trimpath -ldflags "${ldflags}" ./cmd/...
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags "${ldflags}" ./cmd/...
           VERSION="${BUILD_VERSION}" COMMIT="${BUILD_COMMIT}" BUILD_TIME="${BUILD_TIME}" make build
 
       - name: Smoke-test command surfaces
@@ -378,7 +379,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Go from go.mod
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: true
@@ -421,7 +422,7 @@ jobs:
           cache-dependency-path: dashboard/package-lock.json
 
       - name: Setup Go from go.mod
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: false
@@ -510,6 +511,96 @@ jobs:
             dashboard/playwright-report/
           if-no-files-found: warn
           retention-days: 14
+
+  bruno-runner:
+    name: Bruno compatibility runner
+    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.id == github.event.repository.id && github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'apexload-ci-unprivileged' }}
+    timeout-minutes: 35
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: ${{ inputs.checkout-ref || github.sha }}
+          persist-credentials: false
+
+      - name: Setup Node 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22.22.0
+          cache: false
+
+      - name: Enable pinned pnpm
+        run: corepack enable
+
+      - name: Install pinned Bruno dependencies
+        working-directory: runners/bruno
+        run: pnpm install --frozen-lockfile
+
+      - name: Audit runner dependencies
+        working-directory: runners/bruno
+        run: pnpm audit --audit-level moderate
+
+      - name: Test compatibility runner
+        working-directory: runners/bruno
+        run: pnpm test
+
+      - name: Verify generated CycloneDX manifest
+        working-directory: runners/bruno
+        run: |
+          set -euo pipefail
+          pnpm run sbom
+          git diff --exit-code -- sbom.cdx.json
+
+      - name: Build runner image
+        run: docker build --file runners/bruno/Dockerfile --tag apexload-bruno-runner:ci runners/bruno
+
+      - name: Smoke-test runner image
+        run: |
+          set -euo pipefail
+          container_id="$(docker run --detach --rm \
+            --env APEXLOAD_BRUNO_ALLOW_DIRECT_EGRESS=true \
+            --env APEXLOAD_BRUNO_RUNNER_ADDR=0.0.0.0 \
+            --publish 127.0.0.1::8097 \
+            apexload-bruno-runner:ci)"
+          cleanup() {
+            docker rm --force "${container_id}" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          port="$(docker port "${container_id}" 8097/tcp | sed -E 's/.*:([0-9]+)$/\1/')"
+          for _ in $(seq 1 30); do
+            if curl --silent --fail "http://127.0.0.1:${port}/v1/health" >/dev/null; then break; fi
+            sleep 1
+          done
+          curl --silent --show-error --fail "http://127.0.0.1:${port}/v1/capabilities" \
+            | jq -e '.compatibility_version == "3.5.2" and .streaming == true' >/dev/null
+
+      - name: Generate runner SPDX SBOM
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0
+        with:
+          image: apexload-bruno-runner:ci
+          format: spdx-json
+          output-file: sbom-bruno-runner.spdx.json
+          upload-artifact: false
+
+      - name: Scan runner image for fixable high-severity vulnerabilities
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: apexload-bruno-runner:ci
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: false
+          exit-code: "1"
+          timeout: 10m0s
+
+      - name: Upload runner SBOM
+        if: always()
+        uses: ./.github/actions/upload-artifact
+        with:
+          name: sbom-bruno-runner
+          path: sbom-bruno-runner.spdx.json
+          if-no-files-found: error
+          retention-days: 30
 
   deployment-artifacts:
     name: Deployment artifact validation
@@ -671,6 +762,25 @@ jobs:
             exit 1
           fi
 
+          bruno_values=(
+            "${values[@]}"
+            --set bruno.enabled=true
+            --set bruno.artifactPersistence.existingClaim=apexload-bruno-artifacts
+            --set bruno.egressBrokerUrl=http://apexload-egress-broker.apexload.svc.cluster.local:8080
+            --set bruno.keyVaultKeyId=https://ci-apexload.vault.azure.net/keys/bruno/00000000000000000000000000000000
+          )
+          helm lint deployments/helm/apexload "${bruno_values[@]}"
+          helm template apexload deployments/helm/apexload --namespace apexload \
+            "${bruno_values[@]}" >"${RUNNER_TEMP}/apexload-helm-bruno.yaml"
+          "${RUNNER_TEMP}/bin/kubeconform" -strict \
+            -schema-location default \
+            -schema-location "${RUNNER_TEMP}/crd-schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+            "${RUNNER_TEMP}/apexload-helm-bruno.yaml"
+          if grep -Ein 'changeme|change-me' "${RUNNER_TEMP}/apexload-helm-bruno.yaml"; then
+            echo "rendered Bruno Helm manifest contains unresolved placeholder values" >&2
+            exit 1
+          fi
+
       - name: Validate Docker Compose and Prometheus
         run: |
           set -euo pipefail
@@ -707,10 +817,10 @@ jobs:
           persist-credentials: false
 
       - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@e468171a9de216ec08956ac3ada2f0791b6bd435 # v3.11.1
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
 
       - name: Build image from clean checkout
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83 # v6.18.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
           file: Dockerfile
@@ -770,7 +880,7 @@ jobs:
           persist-credentials: false
 
       - name: Review dependency changes
-        uses: actions/dependency-review-action@3c4e3dcb1aa7874d2c16be7d79418e9b7efd6261 # v4.8.2
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
         with:
           fail-on-severity: high
           comment-summary-in-pr: never
@@ -788,7 +898,7 @@ jobs:
           persist-credentials: false
 
       - name: Setup Go from go.mod
-        uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: true
@@ -850,6 +960,7 @@ jobs:
       - build
       - protocol-tags
       - dashboard
+      - bruno-runner
       - deployment-artifacts
       - containers
       - dependency-review
@@ -869,7 +980,7 @@ jobs:
 
           full_ci_jobs=(
             workflow-policy go-quality go-tests build protocol-tags dashboard
-            deployment-artifacts containers govulncheck codeql
+            bruno-runner deployment-artifacts containers govulncheck codeql
           )
           expected_success=()
           expected_skipped=()

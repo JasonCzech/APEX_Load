@@ -1210,6 +1210,45 @@ func TestConvertMaskedBodyArgRedactsWithoutFlag(t *testing.T) {
 	}
 }
 
+func TestMaskedBodyPublicReferenceDoesNotFingerprintOpaquePayload(t *testing.T) {
+	convert := func(maskedPayload string) dsl.Action {
+		t.Helper()
+		parsed, err := ParseActionFile("Action.c", `Action()
+{
+	web_rest("POST: SubmitOrder",
+		"URL=https://api.example.test/orders",
+		"Method=POST",
+		"Body=lr_unmask(\"`+maskedPayload+`\")",
+		LAST);
+}`)
+		if err != nil {
+			t.Fatalf("parse error: %v", err)
+		}
+		result, err := Convert([]*ParsedAction{parsed}, ConvertOptions{})
+		if err != nil {
+			t.Fatalf("convert error: %v", err)
+		}
+		if len(result.Script.Actions) != 1 {
+			t.Fatalf("action count = %d, want 1", len(result.Script.Actions))
+		}
+		return result.Script.Actions[0]
+	}
+
+	first := convert("FIRST-OPAQUE-PAYLOAD")
+	second := convert("A-DIFFERENT-AND-LONGER-OPAQUE-PAYLOAD")
+	if first.Body != second.Body {
+		t.Fatalf("public secret references fingerprint opaque payloads: %q != %q", first.Body, second.Body)
+	}
+	if metadataString(first.Metadata, "source_secret_ref") != metadataString(second.Metadata, "source_secret_ref") {
+		t.Fatalf("public source-secret metadata fingerprints opaque payloads: %#v != %#v", first.Metadata, second.Metadata)
+	}
+	for _, action := range []dsl.Action{first, second} {
+		if _, exists := action.Metadata["source_secret_hash"]; exists {
+			t.Fatalf("public action retained an opaque-payload hash: %#v", action.Metadata)
+		}
+	}
+}
+
 func findSourceReviewMappingByTarget(t *testing.T, result *ConvertResult, targetName string) SourceReviewMapping {
 	t.Helper()
 	if result.SourceReview == nil {

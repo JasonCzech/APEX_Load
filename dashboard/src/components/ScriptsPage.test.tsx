@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ApiError } from '../hooks/apiClient'
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import ScriptsPage from './ScriptsPage'
@@ -13,6 +14,12 @@ import ScriptsPage from './ScriptsPage'
 const apiMock = {
   listScripts: vi.fn(),
   getScript: vi.fn(),
+  getScriptSecretStatus: vi.fn(),
+  getProjectSecretStatuses: vi.fn(),
+  cloneScriptDraft: vi.fn(),
+  applySecretBindings: vi.fn(),
+  migrateImportSecrets: vi.fn(),
+  discardImportSecretSession: vi.fn(),
   deleteScript: vi.fn(),
   listTests: vi.fn(),
   listAuthoringTemplates: vi.fn(),
@@ -23,6 +30,7 @@ const apiMock = {
   deleteAuthoringSession: vi.fn(),
   previewAuthoringCorrelation: vi.fn(),
   getAuthEffectiveAccess: vi.fn(),
+  getSystemSettings: vi.fn(),
 }
 
 const libraryApiMock = {
@@ -51,10 +59,11 @@ vi.mock('../hooks/useProject', () => ({
 }))
 
 vi.mock('./ScriptEditor', () => ({
-  default: ({ initialScript, scriptId, onSave, onClose }: { initialScript?: { name?: string }, scriptId?: string | null, onSave?: (script: { id: string; name: string }) => void, onClose?: () => void }) => (
+  default: ({ initialScript, initiallyDirty, scriptId, onSave, onClose }: { initialScript?: { name?: string }, initiallyDirty?: boolean, scriptId?: string | null, onSave?: (script: { id: string; name: string }) => void, onClose?: () => void }) => (
     <div data-testid="script-editor">
       <span>editor:{initialScript?.name || 'blank'}</span>
       <span>script-id:{scriptId || 'none'}</span>
+      <span>initially-dirty:{initiallyDirty ? 'yes' : 'no'}</span>
       <button onClick={() => onSave?.({ id: 'saved-script-1', name: initialScript?.name || 'Saved Script' })}>mock-save</button>
       <button onClick={onClose}>mock-close</button>
     </div>
@@ -182,6 +191,7 @@ function TopbarContributionHarness() {
 
 const importSurfaces = [
   surface('openapi', 'OpenAPI / Swagger', 'OpenAPI', 'Contracts & Collections', 10, 'openapi', 'Generate HTTP scripts from OpenAPI 3.x or Swagger 2.0 contracts.'),
+  surface('bruno', 'Bruno Collection', 'Bruno', 'Contracts & Collections', 15, 'bruno', 'Preserve and execute Bruno collections without translating source behavior.'),
   surface('postman', 'Postman Collection', 'Postman', 'Contracts & Collections', 20, 'postman', 'Convert Postman collections and environments into script drafts.'),
   surface('wsdl', 'WSDL / SOAP', 'WSDL', 'Contracts & Collections', 30, 'wsdl', 'Import SOAP services and operations from WSDL.'),
   surface('asyncapi', 'AsyncAPI', 'AsyncAPI', 'Contracts & Collections', 40, 'asyncapi', 'Model event-driven flows from AsyncAPI contracts.'),
@@ -244,6 +254,7 @@ describe('ScriptsPage', () => {
           name: 'Existing Script',
           protocol: 'http',
           version: '1.0.0',
+          project_id: 'project-1',
           created_at: '2026-05-12T20:00:00Z',
           scenario_count: 0,
           associated_releases: [],
@@ -260,6 +271,44 @@ describe('ScriptsPage', () => {
       ],
     })
     apiMock.getScript.mockResolvedValue({ script: null })
+    apiMock.getScriptSecretStatus.mockResolvedValue({
+      script_id: 'script-1',
+      project_id: 'project-1',
+      required: [],
+      configured: [],
+      missing: [],
+      secrets: [],
+      capabilities: {
+        provider: 'encrypted_database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: false,
+      },
+    })
+    apiMock.cloneScriptDraft.mockResolvedValue({
+      script: {
+        name: 'Existing Script (Copy)',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://existing.example.com' },
+        actions: [],
+      },
+      secret_binding_requirements: [],
+    })
+    apiMock.getProjectSecretStatuses.mockResolvedValue({
+      project_id: 'project-1',
+      capabilities: {
+        provider: 'encrypted_database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: true,
+      },
+      secrets: [],
+    })
+    apiMock.applySecretBindings.mockResolvedValue({ script: null, secret_binding_requirements: [] })
+    apiMock.migrateImportSecrets.mockResolvedValue({ project_id: 'project-1', secrets: [], count: 0 })
     apiMock.deleteScript.mockResolvedValue({})
     apiMock.listTests.mockResolvedValue({ tests: [] })
     apiMock.listAuthoringTemplates.mockResolvedValue({ templates: [], count: 0 })
@@ -298,7 +347,12 @@ describe('ScriptsPage', () => {
         },
       ],
     })
+    apiMock.getSystemSettings.mockResolvedValue({
+      script_imports: { allow_source_secret_migration: false },
+    })
     window.localStorage.removeItem('apexload.settings.focusSection')
+    window.localStorage.removeItem('apexload.settings.projectSubsection')
+    window.localStorage.removeItem('apexload.settings.projectId')
   })
 
   afterEach(async () => {
@@ -308,6 +362,102 @@ describe('ScriptsPage', () => {
     container.remove()
     vi.clearAllMocks()
     window.localStorage.removeItem('apexload.settings.focusSection')
+    window.localStorage.removeItem('apexload.settings.projectSubsection')
+    window.localStorage.removeItem('apexload.settings.projectId')
+  })
+
+  it('preserves the script project when opening Project Secrets from library health', async () => {
+    apiMock.getScriptSecretStatus.mockResolvedValueOnce({
+      script_id: 'script-1',
+      project_id: 'project-1',
+      required: ['LOGIN_TOKEN'],
+      configured: [],
+      missing: ['LOGIN_TOKEN'],
+      secrets: [{ name: 'LOGIN_TOKEN', configured: false }],
+      capabilities: {
+        provider: 'encrypted_database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: false,
+      },
+    })
+    const onNavigate = vi.fn()
+
+    await act(async () => {
+      root.render(<ScriptsPage onNavigate={onNavigate} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const configureButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Configure secrets')
+    expect(configureButton).not.toBeNull()
+    await act(async () => {
+      configureButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(onNavigate).toHaveBeenCalledWith('settings')
+    expect(window.localStorage.getItem('apexload.settings.focusSection')).toBe('projects')
+    expect(window.localStorage.getItem('apexload.settings.projectSubsection')).toBe(JSON.stringify('secrets'))
+    expect(window.localStorage.getItem('apexload.settings.projectId')).toBe('project-1')
+  })
+
+  it('bounds secret-status concurrency and publishes each completed row incrementally', async () => {
+    const scripts = Array.from({ length: 20 }, (_, index) => ({
+      ...scriptRecord(`script-${index + 1}`, `Script ${index + 1}`, 'project-1'),
+      script: {
+        name: `Script ${index + 1}`,
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: '' },
+        actions: [{ name: 'Call', type: 'http', target: '/', headers: { Authorization: `Bearer {{secret.TOKEN_${index + 1}}}` } }],
+      },
+    }))
+    apiMock.listScripts.mockResolvedValueOnce({ scripts, count: scripts.length })
+    let active = 0
+    let maxActive = 0
+    const resolvers = new Map<string, (value: unknown) => void>()
+    apiMock.getScriptSecretStatus.mockImplementation((scriptId: string) => new Promise(resolve => {
+      active += 1
+      maxActive = Math.max(maxActive, active)
+      resolvers.set(scriptId, value => {
+        active -= 1
+        resolve(value)
+      })
+    }))
+
+    await act(async () => {
+      root.render(<ScriptsPage />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.getScriptSecretStatus).toHaveBeenCalledTimes(8)
+    expect(maxActive).toBe(8)
+    const firstPendingRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Script 1'))
+    expect(firstPendingRow?.textContent).toContain('Checking secrets')
+
+    await act(async () => {
+      resolvers.get('script-1')?.({
+        script_id: 'script-1',
+        project_id: 'project-1',
+        required: ['TOKEN_1'],
+        configured: ['TOKEN_1'],
+        missing: [],
+        secrets: [{ name: 'TOKEN_1', configured: true }],
+        capabilities: { provider: 'encrypted_database', writable: true },
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(apiMock.getScriptSecretStatus).toHaveBeenCalledTimes(9)
+    expect(maxActive).toBe(8)
+    const readyRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Script 1'))
+    const stillPendingRow = Array.from(container.querySelectorAll('tr')).find(row => row.textContent?.includes('Script 2'))
+    expect(readyRow?.textContent).not.toContain('Checking secrets')
+    expect(stillPendingRow?.textContent).toContain('Checking secrets')
   })
 
   it('routes sample import edit handoff through the draft editor and into persisted edit mode after save', async () => {
@@ -531,7 +681,7 @@ describe('ScriptsPage', () => {
     expect(countImportOption('Event Hubs Capture')).toBe(1)
     expect(countImportOption('Broker Config')).toBe(1)
     expect(countImportOption('Oracle E-Business / Siebel Review')).toBe(1)
-    expect(container.querySelectorAll('.script-create-import-groups .script-create-option')).toHaveLength(15)
+    expect(container.querySelectorAll('.script-create-import-groups .script-create-option')).toHaveLength(16)
     expect(countImportOption('Import SOAP Assets')).toBe(0)
   })
 
@@ -552,7 +702,7 @@ describe('ScriptsPage', () => {
     expect(container.textContent).toContain('Contracts & Collections')
     expect(container.textContent).toContain('Traffic & Samples')
     expect(container.textContent).toContain('Messaging & Cloud Artifacts')
-    expect(container.querySelectorAll('.script-create-import-groups .script-create-option')).toHaveLength(15)
+    expect(container.querySelectorAll('.script-create-import-groups .script-create-option')).toHaveLength(16)
     expect(container.textContent).toContain('HAR Traffic')
     expect(container.textContent).toContain('Oracle E-Business / Siebel Review')
     expect(container.textContent).not.toContain('No import sources are available from this controller.')
@@ -605,10 +755,9 @@ describe('ScriptsPage', () => {
   })
 
   it('models a new draft from an existing saved script without editing the original', async () => {
-    apiMock.getScript.mockResolvedValueOnce({
+    apiMock.cloneScriptDraft.mockResolvedValueOnce({
       script: {
-        id: 'script-1',
-        name: 'Existing Script',
+        name: 'Existing Script (Copy)',
         version: '1.0.0',
         protocol: 'http',
         project_id: 'project-1',
@@ -629,14 +778,281 @@ describe('ScriptsPage', () => {
     await clickButton('Existing Script')
     await flushPromises()
 
-    expect(apiMock.getScript).toHaveBeenCalledWith('script-1')
+    expect(apiMock.cloneScriptDraft).toHaveBeenCalledWith('script-1', {
+      import_detected_credential_values: false,
+    })
     expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
     expect(container.textContent).toContain('editor:Existing Script (Copy)')
     expect(container.textContent).toContain('script-id:none')
   })
 
+  it('ignores a late Model Existing response after authoring navigation', async () => {
+    let resolveClone: ((value: {
+      script: {
+        name: string
+        version: string
+        protocol: string
+        config: { base_url: string }
+        actions: unknown[]
+      }
+      secret_binding_requirements: unknown[]
+    }) => void) | undefined
+    apiMock.cloneScriptDraft.mockReturnValueOnce(new Promise(resolve => {
+      resolveClone = resolve
+    }))
+
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+    await flushPromises()
+
+    await clickButton('Existing Script')
+    expect(apiMock.cloneScriptDraft).toHaveBeenCalledTimes(1)
+    await clickButton('Script Library')
+    expect(container.textContent).not.toContain('Model From Existing Script')
+
+    await act(async () => {
+      resolveClone?.({
+        script: {
+          name: 'Late Existing Script (Copy)',
+          version: '1.0.0',
+          protocol: 'http',
+          config: { base_url: 'https://late.example.com' },
+          actions: [],
+        },
+        secret_binding_requirements: [],
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
+    expect(container.textContent).not.toContain('Late Existing Script (Copy)')
+    expect(container.textContent).toContain('Script Library')
+  })
+
+  it('optionally migrates recoverable source credentials while always applying safe references', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValueOnce({
+      enabled: true,
+      authenticated: true,
+      project_id: 'project-1',
+      resources: [{
+        id: 'scripts_and_projects',
+        name: 'Scripts and projects',
+        description: '',
+        operations: [
+          { id: 'manage_scripts', label: 'Manage scripts', allowed: true },
+          { id: 'manage_projects', label: 'Manage projects', allowed: true },
+        ],
+      }],
+    })
+    apiMock.getSystemSettings.mockResolvedValueOnce({
+      script_imports: { allow_source_secret_migration: true },
+    })
+    const maskedDraft = {
+      name: 'Existing Script (Copy)',
+      version: '1.0.0',
+      protocol: 'http',
+      project_id: 'project-1',
+      config: { base_url: 'https://existing.example.com' },
+      actions: [{
+        name: 'Login',
+        type: 'request',
+        method: 'POST',
+        target: '/login',
+        headers: { Authorization: 'Bearer [REDACTED]' },
+      }],
+    }
+    const safeDraft = {
+      ...maskedDraft,
+      actions: [{
+        ...maskedDraft.actions[0],
+        headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' },
+      }],
+    }
+    apiMock.cloneScriptDraft.mockResolvedValueOnce({
+      script: safeDraft,
+      secret_binding_requirements: [{
+        id: 'login-token',
+        path: '/actions/0/headers/Authorization',
+        label: 'Login token',
+        suggested_name: 'LOGIN_TOKEN',
+        replacement: 'Bearer {{secret.LOGIN_TOKEN}}',
+        source_value_available: true,
+      }, {
+        id: 'redacted-only',
+        path: '/actions/0/body/password',
+        label: 'Password',
+        suggested_name: 'LOGIN_PASSWORD',
+        replacement: '{{secret.LOGIN_PASSWORD}}',
+      }],
+      source_secret_session_id: 'session-1',
+      source_value_requirement_ids: ['login-token'],
+      secret_provider_capabilities: {
+        provider: 'database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: true,
+      },
+    })
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+    await flushPromises()
+
+    const migrateToggle = container.querySelector<HTMLInputElement>('.script-create-secret-migration input')
+    expect(migrateToggle).not.toBeNull()
+    await act(async () => migrateToggle?.click())
+    await clickButton('Existing Script')
+    await flushPromises()
+
+    expect(apiMock.cloneScriptDraft).toHaveBeenCalledWith('script-1', {
+      import_detected_credential_values: true,
+    })
+    expect(apiMock.applySecretBindings).not.toHaveBeenCalled()
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledWith('project-1', ['LOGIN_TOKEN'])
+    expect(apiMock.migrateImportSecrets).toHaveBeenCalledWith({
+      project_id: 'project-1',
+      source_secret_session_id: 'session-1',
+      secrets: [{ requirement_id: 'login-token', secret_name: 'LOGIN_TOKEN' }],
+    })
+    expect(apiMock.discardImportSecretSession).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('editor:Existing Script (Copy)')
+  })
+
+  it('does not consume a Model Existing source-secret session after navigation during the status probe', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValueOnce({
+      enabled: true,
+      authenticated: true,
+      project_id: 'project-1',
+      resources: [{
+        id: 'scripts_and_projects',
+        name: 'Scripts and projects',
+        description: '',
+        operations: [
+          { id: 'manage_scripts', label: 'Manage scripts', allowed: true },
+          { id: 'manage_projects', label: 'Manage projects', allowed: true },
+        ],
+      }],
+    })
+    apiMock.getSystemSettings.mockResolvedValueOnce({
+      script_imports: { allow_source_secret_migration: true },
+    })
+    apiMock.cloneScriptDraft.mockResolvedValueOnce({
+      script: {
+        name: 'Existing Script (Copy)',
+        version: '1.0.0',
+        protocol: 'http',
+        project_id: 'project-1',
+        config: { base_url: 'https://existing.example.com' },
+        actions: [{ name: 'Login', type: 'request', target: '/', headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' } }],
+      },
+      secret_binding_requirements: [{
+        id: 'login-token',
+        path: '/actions/0/headers/Authorization',
+        label: 'Login token',
+        suggested_name: 'LOGIN_TOKEN',
+        replacement: 'Bearer {{secret.LOGIN_TOKEN}}',
+        source_value_available: true,
+      }],
+      source_secret_session_id: 'session-late',
+    })
+    let resolveStatus: ((value: unknown) => void) | undefined
+    apiMock.getProjectSecretStatuses.mockReturnValueOnce(new Promise(resolve => {
+      resolveStatus = resolve
+    }))
+
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+    await flushPromises()
+    const migrateToggle = container.querySelector<HTMLInputElement>('.script-create-secret-migration input')
+    await act(async () => migrateToggle?.click())
+    await clickButton('Existing Script')
+    await flushPromises()
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledWith('project-1', ['LOGIN_TOKEN'])
+
+    await clickButton('Script Library')
+    await act(async () => {
+      resolveStatus?.({ project_id: 'project-1', secrets: [] })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(apiMock.migrateImportSecrets).not.toHaveBeenCalled()
+    expect(apiMock.discardImportSecretSession).toHaveBeenCalledWith({
+      project_id: 'project-1',
+      source_secret_session_id: 'session-late',
+    })
+    expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
+  })
+
+  it('opens a safe Model Existing draft when optional source migration conflicts', async () => {
+    apiMock.getAuthEffectiveAccess.mockResolvedValueOnce({
+      enabled: true,
+      authenticated: true,
+      project_id: 'project-1',
+      resources: [{
+        id: 'scripts_and_projects',
+        name: 'Scripts and projects',
+        description: '',
+        operations: [
+          { id: 'manage_scripts', label: 'Manage scripts', allowed: true },
+          { id: 'manage_projects', label: 'Manage projects', allowed: true },
+        ],
+      }],
+    })
+    apiMock.getSystemSettings.mockResolvedValueOnce({
+      script_imports: { allow_source_secret_migration: true },
+    })
+    apiMock.cloneScriptDraft.mockResolvedValueOnce({
+      script: {
+        name: 'Existing Script (Copy)',
+        version: '1.0.0',
+        protocol: 'http',
+        project_id: 'project-1',
+        config: { base_url: 'https://existing.example.com' },
+        actions: [{ name: 'Login', type: 'request', target: '/', headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' } }],
+      },
+      secret_binding_requirements: [{
+        id: 'login-token',
+        path: '/actions/0/headers/Authorization',
+        label: 'Login token',
+        suggested_name: 'LOGIN_TOKEN',
+        replacement: 'Bearer {{secret.LOGIN_TOKEN}}',
+        source_value_available: true,
+      }],
+      source_secret_session_id: 'session-conflict',
+    })
+    apiMock.migrateImportSecrets.mockRejectedValueOnce(new ApiError('provider write failed', 502, {
+      partial: true,
+      source_secret_session_consumed: true,
+      manual_configuration_required: true,
+      remaining_names: ['LOGIN_TOKEN'],
+      migrated: [{ name: 'ALREADY_CREATED_TOKEN', provider: 'database' }],
+    }))
+
+    await act(async () => {
+      root.render(<ScriptsPage initialMode="create-options" />)
+    })
+    await flushPromises()
+
+    const migrateToggle = container.querySelector<HTMLInputElement>('.script-create-secret-migration input')
+    await act(async () => migrateToggle?.click())
+    await clickButton('Existing Script')
+    await flushPromises()
+
+    expect(container.querySelector('[data-testid="script-editor"]')).not.toBeNull()
+    expect(container.textContent).toContain('editor:Existing Script (Copy)')
+    expect(container.textContent).toContain('initially-dirty:yes')
+    expect(container.textContent).toContain('safe draft was opened without importing detected credential values')
+    expect(container.textContent).toContain('Remaining credentials: LOGIN_TOKEN')
+    expect(container.textContent).not.toContain('ALREADY_CREATED_TOKEN')
+  })
+
   it('surfaces a recoverable error when an existing script cannot be cloned', async () => {
-    apiMock.getScript.mockRejectedValueOnce(new Error('clone source unavailable'))
+    apiMock.cloneScriptDraft.mockRejectedValueOnce(new Error('clone source unavailable'))
 
     await act(async () => {
       root.render(<ScriptsPage initialMode="create-options" />)
@@ -648,7 +1064,9 @@ describe('ScriptsPage', () => {
     await clickButton('Existing Script')
     await flushPromises()
 
-    expect(apiMock.getScript).toHaveBeenCalledWith('script-1')
+    expect(apiMock.cloneScriptDraft).toHaveBeenCalledWith('script-1', {
+      import_detected_credential_values: false,
+    })
     expect(container.querySelector('[data-testid="script-editor"]')).toBeNull()
     expect(container.textContent).toContain('clone source unavailable')
   })

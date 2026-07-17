@@ -186,6 +186,7 @@ func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req Br
 			RuntimeProfile:  &session.RuntimeProfile,
 			Variables:       req.Variables,
 			RedactionRules:  req.RedactionRules,
+			SecretResolver:  req.SecretResolver,
 			IgnoreThinkTime: ignoreThinkTime,
 			OnProgress: func(event engine.ReplayProgressEvent) {
 				if event.Type == engine.ReplayProgressEventRun {

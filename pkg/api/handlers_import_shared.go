@@ -167,7 +167,7 @@ func attachSourceReviewToScript(script *dsl.Script, source string, sourceScriptN
 	if script.Metadata.Import.Preserved == nil {
 		script.Metadata.Import.Preserved = map[string]any{}
 	}
-	script.Metadata.Import.Preserved["source_review"] = review
+	script.Metadata.Import.Preserved["source_review"] = sanitizeImportReviewEvidence(review)
 }
 
 func persistProtocolCompatReport(script *dsl.Script, source string, report *protocolCompatReport) {

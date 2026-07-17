@@ -446,6 +446,83 @@ func (s *SQLiteStore) SaveTestIfLeaseHeld(test *TestRecord, leaseName, leaseOwne
 	return true, nil
 }
 
+// RepairTestRuntimeSnapshot rewrites only the two runtime-bearing JSON columns
+// of one immutable test identity. It is used to scrub legacy snapshots without
+// replaying a stale full TestRecord over concurrently changing lifecycle state.
+func (s *SQLiteStore) RepairTestRuntimeSnapshot(id, projectID, materializationKey string, startTime time.Time, groups, runtimeSettings any) (bool, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	repaired, err := repairTestRuntimeSnapshotWithExecutor(tx, id, projectID, materializationKey, startTime, groups, runtimeSettings)
+	if err != nil || !repaired {
+		return repaired, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// RepairTestRuntimeSnapshotIfLeaseHeld combines the narrow runtime repair with
+// the execution-epoch fence. A standby or stale leader therefore cannot scrub a
+// replacement row or mutate the active leader's durable snapshot.
+func (s *SQLiteStore) RepairTestRuntimeSnapshotIfLeaseHeld(id, projectID, materializationKey string, startTime time.Time, groups, runtimeSettings any, leaseName, leaseOwnerID string) (bool, error) {
+	leaseName = strings.TrimSpace(leaseName)
+	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
+	if leaseName == "" || leaseOwnerID == "" {
+		return false, errors.New("lease name and owner token are required")
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	held, err := schedulerLeaseHeldInTransaction(tx, s.db.dialect, leaseName, leaseOwnerID)
+	if err != nil || !held {
+		return false, err
+	}
+	repaired, err := repairTestRuntimeSnapshotWithExecutor(tx, id, projectID, materializationKey, startTime, groups, runtimeSettings)
+	if err != nil || !repaired {
+		return repaired, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func repairTestRuntimeSnapshotWithExecutor(executor testSaveExecutor, id, projectID, materializationKey string, startTime time.Time, groups, runtimeSettings any) (bool, error) {
+	id = strings.TrimSpace(id)
+	projectID = normalizeProjectID(projectID)
+	materializationKey = strings.TrimSpace(materializationKey)
+	if id == "" || startTime.IsZero() {
+		return false, errors.New("test identity is required for runtime snapshot repair")
+	}
+	groupsJSON, err := marshalTestField("groups_json", groups)
+	if err != nil {
+		return false, err
+	}
+	runtimeSettingsJSON, err := marshalTestField("runtime_settings_json", runtimeSettings)
+	if err != nil {
+		return false, err
+	}
+	result, err := executor.Exec(`
+		UPDATE tests
+		SET groups_json = ?, runtime_settings_json = ?
+		WHERE id = ?
+		  AND COALESCE(NULLIF(TRIM(project_id), ''), ?) = ?
+		  AND COALESCE(materialization_key, '') = ?
+		  AND start_time = ?
+	`, groupsJSON, runtimeSettingsJSON, id, DefaultProjectID, projectID, materializationKey, startTime)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	return affected == 1, err
+}
+
 // EnsureTestRefKey fills only an empty ref_key column and returns the durable
 // winner. It deliberately avoids a full-row upsert: reference-key backfill runs
 // during controller boot, before an HA replica has acquired an execution epoch,
@@ -1095,6 +1172,16 @@ func lockCapacityReservationsForTestMutation(tx *storeTx, testID string, timeslo
 }
 
 func deleteTestGraphTx(tx *storeTx, id, projectID string) error {
+	var incompleteControllerChecks int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM github_check_links
+		WHERE test_id = ? AND kind = 'controller'
+			AND (LOWER(COALESCE(status, '')) <> 'completed' OR COALESCE(conclusion, '') = '')`, id).
+		Scan(&incompleteControllerChecks); err != nil {
+		return err
+	}
+	if incompleteControllerChecks > 0 {
+		return fmt.Errorf("test has an incomplete controller-owned GitHub Check")
+	}
 	archive, err := getRunArchiveTx(tx, id)
 	if err != nil && err != sql.ErrNoRows {
 		return err

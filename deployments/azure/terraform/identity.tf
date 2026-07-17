@@ -56,10 +56,11 @@ resource "azurerm_role_assignment" "workload_blob" {
   principal_id         = azurerm_user_assigned_identity.apexload.principal_id
 }
 
-# Script secrets: read-only Key Vault access for {{secret.*}} resolution.
+# Project Secrets: the controller creates and rotates governed values while
+# generators retain read-only access for legacy direct Key Vault resolution.
 resource "azurerm_role_assignment" "workload_keyvault" {
   scope                = azurerm_key_vault.main.id
-  role_definition_name = "Key Vault Secrets User"
+  role_definition_name = "Key Vault Secrets Officer"
   principal_id         = azurerm_user_assigned_identity.apexload.principal_id
 }
 

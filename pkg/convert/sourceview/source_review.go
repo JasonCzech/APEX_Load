@@ -5,9 +5,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 const (
@@ -179,6 +181,7 @@ func Language(path string) string {
 
 func Redact(content string) (string, bool) {
 	redacted := content
+	redacted = redactStructuredNameValuePairs(redacted)
 	for _, redactor := range sourceRedactors {
 		next := redactor.re.ReplaceAllString(redacted, redactor.replacement)
 		if next != redacted {
@@ -186,6 +189,63 @@ func Redact(content string) (string, bool) {
 		}
 	}
 	return redacted, redacted != content
+}
+
+// Source-review payloads frequently preserve a name and its value as sibling
+// fields instead of using the sensitive name as the JSON/XML key. Postman
+// headers (`{"key":"X-Auth-Token","value":"..."}`) and TruClient arguments
+// (`<Argument name="Password" value="..."/>`) are common examples. Generic
+// key-aware scrubbers cannot associate those siblings, so handle those shapes
+// before the ordinary text redactors run. Replacements preserve surrounding
+// formatting so source-to-script line mappings remain valid.
+func redactStructuredNameValuePairs(content string) string {
+	content = jsonNamedValuePair.ReplaceAllStringFunc(content, redactJSONNamedValuePair)
+	content = jsonValueNamedPair.ReplaceAllStringFunc(content, redactJSONValueNamedPair)
+	content = xmlTagPattern.ReplaceAllStringFunc(content, redactXMLNamedValueTag)
+	content = cssSensitiveAttributePattern.ReplaceAllString(content, `${1}[REDACTED]${4}`)
+	return content
+}
+
+func redactJSONNamedValuePair(candidate string) string {
+	matches := jsonNamedValuePair.FindStringSubmatch(candidate)
+	if len(matches) != 5 || !reviewSensitiveName(unquoteJSONString(matches[2])) {
+		return candidate
+	}
+	return matches[1] + scrub.Redacted + matches[4]
+}
+
+func redactJSONValueNamedPair(candidate string) string {
+	matches := jsonValueNamedPair.FindStringSubmatch(candidate)
+	if len(matches) != 5 || !reviewSensitiveName(unquoteJSONString(matches[4])) {
+		return candidate
+	}
+	return matches[1] + scrub.Redacted + matches[3]
+}
+
+func redactXMLNamedValueTag(tag string) string {
+	matches := xmlSemanticNameAttribute.FindStringSubmatch(tag)
+	if len(matches) != 3 || !reviewSensitiveName(matches[2]) {
+		return tag
+	}
+	return xmlValueAttribute.ReplaceAllStringFunc(tag, func(attribute string) string {
+		quoteOffset := strings.IndexAny(attribute, `"'`)
+		if quoteOffset < 0 {
+			return attribute
+		}
+		return attribute[:quoteOffset+1] + scrub.Redacted + attribute[len(attribute)-1:]
+	})
+}
+
+func unquoteJSONString(value string) string {
+	decoded, err := strconv.Unquote(`"` + value + `"`)
+	if err != nil {
+		return value
+	}
+	return decoded
+}
+
+func reviewSensitiveName(name string) bool {
+	return scrub.SensitiveName(name) || (scrub.Policy{}).SensitiveHeader(name)
 }
 
 func buildFiles(files map[string]string, mappings []Mapping) []SourceFile {
@@ -285,3 +345,15 @@ var sourceRedactors = []sourceRedactor{
 	{regexp.MustCompile(`(?i)((?:Authorization|Cookie|Set-Cookie)\s*[:=]\s*)([^\r\n"]+)`), `${1}[REDACTED]`},
 	{regexp.MustCompile(`(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]{8,}`), `${1}[REDACTED]`},
 }
+
+var (
+	jsonNamedValuePair = regexp.MustCompile(`(?is)("(?:key|name|field|label|header)"\s*:\s*"((?:\\.|[^"\\])*)"\s*,\s*"(?:value|text|content|selector|xpath)"\s*:\s*")((?:\\.|[^"\\])*)(")`)
+	jsonValueNamedPair = regexp.MustCompile(`(?is)("(?:value|text|content|selector|xpath)"\s*:\s*")((?:\\.|[^"\\])*)("\s*,\s*"(?:key|name|field|label|header)"\s*:\s*"((?:\\.|[^"\\])*)")`)
+	// Go's regexp engine caps a single counted repetition at 1000. Segment the
+	// 4096-byte tag bound so generated binaries compile while preserving the
+	// original source-review work limit.
+	xmlTagPattern                = regexp.MustCompile(`(?is)<[^>]{1,1000}[^>]{0,1000}[^>]{0,1000}[^>]{0,1000}[^>]{0,96}>`)
+	xmlSemanticNameAttribute     = regexp.MustCompile(`(?is)\b(?:name|key|field|label|header)\s*=\s*(["'])([^"']*)["']`)
+	xmlValueAttribute            = regexp.MustCompile(`(?is)\b(?:value|text|content|selector|xpath|regex)\s*=\s*(?:"[^"]*"|'[^']*')`)
+	cssSensitiveAttributePattern = regexp.MustCompile(`(?is)(\[\s*(?:data[-_:]?|aria[-_:]?)?(?:password|passwd|pwd|token|secret|api[-_:]?key|authorization|cookie|session(?:[-_:]?id)?)\s*(?:[*^$|~]?=)\s*(["']))([^"']*)(["'])`)
+)

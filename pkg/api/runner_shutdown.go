@@ -21,6 +21,7 @@ func (tr *TestRunner) beginShutdown() {
 	if tr == nil {
 		return
 	}
+	tr.stopRuntimeOverrideSecretAttemptReconciliation()
 	tr.mu.Lock()
 	tr.shuttingDown = true
 	tr.mu.Unlock()
@@ -134,7 +135,8 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 		case "INITIALIZING", "RUNNING", "PAUSED", "STOPPING", "SHAKEOUT":
 			activeStatus = true
 		}
-		if !activeStatus && test.cancel == nil && test.multiEngine == nil && test.remoteClient == nil && len(test.remoteClientsByTarget) == 0 && len(test.remoteArchiveClientsByTarget) == 0 {
+		if !activeStatus && test.cancel == nil && test.multiEngine == nil && test.remoteClient == nil &&
+			len(test.remoteClientsByTarget) == 0 && len(test.remoteArchiveClientsByTarget) == 0 && len(test.remoteSecretSnapshots) == 0 {
 			continue
 		}
 		runtime := leadershipLossRuntime{
@@ -171,6 +173,7 @@ func (tr *TestRunner) teardownActiveTestsAfterLeadershipLoss(ctx context.Context
 		test.remoteGoalUpdateRunning = false
 		test.remoteActivated = false
 		test.remoteActivationPending = false
+		clearDistributedRunSecretSnapshotsLocked(test)
 		test.remoteControlGeneration++
 		runtimes = append(runtimes, runtime)
 	}

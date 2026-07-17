@@ -29,6 +29,7 @@ type ScriptDebugStartRequest struct {
 	Script          *dsl.Script                  `json:"script,omitempty"`
 	Mode            string                       `json:"-"`
 	Preflight       *ReplayPreflight             `json:"-"`
+	SecretResolver  engine.SecretResolver        `json:"-"`
 }
 
 type ScriptDebugStepRequest struct {
@@ -158,17 +159,27 @@ func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.R
 
 func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Request, id string, script *dsl.Script, req ScriptDebugStartRequest) {
 	script = applyScriptDebugOverrides(script, req)
+	var prepared bool
+	script, prepared = prepareTransientExecutableScript(w, script)
+	if !prepared {
+		return
+	}
 	resolvedScript, refWarnings, refIssues := resolveObjectRefs(s.store, script)
 	if resolvedScript != nil {
 		script = resolvedScript
 	}
+	script, prepared = prepareTransientExecutableScript(w, script)
+	if !prepared {
+		return
+	}
 	issues := append(validateScriptForReplay(script), refIssues...)
 	warnings := append(validationWarnings(script), refWarnings...)
-	preflight := buildReplayPreflight(script, req.Variables, issues, warnings)
-	if len(issues) > 0 {
+	secretResolver := s.runner.secretResolverForProject(script.ProjectID)
+	preflight := buildReplayPreflight(script, req.Variables, issues, warnings, secretResolver)
+	if len(issues) > 0 || len(preflight.MissingSecrets) > 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"script_id": id,
-			"valid":     false,
+			"valid":     preflight.Valid,
 			"issues":    issues,
 			"warnings":  warnings,
 			"preflight": preflight,
@@ -177,6 +188,7 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 	}
 
 	req.Preflight = preflight
+	req.SecretResolver = secretResolver
 	session := s.scriptDebug.Start(id, script, req)
 	s.recordAuditEvent(r, "script_debug.session.start", "success", "script_debug_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "script_name": script.Name, "status": session.Status, "start_paused": req.StartPaused, "log_level": session.LogLevel})
 	writeJSON(w, http.StatusOK, map[string]any{

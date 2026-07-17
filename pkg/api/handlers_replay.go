@@ -71,30 +71,23 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	issues := validateScriptForReplay(script)
-	warnings := validationWarnings(script)
-	preflight := buildReplayPreflight(script, req.Variables, issues, warnings)
-	if len(issues) > 0 {
-		writeJSON(w, http.StatusBadRequest, map[string]any{
-			"script_id": id,
-			"valid":     false,
-			"issues":    issues,
-			"warnings":  warnings,
-			"preflight": preflight,
-		})
-		return
-	}
 	s.handleReplayRequest(w, id, script, req)
 }
 
 func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *dsl.Script, req ReplayScriptRequest) {
+	var prepared bool
+	script, prepared = prepareTransientExecutableScript(w, script)
+	if !prepared {
+		return
+	}
 	issues := validateScriptForReplay(script)
 	warnings := validationWarnings(script)
-	preflight := buildReplayPreflight(script, req.Variables, issues, warnings)
-	if len(issues) > 0 {
+	secretResolver := s.runner.secretResolverForProject(script.ProjectID)
+	preflight := buildReplayPreflight(script, req.Variables, issues, warnings, secretResolver)
+	if len(issues) > 0 || len(preflight.MissingSecrets) > 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"script_id": id,
-			"valid":     false,
+			"valid":     preflight.Valid,
 			"issues":    issues,
 			"warnings":  warnings,
 			"preflight": preflight,
@@ -117,6 +110,7 @@ func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *d
 		RuntimeProfile:  &engine.ReplayRuntimeProfile{Name: "classic replay", CaptureMode: "diagnostic", LogLevel: "info", IgnoreThinkTime: ignoreThinkTime},
 		Variables:       req.Variables,
 		RedactionRules:  req.RedactionRules,
+		SecretResolver:  secretResolver,
 		IgnoreThinkTime: ignoreThinkTime,
 		OnProgress: func(event engine.ReplayProgressEvent) {
 			s.broadcastReplayProgress(replaySessionID, id, normalizeProjectID(script.ProjectID), event)
@@ -134,6 +128,25 @@ func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *d
 		"report":            report,
 		"warnings":          warnings,
 	})
+}
+
+// prepareTransientExecutableScript applies the same disclosure-safe binding
+// boundary used by durable script writes to replay, debugger, and browser
+// drafts. Caller-supplied overrides are executable even though they are not
+// persisted, so plaintext credentials and executable sentinels must be
+// converted through the Credentials flow before any session or progress event
+// can observe them.
+func prepareTransientExecutableScript(w http.ResponseWriter, script *dsl.Script) (*dsl.Script, bool) {
+	projected := maskScriptSecrets(script)
+	if projected == nil {
+		writeError(w, http.StatusBadRequest, "failed to project script for secret binding")
+		return nil, false
+	}
+	if unresolved := discoverSecretBindingRequirements(projected, 0); len(unresolved) > 0 {
+		writeSecretBindingsRequired(w, unresolved)
+		return nil, false
+	}
+	return projected, true
 }
 
 func (s *Server) broadcastReplayProgress(replaySessionID string, scriptID string, projectID string, event engine.ReplayProgressEvent) {

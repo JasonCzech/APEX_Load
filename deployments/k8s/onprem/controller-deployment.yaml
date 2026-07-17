@@ -70,6 +70,13 @@ spec:
               value: /var/lib/apexload/archives
             - name: APEXLOAD_EXPORT_DIR
               value: /var/lib/apexload/exports
+            # Required even when Bruno execution is disabled: the same stable
+            # key wraps encrypted database-backed Project Secrets.
+            - name: APEXLOAD_WRAPPING_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: apexload-data-platform
+                  key: APEXLOAD_WRAPPING_MASTER_KEY
           envFrom:
             - configMapRef:
                 name: apexload-data-platform

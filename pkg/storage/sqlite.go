@@ -384,6 +384,7 @@ func rewriteSQL(query string, dialect storeDialect) string {
 		{"COALESCE(enabled, 1)", "COALESCE(enabled, TRUE)"},
 		{"COALESCE(baseline_pinned, 0)", "COALESCE(baseline_pinned, FALSE)"},
 		{" active = 1", " active = TRUE"},
+		{"size_bytes INTEGER NOT NULL", "size_bytes BIGINT NOT NULL"},
 	} {
 		rewritten = strings.ReplaceAll(rewritten, replacement.old, replacement.new)
 	}

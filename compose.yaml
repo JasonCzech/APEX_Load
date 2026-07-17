@@ -29,11 +29,14 @@ services:
       APEXLOAD_GENERATOR_DISCOVERY_INTERVAL: 10s
       APEXLOAD_GENERATOR_TIMEOUT: 5s
       APEXLOAD_ENV: local
+      APEXLOAD_BRUNO_ARTIFACT_ROOT: /var/lib/apexload-bruno
+      APEXLOAD_WRAPPING_MASTER_KEY: ${APEXLOAD_WRAPPING_MASTER_KEY:-apexload-local-wrapping-key-change-me}
     ports:
       - "127.0.0.1:8080:8080"
       - "127.0.0.1:9091:9091"
     volumes:
       - controller-data:/data
+      - bruno-artifacts:/var/lib/apexload-bruno
       - ./dist/recording-agent:/packages/recording-agent:ro
       - ./dist/desktop:/packages/desktop:ro
     tmpfs:
@@ -69,10 +72,52 @@ services:
       APEXLOAD_ENV: local
       APEXLOAD_GENERATOR_LISTEN_ADDR: ":9090"
       APEXLOAD_GENERATOR_MAX_VUSERS: "1000"
+      APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED: "true"
+      APEXLOAD_BRUNO_ARTIFACT_ROOT: /var/lib/apexload-bruno
+      APEXLOAD_WRAPPING_MASTER_KEY: ${APEXLOAD_WRAPPING_MASTER_KEY:-apexload-local-wrapping-key-change-me}
+      APEXLOAD_BRUNO_RUNNER_URL: http://127.0.0.1:8097
+      APEXLOAD_BRUNO_ALLOW_DIRECT_EGRESS: "true"
+      APEXLOAD_BRUNO_MAX_JUMPS: "10000"
+      APEXLOAD_BRUNO_MAX_RUN_REQUEST_DEPTH: "64"
+      APEXLOAD_BRUNO_MAX_PARALLEL_REQUESTS: "100"
+      APEXLOAD_BRUNO_MAX_OUTPUT_BYTES: "4194304"
+      APEXLOAD_BRUNO_MAX_STREAM_TIMEOUT_MS: "60000"
     expose:
       - "9090"
     tmpfs:
       - /tmp
+    volumes:
+      - bruno-artifacts:/var/lib/apexload-bruno:ro
+
+  bruno-runner:
+    build:
+      context: ./runners/bruno
+      dockerfile: Dockerfile
+    image: apexload-bruno-runner:local
+    init: true
+    restart: unless-stopped
+    network_mode: service:generator
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      APEXLOAD_BRUNO_RUNNER_ADDR: 127.0.0.1
+      APEXLOAD_BRUNO_RUNNER_PORT: "8097"
+      APEXLOAD_BRUNO_ALLOW_DIRECT_EGRESS: "true"
+      APEXLOAD_BRUNO_MAX_SESSIONS: "128"
+      APEXLOAD_BRUNO_MAX_PENDING_EVENTS: "10000"
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8097/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      - generator
 
   prometheus:
     image: prom/prometheus:v3.12.0
@@ -93,5 +138,6 @@ services:
       - prometheus-data:/prometheus
 
 volumes:
+  bruno-artifacts:
   controller-data:
   prometheus-data:

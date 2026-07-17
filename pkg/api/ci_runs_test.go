@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -531,8 +532,30 @@ func TestValidateCIRunAllowsControllerResolvedDatabaseTarget(t *testing.T) {
 		t.Fatalf("controller-resolved database target rejected before runtime enforcement: %v", err)
 	}
 	policy.AllowedTargetHosts = []string{"other.example.test"}
-	if err := validateCIRunRequest(req, policy, script, engine.NewProjectSecretResolver(req.ProjectID)); err == nil || !strings.Contains(err.Error(), "db.example.test") {
+	if err := validateCIRunRequest(req, policy, script, engine.NewProjectSecretResolver(req.ProjectID)); err == nil ||
+		!strings.Contains(err.Error(), "resolved target host") || strings.Contains(err.Error(), "db.example.test") {
 		t.Fatalf("policy-disallowed resolved target error = %v", err)
+	}
+}
+
+func TestValidateCIRunRequiresAllReferencedProjectSecrets(t *testing.T) {
+	req := ciTestRunRequest()
+	policy := ciRunSourceTestPolicy()
+	policy.AllowedProtocols = []string{"http"}
+	policy.AllowedTargetHosts = []string{"api.example.test"}
+	script := ciTestScript("https://api.example.test")
+	script.Actions[0].Headers = map[string]string{
+		"Authorization": "Bearer {{secret.api_token}}",
+	}
+	if err := validateCIRunRequest(req, policy, script, engine.SecretResolverFunc(func(string) (string, bool) {
+		return "", false
+	})); err == nil || !strings.Contains(err.Error(), "api_token") {
+		t.Fatalf("missing project secret error = %v", err)
+	}
+	if err := validateCIRunRequest(req, policy, script, engine.SecretResolverFunc(func(name string) (string, bool) {
+		return "configured", name == "api_token"
+	})); err != nil {
+		t.Fatalf("configured project secret rejected: %v", err)
 	}
 }
 
@@ -987,6 +1010,183 @@ func TestCreateCIRunIdempotencyReusesAttemptAndSeparatesNewAttempt(t *testing.T)
 	}
 }
 
+func TestCreateCIRunAdoptsConcurrentRunningMaterializationWithoutRestartingIt(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer target.Close()
+
+	policy := ciRunSourceTestPolicy()
+	policy.MaxDurationMinutes = 1
+	policy.AllowedTargetHosts = []string{"127.0.0.1"}
+	server, store := newCIContractTestServer(t, policy)
+	publishCheck := false
+	scriptRaw, err := json.Marshal(ciTestScript(target.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ciRunCreateRequest{
+		ProjectID: "project-ci", ScriptPath: "tests/concurrent.json", Script: scriptRaw,
+		Execution:    ciRunExecutionRequest{VUsers: 1, Duration: "50ms"},
+		Goals:        ciRunGoalsRequest{},
+		Source:       ciTestRunSource("1"),
+		PublishCheck: &publishCheck,
+	}
+
+	var winningRuntime *ManagedTest
+	var winningContext context.Context
+	server.beforeCIRunMaterialize = func(create CreateTestRequest) {
+		winner, createErr := server.runner.CreateTest(create)
+		if createErr != nil {
+			t.Fatalf("materialize concurrent winner: %v", createErr)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		t.Cleanup(cancel)
+		startedAt := time.Now().UTC()
+		server.runner.mu.Lock()
+		winningRuntime = server.runner.tests[winner.ID]
+		winningRuntime.Status = "RUNNING"
+		winningRuntime.StartedAt = &startedAt
+		winningRuntime.executionCtx = ctx
+		winningRuntime.cancel = cancel
+		record := buildManagedTestRecord(winningRuntime)
+		server.runner.mu.Unlock()
+		winningContext = ctx
+		if saveErr := store.SaveTest(record); saveErr != nil {
+			t.Fatalf("persist concurrent RUNNING winner: %v", saveErr)
+		}
+	}
+
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	httpReq := httptest.NewRequest(http.MethodPost, "/api/v1/ci/runs", bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Idempotency-Key", "octo/apex:performance:9001:1:concurrent-running")
+	recorder := httptest.NewRecorder()
+	server.handleCreateCIRun(recorder, httpReq)
+	if recorder.Code != http.StatusAccepted {
+		t.Fatalf("concurrent idempotent create = %d %s", recorder.Code, recorder.Body.String())
+	}
+	var response ciRunResponse
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	server.runner.mu.RLock()
+	retained := server.runner.tests[response.TestID]
+	server.runner.mu.RUnlock()
+	if retained != winningRuntime || retained == nil || retained.Status != "RUNNING" || retained.executionCtx != winningContext || retained.cancel == nil {
+		t.Fatalf("handler replaced or restarted concurrent winner: retained=%p winner=%p status=%q context_retained=%t cancel_retained=%t", retained, winningRuntime, retained.Status, retained != nil && retained.executionCtx == winningContext, retained != nil && retained.cancel != nil)
+	}
+	durable, err := store.GetTest(response.TestID)
+	if err != nil || durable.Status != "RUNNING" {
+		t.Fatalf("durable concurrent winner = %#v, %v", durable, err)
+	}
+}
+
+func TestConcurrentCreateCIRunRequestsBothAdoptSingleStartedMaterialization(t *testing.T) {
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer target.Close()
+
+	policy := ciRunSourceTestPolicy()
+	policy.MaxDurationMinutes = 1
+	policy.AllowedTargetHosts = []string{"127.0.0.1"}
+	server, _ := newCIContractTestServer(t, policy)
+	backend := &executionBackendSpy{called: make(chan string, 4)}
+	server.runner.setExecutionBackend(backend)
+	publishCheck := false
+	scriptRaw, err := json.Marshal(ciTestScript(target.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := ciRunCreateRequest{
+		ProjectID: "project-ci", ScriptPath: "tests/concurrent-real.json", Script: scriptRaw,
+		Execution:    ciRunExecutionRequest{VUsers: 1, Duration: "50ms"},
+		Goals:        ciRunGoalsRequest{},
+		Source:       ciTestRunSource("1"),
+		PublishCheck: &publishCheck,
+	}
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	firstAtMaterialize := make(chan struct{})
+	secondAtMaterialize := make(chan struct{})
+	allowFirst := make(chan struct{})
+	allowSecond := make(chan struct{})
+	freshCreated := make(chan struct{})
+	allowFreshToStart := make(chan struct{})
+	var arrivals atomic.Int32
+	server.beforeCIRunMaterialize = func(CreateTestRequest) {
+		switch arrivals.Add(1) {
+		case 1:
+			close(firstAtMaterialize)
+			<-allowFirst
+		case 2:
+			close(secondAtMaterialize)
+			<-allowSecond
+		}
+	}
+	server.afterCIRunMaterialize = func(test *ManagedTest) {
+		if test != nil && !test.creationAdopted {
+			close(freshCreated)
+			<-allowFreshToStart
+		}
+	}
+
+	invoke := func() *httptest.ResponseRecorder {
+		httpReq := httptest.NewRequest(http.MethodPost, "/api/v1/ci/runs", bytes.NewReader(body))
+		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set("Idempotency-Key", "octo/apex:performance:9001:1:actual-concurrent")
+		recorder := httptest.NewRecorder()
+		server.handleCreateCIRun(recorder, httpReq)
+		return recorder
+	}
+	firstResponse := make(chan *httptest.ResponseRecorder, 1)
+	secondResponse := make(chan *httptest.ResponseRecorder, 1)
+	go func() { firstResponse <- invoke() }()
+	<-firstAtMaterialize
+	go func() { secondResponse <- invoke() }()
+	<-secondAtMaterialize
+	close(allowFirst)
+	<-freshCreated
+	close(allowSecond)
+
+	second := <-secondResponse
+	if second.Code != http.StatusAccepted {
+		t.Fatalf("adopted concurrent response = %d %s", second.Code, second.Body.String())
+	}
+	select {
+	case <-backend.called:
+	case <-time.After(2 * time.Second):
+		t.Fatal("adopted request did not start the materialized run")
+	}
+	close(allowFreshToStart)
+	first := <-firstResponse
+	if first.Code != http.StatusAccepted {
+		t.Fatalf("fresh concurrent response = %d %s", first.Code, first.Body.String())
+	}
+	var firstRun, secondRun ciRunResponse
+	if err := json.Unmarshal(first.Body.Bytes(), &firstRun); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(second.Body.Bytes(), &secondRun); err != nil {
+		t.Fatal(err)
+	}
+	if firstRun.TestID == "" || firstRun.TestID != secondRun.TestID {
+		t.Fatalf("concurrent run ids = %q and %q", firstRun.TestID, secondRun.TestID)
+	}
+	select {
+	case duplicate := <-backend.called:
+		t.Fatalf("concurrent retry started duplicate backend execution for %s", duplicate)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
 func TestCreateCIRunIdempotentLibraryRetryIgnoresLaterScriptMutationAndDeletion(t *testing.T) {
 	policy := ciRunSourceTestPolicy()
 	policy.MaxDurationMinutes = 1
@@ -1286,6 +1486,47 @@ func TestFailCIRunDuringPromotionDoesNotReenterPendingQueue(t *testing.T) {
 	second, ok := runner.GetTest(ids[1])
 	if !ok || second.Status != "PENDING" {
 		t.Fatalf("second run = %#v, want untouched PENDING row", second)
+	}
+}
+
+func TestFailCIRunBeforeExecutionDoesNotTerminalizeStartedRun(t *testing.T) {
+	runner, ids := newRevokedPendingCIRunner(t, 1)
+	runner.mu.Lock()
+	started := time.Now().UTC()
+	run := runner.tests[ids[0]]
+	run.Status = "RUNNING"
+	run.StartedAt = &started
+	cancelled := false
+	run.cancel = func() { cancelled = true }
+	runner.mu.Unlock()
+
+	if err := runner.failCIRunBeforeExecution(ids[0], "stale recovery failure"); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := runner.GetTest(ids[0])
+	if !ok || got.Status != "RUNNING" {
+		t.Fatalf("started run = %#v, want RUNNING", got)
+	}
+	if cancelled {
+		t.Fatal("stale recovery failure cancelled a started run")
+	}
+}
+
+func TestValidateExistingCIRunIgnoresControllerStampedPolicyMetadata(t *testing.T) {
+	expected := ciRunMetadata{
+		SchemaVersion: ciRunSchemaVersion, ScriptIdentity: "script_id:one",
+		PolicyRevision: 2, CheckInstallationID: 20, IdempotencySHA: "same",
+	}
+	actual := expected
+	actual.PolicyRevision = 1
+	actual.CheckInstallationID = 10
+	encoded, err := encodeCIRunMetadata(actual)
+	if err != nil {
+		t.Fatal(err)
+	}
+	test := &ManagedTest{ProjectID: "project-ci", MaterializationKey: encoded}
+	if err := validateExistingCIRun(test, "project-ci", expected); err != nil {
+		t.Fatalf("controller-stamped metadata broke idempotent retry: %v", err)
 	}
 }
 

@@ -58,7 +58,7 @@ func TestCreateTestReturnsDeepSnapshot(t *testing.T) {
 		Assignment: &GeneratorAssignmentSettings{RequiredLabels: map[string]string{"zone": "a"}},
 		Groups: []CreateGroupEntry{{
 			ScriptID: "test-snapshot-script", VUsers: 1,
-			RuntimeSettings: &RuntimeSettingsOverride{Env: map[string]string{"TOKEN": "before"}},
+			RuntimeSettings: &RuntimeSettingsOverride{Env: map[string]string{"REGION": "before"}},
 		}},
 	})
 	if err != nil {
@@ -66,12 +66,12 @@ func TestCreateTestReturnsDeepSnapshot(t *testing.T) {
 	}
 	created.Name = "tampered"
 	created.Assignment.RequiredLabels["zone"] = "tampered"
-	created.Groups[0].RuntimeSettings.Env["TOKEN"] = "tampered"
+	created.Groups[0].RuntimeSettings.Env["REGION"] = "tampered"
 	stored, ok := runner.GetTest(created.ID)
 	if !ok {
 		t.Fatal("created test missing")
 	}
-	if stored.Name != "Snapshot run" || stored.Assignment.RequiredLabels["zone"] != "a" || stored.Groups[0].RuntimeSettings.Env["TOKEN"] != "before" {
+	if stored.Name != "Snapshot run" || stored.Assignment.RequiredLabels["zone"] != "a" || stored.Groups[0].RuntimeSettings.Env["REGION"] != "before" {
 		t.Fatalf("create response aliases canonical test: %#v", stored)
 	}
 }

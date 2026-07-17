@@ -106,7 +106,7 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
 	}
 	reviewSections = attachAgentforceReview(result.Script, "openapi", reviewSections, agentforceTransformRequested(r))
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
 		Warnings:            result.Warnings,
@@ -155,6 +155,12 @@ func (s *Server) handleCommitOpenAPIImport(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	script := &req.Script
+	safeScript, _, err := applySuggestedSecretBindings(script, 0)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to prepare safe secret references: "+err.Error())
+		return
+	}
+	script = safeScript
 	if issues := validateScript(script); len(issues) > 0 {
 		writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
 		return
@@ -317,7 +323,7 @@ func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
 	}
 	reviewSections = attachAgentforceReview(result.Script, "raml", reviewSections, agentforceTransformRequested(r))
 
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
 		Warnings:            result.Warnings,
@@ -525,7 +531,7 @@ func (s *Server) handleImportWSDL(w http.ResponseWriter, r *http.Request) {
 	if issues := validateScript(result.Script); len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
 		Warnings:            result.Warnings,
@@ -554,14 +560,14 @@ func (s *Server) handleImportPostman(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
-	s.writePostmanImportResponse(w, result, importReq, agentforceTransformRequested(r))
+	s.writePostmanImportResponse(w, r, result, importReq, agentforceTransformRequested(r))
 }
 
 func (s *Server) handleValidatePostmanImport(w http.ResponseWriter, r *http.Request) {
 	s.handleImportPostman(w, r)
 }
 
-func (s *Server) writePostmanImportResponse(w http.ResponseWriter, result *postman.ConvertResult, importReq *postmanImportRequest, agentforceTransform bool) {
+func (s *Server) writePostmanImportResponse(w http.ResponseWriter, r *http.Request, result *postman.ConvertResult, importReq *postmanImportRequest, agentforceTransform bool) {
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
@@ -580,7 +586,7 @@ func (s *Server) writePostmanImportResponse(w http.ResponseWriter, result *postm
 		reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
 	}
 	reviewSections = attachAgentforceReview(result.Script, "postman", reviewSections, agentforceTransform)
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
 		Warnings:            result.Warnings,
@@ -607,6 +613,12 @@ func (s *Server) handleSavePostmanImport(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	script := &req.Script
+	safeScript, _, err := applySuggestedSecretBindings(script, 0)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to prepare safe secret references: "+err.Error())
+		return
+	}
+	script = safeScript
 	if issues := validateScript(script); len(issues) > 0 {
 		writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
 		return
@@ -775,7 +787,7 @@ func (s *Server) handleImportAsyncAPI(w http.ResponseWriter, r *http.Request) {
 	if len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Scripts:             result.Scripts,
 		Script:              result.Script,
@@ -851,7 +863,7 @@ func (s *Server) handleImportEventHubsCapture(w http.ResponseWriter, r *http.Req
 	if issues := validateScript(result.Script); len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:           result,
 		Script:           result.Script,
 		Warnings:         result.Warnings,
@@ -949,7 +961,7 @@ func (s *Server) handleImportBrokerConfig(w http.ResponseWriter, r *http.Request
 	if issues := validateScript(result.Script); len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:           result,
 		Script:           result.Script,
 		Warnings:         result.Warnings,

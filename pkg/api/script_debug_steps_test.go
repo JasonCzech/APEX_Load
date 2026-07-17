@@ -1,7 +1,9 @@
 package api
 
 import (
+	"encoding/json"
 	"slices"
+	"strings"
 	"sync"
 	"testing"
 
@@ -221,5 +223,93 @@ func TestScriptDebugManagerCapturesConditionEvidence(t *testing.T) {
 	}
 	if evidence.Left != "admin" || evidence.Op != "eq" || evidence.Right != "admin" || !evidence.Result || evidence.Branch != "then" {
 		t.Fatalf("condition evidence = %+v, want left=admin op=eq right=admin result=true branch=then", evidence)
+	}
+}
+
+func TestScriptDebugManagerSerializesSecretConditionEvidenceSafely(t *testing.T) {
+	const secretValue = "debug-condition-project-secret"
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+
+	manager := NewScriptDebugManager(NewHub())
+	manager.Start("", &dsl.Script{
+		Name:     "Secret Evidence",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Actions: []dsl.Action{{
+			Name: "Branch", Type: "control_if",
+			Control: &dsl.ControlFlow{
+				Condition: &dsl.Condition{Left: "{{secret.API_TOKEN}}", Op: "exists"},
+				Steps: []dsl.Action{{Name: "Then", Type: "GET", Method: "GET", Target: "/then"}, {
+					Name: "Store secret alias",
+					Type: "source_parameter",
+					Params: map[string]any{
+						"function": "lr_save_string",
+						"args":     []any{"{{secret.API_TOKEN}}", "public_alias"},
+					},
+				}},
+			},
+		}},
+	}, ScriptDebugStartRequest{
+		ReplaySessionID: "debug-secret-evidence",
+		SecretResolver: engine.SecretResolverFunc(func(name string) (string, bool) {
+			return secretValue, name == "API_TOKEN"
+		}),
+	})
+
+	done := waitForScriptDebugStatus(t, manager, "debug-secret-evidence", ScriptDebugCompleted)
+	evidence := done.ConditionEvidence[conditionEvidenceKey("action", 0, nil)]
+	if evidence.Left != "{{secret.API_TOKEN}}" || !evidence.Result || evidence.Branch != "then" {
+		t.Fatalf("condition evidence = %+v", evidence)
+	}
+	if done.FinalReport == nil {
+		t.Fatal("completed debugger session has no final replay report")
+	}
+	if got := done.FinalReport.FinalVariables["public_alias"]; got != "[REDACTED]" {
+		t.Fatalf("debug final public_alias = %q, want redacted", got)
+	}
+	payload, err := json.Marshal(done)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), secretValue) {
+		t.Fatalf("serialized debugger session exposed the configured secret: %s", payload)
+	}
+}
+
+func TestScriptDebugManagerFailsBeforeActionWhenStaticSecretIsMissing(t *testing.T) {
+	executed := make(chan struct{}, 1)
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		executed <- struct{}{}
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+
+	manager := NewScriptDebugManager(NewHub())
+	manager.Start("", &dsl.Script{
+		Name:     "Missing Secret",
+		Protocol: protocolName,
+		Version:  "1.0.0",
+		Actions: []dsl.Action{{
+			Name:    "request",
+			Type:    "GET",
+			Target:  "/",
+			Headers: map[string]string{"Authorization": "Bearer {{secret.API_TOKEN}}"},
+		}},
+	}, ScriptDebugStartRequest{
+		ReplaySessionID: "debug-missing-secret",
+		SecretResolver: engine.SecretResolverFunc(func(string) (string, bool) {
+			return "", false
+		}),
+	})
+
+	done := waitForScriptDebugStatus(t, manager, "debug-missing-secret", ScriptDebugFailed)
+	if !strings.Contains(done.Error, "API_TOKEN") || done.FinalReport != nil {
+		t.Fatalf("debug missing-secret failure = error %q report %#v", done.Error, done.FinalReport)
+	}
+	select {
+	case <-executed:
+		t.Fatal("debugger executed a protocol action with a missing static secret")
+	default:
 	}
 }

@@ -79,6 +79,55 @@ func TestEngineConstructorsRejectUnboundedVUserAndGroupAdmission(t *testing.T) {
 	}
 }
 
+func TestMultiGroupRuntimeSecretRedactionSharesIdenticalMatchers(t *testing.T) {
+	secret := strings.Repeat("shared-runtime-secret/", 3000)
+	script := &dsl.Script{Name: "shared-redaction", Protocol: "stub"}
+	groups := make([]GroupConfig, MaxEngineGroups)
+	for index := range groups {
+		groups[index] = GroupConfig{
+			Name:            fmt.Sprintf("shared-%d", index),
+			Script:          script,
+			VUsers:          0,
+			AllowZeroVUsers: true,
+			RedactionConfig: &RedactionConfig{runtimeSecretValues: map[string]struct{}{secret: {}}},
+		}
+	}
+
+	multi, err := NewMultiGroup(MultiGroupConfig{Duration: time.Second, Groups: groups})
+	if err != nil {
+		t.Fatalf("identical bounded matcher set was rejected: %v", err)
+	}
+	first := multi.groups[0].RedactionConfig
+	last := multi.groups[len(multi.groups)-1].RedactionConfig
+	if first == nil || last == nil || len(first.secretReplacers) != 1 || len(last.secretReplacers) != 1 {
+		t.Fatal("runtime matcher was not constructed for every group")
+	}
+	if first.secretReplacers[0] != last.secretReplacers[0] {
+		t.Fatal("identical group secret sets compiled duplicate runtime matchers")
+	}
+}
+
+func TestMultiGroupRuntimeSecretRedactionRejectsAggregateMatcherAmplification(t *testing.T) {
+	script := &dsl.Script{Name: "bounded-redaction", Protocol: "stub"}
+	groups := make([]GroupConfig, MaxEngineGroups)
+	for index := range groups {
+		prefix := fmt.Sprintf("group-%03d/", index)
+		secret := strings.Repeat(prefix, (64<<10)/len(prefix))
+		groups[index] = GroupConfig{
+			Name:            fmt.Sprintf("distinct-%d", index),
+			Script:          script,
+			VUsers:          0,
+			AllowZeroVUsers: true,
+			RedactionConfig: &RedactionConfig{runtimeSecretValues: map[string]struct{}{secret: {}}},
+		}
+	}
+
+	if _, err := NewMultiGroup(MultiGroupConfig{Duration: time.Second, Groups: groups}); err == nil ||
+		!strings.Contains(err.Error(), "aggregate matcher limit") {
+		t.Fatalf("aggregate runtime matcher admission error = %v", err)
+	}
+}
+
 func TestScaleVUsersRejectsUnboundedTargetBeforeSpawning(t *testing.T) {
 	script := &dsl.Script{Name: "bounded-scale", Protocol: "stub"}
 	multi, err := NewMultiGroup(MultiGroupConfig{Duration: time.Second, Groups: []GroupConfig{

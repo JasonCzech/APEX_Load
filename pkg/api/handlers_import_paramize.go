@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -12,10 +11,8 @@ type importParameterizeApplyRequest struct {
 	Script      *dsl.Script           `json:"script"`
 	Suggestions []paramize.Suggestion `json:"suggestions"`
 	SelectedIDs []string              `json:"selected_ids"`
-	// ConfirmHighRisk acknowledges that selected high-risk suggestions
-	// (secrets externalized to {{env.KEY}}) require runtime environment values
-	// before the script can run. Without it, a selection containing high-risk
-	// suggestions is blocked — mirroring the authoring correlation gate.
+	// ConfirmHighRisk remains accepted for wire compatibility. Credential
+	// suggestions are no longer selectable here; they use guided bindings.
 	ConfirmHighRisk bool `json:"confirm_high_risk,omitempty"`
 }
 
@@ -53,22 +50,44 @@ func (s *Server) handleApplyImportParameterization(w http.ResponseWriter, r *htt
 	for _, id := range req.SelectedIDs {
 		selected[id] = true
 	}
-
-	if blockedNames := selectedHighRiskNames(req.Suggestions, selected); len(blockedNames) > 0 && !req.ConfirmHighRisk {
-		writeJSON(w, http.StatusOK, importParameterizeApplyResponse{
-			Script:        req.Script,
-			Diffs:         []paramize.Diff{},
-			Blocked:       true,
-			BlockedReason: "high-risk suggestions require explicit confirmation (confirm_high_risk): " + strings.Join(blockedNames, ", "),
-		})
-		return
+	for _, suggestion := range req.Suggestions {
+		if selected[suggestion.ID] && suggestion.Kind == paramize.KindSecret {
+			writeError(w, http.StatusUnprocessableEntity, "secret parameterization must use guided credential bindings")
+			return
+		}
 	}
 
-	applied, diffs, err := paramize.ApplySuggestions(req.Script, req.Suggestions, selected)
+	// Project before deriving instructions. This accepts deferred [REDACTED]
+	// placeholders while ensuring a caller cannot smuggle an inline credential
+	// into the response or into client-controlled replacement instructions.
+	safeScript := maskScriptSecrets(req.Script)
+	if safeScript == nil {
+		writeError(w, http.StatusBadRequest, "failed to project script for parameterization")
+		return
+	}
+	trusted := buildTrustedImportParameterization(safeScript)
+	trustedByID := make(map[string]bool, len(trusted.Suggestions))
+	for _, suggestion := range trusted.Suggestions {
+		trustedByID[suggestion.ID] = true
+	}
+	for id := range selected {
+		if !trustedByID[id] {
+			writeError(w, http.StatusConflict, "selected parameterization suggestions are stale or unavailable; refresh the import preview")
+			return
+		}
+	}
+
+	applied, diffs, err := paramize.ApplySuggestions(safeScript, trusted.Suggestions, selected)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "failed to apply parameterization: "+err.Error())
 		return
 	}
+	projected := maskScriptSecrets(applied)
+	if projected == nil {
+		writeError(w, http.StatusInternalServerError, "failed to project parameterized script")
+		return
+	}
+	diffs = sanitizeParameterizationDiffs(diffs)
 
 	appliedIDs := map[string]bool{}
 	for _, diff := range diffs {
@@ -77,27 +96,27 @@ func (s *Server) handleApplyImportParameterization(w http.ResponseWriter, r *htt
 		}
 	}
 
-	warnings := validateScript(applied)
-	s.recordAuditEvent(r, "script.import.parameterize.apply", "success", "script", applied.Name, applied.ProjectID, map[string]any{
+	warnings := validateScript(projected)
+	s.recordAuditEvent(r, "script.import.parameterize.apply", "success", "script", projected.Name, projected.ProjectID, map[string]any{
 		"selected": len(req.SelectedIDs),
 		"applied":  len(appliedIDs),
 		"changes":  len(diffs),
 	})
 
 	writeJSON(w, http.StatusOK, importParameterizeApplyResponse{
-		Script:       applied,
+		Script:       projected,
 		Diffs:        diffs,
 		AppliedCount: len(appliedIDs),
 		Warnings:     warnings,
 	})
 }
 
-func selectedHighRiskNames(suggestions []paramize.Suggestion, selected map[string]bool) []string {
-	names := make([]string, 0)
-	for _, suggestion := range suggestions {
-		if suggestion.HighRisk && selected[suggestion.ID] {
-			names = append(names, suggestion.VarName)
-		}
+func sanitizeParameterizationDiffs(input []paramize.Diff) []paramize.Diff {
+	output := make([]paramize.Diff, len(input))
+	copy(output, input)
+	for index := range output {
+		output[index].Before = ""
+		output[index].After = ""
 	}
-	return names
+	return output
 }

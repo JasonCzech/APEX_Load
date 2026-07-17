@@ -90,6 +90,21 @@ describe('useScriptApi import wrappers', () => {
     expect(request).toHaveBeenCalledWith('/scripts/authoring/capabilities')
   })
 
+  it('preserves recording provenance when a reviewed draft is saved', async () => {
+    const script = { name: 'Recorded', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [] }
+
+    await api.createScript(script, 'project-1', undefined, 'recording-1')
+
+    expect(request).toHaveBeenCalledWith('/scripts', {
+      method: 'POST',
+      body: JSON.stringify({
+        script,
+        project_id: 'project-1',
+        source_recording_session_id: 'recording-1',
+      }),
+    })
+  })
+
   it('applies logical secret bindings through the dedicated endpoint', async () => {
     const payload = {
       script: { name: 'Imported', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [] },
@@ -100,6 +115,17 @@ describe('useScriptApi import wrappers', () => {
     await api.applySecretBindings(payload)
 
     expect(request).toHaveBeenCalledWith('/scripts/secret-bindings/apply', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  })
+
+  it('discards protected source-secret sessions without requesting a response body', async () => {
+    const payload = { project_id: 'project-1', source_secret_session_id: 'source-session-1' }
+
+    await api.discardImportSecretSession(payload)
+
+    expect(request).toHaveBeenCalledWith('/scripts/import/secrets/discard', {
       method: 'POST',
       body: JSON.stringify(payload),
     })

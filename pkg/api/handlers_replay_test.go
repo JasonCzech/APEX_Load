@@ -109,11 +109,11 @@ func TestHandleReplayScriptReturnsStructuredReport(t *testing.T) {
 	if len(payload.Report.Events) != 2 {
 		t.Fatalf("event count = %d, want 2", len(payload.Report.Events))
 	}
-	if payload.Report.Events[1].Target != "/users/s-123" {
-		t.Fatalf("target = %q, want /users/s-123", payload.Report.Events[1].Target)
+	if payload.Report.Events[1].Target != "/users/[REDACTED]" {
+		t.Fatalf("target = %q, want /users/[REDACTED]", payload.Report.Events[1].Target)
 	}
-	if payload.Report.FinalVariables["session"] != "s-123" {
-		t.Fatalf("session = %q, want s-123", payload.Report.FinalVariables["session"])
+	if payload.Report.FinalVariables["session"] != "[REDACTED]" {
+		t.Fatalf("session = %q, want [REDACTED]", payload.Report.FinalVariables["session"])
 	}
 }
 
@@ -194,6 +194,72 @@ func TestHandleReplayScriptUsesDraftOverride(t *testing.T) {
 	}
 	if payload.Report.Events[0].ActionName != "draft" || payload.Report.Events[0].Target != "/draft" {
 		t.Fatalf("unexpected draft event: %#v", payload.Report.Events[0])
+	}
+}
+
+func TestTransientReplayAndDebugDraftsRequireSecretBindingsBeforeExecution(t *testing.T) {
+	const secret = "transient-inline-credential"
+	server := NewServer(ServerConfig{})
+	script := map[string]any{
+		"name":       "Unsafe transient draft",
+		"version":    "1",
+		"protocol":   "http",
+		"project_id": "transient-secret-project",
+		"config":     map[string]any{"base_url": "https://example.test"},
+		"actions": []map[string]any{{
+			"name":   "request",
+			"type":   "request",
+			"method": "GET",
+			"target": "https://example.test/path?api_key=" + secret,
+		}},
+	}
+	body := map[string]any{
+		"project_id": "transient-secret-project",
+		"script":     script,
+	}
+	for _, path := range []string{
+		"/api/v1/scripts/replay",
+		"/api/v1/scripts/replay/sessions",
+		"/api/v1/scripts/debug/sessions",
+		"/api/v1/scripts/browser-replay/sessions",
+	} {
+		t.Run(path, func(t *testing.T) {
+			payload, err := json.Marshal(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(payload))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			server.mux.ServeHTTP(response, request)
+			if response.Code != http.StatusUnprocessableEntity ||
+				!strings.Contains(response.Body.String(), secretBindingsRequiredCode) ||
+				strings.Contains(response.Body.String(), secret) {
+				t.Fatalf("%s response = %d %s", path, response.Code, response.Body.String())
+			}
+		})
+	}
+
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name: "Stored safe script", Protocol: "http", ProjectID: "transient-secret-project",
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{{Name: "safe", Type: "request", Method: http.MethodGet, Target: "/safe"}},
+	})
+	if stored == nil {
+		t.Fatal("failed to seed stored script")
+	}
+	payload, err := json.Marshal(map[string]any{"script": script})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/replay", bytes.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, request)
+	if response.Code != http.StatusUnprocessableEntity ||
+		!strings.Contains(response.Body.String(), secretBindingsRequiredCode) ||
+		strings.Contains(response.Body.String(), secret) {
+		t.Fatalf("stored override response = %d %s", response.Code, response.Body.String())
 	}
 }
 
@@ -638,9 +704,9 @@ func TestValidateScriptForReplayBlocksReviewGatedJavaScriptUntilApproved(t *test
 	}
 }
 
-// TestReplayPreflightSecretMissWarnsNotInvalid guards C6: a secret unresolvable
-// on the controller is resolved on the generators at runtime, so it must surface
-// as a warning, not invalidate the script.
+// TestReplayPreflightSecretMissWarnsNotInvalid preserves non-blocking import
+// and authoring previews when no governed project resolver is intentionally
+// available.
 func TestReplayPreflightSecretMissWarnsNotInvalid(t *testing.T) {
 	const secretName = "C6_UNSET_SECRET_FIXTURE"
 	script := &dsl.Script{
@@ -668,6 +734,47 @@ func TestReplayPreflightSecretMissWarnsNotInvalid(t *testing.T) {
 	}
 	if !anyStringContains(preflight.Warnings, secretName) {
 		t.Fatalf("warnings = %v, want a secret-binding warning mentioning %q", preflight.Warnings, secretName)
+	}
+}
+
+func TestReplayPreflightUsesGovernedProjectSecretResolver(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "Managed Secret Replay",
+		Protocol: "database",
+		Config: dsl.ScriptConfig{
+			Database: dsl.DatabaseConfig{DSN: "{{secret.DATABASE_DSN}}"},
+		},
+		Actions: []dsl.Action{{
+			Name: "Query",
+			Type: "db_query",
+		}},
+	}
+	configured := engine.SecretResolverFunc(func(name string) (string, bool) {
+		return "server-side-value", name == "DATABASE_DSN"
+	})
+	preflight := buildReplayPreflight(script, nil, nil, nil, configured)
+	if !preflight.Valid {
+		t.Fatalf("configured preflight.Valid = false: %#v", preflight)
+	}
+	if len(preflight.MissingSecrets) != 0 {
+		t.Fatalf("configured MissingSecrets = %v", preflight.MissingSecrets)
+	}
+	if status := replayPreflightCheckStatus(preflight, "secrets"); status != "warn" {
+		t.Fatalf("configured secrets status = %q, want warn for required binding", status)
+	}
+
+	missing := engine.SecretResolverFunc(func(string) (string, bool) {
+		return "", false
+	})
+	preflight = buildReplayPreflight(script, nil, nil, nil, missing)
+	if preflight.Valid {
+		t.Fatal("missing governed project secret did not fail preflight")
+	}
+	if !slices.Contains(preflight.MissingSecrets, "DATABASE_DSN") {
+		t.Fatalf("MissingSecrets = %v", preflight.MissingSecrets)
+	}
+	if status := replayPreflightCheckStatus(preflight, "secrets"); status != "fail" {
+		t.Fatalf("missing secrets status = %q, want fail", status)
 	}
 }
 

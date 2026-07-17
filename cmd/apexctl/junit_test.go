@@ -95,6 +95,24 @@ func TestBuildJUnitReportSLABreach(t *testing.T) {
 	}
 }
 
+func TestBuildJUnitReportPartialEvidenceBreachStillFails(t *testing.T) {
+	report := buildJUnitReport(junitInput{
+		suiteName: "apexload:partial",
+		sla: &SLASummary{
+			Evaluated: false,
+			Breached:  true,
+			Details:   []string{"P95 latency 900.0ms exceeded 800.0ms"},
+		},
+	})
+	suite := report.Suites[0]
+	if suite.Failures != 1 || suite.Skipped != 0 {
+		t.Fatalf("partial-evidence breach counts = failures:%d skipped:%d, want 1/0", suite.Failures, suite.Skipped)
+	}
+	if suite.Cases[1].Failure == nil || !strings.Contains(suite.Cases[1].Failure.Body, "P95 latency") {
+		t.Fatalf("partial-evidence breach was not preserved: %#v", suite.Cases[1])
+	}
+}
+
 func TestBuildJUnitReportExecutionError(t *testing.T) {
 	report := buildJUnitReport(junitInput{
 		suiteName: "apexload:x",

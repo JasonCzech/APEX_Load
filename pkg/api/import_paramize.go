@@ -1,6 +1,8 @@
 package api
 
 import (
+	"strings"
+
 	"github.com/jasonczech/apexload/pkg/convert/openapi"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/postman"
@@ -37,6 +39,44 @@ func buildImportParameterization(script *dsl.Script, preApplied []paramize.PreAp
 		EnableSecrets:    true,
 	})
 	return &result
+}
+
+// buildTrustedImportParameterization derives the selectable parameterization
+// instructions from the disclosure-safe script held by the server. Browser
+// supplied suggestion internals are descriptors only and are never replayed as
+// mutation instructions. Credential-shaped and redacted values are excluded;
+// those are handled exclusively by the guided Credentials workflow.
+func buildTrustedImportParameterization(script *dsl.Script) *paramize.Result {
+	result := buildImportParameterization(script, nil)
+	trusted := make([]paramize.Suggestion, 0, len(result.Suggestions))
+	for _, suggestion := range result.Suggestions {
+		if suggestion.Kind != paramize.KindDataParam || parameterizationSuggestionContainsMaskedSecret(suggestion) {
+			continue
+		}
+		trusted = append(trusted, suggestion)
+	}
+	result.Suggestions = trusted
+	result.Summary = paramizeSummary(trusted)
+	return result
+}
+
+func parameterizationSuggestionContainsMaskedSecret(suggestion paramize.Suggestion) bool {
+	contains := func(value string) bool {
+		return strings.Contains(value, maskedScriptSecret)
+	}
+	if contains(suggestion.LiteralValue) || contains(suggestion.SampleValue) || contains(suggestion.Replacement) {
+		return true
+	}
+	for _, location := range suggestion.Locations {
+		if contains(location.SearchText) || contains(location.ReplaceText) {
+			return true
+		}
+	}
+	if suggestion.FoundInAction != nil &&
+		(contains(suggestion.FoundInAction.SearchText) || contains(suggestion.FoundInAction.ReplaceText)) {
+		return true
+	}
+	return false
 }
 
 // buildMultiScriptParameterization merges suggestions across a multi-script

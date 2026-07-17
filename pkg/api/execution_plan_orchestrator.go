@@ -82,6 +82,7 @@ type seqPlanRunState struct {
 	createdAt     time.Time
 	attribSubject string
 	attribName    string
+	creationActor testCreationActor
 	approval      *storage.ExecutionPlanApproval
 	leaseTerm     executionLeaseTerm
 	rehydrated    bool // restored from durable storage rather than materialized in this process
@@ -125,7 +126,7 @@ func enabledSortedEntries(entries []storage.ExecutionPlanEntry) []storage.Execut
 // pools because createTestRequestFromScenario only fills empty DataPools), and an
 // optional timeslot (entry-level, else the plan-level fallback). Shared by both the
 // sequential orchestrator and the parallel materialize path.
-func buildPlanEntryCreateRequest(planName, projectID string, planTimeslot *string, entry storage.ExecutionPlanEntry) (CreateTestRequest, error) {
+func buildPlanEntryCreateRequest(planName, projectID string, planTimeslot *string, entry storage.ExecutionPlanEntry, actors ...testCreationActor) (CreateTestRequest, error) {
 	req := CreateTestRequest{
 		Name:       strings.TrimSpace(planName + " / " + executionEntryLabel(entry)),
 		ScenarioID: entry.ScenarioID,
@@ -144,6 +145,9 @@ func buildPlanEntryCreateRequest(planName, projectID string, planTimeslot *strin
 	if ts := firstNonEmpty(trimPtr(entry.TimeslotID), trimPtr(planTimeslot)); ts != "" {
 		req.TimeslotID = &ts
 	}
+	if len(actors) > 0 {
+		req.creationActor = normalizeTestCreationActor(actors[0])
+	}
 	return req, nil
 }
 
@@ -154,7 +158,8 @@ func trimPtr(s *string) string {
 	return strings.TrimSpace(*s)
 }
 
-func executionPlanRunEntrySnapshot(entry storage.ExecutionPlanEntry, runName, attribSubject, attribName string, effectiveTimeslot *string, approval *storage.ExecutionPlanApproval) storage.ExecutionPlanRunEntry {
+func executionPlanRunEntrySnapshot(entry storage.ExecutionPlanEntry, runName, attribSubject, attribName string, effectiveTimeslot *string, approval *storage.ExecutionPlanApproval, actors ...testCreationActor) storage.ExecutionPlanRunEntry {
+	actor := executionPlanCreationActor(attribSubject, attribName, actors...)
 	return storage.ExecutionPlanRunEntry{
 		Order:            entry.Order,
 		ScenarioID:       entry.ScenarioID,
@@ -167,8 +172,84 @@ func executionPlanRunEntrySnapshot(entry storage.ExecutionPlanEntry, runName, at
 		RunName:          runName,
 		AttribSubject:    strings.TrimSpace(attribSubject),
 		AttribName:       strings.TrimSpace(attribName),
+		ActorType:        actor.Type,
+		ActorSubject:     actor.Subject,
+		ActorDisplayName: actor.DisplayName,
 		ApprovalID:       approvalID(approval),
 	}
+}
+
+func executionPlanCreationActor(attribSubject, attribName string, actors ...testCreationActor) testCreationActor {
+	if len(actors) > 0 {
+		return normalizeTestCreationActor(actors[0])
+	}
+	// Attribution text alone cannot distinguish a user from a service account.
+	// Callers that may project plaintext credentials must supply the authenticated
+	// actor explicitly; omitted provenance remains usable for non-secret runs.
+	return normalizeTestCreationActor(testCreationActor{
+		Type:        "legacy",
+		Subject:     firstNonEmpty(attribSubject, "controller:execution-plan-unattributed"),
+		DisplayName: attribName,
+	})
+}
+
+func executionPlanRunEntryCreationActor(entry storage.ExecutionPlanRunEntry) testCreationActor {
+	if strings.TrimSpace(entry.ActorType) != "" || strings.TrimSpace(entry.ActorSubject) != "" {
+		return normalizeTestCreationActor(testCreationActor{
+			Type:        entry.ActorType,
+			Subject:     entry.ActorSubject,
+			DisplayName: entry.ActorDisplayName,
+		})
+	}
+	// A legacy row cannot prove whether its attribution subject was a user or a
+	// service account. Preserve the subject for diagnostics but mark the authority
+	// unknown so later entries cannot inherit system-level secret-write power.
+	return normalizeTestCreationActor(testCreationActor{
+		Type:        "legacy",
+		Subject:     firstNonEmpty(entry.AttribSubject, "controller:execution-plan-legacy"),
+		DisplayName: entry.AttribName,
+	})
+}
+
+// preflightExecutionPlanRuntimeSecretAuthority rejects a run whose actor lacks
+// project-secret write authority before approval claims, run anchors, provider
+// calls, or test side effects. The
+// create boundary enforces the same rule again, so a concurrent scenario change
+// still fails closed after this early authorization check.
+func (tr *TestRunner) preflightExecutionPlanRuntimeSecretAuthority(plan *storage.ExecutionPlan, runName, runID string, actor testCreationActor) error {
+	actor = normalizeTestCreationActor(actor)
+	actorErr := runtimeSecretWriteActorError(actor)
+	if actorErr == nil || plan == nil {
+		return nil
+	}
+	entries := enabledSortedEntries(plan.Entries)
+	planTimeslotUsed := false
+	for index, entry := range entries {
+		var planTimeslot *string
+		if trimPtr(entry.TimeslotID) == "" && !planTimeslotUsed && trimPtr(plan.TimeslotID) != "" {
+			planTimeslot = plan.TimeslotID
+			planTimeslotUsed = true
+		}
+		req, err := buildPlanEntryCreateRequest(runName, plan.ProjectID, planTimeslot, entry, actor)
+		if err != nil {
+			// Preserve the materializer's existing validation/governance ordering.
+			// The authoritative create boundary still enforces actor authority if a
+			// malformed entry later reaches runtime-secret persistence.
+			continue
+		}
+		tr.mu.RLock()
+		preview, err := tr.buildManagedTestLocked(req, executionPlanEntryTestID(runID, index, entry.Order), "DRAFT")
+		tr.mu.RUnlock()
+		if err != nil {
+			continue
+		}
+		for _, group := range preview.Groups {
+			if len(group.runtimeSecretValues) > 0 {
+				return actorErr
+			}
+		}
+	}
+	return nil
 }
 
 func executionPlanEntryFromRunEntry(entry storage.ExecutionPlanRunEntry) storage.ExecutionPlanEntry {
@@ -213,6 +294,10 @@ func (tr *TestRunner) startExecutionPlanRunWithID(plan *storage.ExecutionPlan, a
 }
 
 func (tr *TestRunner) startExecutionPlanRunWithIDAndTerm(plan *storage.ExecutionPlan, attribSubject, attribName, runNameOverride, runIDOverride string, leaseTerm executionLeaseTerm, approval ...*storage.ExecutionPlanApproval) (*storage.ExecutionPlanRun, error) {
+	return tr.startExecutionPlanRunWithIDAndTermActor(plan, attribSubject, attribName, runNameOverride, runIDOverride, leaseTerm, executionPlanCreationActor(attribSubject, attribName), approval...)
+}
+
+func (tr *TestRunner) startExecutionPlanRunWithIDAndTermActor(plan *storage.ExecutionPlan, attribSubject, attribName, runNameOverride, runIDOverride string, leaseTerm executionLeaseTerm, actor testCreationActor, approval ...*storage.ExecutionPlanApproval) (*storage.ExecutionPlanRun, error) {
 	if plan == nil {
 		return nil, fmt.Errorf("execution plan is required")
 	}
@@ -237,7 +322,7 @@ func (tr *TestRunner) startExecutionPlanRunWithIDAndTerm(plan *storage.Execution
 			effectiveTimeslot = plan.TimeslotID
 			planTimeslotUsed = true
 		}
-		statuses[i] = executionPlanRunEntrySnapshot(e, runName, attribSubject, attribName, effectiveTimeslot, runApproval)
+		statuses[i] = executionPlanRunEntrySnapshot(e, runName, attribSubject, attribName, effectiveTimeslot, runApproval, actor)
 	}
 	runID := strings.TrimSpace(runIDOverride)
 	if runID == "" {
@@ -270,6 +355,7 @@ func (tr *TestRunner) startExecutionPlanRunWithIDAndTerm(plan *storage.Execution
 		createdAt:     now,
 		attribSubject: attribSubject,
 		attribName:    attribName,
+		creationActor: normalizeTestCreationActor(actor),
 		leaseTerm:     leaseTerm,
 	}
 	st.approval = runApproval
@@ -543,6 +629,7 @@ func (tr *TestRunner) launchNextPlanEntryWithTerm(runID string, leaseTerm execut
 			st.timeslotUsed = true
 		}
 		subject, displayName, approval := st.attribSubject, st.attribName, st.approval
+		creationActor := st.creationActor
 		// Claim this entry durably before creating its queued test. This is the
 		// side-effect fence for HA recovery: only the controller that advances the
 		// run revision from pending to running may materialize the entry.
@@ -560,7 +647,7 @@ func (tr *TestRunner) launchNextPlanEntryWithTerm(runID string, leaseTerm execut
 		err := tr.validateExecutionPlanApprovalMaterialization(planID, runID, approval)
 		var req CreateTestRequest
 		if err == nil {
-			req, err = buildPlanEntryCreateRequest(planName, projectID, timeslot, entry)
+			req, err = buildPlanEntryCreateRequest(planName, projectID, timeslot, entry, creationActor)
 			if err == nil {
 				req.MaterializationKey = materializationKey
 				req.ExecutionPlanApproval = approval

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -42,6 +44,64 @@ func storeExecutionPlanTermScript(t *testing.T, runner *TestRunner, id, projectI
 func executionPlanTermCreateRequest(name, scriptID, projectID string) CreateTestRequest {
 	return CreateTestRequest{
 		Name: name, Duration: "30s", ProjectID: projectID, ScriptID: scriptID, VUsers: 1, RampUp: "1s",
+	}
+}
+
+func TestIdempotentTestCreateAdoptsRunningMaterializationWithoutReplacingRuntime(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "idempotent-running.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	runner := NewTestRunner(2, NewHub(), store)
+	storeExecutionPlanTermScript(t, runner, "idempotent-running-script", storage.DefaultProjectID)
+	testID := uuid.NewString()
+	request := executionPlanTermCreateRequest("idempotent running", "idempotent-running-script", storage.DefaultProjectID)
+	request.RequestedTestID = testID
+	request.MaterializationKey = "ci/materialization/idempotent-running"
+	if _, err := runner.CreateTest(request); err != nil {
+		t.Fatalf("initial CreateTest: %v", err)
+	}
+
+	executionCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	startedAt := time.Now().UTC()
+	runner.mu.Lock()
+	canonical := runner.tests[testID]
+	if canonical == nil {
+		runner.mu.Unlock()
+		t.Fatal("initial create did not populate the execution cache")
+	}
+	canonical.Status = "RUNNING"
+	canonical.StartedAt = &startedAt
+	canonical.executionCtx = executionCtx
+	canonical.cancel = cancel
+	runningRecord := buildManagedTestRecord(canonical)
+	runner.mu.Unlock()
+	if err := store.SaveTest(runningRecord); err != nil {
+		t.Fatalf("persist RUNNING materialization: %v", err)
+	}
+
+	retry, err := runner.CreateTest(request)
+	if err != nil {
+		t.Fatalf("idempotent CreateTest: %v", err)
+	}
+	if retry.Status != "RUNNING" || retry.StartedAt == nil {
+		t.Fatalf("retry adopted status = %q started_at=%v, want RUNNING materialization", retry.Status, retry.StartedAt)
+	}
+	runner.mu.RLock()
+	retained := runner.tests[testID]
+	runner.mu.RUnlock()
+	if retained != canonical || retained.executionCtx != executionCtx || retained.cancel == nil {
+		t.Fatalf("idempotent retry replaced the live runtime: retained=%p canonical=%p context_retained=%t cancel_retained=%t", retained, canonical, retained != nil && retained.executionCtx == executionCtx, retained != nil && retained.cancel != nil)
+	}
+	durable, err := store.GetTest(testID)
+	if err != nil {
+		t.Fatalf("GetTest: %v", err)
+	}
+	if durable.Status != "RUNNING" {
+		t.Fatalf("durable retry state = %q, want RUNNING", durable.Status)
 	}
 }
 

@@ -101,6 +101,9 @@ func evidenceTarget(action *Action, result *Result) string {
 		return result.DependencyTarget
 	}
 	if action != nil {
+		if strings.TrimSpace(action.RedactedTarget) != "" {
+			return strings.TrimSpace(action.RedactedTarget)
+		}
 		return strings.TrimSpace(action.Target)
 	}
 	return ""

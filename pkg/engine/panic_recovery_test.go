@@ -42,9 +42,41 @@ func (p *panicTeardownProtocol) Teardown(_ context.Context) error {
 }
 func (p *panicTeardownProtocol) HealthCheck(_ context.Context) error { return nil }
 
+type panicInitProtocol struct{}
+
+var panicInitTeardownCalls atomic.Int64
+
+func (*panicInitProtocol) Name() string { return "panic-init-stub" }
+func (*panicInitProtocol) Init(context.Context, map[string]any) error {
+	panic("boom: simulated init fault")
+}
+func (*panicInitProtocol) Execute(context.Context, *protocol.Action) (*protocol.Result, error) {
+	return nil, nil
+}
+func (*panicInitProtocol) Teardown(context.Context) error {
+	panicInitTeardownCalls.Add(1)
+	return nil
+}
+func (*panicInitProtocol) HealthCheck(context.Context) error { return nil }
+
+type panicHealthProtocol struct{}
+
+var panicHealthExecuteCalls atomic.Int64
+
+func (*panicHealthProtocol) Name() string                               { return "panic-health-stub" }
+func (*panicHealthProtocol) Init(context.Context, map[string]any) error { return nil }
+func (*panicHealthProtocol) Teardown(context.Context) error             { return nil }
+func (*panicHealthProtocol) HealthCheck(context.Context) error          { panic("boom: simulated health fault") }
+func (*panicHealthProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	panicHealthExecuteCalls.Add(1)
+	return &protocol.Result{ActionName: action.Name, Success: true, Duration: time.Millisecond}, nil
+}
+
 func init() {
 	protocol.Register("panic-stub", func() protocol.Protocol { return &panickingProtocol{} })
 	protocol.Register("panic-teardown-stub", func() protocol.Protocol { return &panicTeardownProtocol{} })
+	protocol.Register("panic-init-stub", func() protocol.Protocol { return &panicInitProtocol{} })
+	protocol.Register("panic-health-stub", func() protocol.Protocol { return &panicHealthProtocol{} })
 }
 
 func TestSafeProtoExecute_RecoversPanic(t *testing.T) {
@@ -77,6 +109,109 @@ func TestRecoveredPanicLogTextScrubsAndBoundsAdapterValue(t *testing.T) {
 	}
 	if len(got) > maxRecoveredPanicLogBytes {
 		t.Fatalf("panic log value length = %d, want <= %d", len(got), maxRecoveredPanicLogBytes)
+	}
+}
+
+func TestTeardownPanicRecoveryUsesExactRuntimeRedaction(t *testing.T) {
+	const secret = "tiny-unpatterned-panic-value"
+	proto := teardownPanicValueProtocol{value: secret}
+	config := WithSecretValueRedaction(nil, []string{secret})
+	err := callProtocolTeardown(context.Background(), proto, config)
+	if err == nil || strings.Contains(err.Error(), secret) || !strings.Contains(err.Error(), redactedPayloadValue) {
+		t.Fatalf("callProtocolTeardown error = %q, want exact-redacted panic", err)
+	}
+	if got := recoveredPanicLogTextWithConfig("panic "+secret, config); strings.Contains(got, secret) {
+		t.Fatalf("recovered panic log exposed exact runtime value: %q", got)
+	}
+}
+
+func TestRecoveredPanicLogScrubsLongRuntimeSecretBeforeTruncation(t *testing.T) {
+	secret := strings.Repeat("q", maxRecoveredPanicLogBytes*2)
+	config := WithSecretValueRedaction(nil, []string{secret})
+	got := recoveredPanicLogTextWithConfig("panic: "+secret+":end", config)
+	if strings.Contains(got, strings.Repeat("q", 256)) || !strings.Contains(got, redactedPayloadValue) {
+		t.Fatalf("long panic secret survived as a truncated prefix: %q", got)
+	}
+	if len(got) > maxRecoveredPanicLogBytes {
+		t.Fatalf("panic log value length = %d, want <= %d", len(got), maxRecoveredPanicLogBytes)
+	}
+}
+
+func TestInitAndHealthCheckPanicRecoveryUsesExactRuntimeRedaction(t *testing.T) {
+	const secret = "tiny-unpatterned-lifecycle-value"
+	config := WithSecretValueRedaction(nil, []string{secret})
+	initErr := callProtocolInit(context.Background(), lifecycleInitPanicValueProtocol{value: secret}, nil, config)
+	if initErr == nil || strings.Contains(initErr.Error(), secret) || !strings.Contains(initErr.Error(), redactedPayloadValue) {
+		t.Fatalf("callProtocolInit error = %q, want exact-redacted panic", initErr)
+	}
+	healthErr := callProtocolHealthCheck(context.Background(), lifecycleHealthPanicValueProtocol{value: secret}, config)
+	if healthErr == nil || strings.Contains(healthErr.Error(), secret) || !strings.Contains(healthErr.Error(), redactedPayloadValue) {
+		t.Fatalf("callProtocolHealthCheck error = %q, want exact-redacted panic", healthErr)
+	}
+}
+
+type lifecycleInitPanicValueProtocol struct{ value string }
+
+func (p lifecycleInitPanicValueProtocol) Init(context.Context, map[string]any) error { panic(p.value) }
+
+type lifecycleHealthPanicValueProtocol struct{ value string }
+
+func (p lifecycleHealthPanicValueProtocol) HealthCheck(context.Context) error { panic(p.value) }
+
+type teardownPanicValueProtocol struct{ value string }
+
+func (p teardownPanicValueProtocol) Teardown(context.Context) error { panic(p.value) }
+
+func TestReplayAndShakeoutSurviveProtocolTeardownPanic(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "panic teardown replay",
+		Protocol: "panic-teardown-stub",
+		Actions:  []dsl.Action{{Name: "ok", Type: "request", Target: "/"}},
+	}
+	if report, err := ReplayScript(context.Background(), script, ReplayOptions{IgnoreThinkTime: true}); err != nil || report == nil || !report.Success {
+		t.Fatalf("ReplayScript = report %#v err %v", report, err)
+	}
+	if err := RunScriptShakeout(context.Background(), "shakeout", script); err != nil {
+		t.Fatalf("RunScriptShakeout: %v", err)
+	}
+}
+
+func TestReplayAndShakeoutContainProtocolInitPanicAndTeardownPartialState(t *testing.T) {
+	before := panicInitTeardownCalls.Load()
+	script := &dsl.Script{
+		Name:     "panic init replay",
+		Protocol: "panic-init-stub",
+		Actions:  []dsl.Action{{Name: "never", Type: "request", Target: "/"}},
+	}
+	if report, err := ReplayScript(context.Background(), script, ReplayOptions{IgnoreThinkTime: true}); err == nil || report != nil || !strings.Contains(err.Error(), "protocol init panicked") {
+		t.Fatalf("ReplayScript = report %#v err %v, want contained init panic", report, err)
+	}
+	if err := RunScriptShakeout(context.Background(), "shakeout", script); err == nil || !strings.Contains(err.Error(), "protocol init panicked") {
+		t.Fatalf("RunScriptShakeout error = %v, want contained init panic", err)
+	}
+	if got := panicInitTeardownCalls.Load() - before; got != 2 {
+		t.Fatalf("partial-init teardown calls = %d, want 2", got)
+	}
+}
+
+func TestEngineRunContainsHealthCheckPanicAndContinues(t *testing.T) {
+	before := panicHealthExecuteCalls.Load()
+	script := &dsl.Script{
+		Name:     "panic health run",
+		Protocol: "panic-health-stub",
+		Config:   dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions:  []dsl.Action{{Name: "ok", Type: "request", Target: "/"}},
+	}
+	e, err := New(Config{Script: script, VUsers: 1, Duration: time.Second})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	result, err := e.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result == nil || panicHealthExecuteCalls.Load() <= before {
+		t.Fatalf("health panic prevented execution: result=%#v execute_calls=%d", result, panicHealthExecuteCalls.Load()-before)
 	}
 }
 

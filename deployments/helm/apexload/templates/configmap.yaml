@@ -1,3 +1,9 @@
+{{- if and .Values.projectSecrets.wrappingKeyVaultKeyId .Values.bruno.keyVaultKeyId (ne .Values.projectSecrets.wrappingKeyVaultKeyId .Values.bruno.keyVaultKeyId) }}
+{{- fail "projectSecrets.wrappingKeyVaultKeyId and bruno.keyVaultKeyId must match because the controller uses one wrapping key" }}
+{{- end }}
+{{- if and .Values.projectSecrets.wrappingMasterKey .Values.bruno.artifactMasterKey (ne .Values.projectSecrets.wrappingMasterKey .Values.bruno.artifactMasterKey) }}
+{{- fail "projectSecrets.wrappingMasterKey and bruno.artifactMasterKey must match because the controller uses one wrapping key" }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -24,6 +30,8 @@ data:
   APEXLOAD_AZURE_KEY_VAULT_URL: {{ include "apexload.requiredCleanValue" (list "dataPlatform.keyVaultUrl" .Values.dataPlatform.keyVaultUrl) | quote }}
   APEXLOAD_AZURE_KEY_VAULT_AUTH: {{ .Values.dataPlatform.keyVaultAuth | quote }}
   APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS: {{ .Values.dataPlatform.keyVaultAllowedSecrets | quote }}
+  APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED: {{ eq .Values.projectSecrets.provider "azure_key_vault" | quote }}
+  APEXLOAD_AZURE_KEY_VAULT_API_VERSION: {{ .Values.projectSecrets.azureKeyVaultApiVersion | quote }}
   APEXLOAD_AZURE_MESSAGING_ALLOWED_NAMESPACES: {{ .Values.dataPlatform.azureMessagingAllowedNamespaces | quote }}
   APEXLOAD_GENERATORS: {{ .Values.dataPlatform.generators | quote }}
   APEXLOAD_GENERATOR_DISCOVERY_INTERVAL: {{ .Values.dataPlatform.generatorDiscoveryInterval | quote }}
@@ -36,3 +44,12 @@ data:
   APEXLOAD_METRICS_ADDR: {{ .Values.dataPlatform.metricsAddr | quote }}
   APEXLOAD_API_KEY_RATE_LIMIT_PER_MINUTE: {{ .Values.dataPlatform.apiKeyRateLimitPerMinute | quote }}
   APEXLOAD_IDEMPOTENCY_KEY_TTL: {{ .Values.dataPlatform.idempotencyKeyTTL | quote }}
+  APEXLOAD_BRUNO_IMPORT_ENABLED: {{ .Values.bruno.importEnabled | quote }}
+  APEXLOAD_BRUNO_SAFE_EXECUTION_ENABLED: {{ .Values.bruno.enabled | quote }}
+  APEXLOAD_BRUNO_DEVELOPER_EXECUTION_ENABLED: "false"
+  APEXLOAD_BRUNO_NATIVE_PROJECTION_ENABLED: "false"
+  APEXLOAD_BRUNO_EGRESS_BROKER_URL: {{ .Values.bruno.egressBrokerUrl | quote }}
+{{- $wrappingKeyVaultKeyId := include "apexload.wrappingKeyVaultKeyId" . }}
+{{- if $wrappingKeyVaultKeyId }}
+  APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID: {{ $wrappingKeyVaultKeyId | quote }}
+{{- end }}

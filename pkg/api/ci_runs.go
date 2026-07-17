@@ -224,6 +224,8 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	testID := uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload-ci-run:"+req.ProjectID+":"+idempotencyKey)).String()
+	s.beginCIRunCreate(testID)
+	defer s.endCIRunCreate(testID)
 	deploymentLeaseToken := strings.TrimSpace(r.Header.Get(deploymentLeaseTokenHeader))
 	if deploymentLeaseToken != "" && !deploymentLeaseTokenPattern.MatchString(deploymentLeaseToken) {
 		writeError(w, http.StatusBadRequest, "invalid deployment lease authorization header")
@@ -259,7 +261,7 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusConflict, "CI script selection changed while the run was being created")
 			return
 		}
-		if err := validateCIRunRequest(req, policy, script, engine.NewProjectSecretResolver(req.ProjectID)); err != nil {
+		if err := validateCIRunRequest(req, policy, script, s.runner.secretResolverForProject(req.ProjectID)); err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -301,11 +303,13 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if strings.EqualFold(strings.TrimSpace(existing.Status), "QUEUED") && existing.StartedAt == nil {
-			if err := s.runner.StartTest(existing.ID); err != nil {
-				s.respondFailedCIRunStart(w, r, existing, "controller could not start recovered CI run", err)
-				return
-			}
+		var started bool
+		existing, started, err = s.startOrAdoptCIRun(existing, req.ProjectID, metadata)
+		if err != nil {
+			s.respondFailedCIRunStart(w, r, existing, "controller could not start recovered CI run", err)
+			return
+		}
+		if started {
 			actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 			if actorType == "user" || actorType == "service_account" {
 				s.runner.AttributeTestStarted(existing.ID, actorSubject, actorDisplayName)
@@ -357,6 +361,11 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 		ScriptID: effectiveScriptID, VUsers: req.Execution.VUsers, RampUp: strings.TrimSpace(req.Execution.RampUp), ScenarioMode: scenarioMode, GoalConfig: goalConfig,
 		RuntimeSettings: &RuntimeSettingsOverride{BaseURL: strings.TrimSpace(req.Execution.BaseURL), Env: cloneCIStringMap(req.Execution.Variables)},
 	}
+	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	create.creationActor = testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
+	if s.beforeCIRunMaterialize != nil {
+		s.beforeCIRunMaterialize(create)
+	}
 	test, err := s.runner.CreateTest(create)
 	if err != nil {
 		if existing, ok := s.runner.GetTest(testID); ok {
@@ -368,10 +377,14 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 						return
 					}
 				}
-				if strings.EqualFold(strings.TrimSpace(existing.Status), "QUEUED") && existing.StartedAt == nil {
-					if startErr := s.runner.StartTest(existing.ID); startErr != nil {
-						s.respondFailedCIRunStart(w, r, existing, "controller could not start recovered CI run", startErr)
-						return
+				existing, started, startErr := s.startOrAdoptCIRun(existing, req.ProjectID, metadata)
+				if startErr != nil {
+					s.respondFailedCIRunStart(w, r, existing, "controller could not start recovered CI run", startErr)
+					return
+				}
+				if started {
+					if actorType == "user" || actorType == "service_account" {
+						s.runner.AttributeTestStarted(existing.ID, actorSubject, actorDisplayName)
 					}
 					existing, _ = s.runner.GetTest(existing.ID)
 				}
@@ -383,8 +396,37 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if s.afterCIRunMaterialize != nil {
+		s.afterCIRunMaterialize(test)
+	}
 	intentHasNoTest = false
-	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	if test.creationAdopted {
+		if validationErr := validateExistingCIRun(test, req.ProjectID, metadata); validationErr != nil {
+			writeError(w, http.StatusConflict, validationErr.Error())
+			return
+		}
+		if metadata.PublishCheck {
+			if _, checkErr := s.createCIGitHubCheck(r.Context(), checkClient, githubPolicy, test, metadata); checkErr != nil {
+				writeError(w, http.StatusBadGateway, "failed to recover required GitHub Check: "+checkErr.Error())
+				return
+			}
+		}
+		var started bool
+		test, started, err = s.startOrAdoptCIRun(test, req.ProjectID, metadata)
+		if err != nil {
+			s.respondFailedCIRunStart(w, r, test, "controller could not start recovered CI run", err)
+			return
+		}
+		if started {
+			if actorType == "user" || actorType == "service_account" {
+				s.runner.AttributeTestStarted(test.ID, actorSubject, actorDisplayName)
+			}
+			test, _ = s.runner.GetTest(test.ID)
+		}
+		response, _ := s.buildCIRunResponse(r.Context(), test)
+		writeJSON(w, http.StatusAccepted, response)
+		return
+	}
 	if actorType == "user" || actorType == "service_account" {
 		s.runner.AttributeTestCreated(test.ID, actorSubject, actorDisplayName)
 	}
@@ -399,11 +441,13 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if err := s.runner.StartTest(test.ID); err != nil {
+	var started bool
+	test, started, err = s.startOrAdoptCIRun(test, req.ProjectID, metadata)
+	if err != nil {
 		s.respondFailedCIRunStart(w, r, test, "controller could not start CI run", err)
 		return
 	}
-	if actorType == "user" || actorType == "service_account" {
+	if started && (actorType == "user" || actorType == "service_account") {
 		s.runner.AttributeTestStarted(test.ID, actorSubject, actorDisplayName)
 	}
 	test, _ = s.runner.GetTest(test.ID)
@@ -412,9 +456,75 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusAccepted, response)
 }
 
+func ciRunNeedsStart(test *ManagedTest) bool {
+	return test != nil && strings.EqualFold(strings.TrimSpace(test.Status), "QUEUED") && test.StartedAt == nil
+}
+
+// startOrAdoptCIRun makes every exact-retry path idempotent across the final
+// QUEUED->start race. If another request starts or otherwise transitions the
+// same validated materialization first, its current state wins and both callers
+// can return the same accepted run instead of reporting a false start failure.
+func (s *Server) startOrAdoptCIRun(test *ManagedTest, projectID string, metadata ciRunMetadata) (*ManagedTest, bool, error) {
+	if !ciRunNeedsStart(test) {
+		return test, false, nil
+	}
+	startErr := s.runner.StartTest(test.ID)
+	if startErr == nil {
+		current, ok := s.runner.GetTest(test.ID)
+		if ok {
+			return current, true, nil
+		}
+		return test, true, nil
+	}
+	current, ok := s.runner.GetTest(test.ID)
+	if ok && validateExistingCIRun(current, projectID, metadata) == nil && !ciRunNeedsStart(current) {
+		return current, false, nil
+	}
+	return test, false, startErr
+}
+
+func (s *Server) beginCIRunCreate(testID string) {
+	if s == nil || strings.TrimSpace(testID) == "" {
+		return
+	}
+	s.ciRunCreateMu.Lock()
+	if s.ciRunCreates == nil {
+		s.ciRunCreates = make(map[string]int)
+	}
+	s.ciRunCreates[testID]++
+	s.ciRunCreateMu.Unlock()
+}
+
+func (s *Server) endCIRunCreate(testID string) {
+	if s == nil || strings.TrimSpace(testID) == "" {
+		return
+	}
+	s.ciRunCreateMu.Lock()
+	if s.ciRunCreates[testID] <= 1 {
+		delete(s.ciRunCreates, testID)
+	} else {
+		s.ciRunCreates[testID]--
+	}
+	s.ciRunCreateMu.Unlock()
+}
+
+func (s *Server) ciRunCreateInFlight(testID string) bool {
+	if s == nil || strings.TrimSpace(testID) == "" {
+		return false
+	}
+	s.ciRunCreateMu.Lock()
+	inFlight := s.ciRunCreates[testID] > 0
+	s.ciRunCreateMu.Unlock()
+	return inFlight
+}
+
 func (s *Server) respondFailedCIRunStart(w http.ResponseWriter, r *http.Request, test *ManagedTest, prefix string, startErr error) {
 	if s == nil || s.runner == nil || test == nil {
 		writeError(w, http.StatusInternalServerError, "failed to persist CI run start failure")
+		return
+	}
+	if errors.Is(startErr, errNotExecutionLeader) {
+		writeError(w, http.StatusServiceUnavailable, startErr.Error())
 		return
 	}
 	message := strings.TrimSpace(prefix) + ": " + startErr.Error()
@@ -602,13 +712,36 @@ func validateCIRunRequest(req ciRunCreateRequest, policy storage.GitHubActionsPo
 	}
 	var resolver engine.SecretResolver
 	if len(resolvers) > 0 {
-		resolver = resolvers[0]
+		resolver = engine.CacheSecretResolverForRun(resolvers[0])
+	}
+	if err := validateCIRequiredProjectSecrets(script, resolver); err != nil {
+		return err
 	}
 	if err := validateCIScriptPolicy(policy, script, req.Execution.BaseURL, resolver); err != nil {
 		return err
 	}
 	if strings.EqualFold(strings.TrimSpace(script.Protocol), "browser") {
 		return fmt.Errorf("browser protocol is disabled for controller-backed CI until browser-process egress enforcement is available")
+	}
+	return nil
+}
+
+func validateCIRequiredProjectSecrets(script *dsl.Script, resolver engine.SecretResolver) error {
+	names, err := engine.ReferencedSecretNames(script)
+	if err != nil {
+		return fmt.Errorf("inspect controller-managed project secrets")
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	ctx, cancel := engine.WithSecretResolutionBudget(context.Background())
+	defer cancel()
+	_, missing, err := engine.ResolveSecretNames(ctx, names, resolver)
+	if err != nil {
+		return fmt.Errorf("resolve controller-managed project secrets: %w", err)
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("controller-managed project secret(s) could not be resolved: %s", strings.Join(missing, ", "))
 	}
 	return nil
 }
@@ -1387,7 +1520,7 @@ func validateCIScriptPolicy(policy storage.GitHubActionsPolicy, script *dsl.Scri
 	}
 	for _, host := range hosts {
 		if !githubPolicyAllowsPattern(host, policy.AllowedTargetHosts, true) {
-			return fmt.Errorf("target host %q is not allowed by project policy", host)
+			return fmt.Errorf("resolved target host is not allowed by project policy")
 		}
 	}
 	return nil
@@ -1675,6 +1808,11 @@ func validateExistingCIRun(test *ManagedTest, projectID string, expected ciRunMe
 	if err != nil {
 		return fmt.Errorf("idempotency key is already bound to different CI run metadata")
 	}
+	// These values are stamped by the controller at acceptance time. They may
+	// legitimately change before an exact client retry and are not part of the
+	// caller's idempotency identity.
+	actual.PolicyRevision, expected.PolicyRevision = 0, 0
+	actual.CheckInstallationID, expected.CheckInstallationID = 0, 0
 	actualJSON, actualErr := json.Marshal(actual)
 	expectedJSON, expectedErr := json.Marshal(expected)
 	if actualErr != nil || expectedErr != nil || string(actualJSON) != string(expectedJSON) {
@@ -1876,6 +2014,9 @@ func ciSLAEvidenceComplete(config *GoalConfig, live *LiveMetrics) bool {
 	}
 	if config.MaxErrorCount != nil {
 		configured = true
+		if live == nil || live.TotalTx+live.TotalErrors <= 0 {
+			return false
+		}
 	}
 	return configured
 }

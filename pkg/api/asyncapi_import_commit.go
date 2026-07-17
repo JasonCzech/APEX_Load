@@ -35,6 +35,12 @@ func (s *Server) handleCommitAsyncAPIImport(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	script := &req.Script
+	safeScript, _, err := applySuggestedSecretBindings(script, 0)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "failed to prepare safe secret references: "+err.Error())
+		return
+	}
+	script = safeScript
 	if issues := validateScript(script); len(issues) > 0 {
 		writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
 		return

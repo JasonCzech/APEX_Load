@@ -80,6 +80,7 @@ import {
 } from './appProjectScope'
 import type { ScriptsAuthoringSubView } from './components/useScriptsAuthoringState'
 import type { MonitorCategoryId } from './components/MonitoringPage'
+import { resolveNativeImportRequest, type NativeImportRequest } from './nativeImportRouting'
 import './App.css'
 import './components/Pages.css'
 
@@ -110,40 +111,12 @@ const PROTECTED_METRICS_STATUSES = new Set([
   'STOPPING',
 ])
 
-type NativeImportTarget = {
-  launcher: string
-  mode?: string | null
-}
-
-type NativeImportRequest = NativeImportTarget & {
-  id: number
-  files: File[]
-}
-
 type PendingGuardedHistoryTraversal = {
   originHash: string
   originIndex: number
   targetHash: string
   targetIndex: number
   targetView: AppView
-}
-
-function nativeImportTargetForFileName(fileName: string): NativeImportTarget {
-  const name = fileName.toLowerCase()
-  if (name.endsWith('.zip')) return { launcher: 'enterprise_archive' }
-  if (name.endsWith('.jmx')) return { launcher: 'jmeter' }
-  if (name.endsWith('.har')) return { launcher: 'traffic_har', mode: 'auto_detect' }
-  if (name.endsWith('.postman_collection.json') || name.endsWith('.postman_environment.json')) return { launcher: 'postman' }
-  if (name.endsWith('.asyncapi.json') || name.endsWith('.asyncapi.yaml') || name.endsWith('.asyncapi.yml')) return { launcher: 'asyncapi' }
-  if (name.endsWith('.openapi.json') || name.endsWith('.openapi.yaml') || name.endsWith('.openapi.yml')) return { launcher: 'openapi' }
-  if (name.endsWith('.wsdl') || name.endsWith('.xml')) return { launcher: 'wsdl' }
-  if (name.endsWith('.raml')) return { launcher: 'raml' }
-  if (name.endsWith('.yaml') || name.endsWith('.yml')) return { launcher: 'openapi' }
-  if (name.endsWith('.avro')) return { launcher: 'eventhubs_capture' }
-  if (name.endsWith('.mqsc') || name.endsWith('.properties')) return { launcher: 'broker_config' }
-  if (name.endsWith('.js') || name.endsWith('.ts')) return { launcher: 'k6' }
-  if (name.endsWith('.http') || name.endsWith('.curl') || name.endsWith('.sh') || name.endsWith('.txt')) return { launcher: 'sample', mode: 'standard_api' }
-  return { launcher: 'openapi' }
 }
 
 function formatDesktopRemoteHealth(status?: DesktopStatusResponse) {
@@ -307,6 +280,7 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const [desktopStatus, setDesktopStatus] = useState<DesktopStatusResponse | null>(null)
   const [activeTopbarRuns, setActiveTopbarRuns] = useState<TopbarRunSummary[]>([])
   const [nativeImportRequest, setNativeImportRequest] = useState<NativeImportRequest | null>(null)
+  const nativeImportRequestGenerationRef = useRef(0)
   const [fleetEventSignal, setFleetEventSignal] = useState(0)
   // Bumped by the content-free `access_review_changed` WebSocket ping so the Access page
   // refetches its (admin-gated) review when the posture changes server-side.
@@ -605,16 +579,17 @@ function AppShell({ authStatus }: { authStatus?: import('./types').DashboardAuth
   const openNativeImportFiles = useCallback((files: File[]) => {
     const usable = files.filter(Boolean)
     if (usable.length === 0) return
-    const target = nativeImportTargetForFileName(usable[0].name)
-    runGuarded(() => {
-      setNativeImportRequest({
-        id: Date.now(),
-        files: usable,
-        ...target,
+    const requestID = ++nativeImportRequestGenerationRef.current
+    const isCurrent = (candidate: number) => nativeImportRequestGenerationRef.current === candidate
+    void resolveNativeImportRequest(usable, requestID, isCurrent).then(request => {
+      if (!request) return
+      runGuarded(() => {
+        if (!isCurrent(requestID)) return
+        setNativeImportRequest(request)
+        setScriptsNavigationVersion(version => version + 1)
+        setScriptsTopbarState(null)
+        setView({ page: 'scripts' })
       })
-      setScriptsNavigationVersion(version => version + 1)
-      setScriptsTopbarState(null)
-      setView({ page: 'scripts' })
     })
   }, [runGuarded])
 

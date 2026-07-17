@@ -26,3 +26,17 @@ helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
 {{- $registry := include "apexload.requiredCleanValue" (list "image.registry" .Values.image.registry) -}}
 {{- printf "%s/%s:%s" $registry .Values.image.generatorRepository .Values.image.tag -}}
 {{- end -}}
+
+{{- define "apexload.brunoRunnerImage" -}}
+{{- $registry := include "apexload.requiredCleanValue" (list "image.registry" .Values.image.registry) -}}
+{{- $tag := default .Values.image.tag .Values.bruno.runner.image.tag -}}
+{{- printf "%s/%s:%s" $registry .Values.bruno.runner.image.repository $tag -}}
+{{- end -}}
+
+{{- define "apexload.wrappingKeyVaultKeyId" -}}
+{{- coalesce .Values.projectSecrets.wrappingKeyVaultKeyId .Values.bruno.keyVaultKeyId -}}
+{{- end -}}
+
+{{- define "apexload.wrappingMasterKey" -}}
+{{- coalesce .Values.projectSecrets.wrappingMasterKey .Values.bruno.artifactMasterKey -}}
+{{- end -}}

@@ -112,7 +112,7 @@ func buildJUnitReport(in junitInput) junitTestsuites {
 
 	// SLA testcase: present only when thresholds were evaluated. A breach is a
 	// failure with all breached details in the body so CI surfaces them inline.
-	if in.sla != nil && in.sla.Evaluated {
+	if in.sla != nil && (in.sla.Evaluated || in.sla.Breached) {
 		sla := junitTestcase{Name: "sla", Classname: classname, Time: "0"}
 		if in.sla.Breached {
 			sla.Failure = &junitFailure{
@@ -123,11 +123,15 @@ func buildJUnitReport(in junitInput) junitTestsuites {
 		}
 		suite.Cases = append(suite.Cases, sla)
 	} else {
+		message := "no SLA thresholds configured"
+		if in.sla != nil {
+			message = "SLA thresholds could not be fully evaluated"
+		}
 		suite.Cases = append(suite.Cases, junitTestcase{
 			Name:      "sla",
 			Classname: classname,
 			Time:      "0",
-			Skipped:   &junitSkipped{Message: "no SLA thresholds configured"},
+			Skipped:   &junitSkipped{Message: message},
 		})
 	}
 

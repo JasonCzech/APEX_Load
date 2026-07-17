@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"golang.org/x/sys/unix"
+	"github.com/jasonczech/apexload/pkg/internal/diskspace"
 )
 
 const (
@@ -177,22 +177,7 @@ func archiveDownloadFreeBytes(file *os.File) (int64, error) {
 	if file == nil {
 		return 0, fmt.Errorf("archive download staging file is unavailable")
 	}
-	var stat unix.Statfs_t
-	if err := unix.Fstatfs(int(file.Fd()), &stat); err != nil {
-		return 0, err
-	}
-	if stat.Bsize <= 0 {
-		return 0, fmt.Errorf("archive download staging filesystem reported an invalid block size")
-	}
-	blockSize := uint64(stat.Bsize)
-	if stat.Bavail > ^uint64(0)/blockSize {
-		return int64(^uint64(0) >> 1), nil
-	}
-	available := stat.Bavail * blockSize
-	if available > ^uint64(0)>>1 {
-		return int64(^uint64(0) >> 1), nil
-	}
-	return int64(available), nil
+	return diskspace.AvailableFile(file)
 }
 
 func stageArchiveDownload(ctx context.Context, write func(io.Writer) error) (*stagedArchiveDownload, error) {

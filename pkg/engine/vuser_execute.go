@@ -4,6 +4,7 @@ package engine
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"runtime/debug"
@@ -33,7 +34,6 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	}
 	retainResponseBody := shouldRetainResultResponseBody(result, logCfg)
 	scrubSensitiveStructuredResult(result, vu.RedactionConfig)
-	boundResultEvidence(result)
 	scrubSensitiveResultWithOptions(result, vu.RedactionConfig, retainResponseBody)
 	boundResultEvidence(result)
 	vu.Metrics.Record(result)
@@ -111,6 +111,13 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 	if !success && tx.ErrorMessage == "" {
 		tx.ErrorMessage = "transaction failed"
 	}
+	// Transaction-only execution paths (notably http_sequence aggregates) do
+	// not pass through recordResult. Apply the same detach, exact-secret
+	// redaction, and evidence bounds before either metrics or archive sinks can
+	// retain adapter-controlled metadata or error text.
+	scrubSensitiveStructuredResult(tx, vu.RedactionConfig)
+	scrubSensitiveResultWithOptions(tx, vu.RedactionConfig, false)
+	boundResultEvidence(tx)
 	if vu.Metrics != nil {
 		vu.Metrics.RecordTransactionResult(tx)
 	}
@@ -228,6 +235,10 @@ func (vu *VUser) waitAtRendezvous(ctx context.Context, action dsl.Action) error 
 // goroutine and crashing the whole generator process along with every other
 // concurrent VUser and test on the pod.
 func (vu *VUser) safeProtoExecute(ctx context.Context, action *protocol.Action) (result *protocol.Result, err error) {
+	return vu.safeProtoExecuteStream(ctx, action, nil)
+}
+
+func (vu *VUser) safeProtoExecuteStream(ctx context.Context, action *protocol.Action, emit func(*protocol.Result) error) (result *protocol.Result, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			result = nil
@@ -243,12 +254,30 @@ func (vu *VUser) safeProtoExecute(ctx context.Context, action *protocol.Action) 
 				protoName, actionName, r, debug.Stack())
 		}
 	}()
+	if streaming, ok := vu.Proto.(protocol.StreamingProtocol); ok {
+		if emit == nil {
+			emit = func(*protocol.Result) error { return nil }
+		}
+		return streaming.ExecuteStream(ctx, action, emit)
+	}
 	return vu.Proto.Execute(ctx, action)
 }
 
 // executeWithRetry wraps a single action execution with retry logic.
 func (vu *VUser) executeWithRetry(ctx context.Context, action *protocol.Action, errCfg dsl.ErrorHandlingConfig) (*protocol.Result, error) {
+	return vu.executeWithRetryStream(ctx, action, errCfg, nil)
+}
+
+func (vu *VUser) executeWithRetryStream(
+	ctx context.Context,
+	action *protocol.Action,
+	errCfg dsl.ErrorHandlingConfig,
+	emit func(*protocol.Result) error,
+) (*protocol.Result, error) {
 	if err := vu.checkResolvedSecrets(); err != nil {
+		return nil, err
+	}
+	if err := vu.extendRuntimeRedactionForActionAuth(action); err != nil {
 		return nil, err
 	}
 	if errCfg.MaxRetries < 0 || errCfg.MaxRetries > dsl.MaxErrorRetries {
@@ -288,9 +317,39 @@ func (vu *VUser) executeWithRetry(ctx context.Context, action *protocol.Action, 
 			}
 		}
 
-		result, err := vu.safeProtoExecute(ctx, action)
+		streaming := false
+		if _, ok := vu.Proto.(protocol.StreamingProtocol); ok {
+			streaming = true
+		}
+		childEmitter := emit
+		if streaming {
+			childEmitter = func(child *protocol.Result) error {
+				if child == nil {
+					return nil
+				}
+				if child.SampleKind == "" {
+					child.SampleKind = "child"
+				}
+				if child.ParentActionName == "" && action != nil {
+					child.ParentActionName = action.Name
+				}
+				child.Attempt = attempt + 1
+				applyProtocolResultSourceMetadata(child, action.Metadata)
+				if emit == nil {
+					return nil
+				}
+				return emit(child)
+			}
+		}
+		result, err := vu.safeProtoExecuteStream(ctx, action, childEmitter)
 		if err != nil {
 			return nil, err
+		}
+		if streaming && result != nil {
+			if result.SampleKind == "" {
+				result.SampleKind = "aggregate"
+			}
+			result.Attempt = attempt + 1
 		}
 		applyProtocolResultSourceMetadata(result, action.Metadata)
 		lastResult = result
@@ -306,6 +365,29 @@ func (vu *VUser) executeWithRetry(ctx context.Context, action *protocol.Action, 
 	}
 
 	return lastResult, nil
+}
+
+func (vu *VUser) extendRuntimeRedactionForActionAuth(action *protocol.Action) error {
+	if action == nil || action.Auth == nil ||
+		!strings.EqualFold(strings.TrimSpace(action.Auth.Type), "basic") {
+		return nil
+	}
+	if action.Auth.Username == "" && action.Auth.Password == "" {
+		return nil
+	}
+	payload := base64.StdEncoding.EncodeToString([]byte(action.Auth.Username + ":" + action.Auth.Password))
+	redactionConfig, err := WithSecretValueRedactionChecked(vu.RedactionConfig, []string{
+		action.Auth.Username,
+		action.Auth.Password,
+		payload,
+		"Basic " + payload,
+	})
+	if err != nil {
+		return fmt.Errorf("prepare action credential redaction: %s", scrubSensitiveText(err.Error()))
+	}
+	vu.RedactionConfig = redactionConfig
+	vu.runtimeRedaction.Store(redactionConfig)
+	return nil
 }
 
 func boundedRetryBackoff(base time.Duration, attempt int) time.Duration {
@@ -493,12 +575,24 @@ func applyProtocolResultSourceMetadata(result *protocol.Result, metadata map[str
 	if result == nil || len(metadata) == 0 {
 		return
 	}
-	result.SourceStepID = sourceMetadataString(metadata, "source_step_id")
-	result.SourceStepIndex = sourceMetadataInt(metadata, "source_step_index")
-	result.SourceAction = sourceMetadataString(metadata, "source_action")
-	result.SourceActionName = sourceMetadataString(metadata, "source_action_name")
-	result.SourceTransaction = sourceTransactionName(metadata)
-	result.SourceProfile = sourceMetadataString(metadata, "source_profile")
+	if result.SourceStepID == "" {
+		result.SourceStepID = sourceMetadataString(metadata, "source_step_id")
+	}
+	if result.SourceStepIndex == 0 {
+		result.SourceStepIndex = sourceMetadataInt(metadata, "source_step_index")
+	}
+	if result.SourceAction == "" {
+		result.SourceAction = sourceMetadataString(metadata, "source_action")
+	}
+	if result.SourceActionName == "" {
+		result.SourceActionName = sourceMetadataString(metadata, "source_action_name")
+	}
+	if result.SourceTransaction == "" {
+		result.SourceTransaction = sourceTransactionName(metadata)
+	}
+	if result.SourceProfile == "" {
+		result.SourceProfile = sourceMetadataString(metadata, "source_profile")
+	}
 }
 
 // handleSnapshot stores an error snapshot if configured and the result is a failure.

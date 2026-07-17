@@ -167,6 +167,65 @@ func TestBuildProtoConfig_KafkaSASLPasswordSecret(t *testing.T) {
 	}
 }
 
+func TestBuildProtoConfig_ResolvesNamedDedicatedSecrets(t *testing.T) {
+	resolver := SecretResolverFunc(func(name string) (string, bool) {
+		values := map[string]string{
+			"DATABASE_DSN":   "postgres://user:pass@db.example.test/app",
+			"KAFKA_PASSWORD": "runtime-kafka-pass",
+			"EVENTHUBS_CONN": "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKey=runtime",
+			"JMS_CA":         "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+		}
+		value, ok := values[name]
+		return value, ok
+	})
+	script := &dsl.Script{Config: dsl.ScriptConfig{
+		Database:  dsl.DatabaseConfig{DSNSecret: "DATABASE_DSN"},
+		Kafka:     dsl.KafkaConfig{SASLPasswordSecret: "KAFKA_PASSWORD"},
+		EventHubs: dsl.EventHubsConfig{ConnectionStringSecret: "EVENTHUBS_CONN"},
+		JMS: dsl.JMSConfig{TLS: &dsl.JMSTLSConfig{
+			CACertSecret: "JMS_CA",
+		}},
+	}}
+
+	cfg := buildProtoConfigWithSecretResolver(script, resolver)
+	for key, want := range map[string]string{
+		"database_dsn_secret":                "postgres://user:pass@db.example.test/app",
+		"kafka_sasl_password_secret":         "runtime-kafka-pass",
+		"eventhubs_connection_string_secret": "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKey=runtime",
+		"jms_tls_ca_cert_secret":             "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----",
+	} {
+		if got := cfg[key]; got != want {
+			t.Errorf("%s = %q, want resolved governed value", key, got)
+		}
+	}
+}
+
+func TestBuildProtoConfigBrunoPreservesSourceKeyAndResolvesOnlyBindingValue(t *testing.T) {
+	resolver := SecretResolverFunc(func(name string) (string, bool) {
+		if name == "PROJECT_API_TOKEN" {
+			return "resolved-bruno-material", true
+		}
+		return "", false
+	})
+	script := &dsl.Script{Config: dsl.ScriptConfig{Bruno: dsl.BrunoConfig{
+		SecretBindings: map[string]string{
+			"API_TOKEN": "{{secret.PROJECT_API_TOKEN}}",
+		},
+	}}}
+
+	cfg := buildProtoConfigWithSecretResolver(script, resolver)
+	bindings, ok := cfg["bruno_secret_bindings"].(map[string]string)
+	if !ok {
+		t.Fatalf("bruno_secret_bindings = %#v", cfg["bruno_secret_bindings"])
+	}
+	if got := bindings["API_TOKEN"]; got != "resolved-bruno-material" {
+		t.Fatalf("API_TOKEN = %q, want resolved governed value", got)
+	}
+	if _, exposed := bindings["PROJECT_API_TOKEN"]; exposed {
+		t.Fatalf("project logical name was exposed as a Bruno source variable: %#v", bindings)
+	}
+}
+
 func TestBuildProtoConfig_BaseURL(t *testing.T) {
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{

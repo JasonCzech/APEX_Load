@@ -2,15 +2,19 @@ package main
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/debugserver"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
@@ -61,6 +65,12 @@ func main() {
 	}
 
 	cfg := config.LoadGeneratorConfigFromEnv(os.Getenv)
+	restoreBrunoResolver, err := configureBrunoResolver()
+	if err != nil {
+		slog.Error("invalid Bruno distributed artifact configuration", "err", err)
+		os.Exit(1)
+	}
+	defer restoreBrunoResolver()
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -151,6 +161,36 @@ func main() {
 	if serverFailed {
 		os.Exit(1)
 	}
+}
+
+func configureBrunoResolver() (func(), error) {
+	enabled, err := strconv.ParseBool(strings.TrimSpace(os.Getenv("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED")))
+	if err != nil && strings.TrimSpace(os.Getenv("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED")) != "" {
+		return nil, fmt.Errorf("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED: %w", err)
+	}
+	if !enabled {
+		return func() {}, nil
+	}
+	root := strings.TrimSpace(os.Getenv("APEXLOAD_BRUNO_ARTIFACT_ROOT"))
+	if root == "" {
+		return nil, errors.New("APEXLOAD_BRUNO_ARTIFACT_ROOT is required when distributed Bruno execution is enabled")
+	}
+	wrapper, err := brunoartifact.NewConfiguredKeyWrapper(false)
+	if err != nil {
+		return nil, err
+	}
+	objects, err := brunoartifact.NewEncryptedStore(brunoartifact.StoreOptions{
+		RootDir:  root,
+		Wrapper:  wrapper,
+		ReadOnly: true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return brunoartifact.SetResolver(&brunoartifact.ContentAddressedResolver{
+		Objects: objects,
+		Kind:    "sanitized",
+	}), nil
 }
 
 func shutdownGeneratorRuntime(service generatorShutdownService, health healthStatusSetter, controlServer grpcStopper, healthServer grpcStopper, waitForNaturalDrain bool) {

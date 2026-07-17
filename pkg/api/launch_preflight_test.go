@@ -50,7 +50,7 @@ func storePreflightSAPGUIScript(runner *TestRunner, id string, projectID string)
 		ProjectID: projectID,
 		Config: dsl.ScriptConfig{
 			SAPGUI: dsl.SAPGUIConfig{
-				ConnectionString: "SAP_SYSTEM",
+				ConnectionString: "{{secret.sapgui_connection}}",
 				Password:         "{{secret.sapgui_password}}",
 			},
 		},

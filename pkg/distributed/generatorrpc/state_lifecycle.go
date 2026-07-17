@@ -167,6 +167,7 @@ func (s *Service) cacheScriptLocked(id string, content []byte, contentHash strin
 		s.scriptCacheBytes -= int64(len(existing.content))
 		existing.content = append(existing.content[:0], content...)
 		existing.hash = contentHash
+		existing.protocol = scriptProtocol(content)
 		existing.lastUsed = s.scriptUseCounter
 		s.scripts[id] = existing
 		s.scriptCacheBytes += contentBytes
@@ -178,7 +179,7 @@ func (s *Service) cacheScriptLocked(id string, content []byte, contentHash strin
 		}
 	}
 	s.scriptUseCounter++
-	s.scripts[id] = cachedScript{content: append([]byte(nil), content...), hash: contentHash, lastUsed: s.scriptUseCounter}
+	s.scripts[id] = cachedScript{content: append([]byte(nil), content...), hash: contentHash, protocol: scriptProtocol(content), lastUsed: s.scriptUseCounter}
 	s.scriptCacheBytes += contentBytes
 	return nil
 }

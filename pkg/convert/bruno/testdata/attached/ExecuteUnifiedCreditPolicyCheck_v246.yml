@@ -1,0 +1,240 @@
+info:
+  name: ExecuteUnifiedCreditPolicyCheck_v246
+  type: http
+  seq: 10
+
+http:
+  method: POST
+  url: "{{env}}{{riskassessmentadapter}}Services/com/cingular/csi/icas/ExecuteUnifiedCreditPolicyCheck.jws"
+  body:
+    type: xml
+    data: "<SOAP-ENV:Envelope xmlns:SOAP-ENV=\"http://schemas.xmlsoap.org/soap/envelope/\">\r
+
+      \    <SOAP-ENV:Header>\r
+
+      \        <ns2:MessageHeader xmlns:ns2=\"http://csi.cingular.com/CSI/Namespaces/InterfaceCustomerApprovalSystem/InfrastructureCommon/Types/Public/MessageHeader.xsd\">\r
+
+      \            <ns2:TrackingMessageHeader>\r
+
+      \                <ns2:infrastructureVersion>86</ns2:infrastructureVersion>\r
+
+      \                <ns2:applicationName>InterfaceCustomerApprovalSystem</ns2:applicationName>\r
+
+      \                <ns2:version>246</ns2:version>\r
+
+      \                <ns2:messageId>EUCPC_051021_1529</ns2:messageId>\r
+
+      \                <ns2:conversationId></ns2:conversationId>\r
+
+      \                <ns2:dateTimeStamp>2022-03-09T09:27:47.0Z</ns2:dateTimeStamp>\r
+
+      \            </ns2:TrackingMessageHeader>\r
+
+      \            <ns2:SecurityMessageHeader>\r
+
+      \                <ns2:userName>{{partnerUserName}}</ns2:userName>\r
+
+      \                <ns2:userPassword>{{partnerPassword}}</ns2:userPassword>\r
+
+      \            </ns2:SecurityMessageHeader>\r
+
+      \            <ns2:SequenceMessageHeader>\r
+
+      \                <ns2:sequenceNumber>1</ns2:sequenceNumber>\r
+
+      \                <ns2:totalInSequence>1</ns2:totalInSequence>\r
+
+      \            </ns2:SequenceMessageHeader>\r
+
+      \        </ns2:MessageHeader>\r
+
+      \    </SOAP-ENV:Header>\r
+
+      \    <SOAP-ENV:Body>\r
+
+      \        <ns2:ExecuteUnifiedCreditPolicyCheckRequest xmlns:ns2=\"http://csi.cingular.com/CSI/Namespaces/Container/Public/ExecuteUnifiedCreditPolicyCheckRequest.xsd\" xmlns:ns3=\"http://csi.att.com/CSI/Namespaces/InterfaceCustomerApprovalSystem/Types/Public/CommonDataModel.xsd\">\r
+
+      \            <ns2:affiliateId>MT</ns2:affiliateId>\r
+
+      \            <ns2:salesChannel>IR</ns2:salesChannel>\r
+
+      \            <ns2:salesChannelType>RET</ns2:salesChannelType>\r
+
+      \            <ns2:sourceApplicationId>APPLE</ns2:sourceApplicationId>\r
+
+      \            <ns2:requestorCorrelationId>GRLHFUEPTHBQ</ns2:requestorCorrelationId>\r
+
+      \            <ns2:CustomerDetails>\r
+
+      \                <ns2:NameDetails>\r
+
+      \                    <ns3:FirstNameInfo>SSUZANE</ns3:FirstNameInfo>\r
+
+      \                    <ns3:LastNameInfo>PULEO</ns3:LastNameInfo>\r
+
+      \                </ns2:NameDetails>\r
+
+      \                <ns2:AddressDetails>\r
+
+      \                    <ns2:customerCity>SAN ANTONIO</ns2:customerCity>\r
+
+      \                    <ns2:customerState>TX</ns2:customerState>\r
+
+      \                    <ns2:customerZipCode>78242</ns2:customerZipCode>\r
+
+      \                    <ns2:customerAddressLine1>8501 SPOTTED DEER</ns2:customerAddressLine1>\r
+
+      \                </ns2:AddressDetails>\r
+
+      \                <ns2:OtherDetails>\r
+
+      \                    <ns2:customerPreferredLanguageOption>EN</ns2:customerPreferredLanguageOption>\r
+
+      \                    <ns2:paperlessBillingIndicator>false</ns2:paperlessBillingIndicator>\r
+
+      \                </ns2:OtherDetails>\r
+
+      \            </ns2:CustomerDetails>\r
+
+      \            <ns2:ProductDetails>\r
+
+      \                <ns2:numberOfAffiliates>1</ns2:numberOfAffiliates>\r
+
+      \                <ns2:AffiliateDetails>\r
+
+      \                    <ns2:affiliateCode>MT</ns2:affiliateCode>\r
+
+      \                    <ns2:productType>P0001</ns2:productType>\r
+
+      \                    <ns2:numberOfLineItems>1</ns2:numberOfLineItems>\r
+
+      \                    <ns2:LineItemsDetails>\r
+
+      \                        <ns2:actionType>AD</ns2:actionType>\r
+
+      \                        <ns2:productLineItemId>LINE01</ns2:productLineItemId>\r
+
+      \                        <ns2:customerActivityType1>A0013</ns2:customerActivityType1>\r
+
+      \                        <ns2:numberOfLineItemAttributes>5</ns2:numberOfLineItemAttributes>\r
+
+      \                        <ns2:LineItemAttributeDetails>\r
+
+      \                            <ns3:AttributeCode>AC002</ns3:AttributeCode>\r
+
+      \                            <ns3:AttributeValue>SP</ns3:AttributeValue>\r
+
+      \                        </ns2:LineItemAttributeDetails>\r
+
+      \                        <ns2:LineItemAttributeDetails>\r
+
+      \                            <ns3:AttributeCode>AC013</ns3:AttributeCode>\r
+
+      \                            <ns3:AttributeValue>NEXT</ns3:AttributeValue>\r
+
+      \                        </ns2:LineItemAttributeDetails>\r
+
+      \                        <ns2:LineItemAttributeDetails>\r
+
+      \                            <ns3:AttributeCode>AC023</ns3:AttributeCode>\r
+
+      \                            <ns3:AttributeValue>599.00</ns3:AttributeValue>\r
+
+      \                        </ns2:LineItemAttributeDetails>\r
+
+      \                        <ns2:LineItemAttributeDetails>\r
+
+      \                            <ns3:AttributeCode>AC024</ns3:AttributeCode>\r
+
+      \                            <ns3:AttributeValue>iPhone 11 128GB Red</ns3:AttributeValue>\r
+
+      \                        </ns2:LineItemAttributeDetails>\r
+
+      \                        <ns2:LineItemAttributeDetails>\r
+
+      \                            <ns3:AttributeCode>AC009</ns3:AttributeCode>\r
+
+      \                            <ns3:AttributeValue>S6</ns3:AttributeValue>\r
+
+      \                        </ns2:LineItemAttributeDetails>\r
+
+      \                    </ns2:LineItemsDetails>\r
+
+      \                </ns2:AffiliateDetails>\r
+
+      \            </ns2:ProductDetails>\r
+
+      \            <ns2:businessOrResidenceCode>RES</ns2:businessOrResidenceCode>\r
+
+      \            <ns2:customerAccountTypes>T0016</ns2:customerAccountTypes>\r
+
+      \            <ns2:contractType>NEXT</ns2:contractType>\r
+
+      \            <ns2:storeId>R250</ns2:storeId>\r
+
+      \            <ns2:dealerCode>EDGG0</ns2:dealerCode>\r
+
+      \            <ns2:nationalRetailerName>AppleStore</ns2:nationalRetailerName>\r
+
+      \            <!--billingAccountNumber from AA response-->\r
+
+      \            <ns2:ban>{{billingAccountNumber}}</ns2:ban>\r
+
+      \            <ns2:accountType>I</ns2:accountType>\r
+
+      \            <ns2:accountSubType>R</ns2:accountSubType>\r
+
+      \            <ns2:cpniOptOutFlag>true</ns2:cpniOptOutFlag>\r
+
+      \            <!--decisionReferenceNumber from AA response-->\r
+
+      \            <ns2:casOrderNumber>504157836038</ns2:casOrderNumber>\r
+
+      \        </ns2:ExecuteUnifiedCreditPolicyCheckRequest>\r
+
+      \    </SOAP-ENV:Body>\r
+
+      </SOAP-ENV:Envelope>"
+  auth:
+    type: basic
+    username: "{{username}}"
+    password: "{{password}}"
+
+runtime:
+  scripts:
+    - type: after-response
+      code: |-
+        test("Response status code is 500", function () {
+            expect(res.getStatus()).to.equal(500);
+        });
+         
+        test("Response Content-Type is text/xml", function () {
+            expect(res.getHeader("content-type".toLowerCase())).to.include("text/xml");
+        });
+
+        test("Validate CTA error code and description", function () {
+            const body = res.getBody();
+
+            // Extract values using regex
+            const codeMatch = body.match(/<code>(.*?)<\/code>/);
+            const descriptionMatch = body.match(/<description>(.*?)<\/description>/);
+            const faultCodeMatch = body.match(/<faultCode>(.*?)<\/faultCode>/);
+            const faultDescriptionMatch = body.match(/<faultDescription>(.*?)<\/faultDescription>/);
+
+            const code = codeMatch ? codeMatch[1] : null;
+            const description = descriptionMatch ? descriptionMatch[1] : null;
+            const faultCode = faultCodeMatch ? faultCodeMatch[1] : null;
+            const faultDescription = faultDescriptionMatch ? faultDescriptionMatch[1] : null;
+          
+            //Validations
+            expect(code).to.equal("500");
+            expect(description).to.equal("Please contact AT&amp;T (800) 331-0500");
+            expect(faultCode).to.equal("500600000013");
+            expect(faultDescription).to.equal("Please contact AT&amp;T (800) 331-0500");
+        });
+
+settings:
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5

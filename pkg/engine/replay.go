@@ -14,6 +14,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 type ReplayOptions struct {
@@ -23,6 +24,7 @@ type ReplayOptions struct {
 	RuntimeProfile  *ReplayRuntimeProfile
 	Variables       map[string]string
 	RedactionRules  []RedactionRule
+	SecretResolver  SecretResolver
 	IgnoreThinkTime bool
 	// Seed, when set, makes random data selection and {{fn.random}}/{{fake.*}}
 	// reproducible across replays. Nil uses defaultReplaySeed.
@@ -264,17 +266,40 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if err != nil {
 		return nil, fmt.Errorf("redaction config: %s", scrubSensitiveText(err.Error()))
 	}
+	secretResolver := opts.SecretResolver
+	if secretResolver == nil {
+		secretResolver = defaultSecretResolverForScript(script)
+	}
+	resolutionCtx, resolutionCancel := WithSecretResolutionBudget(ctx)
+	secretResolver, secretValues, err := snapshotReferencedSecretsContext(resolutionCtx, script, secretResolver)
+	resolutionCancel()
+	if err != nil {
+		return nil, fmt.Errorf("inspect script secret references: %s", scrubSensitiveText(err.Error()))
+	}
+	secretValues = append(secretValues, runtimeProtocolAuthCompositeValues(script, secretResolver)...)
+	seedSecretValues := make([]string, 0)
+	for key, value := range opts.Variables {
+		if value != "" && (scrub.SensitiveName(key) || scrub.Value(value, scrub.Policy{}) != value) {
+			seedSecretValues = append(seedSecretValues, value)
+		}
+	}
+	secretValues = append(secretValues, seedSecretValues...)
+	redactionConfig, err = WithSecretValueRedactionChecked(redactionConfig, secretValues)
+	if err != nil {
+		return nil, fmt.Errorf("prepare runtime secret redaction: %s", scrubSensitiveText(err.Error()))
+	}
 
 	proto, err := protocol.Get(script.Protocol)
 	if err != nil {
 		return nil, fmt.Errorf("protocol init: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
 	}
 
-	secretResolver := defaultSecretResolverForScript(script)
-	if err := proto.Init(ctx, buildProtoConfigForRunModeWithSecretResolver(script, "replay", secretResolver)); err != nil {
-		return nil, fmt.Errorf("protocol init: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
+	bindProtocolRuntimeRedaction(proto, func() *RedactionConfig { return redactionConfig })
+	if err := callProtocolInit(ctx, proto, buildProtoConfigForRunModeWithSecretResolver(script, "replay", secretResolver), redactionConfig); err != nil {
+		runProtocolTeardown(proto, func() *RedactionConfig { return redactionConfig })
+		return nil, fmt.Errorf("protocol init: %s", err)
 	}
-	defer runProtocolTeardown(proto)
+	defer runProtocolTeardown(proto, func() *RedactionConfig { return redactionConfig })
 
 	dataProvider, err := NewDataProvider(script.DataSources)
 	if err != nil {
@@ -355,7 +380,7 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	teardownCancel()
 
 	report.CompletedAt = time.Now()
-	report.FinalVariables = cloneStringMap(vu.Variables)
+	report.FinalVariables = scrubReplayFinalVariables(vu.Variables, vu.RedactionConfig)
 	report.Snapshots = vu.SnapshotStore.Snapshots()
 	report.DiagnosisSummary = buildReplayDiagnosisSummary(report.Events)
 	report.RepairSuggestions = collectReplayRepairSuggestions(report.Events)
@@ -716,6 +741,7 @@ func runReplayUnit(
 	debugAction := replayDebugActionFor(unit.action, unit.phase, unit.actionIndex, eventIndex)
 	debugAction.EventID = eventID
 	applyReplayUnitIdentityDebug(&debugAction, unit)
+	scrubReplayDebugAction(&debugAction, vu.RedactionConfig)
 
 	if debugController != nil {
 		if err := debugController.BeforeAction(ctx, debugAction); err != nil {
@@ -889,7 +915,7 @@ func runReplayAction(
 		}
 		applyReplaySourceMetadata(&event, action.Metadata)
 		if err != nil {
-			event.ErrorMessage = err.Error()
+			event.ErrorMessage = scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig)
 			attachReplayDiagnosis(&event)
 		}
 		return event, err == nil
@@ -1010,6 +1036,21 @@ func runReplayAction(
 	}
 
 	return event, true
+}
+
+func scrubReplayFinalVariables(values map[string]string, config *RedactionConfig) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	scrubbed := make(map[string]string, len(values))
+	for key, value := range values {
+		if scrub.SensitiveName(key) {
+			scrubbed[key] = redactedPayloadValue
+			continue
+		}
+		scrubbed[key] = scrubSensitiveTextWithConfig(value, config)
+	}
+	return scrubbed
 }
 
 func deduplicateReplayBrowserSnapshot(event *ReplayActionEvent) {
@@ -1294,6 +1335,9 @@ func scrubReplayActionEvent(event *ReplayActionEvent, config *RedactionConfig) {
 	if event == nil {
 		return
 	}
+	event.ActionName = scrubSensitiveTextWithConfig(event.ActionName, config)
+	event.ActionType = scrubSensitiveTextWithConfig(event.ActionType, config)
+	event.Method = scrubSensitiveTextWithConfig(event.Method, config)
 	event.ErrorMessage = scrubSensitiveTextWithConfig(event.ErrorMessage, config)
 	event.Target = scrubSensitiveTextWithConfig(event.Target, config)
 	event.Selector = scrubSensitiveTextWithConfig(event.Selector, config)
@@ -1318,6 +1362,26 @@ func scrubReplayActionEvent(event *ReplayActionEvent, config *RedactionConfig) {
 	event.SourceActionName = scrubSensitiveTextWithConfig(event.SourceActionName, config)
 	event.SourceTransaction = scrubSensitiveTextWithConfig(event.SourceTransaction, config)
 	event.SourceProfile = scrubSensitiveTextWithConfig(event.SourceProfile, config)
+	event.ParentActionName = scrubSensitiveTextWithConfig(event.ParentActionName, config)
+	for index := range event.StepPath {
+		event.StepPath[index] = scrubSensitiveTextWithConfig(event.StepPath[index], config)
+	}
+}
+
+func scrubReplayDebugAction(action *ReplayDebugAction, config *RedactionConfig) {
+	if action == nil {
+		return
+	}
+	action.ActionName = scrubSensitiveTextWithConfig(action.ActionName, config)
+	action.ActionType = scrubSensitiveTextWithConfig(action.ActionType, config)
+	action.Method = scrubSensitiveTextWithConfig(action.Method, config)
+	action.Target = scrubSensitiveTextWithConfig(action.Target, config)
+	action.Selector = scrubSensitiveTextWithConfig(action.Selector, config)
+	action.SourceStepID = scrubSensitiveTextWithConfig(action.SourceStepID, config)
+	action.ParentActionName = scrubSensitiveTextWithConfig(action.ParentActionName, config)
+	for index := range action.StepPath {
+		action.StepPath[index] = scrubSensitiveTextWithConfig(action.StepPath[index], config)
+	}
 }
 
 func scrubReplayHeaders(action *protocol.Action, config *RedactionConfig) map[string]string {

@@ -87,6 +87,7 @@ describe('settingsSectionLayout', () => {
   it('validates subsection ids for dense settings tabs', () => {
     expect(GOVERNANCE_SETTINGS_SUBSECTIONS.map(section => section.id)).toEqual([
       'schedule-defaults',
+      'script-imports',
       'service-account-apis',
       'recent-audit-events',
     ])
@@ -101,6 +102,7 @@ describe('settingsSectionLayout', () => {
       'limits',
       'github',
       'redaction',
+      'secrets',
     ])
     expect(INTEGRATION_SETTINGS_SUBSECTIONS.map(section => section.id)).toEqual([
       'library',

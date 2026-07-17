@@ -500,13 +500,14 @@ func (tr *TestRunner) publishLiveMetrics(test *ManagedTest, live *LiveMetrics, a
 	testID := test.ID
 	testName := test.Name
 	projectID := normalizeProjectID(test.ProjectID)
+	goalConfig := cloneGoalConfig(test.GoalConfig)
 	tr.mu.Unlock()
 
 	tr.cacheRunSnapshot(snapshot)
 	if err := tr.saveLiveMetricsHistory(testID, publishedLive.Timestamp, publishedLive); err != nil {
 		slog.Warn("failed to persist live metrics history", "test_id", testID, "timestamp", publishedLive.Timestamp, "error", err)
 	}
-	artifacts.recordLiveMetrics(test, publishedLive)
+	artifacts.recordLiveMetrics(test, goalConfig, publishedLive)
 
 	tr.hub.BroadcastScopedJSON(testID, projectID, map[string]any{
 		"type":       "metrics_update",

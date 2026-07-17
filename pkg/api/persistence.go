@@ -28,9 +28,15 @@ const (
 )
 
 var (
-	errStoredTestMissing          = errors.New("durable test row no longer exists")
-	errStoredTestTransitionFenced = errors.New("durable test lifecycle transition was fenced")
+	errStoredTestMissing           = errors.New("durable test row no longer exists")
+	errStoredTestTransitionFenced  = errors.New("durable test lifecycle transition was fenced")
+	errLegacyRuntimeSecretSnapshot = errors.New("stored runtime snapshot contains plaintext runtime credentials")
 )
+
+type testRuntimeSnapshotRepairPersistence interface {
+	RepairTestRuntimeSnapshot(id, projectID, materializationKey string, startTime time.Time, groups, runtimeSettings any) (bool, error)
+	RepairTestRuntimeSnapshotIfLeaseHeld(id, projectID, materializationKey string, startTime time.Time, groups, runtimeSettings any, leaseName, leaseOwnerID string) (bool, error)
+}
 
 func isStoredTestTransitionCancelled(err error) bool {
 	return errors.Is(err, errStoredTestMissing) ||
@@ -151,6 +157,14 @@ func (tr *TestRunner) loadStoredScenarios() {
 		if err != nil {
 			full = scenario
 		}
+		if full != nil {
+			bindings, bindingsErr := tr.scenarioStore.ListScenarioDataPoolBindings(full.ID)
+			if bindingsErr != nil {
+				slog.Warn("failed to load legacy scenario bindings for runtime repair", "scenario_id", full.ID, "error", bindingsErr)
+			} else if repairErr := tr.repairLegacyStoredScenarioRuntime(full, scripts, bindings); repairErr != nil {
+				slog.Error("failed to protect stored scenario runtime", "scenario_id", full.ID, "error", repairErr)
+			}
+		}
 		tr.scenarios[scenario.ID] = tr.buildStoredScenario(full, scripts)
 	}
 }
@@ -190,6 +204,9 @@ func (tr *TestRunner) reloadStoredScenarios() error {
 		if loadErr != nil {
 			return fmt.Errorf("load scenario %s data pools: %w", scenario.ID, loadErr)
 		}
+		if repairErr := tr.repairLegacyStoredScenarioRuntime(full, scripts, bindings); repairErr != nil {
+			return fmt.Errorf("protect stored scenario %s runtime: %w", scenario.ID, repairErr)
+		}
 		schedules, loadErr := tr.scenarioStore.ListScenarioSchedules(scenario.ID)
 		if loadErr != nil {
 			return fmt.Errorf("load scenario %s schedules: %w", scenario.ID, loadErr)
@@ -222,6 +239,63 @@ func (tr *TestRunner) reloadStoredScenarios() error {
 		tr.observeAndIndexRefKeyLocked(scenario.RefKey, scenario.ID)
 	}
 	tr.mu.Unlock()
+	return nil
+}
+
+func (tr *TestRunner) repairLegacyStoredScenarioRuntime(scenario *storage.Scenario, scripts []storage.ScenarioScript, bindings []storage.ScenarioDataPoolBinding) error {
+	if tr == nil || scenario == nil {
+		return nil
+	}
+	changed := false
+	protectedRoot, rootValues, rootChanged, err := protectLegacyRuntimeOverrideSecrets(
+		scenario.ID, -1, nil, decodeStoredRuntimeSettings(scenario.RuntimeSettings),
+	)
+	for name := range rootValues {
+		rootValues[name] = ""
+		delete(rootValues, name)
+	}
+	if err != nil {
+		return err
+	}
+	if rootChanged {
+		scenario.RuntimeSettings = runtimeSettingsForStorage(protectedRoot)
+		changed = true
+	}
+	for index := range scripts {
+		protected, values, groupChanged, protectErr := protectLegacyRuntimeOverrideSecrets(
+			scenario.ID, index, nil, decodeStoredRuntimeSettings(scripts[index].RuntimeSettings),
+		)
+		for name := range values {
+			values[name] = ""
+			delete(values, name)
+		}
+		if protectErr != nil {
+			return fmt.Errorf("group[%d]: %w", index, protectErr)
+		}
+		if groupChanged {
+			scripts[index].RuntimeSettings = runtimeSettingsForStorage(protected)
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	store, ok := tr.scenarioStore.(conditionalScenarioPersistence)
+	if !ok {
+		return errors.New("scenario persistence does not support conditional legacy runtime repair")
+	}
+	expectedUpdatedAt := scenario.UpdatedAt
+	repaired, err := store.UpdateScenarioWithDataPoolBindingsIfUnchanged(
+		scenario, scripts, append([]storage.ScenarioDataPoolBinding(nil), bindings...), expectedUpdatedAt,
+	)
+	if err != nil {
+		return err
+	}
+	if !repaired {
+		// Another writer won the CAS. The local copy is already protected and the
+		// next bounded reload will adopt the durable winner.
+		return nil
+	}
 	return nil
 }
 
@@ -327,7 +401,7 @@ func (tr *TestRunner) loadStoredTests() {
 	}
 	for _, record := range tests {
 		managedTest := managedTestFromRecord(record)
-		if err := tr.restoreManagedTestRuntime(managedTest); err != nil {
+		if err := tr.restoreManagedTestRuntimeAndRepair(managedTest); err != nil {
 			managedTest.runtimeHydrationError = err.Error()
 			slog.Error("failed to restore stored test runtime", "test_id", managedTest.ID, "error", err)
 		}
@@ -399,14 +473,14 @@ func (tr *TestRunner) reloadStoredTestsLocked() error {
 		sameIdentity := ok && sameStoredTestIdentity(existing, record)
 		staleRuntimeHandle := sameIdentity && !liveLocally && (existing.cancel != nil || existing.executionCtx != nil)
 		reuseReplicaState := sameIdentity && !staleRuntimeHandle
-		retryHydration := reuseReplicaState && existing.runtimeHydrationError != ""
+		retryHydration := reuseReplicaState && (existing.runtimeHydrationError != "" || existing.runtimeSnapshotRepairRequired)
 		tr.mu.RUnlock()
 		if liveLocally {
 			continue
 		}
 		managedTest := managedTestFromRecord(record)
 		if !reuseReplicaState || retryHydration {
-			if err := tr.restoreManagedTestRuntime(managedTest); err != nil {
+			if err := tr.restoreManagedTestRuntimeAndRepair(managedTest); err != nil {
 				managedTest.runtimeHydrationError = err.Error()
 				slog.Error("failed to restore reloaded test runtime", "test_id", managedTest.ID, "error", err)
 			}
@@ -670,6 +744,44 @@ func (tr *TestRunner) restoreManagedTestRuntime(test *ManagedTest) error {
 	if len(test.Groups) == 0 {
 		return fmt.Errorf("stored test has no groups")
 	}
+
+	// Legacy rows may contain plaintext runtime overrides even when they already
+	// have a compiled script snapshot. Convert those values (and unrecoverable
+	// sentinels) to deterministic references before deciding whether the stored
+	// script can be trusted. No value is written to the project secret store:
+	// unattributed historical rows must never gain secret-write authority during
+	// startup, failover, or an ordinary read.
+	protectedRuntimeSettings, rootValues, rootChanged, err := protectLegacyRuntimeOverrideSecrets(test.ID, -1, nil, test.RuntimeSettings)
+	if err != nil {
+		return fmt.Errorf("protect restored test runtime credentials: %w", err)
+	}
+	clearValues := func(values map[string]string) {
+		for name := range values {
+			values[name] = ""
+			delete(values, name)
+		}
+	}
+	defer clearValues(rootValues)
+	runtimeOverridesChanged := rootChanged
+	protectedGroupSettings := make([]*RuntimeSettingsOverride, len(test.Groups))
+	for index := range test.Groups {
+		protected, values, changed, protectErr := protectLegacyRuntimeOverrideSecrets(test.ID, index, test.Groups[index].script, test.Groups[index].RuntimeSettings)
+		if protectErr != nil {
+			clearValues(values)
+			return fmt.Errorf("protect restored group[%d] runtime credentials: %w", index, protectErr)
+		}
+		clearValues(values)
+		protectedGroupSettings[index] = protected
+		runtimeOverridesChanged = runtimeOverridesChanged || changed
+	}
+	if runtimeOverridesChanged {
+		test.RuntimeSettings = protectedRuntimeSettings
+		for index := range test.Groups {
+			test.Groups[index].RuntimeSettings = protectedGroupSettings[index]
+			test.Groups[index].runtimeSecretValues = nil
+		}
+	}
+
 	compiledSnapshots := true
 	for _, group := range test.Groups {
 		if group.script == nil {
@@ -677,29 +789,46 @@ func (tr *TestRunner) restoreManagedTestRuntime(test *ManagedTest) error {
 			break
 		}
 	}
+	// A compiled script built from plaintext overrides may already contain those
+	// literals. Recompile from the durable source scripts after any conversion so
+	// the new snapshot contains only {{secret.*}} references.
+	if runtimeOverridesChanged {
+		compiledSnapshots = false
+	}
 	if compiledSnapshots {
 		specs, err := restoreStoredEngineGroupSpecs(test)
-		if err != nil {
+		if err != nil && !errors.Is(err, errLegacyRuntimeSecretSnapshot) {
 			return err
 		}
-		test.groupSpecs = specs
-		return nil
+		if err == nil {
+			for index := range specs {
+				resolver := tr.secretResolverForProject(specs[index].Script.ProjectID)
+				if index < len(test.Groups) {
+					resolver = overlayRuntimeSecretResolver(test.Groups[index].runtimeSecretValues, resolver)
+				}
+				specs[index].SecretResolver = resolver
+			}
+			test.groupSpecs = specs
+			return nil
+		}
+		test.runtimeSnapshotRepairRequired = true
 	}
 
 	entries := make([]CreateGroupEntry, 0, len(test.Groups))
 	for _, group := range test.Groups {
 		entries = append(entries, CreateGroupEntry{
-			Name:            group.Name,
-			ScriptID:        group.ScriptID,
-			Role:            group.Role,
-			VUsers:          group.VUsers,
-			RampUp:          group.RampUp,
-			RampDown:        group.RampDown,
-			Stages:          cloneLoadStages(group.Stages),
-			Iterations:      cloneIntPtr(group.Iterations),
-			RuntimeSettings: cloneRuntimeSettings(group.RuntimeSettings),
-			Assignment:      cloneGeneratorAssignmentSettings(group.Assignment),
-			InitStrategy:    group.Initialization,
+			Name:               group.Name,
+			ScriptID:           group.ScriptID,
+			Role:               group.Role,
+			VUsers:             group.VUsers,
+			RampUp:             group.RampUp,
+			RampDown:           group.RampDown,
+			Stages:             cloneLoadStages(group.Stages),
+			Iterations:         cloneIntPtr(group.Iterations),
+			RuntimeSettings:    cloneRuntimeSettings(group.RuntimeSettings),
+			Assignment:         cloneGeneratorAssignmentSettings(group.Assignment),
+			InitStrategy:       group.Initialization,
+			runtimeSecretScope: test.ID,
 		})
 	}
 	tr.mu.Lock()
@@ -711,8 +840,71 @@ func (tr *TestRunner) restoreManagedTestRuntime(test *ManagedTest) error {
 	if totalVUsers != test.TotalVUsers {
 		return fmt.Errorf("stored test workload changed while recompiling: persisted total %d, restored total %d", test.TotalVUsers, totalVUsers)
 	}
+	for index := range groups {
+		// The recompile used only protected references. Keep no recovered literal
+		// overlay in process memory; execution must resolve through the governed
+		// project store and therefore fails closed until values are configured.
+		groups[index].runtimeSecretValues = nil
+		if index < len(specs) {
+			specs[index].SecretResolver = tr.secretResolverForProject(specs[index].Script.ProjectID)
+		}
+	}
+	test.RuntimeSettings = protectedRuntimeSettings
 	test.Groups = groups
 	test.groupSpecs = specs
+	test.runtimeSnapshotRepairRequired = true
+	return nil
+}
+
+func (tr *TestRunner) restoreManagedTestRuntimeAndRepair(test *ManagedTest) error {
+	if err := tr.restoreManagedTestRuntime(test); err != nil {
+		return err
+	}
+	if !test.runtimeSnapshotRepairRequired || !tr.holdsExecutionLeadership() {
+		return nil
+	}
+	return tr.persistManagedTestRuntimeRepair(test)
+}
+
+func (tr *TestRunner) persistManagedTestRuntimeRepair(test *ManagedTest) error {
+	if tr == nil || test == nil || !test.runtimeSnapshotRepairRequired {
+		return nil
+	}
+	store, ok := tr.testStore.(testRuntimeSnapshotRepairPersistence)
+	if !ok {
+		return errors.New("test persistence does not support narrow runtime snapshot repair")
+	}
+	groups := encodeStoredGroups(test.Groups)
+	runtimeSettings := runtimeSettingsForStorage(test.RuntimeSettings)
+	var (
+		repaired bool
+		err      error
+	)
+	if tr.durableExecutionFence {
+		token := tr.currentExecutionFenceToken()
+		if token == "" {
+			return errNotExecutionLeader
+		}
+		repaired, err = store.RepairTestRuntimeSnapshotIfLeaseHeld(
+			test.ID, test.ProjectID, test.MaterializationKey, test.CreatedAt,
+			groups, runtimeSettings, executionLeaseName, token,
+		)
+	} else {
+		repaired, err = store.RepairTestRuntimeSnapshot(
+			test.ID, test.ProjectID, test.MaterializationKey, test.CreatedAt,
+			groups, runtimeSettings,
+		)
+	}
+	if err != nil {
+		return fmt.Errorf("persist protected legacy runtime snapshot: %w", err)
+	}
+	if !repaired {
+		if tr.durableExecutionFence && !tr.holdsExecutionLeadership() {
+			return errNotExecutionLeader
+		}
+		return fmt.Errorf("%w: test %s changed before runtime repair", errStoredTestTransitionFenced, test.ID)
+	}
+	test.runtimeSnapshotRepairRequired = false
 	return nil
 }
 
@@ -751,6 +943,22 @@ func restoreStoredEngineGroupSpecs(test *ManagedTest) ([]engine.GroupConfig, err
 		redactionConfig, err := engine.NewRedactionConfig(group.redactionRules)
 		if err != nil {
 			return nil, fmt.Errorf("group[%d] restore redaction config: %w", index, err)
+		}
+		_, projectedRuntimeSecrets, err := protectRuntimeOverrideSecrets(test.ID, index, group.script, mergeRuntimeSettings(test.RuntimeSettings, group.RuntimeSettings), false)
+		if err != nil {
+			return nil, fmt.Errorf("group[%d] restore runtime credentials: %w", index, err)
+		}
+		referencedRuntimeSecrets, err := filterReferencedRuntimeSecretValues(group.script, projectedRuntimeSecrets)
+		if err != nil {
+			return nil, fmt.Errorf("group[%d] inspect protected runtime credentials", index)
+		}
+		if len(projectedRuntimeSecrets) > len(referencedRuntimeSecrets) && runtimeSecretValueAppearsInScript(group.script, projectedRuntimeSecrets) {
+			return nil, fmt.Errorf("group[%d]: %w", index, errLegacyRuntimeSecretSnapshot)
+		}
+		group.runtimeSecretValues = cloneRuntimeSecretValues(referencedRuntimeSecrets)
+		redactionConfig, err = engine.WithSecretValueRedactionChecked(redactionConfig, runtimeSecretValueList(referencedRuntimeSecrets))
+		if err != nil {
+			return nil, fmt.Errorf("group[%d] restore runtime credential redaction: %w", index, err)
 		}
 		group.rampUpDur = rampUp
 		group.stageDriven = stageDriven
@@ -1105,10 +1313,18 @@ func (tr *TestRunner) forgetProject(projectID string) {
 }
 
 func (tr *TestRunner) saveStoredScript(script *dsl.Script) error {
-	if tr.scriptStore != nil {
-		return tr.scriptStore.SaveScript(script)
+	if tr.scriptStore == nil {
+		return nil
 	}
-	return nil
+	projected, err := preparePersistentLibraryScript(script, nil)
+	if err != nil {
+		return err
+	}
+	// Keep the in-memory object aligned with the disclosure-safe form passed to
+	// storage. This seam is also used by the compatibility ref-key backfill for
+	// lightweight stores that do not implement the atomic ref-key operation.
+	*script = *projected
+	return tr.scriptStore.SaveScript(script)
 }
 
 func (tr *TestRunner) deleteStoredScript(id string) error {

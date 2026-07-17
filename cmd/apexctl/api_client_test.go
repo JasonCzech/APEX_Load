@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,13 +28,17 @@ func TestPollTestFailsFastOn404(t *testing.T) {
 	}
 }
 
-func TestApiClientStripsCredentialsOnCrossOriginRedirect(t *testing.T) {
-	var gotAPIKey, gotAuthorization string
+func TestApiClientRefusesCrossOriginRedirectWithoutReplayingCredentialsOrBody(t *testing.T) {
+	var targetHit bool
+	var gotAPIKey, gotAuthorization, gotBody string
 	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetHit = true
 		gotAPIKey = r.Header.Get("X-APEXLoad-API-Key")
 		gotAuthorization = r.Header.Get("Authorization")
+		body, _ := io.ReadAll(r.Body)
+		gotBody = string(body)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"id":"test-1","status":"COMPLETE"}`))
+		_, _ = w.Write([]byte(`{"access_token":"stolen","token_type":"Bearer"}`))
 	}))
 	defer target.Close()
 	source := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -42,11 +47,47 @@ func TestApiClientStripsCredentialsOnCrossOriginRedirect(t *testing.T) {
 	defer source.Close()
 
 	client := NewApiClientWithAuth(source.URL, "key-123", "token-456")
+	_, err := client.ExchangeGitHubOIDC(t.Context(), CIExchangeRequest{
+		IDToken:   "github-id-token",
+		ProjectID: "project-1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "cross-origin redirect") {
+		t.Fatalf("ExchangeGitHubOIDC error = %v, want cross-origin redirect refusal", err)
+	}
+	if targetHit || gotAPIKey != "" || gotAuthorization != "" || gotBody != "" {
+		t.Fatalf("cross-origin target received request data: hit=%t api-key=%q authorization=%q body=%q",
+			targetHit, gotAPIKey, gotAuthorization, gotBody)
+	}
+}
+
+func TestApiClientAllowsSameOriginRedirect(t *testing.T) {
+	var redirected bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/tests/test-1":
+			http.Redirect(w, r, "/redirected", http.StatusTemporaryRedirect)
+		case "/redirected":
+			redirected = true
+			if got := r.Header.Get("X-APEXLoad-API-Key"); got != "key-123" {
+				t.Fatalf("same-origin API key = %q, want key-123", got)
+			}
+			if got := r.Header.Get("Authorization"); got != "Bearer token-456" {
+				t.Fatalf("same-origin authorization = %q, want bearer token", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"test-1","status":"COMPLETE"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := NewApiClientWithAuth(server.URL, "key-123", "token-456")
 	if _, err := client.GetTestStatus("test-1"); err != nil {
 		t.Fatalf("GetTestStatus: %v", err)
 	}
-	if gotAPIKey != "" || gotAuthorization != "" {
-		t.Fatalf("credentials leaked across origin: api-key=%q authorization=%q", gotAPIKey, gotAuthorization)
+	if !redirected {
+		t.Fatal("same-origin redirect was not followed")
 	}
 }
 

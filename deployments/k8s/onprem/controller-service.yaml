@@ -17,3 +17,21 @@ spec:
     - name: metrics
       port: 9091
       targetPort: metrics
+---
+# In the single-replica base this Service selects the controller normally. The
+# onprem-ha overlay removes the selector and supplies a leader-maintained
+# EndpointSlice for execution-mutating CI routes.
+apiVersion: v1
+kind: Service
+metadata:
+  name: apexload-controller-active
+  labels:
+    app.kubernetes.io/name: apexload-controller
+    app.kubernetes.io/component: active-controller
+spec:
+  selector:
+    app.kubernetes.io/name: apexload-controller
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

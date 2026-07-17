@@ -58,9 +58,11 @@ import { applyCorrelationRepairToAction, type CorrelationExtractorRepair } from 
 import ParameterizationReview from './ParameterizationReview'
 import type { Parameterization } from '../types/scriptImports'
 import type { ScriptRecordingStatus } from '../hooks/api/useScriptApi'
+import type { ProjectSecretStatus, ScriptSecretStatus } from '../types/secrets'
 import PageViewToggle from './PageViewToggle'
 import ReplayPreflightCard from './ReplayPreflightCard'
-import { buildLocalReplayPreflight, replayPreflightStatusLabel } from './replayPreflightUtils'
+import { buildLocalReplayPreflight, reconcileReplayPreflightSecretStatus, replayPreflightStatusLabel } from './replayPreflightUtils'
+import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
 import RepairSuggestionList from './RepairSuggestionList'
 import SourceMappingReview from './SourceMappingReview'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
@@ -2077,6 +2079,7 @@ interface JsonParameterOccurrenceReviewState {
 interface Props {
   scriptId?: string | null
   initialScript?: ScriptData | null
+  initiallyDirty?: boolean
   initialFocusedActionName?: string | null
   initialFocusedSection?: string | null
   initialFocusedDataSourceName?: string | null
@@ -2374,8 +2377,43 @@ interface ReplayScreenshotSelection {
 }
 
 
-export default function ScriptEditor({ scriptId, initialScript, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, onSave, onClose }: Props) {
+export default function ScriptEditor({ scriptId, initialScript, initiallyDirty = false, initialFocusedActionName, initialFocusedSection, initialFocusedDataSourceName, initialFocusedRuntimeArea, projectId, folderId, onSave, onClose }: Props) {
   const api = useApi()
+  const [scriptSecretStatus, setScriptSecretStatus] = useState<ScriptSecretStatus | null>(null)
+  const scriptSecretStatusRequestRef = useRef(0)
+  const [projectSecretProbe, setProjectSecretProbe] = useState<{
+    projectId: string
+    namesKey: string
+    statuses: ProjectSecretStatus[]
+    state: 'loading' | 'ready' | 'unavailable'
+  } | null>(null)
+  const projectSecretProbeRequestRef = useRef(0)
+  const [projectSecretProbeRetryGeneration, setProjectSecretProbeRetryGeneration] = useState(0)
+  const replayMissingProjectSecretsRef = useRef<string[]>([])
+  const replaySecretStatusKnownRef = useRef(true)
+  const refreshScriptSecretStatus = useCallback(async () => {
+    const requestId = ++scriptSecretStatusRequestRef.current
+    if (!scriptId || !projectId || typeof api.getScriptSecretStatus !== 'function') {
+      setScriptSecretStatus(null)
+      return
+    }
+    try {
+      const status = await api.getScriptSecretStatus(scriptId)
+      if (scriptSecretStatusRequestRef.current === requestId) {
+        setScriptSecretStatus(status)
+      }
+    } catch {
+      if (scriptSecretStatusRequestRef.current === requestId) {
+        setScriptSecretStatus(null)
+      }
+    }
+  }, [api, projectId, scriptId])
+  useEffect(() => {
+    void refreshScriptSecretStatus()
+    return () => {
+      scriptSecretStatusRequestRef.current += 1
+    }
+  }, [refreshScriptSecretStatus])
   const [scriptRecordingStatus, setScriptRecordingStatus] = useState<ScriptRecordingStatus | null>(null)
   // Object-repository logical names for the per-action object_ref autocomplete.
   const [objectRefSuggestions, setObjectRefSuggestions] = useState<string[]>([])
@@ -2422,6 +2460,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   )
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const { runGuarded } = useNavigationGuardRunner()
+  const openProjectSecrets = useCallback(() => {
+    runGuarded(() => {
+      prepareProjectSecretsSettingsNavigation(projectId)
+      window.location.hash = '#/settings'
+    })
+  }, [projectId, runGuarded])
   const {
     activeAction,
     activeReplaySessionId,
@@ -2481,6 +2525,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     warnings,
     closeReplayScreenshot,
   } = useScriptEditorState(initialScript)
+  const [initialSaveRequired, setInitialSaveRequired] = useState(initiallyDirty)
+  const initialSaveSourceRef = useRef({ script: initialScript, initiallyDirty })
+  useEffect(() => {
+    const previous = initialSaveSourceRef.current
+    if (previous.script !== initialScript || (!previous.initiallyDirty && initiallyDirty)) {
+      setInitialSaveRequired(initiallyDirty)
+    }
+    initialSaveSourceRef.current = { script: initialScript, initiallyDirty }
+  }, [initialScript, initiallyDirty])
   const [focusParameterIdx, setFocusParameterIdx] = useState<number | null>(null)
   const [selectedParameterIdx, setSelectedParameterIdx] = useState<number | null>(null)
   // Holds the pending selection while the Parameterize choice dialog (File vs Built-in Function)
@@ -4382,7 +4435,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const jsonParseMessage = jsonDraftParse.ok ? '' : jsonDraftParse.message
   const jsonStatus: ScriptCodePaneProps['status'] = jsonParseMessage ? 'invalid' : jsonDirty ? 'dirty' : 'synced'
   const jsonStatusMessage = jsonParseMessage ? 'Invalid JSON' : jsonDirty ? 'Unsaved JSON edits' : 'Synced'
-  const scriptEditorDirty = jsonDirty || formattedScriptJson !== baselineJsonRef.current
+  const scriptEditorDirty = initialSaveRequired || jsonDirty || formattedScriptJson !== baselineJsonRef.current
   const saveScriptDisabled = saving || validating || !scriptEditorDirty || !currentDraftScript.name || Boolean(jsonParseMessage)
   const saveScriptTitle = saving
     ? 'Saving script'
@@ -4472,7 +4525,12 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       }
       commitJsonDraft(currentScript)
       markBaseline(currentScript)
+      setInitialSaveRequired(false)
       setSuccess('Script saved successfully!')
+      if (scriptId) {
+        await refreshScriptSecretStatus()
+        setProjectSecretProbeRetryGeneration(generation => generation + 1)
+      }
       onSave?.(savedScript)
       return true
     } catch (e: unknown) {
@@ -4600,6 +4658,15 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   }, [activateWorkspaceTab])
 
   const handleReplay = useCallback(async (options?: { startPaused?: boolean }) => {
+    if (!replaySecretStatusKnownRef.current) {
+      setError('Project secret status is not available yet. Wait for the credential check to complete before running this script.')
+      return
+    }
+    const missingSecrets = replayMissingProjectSecretsRef.current
+    if (missingSecrets.length > 0) {
+      setError(`Configure missing project secret${missingSecrets.length === 1 ? '' : 's'} before running: ${missingSecrets.join(', ')}.`)
+      return
+    }
     setError('')
     setSuccess('')
     setWarnings([])
@@ -4936,13 +5003,106 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     ? buildReplayVariableDiffs(replaySeedVariables, replayReport.events)
     : []
   const replayConfiguredVariables = safeParseReplayVariables(replayOptions.variablesText)
-  const replayPreflight = browserReplaySession?.preflight || validationReplayPreflight || buildLocalReplayPreflight(script, replayConfiguredVariables)
+  // Raw JSON is an executable draft even before the user applies it back to the
+  // structured authoring controls. Never reuse an older server/session preflight
+  // for that draft: derive requirements from the exact valid script that the Run
+  // handler will parse and send.
+  const unreconciledReplayPreflight = (!jsonDirty && (browserReplaySession?.preflight || validationReplayPreflight))
+    || buildLocalReplayPreflight(currentDraftScript, replayConfiguredVariables)
+  const requiredProjectSecretNames = Array.from(new Set([
+    ...(unreconciledReplayPreflight.required_secrets || []),
+    ...(!jsonDirty && scriptSecretStatus && scriptSecretStatus.project_id === projectId
+      ? scriptSecretStatus.required || []
+      : []),
+  ])).sort()
+  const requiredProjectSecretNamesKey = requiredProjectSecretNames.join('\u0000')
+  const preflightWithAllRequiredSecrets: ReplayPreflight = {
+    ...unreconciledReplayPreflight,
+    required_secrets: requiredProjectSecretNames,
+  }
+
+  useEffect(() => {
+    const requestId = ++projectSecretProbeRequestRef.current
+    const requiredNames = requiredProjectSecretNamesKey === ''
+      ? []
+      : requiredProjectSecretNamesKey.split('\u0000')
+    if (!projectId || requiredNames.length === 0 || typeof api.getProjectSecretStatuses !== 'function') {
+      setProjectSecretProbe(null)
+      return
+    }
+    setProjectSecretProbe({
+      projectId,
+      namesKey: requiredProjectSecretNamesKey,
+      statuses: [],
+      state: 'loading',
+    })
+    void api.getProjectSecretStatuses(projectId, requiredNames)
+      .then(response => {
+        if (projectSecretProbeRequestRef.current !== requestId || response.project_id !== projectId) return
+        setProjectSecretProbe({
+          projectId,
+          namesKey: requiredProjectSecretNamesKey,
+          statuses: response.secrets || [],
+          state: 'ready',
+        })
+      })
+      .catch(() => {
+        if (projectSecretProbeRequestRef.current === requestId) {
+          setProjectSecretProbe({
+            projectId,
+            namesKey: requiredProjectSecretNamesKey,
+            statuses: [],
+            state: 'unavailable',
+          })
+        }
+      })
+    return () => {
+      if (projectSecretProbeRequestRef.current === requestId) projectSecretProbeRequestRef.current += 1
+    }
+  }, [api, projectId, projectSecretProbeRetryGeneration, requiredProjectSecretNamesKey])
+
+  const projectProbeIsCurrent = projectSecretProbe !== null
+    && projectSecretProbe.projectId === projectId
+    && projectSecretProbe.namesKey === requiredProjectSecretNamesKey
+  const projectProbeIsReady = projectProbeIsCurrent && projectSecretProbe?.state === 'ready'
+  const projectProbeIsUnavailable = projectProbeIsCurrent && projectSecretProbe?.state === 'unavailable'
+  const persistedStatusByName = new Map((scriptSecretStatus && scriptSecretStatus.project_id === projectId ? scriptSecretStatus.secrets : [])
+    .map(status => [status.name, status]))
+  const persistedStatusCoversCurrentDraft = Boolean(scriptId)
+    && requiredProjectSecretNames.every(name => persistedStatusByName.has(name))
+  // A ready project-scoped probe is newer and authoritative. In particular, a
+  // persisted true must never hide a fresh false after a provider value expires
+  // or is removed. While a project-scoped probe is supported, replay waits for
+  // that current answer; persisted script status is only a legacy-capability
+  // fallback when the project probe endpoint is unavailable altogether.
+  const canUsePersistedStatusFallback = persistedStatusCoversCurrentDraft
+    && typeof api.getProjectSecretStatuses !== 'function'
+  const secretStatuses = projectProbeIsReady
+    ? projectSecretProbe?.statuses || []
+    : canUsePersistedStatusFallback
+      ? Array.from(persistedStatusByName.values())
+      : []
+  const secretStatusKnown = requiredProjectSecretNames.length === 0 || projectProbeIsReady || canUsePersistedStatusFallback
+  const replayPreflight = reconcileReplayPreflightSecretStatus(
+    preflightWithAllRequiredSecrets,
+    secretStatuses,
+    secretStatusKnown,
+    projectProbeIsUnavailable,
+  )
+  const missingProjectSecrets = replayPreflight.missing_secrets || []
+  replayMissingProjectSecretsRef.current = missingProjectSecrets
+  replaySecretStatusKnownRef.current = secretStatusKnown
+  const replayBlockedByUnknownSecretStatus = requiredProjectSecretNames.length > 0 && !secretStatusKnown
+  const replayBlockedByMissingSecrets = missingProjectSecrets.length > 0 || replayBlockedByUnknownSecretStatus
+  const replaySecretStatusState = replayBlockedByUnknownSecretStatus
+    ? (projectProbeIsUnavailable || typeof api.getProjectSecretStatuses !== 'function' ? 'unavailable' : 'checking')
+    : undefined
 
   useEffect(() => {
     setValidationReplayPreflight(null)
     setValidationEvidence(null)
     setValidationSidebarResult(null)
-  }, [script.actions, script.data_sources, script.name, script.parameters, script.protocol, replayOptions.variablesText])
+  }, [jsonText, replayOptions.variablesText, script.actions, script.data_sources, script.name, script.parameters, script.protocol])
   const replayFailingEventIndex = replayReport?.events.findIndex(event => !event.success) ?? -1
   const replayFailingEvent = replayReport && replayFailingEventIndex >= 0 ? replayReport.events[replayFailingEventIndex] : null
   const replayVariableTimeline = replayReport
@@ -4959,10 +5119,17 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
   const replayStartButtonLabel = replayOptions.startPaused
     ? (isBrowserScript ? 'Start Browser Step Through' : 'Start Step Through')
     : (isBrowserScript ? 'Run Browser Replay' : 'Run Replay')
+  const replayRunButtonTitle = replayBlockedByUnknownSecretStatus
+    ? (projectProbeIsUnavailable
+        ? 'Project secret status is temporarily unavailable. Retry the credential check before running.'
+        : 'Checking project secret configuration before running…')
+    : replayBlockedByMissingSecrets
+      ? `Configure missing project secret${missingProjectSecrets.length === 1 ? '' : 's'} before running: ${missingProjectSecrets.join(', ')}.`
+      : replayStartButtonLabel
   const debugActionRows = scriptPhaseActionRows
   const stepReplayDisabled = replaying
     ? (!activeReplaySessionId || !isReplayPaused)
-    : (saving || !script.name || debugActionRows.length === 0)
+    : (saving || replayBlockedByMissingSecrets || !script.name || debugActionRows.length === 0)
   const breakpointSummary = `${debugBreakpoints.length} selected across ${debugActionRows.length} executable action${debugActionRows.length === 1 ? '' : 's'}`
   const debugRawSearchText = debugRawSearch.trim().toLowerCase()
   const debugFilteredLogs = (browserReplaySession?.logs || [])
@@ -5310,7 +5477,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       label: replaying ? 'Continue debugger' : 'Run debugger',
       keys: 'F5',
       group: 'Script Editor',
-      disabled: !replaying && (saving || !script.name || debugActionRows.length === 0),
+      disabled: !replaying && (saving || replayBlockedByMissingSecrets || !script.name || debugActionRows.length === 0),
       priority: 850,
       onTrigger: () => {
         if (replaying) {
@@ -5334,7 +5501,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       label: 'Step debugger',
       keys: 'F10',
       group: 'Script Editor',
-      disabled: !((replaying && isReplayPaused) || (!replaying && !saving && script.name && debugActionRows.length > 0)),
+      disabled: !((replaying && isReplayPaused) || (!replaying && !saving && !replayBlockedByMissingSecrets && script.name && debugActionRows.length > 0)),
       priority: 850,
       onTrigger: () => { void handleStepReplay('into') },
     },
@@ -5381,6 +5548,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
     handleStepReplay,
     handleStopReplay,
     isReplayPaused,
+    replayBlockedByMissingSecrets,
     replaying,
     saveScriptDisabled,
     saving,
@@ -6515,9 +6683,9 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
         compactLabel: 'Run',
         icon: <DebugTopbarIcon kind="run" />,
         className: 'topbar-debug-action topbar-debug-action-run',
-        title: replayStartButtonLabel,
+        title: replayRunButtonTitle,
         tone: 'success',
-        disabled: replaying || saving || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0,
+        disabled: replaying || saving || replayBlockedByMissingSecrets || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0,
         onClick: () => { void handleReplay() },
       },
       {
@@ -6935,7 +7103,14 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
           </button>
         </div>
       </div>
-      <ReplayPreflightCard preflight={replayPreflight} />
+      <ReplayPreflightCard
+        preflight={replayPreflight}
+        onConfigureSecrets={projectId ? openProjectSecrets : undefined}
+        secretStatusState={replaySecretStatusState}
+        onRetrySecretStatus={replaySecretStatusState === 'unavailable'
+          ? () => setProjectSecretProbeRetryGeneration(generation => generation + 1)
+          : undefined}
+      />
       {renderReadinessValidationResult()}
       {showChecklist && (
         <div className="utility-checklist">
@@ -7271,6 +7446,30 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
       <datalist id="object-ref-suggestions">
         {objectRefSuggestions.map(name => <option key={name} value={name} aria-label={name} />)}
       </datalist>
+      {projectId && (missingProjectSecrets.length > 0 || replayBlockedByUnknownSecretStatus) && (
+        <div className="script-secret-banner" role="status">
+          <div>
+            <strong>
+              {replayBlockedByUnknownSecretStatus
+                ? replaySecretStatusState === 'unavailable' ? 'Project secret status is unavailable' : 'Checking project secret configuration'
+                : `${missingProjectSecrets.length} project secret${missingProjectSecrets.length === 1 ? ' still needs' : 's still need'} configuration`}
+            </strong>
+            <span>
+              {replayBlockedByUnknownSecretStatus
+                ? 'The script is safely saved with references, but replay remains blocked until credential status can be verified.'
+                : 'The script is safely saved with references, but replay will remain blocked until values are available.'}
+            </span>
+          </div>
+          <div className="settings-inline-actions">
+            <button className="btn btn-secondary btn-sm" type="button" onClick={openProjectSecrets}>Configure secrets</button>
+            {replaySecretStatusState === 'unavailable' && (
+              <button className="btn btn-secondary btn-sm" type="button" onClick={() => setProjectSecretProbeRetryGeneration(generation => generation + 1)}>
+                Retry credential check
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {showImportedParameterMappingsDialog && importedParameterFileMappings.length > 0 && (
         <ImportedParameterMappingsDialog
           mappings={importedParameterFileMappings}
@@ -7300,6 +7499,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               <ParameterizationReview
                 parameterization={serverParameterization}
                 script={script}
+                disabled={saving || validating || replaying}
                 onApplied={(applied, diffs) => {
                   replaceScriptWithHistory(applied)
                   recordAssistantChange('Applied server parameterization', `${diffs.length} change${diffs.length === 1 ? '' : 's'}`)
@@ -7419,7 +7619,7 @@ export default function ScriptEditor({ scriptId, initialScript, initialFocusedAc
               </button>
             </div>
             <div className="script-ide-quick-actions" role="group" aria-label="Quick actions">
-              <button type="button" className="debugger-icon-btn" title={replayStartButtonLabel} onClick={() => void handleReplay()} disabled={replaying || saving || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0}>
+              <button type="button" className="debugger-icon-btn" title={replayRunButtonTitle} onClick={() => void handleReplay()} disabled={replaying || saving || replayBlockedByMissingSecrets || !currentDraftScript.name || (currentDraftScript.actions || []).length === 0}>
                 <span className="debugger-icon" aria-hidden="true">&#9654;</span>
                 <span>{replaying ? 'Running...' : replayReport ? 'Restart' : 'Run'}</span>
               </button>

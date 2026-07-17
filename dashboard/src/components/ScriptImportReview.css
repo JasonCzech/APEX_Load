@@ -54,7 +54,7 @@
 }
 
 .secret-binding-review {
-  background: color-mix(in srgb, var(--warning) 7%, transparent);
+  background: color-mix(in srgb, var(--accent) 4%, var(--bg-primary));
 }
 
 .secret-binding-review-header {
@@ -65,7 +65,7 @@
 }
 
 .secret-binding-review-header h4 {
-  color: var(--warning-text, var(--warning));
+  color: var(--text-primary);
 }
 
 .secret-binding-review-header p {
@@ -78,6 +78,51 @@
 
 .secret-binding-review-header .secret-binding-review-reuse-help {
   color: var(--text-muted);
+}
+
+.credentials-card-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.credentials-card-summary span {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.credentials-source-migration {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning-border);
+  border-radius: 8px;
+  background: var(--warning-bg);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.credentials-source-migration input {
+  margin-top: 2px;
+}
+
+.credentials-source-migration span {
+  display: grid;
+  gap: 3px;
+}
+
+.credentials-source-migration small {
+  color: var(--text-muted);
+  font-weight: 400;
+  line-height: 1.4;
 }
 
 .secret-binding-review-blocked,
@@ -170,6 +215,20 @@
   font-size: 11px;
 }
 
+.credentials-location-list {
+  display: grid;
+  gap: 3px;
+  margin: 7px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.credentials-location-list code {
+  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
 .secret-binding-review-control {
   display: grid;
   align-content: start;
@@ -190,6 +249,15 @@
 
 .secret-binding-review-control input[aria-invalid='true'] {
   border-color: var(--danger);
+}
+
+.secret-binding-review-control input[type='password'] {
+  margin-top: 2px;
+}
+
+.secret-binding-review-control input:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
 }
 
 .secret-binding-review-reference,

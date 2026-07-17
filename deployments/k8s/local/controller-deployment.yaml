@@ -49,6 +49,10 @@ spec:
               value: /var/lib/apexload/apexload.db
             - name: APEXLOAD_STORE
               value: sqlite
+            # Local-only wrapping key for database-backed Project Secrets.
+            # Production deployments must inject a randomly generated key.
+            - name: APEXLOAD_WRAPPING_MASTER_KEY
+              value: apexload-local-project-secret-wrapping-key
             - name: APEXLOAD_ARCHIVE_DIR
               value: /var/lib/apexload/archives
             - name: APEXLOAD_ARCHIVE_BACKEND

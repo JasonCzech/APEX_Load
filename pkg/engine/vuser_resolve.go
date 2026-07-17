@@ -12,6 +12,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 func actionParamInt(params map[string]any, key string) (int, bool) {
@@ -102,16 +103,20 @@ func (vu *VUser) makeLogger(cfg dsl.LogConfig) *slog.Logger {
 	}
 }
 
-func actionLogAttrs(actionName string, resolved *protocol.Action, result *protocol.Result, cfg dsl.LogConfig, includeError bool) []any {
+func actionLogAttrs(actionName string, resolved *protocol.Action, result *protocol.Result, cfg dsl.LogConfig, includeError bool, redactionConfig *RedactionConfig) []any {
+	if result == nil {
+		result = &protocol.Result{}
+	}
 	attrs := []any{
-		"action", actionName,
+		"action", cloneBoundedResultString(scrubSensitiveTextWithConfig(actionName, redactionConfig), maxResultMetadataBytes),
 		"status", result.StatusCode,
 		"duration_ms", result.Duration.Milliseconds(),
 	}
 	if !includeError {
 		attrs = append(attrs, "bytes", result.BytesReceived)
 	} else {
-		attrs = append(attrs, "error", result.ErrorMessage)
+		attrs = append(attrs, "error",
+			cloneBoundedResultString(scrubSensitiveTextWithConfig(result.ErrorMessage, redactionConfig), maxResultErrorBytes))
 	}
 
 	options := make(map[string]struct{}, len(cfg.ExtendedOptions))
@@ -129,17 +134,18 @@ func actionLogAttrs(actionName string, resolved *protocol.Action, result *protoc
 			requestBody = string(resolved.RedactedBody)
 		}
 		attrs = append(attrs,
-			"target", target,
-			"request_body", requestBody,
+			"target", scrubSensitiveTextWithConfig(target, redactionConfig),
+			"request_body", scrubSensitiveTextWithConfig(requestBody, redactionConfig),
 		)
 	}
 	if _, ok := options["data_returned"]; ok {
-		attrs = append(attrs, "response_body", result.ResponseBody)
+		attrs = append(attrs, "response_body",
+			cloneBoundedResultString(scrubSensitiveTextWithConfig(result.ResponseBody, redactionConfig), maxRetainedResultEvidenceBytes))
 	}
 	if _, ok := options["advanced_trace"]; ok {
 		attrs = append(attrs,
-			"dependency_target", result.DependencyTarget,
-			"correlation_id", result.CorrelationID,
+			"dependency_target", cloneBoundedResultString(scrubSensitiveTextWithConfig(result.DependencyTarget, redactionConfig), maxResultMetadataBytes),
+			"correlation_id", cloneBoundedResultString(scrubSensitiveTextWithConfig(result.CorrelationID, redactionConfig), maxResultMetadataBytes),
 			"dns_ms", result.DNSTime.Milliseconds(),
 			"connect_ms", result.ConnectTime.Milliseconds(),
 			"tls_ms", result.TLSTime.Milliseconds(),
@@ -148,6 +154,33 @@ func actionLogAttrs(actionName string, resolved *protocol.Action, result *protoc
 	}
 
 	return attrs
+}
+
+func (vu *VUser) bindRuntimeTextRedactor() {
+	if vu == nil || vu.Proto == nil {
+		return
+	}
+	vu.runtimeRedaction.Store(vu.RedactionConfig)
+	bindProtocolRuntimeRedaction(vu.Proto, func() *RedactionConfig { return vu.runtimeRedaction.Load() })
+}
+
+// bindProtocolRuntimeRedaction installs the evidence gate before protocol Init
+// as well as after VUser construction. Browser Init can otherwise create a raw
+// Playwright HAR working file before the VUser has a chance to suppress it.
+func bindProtocolRuntimeRedaction(proto protocol.Protocol, provider func() *RedactionConfig) {
+	if proto == nil || provider == nil {
+		return
+	}
+	if setter, ok := proto.(protocol.RuntimeTextRedactorSetter); ok {
+		setter.SetRuntimeTextRedactor(func(value string) string {
+			return scrubSensitiveTextWithConfig(value, currentRedactionConfig(provider))
+		})
+	}
+	if setter, ok := proto.(protocol.RuntimeSecretActivitySetter); ok {
+		setter.SetRuntimeSecretActivity(func() bool {
+			return currentRedactionConfig(provider).HasRuntimeSecretMaterial()
+		})
+	}
 }
 
 func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
@@ -510,6 +543,20 @@ func (vu *VUser) mergeExtractions(r *protocol.Result) error {
 	if additionalBytes > maxVUserExtractionBytes-vu.extractedVariableBytes {
 		return fmt.Errorf("VUser extracted variables exceed %d bytes", maxVUserExtractionBytes)
 	}
+	// Build the complete runtime matcher before retaining any sensitive
+	// extraction. If its reversible spellings exceed the bounded matcher
+	// budget, fail this extraction atomically instead of keeping a value that
+	// later evidence could expose.
+	sensitiveValues := make([]string, 0)
+	for key, value := range r.Extractions {
+		if value != "" && scrub.SensitiveName(key) {
+			sensitiveValues = append(sensitiveValues, value)
+		}
+	}
+	redactionConfig, err := WithSecretValueRedactionChecked(vu.RedactionConfig, sensitiveValues)
+	if err != nil {
+		return fmt.Errorf("sensitive extraction redaction: %s", scrubSensitiveText(err.Error()))
+	}
 	for key, value := range r.Extractions {
 		size := len(key) + len(value)
 		oldSize := vu.extractedVariables[key]
@@ -517,6 +564,13 @@ func (vu *VUser) mergeExtractions(r *protocol.Result) error {
 		vu.extractedVariables[key] = size
 		vu.extractedVariableBytes += size - oldSize
 	}
+	// Sensitive runtime extractions (tokens, sessions, passwords, and similar
+	// values) must remain usable by later actions without becoming observable
+	// in their resolved targets, evidence, logs, or replay reports. Add their
+	// exact values only to the in-memory redaction projection after the entire
+	// extraction batch has passed validation and retention bounds.
+	vu.RedactionConfig = redactionConfig
+	vu.runtimeRedaction.Store(vu.RedactionConfig)
 	return nil
 }
 

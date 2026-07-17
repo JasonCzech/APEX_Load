@@ -2,16 +2,41 @@ package api
 
 import (
 	"bytes"
+	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+type projectDeletionVaultCredential struct{}
+
+func (projectDeletionVaultCredential) GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	return azcore.AccessToken{Token: "test-token", ExpiresOn: time.Now().Add(time.Hour)}, nil
+}
+
+type failingExternalSecretMetadataStore struct {
+	storage.Store
+	storage.ProjectSecretMetadataStore
+	err error
+}
+
+func (s *failingExternalSecretMetadataStore) ListExternalProjectSecretMetadata(string) ([]storage.ProjectSecretMetadata, error) {
+	return nil, s.err
+}
 
 func TestProjectAndFolderHandlers(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
@@ -294,13 +319,65 @@ func TestDeleteProjectRetainsAndAttributesAuditHistory(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SaveAuditEvent returned error: %v", err)
 	}
+	created, err := store.CreateProjectSecretMetadata(&storage.ProjectSecretMetadata{
+		ProjectID: projectID, SecretName: "KV_TOKEN", Provider: "azure_key_vault",
+		CreatedAt: now, UpdatedAt: now, CreatedBy: "operator",
+	})
+	if err != nil || !created {
+		t.Fatalf("CreateProjectSecretMetadata returned created=%t error=%v", created, err)
+	}
 
-	server := NewServer(ServerConfig{Store: store})
+	// No active Key Vault provider is configured. Deletion must still discover
+	// the externally retained value through the durable metadata index.
+	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+		Key:   bytes.Repeat([]byte{0x6d}, 32),
+		KeyID: "project-delete-test",
+	})
+	if err != nil {
+		t.Fatalf("NewLocalAESKeyWrapper returned error: %v", err)
+	}
+	server := NewServer(ServerConfig{
+		Store:                store,
+		ImportAssetDir:       t.TempDir(),
+		BrunoArtifactWrapper: wrapper,
+	})
+	server.sourceSecretSessions["delete-source-session"] = &sourceSecretSession{
+		ID:        "delete-source-session",
+		ProjectID: projectID,
+		Values:    map[string]string{"requirement": "ephemeral-source-value"},
+		ExpiresAt: now.Add(time.Hour),
+	}
+	server.brunoImportSessions["delete-bruno-session"] = &brunoImportSession{
+		ID:        "delete-bruno-session",
+		ProjectID: projectID,
+	}
 	req := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+projectID, nil)
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, req)
 	if resp.Code != http.StatusOK {
 		t.Fatalf("delete project status = %d, want 200 body=%s", resp.Code, resp.Body.String())
+	}
+	var deletionResponse struct {
+		ExternalSecretCleanupRequired  bool     `json:"external_secret_cleanup_required"`
+		ExternalSecretCleanupNames     []string `json:"external_secret_cleanup_names"`
+		ExternalSecretCleanupProviders []string `json:"external_secret_cleanup_providers"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &deletionResponse); err != nil {
+		t.Fatalf("unmarshal project deletion response: %v", err)
+	}
+	if !deletionResponse.ExternalSecretCleanupRequired || len(deletionResponse.ExternalSecretCleanupNames) != 1 ||
+		deletionResponse.ExternalSecretCleanupNames[0] != "KV_TOKEN" {
+		t.Fatalf("external secret cleanup response = %#v", deletionResponse)
+	}
+	if len(deletionResponse.ExternalSecretCleanupProviders) != 1 ||
+		deletionResponse.ExternalSecretCleanupProviders[0] != "azure_key_vault" {
+		t.Fatalf("external secret cleanup providers = %#v", deletionResponse.ExternalSecretCleanupProviders)
+	}
+	if _, exists := server.sourceSecretSessions["delete-source-session"]; exists {
+		t.Fatal("project deletion retained a source-secret session")
+	}
+	if _, exists := server.brunoImportSessions["delete-bruno-session"]; exists {
+		t.Fatal("project deletion retained a Bruno import session")
 	}
 
 	history, err := store.ListAuditEvents(storage.AuditEventFilter{ProjectID: projectID, Limit: 20})
@@ -321,6 +398,158 @@ func TestDeleteProjectRetainsAndAttributesAuditHistory(t *testing.T) {
 	}
 	if deleteEvent.ProjectID != projectID || deleteEvent.DomainID != domainID {
 		t.Fatalf("project.delete scope = project %q domain %q, want %q/%q", deleteEvent.ProjectID, deleteEvent.DomainID, projectID, domainID)
+	}
+	encodedDeleteEvent, err := json.Marshal(deleteEvent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(encodedDeleteEvent, []byte("KV_TOKEN")) || bytes.Contains(encodedDeleteEvent, []byte("ephemeral-source-value")) {
+		t.Fatalf("project.delete audit cleanup metadata = %s", encodedDeleteEvent)
+	}
+}
+
+func TestDeleteProjectPartialCleanupResponseRetainsExternalSecretGuidance(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	const projectID = "partial-cleanup-secret-guidance"
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{
+		ID: projectID, Name: "Partial cleanup", CreatedAt: now, UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	created, err := store.CreateProjectSecretMetadata(&storage.ProjectSecretMetadata{
+		ProjectID: projectID, SecretName: "EXTERNAL_TOKEN", Provider: "azure_key_vault",
+		CreatedAt: now, UpdatedAt: now, CreatedBy: "operator",
+	})
+	if err != nil || !created {
+		t.Fatalf("CreateProjectSecretMetadata returned created=%t error=%v", created, err)
+	}
+	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+		Key: bytes.Repeat([]byte{0x4f}, 32),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifactRoot := t.TempDir()
+	artifacts, err := brunoartifact.NewEncryptedStore(brunoartifact.StoreOptions{
+		RootDir: artifactRoot, Wrapper: wrapper, ReadOnly: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{Store: store})
+	server.brunoArtifacts = artifacts
+
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+projectID, nil)
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, request)
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf("delete status = %d, want 500 body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Error     string   `json:"error"`
+		Deleted   string   `json:"deleted"`
+		Required  bool     `json:"external_secret_cleanup_required"`
+		Names     []string `json:"external_secret_cleanup_names"`
+		Providers []string `json:"external_secret_cleanup_providers"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.Error == "" || payload.Deleted != projectID || !payload.Required ||
+		len(payload.Names) != 1 || payload.Names[0] != "EXTERNAL_TOKEN" ||
+		len(payload.Providers) != 1 || payload.Providers[0] != "azure_key_vault" {
+		t.Fatalf("partial deletion cleanup guidance = %#v", payload)
+	}
+	if _, err := store.GetProject(projectID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("project lookup after durable deletion = %v, want not found", err)
+	}
+}
+
+func TestDeleteProjectBlocksWhenExternalSecretMetadataCannotBeEnumerated(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	project := &storage.Project{
+		ID:        "external-secret-enumeration-failure",
+		Name:      "Must remain",
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+	failingStore := &failingExternalSecretMetadataStore{
+		Store:                      store,
+		ProjectSecretMetadataStore: store,
+		err:                        errors.New("metadata backend unavailable"),
+	}
+	server := NewServer(ServerConfig{Store: failingStore})
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+project.ID, nil)
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("delete status = %d, want 503 body=%s", response.Code, response.Body.String())
+	}
+	if _, err := store.GetProject(project.ID); err != nil {
+		t.Fatalf("project was deleted despite metadata enumeration failure: %v", err)
+	}
+}
+
+func TestProjectDeletionReportsKeyVaultPrefixWithoutPriorSecretProbe(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	const projectID = "unprobed-key-vault-project"
+	now := time.Now().UTC()
+	if err := store.SaveProject(&storage.Project{ID: projectID, Name: "Unprobed Key Vault", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	var requests atomic.Int32
+	vault := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		http.Error(w, "unexpected probe", http.StatusInternalServerError)
+	}))
+	t.Cleanup(vault.Close)
+	keyVault := &secretstore.AzureKeyVaultStore{
+		BaseURL: vault.URL, APIVersion: "7.4", Credential: projectDeletionVaultCredential{},
+		Client: vault.Client(), Metadata: store,
+	}
+	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x37}, 32)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(ServerConfig{
+		Store: store, ProjectSecretStore: keyVault, ImportAssetDir: t.TempDir(), BrunoArtifactWrapper: wrapper,
+	})
+	request := httptest.NewRequest(http.MethodDelete, "/api/v1/projects/"+projectID, nil)
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("delete project status = %d body=%s", response.Code, response.Body.String())
+	}
+	var payload struct {
+		Required  bool     `json:"external_secret_cleanup_required"`
+		Names     []string `json:"external_secret_cleanup_names"`
+		Providers []string `json:"external_secret_cleanup_providers"`
+		Prefix    string   `json:"external_secret_cleanup_prefix"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if !payload.Required || len(payload.Names) != 0 || len(payload.Providers) != 1 || payload.Providers[0] != "azure_key_vault" ||
+		payload.Prefix != engine.ProjectSecretBindingPrefix(projectID) {
+		t.Fatalf("unprobed Key Vault cleanup guidance = %#v", payload)
+	}
+	if requests.Load() != 0 {
+		t.Fatalf("project deletion made %d value-bearing Key Vault request(s) without a known logical name", requests.Load())
 	}
 }
 

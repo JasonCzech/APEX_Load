@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 // actionFlow signals how the per-action executor should proceed after running
@@ -91,7 +92,10 @@ func (vu *VUser) evalConditionEvidence(cond *dsl.Condition) (bool, ConditionEvid
 	}
 	if expr := strings.TrimSpace(cond.Expr); expr != "" {
 		result := vu.evalConditionExpr(expr)
-		return result, ConditionEvidence{Expr: expr, Result: result}
+		return result, ConditionEvidence{
+			Expr:   scrubSensitiveTextWithConfig(expr, vu.RedactionConfig),
+			Result: result,
+		}
 	}
 	left := vu.interpolate(cond.Left)
 	right := vu.interpolate(cond.Right)
@@ -100,7 +104,47 @@ func (vu *VUser) evalConditionEvidence(cond *dsl.Condition) (bool, ConditionEvid
 		op = "eq"
 	}
 	result := evalConditionOp(left, op, right)
-	return result, ConditionEvidence{Left: left, Op: op, Right: right, Result: result}
+	return result, ConditionEvidence{
+		Left:   vu.conditionEvidenceOperand(cond.Left, left),
+		Op:     op,
+		Right:  vu.conditionEvidenceOperand(cond.Right, right),
+		Result: result,
+	}
+}
+
+// conditionEvidenceOperand keeps debugger predicates useful without returning
+// resolved credential material. Direct project-secret references (and
+// sensitive variable/data/parameter references such as {{var.access_token}})
+// remain as their author-facing template text. Other operands retain their
+// evaluated value, with the run's exact-value redaction applied as a final
+// boundary in case secret material arrived through an indirect variable.
+func (vu *VUser) conditionEvidenceOperand(raw, resolved string) string {
+	if conditionOperandContainsSensitiveReference(raw) {
+		return scrubSensitiveTextWithConfig(raw, vu.RedactionConfig)
+	}
+	return scrubSensitiveTextWithConfig(resolved, vu.RedactionConfig)
+}
+
+func conditionOperandContainsSensitiveReference(value string) bool {
+	for _, match := range scriptTemplateReferencePattern.FindAllStringSubmatch(value, -1) {
+		if len(match) < 2 {
+			continue
+		}
+		expr := strings.TrimSpace(match[1])
+		namespace, name, ok := strings.Cut(expr, ".")
+		if !ok {
+			continue
+		}
+		switch namespace {
+		case "secret":
+			return true
+		case "var", "param", "data", "env":
+			if scrub.SensitiveName(name) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // conditionTruthy reports whether a template-expanded string should be treated as

@@ -145,6 +145,9 @@ func (tr *TestRunner) startTestWithOptionsAndExpectedTerm(id string, opts StartT
 	if blocked {
 		return nil
 	}
+	if err := tr.validateStartSecretRequirements(id); err != nil {
+		return err
+	}
 
 	shakeoutTest, err := tr.beginScriptShakeoutIfNeededWithExpectedTerm(id, opts, expectedTerm)
 	if err != nil {
@@ -184,6 +187,70 @@ func (tr *TestRunner) startTestWithOptionsAndExpectedTerm(id string, opts StartT
 	}
 
 	go tr.runTest(test)
+	return nil
+}
+
+// validateStartSecretRequirements keeps saved scripts independently
+// configurable while making StartTest the execution boundary: every static
+// {{secret.*}} reference must resolve before shakeout, INITIALIZING, backend
+// dispatch, or generator assignment. Engine construction repeats the check as
+// defense against a value being removed between preflight and launch.
+func (tr *TestRunner) validateStartSecretRequirements(id string) error {
+	tr.mu.RLock()
+	test := tr.tests[id]
+	if test == nil {
+		tr.mu.RUnlock()
+		return fmt.Errorf("test not found: %s", id)
+	}
+	defaultProjectID := test.ProjectID
+	groups := testexec.CloneGroupSpecsWithResultSink(test.groupSpecs, nil)
+	runtimeSecrets := make([]map[string]string, len(test.Groups))
+	for index := range groups {
+		groups[index].Script = cloneScriptDefinition(groups[index].Script)
+		if index < len(test.Groups) {
+			runtimeSecrets[index] = cloneRuntimeSecretValues(test.Groups[index].runtimeSecretValues)
+		}
+	}
+	tr.mu.RUnlock()
+
+	projectResolvers := make(map[string]engine.SecretResolver)
+	resolutionCtx, resolutionCancel := engine.WithSecretResolutionBudget(context.Background())
+	defer resolutionCancel()
+	for index, group := range groups {
+		if group.Script == nil {
+			continue
+		}
+		names, err := engine.ReferencedSecretNames(group.Script)
+		if err != nil {
+			return fmt.Errorf("group[%d] %q: inspect project secret references", index, group.Name)
+		}
+		if len(names) == 0 {
+			continue
+		}
+		projectID := strings.TrimSpace(group.Script.ProjectID)
+		if projectID == "" {
+			projectID = defaultProjectID
+		}
+		resolver := projectResolvers[projectID]
+		if resolver == nil {
+			resolver = tr.secretResolverForProject(projectID)
+			projectResolvers[projectID] = resolver
+		}
+		if index < len(runtimeSecrets) {
+			resolver = overlayRuntimeSecretResolver(runtimeSecrets[index], resolver)
+		}
+		_, missing, err := engine.ResolveSecretNames(resolutionCtx, names, resolver)
+		if err != nil {
+			return fmt.Errorf("group[%d] %q: project secret resolution failed: %w", index, group.Name, err)
+		}
+		if len(missing) > 0 {
+			groupName := strings.TrimSpace(group.Name)
+			if groupName == "" {
+				groupName = group.Script.Name
+			}
+			return fmt.Errorf("group %q: configure the following project secret(s) before starting the test: %s", groupName, strings.Join(missing, ", "))
+		}
+	}
 	return nil
 }
 
@@ -555,6 +622,10 @@ func (tr *TestRunner) reloadAndReconcile() error {
 	if err := tr.repairCapacityReservationBindings(); err != nil {
 		return fmt.Errorf("repair capacity timeslot bindings: %w", err)
 	}
+	if err := tr.reconcileExpiredRuntimeOverrideSecretAttempts(time.Now().UTC()); err != nil {
+		return fmt.Errorf("recover runtime credential provisioning: %w", err)
+	}
+	tr.scheduleRuntimeOverrideSecretAttemptReconciliation()
 	if err := tr.reloadStoredScripts(); err != nil {
 		return fmt.Errorf("reload scripts: %w", err)
 	}
@@ -2335,6 +2406,22 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 	if err := validateEngineGroupBounds(groups); err != nil {
 		return nil, err
 	}
+	projectResolvers := make(map[string]engine.SecretResolver)
+	for index := range groups {
+		projectID := test.ProjectID
+		if groups[index].Script != nil && strings.TrimSpace(groups[index].Script.ProjectID) != "" {
+			projectID = groups[index].Script.ProjectID
+		}
+		resolver := projectResolvers[projectID]
+		if resolver == nil {
+			resolver = engine.CacheSecretResolverForRun(tr.secretResolverForProject(projectID))
+			projectResolvers[projectID] = resolver
+		}
+		if index < len(test.Groups) {
+			resolver = overlayRuntimeSecretResolver(test.Groups[index].runtimeSecretValues, resolver)
+		}
+		groups[index].SecretResolver = resolver
+	}
 	preBaseline, postBaseline := testexec.ResourceBaselineWindows(test.ResourceBaseline)
 	preBaseline += testexec.StartDelayWindow(test.StartDelay)
 	return engine.NewMultiGroup(engine.MultiGroupConfig{
@@ -2618,6 +2705,7 @@ func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test 
 	test.EndedAt = &endTime
 	test.cancel = nil
 	test.executionCtx = nil
+	clearDistributedRunSecretSnapshotsLocked(test)
 	test.Archive = archiveRecord
 	if archiveRecord != nil {
 		tr.archives[test.ID] = archiveRecord
@@ -2887,7 +2975,8 @@ func (tr *TestRunner) runScriptShakeoutReport(test *ManagedTest) ScriptShakeoutR
 		StartedAt: time.Now().UTC(),
 		Results:   make([]ScriptShakeoutResult, 0, len(test.groupSpecs)),
 	}
-	for _, group := range test.groupSpecs {
+	projectResolvers := make(map[string]engine.SecretResolver)
+	for index, group := range test.groupSpecs {
 		result := ScriptShakeoutResult{
 			GroupName: group.Name,
 			Status:    "passed",
@@ -2906,7 +2995,19 @@ func (tr *TestRunner) runScriptShakeoutReport(test *ManagedTest) ScriptShakeoutR
 		shakeoutScript.Config.RunLogic.Iterations = 1
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		err := engine.RunScriptShakeout(ctx, group.Name, &shakeoutScript)
+		projectID := shakeoutScript.ProjectID
+		if strings.TrimSpace(projectID) == "" {
+			projectID = test.ProjectID
+		}
+		resolver := projectResolvers[projectID]
+		if resolver == nil {
+			resolver = tr.secretResolverForProject(projectID)
+			projectResolvers[projectID] = resolver
+		}
+		if index < len(test.Groups) {
+			resolver = overlayRuntimeSecretResolver(test.Groups[index].runtimeSecretValues, resolver)
+		}
+		err := engine.RunScriptShakeoutWithSecretResolver(ctx, group.Name, &shakeoutScript, resolver)
 		cancel()
 		if err != nil {
 			result.Status = "failed"

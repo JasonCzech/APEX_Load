@@ -22,10 +22,28 @@ type SecretResolver interface {
 	Resolve(name string) (string, bool)
 }
 
+// ContextSecretResolver is the optional cancellation-aware form used by
+// launch/preflight batch resolution. Implementations should stop provider work
+// when ctx is done so one overall budget applies across every referenced name.
+type ContextSecretResolver interface {
+	SecretResolver
+	ResolveContext(ctx context.Context, name string) (string, bool)
+}
+
 type SecretResolverFunc func(name string) (string, bool)
 
 func (fn SecretResolverFunc) Resolve(name string) (string, bool) {
 	return fn(name)
+}
+
+type ContextSecretResolverFunc func(context.Context, string) (string, bool)
+
+func (fn ContextSecretResolverFunc) Resolve(name string) (string, bool) {
+	return fn(context.Background(), name)
+}
+
+func (fn ContextSecretResolverFunc) ResolveContext(ctx context.Context, name string) (string, bool) {
+	return fn(ctx, name)
 }
 
 type cachingSecretResolver struct {
@@ -41,14 +59,18 @@ type cachingSecretResolver struct {
 }
 
 const (
-	maxSecretNameBytes            = 256
-	maxResolvedSecretValueBytes   = 64 << 10
-	maxCachedSecrets              = 1024
-	maxCachedSecretBytes          = 4 << 20
-	maxAzureKeyVaultResponseBytes = 1 << 20
-	maxAzureKeyVaultAllowedNames  = 1024
-	secretNegativeCacheTTL        = 5 * time.Second
+	maxSecretNameBytes             = 256
+	maxResolvedSecretValueBytes    = 64 << 10
+	maxCachedSecrets               = 1024
+	maxCachedSecretBytes           = 4 << 20
+	maxAzureKeyVaultResponseBytes  = 1 << 20
+	maxAzureKeyVaultAllowedNames   = 1024
+	secretNegativeCacheTTL         = 5 * time.Second
+	defaultSecretResolutionBudget  = 10 * time.Second
+	maxConcurrentSecretResolutions = 32
 )
+
+var secretResolutionSlots = make(chan struct{}, maxConcurrentSecretResolutions)
 
 type secretResolutionFlight struct {
 	done  chan struct{}
@@ -60,6 +82,9 @@ func newCachingSecretResolver(delegate SecretResolver) SecretResolver {
 	if delegate == nil {
 		return nil
 	}
+	if _, ok := delegate.(*cachingSecretResolver); ok {
+		return delegate
+	}
 	return &cachingSecretResolver{
 		delegate:    delegate,
 		values:      make(map[string]string),
@@ -70,7 +95,23 @@ func newCachingSecretResolver(delegate SecretResolver) SecretResolver {
 	}
 }
 
+// CacheSecretResolverForRun adds bounded, concurrency-safe positive and
+// negative caching to an externally supplied resolver. Runtime entry points
+// call this before resolving script references so database and external
+// providers are not queried once per VUser/action. An already cached resolver
+// is returned unchanged.
+func CacheSecretResolverForRun(delegate SecretResolver) SecretResolver {
+	return newCachingSecretResolver(delegate)
+}
+
 func (r *cachingSecretResolver) Resolve(name string) (string, bool) {
+	return r.ResolveContext(context.Background(), name)
+}
+
+func (r *cachingSecretResolver) ResolveContext(ctx context.Context, name string) (string, bool) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	name = strings.TrimSpace(name)
 	if name == "" || len(name) > maxSecretNameBytes {
 		return "", false
@@ -91,8 +132,12 @@ func (r *cachingSecretResolver) Resolve(name string) (string, bool) {
 	}
 	if flight := r.inflight[name]; flight != nil {
 		r.mu.Unlock()
-		<-flight.done
-		return flight.value, flight.ok
+		select {
+		case <-flight.done:
+			return flight.value, flight.ok
+		case <-ctx.Done():
+			return "", false
+		}
 	}
 	if len(r.inflight) >= maxCachedSecrets {
 		r.mu.Unlock()
@@ -102,7 +147,7 @@ func (r *cachingSecretResolver) Resolve(name string) (string, bool) {
 	r.inflight[name] = flight
 	r.mu.Unlock()
 
-	value, ok := r.delegate.Resolve(name)
+	value, ok := resolveSecretWithContext(ctx, r.delegate, name)
 	if len(value) > maxResolvedSecretValueBytes {
 		value = ""
 		ok = false
@@ -116,6 +161,57 @@ func (r *cachingSecretResolver) Resolve(name string) (string, bool) {
 	delete(r.inflight, name)
 	close(flight.done)
 	return value, ok
+}
+
+func resolveSecretWithContext(ctx context.Context, resolver SecretResolver, name string) (string, bool) {
+	if resolver == nil {
+		return "", false
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if contextual, ok := resolver.(ContextSecretResolver); ok {
+		value, resolved := contextual.ResolveContext(ctx, name)
+		if !resolved || !IsUsableResolvedSecretValue(value) {
+			return "", false
+		}
+		return value, true
+	}
+	select {
+	case secretResolutionSlots <- struct{}{}:
+	case <-ctx.Done():
+		return "", false
+	}
+	result := make(chan secretResolutionFlight, 1)
+	go func() {
+		value, ok := resolver.Resolve(name)
+		<-secretResolutionSlots
+		result <- secretResolutionFlight{value: value, ok: ok}
+	}()
+	select {
+	case resolved := <-result:
+		if !resolved.ok || !IsUsableResolvedSecretValue(resolved.value) {
+			return "", false
+		}
+		return resolved.value, true
+	case <-ctx.Done():
+		return "", false
+	}
+}
+
+// IsUsableResolvedSecretValue applies the value-level runtime invariant shared
+// by managed stores and external providers. A canonical redaction sentinel is
+// evidence that the source value was not recoverable; it must never become an
+// executable credential.
+func IsUsableResolvedSecretValue(value string) bool {
+	return value != "" && !strings.EqualFold(strings.TrimSpace(value), "[REDACTED]")
+}
+
+// ResolveSecret applies cancellation to both context-aware providers and
+// legacy resolver implementations. Legacy calls are isolated behind a bounded
+// process-wide gate so a faulty resolver cannot create unbounded goroutines.
+func ResolveSecret(ctx context.Context, resolver SecretResolver, name string) (string, bool) {
+	return resolveSecretWithContext(ctx, resolver, name)
 }
 
 func (r *cachingSecretResolver) admitLocked(name, value string, ok bool) {
@@ -187,9 +283,16 @@ func newChainedSecretResolver(delegates ...SecretResolver) SecretResolver {
 }
 
 func (r chainedSecretResolver) Resolve(name string) (string, bool) {
+	return r.ResolveContext(context.Background(), name)
+}
+
+func (r chainedSecretResolver) ResolveContext(ctx context.Context, name string) (string, bool) {
 	for _, delegate := range r.delegates {
-		if value, ok := delegate.Resolve(name); ok {
+		if value, ok := resolveSecretWithContext(ctx, delegate, name); ok {
 			return value, true
+		}
+		if ctx.Err() != nil {
+			return "", false
 		}
 	}
 	return "", false
@@ -209,7 +312,17 @@ func (envSecretResolver) Resolve(name string) (string, bool) {
 	// expose a value to the script secret store only by placing it in the
 	// dedicated APEXLOAD_SECRET_* namespace.
 	value, ok := os.LookupEnv(scriptSecretEnvironmentName(name))
-	return value, ok
+	if !ok || !IsUsableResolvedSecretValue(value) {
+		return "", false
+	}
+	return value, true
+}
+
+func (r envSecretResolver) ResolveContext(ctx context.Context, name string) (string, bool) {
+	if ctx != nil && ctx.Err() != nil {
+		return "", false
+	}
+	return r.Resolve(name)
 }
 
 func scriptSecretEnvironmentName(name string) string {
@@ -223,6 +336,10 @@ type projectScopedSecretResolver struct {
 }
 
 func (r projectScopedSecretResolver) Resolve(name string) (string, bool) {
+	return r.ResolveContext(context.Background(), name)
+}
+
+func (r projectScopedSecretResolver) ResolveContext(ctx context.Context, name string) (string, bool) {
 	if r.delegate == nil {
 		return "", false
 	}
@@ -230,7 +347,7 @@ func (r projectScopedSecretResolver) Resolve(name string) (string, bool) {
 	if boundName == "" {
 		return "", false
 	}
-	return r.delegate.Resolve(boundName)
+	return resolveSecretWithContext(ctx, r.delegate, boundName)
 }
 
 // ProjectSecretBindingName returns the operator-facing logical binding used by
@@ -243,14 +360,26 @@ func ProjectSecretBindingName(projectID, name string) string {
 	if name == "" || projectID == "" {
 		return name
 	}
-	projectHash := sha256.Sum256([]byte(projectID))
-	prefix := fmt.Sprintf("apexload-p-%x-", projectHash[:10])
+	prefix := ProjectSecretBindingPrefix(projectID)
 	normalizedName := normalizeAzureKeyVaultSecretName(name)
 	if validAzureKeyVaultSecretName(normalizedName) && len(prefix)+len(normalizedName) <= 127 {
 		return prefix + normalizedName
 	}
 	nameHash := sha256.Sum256([]byte(name))
 	return fmt.Sprintf("%ssecret-%x", prefix, nameHash[:16])
+}
+
+// ProjectSecretBindingPrefix is the value-free prefix shared by every
+// deterministic Azure Key Vault name for a project. It gives administrators
+// actionable cleanup guidance even when no logical names were indexed before
+// the project was deleted.
+func ProjectSecretBindingPrefix(projectID string) string {
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return ""
+	}
+	projectHash := sha256.Sum256([]byte(projectID))
+	return fmt.Sprintf("apexload-p-%x-", projectHash[:10])
 }
 
 // ProjectSecretEnvironmentName returns the exact environment-variable name an
@@ -292,6 +421,10 @@ type allowlistedAzureKeyVaultSecretResolver struct {
 }
 
 func (r allowlistedAzureKeyVaultSecretResolver) Resolve(name string) (string, bool) {
+	return r.ResolveContext(context.Background(), name)
+}
+
+func (r allowlistedAzureKeyVaultSecretResolver) ResolveContext(ctx context.Context, name string) (string, bool) {
 	secretName := normalizeAzureKeyVaultSecretName(name)
 	if !validAzureKeyVaultSecretName(secretName) {
 		return "", false
@@ -299,7 +432,7 @@ func (r allowlistedAzureKeyVaultSecretResolver) Resolve(name string) (string, bo
 	if _, ok := r.allowed[secretName]; !ok {
 		return "", false
 	}
-	return r.delegate.Resolve(secretName)
+	return resolveSecretWithContext(ctx, r.delegate, secretName)
 }
 
 func azureKeyVaultAllowedSecretNamesFromEnv() (map[string]struct{}, error) {
@@ -437,6 +570,10 @@ func newAzureIdentityKeyVaultTokenSource() azureTokenSource {
 }
 
 func (r *azureKeyVaultSecretResolver) Resolve(name string) (string, bool) {
+	return r.ResolveContext(context.Background(), name)
+}
+
+func (r *azureKeyVaultSecretResolver) ResolveContext(parent context.Context, name string) (string, bool) {
 	if r == nil || name == "" {
 		return "", false
 	}
@@ -452,7 +589,10 @@ func (r *azureKeyVaultSecretResolver) Resolve(name string) (string, bool) {
 	query.Set("api-version", r.apiVersion)
 	endpoint.RawQuery = query.Encode()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	if parent == nil {
+		parent = context.Background()
+	}
+	ctx, cancel := context.WithTimeout(parent, 10*time.Second)
 	defer cancel()
 	token, err := r.tokens.Token(ctx)
 	if err != nil {
@@ -593,10 +733,39 @@ func resolveProtoConfigSecrets(value any, resolver SecretResolver) any {
 	case map[string]any:
 		resolved := make(map[string]any, len(typed))
 		for key, item := range typed {
+			if text, ok := item.(string); ok && isDedicatedProtoConfigSecretKey(key) {
+				resolved[key] = resolveDedicatedProtoConfigSecret(text, resolver)
+				continue
+			}
 			resolved[key] = resolveProtoConfigSecrets(item, resolver)
 		}
 		return resolved
 	default:
 		return value
 	}
+}
+
+func isDedicatedProtoConfigSecretKey(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "database_dsn_secret", "kafka_sasl_password_secret",
+		"eventhubs_connection_string_secret", "jms_tls_ca_cert_secret":
+		return true
+	default:
+		return false
+	}
+}
+
+func resolveDedicatedProtoConfigSecret(value string, resolver SecretResolver) string {
+	resolved := interpolateSecretReferences(value, resolver)
+	if resolved != value || strings.Contains(value, "{{") {
+		return resolved
+	}
+	name := strings.TrimSpace(value)
+	if !ValidLogicalSecretName(name) || resolver == nil {
+		return value
+	}
+	if secret, ok := resolver.Resolve(name); ok {
+		return secret
+	}
+	return value
 }

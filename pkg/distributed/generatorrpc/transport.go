@@ -59,20 +59,23 @@ const (
 	minProductionAuthTokenBytes = 32
 
 	// gRPC enforces limits against the encoded protobuf message, not just the
-	// bytes field carrying a script or archive. Reserve explicit envelope space
-	// and one script-cache-sized allowance for WorkAssignment data files and
-	// metadata so an application-valid payload is not rejected by transport.
+	// bytes field carrying a script or archive. Reserve explicit envelope space,
+	// one script-cache-sized allowance for WorkAssignment data files, and the
+	// bounded secret bundle plus protobuf map overhead so an application-valid
+	// payload is not rejected by transport.
 	generatorRPCEnvelopeHeadroomBytes int64 = 1 << 20
+	generatorRPCSecretHeadroomBytes   int64 = MaxAssignmentSecretBytes + (64 << 10)
 	maxTransportPEMBytes                    = 4 << 20
 )
 
 func generatorRPCMaxReceiveBytes() int64 {
 	limit := configuredGeneratorScriptCacheMaxBytes()
+	headroom := generatorRPCEnvelopeHeadroomBytes + generatorRPCSecretHeadroomBytes
 	maxInt64 := int64(^uint64(0) >> 1)
-	if limit > (maxInt64-generatorRPCEnvelopeHeadroomBytes)/2 {
+	if limit > (maxInt64-headroom)/2 {
 		return maxInt64
 	}
-	return 2*limit + generatorRPCEnvelopeHeadroomBytes
+	return 2*limit + headroom
 }
 
 func generatorRPCAssignmentAncillaryLimit(scriptLimit int64) int64 {
@@ -118,6 +121,13 @@ type TransportSecurity struct {
 }
 
 func (t TransportSecurity) Insecure() bool { return !t.TLS && !t.Token }
+
+// AllowsSecretDelivery reports whether the channel encrypts assignment
+// credentials and authenticates the controller. Plaintext token transport and
+// unauthenticated server-only TLS are intentionally insufficient.
+func (t TransportSecurity) AllowsSecretDelivery() bool {
+	return t.TLS && (t.MutualTLS || t.Token)
+}
 
 // productionEnv is the canonical APEXLOAD_ENV value that arms the fail-closed posture.
 const productionEnv = "production"

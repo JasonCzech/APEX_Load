@@ -26,8 +26,9 @@ type loggingProtocol struct {
 }
 
 type sequenceProtocol struct {
-	failFirst bool
-	actions   []*protocol.Action
+	failFirst    bool
+	executeError string
+	actions      []*protocol.Action
 }
 
 type perActionExtractionProtocol struct{}
@@ -87,6 +88,9 @@ func (p *sequenceProtocol) Init(_ context.Context, _ map[string]any) error {
 }
 func (p *sequenceProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
 	p.actions = append(p.actions, action)
+	if p.executeError != "" {
+		return nil, fmt.Errorf("sequence adapter failed: %s", p.executeError)
+	}
 	result := &protocol.Result{
 		ActionName:       action.Name,
 		Success:          true,
@@ -210,6 +214,9 @@ func TestVUser_MergeExtractions(t *testing.T) {
 	}
 	if vu.Variables["existing"] != "overwritten" {
 		t.Errorf("existing should be overwritten, got %q", vu.Variables["existing"])
+	}
+	if got := scrubSensitiveTextWithConfig("/users/new-token", vu.RedactionConfig); got != "/users/[REDACTED]" {
+		t.Errorf("sensitive extracted value remained observable: %q", got)
 	}
 }
 
@@ -617,7 +624,7 @@ func TestVUser_Run_LogsExtendedOptions(t *testing.T) {
 	for _, expected := range []string{
 		"msg=\"action ok\"",
 		"target=https://api.example.test/checkout",
-		"request_body=\"token=abc123\"",
+		"request_body=\"token=[REDACTED]\"",
 		"response_body=\"{\\\"status\\\":\\\"ok\\\"}\"",
 		"dependency_target=api.example.test",
 		"correlation_id=corr-123",
@@ -627,6 +634,9 @@ func TestVUser_Run_LogsExtendedOptions(t *testing.T) {
 		if !strings.Contains(logOutput, expected) {
 			t.Fatalf("log output missing %q: %s", expected, logOutput)
 		}
+	}
+	if strings.Contains(logOutput, "abc123") {
+		t.Fatalf("extended parameter-substitution log leaked a sensitive value: %s", logOutput)
 	}
 }
 
@@ -753,6 +763,71 @@ func TestVUser_Run_HTTPSequenceContinueOnErrorRunsRemainingChildren(t *testing.T
 	}
 }
 
+func TestVUser_Run_HTTPSequenceScrubsAdapterErrorBeforeTransactionSinks(t *testing.T) {
+	const secret = "http-sequence-runtime-secret"
+	var logBuffer bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(previousLogger)
+
+	protoStub := &sequenceProtocol{executeError: secret}
+	sink := &sequenceCaptureSink{}
+	metrics := NewMetricsCollector(16)
+	vu := &VUser{
+		ID:              1,
+		Group:           "Checkout",
+		Proto:           protoStub,
+		Variables:       map[string]string{},
+		Metrics:         metrics,
+		ResultSink:      sink,
+		RedactionConfig: WithSecretValueRedaction(nil, []string{secret}),
+		Script: &dsl.Script{
+			Name:     "Imported",
+			Protocol: "http",
+			Config: dsl.ScriptConfig{
+				RunLogic: dsl.RunLogicConfig{Iterations: 1},
+				Log: dsl.LogConfig{
+					Level:           "extended",
+					ExtendedOptions: []string{"data_returned", "advanced_trace"},
+				},
+			},
+			Actions: []dsl.Action{{
+				Name: "CheckoutFlow",
+				Type: "http_sequence",
+				Params: map[string]any{
+					"requests": []map[string]any{{
+						"name":   "Login",
+						"type":   "POST",
+						"method": "POST",
+						"target": "/login",
+					}},
+				},
+				Metadata: map[string]any{"source_transaction": "CheckoutFlow"},
+			}},
+		},
+	}
+
+	vu.Run(context.Background())
+
+	if len(sink.transactions) != 1 {
+		t.Fatalf("recorded transactions = %d, want one logical transaction", len(sink.transactions))
+	}
+	if encoded := fmt.Sprintf("%#v", sink.transactions[0]); strings.Contains(encoded, secret) {
+		t.Fatalf("transaction sink retained adapter secret: %s", encoded)
+	}
+	select {
+	case metric := <-metrics.ch:
+		if encoded := fmt.Sprintf("%#v", metric); strings.Contains(encoded, secret) {
+			t.Fatalf("metrics sink retained adapter secret: %s", encoded)
+		}
+	default:
+		t.Fatal("transaction metric was not recorded")
+	}
+	if strings.Contains(logBuffer.String(), secret) {
+		t.Fatalf("extended http_sequence log retained adapter secret: %s", logBuffer.String())
+	}
+}
+
 func TestVUser_Run_RedactsSecretValuesFromLogs(t *testing.T) {
 	t.Setenv("APEXLOAD_SECRET_LOG_TOKEN", "super-secret")
 
@@ -796,6 +871,59 @@ func TestVUser_Run_RedactsSecretValuesFromLogs(t *testing.T) {
 		t.Fatalf("expected secret value to be redacted from logs, got %s", logOutput)
 	}
 	for _, expected := range []string{"target=\"https://example.test/login?token=[REDACTED]\"", "request_body=\"token=[REDACTED]\""} {
+		if !strings.Contains(logOutput, expected) {
+			t.Fatalf("log output missing %q: %s", expected, logOutput)
+		}
+	}
+}
+
+func TestVUser_Run_RedactsExtractedSecretValuesFromLogs(t *testing.T) {
+	protoStub := &sequenceProtocol{}
+
+	var logBuf bytes.Buffer
+	prev := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	defer slog.SetDefault(prev)
+
+	vu := &VUser{
+		ID:    1,
+		Group: "Checkout",
+		Proto: protoStub,
+		Script: &dsl.Script{
+			Protocol: "http",
+			Config: dsl.ScriptConfig{
+				RunLogic: dsl.RunLogicConfig{Iterations: 1},
+				Log:      dsl.LogConfig{Level: "extended", ExtendedOptions: []string{"parameter_substitution"}},
+			},
+			Actions: []dsl.Action{
+				{
+					Name:   "Login",
+					Type:   "request",
+					Method: "POST",
+					Target: "https://example.test/login",
+				},
+				{
+					Name:   "Use token",
+					Type:   "request",
+					Method: "POST",
+					Target: "https://example.test/use/{{var.token}}",
+					Body:   "credential={{var.token}}",
+				},
+			},
+		},
+		Metrics: NewMetricsCollector(16),
+	}
+
+	vu.Run(context.Background())
+
+	logOutput := logBuf.String()
+	if strings.Contains(logOutput, "abc123") {
+		t.Fatalf("expected extracted token to be redacted from logs, got %s", logOutput)
+	}
+	for _, expected := range []string{
+		`target=https://example.test/use/[REDACTED]`,
+		`request_body="credential=[REDACTED]"`,
+	} {
 		if !strings.Contains(logOutput, expected) {
 			t.Fatalf("log output missing %q: %s", expected, logOutput)
 		}

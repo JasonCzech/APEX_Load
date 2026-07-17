@@ -139,7 +139,7 @@ func (s *Server) handlePreviewAuthoringCorrelation(w http.ResponseWriter, r *htt
 		Applied:         req.Apply,
 		Extractor:       extractor,
 		Draft:           maskScriptSecrets(draft),
-		Changes:         changes,
+		Changes:         sanitizeAuthoringCorrelationDiffs(changes),
 		AuthoringHealth: validation.AuthoringHealth,
 	})
 }
@@ -248,13 +248,36 @@ func (s *Server) handleBatchAuthoringCorrelationPreview(w http.ResponseWriter, r
 		SessionID:       session.ID,
 		Applied:         req.Apply && appliedCount > 0,
 		Draft:           maskScriptSecrets(draft),
-		Changes:         allChanges,
+		Changes:         sanitizeAuthoringCorrelationDiffs(allChanges),
 		AuthoringHealth: validation.AuthoringHealth,
-		Items:           items,
+		Items:           sanitizeAuthoringCorrelationPreviewItems(items),
 		ReviewRequired:  uniqueStringsPreserveOrder(reviewRequired),
 		Blocked:         blocked,
 		AppliedCount:    appliedCount,
 	})
+}
+
+func sanitizeAuthoringCorrelationDiffs(changes []authoringCorrelationDiff) []authoringCorrelationDiff {
+	if len(changes) == 0 {
+		return changes
+	}
+	out := make([]authoringCorrelationDiff, len(changes))
+	for index, change := range changes {
+		out[index] = authoringCorrelationDiff{Kind: change.Kind, Path: change.Path}
+	}
+	return out
+}
+
+func sanitizeAuthoringCorrelationPreviewItems(items []authoringCorrelationPreviewItem) []authoringCorrelationPreviewItem {
+	if len(items) == 0 {
+		return items
+	}
+	out := make([]authoringCorrelationPreviewItem, len(items))
+	for index, item := range items {
+		out[index] = item
+		out[index].Changes = sanitizeAuthoringCorrelationDiffs(item.Changes)
+	}
+	return out
 }
 
 func buildGuidedCorrelationExtractor(req authoringCorrelationPreviewRequest) (dsl.Extractor, error) {

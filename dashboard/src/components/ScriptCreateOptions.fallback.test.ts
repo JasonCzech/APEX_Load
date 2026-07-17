@@ -7,6 +7,7 @@ import { defaultImportSurfaces } from './ScriptCreateOptions'
 // data-driven card grid and its offline fallback would disagree, so fail loudly here.
 const CANONICAL_LAUNCHERS = [
   'openapi',
+  'bruno',
   'postman',
   'wsdl',
   'asyncapi',

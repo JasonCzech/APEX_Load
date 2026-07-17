@@ -22,8 +22,14 @@ func (s *Server) handleCreateScenario(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	req.creationActor = testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
 	scenario, err := s.runner.StoreScenario(req)
 	if err != nil {
+		if errors.Is(err, errServiceAccountRuntimeSecretWrite) || errors.Is(err, errUnattributedRuntimeSecretWrite) {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -56,6 +62,8 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	req.creationActor = testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
 	existing, ok := s.runner.GetScenario(r.PathValue("id"))
 	if !ok || existing == nil {
 		writeError(w, http.StatusNotFound, "scenario not found")
@@ -75,6 +83,8 @@ func (s *Server) handleUpdateScenario(w http.ResponseWriter, r *http.Request) {
 		status := http.StatusBadRequest
 		if errors.Is(err, errScenarioConcurrentChange) {
 			status = http.StatusConflict
+		} else if errors.Is(err, errServiceAccountRuntimeSecretWrite) || errors.Is(err, errUnattributedRuntimeSecretWrite) {
+			status = http.StatusForbidden
 		}
 		writeError(w, status, err.Error())
 		return

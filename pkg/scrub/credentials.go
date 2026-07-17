@@ -24,12 +24,18 @@ var credentialFieldNames = map[string]bool{
 	"api_key": true, "apikey": true, "private_key": true,
 	"privatekey": true, "secret_key": true, "secretkey": true,
 	"access_key": true, "accesskey": true,
+	"passphrase": true, "access_token": true, "accesstoken": true,
+	"refresh_token": true, "refreshtoken": true,
 }
 
 func isCredentialField(name string) bool {
 	normalized := normalizeCredentialFieldName(name)
 	return credentialFieldNames[normalized]
 }
+
+// IsCredentialField reports whether name is a shared static-credential field.
+// Importers use this to keep source sanitization aligned with recorder scrubbing.
+func IsCredentialField(name string) bool { return isCredentialField(name) }
 
 func normalizeCredentialFieldName(name string) string {
 	name = strings.ToLower(strings.TrimSpace(name))

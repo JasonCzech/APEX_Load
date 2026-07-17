@@ -10,14 +10,30 @@ import (
 
 const (
 	maskedBodySecretArgKey = "__masked_body_secret"
-	maskedBodyHashArgKey   = "__masked_body_hash"
 	maskedBodyFuncArgKey   = "__masked_body_function"
 )
 
-func secretNameForLRUnmaskPayload(payload string) (name string, hash string) {
-	sum := sha256.Sum256([]byte(strings.TrimSpace(payload)))
-	hash = fmt.Sprintf("%x", sum[:])
-	return "lr_unmask_" + hash[:16], hash
+func secretNameForLRUnmaskLocation(fn *ParsedFunction) string {
+	if fn == nil {
+		return ""
+	}
+	// The logical reference is public, so bind it only to public source
+	// structure. Hashing the opaque lr_unmask payload would turn the reference
+	// into a dictionary oracle for protected source material.
+	digest := sha256.New()
+	for _, part := range []string{
+		fn.Filename,
+		fn.Phase,
+		fmt.Sprintf("%d", fn.LineNumber),
+		fmt.Sprintf("%d", fn.EndLine),
+		fn.Name,
+		fn.StepName,
+	} {
+		_, _ = fmt.Fprintf(digest, "%d:", len(part))
+		_, _ = digest.Write([]byte(part))
+	}
+	sum := digest.Sum(nil)
+	return fmt.Sprintf("lr_unmask_%x", sum[:8])
 }
 
 func maskedBodySecretReference(secretName string) string {
@@ -28,33 +44,33 @@ func applyMaskedBodyReference(fn *ParsedFunction) {
 	if fn == nil {
 		return
 	}
-	if secretName, hash, ok := findLRUnmaskPayload(fn); ok {
+	if secretName, ok := findLRUnmaskPayload(fn); ok {
 		if fn.Args == nil {
 			fn.Args = make(map[string]string)
 		}
 		fn.Args[maskedBodySecretArgKey] = secretName
-		fn.Args[maskedBodyHashArgKey] = hash
 		fn.Args[maskedBodyFuncArgKey] = "lr_unmask"
 	}
 }
 
-func findLRUnmaskPayload(fn *ParsedFunction) (secretName string, hash string, ok bool) {
+func findLRUnmaskPayload(fn *ParsedFunction) (secretName string, ok bool) {
+	if fn == nil {
+		return "", false
+	}
 	for _, candidate := range []string{fn.Body, fn.Args["Body"]} {
-		if payload, found := extractLRUnmaskPayload(candidate); found {
-			secretName, hash = secretNameForLRUnmaskPayload(payload)
-			return secretName, hash, true
+		if _, found := extractLRUnmaskPayload(candidate); found {
+			return secretNameForLRUnmaskLocation(fn), true
 		}
 	}
 	for _, arg := range fn.CallArgs {
 		if !strings.EqualFold(strings.TrimSpace(arg.NestedCall), "lr_unmask") && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(arg.Value)), "lr_unmask") {
 			continue
 		}
-		if payload, found := extractLRUnmaskPayload(convertutil.FirstNonEmpty(arg.Value, arg.Raw)); found {
-			secretName, hash = secretNameForLRUnmaskPayload(payload)
-			return secretName, hash, true
+		if _, found := extractLRUnmaskPayload(convertutil.FirstNonEmpty(arg.Value, arg.Raw)); found {
+			return secretNameForLRUnmaskLocation(fn), true
 		}
 	}
-	return "", "", false
+	return "", false
 }
 
 func extractLRUnmaskPayload(value string) (string, bool) {

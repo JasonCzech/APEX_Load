@@ -1,7 +1,9 @@
 package storage
 
 import (
+	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -77,6 +79,62 @@ func TestSQLiteStoreEnsureTestRefKeyDoesNotOverwriteLifecycle(t *testing.T) {
 	}
 	if got.Status != "RUNNING" || !got.StartTime.Equal(now) || got.EndTime != nil || got.Error != "" {
 		t.Fatalf("reference-key backfill overwrote lifecycle fields: %#v", got)
+	}
+}
+
+func TestSQLiteStoreRuntimeSnapshotRepairIsNarrowIdentityAndLeaseFenced(t *testing.T) {
+	store := newHAFencingStore(t)
+	started := time.Now().UTC().Truncate(time.Microsecond)
+	record := &TestRecord{
+		ID:                 "runtime-snapshot-repair",
+		MaterializationKey: "materialization-a",
+		Name:               "Runtime snapshot",
+		Status:             "RUNNING",
+		StartTime:          started,
+		Error:              "retain lifecycle",
+		Groups:             []map[string]string{{"credential": "plaintext"}},
+		RuntimeSettings:    map[string]string{"credential": "plaintext"},
+	}
+	if err := store.SaveTest(record); err != nil {
+		t.Fatalf("SaveTest: %v", err)
+	}
+
+	repaired, err := store.RepairTestRuntimeSnapshot(
+		record.ID, DefaultProjectID, record.MaterializationKey, record.StartTime,
+		[]map[string]string{{"credential": "{{secret.RUNTIME}}"}},
+		map[string]string{"credential": "{{secret.RUNTIME}}"},
+	)
+	if err != nil || !repaired {
+		t.Fatalf("RepairTestRuntimeSnapshot = (%v, %v), want (true, nil)", repaired, err)
+	}
+	got, err := store.GetTest(record.ID)
+	if err != nil {
+		t.Fatalf("GetTest: %v", err)
+	}
+	encoded, _ := json.Marshal(got)
+	if strings.Contains(string(encoded), "plaintext") || !strings.Contains(string(encoded), "{{secret.RUNTIME}}") {
+		t.Fatalf("runtime snapshot was not narrowly repaired: %s", encoded)
+	}
+	if got.Status != "RUNNING" || got.Error != "retain lifecycle" {
+		t.Fatalf("runtime repair overwrote lifecycle: %#v", got)
+	}
+
+	if repaired, err = store.RepairTestRuntimeSnapshot(
+		record.ID, DefaultProjectID, "replacement-materialization", record.StartTime,
+		[]any{}, nil,
+	); err != nil || repaired {
+		t.Fatalf("replacement identity repair = (%v, %v), want (false, nil)", repaired, err)
+	}
+
+	token := "controller/runtime-repair"
+	if acquired, acquireErr := store.TryAcquireSchedulerLease(testExecutionLeaseName, token, time.Now(), time.Minute); acquireErr != nil || !acquired {
+		t.Fatalf("acquire lease = (%v, %v)", acquired, acquireErr)
+	}
+	if repaired, err = store.RepairTestRuntimeSnapshotIfLeaseHeld(
+		record.ID, DefaultProjectID, record.MaterializationKey, record.StartTime,
+		[]any{}, nil, testExecutionLeaseName, "stale-controller",
+	); err != nil || repaired {
+		t.Fatalf("stale repair = (%v, %v), want (false, nil)", repaired, err)
 	}
 }
 

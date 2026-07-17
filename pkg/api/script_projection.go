@@ -14,15 +14,16 @@ import (
 	"unicode"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 const maskedScriptSecret = scrub.Redacted
 
-var scriptSecretTemplatePattern = regexp.MustCompile(`\{\{secret\.[A-Za-z0-9_.:/@-]+\}\}`)
+var scriptSecretTemplatePattern = regexp.MustCompile(`\{\{\s*secret\.(` + engine.LogicalSecretNameInputPattern + `)\s*\}\}`)
 var scriptPortableTemplatePattern = regexp.MustCompile(`\{\{[^{}\r\n]{1,256}\}\}`)
-var scriptPortableReferencePattern = regexp.MustCompile(`^(?:env|data|var|param|secret|file)\.[A-Za-z0-9_.:/@-]+$`)
+var scriptPortableReferencePattern = regexp.MustCompile(`^(?:(?:env|data|var|param|file)\.[A-Za-z0-9_.:/@-]+|secret\.` + engine.LogicalSecretNameInputPattern + `)$`)
 var scriptPortableRandomPattern = regexp.MustCompile(`^fn\.random\(\s*-?\d+\s*,\s*-?\d+\s*\)$`)
 var scriptPortableRandomStringPattern = regexp.MustCompile(`^fn\.random_string\(\s*\d+\s*\)$`)
 
@@ -80,6 +81,7 @@ func maskAuthoringSession(session *storage.AuthoringSession) *storage.AuthoringS
 	}
 	masked := cloneAuthoringSession(session)
 	masked.Draft = maskScriptSecrets(masked.Draft)
+	masked.ReviewState = projectAuthoringReviewState(masked.ReviewState)
 	return masked
 }
 
@@ -94,11 +96,33 @@ func maskAuthoringSessions(sessions []*storage.AuthoringSession) []*storage.Auth
 	return masked
 }
 
+// projectAuthoringReviewState makes the client-extensible review_state map a
+// disclosure-safe authoring surface. It preserves ordinary workflow metadata
+// while scrubbing credential-named fields and secret-shaped free text. The map
+// is never executable, so retained {{secret.*}} descriptors are informational
+// and do not become runtime requirements.
+func projectAuthoringReviewState(state map[string]any) map[string]any {
+	if len(state) == 0 {
+		return nil
+	}
+	payload, err := json.Marshal(state)
+	if err != nil {
+		return nil
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(payload, &raw); err != nil {
+		return nil
+	}
+	projected, _ := projectScriptNode(raw, scriptProjectionContext{opaqueMap: true}).(map[string]any)
+	return projected
+}
+
 type scriptProjectionContext struct {
-	key        string
-	opaqueMap  bool
-	headers    bool
-	headerList bool
+	key            string
+	opaqueMap      bool
+	headers        bool
+	headerList     bool
+	secretBindings bool
 }
 
 func projectScriptNode(value any, ctx scriptProjectionContext) any {
@@ -110,6 +134,25 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 		credentialValue := scriptMapHasCredentialValue(typed)
 		out := make(map[string]any, len(typed))
 		for key, child := range typed {
+			if ctx.secretBindings {
+				if text, ok := child.(string); ok && isPortableSecretReference(text) {
+					out[key] = text
+				} else {
+					// Bruno forwards every map value as executable credential
+					// material regardless of its caller-controlled alias key.
+					// Only an exact governed reference may survive projection.
+					out[key] = maskedScriptSecret
+				}
+				continue
+			}
+			// Import review evidence is client-extensible and frequently embeds
+			// raw source snippets or sibling name/value pairs that the ordinary
+			// script projection cannot associate. Apply the import-specific,
+			// recursive disclosure boundary before this metadata can be persisted.
+			if isReviewEvidenceSubtreeKey(key) {
+				out[key] = sanitizeImportReviewEvidence(child)
+				continue
+			}
 			if credentialValue && strings.EqualFold(key, "value") {
 				if text, ok := child.(string); ok && isPortableTemplateBinding(text) {
 					out[key] = text
@@ -121,10 +164,11 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 				continue
 			}
 			childCtx := scriptProjectionContext{
-				key:        key,
-				opaqueMap:  ctx.opaqueMap || isOpaqueScriptMap(key),
-				headers:    isScriptHeaderMap(key),
-				headerList: isScriptHeaderList(key),
+				key:            key,
+				opaqueMap:      ctx.opaqueMap || isOpaqueScriptMap(key),
+				headers:        isScriptHeaderMap(key),
+				headerList:     isScriptHeaderList(key),
+				secretBindings: isScriptSecretBindingsMap(key),
 			}
 			if ctx.headers {
 				out[key] = projectHeaderValue(key, child)
@@ -250,10 +294,11 @@ func normalizeScriptFieldName(value string) string {
 func isSensitiveScriptKey(key string) bool {
 	normalized := normalizeScriptFieldName(key)
 	// OAuth token_url identifies the remote endpoint; it is not token material.
-	// Keep this explicit locator exception ahead of the shared component-aware
-	// vocabulary, which correctly treats the standalone "token" component as
-	// sensitive in otherwise opaque extension maps.
-	if normalized == "tokenurl" {
+	// Bruno's persist-session setting is likewise a boolean runtime control, not
+	// session material. Keep these explicit exceptions ahead of the shared
+	// component-aware vocabulary, which correctly treats standalone token and
+	// session components as sensitive in otherwise opaque extension maps.
+	if normalized == "tokenurl" || normalized == "persistsessionacrossiterations" {
 		return false
 	}
 	// Keep script projection aligned with the shared credential vocabulary used
@@ -479,6 +524,10 @@ func isScriptHeaderMap(key string) bool {
 
 func isScriptHeaderList(key string) bool {
 	return normalizeScriptFieldName(key) == "headerlist"
+}
+
+func isScriptSecretBindingsMap(key string) bool {
+	return normalizeScriptFieldName(key) == "secretbindings"
 }
 
 // reconcileMaskedScriptSecrets restores only executable sentinels that exactly

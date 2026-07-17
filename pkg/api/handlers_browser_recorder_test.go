@@ -545,6 +545,55 @@ func TestHandleConvertBrowserRecordingStoresScript(t *testing.T) {
 	}
 }
 
+func TestHandleConvertBrowserRecordingStoresOnlyGovernedSecretReferences(t *testing.T) {
+	artifact := recordedBrowserArtifact()
+	artifact.HAR = []byte(`{"log":{"version":"1.2","entries":[{"startedDateTime":"2026-05-12T20:00:00Z","time":12,"request":{"method":"GET","url":"https://shop.example/api/cart","httpVersion":"HTTP/1.1","headers":[{"name":"Authorization","value":"Bearer browser-recorded-token"}],"queryString":[],"cookies":[],"headersSize":-1,"bodySize":0},"response":{"status":200,"statusText":"OK","httpVersion":"HTTP/1.1","headers":[{"name":"Content-Type","value":"application/json"}],"cookies":[],"content":{"size":2,"mimeType":"application/json","text":"{}"},"redirectURL":"","headersSize":-1,"bodySize":2},"cache":{},"timings":{"send":1,"wait":10,"receive":1}}]}}`)
+	fake := newFakeBrowserRecorder(artifact)
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+	stopBrowserRecordingViaAPI(t, server, id)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert",
+		bytes.NewBufferString(`{"name":"Checkout Saved","also_create_http_script":true}`))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("convert status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if strings.Contains(resp.Body.String(), "browser-recorded-token") {
+		t.Fatalf("convert response disclosed recorded credential: %s", resp.Body.String())
+	}
+	var payload struct {
+		SecretBindingRequirements []SecretBindingRequirement `json:"secret_binding_requirements"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if len(payload.SecretBindingRequirements) == 0 {
+		t.Fatalf("convert requirements = %#v", payload.SecretBindingRequirements)
+	}
+	var httpScript *StoredScript
+	for _, stored := range server.runner.ListScripts() {
+		if stored != nil && stored.Script != nil && stored.Script.Protocol == "http" {
+			httpScript = stored
+			break
+		}
+	}
+	if httpScript == nil {
+		t.Fatal("converted HTTP script was not stored")
+	}
+	storedJSON, err := json.Marshal(httpScript.Script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(storedJSON), "browser-recorded-token") || strings.Contains(string(storedJSON), scrub.Redacted) {
+		t.Fatalf("stored HTTP script contains credential material or sentinel: %s", storedJSON)
+	}
+	if !strings.Contains(string(storedJSON), "{{secret.") {
+		t.Fatalf("stored HTTP script has no governed secret reference: %s", storedJSON)
+	}
+}
+
 func TestHandleExportBrowserRecordingHAR(t *testing.T) {
 	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
 	server := newBrowserRecorderTestServer(t, fake)

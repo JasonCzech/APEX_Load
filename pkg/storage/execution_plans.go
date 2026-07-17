@@ -52,8 +52,15 @@ type ExecutionPlanSchedule struct {
 	DisabledFrom  *time.Time `json:"disabled_from,omitempty"`
 	DisabledUntil *time.Time `json:"disabled_until,omitempty"`
 	LastError     string     `json:"last_error,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	// Actor* is the durable principal whose authority is used when a future
+	// occurrence materializes tests. Values are stamped server-side; keeping the
+	// principal on the schedule prevents a scheduler/recovery process from
+	// silently acquiring system-level secret-write authority.
+	ActorType        string    `json:"actor_type,omitempty"`
+	ActorSubject     string    `json:"actor_subject,omitempty"`
+	ActorDisplayName string    `json:"actor_display_name,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // ExecutionPlanScheduleOccurrence records one materialization (or skip/block) of
@@ -75,8 +82,14 @@ type ExecutionPlanScheduleOccurrence struct {
 	ReasonCode      string     `json:"reason_code,omitempty"`
 	RunID           string     `json:"run_id,omitempty"`
 	ConflictSummary string     `json:"conflict_summary,omitempty"`
-	CreatedAt       time.Time  `json:"created_at"`
-	UpdatedAt       time.Time  `json:"updated_at"`
+	// Actor* is the immutable authority snapshot captured when this occurrence
+	// was claimed. It deliberately lives on the occurrence as well as the parent
+	// schedule so a concurrent schedule update cannot change recovery authority.
+	ActorType        string    `json:"actor_type,omitempty"`
+	ActorSubject     string    `json:"actor_subject,omitempty"`
+	ActorDisplayName string    `json:"actor_display_name,omitempty"`
+	CreatedAt        time.Time `json:"created_at"`
+	UpdatedAt        time.Time `json:"updated_at"`
 }
 
 // ExecutionPlan is an ordered collection of scenario runs — the LoadRunner
@@ -171,6 +184,9 @@ type ExecutionPlanRunEntry struct {
 	RunName            string                    `json:"run_name,omitempty"`
 	AttribSubject      string                    `json:"attrib_subject,omitempty"`
 	AttribName         string                    `json:"attrib_name,omitempty"`
+	ActorType          string                    `json:"actor_type,omitempty"`
+	ActorSubject       string                    `json:"actor_subject,omitempty"`
+	ActorDisplayName   string                    `json:"actor_display_name,omitempty"`
 	ApprovalID         string                    `json:"approval_id,omitempty"`
 	MaterializationKey string                    `json:"materialization_key,omitempty"`
 }
