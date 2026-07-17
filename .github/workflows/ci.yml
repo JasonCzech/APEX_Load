@@ -911,10 +911,18 @@ jobs:
         run: govulncheck ./...
 
   codeql:
-    name: CodeQL
+    name: CodeQL (${{ matrix.language }})
     if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.id == github.event.repository.id && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'apexload-ci-unprivileged' }}
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: go
+            build-mode: autobuild
+          - language: javascript-typescript
+            build-mode: none
     permissions:
       contents: read
       security-events: write
@@ -928,14 +936,14 @@ jobs:
       - name: Initialize CodeQL
         uses: github/codeql-action/init@f58f0d11ebf5dedd870fab2f999275f7602cfa46 # codeql-bundle-v2.26.0
         with:
-          languages: go,javascript-typescript
-          build-mode: autobuild
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
           queries: security-extended
 
       - name: Analyze
         uses: github/codeql-action/analyze@f58f0d11ebf5dedd870fab2f999275f7602cfa46 # codeql-bundle-v2.26.0
         with:
-          category: /language:go-javascript-typescript
+          category: /language:${{ matrix.language }}
 
   ghes-fork-block:
     name: GHES fork policy block
