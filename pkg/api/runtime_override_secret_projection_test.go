@@ -1102,16 +1102,19 @@ func TestRuntimeCredentialProvisioningArmsRecoveryBeforeAuditOrProviderCalls(t *
 	}
 	t.Cleanup(func() { _ = records.Close() })
 	secrets := &runtimeProjectionSecretStore{values: make(map[string]string)}
-	server := NewServer(ServerConfig{Store: records, MaxConcurrent: 2, ProjectSecretStore: secrets})
-	t.Cleanup(server.runner.beginShutdown)
-	server.runner.scenarioStore = &panicRuntimeAuditStore{scenarioPersistence: records}
+	runner := &TestRunner{
+		projectSecretStore: secrets,
+		secretAttemptStore: records,
+		scenarioStore:      &panicRuntimeAuditStore{scenarioPersistence: records},
+	}
+	t.Cleanup(runner.stopRuntimeOverrideSecretAttemptReconciliation)
 
 	didPanic := false
 	func() {
 		defer func() {
 			didPanic = recover() != nil
 		}()
-		_, _ = server.runner.persistRuntimeOverrideSecretValues(
+		_, _ = runner.persistRuntimeOverrideSecretValues(
 			storage.DefaultProjectID,
 			"77777777-7777-4777-8777-777777777777",
 			"runtime-secret-panic-owner",
@@ -1126,9 +1129,9 @@ func TestRuntimeCredentialProvisioningArmsRecoveryBeforeAuditOrProviderCalls(t *
 	if err != nil || len(attempts) != 1 {
 		t.Fatalf("provisioning journals = %#v, %v", attempts, err)
 	}
-	server.runner.secretRecovery.mu.Lock()
-	armed := server.runner.secretRecovery.timer != nil && !server.runner.secretRecovery.at.After(attempts[0].LeaseExpiresAt)
-	server.runner.secretRecovery.mu.Unlock()
+	runner.secretRecovery.mu.Lock()
+	armed := runner.secretRecovery.timer != nil && runner.secretRecovery.at.Equal(attempts[0].LeaseExpiresAt)
+	runner.secretRecovery.mu.Unlock()
 	if !armed {
 		t.Fatal("runtime credential recovery was not armed immediately after journal creation")
 	}

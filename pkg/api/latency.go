@@ -637,42 +637,68 @@ func (tr *TestRunner) performLatencyHTTPProbe(host, endpoint string, method stri
 		return target, err
 	}
 
-	var dnsStart time.Time
-	var connectStart time.Time
-	var tlsStart time.Time
+	var traceState struct {
+		sync.Mutex
+		dnsStart     time.Time
+		tlsStart     time.Time
+		connectStart map[string]time.Time
+		dnsMs        float64
+		connectMs    float64
+		tlsMs        float64
+		ttfbMs       float64
+		ip           string
+	}
+	traceState.connectStart = make(map[string]time.Time)
 	start := time.Now()
 	trace := &httptrace.ClientTrace{
 		DNSStart: func(_ httptrace.DNSStartInfo) {
-			dnsStart = time.Now()
+			traceState.Lock()
+			traceState.dnsStart = time.Now()
+			traceState.Unlock()
 		},
 		DNSDone: func(_ httptrace.DNSDoneInfo) {
-			if !dnsStart.IsZero() {
-				target.DNSMs = durationMilliseconds(time.Since(dnsStart))
+			traceState.Lock()
+			if !traceState.dnsStart.IsZero() {
+				traceState.dnsMs = durationMilliseconds(time.Since(traceState.dnsStart))
 			}
+			traceState.Unlock()
 		},
-		ConnectStart: func(_, _ string) {
-			connectStart = time.Now()
+		ConnectStart: func(network, addr string) {
+			traceState.Lock()
+			traceState.connectStart[network+"\x00"+addr] = time.Now()
+			traceState.Unlock()
 		},
-		ConnectDone: func(_, _ string, _ error) {
-			if !connectStart.IsZero() {
-				target.ConnectMs = durationMilliseconds(time.Since(connectStart))
-				target.LatencyMs = target.ConnectMs
+		ConnectDone: func(network, addr string, _ error) {
+			traceState.Lock()
+			key := network + "\x00" + addr
+			if connectStart := traceState.connectStart[key]; !connectStart.IsZero() {
+				traceState.connectMs = durationMilliseconds(time.Since(connectStart))
+				delete(traceState.connectStart, key)
 			}
+			traceState.Unlock()
 		},
 		TLSHandshakeStart: func() {
-			tlsStart = time.Now()
+			traceState.Lock()
+			traceState.tlsStart = time.Now()
+			traceState.Unlock()
 		},
 		TLSHandshakeDone: func(_ tls.ConnectionState, _ error) {
-			if !tlsStart.IsZero() {
-				target.TLSMs = durationMilliseconds(time.Since(tlsStart))
+			traceState.Lock()
+			if !traceState.tlsStart.IsZero() {
+				traceState.tlsMs = durationMilliseconds(time.Since(traceState.tlsStart))
 			}
+			traceState.Unlock()
 		},
 		GotFirstResponseByte: func() {
-			target.TTFBMs = durationMilliseconds(time.Since(start))
+			traceState.Lock()
+			traceState.ttfbMs = durationMilliseconds(time.Since(start))
+			traceState.Unlock()
 		},
 		GotConn: func(info httptrace.GotConnInfo) {
 			if addr, ok := info.Conn.RemoteAddr().(*net.TCPAddr); ok {
-				target.IP = addr.IP.String()
+				traceState.Lock()
+				traceState.ip = addr.IP.String()
+				traceState.Unlock()
 			}
 		},
 	}
@@ -685,6 +711,14 @@ func (tr *TestRunner) performLatencyHTTPProbe(host, endpoint string, method stri
 		},
 	}
 	resp, err := client.Do(req)
+	traceState.Lock()
+	target.DNSMs = traceState.dnsMs
+	target.ConnectMs = traceState.connectMs
+	target.LatencyMs = traceState.connectMs
+	target.TLSMs = traceState.tlsMs
+	target.TTFBMs = traceState.ttfbMs
+	target.IP = traceState.ip
+	traceState.Unlock()
 	target.ProbeTotalMs = durationMilliseconds(time.Since(start))
 	if target.LatencyMs == 0 && target.ConnectMs > 0 {
 		target.LatencyMs = target.ConnectMs

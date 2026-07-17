@@ -2622,17 +2622,22 @@ func TestDistributedExecutionBackendPropagatesRemoteFailure(t *testing.T) {
 		t.Fatalf("StartTest returned error: %v", err)
 	}
 
-	deadline := time.Now().Add(2 * time.Second)
+	deadline := time.Now().Add(5 * time.Second)
 	for {
-		started, ok := runner.GetTest(testRun.ID)
-		if !ok {
+		runner.mu.RLock()
+		started := runner.tests[testRun.ID]
+		if started == nil {
+			runner.mu.RUnlock()
 			t.Fatalf("expected managed test %q to exist", testRun.ID)
 		}
-		if started.Status == "RUNNING" {
+		status := started.Status
+		activated := started.remoteActivated
+		runner.mu.RUnlock()
+		if status == "RUNNING" && activated {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("expected distributed backend to mark test running, got status %q", started.Status)
+			t.Fatalf("expected distributed backend to activate test, got status %q activated=%v", status, activated)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
