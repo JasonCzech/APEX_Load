@@ -36,7 +36,7 @@ func (s *Server) handleImportJMeter(w http.ResponseWriter, r *http.Request) {
 	}
 	attachSourceReviewToScripts(result.Scripts, "jmeter", result.Summary.FileName, result.SourceReview)
 
-	writeJMeterImportResponse(w, http.StatusOK, result)
+	s.writeJMeterImportResponse(w, r, http.StatusOK, result)
 }
 
 func (s *Server) handleValidateJMeterImport(w http.ResponseWriter, r *http.Request) {
@@ -59,7 +59,7 @@ func (s *Server) handleValidateJMeterImport(w http.ResponseWriter, r *http.Reque
 	}
 	attachSourceReviewToScripts(result.Scripts, "jmeter", result.Summary.FileName, result.SourceReview)
 
-	writeJMeterImportResponse(w, http.StatusOK, result)
+	s.writeJMeterImportResponse(w, r, http.StatusOK, result)
 }
 
 func (s *Server) handleJMeterSupportMatrix(w http.ResponseWriter, r *http.Request) {
@@ -331,13 +331,13 @@ func countJMeterExtractors(result *jmeter.ConvertResult) int {
 	return total
 }
 
-func writeJMeterImportResponse(w http.ResponseWriter, status int, result *jmeter.ConvertResult) {
+func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Request, status int, result *jmeter.ConvertResult) {
 	unsupportedElements := uniqueSortedStrings(append(append([]string{}, result.UnsupportedElements...), result.Unsupported.Strings()...))
 	protocolCompat := buildJMeterProtocolCompatReport(result, unsupportedElements)
 	for _, script := range result.Scripts {
 		persistProtocolCompatReport(script, "jmeter", protocolCompat)
 	}
-	writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{
+	writeJSON(w, status, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Scripts:             result.Scripts,
 		Script:              result.Script,
@@ -371,11 +371,16 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 	scriptIDsByName := map[string]string{}
 	for i := range req.Scripts {
 		script := req.Scripts[i]
-		if issues := validateScript(&script); len(issues) > 0 {
+		safeScript, _, err := applySuggestedSecretBindings(&script, i)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to prepare safe secret references: "+err.Error())
+			return
+		}
+		if issues := validateScript(safeScript); len(issues) > 0 {
 			writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
 			return
 		}
-		stored, err := s.runner.StoreScriptDurable(&script)
+		stored, err := s.runner.StoreScriptDurable(safeScript)
 		if err != nil {
 			for _, prior := range storedScripts {
 				if _, cleanupErr := s.runner.DeleteScriptDurable(prior.ID); cleanupErr != nil {

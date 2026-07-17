@@ -11,6 +11,8 @@ package engine
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 	"os"
 	"strings"
 	"time"
@@ -19,6 +21,15 @@ import (
 // defaultTeardownTimeout bounds how long a VUser/protocol teardown may run before
 // it is cancelled. Generous enough for well-behaved network/browser closes.
 const defaultTeardownTimeout = 30 * time.Second
+
+// maxConcurrentProtocolTeardowns bounds the process-wide number of adapter
+// cleanup calls that can remain stuck after ignoring cancellation. A generator
+// can host thousands of VUsers; without a gate, isolating every teardown in its
+// own goroutine would merely turn one shutdown hang into thousands of permanent
+// goroutine leaks.
+const maxConcurrentProtocolTeardowns = 64
+
+var protocolTeardownSlots = make(chan struct{}, maxConcurrentProtocolTeardowns)
 
 // teardownTimeout resolves the teardown deadline. Operators may override the
 // default via APEXLOAD_TEARDOWN_TIMEOUT (a Go duration string, e.g. "10s").
@@ -43,11 +54,62 @@ func teardownContext() (context.Context, context.CancelFunc) {
 // place.
 func runProtocolTeardown(p interface {
 	Teardown(context.Context) error
-}) {
+}, providers ...func() *RedactionConfig) {
 	if p == nil {
 		return
 	}
 	ctx, cancel := teardownContext()
 	defer cancel()
-	_ = p.Teardown(ctx)
+	if err := callProtocolTeardown(ctx, p, currentRedactionConfig(providers...)); err != nil {
+		slog.Warn("protocol teardown failed", "error", err)
+	}
+}
+
+func callProtocolTeardown(ctx context.Context, p interface {
+	Teardown(context.Context) error
+}, config *RedactionConfig) error {
+	return callProtocolTeardownWithSlots(ctx, p, config, protocolTeardownSlots)
+}
+
+func callProtocolTeardownWithSlots(ctx context.Context, p interface {
+	Teardown(context.Context) error
+}, config *RedactionConfig, slots chan struct{}) error {
+	if p == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	// Context cancellation only bounds cooperative adapters. Run the adapter in
+	// an isolated goroutine as well so an implementation that ignores ctx cannot
+	// hold a VUser, wg.Wait, or controller shutdown forever. The buffered result
+	// lets a late-returning adapter exit without retaining a blocked sender.
+	select {
+	case slots <- struct{}{}:
+	case <-ctx.Done():
+		return scrubSensitiveError(fmt.Errorf("protocol teardown could not start before deadline: %w", ctx.Err()), config)
+	}
+
+	result := make(chan error, 1)
+	go func() {
+		var err error
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				err = fmt.Errorf("protocol teardown panicked: %s", recoveredPanicLogTextWithConfig(recovered, config))
+			}
+			<-slots
+			result <- err
+		}()
+		if teardownErr := p.Teardown(ctx); teardownErr != nil {
+			err = scrubSensitiveError(teardownErr, config)
+		}
+	}()
+
+	select {
+	case err := <-result:
+		return err
+	case <-ctx.Done():
+		return scrubSensitiveError(fmt.Errorf("protocol teardown exceeded deadline: %w", ctx.Err()), config)
+	}
 }

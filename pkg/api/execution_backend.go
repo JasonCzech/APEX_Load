@@ -385,7 +385,7 @@ func (sink liveErrorEvidenceSink) RecordResult(result *protocol.Result) error {
 	return nil
 }
 
-func (a *runArtifacts) recordLiveMetrics(test *ManagedTest, live *LiveMetrics) {
+func (a *runArtifacts) recordLiveMetrics(test *ManagedTest, goalConfig *GoalConfig, live *LiveMetrics) {
 	if a == nil || a.recorder == nil {
 		return
 	}
@@ -396,11 +396,7 @@ func (a *runArtifacts) recordLiveMetrics(test *ManagedTest, live *LiveMetrics) {
 		slog.Warn("failed to record resource sample", "test_id", test.ID, "error", err)
 	}
 	if live != nil {
-		var config *GoalConfig
-		if test != nil {
-			config = test.GoalConfig
-		}
-		a.slaEvaluated = a.slaEvaluated || ciSLAEvidenceComplete(config, live)
+		a.slaEvaluated = a.slaEvaluated || ciSLAEvidenceComplete(goalConfig, live)
 		breached, details := ciLiveSLABreach(live.GoalStatus)
 		if breached {
 			a.slaBreached = true

@@ -32,7 +32,7 @@ func (s *Server) handleImportRecorder(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, buildRecorderImportResponse(result, preflight))
+	writeJSON(w, http.StatusOK, s.buildRecorderImportResponse(r, result, preflight))
 }
 
 func (s *Server) handleValidateRecorderImport(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +45,7 @@ func (s *Server) handleValidateRecorderImport(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, buildRecorderImportResponse(result, preflight))
+	writeJSON(w, http.StatusOK, s.buildRecorderImportResponse(r, result, preflight))
 }
 
 func (s *Server) handleReplayRecorderImport(w http.ResponseWriter, r *http.Request) {
@@ -64,7 +64,7 @@ func (s *Server) handleReplayRecorderImport(w http.ResponseWriter, r *http.Reque
 	}
 	issues := validateScriptForReplay(result.Script)
 	if len(issues) > 0 {
-		response := buildRecorderImportResponse(result, preflight)
+		response := s.buildRecorderImportResponse(r, result, preflight)
 		response["valid"] = false
 		response["issues"] = issues
 		writeJSON(w, http.StatusBadRequest, response)
@@ -76,7 +76,7 @@ func (s *Server) handleReplayRecorderImport(w http.ResponseWriter, r *http.Reque
 		IgnoreThinkTime: &ignoreThink,
 		Preflight:       preflight,
 	})
-	response := buildRecorderImportResponse(result, preflight)
+	response := s.buildRecorderImportResponse(r, result, preflight)
 	response["replay_session_id"] = replay.ID
 	response["replay_session"] = replay
 	writeJSON(w, http.StatusCreated, response)
@@ -107,8 +107,8 @@ func (s *Server) convertRecorderImport(importReq *recorderImportRequest) (*recor
 	return result, nil, nil
 }
 
-func buildRecorderImportResponse(result *recorderjson.ConvertResult, preflight *ReplayPreflight) map[string]any {
-	return newScriptImportResponse(scriptImportResponseOptions{
+func (s *Server) buildRecorderImportResponse(r *http.Request, result *recorderjson.ConvertResult, preflight *ReplayPreflight) map[string]any {
+	return s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
 		Warnings:            result.Warnings,

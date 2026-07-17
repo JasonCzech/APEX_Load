@@ -16,9 +16,12 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/fileasset"
+	"github.com/jasonczech/apexload/pkg/keywrap"
 	"github.com/jasonczech/apexload/pkg/recorder"
+	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -89,60 +92,77 @@ type Server struct {
 	// replay and script debug managers fire completion hooks into the shared
 	// persistSelfHealToRepository, whose read-modify-write of the whole objects
 	// blob would otherwise lose a concurrently appended candidate.
-	selfHealMu                sync.Mutex
-	collectorMetrics          *collectorMetricStore
-	fleetScaler               fleetPoolScaler
-	fleetProvisioningMu       sync.Mutex
-	fleetProvisioningActive   map[string]string
-	leadership                *executionLeadership
-	activeEndpointPublisher   ExecutionEndpointPublisher
-	activeEndpointMu          sync.RWMutex
-	activeEndpointPublished   bool
-	activeEndpointOwnerID     string
-	activeEndpointGeneration  uint64
-	activeEndpointLastAttempt time.Time
-	mux                       *http.ServeMux
-	backgroundMu              sync.Mutex
-	backgroundStopping        bool
-	backgroundWG              sync.WaitGroup
-	usageCancel               context.CancelFunc
-	auditRetentionCancel      context.CancelFunc
-	timeslotRetentionCancel   context.CancelFunc
-	archiveCleanupCancel      context.CancelFunc
-	archiveCleanupDone        chan struct{}
-	archiveFinalizationCancel context.CancelFunc
-	archiveFinalizationWake   chan struct{}
-	archiveFinalizationDone   chan struct{}
-	accessReviewNotifyCancel  context.CancelFunc
-	authAudit                 auditThrottle
-	fanoutCancel              context.CancelFunc
-	fanoutSub                 FanoutSubscription
-	generatorInventoryCancel  context.CancelFunc
-	generatorDiscovery        *generatorDiscovery
-	discoveryCancel           context.CancelFunc
-	k8sRestart                K8sRestartSettings
-	kubeRestarter             KubeRestarter
-	kubePodsCacheMu           sync.Mutex
-	kubePodsCache             generatorPodInventoryCache
-	restartMu                 sync.Mutex
-	restartInFlight           map[string]struct{}
-	testNotesArchiveMu        sync.Mutex
-	testNotesArchiveLocks     map[string]*sync.Mutex
-	metricsAddr               string
-	metricsToken              string
-	metricsServerMu           sync.Mutex
-	metricsServer             *http.Server
-	metricsServerStopped      bool
-	metricsBoundAddr          string
-	desktopMode               bool
-	bridgeMode                bool
-	recordingBridge           *BrowserRecordingBridge
-	desktopAppData            string
-	desktopLogPath            string
-	importAssetDir            string
-	bindScope                 string
-	boundAddr                 string
-	boundAddrMu               sync.RWMutex
+	selfHealMu                  sync.Mutex
+	collectorMetrics            *collectorMetricStore
+	fleetScaler                 fleetPoolScaler
+	fleetProvisioningMu         sync.Mutex
+	fleetProvisioningActive     map[string]string
+	leadership                  *executionLeadership
+	activeEndpointPublisher     ExecutionEndpointPublisher
+	activeEndpointMu            sync.RWMutex
+	activeEndpointPublished     bool
+	activeEndpointOwnerID       string
+	activeEndpointGeneration    uint64
+	activeEndpointLastAttempt   time.Time
+	mux                         *http.ServeMux
+	backgroundMu                sync.Mutex
+	backgroundStopping          bool
+	backgroundWG                sync.WaitGroup
+	usageCancel                 context.CancelFunc
+	auditRetentionCancel        context.CancelFunc
+	timeslotRetentionCancel     context.CancelFunc
+	archiveCleanupCancel        context.CancelFunc
+	archiveCleanupDone          chan struct{}
+	archiveFinalizationCancel   context.CancelFunc
+	archiveFinalizationWake     chan struct{}
+	archiveFinalizationDone     chan struct{}
+	accessReviewNotifyCancel    context.CancelFunc
+	authAudit                   auditThrottle
+	fanoutCancel                context.CancelFunc
+	fanoutSub                   FanoutSubscription
+	generatorInventoryCancel    context.CancelFunc
+	generatorDiscovery          *generatorDiscovery
+	discoveryCancel             context.CancelFunc
+	k8sRestart                  K8sRestartSettings
+	kubeRestarter               KubeRestarter
+	kubePodsCacheMu             sync.Mutex
+	kubePodsCache               generatorPodInventoryCache
+	restartMu                   sync.Mutex
+	restartInFlight             map[string]struct{}
+	testNotesArchiveMu          sync.Mutex
+	testNotesArchiveLocks       map[string]*sync.Mutex
+	metricsAddr                 string
+	metricsToken                string
+	metricsServerMu             sync.Mutex
+	metricsServer               *http.Server
+	metricsServerStopped        bool
+	metricsBoundAddr            string
+	desktopMode                 bool
+	bridgeMode                  bool
+	recordingBridge             *BrowserRecordingBridge
+	desktopAppData              string
+	desktopLogPath              string
+	importAssetDir              string
+	brunoImportMu               sync.Mutex
+	brunoImportSessions         map[string]*brunoImportSession
+	brunoArtifactMu             sync.Mutex
+	brunoArtifacts              *brunoartifact.EncryptedStore
+	brunoArtifactDir            string
+	brunoArtifactWrapper        keywrap.KeyWrapper
+	brunoSessionCleanupCancel   context.CancelFunc
+	projectSecretStore          secretstore.Store
+	protectedSourceSessions     *secretstore.ProtectedSourceSessionStore
+	sourceSecretMu              sync.Mutex
+	sourceSecretSessions        map[string]*sourceSecretSession
+	sourceSecretSessionLifetime time.Duration
+	sourceSecretCleanupCancel   context.CancelFunc
+	ciRunCreateMu               sync.Mutex
+	ciRunCreates                map[string]int
+	beforeCIRunMaterialize      func(CreateTestRequest)
+	afterCIRunMaterialize       func(*ManagedTest)
+	bindScope                   string
+	boundAddr                   string
+	boundAddrMu                 sync.RWMutex
 	// staticFS is the dashboard asset filesystem probed by readiness checks.
 	// It defaults to the compile-time embedded StaticFS; tests override it so
 	// the readiness suite does not depend on a prior `npm run build`.
@@ -174,6 +194,15 @@ type ServerConfig struct {
 	DesktopAppDataPath string
 	DesktopLogPath     string
 	ImportAssetDir     string
+	// BrunoArtifactDir stores encrypted, content-addressed Bruno source
+	// objects. BrunoArtifactWrapper may inject a KMS/test wrapper; when omitted,
+	// Key Vault or an operator/local-keychain key is resolved lazily.
+	BrunoArtifactDir     string
+	BrunoArtifactWrapper keywrap.KeyWrapper
+	// ProjectSecretStore optionally injects a project-scoped writable provider.
+	// When omitted, Key Vault or encrypted database storage is configured from
+	// the environment and the artifact wrapping key.
+	ProjectSecretStore secretstore.Store
 	// HAExecutionLeadership enables leader election so that, when multiple
 	// controller replicas run against a shared database, only the lease holder
 	// performs test execution. Requires a store that supports scheduler leases
@@ -232,6 +261,32 @@ func NewServer(cfg ServerConfig) *Server {
 		distributedBackend.ApplyGeneratorDrainStates(loadGeneratorDrainStates(cfg.Store))
 		runnerOpts = append(runnerOpts, WithExecutionBackend(distributedBackend))
 	}
+	projectSecretStore := cfg.ProjectSecretStore
+	var records storage.ProjectSecretCipherStore
+	if candidate, ok := cfg.Store.(storage.ProjectSecretCipherStore); ok {
+		records = candidate
+	}
+	wrapper := cfg.BrunoArtifactWrapper
+	if wrapper == nil && records != nil && projectSecretStore == nil {
+		if configured, wrapperErr := keywrap.NewConfiguredKeyWrapper(cfg.DesktopMode); wrapperErr == nil {
+			wrapper = configured
+		} else {
+			slog.Warn("encrypted project secret store is unavailable", "error", wrapperErr)
+		}
+	}
+	if projectSecretStore == nil {
+		if configured, secretErr := secretstore.NewConfigured(records, wrapper); secretErr == nil {
+			projectSecretStore = configured
+		} else {
+			slog.Warn("project secret store configuration is unavailable", "error", secretErr)
+			projectSecretStore = secretstore.Chain{Stores: []secretstore.Store{secretstore.EnvironmentStore{}}}
+		}
+	}
+	var protectedSourceSessions *secretstore.ProtectedSourceSessionStore
+	if protectedRecords, ok := cfg.Store.(storage.ProtectedSourceSecretSessionStore); ok && protectedRecords != nil && wrapper != nil {
+		protectedSourceSessions = &secretstore.ProtectedSourceSessionStore{Records: protectedRecords, Wrapper: wrapper}
+	}
+	runnerOpts = append(runnerOpts, WithProjectSecretStore(projectSecretStore))
 	runner := NewTestRunner(cfg.MaxConcurrent, hub, cfg.Store, runnerOpts...)
 	runner.setLiveStateStore(cache)
 	var discovery *generatorDiscovery
@@ -243,38 +298,45 @@ func NewServer(cfg ServerConfig) *Server {
 	browserRecording.SetHARArtifactDir(runner.GetSystemSettings().ArchiveRetention.HARArtifactDir)
 
 	s := &Server{
-		hub:                     hub,
-		runner:                  runner,
-		scheduler:               newScenarioScheduler(runner),
-		browserReplay:           NewBrowserReplayManager(hub),
-		scriptDebug:             NewScriptDebugManager(hub),
-		browserRecording:        browserRecording,
-		browserInstall:          newBrowserInstallState(),
-		recorder:                rec,
-		store:                   cfg.Store,
-		cache:                   cache,
-		controllerID:            controllerID,
-		haExecution:             cfg.HAExecutionLeadership,
-		authoring:               make(map[string]*storage.AuthoringSession),
-		libraryRemotes:          make(map[string]*LibraryRemote),
-		libraryLinks:            make(map[string]*librarySyncLink),
-		libraryCreds:            cfg.LibraryCredentials,
-		slaWaivers:              make(map[string][]*storage.ReleaseSLAWaiver),
-		resultImports:           make(map[string]*storage.ExternalResultImport),
-		githubTokens:            make(map[string]githubCachedToken),
-		ciOIDCProviders:         make(map[string]*ciOIDCProviderRuntime),
-		ciOIDCExchanges:         make(map[string]ciOIDCExchangeCacheEntry),
-		collectorMetrics:        newCollectorMetricStore(),
-		fleetProvisioningActive: make(map[string]string),
-		leadership:              leadership,
-		activeEndpointPublisher: cfg.ActiveEndpointPublisher,
-		mux:                     http.NewServeMux(),
-		desktopMode:             cfg.DesktopMode,
-		bridgeMode:              cfg.BridgeMode,
-		desktopAppData:          cfg.DesktopAppDataPath,
-		desktopLogPath:          cfg.DesktopLogPath,
-		importAssetDir:          resolveImportAssetDir(cfg),
-		bindScope:               cfg.BindScope,
+		hub:                         hub,
+		runner:                      runner,
+		scheduler:                   newScenarioScheduler(runner),
+		browserReplay:               NewBrowserReplayManager(hub),
+		scriptDebug:                 NewScriptDebugManager(hub),
+		browserRecording:            browserRecording,
+		browserInstall:              newBrowserInstallState(),
+		recorder:                    rec,
+		store:                       cfg.Store,
+		cache:                       cache,
+		controllerID:                controllerID,
+		haExecution:                 cfg.HAExecutionLeadership,
+		authoring:                   make(map[string]*storage.AuthoringSession),
+		libraryRemotes:              make(map[string]*LibraryRemote),
+		libraryLinks:                make(map[string]*librarySyncLink),
+		libraryCreds:                cfg.LibraryCredentials,
+		slaWaivers:                  make(map[string][]*storage.ReleaseSLAWaiver),
+		resultImports:               make(map[string]*storage.ExternalResultImport),
+		githubTokens:                make(map[string]githubCachedToken),
+		ciOIDCProviders:             make(map[string]*ciOIDCProviderRuntime),
+		ciOIDCExchanges:             make(map[string]ciOIDCExchangeCacheEntry),
+		collectorMetrics:            newCollectorMetricStore(),
+		fleetProvisioningActive:     make(map[string]string),
+		leadership:                  leadership,
+		activeEndpointPublisher:     cfg.ActiveEndpointPublisher,
+		mux:                         http.NewServeMux(),
+		desktopMode:                 cfg.DesktopMode,
+		bridgeMode:                  cfg.BridgeMode,
+		desktopAppData:              cfg.DesktopAppDataPath,
+		desktopLogPath:              cfg.DesktopLogPath,
+		importAssetDir:              resolveImportAssetDir(cfg),
+		brunoImportSessions:         make(map[string]*brunoImportSession),
+		brunoArtifactDir:            strings.TrimSpace(cfg.BrunoArtifactDir),
+		brunoArtifactWrapper:        cfg.BrunoArtifactWrapper,
+		projectSecretStore:          projectSecretStore,
+		protectedSourceSessions:     protectedSourceSessions,
+		sourceSecretSessions:        make(map[string]*sourceSecretSession),
+		sourceSecretSessionLifetime: sourceSecretSessionTTL,
+		bindScope:                   cfg.BindScope,
 
 		generatorDiscovery:      discovery,
 		k8sRestart:              normalizeK8sRestartSettings(cfg.K8sRestart),
@@ -516,6 +578,10 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/projects/{id}", cors(log(auth(http.HandlerFunc(s.handleGetProject)))))
 	s.mux.Handle("PUT /api/v1/projects/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateProject)))))
 	s.mux.Handle("DELETE /api/v1/projects/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteProject)))))
+	s.mux.Handle("GET /api/v1/projects/{id}/secrets", cors(log(auth(http.HandlerFunc(s.handleListProjectSecrets)))))
+	s.mux.Handle("POST /api/v1/projects/{id}/secrets/status", cors(log(auth(http.HandlerFunc(s.handleProjectSecretStatus)))))
+	s.mux.Handle("POST /api/v1/projects/{id}/secrets", cors(log(auth(http.HandlerFunc(s.handleCreateProjectSecrets)))))
+	s.mux.Handle("PUT /api/v1/projects/{id}/secrets/{name}", cors(log(auth(http.HandlerFunc(s.handleRotateProjectSecret)))))
 	s.mux.Handle("GET /api/v1/projects/{id}/github/policy", cors(log(auth(http.HandlerFunc(s.handleGetProjectGitHubPolicy)))))
 	s.mux.Handle("PUT /api/v1/projects/{id}/github/policy", cors(log(auth(http.HandlerFunc(s.handleUpdateProjectGitHubPolicy)))))
 	s.mux.Handle("POST /api/v1/projects/{id}/releases", cors(log(auth(http.HandlerFunc(s.handleCreateProjectRelease)))))
@@ -672,11 +738,20 @@ func (s *Server) routes(allowedOrigins []string) {
 	// Script CRUD, validation, import, and export endpoints.
 	s.mux.Handle("POST /api/v1/scripts", cors(log(auth(http.HandlerFunc(s.handleCreateScript)))))
 	s.mux.Handle("POST /api/v1/scripts/secret-bindings/apply", cors(log(auth(http.HandlerFunc(s.handleApplyScriptSecretBindings)))))
+	s.mux.Handle("POST /api/v1/scripts/import/secrets/migrate", cors(log(auth(http.HandlerFunc(s.handleMigrateSourceSecrets)))))
+	s.mux.Handle("POST /api/v1/scripts/import/secrets/discard", cors(log(auth(http.HandlerFunc(s.handleDiscardSourceSecretSession)))))
 	s.mux.Handle("GET /api/v1/scripts", cors(log(auth(http.HandlerFunc(s.handleListScripts)))))
 	s.mux.Handle("GET /api/v1/scripts/{id}", cors(log(auth(http.HandlerFunc(s.handleGetScript)))))
+	s.mux.Handle("GET /api/v1/scripts/{id}/secret-status", cors(log(auth(http.HandlerFunc(s.handleScriptSecretStatus)))))
+	s.mux.Handle("POST /api/v1/scripts/{id}/clone-draft", cors(log(auth(http.HandlerFunc(s.handleCloneScriptDraft)))))
 	s.mux.Handle("PUT /api/v1/scripts/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateScript)))))
 	s.mux.Handle("DELETE /api/v1/scripts/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteScript)))))
 	s.mux.Handle("PATCH /api/v1/scripts/{id}/move", cors(log(auth(http.HandlerFunc(s.handleMoveScript)))))
+	s.mux.Handle("GET /api/v1/scripts/{id}/bruno-imports/source", cors(log(auth(http.HandlerFunc(s.handleGetBrunoImportSource)))))
+	s.mux.Handle("GET /api/v1/scripts/{id}/bruno-imports/revisions", cors(log(auth(http.HandlerFunc(s.handleListBrunoImportRevisions)))))
+	s.mux.Handle("POST /api/v1/scripts/{id}/bruno-imports/rollback", cors(log(auth(http.HandlerFunc(s.handleRollbackBrunoImport)))))
+	s.mux.Handle("POST /api/v1/scripts/{id}/bruno-projection/preview", cors(log(auth(http.HandlerFunc(s.handlePreviewBrunoProjection)))))
+	s.mux.Handle("POST /api/v1/scripts/{id}/bruno-projection/commit", cors(log(auth(http.HandlerFunc(s.handleCommitBrunoProjection)))))
 	s.mux.Handle("POST /api/v1/scripts/validate", cors(log(auth(http.HandlerFunc(s.handleValidateDraftScript)))))
 	s.mux.Handle("POST /api/v1/scripts/replay", cors(log(auth(http.HandlerFunc(s.handleReplayDraftScript)))))
 	s.mux.Handle("POST /api/v1/scripts/replay/sessions", cors(log(auth(http.HandlerFunc(s.handleStartReplaySessionDraftScript)))))
@@ -736,6 +811,9 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/scripts/import/openapi", cors(log(auth(http.HandlerFunc(s.handleImportOpenAPI)))))
 	s.mux.Handle("POST /api/v1/scripts/import/openapi/commit", cors(log(auth(http.HandlerFunc(s.handleCommitOpenAPIImport)))))
 	s.mux.Handle("GET /api/v1/scripts/import/openapi/support-matrix", cors(log(auth(http.HandlerFunc(s.handleOpenAPISupportMatrix)))))
+	s.mux.Handle("POST /api/v1/scripts/import/bruno/inspect", cors(log(auth(http.HandlerFunc(s.handleInspectBrunoImport)))))
+	s.mux.Handle("POST /api/v1/scripts/import/bruno/commit", cors(log(auth(http.HandlerFunc(s.handleCommitBrunoImport)))))
+	s.mux.Handle("GET /api/v1/scripts/import/bruno/support-matrix", cors(log(auth(http.HandlerFunc(s.handleBrunoSupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/raml", cors(log(auth(http.HandlerFunc(s.handleImportRAML)))))
 	s.mux.Handle("GET /api/v1/scripts/import/raml/support-matrix", cors(log(auth(http.HandlerFunc(s.handleRAMLSupportMatrix)))))
 	s.mux.Handle("POST /api/v1/scripts/import/postman", cors(log(auth(http.HandlerFunc(s.handleImportPostman)))))
@@ -1140,6 +1218,8 @@ func (s *Server) Start() (startErr error) {
 	s.launchBackground(s.hub.Run)
 	s.startReplayRetentionJanitors()
 	s.startBrowserRecordingRetentionJanitor()
+	s.startBrunoImportSessionJanitor()
+	s.startProtectedSourceSecretSessionJanitor()
 	s.startCacheFanout()
 	s.startGeneratorDiscovery()
 
@@ -1336,6 +1416,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.runner.beginShutdown()
 	}
 	s.beginBackgroundShutdown()
+	s.clearAllSourceSecretSessions()
 	// Stop accepting new requests first. WebSocket connections are hijacked and
 	// are closed by the hub below; ordinary in-flight handlers get the caller's
 	// bounded drain window.
@@ -1376,6 +1457,14 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.timeslotRetentionCancel != nil {
 		s.timeslotRetentionCancel()
 		s.timeslotRetentionCancel = nil
+	}
+	if s.brunoSessionCleanupCancel != nil {
+		s.brunoSessionCleanupCancel()
+		s.brunoSessionCleanupCancel = nil
+	}
+	if s.sourceSecretCleanupCancel != nil {
+		s.sourceSecretCleanupCancel()
+		s.sourceSecretCleanupCancel = nil
 	}
 	if s.archiveCleanupCancel != nil {
 		s.archiveCleanupCancel()
@@ -1478,6 +1567,11 @@ func (s *Server) launchBackground(run func()) bool {
 	s.backgroundMu.Unlock()
 	go func() {
 		defer s.backgroundWG.Done()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				slog.Error("server background task panicked", "panic", recovered)
+			}
+		}()
 		run()
 	}()
 	return true

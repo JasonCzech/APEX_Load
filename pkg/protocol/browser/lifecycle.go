@@ -51,6 +51,10 @@ func (b *Browser) close() {
 		// new_user_per_iteration tears down a later browser session.
 		b.lastHARArtifactPath = artifactPath
 	}
+	b.mu.Lock()
+	b.runtimeTextRedactor = nil
+	b.runtimeSecretsActive = nil
+	b.mu.Unlock()
 	b.currentURL = ""
 	b.slowMo = 0
 	b.userAgent = ""

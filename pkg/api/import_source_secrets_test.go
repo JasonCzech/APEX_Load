@@ -1,0 +1,353 @@
+package api
+
+import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
+)
+
+func TestExtractProjectedRedactions(t *testing.T) {
+	tests := []struct {
+		name      string
+		raw       string
+		projected string
+		want      []string
+		ok        bool
+	}{
+		{name: "whole scalar", raw: "literal-password", projected: maskedScriptSecret, want: []string{"literal-password"}, ok: true},
+		{name: "bearer wrapper", raw: "Bearer literal-token", projected: "Bearer " + maskedScriptSecret, want: []string{"literal-token"}, ok: true},
+		{name: "multiple values", raw: `user=alice&password=s3cr3t`, projected: `user=` + maskedScriptSecret + `&password=` + maskedScriptSecret, want: []string{"alice", "s3cr3t"}, ok: true},
+		{name: "credential contains projected delimiter", raw: `Bearer first; x=embedded; x=second`, projected: `Bearer ` + maskedScriptSecret + `; x=` + maskedScriptSecret, ok: false},
+		{name: "adjacent values are ambiguous", raw: "alicepassword", projected: maskedScriptSecret + maskedScriptSecret, ok: false},
+		{name: "unaligned", raw: "abc", projected: "Bearer " + maskedScriptSecret, ok: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, ok := extractProjectedRedactions(test.raw, test.projected)
+			if ok != test.ok {
+				t.Fatalf("ok = %t, want %t (values=%v)", ok, test.ok, got)
+			}
+			if len(got) != len(test.want) {
+				t.Fatalf("values = %v, want %v", got, test.want)
+			}
+			for index := range test.want {
+				if got[index] != test.want[index] {
+					t.Fatalf("values[%d] = %q, want %q", index, got[index], test.want[index])
+				}
+			}
+		})
+	}
+}
+
+func TestAmbiguousProjectedRedactionsAreUnavailableAcrossImportMigrationPaths(t *testing.T) {
+	raw := &dsl.Script{
+		Name: "Ambiguous source", Protocol: "http", ProjectID: "project-a",
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{{Name: "request", Type: "request", Target: "/", Body: `Bearer first; x=embedded; x=second`}},
+	}
+	masked := cloneScriptDefinition(raw)
+	masked.Actions[0].Body = `Bearer ` + maskedScriptSecret + `; x=` + maskedScriptSecret
+	requirements := []SecretBindingRequirement{
+		{ID: "first", ScriptIndex: 0, Path: "/actions/0/body", Occurrence: 0},
+		{ID: "second", ScriptIndex: 0, Path: "/actions/0/body", Occurrence: 1},
+	}
+
+	rawValue := importResponseRawScriptValue(raw)
+	maskedValue := importResponseRawScriptValue(masked)
+	if values := sourceSecretValuesForImportNodes(rawValue, maskedValue, requirements); len(values) != 0 {
+		t.Fatalf("generic import migration guessed ambiguous values: %#v", values)
+	}
+	if values := sourceValuesForMaskedRequirements(raw, masked, requirements); len(values) != 0 {
+		t.Fatalf("Model Existing migration guessed ambiguous values: %#v", values)
+	}
+}
+
+func TestFormattedJSONBodySourceSecretsRemainAvailableAcrossMigrationPaths(t *testing.T) {
+	raw := &dsl.Script{
+		Name: "Formatted JSON source", Protocol: "http", ProjectID: "project-a",
+		Config: dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{{
+			Name:   "request",
+			Type:   "request",
+			Target: "/",
+			Body: "{\n" +
+				"  \"z_note\": \"ordinary\",\n" +
+				"  \"password\": \"source-secret\",\n" +
+				"  \"nested\": {\"api_key\": \"source-key\"}\n" +
+				"}",
+		}},
+	}
+	masked := maskScriptSecrets(raw)
+	if masked == nil || masked.Actions[0].Body == raw.Actions[0].Body {
+		t.Fatalf("expected structural projection to canonicalize and redact the body: %#v", masked)
+	}
+	requirements := discoverSecretBindingRequirements(masked, 0)
+	if len(requirements) != 2 {
+		t.Fatalf("requirements = %#v, want password and api-key requirements", requirements)
+	}
+
+	assertValues := func(label string, values map[string]string) {
+		t.Helper()
+		got := make(map[string]string, len(values))
+		for _, requirement := range requirements {
+			switch {
+			case strings.HasSuffix(requirement.SuggestedName, "API_KEY"):
+				got["API_KEY"] = values[requirement.ID]
+			case strings.HasSuffix(requirement.SuggestedName, "PASSWORD"):
+				got["PASSWORD"] = values[requirement.ID]
+			}
+		}
+		if got["API_KEY"] != "source-key" || got["PASSWORD"] != "source-secret" {
+			t.Fatalf("%s values = %#v, want structurally matched source credentials", label, got)
+		}
+	}
+	assertValues(
+		"uploaded import",
+		sourceSecretValuesForImportNodes(importResponseRawScriptValue(raw), importResponseRawScriptValue(masked), requirements),
+	)
+	assertValues("Model Existing", sourceValuesForMaskedRequirements(raw, masked, requirements))
+}
+
+func TestSourceSecretValuesForImportResponseUsesRequirementIDs(t *testing.T) {
+	script := &dsl.Script{
+		ID:        "source-secret-script",
+		Name:      "Source secret",
+		Protocol:  "http",
+		ProjectID: "project-a",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.test",
+			HTTP: dsl.HTTPConfig{
+				Auth: dsl.AuthConfig{Type: "basic", Password: "literal-password"},
+			},
+		},
+		Actions: []dsl.Action{{
+			Name:    "request",
+			Type:    "request",
+			Target:  "/",
+			Headers: map[string]string{"Authorization": "Bearer literal-token"},
+		}},
+	}
+	response := newScriptImportResponse(scriptImportResponseOptions{Script: script})
+	requirements := response["secret_binding_requirements"].([]SecretBindingRequirement)
+	values := sourceSecretValuesForImportResponse(scriptImportResponseOptions{Script: script}, requirements)
+	if len(values) != 2 {
+		t.Fatalf("values = %#v, want two requirement-bound values", values)
+	}
+	for _, requirement := range requirements {
+		if values[requirement.ID] == "" {
+			t.Fatalf("requirement %q has no source value: requirements=%#v values=%#v", requirement.ID, requirements, values)
+		}
+	}
+	if got := sourceSecretProjectID(scriptImportResponseOptions{Script: script}); got != "project-a" {
+		t.Fatalf("project id = %q, want project-a", got)
+	}
+}
+
+func TestSourceSecretProjectUsesAuthorizedImportScopeWhenDraftOmitsProject(t *testing.T) {
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/har?project_id=project-query", nil)
+	bindAuthorizedProjectToRequest(request, "project-authorized")
+	script := &dsl.Script{
+		Name:     "Scoped import",
+		Protocol: "http",
+		Config: dsl.ScriptConfig{
+			HTTP: dsl.HTTPConfig{Auth: dsl.AuthConfig{Password: "source-password"}},
+		},
+	}
+	projectID, matches := sourceSecretProjectIDForRequest(request, scriptImportResponseOptions{Script: script})
+	if !matches || projectID != "project-authorized" {
+		t.Fatalf("source secret project = %q, matches=%t; want authorized scope", projectID, matches)
+	}
+
+	script.ProjectID = "project-other"
+	if projectID, matches = sourceSecretProjectIDForRequest(request, scriptImportResponseOptions{Script: script}); matches || projectID != "project-authorized" {
+		t.Fatalf("mismatched source project = %q, matches=%t; want migration session suppressed", projectID, matches)
+	}
+}
+
+func TestSourceSecretValuesTreatAlreadyRedactedSourceAsUnavailable(t *testing.T) {
+	script := &dsl.Script{
+		Name:      "Already redacted",
+		Protocol:  "http",
+		ProjectID: "project-a",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.test",
+			HTTP: dsl.HTTPConfig{
+				Auth: dsl.AuthConfig{Type: "basic", Password: maskedScriptSecret},
+			},
+		},
+		Actions: []dsl.Action{{Name: "request", Type: "request", Target: "/"}},
+	}
+	response := newScriptImportResponse(scriptImportResponseOptions{Script: script})
+	requirements := response["secret_binding_requirements"].([]SecretBindingRequirement)
+	if values := sourceSecretValuesForImportResponse(scriptImportResponseOptions{Script: script}, requirements); len(values) != 0 {
+		t.Fatalf("redacted source produced migratable values: %#v", values)
+	}
+}
+
+func TestImportResponseSourceSecretSessionIsPolicyGatedAndDisclosureSafe(t *testing.T) {
+	server, _, _, projectID := newProjectSecretAPIServer(t)
+	script := &dsl.Script{
+		Name:      "Protected import",
+		Protocol:  "http",
+		ProjectID: projectID,
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.test",
+			HTTP: dsl.HTTPConfig{
+				Auth: dsl.AuthConfig{Type: "basic", Password: "must-never-reach-the-browser"},
+			},
+		},
+		Actions: []dsl.Action{{Name: "request", Type: "request", Target: "/"}},
+	}
+	request := httptest.NewRequest("POST", "/api/v1/scripts/import/sample", nil)
+
+	disabled := server.newScriptImportResponseWithSourceSecrets(request, scriptImportResponseOptions{Script: script})
+	if _, exists := disabled["source_secret_session_id"]; exists {
+		t.Fatal("default-off policy exposed a source-secret session")
+	}
+
+	settings := server.runner.GetSystemSettings()
+	settings.ScriptImports.AllowSourceSecretMigration = true
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	enabled := server.newScriptImportResponseWithSourceSecrets(request, scriptImportResponseOptions{Script: script})
+	sessionID, _ := enabled["source_secret_session_id"].(string)
+	if strings.TrimSpace(sessionID) == "" {
+		t.Fatalf("enabled response has no source-secret session: %#v", enabled)
+	}
+	if allowed, _ := enabled["source_secret_migration_allowed"].(bool); !allowed {
+		t.Fatalf("source migration capability = %#v", enabled["source_secret_migration_allowed"])
+	}
+	requirements, _ := enabled["secret_binding_requirements"].([]SecretBindingRequirement)
+	if len(requirements) != 1 || !requirements[0].SourceValueAvailable {
+		t.Fatalf("requirements = %#v, want one source-available requirement", requirements)
+	}
+	encoded, err := json.Marshal(enabled)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "must-never-reach-the-browser") {
+		t.Fatalf("import response disclosed source credential: %s", encoded)
+	}
+}
+
+func TestUploadedImportSourceSecretMigratesServerSideWithoutDisclosure(t *testing.T) {
+	server, _, managed, projectID := newProjectSecretAPIServer(t)
+	settings := server.runner.GetSystemSettings()
+	settings.ScriptImports.AllowSourceSecretMigration = true
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	script := &dsl.Script{
+		Name:      "Uploaded protected import",
+		Protocol:  "http",
+		ProjectID: projectID,
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.test",
+			HTTP: dsl.HTTPConfig{
+				Auth: dsl.AuthConfig{Type: "basic", Password: "uploaded-source-password"},
+			},
+		},
+		Actions: []dsl.Action{{Name: "request", Type: "request", Target: "/"}},
+	}
+	request := httptest.NewRequest("POST", "/api/v1/scripts/import/sample", nil)
+	response := server.newScriptImportResponseWithSourceSecrets(request, scriptImportResponseOptions{Script: script})
+	sessionID, _ := response["source_secret_session_id"].(string)
+	requirements, _ := response["secret_binding_requirements"].([]SecretBindingRequirement)
+	if sessionID == "" || len(requirements) != 1 || !requirements[0].SourceValueAvailable {
+		t.Fatalf("uploaded source-secret response = %#v", response)
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "uploaded-source-password") {
+		t.Fatalf("uploaded import response disclosed source value: %s", encoded)
+	}
+
+	migration := secretAPIRequest(t, server, "POST", "/api/v1/scripts/import/secrets/migrate", map[string]any{
+		"project_id":               projectID,
+		"source_secret_session_id": sessionID,
+		"secrets": []map[string]string{{
+			"requirement_id": requirements[0].ID,
+			"secret_name":    "UPLOADED_PASSWORD",
+		}},
+	})
+	if migration.Code != 201 || strings.Contains(migration.Body.String(), "uploaded-source-password") {
+		t.Fatalf("uploaded migration = %d %s", migration.Code, migration.Body.String())
+	}
+	value, _, err := managed.Get(context.Background(), projectID, "UPLOADED_PASSWORD")
+	if err != nil || value != "uploaded-source-password" {
+		t.Fatalf("uploaded migrated value = %q, %v", value, err)
+	}
+}
+
+func TestMultiScriptImportKeepsDistinctSourceCredentialsIndependentlyMigratable(t *testing.T) {
+	server, _, managed, projectID := newProjectSecretAPIServer(t)
+	settings := server.runner.GetSystemSettings()
+	settings.ScriptImports.AllowSourceSecretMigration = true
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	script := func(id, value string) *dsl.Script {
+		return &dsl.Script{
+			ID: id, Name: "Login flow", Protocol: "http", ProjectID: projectID,
+			Config: dsl.ScriptConfig{BaseURL: "https://example.test"},
+			Actions: []dsl.Action{{
+				Name:    "Login",
+				Type:    "request",
+				Target:  "/login",
+				Headers: map[string]string{"Authorization": "Bearer " + value},
+			}},
+		}
+	}
+	firstValue := "first-script-source-token"
+	secondValue := "second-script-source-token"
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/sample", nil)
+	response := server.newScriptImportResponseWithSourceSecrets(request, scriptImportResponseOptions{
+		Scripts: []*dsl.Script{script("first", firstValue), script("second", secondValue)},
+	})
+	sessionID, _ := response["source_secret_session_id"].(string)
+	requirements, _ := response["secret_binding_requirements"].([]SecretBindingRequirement)
+	if sessionID == "" || len(requirements) != 2 {
+		t.Fatalf("multi-script source-secret response = %#v", response)
+	}
+	if requirements[0].SuggestedName == requirements[1].SuggestedName ||
+		requirements[0].ScriptIndex == requirements[1].ScriptIndex ||
+		!requirements[0].SourceValueAvailable || !requirements[1].SourceValueAvailable {
+		t.Fatalf("multi-script requirements were conflated: %#v", requirements)
+	}
+
+	selections := make([]map[string]string, 0, len(requirements))
+	for _, requirement := range requirements {
+		selections = append(selections, map[string]string{
+			"requirement_id": requirement.ID,
+			"secret_name":    requirement.SuggestedName,
+		})
+	}
+	migration := secretAPIRequest(t, server, http.MethodPost, "/api/v1/scripts/import/secrets/migrate", map[string]any{
+		"project_id":               projectID,
+		"source_secret_session_id": sessionID,
+		"secrets":                  selections,
+	})
+	if migration.Code != http.StatusCreated ||
+		strings.Contains(migration.Body.String(), firstValue) ||
+		strings.Contains(migration.Body.String(), secondValue) {
+		t.Fatalf("multi-script migration = %d %s", migration.Code, migration.Body.String())
+	}
+	for _, requirement := range requirements {
+		want := firstValue
+		if requirement.ScriptIndex == 1 {
+			want = secondValue
+		}
+		got, _, err := managed.Get(context.Background(), projectID, requirement.SuggestedName)
+		if err != nil || got != want {
+			t.Fatalf("script %d migrated value = %q, %v; want distinct source credential", requirement.ScriptIndex, got, err)
+		}
+	}
+}

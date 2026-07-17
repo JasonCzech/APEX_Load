@@ -50,8 +50,23 @@ The compose stack stores controller state in the `controller-data` Docker volume
 
 - SQLite DB: `/data/apexload.db`
 - Run archives: `/data/archives`
+- Encrypted Project Secrets: SQLite records wrapped by
+  `APEXLOAD_WRAPPING_MASTER_KEY`
 
 Prometheus time-series data is stored in the `prometheus-data` Docker volume.
+
+The compose default wrapping key is intentionally local-development-only.
+Override it with a stable value before saving secrets you need to retain:
+
+```bash
+export APEXLOAD_WRAPPING_MASTER_KEY="$(openssl rand -base64 32)"
+docker compose up --build -d
+```
+
+Keep the same value while the `controller-data` volume exists. The local
+controller/generator channel is plaintext, so secret-bearing distributed runs
+fail closed; use the production Helm/on-prem/AKS TLS wiring when validating
+distributed Project Secrets.
 
 ## Running Prometheus Against a Host Controller
 

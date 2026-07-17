@@ -52,6 +52,8 @@ type Assignment struct {
 	Environment           map[string]string
 	DataFiles             []DataFile
 	RedactionRules        []engine.RedactionRule
+	SecretBundle          map[string]string
+	SecretBundleID        string
 }
 
 type AssignmentResult struct {
@@ -303,6 +305,10 @@ type HeartbeatResponse struct {
 // protobuf's unknown-field compatibility would otherwise make an older
 // generator silently start paused traffic or restart the full logical duration.
 const FeatureEvacuationAssignmentStateV1 = "evacuation_assignment_state_v1"
+
+// FeatureSecretBundleV1 means AssignWork accepts a bounded, memory-only map of
+// referenced secret values and injects it as the assignment's runtime resolver.
+const FeatureSecretBundleV1 = "secret_bundle_v1"
 
 type GeneratorStats struct {
 	ActiveVUsers int32
@@ -948,6 +954,8 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 		Environment:           environment,
 		DataFiles:             dataFiles,
 		RedactionRules:        redactionRulesToProto(assignment.RedactionRules),
+		SecretBundle:          cloneSecretBundle(assignment.SecretBundle),
+		SecretBundleId:        assignment.SecretBundleID,
 	}
 }
 

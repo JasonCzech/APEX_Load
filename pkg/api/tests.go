@@ -64,7 +64,7 @@ func (tr *TestRunner) getTestSnapshot(id string, includeHistory bool) (*ManagedT
 		tr.mu.RUnlock()
 	}
 	managed := managedTestFromRecord(record)
-	if err := tr.restoreManagedTestRuntime(managed); err != nil {
+	if err := tr.restoreManagedTestRuntimeAndRepair(managed); err != nil {
 		managed.runtimeHydrationError = err.Error()
 		slog.Error("failed to restore test runtime during durable read", "test_id", managed.ID, "error", err)
 	}
@@ -789,6 +789,7 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned.Archive = cloneRunArchiveRecord(test.Archive)
 	cloned.TelemetryHealth = cloneTelemetryRunHealth(test.TelemetryHealth)
 	cloned.ciSLADetails = append([]string(nil), test.ciSLADetails...)
+	cloned.remoteSecretSnapshots = nil
 	return &cloned
 }
 

@@ -7,8 +7,11 @@ package api
 
 import (
 	"bytes"
+	"context"
+	"crypto/subtle"
 	"encoding/csv"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -20,6 +23,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/refkey"
+	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -103,10 +107,38 @@ func (tr *TestRunner) createTestWithIDAndTerm(req CreateTestRequest, broadcast b
 	if tr.durableExecutionFence && !leaseTerm.valid() {
 		return nil, errNotExecutionLeader
 	}
+	materializationKey := strings.TrimSpace(req.MaterializationKey)
+	// Deterministic callers (CI and execution-plan recovery) may retry after the
+	// original create committed. Adopt the authoritative existing materialization
+	// before building or persisting another QUEUED projection. In particular, do
+	// not replace a RUNNING in-memory object and detach its live control handles.
+	if materializationKey != "" {
+		if existing, ok := tr.GetTestSummary(id); ok {
+			if !tr.executionLeaseTermCurrent(leaseTerm) {
+				return nil, errNotExecutionLeader
+			}
+			if !sameManagedTestMaterialization(existing, id, materializationKey, req.ProjectID) {
+				return nil, fmt.Errorf("%w: test %s", errTestIdentityCollision, id)
+			}
+			existing.creationAdopted = true
+			return existing, nil
+		}
+	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if !tr.executionLeaseTermCurrent(leaseTerm) {
 		return nil, errNotExecutionLeader
+	}
+	// A concurrent exact retry can miss the durable/cache preflight above while
+	// the winning goroutine is still creating the row. tr.mu serializes that
+	// boundary, so re-check after acquiring it and return the winner unchanged.
+	if existing := tr.tests[id]; existing != nil {
+		if materializationKey == "" || !sameManagedTestMaterialization(existing, id, materializationKey, req.ProjectID) {
+			return nil, fmt.Errorf("%w: test %s", errTestIdentityCollision, id)
+		}
+		adopted := cloneManagedTestForReadLocked(existing)
+		adopted.creationAdopted = true
+		return adopted, nil
 	}
 
 	now := time.Now()
@@ -142,8 +174,26 @@ func (tr *TestRunner) createTestWithIDAndTerm(req CreateTestRequest, broadcast b
 		}
 	}
 
+	runtimeSecretAttempt, err := tr.persistRuntimeOverrideSecretValues(
+		test.ProjectID, test.ID, test.MaterializationKey, test.RefKey, test.Groups, req.creationActor,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := tr.releaseProvisionedRuntimeSecretOverlays(test); err != nil {
+		rollbackErr := tr.rollbackRuntimeOverrideSecretAttempt(test.ProjectID, test.ID, runtimeSecretAttempt, "runtime_secret_detach_failed")
+		return nil, errors.Join(err, rollbackErr)
+	}
 	if err := tr.saveNewManagedTestRecordWithTerm(test, leaseTerm); err != nil {
-		return nil, fmt.Errorf("persist test: %w", err)
+		persistErr := fmt.Errorf("persist test: %w", err)
+		rollbackErr := tr.rollbackRuntimeOverrideSecretAttempt(test.ProjectID, test.ID, runtimeSecretAttempt, "test_persistence_failed")
+		return nil, errors.Join(persistErr, rollbackErr)
+	}
+	if err := tr.completeRuntimeOverrideSecretAttempt(runtimeSecretAttempt); err != nil {
+		// The durable test is the source of truth. Recovery observes it and only
+		// removes the value-free journal; it never compensates committed secrets.
+		slog.Warn("runtime credential provisioning journal cleanup deferred", "test_id", test.ID, "error", err)
+		tr.scheduleRuntimeOverrideSecretAttempt(runtimeSecretAttempt.ID, runtimeSecretAttempt.LeaseExpiresAt)
 	}
 	if !tr.executionLeaseTermCurrent(leaseTerm) {
 		return nil, errNotExecutionLeader
@@ -156,6 +206,52 @@ func (tr *TestRunner) createTestWithIDAndTerm(req CreateTestRequest, broadcast b
 		tr.broadcastEvent("test_created", test)
 	}
 	return cloneManagedTestForReadLocked(test), nil
+}
+
+// releaseProvisionedRuntimeSecretOverlays drops the request-time plaintext
+// projection after create-only writes have succeeded. Queued and scheduled
+// tests must resolve the governed store at launch so rotations are authoritative
+// and the original value is not retained for the test's durable lifetime.
+func (tr *TestRunner) releaseProvisionedRuntimeSecretOverlays(test *ManagedTest) error {
+	if test == nil {
+		return nil
+	}
+	for index := range test.groupSpecs {
+		var rules []engine.RedactionRule
+		if index < len(test.Groups) {
+			rules = test.Groups[index].redactionRules
+		}
+		redactionConfig, err := engine.NewRedactionConfig(rules)
+		if err != nil {
+			return fmt.Errorf("group[%d]: detach provisioned runtime credential redaction: %w", index, err)
+		}
+		test.groupSpecs[index].RedactionConfig = redactionConfig
+		test.groupSpecs[index].SecretResolver = nil
+	}
+	for index := range test.Groups {
+		clearRuntimeSecretValueMap(test.Groups[index].runtimeSecretValues)
+		test.Groups[index].runtimeSecretValues = nil
+	}
+	return nil
+}
+
+func clearRuntimeSecretValueMap(values map[string]string) {
+	for name := range values {
+		values[name] = ""
+		delete(values, name)
+	}
+}
+
+func sameManagedTestMaterialization(existing *ManagedTest, id, materializationKey, projectID string) bool {
+	if existing == nil || strings.TrimSpace(existing.ID) != strings.TrimSpace(id) {
+		return false
+	}
+	key := strings.TrimSpace(materializationKey)
+	if key == "" || strings.TrimSpace(existing.MaterializationKey) != key {
+		return false
+	}
+	projectID = strings.TrimSpace(projectID)
+	return projectID == "" || normalizeProjectID(existing.ProjectID) == normalizeProjectID(projectID)
 }
 
 func ceilToNextQuarterHour(value time.Time) time.Time {
@@ -206,6 +302,9 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
+	for index := range groups {
+		groups[index].runtimeSecretScope = id
+	}
 	projectID, err := tr.resolveCreateTestProjectID(req.ProjectID, groups)
 	if err != nil {
 		return nil, err
@@ -243,6 +342,10 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	if err != nil {
 		return nil, err
 	}
+	protectedRuntimeSettings, _, err := protectRuntimeOverrideSecrets(id, -1, nil, effectiveRuntimeSettings, false)
+	if err != nil {
+		return nil, fmt.Errorf("protect test runtime credentials: %w", err)
+	}
 
 	applicationID, releaseID, err := tr.resolveCreateTestReleaseContext(projectID, req.ApplicationID, req.ReleaseID, status)
 	if err != nil {
@@ -278,7 +381,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		ResourceBaseline:      req.ResourceBaseline,
 		StartDelay:            req.StartDelay,
 		GoalConfig:            cloneGoalConfig(req.GoalConfig),
-		RuntimeSettings:       cloneRuntimeSettings(effectiveRuntimeSettings),
+		RuntimeSettings:       cloneRuntimeSettings(protectedRuntimeSettings),
 		TotalVUsers:           totalVUsers,
 		Duration:              dur,
 		DurationStr:           req.Duration,
@@ -309,8 +412,345 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 			return nil, fmt.Errorf("%s: %s", conflict.Code, conflict.Message)
 		}
 	}
-
 	return test, nil
+}
+
+const (
+	runtimeOverrideSecretProviderTimeout = 10 * time.Second
+	runtimeOverrideSecretAttemptLease    = 5 * time.Minute
+	runtimeOverrideSecretRecoveryRetry   = time.Minute
+)
+
+var errServiceAccountRuntimeSecretWrite = errors.New("service accounts cannot create project secrets from runtime credentials; configure the secret with an authorized human user and reference it with {{secret.NAME}}")
+var errUnattributedRuntimeSecretWrite = errors.New("runtime credentials cannot create project secrets without durable human actor attribution; update the schedule or rerun the execution plan as an authorized user")
+
+type testCreationActor struct {
+	Type        string
+	Subject     string
+	DisplayName string
+}
+
+func systemTestCreationActor(subject string) testCreationActor {
+	return normalizeTestCreationActor(testCreationActor{Type: "system", Subject: subject})
+}
+
+func normalizeTestCreationActor(actor testCreationActor) testCreationActor {
+	actor.Type = strings.ToLower(strings.TrimSpace(actor.Type))
+	actor.Subject = strings.TrimSpace(actor.Subject)
+	actor.DisplayName = strings.TrimSpace(actor.DisplayName)
+	if actor.Type == "" {
+		actor.Type = "system"
+	}
+	if actor.Subject == "" {
+		actor.Subject = "controller:test-creation"
+	}
+	return actor
+}
+
+func runtimeSecretWriteActorError(actor testCreationActor) error {
+	actor = normalizeTestCreationActor(actor)
+	switch actor.Type {
+	case "user", "system", "dev_mode":
+		return nil
+	case "service_account":
+		return errServiceAccountRuntimeSecretWrite
+	default:
+		return errUnattributedRuntimeSecretWrite
+	}
+}
+
+type runtimeOverrideSecretRollbackCandidate struct {
+	Name      string
+	Ambiguous bool
+}
+
+type runtimeOverrideSecretAttempt struct {
+	ID             string
+	Actor          string
+	AuditActor     testCreationActor
+	ResourceType   string
+	ResourceID     string
+	Names          []string
+	Candidates     []runtimeOverrideSecretRollbackCandidate
+	LeaseExpiresAt time.Time
+}
+
+type runtimeSecretProvisioningOptions struct {
+	ResourceType      string
+	CommitFingerprint string
+}
+
+func (tr *TestRunner) persistRuntimeOverrideSecretValues(projectID, testID, materializationKey, refKey string, groups []TestGroup, auditActors ...testCreationActor) (runtimeOverrideSecretAttempt, error) {
+	auditActor := systemTestCreationActor("controller:test-creation")
+	if len(auditActors) > 0 {
+		auditActor = normalizeTestCreationActor(auditActors[0])
+	}
+	return tr.persistRuntimeOverrideSecretValuesForResource(
+		projectID, testID, materializationKey, refKey, groups, auditActor,
+		runtimeSecretProvisioningOptions{ResourceType: "test"},
+	)
+}
+
+func (tr *TestRunner) persistRuntimeOverrideSecretValuesForResource(projectID, resourceID, materializationKey, refKey string, groups []TestGroup, auditActor testCreationActor, options runtimeSecretProvisioningOptions) (runtimeOverrideSecretAttempt, error) {
+	values := make(map[string]string)
+	for _, group := range groups {
+		for name, value := range group.runtimeSecretValues {
+			if existing, ok := values[name]; ok && existing != value {
+				return runtimeOverrideSecretAttempt{}, fmt.Errorf("runtime credential projection conflict for %s", name)
+			}
+			values[name] = value
+		}
+	}
+	if len(values) == 0 {
+		return runtimeOverrideSecretAttempt{}, nil
+	}
+	resourceType := strings.ToLower(strings.TrimSpace(options.ResourceType))
+	if resourceType == "" {
+		resourceType = "test"
+	}
+	auditActor = normalizeTestCreationActor(auditActor)
+	// Service-account test execution authority is deliberately narrower than
+	// project-secret write authority. Reject before consulting or invoking the
+	// configured provider; service accounts may only use existing references.
+	if err := runtimeSecretWriteActorError(auditActor); err != nil {
+		return runtimeOverrideSecretAttempt{}, err
+	}
+	store := tr.projectSecretStore
+	if store == nil || !secretstore.SupportsCreate(store) {
+		return runtimeOverrideSecretAttempt{}, errors.New("runtime credentials were entered, but the configured project secret provider cannot create governed values; configure a writable encrypted project secret store or use existing {{secret.NAME}} references")
+	}
+	if !secretstore.SupportsCreatedValueRollback(store) {
+		return runtimeOverrideSecretAttempt{}, errors.New("runtime credentials were entered, but the configured project secret provider cannot safely roll back a failed create; configure the encrypted project secret store or use existing {{secret.NAME}} references")
+	}
+	if tr.scenarioStore == nil {
+		return runtimeOverrideSecretAttempt{}, fmt.Errorf("audit persistence is required before storing governed runtime credentials")
+	}
+	if tr.secretAttemptStore == nil {
+		return runtimeOverrideSecretAttempt{}, fmt.Errorf("durable provisioning recovery is required before storing governed runtime credentials")
+	}
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	attemptID := uuid.New().String()
+	actor := "runtime-" + resourceType + ":" + strings.TrimSpace(resourceID) + ":attempt:" + attemptID
+	attempt := runtimeOverrideSecretAttempt{
+		ID:           attemptID,
+		Actor:        actor,
+		AuditActor:   auditActor,
+		ResourceType: resourceType,
+		ResourceID:   strings.TrimSpace(resourceID),
+		Names:        append([]string(nil), names...),
+		Candidates:   make([]runtimeOverrideSecretRollbackCandidate, 0, len(names)),
+	}
+	now := time.Now().UTC()
+	attempt.LeaseExpiresAt = now.Add(runtimeOverrideSecretAttemptLease)
+	created, err := tr.secretAttemptStore.CreateRuntimeSecretProvisioningAttempt(&storage.RuntimeSecretProvisioningAttempt{
+		ID:                    attempt.ID,
+		ProjectID:             normalizeProjectID(projectID),
+		ResourceType:          resourceType,
+		TestID:                strings.TrimSpace(resourceID),
+		MaterializationKey:    strings.TrimSpace(materializationKey),
+		RefKey:                strings.TrimSpace(refKey),
+		CommitFingerprint:     strings.TrimSpace(options.CommitFingerprint),
+		Actor:                 attempt.Actor,
+		AuditActorType:        attempt.AuditActor.Type,
+		AuditActorSubject:     attempt.AuditActor.Subject,
+		AuditActorDisplayName: attempt.AuditActor.DisplayName,
+		SecretNames:           append([]string(nil), names...),
+		LeaseExpiresAt:        attempt.LeaseExpiresAt,
+		CreatedAt:             now,
+	})
+	if err != nil {
+		return runtimeOverrideSecretAttempt{}, fmt.Errorf("begin durable runtime credential provisioning: %w", err)
+	}
+	if !created {
+		return runtimeOverrideSecretAttempt{}, fmt.Errorf("runtime credential provisioning is already in progress for this %s", resourceType)
+	}
+	releaseActive := tr.markRuntimeOverrideSecretAttemptActive(attempt.ID)
+	defer releaseActive()
+	// Arm recovery as soon as the durable journal exists. This remains effective
+	// if a provider or audit implementation panics and request-level recovery
+	// unwinds the provisioning call before its ordinary rollback path can run.
+	tr.scheduleRuntimeOverrideSecretAttempt(attempt.ID, attempt.LeaseExpiresAt)
+	ctx, cancel := context.WithTimeout(context.Background(), runtimeOverrideSecretProviderTimeout)
+	defer cancel()
+	providerErrorRedaction, err := engine.WithSecretValueRedactionChecked(nil, runtimeSecretValueList(values))
+	if err != nil {
+		return runtimeOverrideSecretAttempt{}, fmt.Errorf("prepare governed runtime credential redaction: %w", err)
+	}
+	fail := func(operationErr error) (runtimeOverrideSecretAttempt, error) {
+		rollbackErr := tr.rollbackRuntimeOverrideSecretAttempt(projectID, resourceID, attempt, "runtime_secret_batch_failed")
+		return runtimeOverrideSecretAttempt{}, errors.Join(operationErr, rollbackErr)
+	}
+	for _, name := range names {
+		value := values[name]
+		if err := tr.auditRuntimeOverrideSecretOperation(projectID, resourceType, resourceID, name, auditActor, "attempt", "pending"); err != nil {
+			return fail(fmt.Errorf("audit governed runtime credential %s before create: %w", name, err))
+		}
+		if _, err := store.Create(ctx, projectID, name, value, actor); err == nil {
+			attempt.Candidates = append(attempt.Candidates, runtimeOverrideSecretRollbackCandidate{Name: name})
+			if auditErr := tr.auditRuntimeOverrideSecretOperation(projectID, resourceType, resourceID, name, auditActor, "success", "created"); auditErr != nil {
+				return fail(fmt.Errorf("audit governed runtime credential %s after create: %w", name, auditErr))
+			}
+			continue
+		} else if !errors.Is(err, secretstore.ErrAlreadyExists) {
+			// A transport error does not prove Create failed before commit. Include
+			// the current logical name in ownership-checked compensation; a
+			// preexisting or rotated value cannot be removed.
+			attempt.Candidates = append(attempt.Candidates, runtimeOverrideSecretRollbackCandidate{Name: name, Ambiguous: true})
+			outcome := "provider_error_commit_ambiguous"
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				outcome = "provider_timeout_commit_ambiguous"
+			}
+			safeProviderErr := errors.New(providerErrorRedaction.ScrubText(err.Error()))
+			if auditErr := tr.auditRuntimeOverrideSecretOperation(projectID, resourceType, resourceID, name, auditActor, "failure", outcome); auditErr != nil {
+				return fail(errors.Join(fmt.Errorf("store governed runtime credential %s: %w", name, safeProviderErr), auditErr))
+			}
+			return fail(fmt.Errorf("store governed runtime credential %s: %w", name, safeProviderErr))
+		}
+		existing, _, err := store.Get(ctx, projectID, name)
+		if err != nil || subtle.ConstantTimeCompare([]byte(existing), []byte(value)) != 1 {
+			outcome := "existing_value_conflict"
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				outcome = "provider_timeout"
+			}
+			if auditErr := tr.auditRuntimeOverrideSecretOperation(projectID, resourceType, resourceID, name, auditActor, "failure", outcome); auditErr != nil {
+				return fail(errors.Join(fmt.Errorf("governed runtime credential %s already exists with a different value", name), auditErr))
+			}
+			return fail(fmt.Errorf("governed runtime credential %s already exists with a different value", name))
+		}
+		if err := tr.auditRuntimeOverrideSecretOperation(projectID, resourceType, resourceID, name, auditActor, "success", "existing_value_reused"); err != nil {
+			return fail(fmt.Errorf("audit reused governed runtime credential %s: %w", name, err))
+		}
+	}
+	return attempt, nil
+}
+
+func (tr *TestRunner) auditRuntimeOverrideSecretOperation(projectID, resourceType, resourceID, name string, actor testCreationActor, status, outcome string) error {
+	if tr == nil || tr.scenarioStore == nil {
+		return fmt.Errorf("audit persistence is unavailable")
+	}
+	details := map[string]any{
+		"outcome":       strings.TrimSpace(outcome),
+		"provider":      secretStoreProvider(tr.projectSecretStore),
+		"resource_type": strings.TrimSpace(resourceType),
+		"resource_id":   strings.TrimSpace(resourceID),
+	}
+	if strings.TrimSpace(resourceType) == "test" {
+		details["test_id"] = strings.TrimSpace(resourceID)
+	} else if strings.TrimSpace(resourceType) == "scenario" {
+		details["scenario_id"] = strings.TrimSpace(resourceID)
+	}
+	if strings.HasSuffix(outcome, "_commit_ambiguous") {
+		details["outcome"] = strings.TrimSuffix(outcome, "_commit_ambiguous")
+		details["commit_state"] = "ambiguous"
+	}
+	actor = normalizeTestCreationActor(actor)
+	return tr.scenarioStore.SaveAuditEvent(&storage.AuditEvent{
+		ID:               uuid.New().String(),
+		Action:           "project_secret.runtime_override.create",
+		ActorType:        actor.Type,
+		ActorSubject:     actor.Subject,
+		ActorDisplayName: actor.DisplayName,
+		ProjectID:        normalizeProjectID(projectID),
+		ResourceType:     "project_secret",
+		ResourceID:       strings.TrimSpace(name),
+		Status:           strings.TrimSpace(status),
+		Details:          details,
+		CreatedAt:        time.Now().UTC(),
+	})
+}
+
+func (tr *TestRunner) rollbackRuntimeOverrideSecretAttempt(projectID, testID string, attempt runtimeOverrideSecretAttempt, trigger string) error {
+	rollback, ok := tr.projectSecretStore.(secretstore.CreatedValueRollbackStore)
+	if !ok && len(attempt.Candidates) > 0 {
+		return secretstore.ErrRollbackUnsupported
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), runtimeOverrideSecretProviderTimeout)
+	defer cancel()
+	auditActor := normalizeTestCreationActor(attempt.AuditActor)
+	resourceType := strings.TrimSpace(attempt.ResourceType)
+	if resourceType == "" {
+		resourceType = "test"
+	}
+	resourceID := strings.TrimSpace(attempt.ResourceID)
+	if resourceID == "" {
+		resourceID = strings.TrimSpace(testID)
+	}
+	var rollbackErr error
+	for index := len(attempt.Candidates) - 1; index >= 0; index-- {
+		candidate := attempt.Candidates[index]
+		name := candidate.Name
+		removed, err := rollback.RollbackCreated(ctx, projectID, name, attempt.Actor)
+		status, outcome := "success", "rolled_back"
+		if err != nil {
+			status, outcome = "failure", "provider_error"
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				outcome = "provider_timeout"
+			}
+			// Provider failures are deliberately not wrapped: provider messages can
+			// echo the value passed to Create.
+			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("roll back governed runtime credential %s: provider operation failed", name))
+		} else if !removed {
+			if candidate.Ambiguous {
+				outcome = "ownership_not_held"
+			} else {
+				status, outcome = "failure", "ownership_changed"
+				rollbackErr = errors.Join(rollbackErr, fmt.Errorf("roll back governed runtime credential %s: current value is not owned by this create attempt", name))
+			}
+		}
+		if tr == nil || tr.scenarioStore == nil {
+			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("audit persistence is unavailable for governed runtime credential rollback"))
+			continue
+		}
+		details := map[string]any{
+			"outcome":       outcome,
+			"trigger":       strings.TrimSpace(trigger),
+			"provider":      secretStoreProvider(tr.projectSecretStore),
+			"resource_type": resourceType,
+			"resource_id":   resourceID,
+		}
+		if resourceType == "test" {
+			details["test_id"] = resourceID
+		} else if resourceType == "scenario" {
+			details["scenario_id"] = resourceID
+		}
+		if auditErr := tr.scenarioStore.SaveAuditEvent(&storage.AuditEvent{
+			ID:               uuid.New().String(),
+			Action:           "project_secret.runtime_override.rollback",
+			ActorType:        auditActor.Type,
+			ActorSubject:     auditActor.Subject,
+			ActorDisplayName: auditActor.DisplayName,
+			ProjectID:        normalizeProjectID(projectID),
+			ResourceType:     "project_secret",
+			ResourceID:       strings.TrimSpace(name),
+			Status:           status,
+			Details:          details,
+			CreatedAt:        time.Now().UTC(),
+		}); auditErr != nil {
+			rollbackErr = errors.Join(rollbackErr, fmt.Errorf("audit governed runtime credential rollback %s: %w", name, auditErr))
+		}
+	}
+	if rollbackErr == nil {
+		rollbackErr = tr.completeRuntimeOverrideSecretAttempt(attempt)
+	}
+	return rollbackErr
+}
+
+func (tr *TestRunner) completeRuntimeOverrideSecretAttempt(attempt runtimeOverrideSecretAttempt) error {
+	if strings.TrimSpace(attempt.ID) == "" {
+		return nil
+	}
+	if tr == nil || tr.secretAttemptStore == nil {
+		return fmt.Errorf("runtime credential provisioning journal is unavailable")
+	}
+	_, err := tr.secretAttemptStore.DeleteRuntimeSecretProvisioningAttempt(attempt.ID, attempt.Actor)
+	if err != nil {
+		return fmt.Errorf("complete runtime credential provisioning journal: %w", err)
+	}
+	return nil
 }
 
 func createTestRequestFromScenario(req CreateTestRequest, scenario *StoredScenario) CreateTestRequest {
@@ -664,7 +1104,7 @@ func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroup
 		RampDown:        rampDownValue,
 		Stages:          cloneLoadStages(group.Stages),
 		Iterations:      effectiveIterations,
-		RuntimeSettings: cloneRuntimeSettings(group.RuntimeSettings),
+		RuntimeSettings: nil,
 		Assignment:      cloneGeneratorAssignmentSettings(assignment),
 		RunLogicGoals:   runLogicGoalSnapshot(script.Script),
 		Initialization:  initStrategy,
@@ -682,8 +1122,35 @@ func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroup
 	if len(sharedDataSources) > 0 {
 		scriptCopy.DataSources = append(cloneDataSources(scriptCopy.DataSources), sharedDataSources...)
 	}
-	if effectiveRuntimeSettings != nil {
-		if err := applyRuntimeOverrides(&scriptCopy, effectiveRuntimeSettings); err != nil {
+	runtimeScope := strings.TrimSpace(group.runtimeSecretScope)
+	if runtimeScope == "" {
+		runtimeScope = "ephemeral:" + strings.TrimSpace(group.ScriptID)
+	}
+	protectedRootSettings, rootRuntimeSecretValues, err := protectRuntimeOverrideSecrets(runtimeScope, -1, &scriptCopy, runtimeSettings, true)
+	if err != nil {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: protect root runtime credentials: %w", index, err)
+	}
+	protectedGroupSettings, groupRuntimeSecretValues, err := protectRuntimeOverrideSecrets(runtimeScope, index, &scriptCopy, group.RuntimeSettings, true)
+	if err != nil {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: protect group runtime credentials: %w", index, err)
+	}
+	executionRuntimeSettings := mergeRuntimeSettings(protectedRootSettings, protectedGroupSettings)
+	if effectiveRuntimeSettings != nil && effectiveRuntimeSettings.Iterations != nil {
+		if executionRuntimeSettings == nil {
+			executionRuntimeSettings = &RuntimeSettingsOverride{}
+		}
+		iterations := *effectiveRuntimeSettings.Iterations
+		executionRuntimeSettings.Iterations = &iterations
+	}
+	runtimeSecretValues := cloneRuntimeSecretValues(rootRuntimeSecretValues)
+	if runtimeSecretValues == nil && len(groupRuntimeSecretValues) > 0 {
+		runtimeSecretValues = make(map[string]string, len(groupRuntimeSecretValues))
+	}
+	for secretName, secretValue := range groupRuntimeSecretValues {
+		runtimeSecretValues[secretName] = secretValue
+	}
+	if executionRuntimeSettings != nil {
+		if err := applyRuntimeOverrides(&scriptCopy, executionRuntimeSettings); err != nil {
 			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: apply runtime overrides: %w", index, err)
 		}
 		if issues := dsl.ValidateScriptIssues(&scriptCopy); len(issues) > 0 {
@@ -716,8 +1183,19 @@ func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroup
 	if err != nil {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: build redaction config: %w", index, err)
 	}
+	runtimeSecretValues, err = filterReferencedRuntimeSecretValues(&scriptCopy, runtimeSecretValues)
+	if err != nil {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: inspect protected runtime credentials", index)
+	}
+	redactionConfig, err = engine.WithSecretValueRedactionChecked(redactionConfig, runtimeSecretValueList(runtimeSecretValues))
+	if err != nil {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: prepare runtime credential redaction: %w", index, err)
+	}
 	testGroup.script = &scriptCopy
+	testGroup.RuntimeSettings = cloneRuntimeSettings(protectedGroupSettings)
 	testGroup.redactionRules = cloneRedactionRules(nilIfNoRules(effectiveRuntimeSettings))
+	testGroup.runtimeSecretValues = cloneRuntimeSecretValues(runtimeSecretValues)
+	secretResolver := overlayRuntimeSecretResolver(runtimeSecretValues, tr.secretResolverForProject(scriptCopy.ProjectID))
 
 	engineGroup := engine.GroupConfig{
 		Name:            name,
@@ -728,6 +1206,7 @@ func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroup
 		AllowZeroVUsers: allowZeroVUsers,
 		InitStrategy:    initStrategy,
 		RedactionConfig: redactionConfig,
+		SecretResolver:  secretResolver,
 	}
 
 	return testGroup, engineGroup, nil

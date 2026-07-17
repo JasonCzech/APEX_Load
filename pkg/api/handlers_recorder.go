@@ -307,7 +307,12 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
 	}
 
-	stored, err := s.runner.StoreScriptDurable(result.Script)
+	safeScript, _, err := applySuggestedSecretBindings(result.Script, 0)
+	if err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "failed to prepare recorded credentials: "+err.Error())
+		return
+	}
+	stored, err := s.runner.StoreScriptDurable(safeScript)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save recorded script: "+err.Error())
 		return
@@ -318,11 +323,14 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"script":       maskStoredScript(stored),
-		"correlations": result.Correlations,
-		"warnings":     result.Warnings,
+	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+		Script:       result.Script,
+		Warnings:     result.Warnings,
+		Correlations: result.Correlations,
 	})
+	response["script"] = maskStoredScript(stored)
+	response["scripts"] = []any{maskStoredScript(stored)}
+	writeJSON(w, http.StatusCreated, response)
 }
 
 func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http.Request) {
@@ -343,7 +351,11 @@ func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(session.ProjectID)
 	}
-	writeJSON(w, http.StatusOK, result)
+	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+		Script:       result.Script,
+		Warnings:     result.Warnings,
+		Correlations: result.Correlations,
+	}))
 }
 
 func (s *Server) handleExportRecording(w http.ResponseWriter, r *http.Request) {

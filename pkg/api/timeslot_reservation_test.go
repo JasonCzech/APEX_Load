@@ -100,6 +100,34 @@ func TestCreateTestBindsTimeslot(t *testing.T) {
 	}
 }
 
+func TestSaveNewManagedTestWithTimeslotIsIdempotentForSameMaterialization(t *testing.T) {
+	runner, store := storeBackedRunner(t)
+	if err := store.SaveCapacityReservation(approvedTimeslot(time.Now())); err != nil {
+		t.Fatalf("save timeslot: %v", err)
+	}
+	tid := "ts-1"
+	test, err := runner.CreateTest(CreateTestRequest{
+		Name: "T", Duration: "10m", ScriptID: "script-1", VUsers: 100, ProjectID: "proj-a", TimeslotID: &tid,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+	leaseTerm, err := runner.captureExecutionLeaseTerm()
+	if err != nil {
+		t.Fatalf("captureExecutionLeaseTerm: %v", err)
+	}
+	if err := runner.saveNewManagedTestRecordWithTerm(test, leaseTerm); err != nil {
+		t.Fatalf("idempotent save: %v", err)
+	}
+	reservation, err := store.GetCapacityReservation(tid)
+	if err != nil {
+		t.Fatalf("GetCapacityReservation: %v", err)
+	}
+	if reservation.BoundTestID == nil || *reservation.BoundTestID != test.ID {
+		t.Fatalf("bound test = %v, want %s", reservation.BoundTestID, test.ID)
+	}
+}
+
 func TestCreateTestTimeslotStrictRejects(t *testing.T) {
 	cases := []struct {
 		name    string

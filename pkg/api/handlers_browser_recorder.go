@@ -743,7 +743,7 @@ func (s *Server) handlePreviewBrowserRecordingConversion(w http.ResponseWriter, 
 			warnings = append(warnings, httpWarnings...)
 		}
 	}
-	response := newScriptImportResponse(scriptImportResponseOptions{
+	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Script:           result.Script,
 		Scripts:          scripts,
 		Warnings:         warnings,
@@ -780,11 +780,21 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 	// Store every generated script (one for the single-script path, several
 	// when splitting at transactions).
 	storedScripts := make([]*StoredScript, 0, len(result.Scripts))
-	for _, sc := range result.Scripts {
+	for scriptIndex, sc := range result.Scripts {
 		if sc == nil {
 			continue
 		}
-		stored, err := s.runner.StoreScriptDurable(sc)
+		safeScript, _, err := applySuggestedSecretBindings(sc, scriptIndex)
+		if err != nil {
+			for _, prior := range storedScripts {
+				if _, cleanupErr := s.runner.DeleteScriptDurable(prior.ID); cleanupErr != nil {
+					slog.Warn("failed to roll back converted browser script", "script_id", prior.ID, "error", cleanupErr)
+				}
+			}
+			writeError(w, http.StatusUnprocessableEntity, "failed to prepare recorded credentials: "+err.Error())
+			return
+		}
+		stored, err := s.runner.StoreScriptDurable(safeScript)
 		if err != nil {
 			for _, prior := range storedScripts {
 				if _, cleanupErr := s.runner.DeleteScriptDurable(prior.ID); cleanupErr != nil {
@@ -803,14 +813,19 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 	primary := storedScripts[0]
 
 	warnings := append([]string(nil), result.Warnings...)
+	var httpScript *dsl.Script
 	var httpStored *StoredScript
 	if req.AlsoCreateHTTPScript {
-		httpScript, httpWarnings, err := s.createHTTPScriptFromHAR(artifact, info, req.Name)
+		var httpWarnings []string
+		var err error
+		httpScript, httpWarnings, err = s.createHTTPScriptFromHAR(artifact, info, req.Name)
 		if err != nil {
 			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
 		} else {
-			httpStored, err = s.runner.StoreScriptDurable(httpScript)
-			if err != nil {
+			safeHTTPScript, _, bindingErr := applySuggestedSecretBindings(httpScript, len(result.Scripts))
+			if bindingErr != nil {
+				warnings = append(warnings, "HTTP script persistence skipped: failed to prepare recorded credentials: "+bindingErr.Error())
+			} else if httpStored, err = s.runner.StoreScriptDurable(safeHTTPScript); err != nil {
 				warnings = append(warnings, "HTTP script persistence skipped: "+err.Error())
 				httpStored = nil
 			} else {
@@ -825,17 +840,36 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 		map[string]any{"recording_session_id": id, "name": primary.Name, "actions": result.Stats.ConvertedActions,
 			"scripts": len(storedScripts), "http_script": httpStored != nil})
 
-	response := newScriptImportResponse(scriptImportResponseOptions{
-		Script:           primary,
-		Scripts:          storedScriptsForResponse(storedScripts, httpStored),
+	sourceHTTPForResponse := httpScript
+	if httpStored == nil {
+		sourceHTTPForResponse = nil
+	}
+	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+		Script:           result.Script,
+		Scripts:          appendBrowserRecordingScripts(result.Scripts, sourceHTTPForResponse),
 		Warnings:         warnings,
 		Stats:            result.Stats,
 		Parameterization: buildImportParameterization(result.Script, nil),
 	})
+	response["script"] = maskStoredScript(primary)
+	response["scripts"] = storedScriptsForResponse(storedScripts, httpStored)
 	if httpStored != nil {
 		response["http_script"] = maskStoredScript(httpStored)
 	}
 	writeJSON(w, http.StatusCreated, response)
+}
+
+func appendBrowserRecordingScripts(scripts []*dsl.Script, httpScript *dsl.Script) []any {
+	out := make([]any, 0, len(scripts)+1)
+	for _, script := range scripts {
+		if script != nil {
+			out = append(out, script)
+		}
+	}
+	if httpScript != nil {
+		out = append(out, httpScript)
+	}
+	return out
 }
 
 func storedScriptsForResponse(scripts []*StoredScript, httpScript *StoredScript) []any {

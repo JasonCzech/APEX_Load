@@ -19,7 +19,10 @@ import {
 import { ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import ParameterizationReview from './ParameterizationReview'
-import SecretBindingReview from './SecretBindingReview'
+import SecretBindingReview, {
+  type PreparedSecretBindings,
+  type SecretBindingReviewHandle,
+} from './SecretBindingReview'
 import { refreshedSecretBindingRequirements } from './secretBindingUtils'
 
 type GitHubSyncModalProps = {
@@ -68,16 +71,85 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
   const [importDraft, setImportDraft] = useState<ScriptDefinition | null>(null)
   const [importParameterization, setImportParameterization] = useState<Parameterization | null>(null)
   const [importSecretBindingRequirements, setImportSecretBindingRequirements] = useState<SecretBindingRequirement[]>([])
+  const [importPreparedSecrets, setImportPreparedSecrets] = useState<PreparedSecretBindings | null>(null)
+  const [sourceSecretSessionId, setSourceSecretSessionId] = useState('')
+  const [sourceSecretSessionExpiresAt, setSourceSecretSessionExpiresAt] = useState('')
+  const [sourceSecretMigrationAllowed, setSourceSecretMigrationAllowed] = useState(false)
 
   // Push-only status.
   const [status, setStatus] = useState<GitHubScriptStatus | null>(null)
   const dialogRef = useRef<HTMLDivElement | null>(null)
   const repositorySelectRef = useRef<HTMLSelectElement | null>(null)
+  const secretBindingReviewRef = useRef<SecretBindingReviewHandle | null>(null)
+  const importDraftRef = useRef<ScriptDefinition | null>(null)
+  const importDraftGenerationRef = useRef(0)
+  const modalOpenRef = useRef(true)
+  const [importDraftGeneration, setImportDraftGeneration] = useState(0)
+  const advanceImportDraftGeneration = useCallback(() => {
+    const next = importDraftGenerationRef.current + 1
+    importDraftGenerationRef.current = next
+    setImportDraftGeneration(next)
+    return next
+  }, [])
+  const importProjectIdRef = useRef(projectId)
+  importProjectIdRef.current = projectId
+  const repoFullNameRef = useRef(repoFullName)
+  repoFullNameRef.current = repoFullName
+  const branchRef = useRef(branch)
+  branchRef.current = branch
+  const pathRef = useRef(path)
+  pathRef.current = path
+  const browseRequestRef = useRef(0)
+  const [parameterizationApplying, setParameterizationApplying] = useState(false)
   const titleId = useId()
 
-  useModalDialog({ dialogRef, initialFocusRef: repositorySelectRef, onClose })
+  const closeModal = useCallback(() => {
+    if (!modalOpenRef.current) return
+    void secretBindingReviewRef.current?.discardSourceSession()
+    modalOpenRef.current = false
+    importDraftGenerationRef.current += 1
+    browseRequestRef.current += 1
+    onClose()
+  }, [onClose])
+
+  useEffect(() => () => {
+    void secretBindingReviewRef.current?.discardSourceSession()
+    modalOpenRef.current = false
+    importDraftGenerationRef.current += 1
+    browseRequestRef.current += 1
+  }, [])
+
+  useModalDialog({ dialogRef, initialFocusRef: repositorySelectRef, onClose: closeModal })
 
   const selectedRepo = useMemo(() => repos.find(repo => repo.full_name === repoFullName), [repos, repoFullName])
+
+  const clearImportReview = useCallback(() => {
+    setImportDraft(null)
+    importDraftRef.current = null
+    setImportParameterization(null)
+    setImportSecretBindingRequirements([])
+    setImportPreparedSecrets(null)
+    setSourceSecretSessionId('')
+    setSourceSecretSessionExpiresAt('')
+    setSourceSecretMigrationAllowed(false)
+    setParameterizationApplying(false)
+  }, [])
+
+  const invalidateImportSource = useCallback(() => {
+    void secretBindingReviewRef.current?.discardSourceSession()
+    advanceImportDraftGeneration()
+    browseRequestRef.current += 1
+    clearImportReview()
+    setLoading(false)
+    setError('')
+  }, [advanceImportDraftGeneration, clearImportReview])
+
+  const previousProjectIdRef = useRef(projectId)
+  useEffect(() => {
+    if (previousProjectIdRef.current === projectId) return
+    previousProjectIdRef.current = projectId
+    invalidateImportSource()
+  }, [invalidateImportSource, projectId])
 
   useEffect(() => {
     let cancelled = false
@@ -89,13 +161,17 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
         const initial = config.default_repo && response.repos.some(r => r.full_name === config.default_repo)
           ? config.default_repo
           : response.repos[0]?.full_name || ''
-        setRepoFullName(initial)
+        if (repoFullNameRef.current !== initial) {
+          invalidateImportSource()
+          setPath('')
+          setRepoFullName(initial)
+        }
       } catch (err) {
         if (!cancelled) setError(getErrorMessage(err, 'Unable to list repositories'))
       }
     })()
     return () => { cancelled = true }
-  }, [githubApi, config.default_repo])
+  }, [githubApi, config.default_repo, invalidateImportSource])
 
   // Load branches when the repo changes.
   useEffect(() => {
@@ -107,13 +183,19 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
         if (cancelled) return
         const names = response.branches.map(b => b.name)
         setBranches(names)
-        setBranch(prev => (names.includes(prev) ? prev : (selectedRepo.default_branch || names[0] || 'main')))
+        const currentBranch = branchRef.current
+        const nextBranch = names.includes(currentBranch) ? currentBranch : (selectedRepo.default_branch || names[0] || 'main')
+        if (nextBranch !== currentBranch) {
+          invalidateImportSource()
+          setPath('')
+          setBranch(nextBranch)
+        }
       } catch (err) {
         if (!cancelled) setError(getErrorMessage(err, 'Unable to list branches'))
       }
     })()
     return () => { cancelled = true }
-  }, [githubApi, selectedRepo])
+  }, [githubApi, invalidateImportSource, selectedRepo])
 
   // Push: load the current sync status for the script.
   useEffect(() => {
@@ -132,17 +214,23 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
 
   const browse = useCallback(async (nextPath: string) => {
     if (!selectedRepo) return
+    const requestID = ++browseRequestRef.current
+    const sourceRepoFullName = selectedRepo.full_name
+    const sourceBranch = branchRef.current
+    const requestIsCurrent = () => browseRequestRef.current === requestID
+      && repoFullNameRef.current === sourceRepoFullName
+      && branchRef.current === sourceBranch
     setError('')
     try {
-      const response = await githubApi.getContents(selectedRepo.owner, selectedRepo.name, nextPath, branch)
-      if (response.type === 'dir') {
+      const response = await githubApi.getContents(selectedRepo.owner, selectedRepo.name, nextPath, sourceBranch)
+      if (requestIsCurrent() && response.type === 'dir') {
         setEntries(response.entries || [])
         setBrowsePath(nextPath)
       }
     } catch (err) {
-      setError(getErrorMessage(err, 'Unable to browse repository'))
+      if (requestIsCurrent()) setError(getErrorMessage(err, 'Unable to browse repository'))
     }
-  }, [githubApi, selectedRepo, branch])
+  }, [githubApi, selectedRepo])
 
   // Import: refresh the directory listing when repo/branch change.
   useEffect(() => {
@@ -164,19 +252,25 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
         message: message.trim() || undefined,
         strategy,
       })
+      if (!modalOpenRef.current) return
       onPushed?.(response)
-      onClose()
+      closeModal()
     } catch (err) {
-      setError(getErrorMessage(err, 'Push failed'))
+      if (modalOpenRef.current) setError(getErrorMessage(err, 'Push failed'))
     } finally {
-      setLoading(false)
+      if (modalOpenRef.current) setLoading(false)
     }
   }
 
-  async function saveImportDraft(draft: ScriptDefinition) {
-    const saved = await scriptApi.createScript(draft, projectId)
+  async function saveImportDraft(
+    draft: ScriptDefinition,
+    targetProjectId: string | undefined,
+    requestIsCurrent: () => boolean,
+  ) {
+    const saved = await scriptApi.createScript(draft, targetProjectId)
+    if (!requestIsCurrent()) return
     onImported?.(saved)
-    onClose()
+    closeModal()
   }
 
   async function doImport() {
@@ -184,16 +278,31 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
       setError('Select a script file to import.')
       return
     }
+    const sourceGeneration = advanceImportDraftGeneration()
+    const sourceProjectId = importProjectIdRef.current
+    const sourceRepoFullName = selectedRepo.full_name
+    const sourceOwner = selectedRepo.owner
+    const sourceRepo = selectedRepo.name
+    const sourcePath = path.trim()
+    const sourceBranch = branchRef.current
+    const requestIsCurrent = () => modalOpenRef.current
+      && importDraftGenerationRef.current === sourceGeneration
+      && importProjectIdRef.current === sourceProjectId
+      && repoFullNameRef.current === sourceRepoFullName
+      && pathRef.current.trim() === sourcePath
+      && branchRef.current === sourceBranch
+    clearImportReview()
     setLoading(true)
     setError('')
     try {
       const result = await githubApi.importScript({
-        project_id: projectId || '',
-        owner: selectedRepo.owner,
-        repo: selectedRepo.name,
-        path: path.trim(),
-        ref: branch,
+        project_id: sourceProjectId || '',
+        owner: sourceOwner,
+        repo: sourceRepo,
+        path: sourcePath,
+        ref: sourceBranch,
       })
+      if (!requestIsCurrent()) return
       const draft = result.script as ScriptDefinition | undefined
       if (!draft) {
         setError('GitHub returned no importable script.')
@@ -202,45 +311,64 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
       const parameterization = result.parameterization
       const secretBindingRequirements = result.secret_binding_requirements ?? []
       if (secretBindingRequirements.length > 0 || (parameterization?.suggestions.length ?? 0) > 0) {
-        // Resolve redacted values before optional parameterization review and save.
+        // Keep references and optional parameterization visible in one review step.
         setImportDraft(draft)
+        importDraftRef.current = draft
         setImportSecretBindingRequirements(secretBindingRequirements)
         setImportParameterization(parameterization && parameterization.suggestions.length > 0 ? parameterization : null)
+        setSourceSecretSessionId(result.source_secret_session_id || '')
+        setSourceSecretSessionExpiresAt(result.source_secret_session_expires_at || '')
+        setSourceSecretMigrationAllowed(result.source_secret_migration_allowed === true)
         return
       }
-      await saveImportDraft(draft)
+      await saveImportDraft(draft, sourceProjectId, requestIsCurrent)
     } catch (err) {
-      setError(getErrorMessage(err, 'Import failed'))
+      if (requestIsCurrent()) setError(getErrorMessage(err, 'Import failed'))
     } finally {
-      setLoading(false)
+      if (requestIsCurrent()) setLoading(false)
     }
   }
 
   async function doSaveReviewedImport() {
     if (!importDraft) return
-    if (importSecretBindingRequirements.length > 0) {
-      setError('Resolve all redacted values before saving the script.')
-      return
-    }
+    const sourceGeneration = importDraftGenerationRef.current
+    const sourceProjectId = importProjectIdRef.current
+    const sourceDraft = importDraftRef.current || importDraft
+    const requestIsCurrent = () => modalOpenRef.current
+      && importDraftGenerationRef.current === sourceGeneration
+      && importProjectIdRef.current === sourceProjectId
     setLoading(true)
     setError('')
     try {
-      await saveImportDraft(importDraft)
+      if (importSecretBindingRequirements.length > 0) {
+        if (!secretBindingReviewRef.current || importPreparedSecrets?.valid === false) return
+        const committed = await secretBindingReviewRef.current.commit()
+        if (!committed) return
+      }
+      if (!requestIsCurrent()) return
+      await saveImportDraft(importDraftRef.current || sourceDraft, sourceProjectId, requestIsCurrent)
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to save imported script'))
+      if (requestIsCurrent()) setError(getErrorMessage(err, 'Failed to save imported script'))
     } finally {
-      setLoading(false)
+      if (requestIsCurrent()) setLoading(false)
     }
   }
 
   async function doApplySecretBindings(bindings: SecretBindingSelection[]) {
     if (!importDraft) return
+    const sourceGeneration = importDraftGenerationRef.current
+    const sourceProjectId = importProjectIdRef.current
     setError('')
     try {
       const result = await scriptApi.applySecretBindings({ script: importDraft, bindings })
+      if (importDraftGenerationRef.current !== sourceGeneration || importProjectIdRef.current !== sourceProjectId) {
+        throw new Error('The imported draft changed while credentials were being prepared. Review the current draft and try again.')
+      }
       setImportDraft(result.script)
+      importDraftRef.current = result.script
       setImportSecretBindingRequirements(result.secret_binding_requirements ?? [])
     } catch (error: unknown) {
+      if (importDraftGenerationRef.current !== sourceGeneration || importProjectIdRef.current !== sourceProjectId) throw error
       const refreshed = refreshedSecretBindingRequirements(error)
       if (refreshed) setImportSecretBindingRequirements(refreshed)
       throw error
@@ -254,13 +382,13 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
       className="modal-overlay"
       role="presentation"
       onPointerDown={event => {
-        if (event.target === event.currentTarget) onClose()
+        if (event.target === event.currentTarget) closeModal()
       }}
     >
       <div ref={dialogRef} className="modal" role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <div className="modal-header">
           <h3 id={titleId}>{title}</h3>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={onClose}>Cancel</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={closeModal}>Cancel</button>
         </div>
         <div className="monitor-body">
           {mode === 'push' && status && (
@@ -275,7 +403,16 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
 
           <label className="project-redaction-rule-field">
             <span>Repository</span>
-            <select ref={repositorySelectRef} className="settings-select" value={repoFullName} onChange={event => setRepoFullName(event.target.value)}>
+            <select
+              ref={repositorySelectRef}
+              className="settings-select"
+              value={repoFullName}
+              onChange={event => {
+                if (mode === 'import') invalidateImportSource()
+                setPath('')
+                setRepoFullName(event.target.value)
+              }}
+            >
               {repos.length === 0 && <option value="">No repositories available</option>}
               {repos.map(repo => <option key={repo.full_name} value={repo.full_name}>{repo.full_name}</option>)}
             </select>
@@ -283,7 +420,15 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
 
           <label className="project-redaction-rule-field">
             <span>Branch</span>
-            <select className="settings-select" value={branch} onChange={event => setBranch(event.target.value)}>
+            <select
+              className="settings-select"
+              value={branch}
+              onChange={event => {
+                if (mode === 'import') invalidateImportSource()
+                setPath('')
+                setBranch(event.target.value)
+              }}
+            >
               {!branches.includes(branch) && <option value={branch}>{branch}</option>}
               {branches.map(name => <option key={name} value={name}>{name}</option>)}
             </select>
@@ -314,21 +459,43 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
                 <label><input type="radio" name="gh-strategy" checked={strategy === 'pr'} onChange={() => setStrategy('pr')} /> Pull request</label>
               </div>
             </>
-          ) : importDraft && importSecretBindingRequirements.length > 0 ? (
-            <SecretBindingReview
-              requirements={importSecretBindingRequirements}
-              onApply={doApplySecretBindings}
-            />
-          ) : importDraft && importParameterization ? (
-            <ParameterizationReview
-              parameterization={importParameterization}
-              script={importDraft}
-              onApplied={parameterizedScript => setImportDraft(parameterizedScript)}
-            />
           ) : importDraft ? (
-            <p className="setting-desc" role="status">
-              All redacted values now use secret references. The imported script is ready to save.
-            </p>
+            <>
+              {importSecretBindingRequirements.length > 0 && (
+                <SecretBindingReview
+                  ref={secretBindingReviewRef}
+                  requirements={importSecretBindingRequirements}
+                  reviewGeneration={`${importDraftGeneration}:${projectId || ''}`}
+                  projectId={projectId}
+                  sourceSecretSessionId={sourceSecretSessionId}
+                  sourceSecretSessionExpiresAt={sourceSecretSessionExpiresAt}
+                  sourceMigrationAllowed={sourceSecretMigrationAllowed}
+                  disabled={loading || parameterizationApplying}
+                  onApply={doApplySecretBindings}
+                  onPreparedChange={setImportPreparedSecrets}
+                />
+              )}
+              {importParameterization && (
+                <ParameterizationReview
+                  parameterization={importParameterization}
+                  script={importDraft}
+                  reviewGeneration={`${importDraftGeneration}:${projectId || ''}`}
+                  disabled={loading}
+                  onApplyingChange={setParameterizationApplying}
+                  onApplied={parameterizedScript => {
+                    secretBindingReviewRef.current?.preserveEditsForNextReviewGeneration()
+                    advanceImportDraftGeneration()
+                    setImportDraft(parameterizedScript)
+                    importDraftRef.current = parameterizedScript
+                  }}
+                />
+              )}
+              {importSecretBindingRequirements.length === 0 && !importParameterization && (
+                <p className="setting-desc" role="status">
+                  All redacted values now use secret references. The imported script is ready to save.
+                </p>
+              )}
+            </>
           ) : (
             <div className="settings-release-list" style={{ maxHeight: 240, overflow: 'auto' }}>
               {browsePath && (
@@ -342,7 +509,14 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
                   key={entry.path}
                   type="button"
                   className={`settings-release-row ${path === entry.path ? 'active' : ''}`}
-                  onClick={() => (entry.type === 'dir' ? void browse(entry.path) : setPath(entry.path))}
+                  onClick={() => {
+                    if (entry.type === 'dir') {
+                      void browse(entry.path)
+                      return
+                    }
+                    invalidateImportSource()
+                    setPath(entry.path)
+                  }}
                 >
                   <div className="settings-release-main">
                     <span>{entry.type === 'dir' ? '📁' : '📄'} {entry.name}</span>
@@ -358,7 +532,7 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
           {error && <p className="settings-error-inline" role="alert">{error}</p>}
 
           <div className="settings-inline-actions">
-            <button className="btn btn-secondary" type="button" onClick={onClose}>Cancel</button>
+            <button className="btn btn-secondary" type="button" onClick={closeModal}>Cancel</button>
             {mode === 'push' ? (
               <button className="btn btn-primary" type="button" onClick={() => void doPush()} disabled={loading || !selectedRepo}>
                 {loading ? 'Pushing…' : strategy === 'pr' ? 'Open Pull Request' : 'Commit'}
@@ -368,9 +542,13 @@ export default function GitHubSyncModal({ mode, config, script, projectId, onClo
                 className="btn btn-primary"
                 type="button"
                 onClick={() => void doSaveReviewedImport()}
-                disabled={loading || importSecretBindingRequirements.length > 0}
+                disabled={loading || parameterizationApplying || importPreparedSecrets?.valid === false}
               >
-                {loading ? 'Saving…' : 'Save Script'}
+                {loading
+                  ? 'Saving…'
+                  : importSecretBindingRequirements.length > 0 && (importPreparedSecrets?.configureLaterCount ?? 0) > 0
+                    ? `Save with ${importPreparedSecrets?.configureLaterCount} secret${importPreparedSecrets?.configureLaterCount === 1 ? '' : 's'} to configure`
+                    : 'Save Script'}
               </button>
             ) : (
               <button className="btn btn-primary" type="button" onClick={() => void doImport()} disabled={loading || !path.trim()}>

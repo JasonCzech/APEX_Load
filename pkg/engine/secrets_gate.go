@@ -15,9 +15,10 @@ import (
 	"strings"
 )
 
-// allowUnresolvedSecretsEnv opts out of the fail-closed gate for the rare case
-// where running with a literal placeholder is intentional (e.g. a smoke test
-// with no secret backend wired).
+// allowUnresolvedSecretsEnv opts out of the action-level gate for dynamically
+// introduced references and direct VUser harnesses. Statically referenced
+// script secrets are required by execution preflight and cannot be bypassed by
+// this compatibility setting.
 const allowUnresolvedSecretsEnv = "APEXLOAD_ALLOW_UNRESOLVED_SECRETS"
 const allowUnresolvedFilesEnv = "APEXLOAD_ALLOW_UNRESOLVED_FILES"
 

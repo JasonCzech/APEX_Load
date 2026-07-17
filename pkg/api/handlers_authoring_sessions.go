@@ -51,6 +51,27 @@ type authoringSessionApprovalResponse struct {
 	AuthoringHealth AuthoringHealth           `json:"authoring_health"`
 }
 
+// prepareAuthoringSessionDraft applies the same durable secret boundary used
+// by script create/update. Executable credentials become structured binding
+// requirements, while non-executable import evidence is scrubbed before the
+// draft is stored or promoted.
+func prepareAuthoringSessionDraft(w http.ResponseWriter, draft, prior *dsl.Script) (*dsl.Script, bool) {
+	projected := maskScriptSecrets(draft)
+	if projected == nil {
+		writeError(w, http.StatusBadRequest, "failed to project authoring draft for secret binding")
+		return nil, false
+	}
+	if unresolved := discoverSecretBindingRequirements(projected, 0); len(unresolved) > 0 {
+		writeSecretBindingsRequired(w, unresolved)
+		return nil, false
+	}
+	if err := reconcileMaskedScriptSecrets(projected, prior); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return nil, false
+	}
+	return projected, true
+}
+
 func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Request) {
 	req, ok := readAuthoringSessionRequest(w, r)
 	if !ok {
@@ -64,10 +85,11 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := reconcileMaskedScriptSecrets(&req.Draft, nil); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	safeDraft, ok := prepareAuthoringSessionDraft(w, &req.Draft, nil)
+	if !ok {
 		return
 	}
+	req.Draft = *safeDraft
 	now := time.Now()
 	session := &storage.AuthoringSession{
 		ID:             uuid.New().String(),
@@ -144,10 +166,11 @@ func (s *Server) handleUpdateAuthoringSession(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := reconcileMaskedScriptSecrets(&req.Draft, existing.Draft); err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+	safeDraft, ok := prepareAuthoringSessionDraft(w, &req.Draft, existing.Draft)
+	if !ok {
 		return
 	}
+	req.Draft = *safeDraft
 	existing.Source = normalizeAuthoringSessionSource(firstNonEmpty(req.Source, existing.Source))
 	existing.Name = authoringSessionName(firstNonEmpty(req.Name, existing.Name), &req.Draft)
 	existing.Status = normalizeAuthoringSessionStatus(firstNonEmpty(req.Status, existing.Status))
@@ -229,6 +252,11 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 		writeJSON(w, http.StatusOK, authoringSessionApprovalResponse{Session: maskAuthoringSession(session), Script: maskStoredScript(stored), AuthoringHealth: validation.AuthoringHealth})
 		return
 	}
+	safeDraft, ok := prepareAuthoringSessionDraft(w, session.Draft, nil)
+	if !ok {
+		return
+	}
+	session.Draft = safeDraft
 
 	validation := buildScriptValidationResponse("", session.Draft)
 	if !validation.Valid || validation.AuthoringHealth.Status == "blocked" {
@@ -452,6 +480,9 @@ func readAuthoringSessionRequest(w http.ResponseWriter, r *http.Request) (author
 }
 
 func (s *Server) saveAuthoringSession(session *storage.AuthoringSession) error {
+	if err := prepareAuthoringSessionForPersistence(session); err != nil {
+		return err
+	}
 	if store, ok := s.store.(authoringSessionPersistence); ok {
 		return store.SaveAuthoringSession(session)
 	}
@@ -462,6 +493,9 @@ func (s *Server) saveAuthoringSession(session *storage.AuthoringSession) error {
 }
 
 func (s *Server) compareAndSwapAuthoringSession(session *storage.AuthoringSession, expectedUpdatedAt time.Time, expectedStatus string) (bool, error) {
+	if err := prepareAuthoringSessionForPersistence(session); err != nil {
+		return false, err
+	}
 	if store, ok := s.store.(authoringSessionCASPersistence); ok {
 		return store.CompareAndSwapAuthoringSession(session, expectedUpdatedAt, expectedStatus)
 	}
@@ -480,6 +514,22 @@ func (s *Server) compareAndSwapAuthoringSession(session *storage.AuthoringSessio
 	}
 	s.authoring[session.ID] = cloneAuthoringSession(session)
 	return true, nil
+}
+
+func prepareAuthoringSessionForPersistence(session *storage.AuthoringSession) error {
+	if session == nil {
+		return nil
+	}
+	session.ReviewState = projectAuthoringReviewState(session.ReviewState)
+	if session.Draft == nil {
+		return nil
+	}
+	projected, err := preparePersistentLibraryScript(session.Draft, nil)
+	if err != nil {
+		return err
+	}
+	session.Draft = projected
+	return nil
 }
 
 func (s *Server) getAuthoringSession(w http.ResponseWriter, id string) (*storage.AuthoringSession, bool) {

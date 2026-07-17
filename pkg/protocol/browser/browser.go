@@ -74,6 +74,8 @@ type Browser struct {
 	harLimitOnce          sync.Once
 	harObservedBytes      int64
 	harObservedEntries    int
+	runtimeTextRedactor   protocol.TextRedactor
+	runtimeSecretsActive  func() bool
 	mobile                bool
 	touchMode             bool
 	orientation           string
@@ -137,6 +139,40 @@ type Browser struct {
 	// rewinding the wait watermark for future waits.
 	wsLastWaitMinSeq int64
 	wsLastWaitValid  bool
+}
+
+// SetRuntimeTextRedactor installs a memory-only projection owned by the VUser.
+// It is intentionally set after Init and is never copied into browser config or
+// retained artifacts.
+func (b *Browser) SetRuntimeTextRedactor(redactor protocol.TextRedactor) {
+	b.mu.Lock()
+	b.runtimeTextRedactor = redactor
+	b.mu.Unlock()
+}
+
+// SetRuntimeSecretActivity installs the VUser-owned, memory-only signal used
+// to suppress pixel evidence whenever governed secret material is available.
+func (b *Browser) SetRuntimeSecretActivity(active func() bool) {
+	b.mu.Lock()
+	b.runtimeSecretsActive = active
+	b.mu.Unlock()
+}
+
+func (b *Browser) hasRuntimeSecretMaterial() bool {
+	b.mu.Lock()
+	active := b.runtimeSecretsActive
+	b.mu.Unlock()
+	return active != nil && active()
+}
+
+func (b *Browser) redactRuntimeText(value string) string {
+	b.mu.Lock()
+	redactor := b.runtimeTextRedactor
+	b.mu.Unlock()
+	if redactor == nil || value == "" {
+		return value
+	}
+	return redactor(value)
 }
 
 // dialogPolicy is armed by a browser_handle_dialog action and consumed by the

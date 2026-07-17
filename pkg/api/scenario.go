@@ -235,6 +235,39 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 	for i := range req.Groups {
 		req.Groups[i].RuntimeSettings = reconcileGroupRuntimeSecrets(req.Groups[i].RuntimeSettings, existingGroupRuntime(existing, req.Groups[i]))
 	}
+	protectedRoot, rootValues, _, err := protectLegacyRuntimeOverrideSecrets(id, -1, nil, req.RuntimeSettings)
+	if err != nil {
+		return nil, fmt.Errorf("protect scenario runtime credentials: %w", err)
+	}
+	runtimeSecretValues := cloneRuntimeSecretValues(rootValues)
+	clearRuntimeValues := func(values map[string]string) {
+		for name := range values {
+			values[name] = ""
+			delete(values, name)
+		}
+	}
+	clearRuntimeValues(rootValues)
+	defer clearRuntimeValues(runtimeSecretValues)
+	req.RuntimeSettings = protectedRoot
+	for i := range req.Groups {
+		protected, values, _, protectErr := protectLegacyRuntimeOverrideSecrets(id, i, nil, req.Groups[i].RuntimeSettings)
+		if protectErr != nil {
+			clearRuntimeValues(values)
+			return nil, fmt.Errorf("protect scenario group[%d] runtime credentials: %w", i, protectErr)
+		}
+		if runtimeSecretValues == nil && len(values) > 0 {
+			runtimeSecretValues = make(map[string]string, len(values))
+		}
+		for name, value := range values {
+			if prior, exists := runtimeSecretValues[name]; exists && prior != value {
+				clearRuntimeValues(values)
+				return nil, fmt.Errorf("runtime credential projection conflict for %s", name)
+			}
+			runtimeSecretValues[name] = value
+		}
+		clearRuntimeValues(values)
+		req.Groups[i].RuntimeSettings = protected
+	}
 	if _, err := validateScenarioRequest(CreateTestRequest{
 		ScenarioMode: req.ScenarioMode,
 		Duration:     req.Duration,
@@ -247,6 +280,9 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 	groups, err := normalizeCreateTestGroups(CreateTestRequest{Groups: req.Groups})
 	if err != nil {
 		return nil, err
+	}
+	for index := range groups {
+		groups[index].runtimeSecretScope = id
 	}
 	testGroups, engineGroups, _, err := tr.compileManagedTestGroupsForModeWithDataSourcesLocked(groups, req.RuntimeSettings, nil, normalizeScenarioMode(req.ScenarioMode))
 	if err != nil {
@@ -320,25 +356,54 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 	if err := tr.validateDataPoolProjectsLocked(projectID, dataPools); err != nil {
 		return nil, err
 	}
+	actor := req.creationActor
+	if strings.TrimSpace(actor.Type) == "" && strings.TrimSpace(actor.Subject) == "" {
+		actor = systemTestCreationActor("controller:scenario-store")
+	}
+	credentialGroups := []TestGroup(nil)
+	if len(runtimeSecretValues) > 0 {
+		credentialGroups = []TestGroup{{runtimeSecretValues: runtimeSecretValues}}
+	}
+	commitFingerprint := scenarioRuntimeCommitFingerprint(scenario, scripts)
+	runtimeSecretAttempt, err := tr.persistRuntimeOverrideSecretValuesForResource(
+		projectID, id, commitFingerprint, refKey, credentialGroups, actor,
+		runtimeSecretProvisioningOptions{
+			ResourceType:      "scenario",
+			CommitFingerprint: commitFingerprint,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	rollbackProvisioning := func(persistErr error) error {
+		rollbackErr := tr.rollbackRuntimeOverrideSecretAttempt(projectID, id, runtimeSecretAttempt, "scenario_persistence_failed")
+		return errors.Join(persistErr, rollbackErr)
+	}
 	if writer != nil {
 		if err := writer(scenario, scripts, dataPools); err != nil {
-			return nil, err
+			return nil, rollbackProvisioning(err)
 		}
 	} else if tr.scenarioStore != nil {
 		if atomicStore, ok := tr.scenarioStore.(atomicScenarioPersistence); ok {
 			if err := atomicStore.SaveScenarioWithDataPoolBindings(scenario, scripts, dataPools); err != nil {
-				return nil, err
+				return nil, rollbackProvisioning(err)
 			}
 		} else {
 			// Non-SQL test/adaptor stores retain the legacy two-call contract.
 			// Production SQLite/PostgreSQL stores implement the atomic interface.
 			if err := tr.scenarioStore.SaveScenario(scenario, scripts); err != nil {
-				return nil, err
+				return nil, rollbackProvisioning(err)
 			}
 			if err := tr.scenarioStore.SaveScenarioDataPoolBindings(id, dataPools); err != nil {
-				return nil, err
+				return nil, rollbackProvisioning(err)
 			}
 		}
+	}
+	if err := tr.completeRuntimeOverrideSecretAttempt(runtimeSecretAttempt); err != nil {
+		// The scenario fingerprint is durable commit evidence. Recovery retains
+		// the governed values and removes only the value-free journal.
+		slog.Warn("scenario runtime credential provisioning journal cleanup deferred", "scenario_id", id, "error", err)
+		tr.scheduleRuntimeOverrideSecretAttempt(runtimeSecretAttempt.ID, runtimeSecretAttempt.LeaseExpiresAt)
 	}
 	stored := tr.buildStoredScenario(scenario, scripts)
 	stored.DataPools = dataPools
@@ -346,6 +411,39 @@ func (tr *TestRunner) storeScenarioLockedWithWriter(id string, req CreateScenari
 	tr.contentRevision++
 	tr.indexRefKeyLocked(stored.RefKey, stored.ID)
 	return stored, nil
+}
+
+func scenarioRuntimeCommitFingerprint(scenario *storage.Scenario, scripts []storage.ScenarioScript) string {
+	if scenario == nil {
+		return ""
+	}
+	return hashCanonical(struct {
+		ID               string
+		RefKey           string
+		Name             string
+		Duration         string
+		StartDelay       string
+		ScenarioMode     string
+		ScriptShakeout   bool
+		ResourceBaseline bool
+		Assignment       any
+		GoalConfig       any
+		RuntimeSettings  any
+		Scripts          []storage.ScenarioScript
+	}{
+		ID:               scenario.ID,
+		RefKey:           scenario.RefKey,
+		Name:             scenario.Name,
+		Duration:         scenario.Duration,
+		StartDelay:       scenario.StartDelay,
+		ScenarioMode:     scenario.ScenarioMode,
+		ScriptShakeout:   scenario.ScriptShakeout,
+		ResourceBaseline: scenario.ResourceBaseline,
+		Assignment:       scenario.Assignment,
+		GoalConfig:       scenario.GoalConfig,
+		RuntimeSettings:  scenario.RuntimeSettings,
+		Scripts:          scripts,
+	})
 }
 
 func normalizeScenarioDataPoolBindings(scenarioID string, bindings []storage.ScenarioDataPoolBinding) ([]storage.ScenarioDataPoolBinding, error) {

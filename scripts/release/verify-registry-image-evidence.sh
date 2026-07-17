@@ -21,7 +21,7 @@ command -v jq >/dev/null || die "jq is required"
 evidence_tmp="$(mktemp -d)"
 trap 'rm -rf "$evidence_tmp"' EXIT
 
-cosign verify --key "$public_key" --insecure-ignore-tlog=true "$image" >/dev/null
+cosign verify --key "$public_key" "$image" >/dev/null
 index="$(skopeo inspect --raw "docker://${image}")" || die "could not inspect image index"
 platform_count=0
 while IFS=$'\t' read -r architecture digest expected_child_size; do
@@ -75,7 +75,7 @@ while IFS=$'\t' read -r architecture digest expected_child_size; do
     || die "platform digest ${digest} configuration does not match linux/${architecture}"
   sbom="$amd64_sbom"
   [[ "$architecture" == arm64 ]] && sbom="$arm64_sbom"
-  cosign verify --key "$public_key" --insecure-ignore-tlog=true "${repository}@${digest}" >/dev/null
+  cosign verify --key "$public_key" "${repository}@${digest}" >/dev/null
   "$(dirname "${BASH_SOURCE[0]}")/verify-sbom-attestation.sh" \
     "${repository}@${digest}" "$public_key" "$sbom"
   platform_count=$((platform_count + 1))

@@ -81,18 +81,36 @@ func (s *Server) persistRecordedBaseline(scriptID, source string, observations [
 }
 
 // captureRecordingBaseline persists the recorded baseline for a newly-created
-// script from a still-live recording session. Best-effort: capture failures
-// never block script creation.
-func (s *Server) captureRecordingBaseline(scriptID, sessionID string) {
+// HTTP script from a still-live proxy recording session. Browser-recorder
+// sessions are deliberately excluded: their UI actions do not have a stable
+// one-to-one mapping to side-car HAR requests, and the HAR conversion path does
+// not currently expose an action-aligned raw observation set. Attaching either
+// source to browser action indexes would make later correlation diagnosis
+// misleading. Best-effort: capture failures never block script creation.
+func (s *Server) captureRecordingBaseline(scriptID, scriptProjectID, sessionID string) {
 	sessionID = strings.TrimSpace(sessionID)
-	if sessionID == "" || s.recorder == nil {
+	if sessionID == "" {
+		return
+	}
+	// A source id can be supplied by either recording surface. Resolve the
+	// headed-browser namespace first so an unlikely id collision can never
+	// attach an unrelated proxy baseline to a browser-generated script.
+	if s.browserRecording != nil {
+		if _, ok := s.browserRecording.Get(sessionID); ok {
+			return
+		}
+	}
+	if s.recorder == nil {
 		return
 	}
 	session, ok := s.recorder.GetSession(sessionID)
 	if !ok {
 		return
 	}
-	if err := s.persistRecordedBaseline(scriptID, "browser_recording", recorder.SessionBaseline(session)); err != nil {
+	if normalizeProjectID(session.ProjectID) != normalizeProjectID(scriptProjectID) {
+		return
+	}
+	if err := s.persistRecordedBaseline(scriptID, "proxy_recording", recorder.SessionBaseline(session)); err != nil {
 		slog.Warn("failed to persist recorded baseline", "script_id", scriptID, "error", err)
 	}
 }

@@ -104,15 +104,15 @@ func renderExecutionPlanScheduleRunName(schedule *storage.ExecutionPlanSchedule,
 	return out
 }
 
-func (tr *TestRunner) CreateExecutionPlanSchedule(planID string, req CreateExecutionPlanScheduleRequest) (*storage.ExecutionPlanSchedule, error) {
+func (tr *TestRunner) CreateExecutionPlanSchedule(planID string, req CreateExecutionPlanScheduleRequest, actors ...testCreationActor) (*storage.ExecutionPlanSchedule, error) {
 	leaseTerm, err := tr.captureExecutionLeaseTerm()
 	if err != nil {
 		return nil, err
 	}
-	return tr.upsertExecutionPlanScheduleWithTerm(planID, uuid.New().String(), nil, req, leaseTerm)
+	return tr.upsertExecutionPlanScheduleWithTerm(planID, uuid.New().String(), nil, req, leaseTerm, actors...)
 }
 
-func (tr *TestRunner) UpdateExecutionPlanSchedule(planID, scheduleID string, req CreateExecutionPlanScheduleRequest) (*storage.ExecutionPlanSchedule, bool, error) {
+func (tr *TestRunner) UpdateExecutionPlanSchedule(planID, scheduleID string, req CreateExecutionPlanScheduleRequest, actors ...testCreationActor) (*storage.ExecutionPlanSchedule, bool, error) {
 	if tr.execPlanScheduleStore == nil {
 		return nil, false, fmt.Errorf("storage is not configured")
 	}
@@ -130,19 +130,19 @@ func (tr *TestRunner) UpdateExecutionPlanSchedule(planID, scheduleID string, req
 	if existing == nil || existing.PlanID != planID {
 		return nil, false, nil
 	}
-	updated, err := tr.upsertExecutionPlanScheduleWithTerm(planID, scheduleID, existing, req, leaseTerm)
+	updated, err := tr.upsertExecutionPlanScheduleWithTerm(planID, scheduleID, existing, req, leaseTerm, actors...)
 	return updated, true, err
 }
 
-func (tr *TestRunner) upsertExecutionPlanSchedule(planID, scheduleID string, existing *storage.ExecutionPlanSchedule, req CreateExecutionPlanScheduleRequest) (*storage.ExecutionPlanSchedule, error) {
+func (tr *TestRunner) upsertExecutionPlanSchedule(planID, scheduleID string, existing *storage.ExecutionPlanSchedule, req CreateExecutionPlanScheduleRequest, actors ...testCreationActor) (*storage.ExecutionPlanSchedule, error) {
 	leaseTerm, err := tr.captureExecutionLeaseTerm()
 	if err != nil {
 		return nil, err
 	}
-	return tr.upsertExecutionPlanScheduleWithTerm(planID, scheduleID, existing, req, leaseTerm)
+	return tr.upsertExecutionPlanScheduleWithTerm(planID, scheduleID, existing, req, leaseTerm, actors...)
 }
 
-func (tr *TestRunner) upsertExecutionPlanScheduleWithTerm(planID, scheduleID string, existing *storage.ExecutionPlanSchedule, req CreateExecutionPlanScheduleRequest, leaseTerm executionLeaseTerm) (*storage.ExecutionPlanSchedule, error) {
+func (tr *TestRunner) upsertExecutionPlanScheduleWithTerm(planID, scheduleID string, existing *storage.ExecutionPlanSchedule, req CreateExecutionPlanScheduleRequest, leaseTerm executionLeaseTerm, actors ...testCreationActor) (*storage.ExecutionPlanSchedule, error) {
 	if tr.execPlanScheduleStore == nil {
 		return nil, fmt.Errorf("storage is not configured")
 	}
@@ -188,21 +188,31 @@ func (tr *TestRunner) upsertExecutionPlanScheduleWithTerm(planID, scheduleID str
 	if runNameTemplate == "" {
 		runNameTemplate = plan.Name
 	}
+	actor := systemTestCreationActor("controller:execution-plan-schedule")
+	if existing != nil {
+		actor = executionPlanScheduleCreationActor(existing)
+	}
+	if len(actors) > 0 {
+		actor = normalizeTestCreationActor(actors[0])
+	}
 	schedule := &storage.ExecutionPlanSchedule{
-		ID:              scheduleID,
-		PlanID:          planID,
-		ProjectID:       normalizeProjectID(plan.ProjectID),
-		Revision:        1,
-		Name:            name,
-		CronExpr:        cronExpr,
-		Timezone:        tz,
-		RunNameTemplate: runNameTemplate,
-		Enabled:         enabled,
-		MissedRunPolicy: normalizeScenarioScheduleMissedRunPolicy(req.MissedRunPolicy),
-		DisabledFrom:    disabledFrom,
-		DisabledUntil:   disabledUntil,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		ID:               scheduleID,
+		PlanID:           planID,
+		ProjectID:        normalizeProjectID(plan.ProjectID),
+		Revision:         1,
+		Name:             name,
+		CronExpr:         cronExpr,
+		Timezone:         tz,
+		RunNameTemplate:  runNameTemplate,
+		Enabled:          enabled,
+		MissedRunPolicy:  normalizeScenarioScheduleMissedRunPolicy(req.MissedRunPolicy),
+		DisabledFrom:     disabledFrom,
+		DisabledUntil:    disabledUntil,
+		ActorType:        actor.Type,
+		ActorSubject:     actor.Subject,
+		ActorDisplayName: actor.DisplayName,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 	if existing != nil {
 		schedule.Revision = existing.Revision + 1
@@ -238,6 +248,42 @@ func (tr *TestRunner) upsertExecutionPlanScheduleWithTerm(planID, scheduleID str
 		return nil, err
 	}
 	return schedule, nil
+}
+
+func executionPlanScheduleCreationActor(schedule *storage.ExecutionPlanSchedule) testCreationActor {
+	if schedule == nil || (strings.TrimSpace(schedule.ActorType) == "" && strings.TrimSpace(schedule.ActorSubject) == "") {
+		return normalizeTestCreationActor(testCreationActor{
+			Type: "legacy", Subject: "controller:execution-plan-schedule-unattributed",
+		})
+	}
+	return normalizeTestCreationActor(testCreationActor{
+		Type:        schedule.ActorType,
+		Subject:     schedule.ActorSubject,
+		DisplayName: schedule.ActorDisplayName,
+	})
+}
+
+func stampExecutionPlanScheduleOccurrenceActor(occurrence *storage.ExecutionPlanScheduleOccurrence, schedule *storage.ExecutionPlanSchedule) {
+	if occurrence == nil {
+		return
+	}
+	actor := executionPlanScheduleCreationActor(schedule)
+	occurrence.ActorType = actor.Type
+	occurrence.ActorSubject = actor.Subject
+	occurrence.ActorDisplayName = actor.DisplayName
+}
+
+func executionPlanScheduleOccurrenceCreationActor(occurrence *storage.ExecutionPlanScheduleOccurrence) testCreationActor {
+	if occurrence == nil || (strings.TrimSpace(occurrence.ActorType) == "" && strings.TrimSpace(occurrence.ActorSubject) == "") {
+		return normalizeTestCreationActor(testCreationActor{
+			Type: "legacy", Subject: "controller:execution-plan-schedule-occurrence-unattributed",
+		})
+	}
+	return normalizeTestCreationActor(testCreationActor{
+		Type:        occurrence.ActorType,
+		Subject:     occurrence.ActorSubject,
+		DisplayName: occurrence.ActorDisplayName,
+	})
 }
 
 func executionPlanScheduleTimingEquivalent(left, right *storage.ExecutionPlanSchedule) bool {
@@ -526,6 +572,7 @@ func (tr *TestRunner) applyMissedExecutionPlanSchedulePolicy(schedule *storage.E
 			UpdatedAt:        now,
 			TransitionToken:  uuid.NewString(),
 		}
+		stampExecutionPlanScheduleOccurrenceActor(occurrence, schedule)
 		if _, err := tr.createExecutionPlanScheduleOccurrenceWithTerm(occurrence, leaseTerm); err != nil {
 			return true, err
 		}
@@ -566,6 +613,7 @@ func (tr *TestRunner) applyMissedExecutionPlanSchedulePolicy(schedule *storage.E
 			UpdatedAt:        now,
 			TransitionToken:  uuid.NewString(),
 		}
+		stampExecutionPlanScheduleOccurrenceActor(occurrence, schedule)
 		if _, err := tr.createExecutionPlanScheduleOccurrenceWithTerm(occurrence, leaseTerm); err != nil {
 			return true, err
 		}
@@ -658,6 +706,7 @@ func (tr *TestRunner) runDueExecutionPlanScheduleOnceWithTerm(schedule *storage.
 		UpdatedAt:        now,
 		TransitionToken:  uuid.NewString(),
 	}
+	stampExecutionPlanScheduleOccurrenceActor(occurrence, schedule)
 	claimed, err := tr.createExecutionPlanScheduleOccurrenceWithTerm(occurrence, leaseTerm)
 	if err != nil {
 		return fmt.Errorf("claim execution-plan schedule occurrence: %w", err)
@@ -754,7 +803,12 @@ func (tr *TestRunner) materializeClaimedExecutionPlanScheduleOccurrence(schedule
 		// work merely because the lease changed between two durable boundaries.
 		return errNotExecutionLeader
 	}
-	result, err := tr.materializeAndRunExecutionPlanWithRunIDAndTerm(plan, "", "", runName, occurrence.RunID, leaseTerm)
+	actor := executionPlanScheduleOccurrenceCreationActor(occurrence)
+	attribSubject := ""
+	if actor.Type == "user" || actor.Type == "service_account" {
+		attribSubject = actor.Subject
+	}
+	result, err := tr.materializeAndRunExecutionPlanWithRunIDAndTerm(plan, attribSubject, actor.DisplayName, runName, occurrence.RunID, leaseTerm, actor)
 	if err != nil {
 		persistedRunID := ""
 		if tr.execPlanRunStore != nil {
@@ -839,7 +893,9 @@ func executionPlanScheduleOccurrenceTransitionMatches(current, intended *storage
 		current.PlannedAt.Equal(intended.PlannedAt) && current.Revision == expectedRevision+1 &&
 		current.TransitionToken == intended.TransitionToken && current.Status == intended.Status &&
 		current.ReasonCode == intended.ReasonCode && current.RunID == intended.RunID &&
-		current.ConflictSummary == intended.ConflictSummary && sameOptionalTime(current.MaterializedAt, intended.MaterializedAt)
+		current.ConflictSummary == intended.ConflictSummary && current.ActorType == intended.ActorType &&
+		current.ActorSubject == intended.ActorSubject && current.ActorDisplayName == intended.ActorDisplayName &&
+		sameOptionalTime(current.MaterializedAt, intended.MaterializedAt)
 }
 
 func (tr *TestRunner) finalizeExecutionPlanScheduleOccurrence(schedule *storage.ExecutionPlanSchedule, occurrence *storage.ExecutionPlanScheduleOccurrence, now time.Time, status, reasonCode, runID, lastErr string, leaseTerm executionLeaseTerm) error {

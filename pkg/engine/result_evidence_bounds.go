@@ -59,6 +59,8 @@ func boundResultEvidence(result *protocol.Result) {
 
 func boundResultMetadata(result *protocol.Result) {
 	result.ActionName = cloneBoundedResultString(result.ActionName, maxResultMetadataBytes)
+	result.SampleKind = cloneBoundedResultString(result.SampleKind, maxResultMetadataBytes)
+	result.ParentActionName = cloneBoundedResultString(result.ParentActionName, maxResultMetadataBytes)
 	result.Group = cloneBoundedResultString(result.Group, maxResultMetadataBytes)
 	result.Region = cloneBoundedResultString(result.Region, maxResultMetadataBytes)
 	result.CorrelationID = cloneBoundedResultString(result.CorrelationID, maxResultMetadataBytes)
@@ -70,6 +72,10 @@ func boundResultMetadata(result *protocol.Result) {
 	result.SourceActionName = cloneBoundedResultString(result.SourceActionName, maxResultMetadataBytes)
 	result.SourceTransaction = cloneBoundedResultString(result.SourceTransaction, maxResultMetadataBytes)
 	result.SourceProfile = cloneBoundedResultString(result.SourceProfile, maxResultMetadataBytes)
+	result.SourcePath = cloneBoundedResultString(result.SourcePath, maxResultMetadataBytes)
+	result.SourceUID = cloneBoundedResultString(result.SourceUID, maxResultMetadataBytes)
+	result.RequestType = cloneBoundedResultString(result.RequestType, maxResultMetadataBytes)
+	result.OperationKind = cloneBoundedResultString(result.OperationKind, maxResultMetadataBytes)
 	if result.ClientMetrics != nil {
 		result.ClientMetrics.DeviceProfile = cloneBoundedResultString(result.ClientMetrics.DeviceProfile, maxResultMetadataBytes)
 		result.ClientMetrics.DevicePlatform = cloneBoundedResultString(result.ClientMetrics.DevicePlatform, maxResultMetadataBytes)

@@ -94,6 +94,7 @@ var (
 func actionCatalogSeeds() []ActionSpec {
 	var seeds []ActionSpec
 	seeds = append(seeds, engineActionSpecs()...)
+	seeds = append(seeds, brunoActionSpecs()...)
 	seeds = append(seeds, httpActionSpecs()...)
 	seeds = append(seeds, browserActionSpecs()...)
 	seeds = append(seeds, websocketActionSpecs()...)

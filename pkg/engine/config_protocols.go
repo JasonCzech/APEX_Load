@@ -6,6 +6,30 @@ import "github.com/jasonczech/apexload/pkg/dsl"
 // Each reads one protocol section off the script and writes the flattened keys into
 // cfg; secret resolution happens once in the orchestrator.
 
+func appendBrunoConfig(cfg map[string]any, script *dsl.Script) {
+	bruno := script.Config.Bruno
+	cfg["bruno_bundle_ref"] = bruno.BundleRef
+	cfg["bruno_bundle_sha256"] = bruno.BundleSHA256
+	cfg["bruno_manifest_sha256"] = bruno.ManifestSHA256
+	cfg["bruno_source_format"] = bruno.SourceFormat
+	cfg["bruno_source_revision"] = bruno.SourceRevision
+	cfg["bruno_compatibility_version"] = bruno.CompatibilityVersion
+	cfg["bruno_dependency_snapshot_ref"] = bruno.DependencySnapshotRef
+	cfg["bruno_default_environment"] = bruno.DefaultEnvironment
+	cfg["bruno_default_global_environment"] = bruno.DefaultGlobalEnvironment
+	cfg["bruno_sandbox"] = bruno.Sandbox
+	cfg["bruno_runner_profile"] = bruno.RunnerProfile
+	cfg["bruno_persist_session_across_iterations"] = bruno.PersistSessionAcrossIterations
+	cfg["bruno_max_jumps"] = float64(bruno.Limits.MaxJumps)
+	cfg["bruno_max_run_request_depth"] = float64(bruno.Limits.MaxRunRequestDepth)
+	cfg["bruno_max_parallel_requests"] = float64(bruno.Limits.MaxParallelRequests)
+	cfg["bruno_max_output_bytes"] = float64(bruno.Limits.MaxOutputBytes)
+	cfg["bruno_default_stream_timeout_ms"] = float64(bruno.Limits.DefaultStreamTimeoutMs)
+	if len(bruno.SecretBindings) > 0 {
+		cfg["bruno_secret_bindings"] = bruno.SecretBindings
+	}
+}
+
 func appendHTTPConfig(cfg map[string]any, script *dsl.Script) {
 	httpCfg := script.Config.HTTP
 	// Timeouts

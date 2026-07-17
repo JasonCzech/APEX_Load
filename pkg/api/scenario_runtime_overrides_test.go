@@ -2,6 +2,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -20,7 +21,8 @@ func newRuntimeOverrideTestServer(t *testing.T) (*Server, storage.Store) {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	t.Cleanup(func() { store.Close() })
-	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 4, Addr: ":8080"})
+	secrets := &runtimeProjectionSecretStore{values: make(map[string]string), attemptStore: store}
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 4, Addr: ":8080", ProjectSecretStore: secrets})
 	return server, store
 }
 
@@ -255,11 +257,21 @@ func TestScenarioUpdatePreservesMaskedSecretsAcrossReorder(t *testing.T) {
 			secretByScript[ref.ScriptID] = ref.RuntimeSettings.Env["API_TOKEN"]
 		}
 	}
-	if secretByScript["script-a"] != "a-secret" {
-		t.Fatalf("script-a secret = %q, want a-secret (preserved across reorder)", secretByScript["script-a"])
+	if secretByScript["script-a"] != "{{secret."+runtimeOverrideSecretName(scenario.ID, 0, "env.API_TOKEN")+"}}" {
+		t.Fatalf("script-a secret reference = %q, want stable protected reference", secretByScript["script-a"])
 	}
-	if secretByScript["script-b"] != "b-secret" {
-		t.Fatalf("script-b secret = %q, want b-secret (preserved across reorder)", secretByScript["script-b"])
+	if secretByScript["script-b"] != "{{secret."+runtimeOverrideSecretName(scenario.ID, 1, "env.API_TOKEN")+"}}" {
+		t.Fatalf("script-b secret reference = %q, want stable protected reference", secretByScript["script-b"])
+	}
+	managed := server.projectSecretStore.(*runtimeProjectionSecretStore)
+	for name, want := range map[string]string{
+		runtimeOverrideSecretName(scenario.ID, 0, "env.API_TOKEN"): "a-secret",
+		runtimeOverrideSecretName(scenario.ID, 1, "env.API_TOKEN"): "b-secret",
+	} {
+		got, _, getErr := managed.Get(context.Background(), storage.DefaultProjectID, name)
+		if getErr != nil || got != want {
+			t.Fatalf("governed %s = %q, %v; want %q", name, got, getErr, want)
+		}
 	}
 }
 

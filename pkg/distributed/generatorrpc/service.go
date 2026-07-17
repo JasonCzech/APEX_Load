@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -35,6 +36,7 @@ import (
 type cachedScript struct {
 	content  []byte
 	hash     string
+	protocol string
 	lastUsed uint64
 }
 
@@ -55,6 +57,7 @@ type assignedTest struct {
 	groupTransactions      map[string][]TransactionMetric
 	groupAggregates        map[string]metricsAggregateSet
 	groupAssignments       map[string][sha256.Size]byte
+	groupSecretBundleIDs   map[string]string
 	groupScripts           map[string]string
 	terminalError          string
 }
@@ -136,6 +139,9 @@ func validateAssignmentMetadataBounds(assignment *pb.WorkAssignment) error {
 	if err := validateGeneratorFieldBytes(assignment.GetExpectedScriptHash(), "expected_script_hash", maxGeneratorHashBytes); err != nil {
 		return err
 	}
+	if err := validateGeneratorFieldBytes(assignment.GetSecretBundleId(), "secret_bundle_id", maxGeneratorHashBytes); err != nil {
+		return err
+	}
 	if len(assignment.GetDataFiles()) > maxAssignmentDataFiles {
 		return status.Errorf(codes.InvalidArgument, "data_files exceeds %d entries", maxAssignmentDataFiles)
 	}
@@ -167,6 +173,15 @@ func validateAssignmentMetadataBounds(assignment *pb.WorkAssignment) error {
 		if environmentBytes > maxAssignmentEnvironmentBytes {
 			return status.Errorf(codes.InvalidArgument, "environment exceeds %d bytes", maxAssignmentEnvironmentBytes)
 		}
+	}
+	if err := ValidateSecretBundle(assignment.GetSecretBundle()); err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
+	}
+	if len(assignment.GetSecretBundle()) > 0 && strings.TrimSpace(assignment.GetSecretBundleId()) == "" {
+		return status.Error(codes.InvalidArgument, "secret_bundle_id is required for secret-bearing assignments")
+	}
+	if len(assignment.GetSecretBundle()) == 0 && strings.TrimSpace(assignment.GetSecretBundleId()) != "" {
+		return status.Error(codes.InvalidArgument, "secret_bundle_id requires a secret bundle")
 	}
 	return nil
 }
@@ -964,6 +979,9 @@ func (s *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssignment)
 	if err := validateAssignmentMetadataBounds(assignment); err != nil {
 		return nil, err
 	}
+	if len(assignment.GetSecretBundle()) > 0 && !TransportSecurityFromEnv().AllowsSecretDelivery() {
+		return nil, status.Error(codes.FailedPrecondition, "secret-bearing assignments require authenticated TLS (mTLS or verified TLS plus generator auth token)")
+	}
 	if assignment.GetVuserCount() < 0 {
 		return nil, status.Error(codes.InvalidArgument, "vuser_count must not be negative")
 	}
@@ -1029,13 +1047,26 @@ func (s *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssignment)
 	}
 	ancillaryBytes := int64(proto.Size(assignment) - len(assignment.GetScriptContent()))
 	ancillaryLimit := generatorRPCAssignmentAncillaryLimit(s.scriptCacheLimit)
+	secretEnvelopeBytes := int64(proto.Size(&pb.WorkAssignment{
+		SecretBundle:   assignment.GetSecretBundle(),
+		SecretBundleId: assignment.GetSecretBundleId(),
+	}))
+	if ancillaryLimit <= int64(^uint64(0)>>1)-secretEnvelopeBytes {
+		ancillaryLimit += secretEnvelopeBytes
+	}
 	if ancillaryBytes > ancillaryLimit {
 		s.mu.RLock()
 		availableCapacity := s.availableCapacityLocked()
 		s.mu.RUnlock()
+		message := fmt.Sprintf("assignment data and metadata are %d bytes and exceed limit %d", ancillaryBytes, ancillaryLimit)
+		if len(assignment.GetSecretBundle()) > 0 {
+			// The protobuf size includes the write-only secret envelope. Do not
+			// turn an admission error into an aggregate credential-length oracle.
+			message = "assignment data and metadata exceed the runtime limit"
+		}
 		return &pb.AssignmentAck{
 			Accepted:          false,
-			ErrorMessage:      fmt.Sprintf("assignment data and metadata are %d bytes and exceed limit %d", ancillaryBytes, ancillaryLimit),
+			ErrorMessage:      message,
 			AvailableCapacity: availableCapacity,
 		}, nil
 	}
@@ -1090,7 +1121,11 @@ func (s *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssignment)
 		}
 		if existing, groupExists := current.groups[assignment.GetGroupName()]; groupExists {
 			existingFingerprint, fingerprintExists := current.groupAssignments[assignment.GetGroupName()]
-			if existing == assignment.GetVuserCount() && fingerprintExists && existingFingerprint == assignmentFingerprint {
+			existingSecretBundleID := current.groupSecretBundleIDs[assignment.GetGroupName()]
+			if existing == assignment.GetVuserCount() &&
+				fingerprintExists &&
+				existingFingerprint == assignmentFingerprint &&
+				existingSecretBundleID == assignment.GetSecretBundleId() {
 				return &pb.AssignmentAck{
 					Accepted:          true,
 					AvailableCapacity: s.availableCapacityLocked(),
@@ -1144,6 +1179,18 @@ func (s *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssignment)
 			AvailableCapacity: s.availableCapacityLocked(),
 		}, nil
 	}
+	if instance, getErr := protocol.Get(cached.protocol); getErr == nil {
+		if provider, ok := instance.(protocol.RuntimeCapabilityProvider); ok {
+			capabilities := provider.RuntimeCapabilities()
+			if capabilities.MaxVUsers > 0 && int64(assignment.GetVuserCount())+s.activeProtocolVUsersLocked(cached.protocol) > capabilities.MaxVUsers {
+				return &pb.AssignmentAck{
+					Accepted:          false,
+					ErrorMessage:      fmt.Sprintf("insufficient %s runtime capacity: maximum %d", cached.protocol, capabilities.MaxVUsers),
+					AvailableCapacity: s.availableCapacityLocked(),
+				}, nil
+			}
+		}
+	}
 
 	projected := s.activeVUsers64Locked() + int64(assignment.GetVuserCount())
 	if projected > int64(s.maxVUsers) {
@@ -1194,6 +1241,9 @@ func (s *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssignment)
 	if current.groupAssignments == nil {
 		current.groupAssignments = make(map[string][sha256.Size]byte)
 	}
+	if current.groupSecretBundleIDs == nil {
+		current.groupSecretBundleIDs = make(map[string]string)
+	}
 	if current.groupScripts == nil {
 		current.groupScripts = make(map[string]string)
 	}
@@ -1233,6 +1283,7 @@ func (s *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssignment)
 	current.groups[assignment.GetGroupName()] += assignment.GetVuserCount()
 	current.activeGroups[assignment.GetGroupName()] += assignment.GetVuserCount()
 	current.groupAssignments[assignment.GetGroupName()] = assignmentFingerprint
+	current.groupSecretBundleIDs[assignment.GetGroupName()] = assignment.GetSecretBundleId()
 	current.groupScripts[assignment.GetGroupName()] = assignment.GetScriptId()
 	current.vuserCount += assignment.GetVuserCount()
 	s.assignments[assignment.GetTestId()] = current
@@ -1252,6 +1303,7 @@ func (s *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssignment)
 				delete(current.activeGroups, assignment.GetGroupName())
 			}
 			delete(current.groupAssignments, assignment.GetGroupName())
+			delete(current.groupSecretBundleIDs, assignment.GetGroupName())
 			delete(current.groupScripts, assignment.GetGroupName())
 			if current.vuserCount <= 0 {
 				delete(s.assignments, assignment.GetTestId())
@@ -1287,6 +1339,7 @@ func (s *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssignment)
 				current.activeGroups[assignment.GetGroupName()] -= assignment.GetVuserCount()
 				current.vuserCount -= assignment.GetVuserCount()
 				delete(current.groupAssignments, assignment.GetGroupName())
+				delete(current.groupSecretBundleIDs, assignment.GetGroupName())
 				delete(current.groupScripts, assignment.GetGroupName())
 				if current.groups[assignment.GetGroupName()] <= 0 {
 					delete(current.groups, assignment.GetGroupName())
@@ -2297,8 +2350,8 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			MemoryLimitBytes:   s.podResources.MemoryLimitBytes,
 			MaxVusers:          s.podResources.MaxVUsers,
 			Version:            buildinfo.Get().Version,
-			SupportedProtocols: supportedProtocolNames(),
-			CompatibleFeatures: compatibleFeatureNames(),
+			SupportedProtocols: supportedProtocolNamesForHeartbeat(stream.Context()),
+			CompatibleFeatures: compatibleFeatureNamesForHeartbeat(stream.Context()),
 		}); err != nil {
 			return err
 		}
@@ -2307,24 +2360,119 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 
 func supportedProtocolNames() []string {
 	names := protocol.List()
-	if !config.JavaVuserRunnerEnabled() {
-		filtered := names[:0]
-		for _, name := range names {
-			if strings.EqualFold(strings.TrimSpace(name), "java_vuser") {
+	filtered := names[:0]
+	for _, name := range names {
+		normalized := strings.ToLower(strings.TrimSpace(name))
+		if normalized == "java_vuser" && !config.JavaVuserRunnerEnabled() {
+			continue
+		}
+		if instance, err := protocol.Get(normalized); err == nil {
+			if provider, ok := instance.(protocol.RuntimeCapabilityProvider); ok && !provider.RuntimeCapabilities().Available {
 				continue
 			}
-			filtered = append(filtered, name)
 		}
-		names = filtered
+		filtered = append(filtered, name)
 	}
+	names = filtered
 	sort.Strings(names)
 	return names
 }
 
 func compatibleFeatureNames() []string {
-	features := append(supportedProtocolNames(), FeatureEvacuationAssignmentStateV1)
+	protocols := supportedProtocolNames()
+	features := append(protocols, FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1)
+	for _, name := range protocols {
+		if instance, err := protocol.Get(name); err == nil {
+			if provider, ok := instance.(protocol.RuntimeCapabilityProvider); ok {
+				features = append(features, provider.RuntimeCapabilities().Features...)
+			}
+		}
+	}
 	sort.Strings(features)
 	return features
+}
+
+func supportedProtocolNamesForHeartbeat(ctx context.Context) []string {
+	names := supportedProtocolNames()
+	filtered := names[:0]
+	for _, name := range names {
+		if instance, err := protocol.Get(name); err == nil {
+			if checker, ok := instance.(protocol.RuntimeHealthChecker); ok && !checker.RuntimeHealthy(ctx) {
+				continue
+			}
+		}
+		filtered = append(filtered, name)
+	}
+	return filtered
+}
+
+func compatibleFeatureNamesForHeartbeat(ctx context.Context) []string {
+	available := supportedProtocolNamesForHeartbeat(ctx)
+	features := append([]string{}, available...)
+	features = append(features, FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1)
+	for _, name := range available {
+		if instance, err := protocol.Get(name); err == nil {
+			if provider, ok := instance.(protocol.RuntimeCapabilityProvider); ok {
+				features = append(features, provider.RuntimeCapabilities().Features...)
+			}
+		}
+	}
+	sort.Strings(features)
+	return features
+}
+
+func containsProtocolName(values []string, expected string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), expected) {
+			return true
+		}
+	}
+	return false
+}
+
+func removeProtocolName(values []string, expected string) []string {
+	filtered := values[:0]
+	for _, value := range values {
+		if !strings.EqualFold(strings.TrimSpace(value), expected) {
+			filtered = append(filtered, value)
+		}
+	}
+	return filtered
+}
+
+func configuredBrunoSessionCapacity() int64 {
+	const defaultCapacity = int64(256)
+	raw := strings.TrimSpace(os.Getenv("APEXLOAD_BRUNO_MAX_SESSIONS"))
+	if raw == "" {
+		return defaultCapacity
+	}
+	value, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || value <= 0 || value > maxGeneratorVUsers {
+		return defaultCapacity
+	}
+	return value
+}
+
+func scriptProtocol(content []byte) string {
+	var header struct {
+		Protocol string `json:"protocol"`
+	}
+	if json.Unmarshal(content, &header) != nil {
+		return ""
+	}
+	return strings.ToLower(strings.TrimSpace(header.Protocol))
+}
+
+func (s *Service) activeProtocolVUsersLocked(protocolName string) int64 {
+	var total int64
+	for _, assignment := range s.assignments {
+		for groupName, scriptID := range assignment.groupScripts {
+			if cached, ok := s.scripts[scriptID]; ok && strings.EqualFold(cached.protocol, protocolName) {
+				total += int64(assignment.groups[groupName])
+			}
+		}
+	}
+	return total
 }
 
 func (s *Service) collectResources() *engine.SystemResources {
@@ -3088,6 +3236,11 @@ func (s *Service) startExecutionLocked(ctx context.Context, assignment *pb.WorkA
 	if err := json.Unmarshal(rawScript, &script); err != nil {
 		return status.Errorf(codes.InvalidArgument, "decode script: %v", err)
 	}
+	if instance, getErr := protocol.Get(strings.ToLower(strings.TrimSpace(script.Protocol))); getErr == nil {
+		if provider, ok := instance.(protocol.RuntimeCapabilityProvider); ok && !provider.RuntimeCapabilities().Available {
+			return status.Errorf(codes.FailedPrecondition, "%s runtime is unavailable on this generator", script.Protocol)
+		}
+	}
 	if issues := dsl.ValidateScriptIssues(&script); len(issues) > 0 {
 		const maxValidationMessageBytes = 16 << 10
 		message := strings.Join(issues, "; ")
@@ -3095,6 +3248,13 @@ func (s *Service) startExecutionLocked(ctx context.Context, assignment *pb.WorkA
 			message = boundedtext.TruncateUTF8(message, maxValidationMessageBytes-len("...[truncated]")) + "...[truncated]"
 		}
 		return status.Errorf(codes.InvalidArgument, "validate script: %s", message)
+	}
+	referencedSecrets, err := engine.ReferencedSecretNames(&script)
+	if err != nil {
+		return status.Error(codes.InvalidArgument, "inspect script secret references")
+	}
+	if err := validateAssignmentSecretReferences(referencedSecrets, assignment.GetSecretBundle()); err != nil {
+		return status.Error(codes.InvalidArgument, err.Error())
 	}
 	runLogic := script.Config.RunLogic
 	if shardCount > 1 && (runLogic.GlobalIterations > 0 || runLogic.MaxTransactions > 0) {
@@ -3122,6 +3282,10 @@ func (s *Service) startExecutionLocked(ctx context.Context, assignment *pb.WorkA
 	redactionConfig, err := engine.NewRedactionConfig(redactionRulesFromProto(assignment.GetRedactionRules()))
 	if err != nil {
 		return status.Errorf(codes.InvalidArgument, "build redaction config: %v", err)
+	}
+	redactionConfig, err = engine.WithSecretValueRedactionChecked(redactionConfig, secretBundleValues(assignment.GetSecretBundle()))
+	if err != nil {
+		return status.Errorf(codes.InvalidArgument, "prepare runtime secret redaction: %v", err)
 	}
 	results := &transactionBuffer{lastDrainAt: time.Now()}
 	writer := s.archiveWriters[assignment.GetTestId()]
@@ -3156,6 +3320,7 @@ func (s *Service) startExecutionLocked(ctx context.Context, assignment *pb.WorkA
 			VUserIDSpan:     int(maxGeneratorVUsers),
 			ResultSink:      combineSinks(results, writer),
 			RedactionConfig: redactionConfig,
+			SecretResolver:  secretBundleResolver(assignment.GetSecretBundle()),
 		}},
 		Duration:     duration,
 		PreBaseline:  preBaseline,

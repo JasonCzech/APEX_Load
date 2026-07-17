@@ -515,7 +515,7 @@ func TestRequiredAggregationEnforcesEventSpecificResults(t *testing.T) {
 
 	fullJobs := []string{
 		"workflow-policy", "go-quality", "go-tests", "build", "protocol-tags",
-		"dashboard", "deployment-artifacts", "containers", "govulncheck", "codeql",
+		"dashboard", "bruno-runner", "deployment-artifacts", "containers", "govulncheck", "codeql",
 	}
 	results := func(defaultResult string) map[string]map[string]string {
 		out := map[string]map[string]string{}

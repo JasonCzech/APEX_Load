@@ -28,7 +28,7 @@ func secretBearingScript(id, projectID string) *dsl.Script {
 			},
 			GRPC:      dsl.GRPCConfig{Metadata: map[string]string{"authorization": "grpc-token", "safe": "safe"}},
 			SOAP:      dsl.SOAPConfig{WSSecurity: &dsl.SOAPWSSecurityConfig{UsernameToken: &dsl.SOAPUsernameTokenConfig{Username: "soap-user", Password: "soap-password"}}},
-			Database:  dsl.DatabaseConfig{DSN: "postgres://db-user:db-password@db.test/main", DSNSecret: "{{secret.database_dsn}}"},
+			Database:  dsl.DatabaseConfig{DSN: "postgres://db-user:db-password@db.test/main", DSNSecret: "{{ secret.database-dsn }}"},
 			Network:   dsl.NetworkConfig{Address: "ldap://ldap-user:ldap-password@ldap.test?token=ldap-token", Username: "ldap-user", Password: "ldap-password"},
 			SAPGUI:    dsl.SAPGUIConfig{ConnectionString: "sap-user:sap-password", Username: "sap-user", Password: "sap-password"},
 			JMS:       dsl.JMSConfig{BrokerURL: "https://jms-user:jms-password@jms.test?token=jms-token", Username: "jms-user", Password: "jms-password", Properties: map[string]string{"client.secret": "jms-client-secret"}},
@@ -65,6 +65,27 @@ func secretBearingScript(id, projectID string) *dsl.Script {
 	}
 }
 
+// seedLegacySecretScript models a pre-upgrade in-memory row. Current durable
+// persistence APIs reject these plaintext credentials; projection/export tests
+// still need to prove that an upgraded legacy row cannot be disclosed.
+func seedLegacySecretScript(server *Server, script *dsl.Script) *StoredScript {
+	script = cloneScriptDefinition(script)
+	if script.RefKey == "" {
+		script.RefKey = "LOC-SCR-9999-v1"
+	}
+	now := time.Now().UTC()
+	stored := &StoredScript{
+		ID: script.ID, RefKey: script.RefKey, Name: script.Name, Protocol: script.Protocol,
+		Version: script.Version, ProjectID: script.ProjectID, FolderID: cloneStringPtr(script.FolderID),
+		CreatedAt: now, AuthoringHealth: buildStoredScriptAuthoringHealth(script), Script: script,
+	}
+	server.runner.mu.Lock()
+	server.runner.scripts[stored.ID] = stored
+	server.runner.observeAndIndexRefKeyLocked(stored.RefKey, stored.ID)
+	server.runner.mu.Unlock()
+	return stored
+}
+
 func TestMaskScriptSecretsProjectsEveryCredentialSurface(t *testing.T) {
 	raw := secretBearingScript("projection", "project-a")
 	masked := maskScriptSecrets(raw)
@@ -85,7 +106,7 @@ func TestMaskScriptSecretsProjectsEveryCredentialSurface(t *testing.T) {
 			t.Fatalf("masked script leaked %q: %s", forbidden, text)
 		}
 	}
-	for _, reference := range []string{"{{secret.database_dsn}}", "{{secret.kafka_password}}", "{{secret.eventhub_connection}}", "{{secret.query_token}}", "{{secret.action_token}}", "{{secret.body_token}}"} {
+	for _, reference := range []string{"{{ secret.database-dsn }}", "{{secret.kafka_password}}", "{{secret.eventhub_connection}}", "{{secret.query_token}}", "{{secret.action_token}}", "{{secret.body_token}}"} {
 		if !strings.Contains(text, reference) {
 			t.Fatalf("masked script lost secret reference %q: %s", reference, text)
 		}
@@ -228,10 +249,7 @@ func TestStoredScriptViewerDownloadAndPrivateExportUseProjection(t *testing.T) {
 	exportDir := t.TempDir()
 	t.Setenv("APEXLOAD_EXPORT_DIR", exportDir)
 	server := NewServer(ServerConfig{})
-	stored, err := server.runner.StoreScriptDurable(secretBearingScript("viewer-secret", "project-a"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	stored := seedLegacySecretScript(server, secretBearingScript("viewer-secret", "project-a"))
 
 	assertMasked := func(label string, response *httptest.ResponseRecorder) {
 		t.Helper()
@@ -281,10 +299,7 @@ func TestStoredScriptViewerDownloadAndPrivateExportUseProjection(t *testing.T) {
 
 func TestPortableHashesBundlesAndGitHubPayloadNeverContainSecrets(t *testing.T) {
 	server := NewServer(ServerConfig{})
-	first, err := server.runner.StoreScriptDurable(secretBearingScript("portable", "project-a"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	first := seedLegacySecretScript(server, secretBearingScript("portable", "project-a"))
 	second := secretBearingScript("portable-2", "project-a")
 	second.Config.HTTP.Auth.Password = "different-password"
 	if hashLibraryScript(first.Script) != hashLibraryScript(second) {
@@ -311,9 +326,16 @@ func TestGitHubPushSendsProjectedPayload(t *testing.T) {
 	stub := newGitHubWriteStub(t)
 	server := newGitHubTestServer(t, stub.server.URL)
 	seedGitHubConnection(t, server)
-	stored, err := server.runner.StoreScriptDurable(secretBearingScript("github-secret", "team-a"))
-	if err != nil {
+	legacy := secretBearingScript("github-secret", "team-a")
+	if err := server.store.SaveScript(legacy); err != nil {
 		t.Fatal(err)
+	}
+	if err := server.runner.reloadStoredScripts(); err != nil {
+		t.Fatal(err)
+	}
+	stored, ok := server.runner.GetScript(legacy.ID)
+	if !ok {
+		t.Fatal("legacy GitHub script was not loaded")
 	}
 	body, _ := json.Marshal(githubPushRequest{Owner: "octocat", Repo: "scripts", Branch: "main", Path: "apexload/scripts/x.json", Strategy: "commit"})
 	postGitHubJSON(t, server, "/api/v1/scripts/"+stored.ID+"/github/push", body, http.StatusOK)

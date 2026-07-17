@@ -33,7 +33,9 @@ counterpart to `deployments/k8s/local` (dev) and the on-prem sibling of
    Rotation needs no pod restart: the generator re-reads its cert per TLS
    handshake and the controller re-reads per dial.
 4. **Secrets** — create `apexload-data-platform` per [secret.example.yaml](secret.example.yaml)
-   (DSN, Redis URL, gRPC token, object-store keys).
+   (DSN, Redis URL, gRPC token, Project Secrets wrapping key, object-store
+   keys). The wrapping key enables encrypted database-backed Project Secrets
+   even when Bruno execution is disabled.
 5. **Edit the CHANGE-ME values** — registry in `kustomization.yaml`, ingress
    hostname/TLS secret, object-store endpoint, and ingress/monitoring namespace
    names in `network-policy.yaml`.
@@ -83,6 +85,8 @@ enumerable destination set (DB, cache, generators, HTTPS).
 - [ ] If autoscaling is enabled, KEDA scale-up observed under a large queued test; fleet returns to
       minReplicaCount afterward
 - [ ] `GET /api/v1/system/services` lists every generator pod after a scale event
+- [ ] Project Secrets reports a writable `database` provider and a
+      secret-bearing smoke run reaches only capability-advertised generators
 - [ ] PostgreSQL backups scheduled (pg_dump or your platform's PITR) and
       object-store archive retention configured
 - [ ] OIDC or trusted-header auth configured — `APEXLOAD_ENV=production`

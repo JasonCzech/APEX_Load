@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
 )
 
@@ -163,5 +164,33 @@ func TestMonitorGeneratorHealthRevokesServingAfterRuntimeReadinessFailure(t *tes
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("health watcher did not stop with its context")
+	}
+}
+
+func TestConfigureBrunoResolverFailsClosedWithoutSharedArtifactRoot(t *testing.T) {
+	t.Setenv("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED", "true")
+	t.Setenv("APEXLOAD_BRUNO_ARTIFACT_ROOT", "")
+	if _, err := configureBrunoResolver(); err == nil {
+		t.Fatal("distributed Bruno resolver configured without an artifact root")
+	}
+}
+
+func TestConfigureBrunoResolverInstallsContentAddressedResolver(t *testing.T) {
+	restorePrevious := brunoartifact.SetResolver(nil)
+	t.Cleanup(restorePrevious)
+	t.Setenv("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED", "true")
+	t.Setenv("APEXLOAD_BRUNO_ARTIFACT_ROOT", t.TempDir())
+	t.Setenv(brunoartifact.MasterKeyEnvVar, "0123456789abcdef0123456789abcdef")
+
+	restore, err := configureBrunoResolver()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !brunoartifact.ResolverAvailable() {
+		t.Fatal("Bruno resolver was not installed")
+	}
+	restore()
+	if brunoartifact.ResolverAvailable() {
+		t.Fatal("Bruno resolver restoration did not remove the generator resolver")
 	}
 }

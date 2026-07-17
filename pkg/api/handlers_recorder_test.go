@@ -28,6 +28,7 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 			Method:     http.MethodGet,
 			URL:        "https://shop.example.com/api/cart",
 			Path:       "/api/cart",
+			Headers:    map[string]string{"Authorization": "Bearer preview-secret"},
 			StatusCode: http.StatusOK,
 			StepName:   "Load Cart",
 		},
@@ -60,6 +61,7 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 				Target string `json:"target"`
 			} `json:"actions"`
 		} `json:"script"`
+		SecretBindingRequirements []SecretBindingRequirement `json:"secret_binding_requirements"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -72,6 +74,12 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 	}
 	if result.Script.Actions[0].Target != "/api/cart" {
 		t.Fatalf("target = %q, want /api/cart", result.Script.Actions[0].Target)
+	}
+	if len(result.SecretBindingRequirements) == 0 {
+		t.Fatalf("preview secret requirements = %#v", result.SecretBindingRequirements)
+	}
+	if strings.Contains(resp.Body.String(), "preview-secret") {
+		t.Fatalf("preview disclosed recorded credential: %s", resp.Body.String())
 	}
 	if got := len(server.runner.ListScripts()); got != 0 {
 		t.Fatalf("preview stored %d scripts, want 0", got)
@@ -125,6 +133,7 @@ func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
 				ProjectID string `json:"project_id"`
 			} `json:"script"`
 		} `json:"script"`
+		SecretBindingRequirements []SecretBindingRequirement `json:"secret_binding_requirements"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -134,6 +143,27 @@ func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
 	}
 	if payload.Script.ProjectID != "project-1" || payload.Script.Script.ProjectID != "project-1" {
 		t.Fatalf("stored project ids = wrapper %q script %q, want project-1", payload.Script.ProjectID, payload.Script.Script.ProjectID)
+	}
+	if len(payload.SecretBindingRequirements) < 2 {
+		t.Fatalf("stored conversion requirements = %#v", payload.SecretBindingRequirements)
+	}
+	if strings.Contains(resp.Body.String(), "recorded-secret") || strings.Contains(resp.Body.String(), "hunter2") {
+		t.Fatalf("stored conversion response disclosed source credentials: %s", resp.Body.String())
+	}
+	storedScript, ok := server.runner.GetScript(payload.Script.ID)
+	if !ok || storedScript == nil || storedScript.Script == nil {
+		t.Fatalf("stored script %q was unavailable", payload.Script.ID)
+	}
+	storedJSON, err := json.Marshal(storedScript.Script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(storedJSON), "recorded-secret") || strings.Contains(string(storedJSON), "hunter2") ||
+		strings.Contains(string(storedJSON), scrub.Redacted) {
+		t.Fatalf("stored script contains credential material or an executable sentinel: %s", storedJSON)
+	}
+	if !strings.Contains(string(storedJSON), "{{secret.") {
+		t.Fatalf("stored script has no governed secret references: %s", storedJSON)
 	}
 	record, err := server.store.GetScriptRecording(payload.Script.ID)
 	if err != nil {

@@ -1340,6 +1340,30 @@ func TestExecuteControllerCIAbortsDeterministicRunAfterTimedOutCreate(t *testing
 	}
 }
 
+func TestDerivedCIIdempotencyKeySeparatesGateConfiguration(t *testing.T) {
+	base := CIRunRequest{
+		Name:      "gate",
+		ScriptID:  "script-1",
+		Execution: CIExecution{VUsers: 10, Duration: "1m", RampUp: "0s"},
+		Goals:     CIGoals{RequireSLA: true, RequireResults: true},
+		Source: CISource{
+			ServerURL: "https://github.com", RepositoryID: "1", Repository: "octo/apex",
+			WorkflowRef: "octo/apex/.github/workflows/ci.yml@refs/heads/main", RunID: "10", RunAttempt: "1",
+		},
+	}
+	changed := base
+	changed.Execution.VUsers = 20
+	if deriveCIIdempotencyKey(base) == deriveCIIdempotencyKey(changed) {
+		t.Fatal("different gate execution settings produced the same idempotency key")
+	}
+	changed = base
+	threshold := 500.0
+	changed.Goals.P95LatencyMs = &threshold
+	if deriveCIIdempotencyKey(base) == deriveCIIdempotencyKey(changed) {
+		t.Fatal("different gate SLA settings produced the same idempotency key")
+	}
+}
+
 func TestFinalizeCIResultWritesSafeOutputsAndEvidence(t *testing.T) {
 	dir := t.TempDir()
 	args := defaultCIArgs()

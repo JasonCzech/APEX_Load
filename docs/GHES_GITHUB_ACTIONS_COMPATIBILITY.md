@@ -48,9 +48,11 @@ For every supported workflow revision:
 4. Verify the OpenSSL signature and every downloaded checksum from the internal
    endpoint. Configure the canonical action's `release-base-url` to the mirror
    root and supply the same protected `release-public-key`.
-5. Copy images by manifest digest. Verify portable Cosign signatures before and
-   after the copy; if the registry rewrites the manifest digest, fail rather than
-   silently trusting the tag.
+5. Copy images by manifest digest. Verify portable Cosign signatures and their
+   Rekor transparency-log entries before and after the copy; if the registry
+   rewrites the manifest digest or Rekor is unreachable, fail rather than
+   silently trusting the tag. Fully disconnected environments must mirror the
+   required Rekor evidence instead of disabling transparency-log verification.
 6. Store portable private keys in enterprise KMS/HSM. Runners receive only a
    short-lived signing session and never write exportable private keys to an
    artifact.

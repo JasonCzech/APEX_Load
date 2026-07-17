@@ -1,16 +1,276 @@
 package api
 
 import (
+	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 var runtimeOverrideEnvPattern = regexp.MustCompile(`\{\{\s*env\.([^{}\s]+)\s*\}\}`)
+var runtimeOverrideExactSecretPattern = regexp.MustCompile(`^\{\{\s*secret\.(` + engine.LogicalSecretNameInputPattern + `)\s*\}\}$`)
+var runtimeOverrideAnySecretPattern = regexp.MustCompile(`\{\{\s*secret\.`)
+
+const runtimeOverrideSecretPrefix = "APEX_RUNTIME_OVERRIDE_"
+
+// protectRuntimeOverrideSecrets returns an execution-only override projection:
+// secret-bearing values become deterministic {{secret.*}} references while
+// their plaintext material is retained only in the returned in-memory map.
+// The logical names depend on group/field identity, never on credential bytes,
+// so script hashes and caches cannot fingerprint values.
+func protectRuntimeOverrideSecrets(scope string, groupIndex int, script *dsl.Script, overrides *RuntimeSettingsOverride, rejectExistingRefs bool) (*RuntimeSettingsOverride, map[string]string, error) {
+	protected, values, _, err := protectRuntimeOverrideSecretsWithOptions(scope, groupIndex, script, overrides, rejectExistingRefs, false)
+	return protected, values, err
+}
+
+// protectLegacyRuntimeOverrideSecrets has one deliberately narrower exception
+// than the request-time validator: an already-persisted [REDACTED] sentinel is
+// converted to a deterministic reference with no value. That makes the legacy
+// row non-executable until an operator configures the secret, without treating
+// the sentinel itself as credential material.
+func protectLegacyRuntimeOverrideSecrets(scope string, groupIndex int, script *dsl.Script, overrides *RuntimeSettingsOverride) (*RuntimeSettingsOverride, map[string]string, bool, error) {
+	return protectRuntimeOverrideSecretsWithOptions(scope, groupIndex, script, overrides, false, true)
+}
+
+func protectRuntimeOverrideSecretsWithOptions(scope string, groupIndex int, script *dsl.Script, overrides *RuntimeSettingsOverride, rejectExistingRefs, deferRedacted bool) (*RuntimeSettingsOverride, map[string]string, bool, error) {
+	protected := cloneRuntimeSettings(overrides)
+	if protected == nil {
+		return nil, nil, false, nil
+	}
+	values := make(map[string]string)
+	changed := false
+	existing := make(map[string]struct{})
+	if rejectExistingRefs && script != nil {
+		names, err := engine.ReferencedSecretNames(script)
+		if err != nil {
+			return nil, nil, false, fmt.Errorf("inspect existing secret references")
+		}
+		for _, name := range names {
+			existing[name] = struct{}{}
+		}
+	}
+	protect := func(path, value string, sensitive bool) (string, error) {
+		if value == "" || !sensitive {
+			return value, nil
+		}
+		if runtimeOverrideExactSecretPattern.MatchString(strings.TrimSpace(value)) {
+			return value, nil
+		}
+		if runtimeOverrideAnySecretPattern.MatchString(value) {
+			return "", fmt.Errorf("runtime override %s mixes literal material with a secret reference; use one exact {{secret.NAME}} reference", path)
+		}
+		if strings.EqualFold(strings.TrimSpace(value), scrub.Redacted) {
+			if !deferRedacted {
+				return "", fmt.Errorf("runtime override %s contains a redaction sentinel; enter or clear the credential", path)
+			}
+			name := runtimeOverrideSecretName(scope, groupIndex, path)
+			if _, collision := existing[name]; collision {
+				return "", fmt.Errorf("runtime override %s conflicts with reserved secret reference %s", path, name)
+			}
+			changed = true
+			return "{{secret." + name + "}}", nil
+		}
+		name := runtimeOverrideSecretName(scope, groupIndex, path)
+		if _, collision := existing[name]; collision {
+			return "", fmt.Errorf("runtime override %s conflicts with reserved secret reference %s", path, name)
+		}
+		values[name] = value
+		changed = true
+		return "{{secret." + name + "}}", nil
+	}
+	var err error
+	for key, value := range protected.Env {
+		protected.Env[key], err = protect("env."+key, value, sensitiveEnvKey(key) || sensitiveEnvValue(value))
+		if err != nil {
+			return nil, nil, false, err
+		}
+	}
+	protected.BaseURL, err = protect("base_url", protected.BaseURL, maskURLSecrets(protected.BaseURL) != protected.BaseURL)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if protected.HTTP != nil {
+		http := protected.HTTP
+		authActive := http.Auth.Type != "" || http.Auth.Password != "" || http.Auth.Token != ""
+		http.Auth.Username, err = protect("http.auth.username", http.Auth.Username, authActive)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		http.Auth.Password, err = protect("http.auth.password", http.Auth.Password, true)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		http.Auth.Token, err = protect("http.auth.token", http.Auth.Token, true)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		http.Proxy.URL, err = protect("http.proxy.url", http.Proxy.URL, maskURLSecrets(http.Proxy.URL) != http.Proxy.URL)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		http.Proxy.Username, err = protect("http.proxy.username", http.Proxy.Username, true)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		http.Proxy.Password, err = protect("http.proxy.password", http.Proxy.Password, true)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		policy := scrub.Policy{}
+		for name, value := range http.DefaultHeaders {
+			http.DefaultHeaders[name], err = protect("http.default_headers."+name, value, policy.SensitiveHeader(name))
+			if err != nil {
+				return nil, nil, false, err
+			}
+		}
+	}
+	if protected.BrowserConfig != nil {
+		browser := protected.BrowserConfig
+		credentialsActive := browser.HTTPCredentials.Username != "" || browser.HTTPCredentials.Password != ""
+		browser.HTTPCredentials.Username, err = protect("browser.http_credentials.username", browser.HTTPCredentials.Username, credentialsActive)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		browser.HTTPCredentials.Password, err = protect("browser.http_credentials.password", browser.HTTPCredentials.Password, true)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		browser.Proxy.Server, err = protect("browser.proxy.server", browser.Proxy.Server, maskURLSecrets(browser.Proxy.Server) != browser.Proxy.Server)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		browser.Proxy.Username, err = protect("browser.proxy.username", browser.Proxy.Username, true)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		browser.Proxy.Password, err = protect("browser.proxy.password", browser.Proxy.Password, true)
+		if err != nil {
+			return nil, nil, false, err
+		}
+		for index := range browser.ClientCertificates {
+			path := fmt.Sprintf("browser.client_certificates.%d.passphrase", index)
+			browser.ClientCertificates[index].Passphrase, err = protect(path, browser.ClientCertificates[index].Passphrase, true)
+			if err != nil {
+				return nil, nil, false, err
+			}
+		}
+	}
+	return protected, values, changed, nil
+}
+
+func runtimeOverrideSecretName(scope string, groupIndex int, path string) string {
+	digest := sha256.Sum256([]byte(fmt.Sprintf("scope:%s:group:%d:%s", strings.TrimSpace(scope), groupIndex, path)))
+	return fmt.Sprintf("%sG%d_%X", runtimeOverrideSecretPrefix, groupIndex+1, digest[:12])
+}
+
+func filterReferencedRuntimeSecretValues(script *dsl.Script, values map[string]string) (map[string]string, error) {
+	if len(values) == 0 || script == nil {
+		return nil, nil
+	}
+	names, err := engine.ReferencedSecretNames(script)
+	if err != nil {
+		return nil, err
+	}
+	referenced := make(map[string]string)
+	for _, name := range names {
+		if value, ok := values[name]; ok {
+			referenced[name] = value
+		}
+	}
+	if len(referenced) == 0 {
+		return nil, nil
+	}
+	return referenced, nil
+}
+
+func runtimeSecretValueList(values map[string]string) []string {
+	if len(values) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		out = append(out, values[name])
+	}
+	return out
+}
+
+func cloneRuntimeSecretValues(values map[string]string) map[string]string {
+	if len(values) == 0 {
+		return nil
+	}
+	cloned := make(map[string]string, len(values))
+	for name, value := range values {
+		cloned[name] = value
+	}
+	return cloned
+}
+
+func overlayRuntimeSecretResolver(values map[string]string, fallback engine.SecretResolver) engine.SecretResolver {
+	if len(values) == 0 {
+		return fallback
+	}
+	snapshot := cloneRuntimeSecretValues(values)
+	return engine.ContextSecretResolverFunc(func(ctx context.Context, name string) (string, bool) {
+		if value, ok := snapshot[strings.TrimSpace(name)]; ok {
+			return value, true
+		}
+		if fallback == nil {
+			return "", false
+		}
+		return engine.ResolveSecret(ctx, fallback, name)
+	})
+}
+
+func runtimeSecretValueAppearsInScript(script *dsl.Script, values map[string]string) bool {
+	if script == nil || len(values) == 0 {
+		return false
+	}
+	payload, err := json.Marshal(script)
+	if err != nil {
+		return true
+	}
+	var document any
+	if err := json.Unmarshal(payload, &document); err != nil {
+		return true
+	}
+	var inspect func(any) bool
+	inspect = func(value any) bool {
+		switch typed := value.(type) {
+		case string:
+			for _, secret := range values {
+				if secret != "" && strings.Contains(typed, secret) {
+					return true
+				}
+			}
+		case []any:
+			for _, item := range typed {
+				if inspect(item) {
+					return true
+				}
+			}
+		case map[string]any:
+			for _, item := range typed {
+				if inspect(item) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	return inspect(document)
+}
 
 // applyRuntimeOverrides merges test-level runtime settings into a script config,
 // mirroring LoadRunner Controller's override behavior (test-level wins where specified).

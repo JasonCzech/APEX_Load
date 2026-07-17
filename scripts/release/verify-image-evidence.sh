@@ -99,7 +99,7 @@ jq -e --argjson expected "$platform_map" '
 ' "$index_file" >/dev/null \
   || die "immutable image index must contain direct platform manifests matching the signed release manifest"
 
-cosign verify --key "$public_key" --insecure-ignore-tlog=true "${repository}@${digest}" >/dev/null
+cosign verify --key "$public_key" "${repository}@${digest}" >/dev/null
 platform_count=0
 while IFS= read -r platform; do
   os="$(jq -er '.os' <<< "$platform")"
@@ -170,7 +170,7 @@ while IFS= read -r platform; do
   [[ -s "$sbom_path" ]] || die "signed SBOM asset is missing"
   actual_sbom_sha256="$(sha256sum "$sbom_path" | awk '{print $1}')"
   [[ "$actual_sbom_sha256" == "$sbom_sha256" ]] || die "signed SBOM asset checksum does not match the manifest"
-  cosign verify --key "$public_key" --insecure-ignore-tlog=true "${repository}@${platform_digest}" >/dev/null
+  cosign verify --key "$public_key" "${repository}@${platform_digest}" >/dev/null
   "$(dirname "${BASH_SOURCE[0]}")/verify-sbom-attestation.sh" \
     "${repository}@${platform_digest}" "$public_key" "$sbom_path"
   platform_count=$((platform_count + 1))

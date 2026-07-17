@@ -108,6 +108,7 @@ func runController() error {
 		Store:                   store,
 		GeneratorTargets:        generatorTargets,
 		GeneratorTimeout:        generatorTimeout,
+		BrunoArtifactDir:        brunoArtifactDirFromEnv(),
 		K8sRestart:              k8sRestartSettings,
 		KubeRestarter:           restarter,
 		HAExecutionLeadership:   haLeaderElection,
@@ -307,6 +308,10 @@ func parseGeneratorTimeout(raw string) time.Duration {
 
 func recorderProxyAddrFromEnv() string {
 	return strings.TrimSpace(os.Getenv("APEXLOAD_RECORDER_PROXY_ADDR"))
+}
+
+func brunoArtifactDirFromEnv() string {
+	return strings.TrimSpace(os.Getenv("APEXLOAD_BRUNO_ARTIFACT_ROOT"))
 }
 
 func activeEndpointPublisherFromEnv(haEnabled bool) (api.ExecutionEndpointPublisher, error) {

@@ -249,7 +249,7 @@ func (s *Server) handleImportGitHub(w http.ResponseWriter, r *http.Request) {
 	s.recordAuditEvent(r, "github.script.import", "success", "script", script.Name, script.ProjectID, map[string]any{
 		"owner": req.Owner, "repo": req.Repo, "path": contents.File.Path,
 	})
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Script:           script,
 		Warnings:         warnings,
 		Parameterization: buildImportParameterization(script, nil),

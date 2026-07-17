@@ -61,6 +61,13 @@ func TestRecorderProxyAddrFromEnvEmpty(t *testing.T) {
 	}
 }
 
+func TestBrunoArtifactDirFromEnv(t *testing.T) {
+	t.Setenv("APEXLOAD_BRUNO_ARTIFACT_ROOT", " /mnt/apexload/bruno-artifacts ")
+	if got := brunoArtifactDirFromEnv(); got != "/mnt/apexload/bruno-artifacts" {
+		t.Fatalf("Bruno artifact dir = %q, want trimmed path", got)
+	}
+}
+
 func TestActiveEndpointPublisherFromEnv(t *testing.T) {
 	t.Run("disabled", func(t *testing.T) {
 		if publisher, err := activeEndpointPublisherFromEnv(true); err != nil || publisher != nil {

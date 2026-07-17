@@ -15,9 +15,10 @@
 package paramize
 
 import (
+	"crypto/sha256"
 	"fmt"
-	"hash/fnv"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
@@ -45,7 +46,7 @@ type Location struct {
 	ActionIndex int    `json:"action_index"` // 0-based index within the section
 	ActionName  string `json:"action_name,omitempty"`
 	Field       string `json:"field"` // "target", "body", "value", or "headers.<Name>"
-	SearchText  string `json:"search_text"`
+	SearchText  string `json:"search_text,omitempty"`
 	ReplaceText string `json:"replace_text"`
 }
 
@@ -58,9 +59,9 @@ type Suggestion struct {
 	// scripts (JMeter thread groups); empty for single-script imports.
 	ScriptName   string     `json:"script_name,omitempty"`
 	VarName      string     `json:"var_name"`
-	Replacement  string     `json:"replacement"`   // display template, e.g. {{var.x}} / {{env.KEY}}
-	LiteralValue string     `json:"literal_value"` // the raw value being replaced
-	SampleValue  string     `json:"sample_value"`  // truncated display copy of LiteralValue
+	Replacement  string     `json:"replacement"`             // display template, e.g. {{var.x}} / {{env.KEY}}
+	LiteralValue string     `json:"literal_value,omitempty"` // the raw value being replaced; server-side only on import responses
+	SampleValue  string     `json:"sample_value,omitempty"`  // truncated display copy of LiteralValue; server-side only on import responses
 	Locations    []Location `json:"locations"`
 	Confidence   float64    `json:"confidence"`
 	RuleID       string     `json:"rule_id"`
@@ -199,9 +200,44 @@ func sortSuggestions(suggestions []Suggestion) {
 }
 
 func suggestionID(s Suggestion) string {
-	h := fnv.New32a()
-	fmt.Fprintf(h, "%s|%s|%s", s.Kind, s.VarName, s.LiteralValue)
-	return fmt.Sprintf("pz_%08x", h.Sum32())
+	// IDs cross the disclosure boundary even though literal/sample/search
+	// values do not. Derive them exclusively from the public structural
+	// descriptor so an observer cannot use the ID as an offline oracle for a
+	// hidden credential or correlation sample.
+	var descriptor strings.Builder
+	appendSuggestionIDPart := func(value string) {
+		descriptor.WriteString(strconv.Itoa(len(value)))
+		descriptor.WriteByte(':')
+		descriptor.WriteString(value)
+	}
+	appendLocation := func(location Location) {
+		appendSuggestionIDPart(location.Section)
+		appendSuggestionIDPart(strconv.Itoa(location.ActionIndex))
+		appendSuggestionIDPart(location.ActionName)
+		appendSuggestionIDPart(location.Field)
+		appendSuggestionIDPart(location.ReplaceText)
+	}
+
+	appendSuggestionIDPart(string(s.Kind))
+	appendSuggestionIDPart(s.ScriptName)
+	appendSuggestionIDPart(s.VarName)
+	appendSuggestionIDPart(s.Replacement)
+	appendSuggestionIDPart(s.RuleID)
+	appendSuggestionIDPart(strconv.FormatBool(s.PreApplied))
+	appendSuggestionIDPart(strconv.FormatBool(s.HighRisk))
+	appendSuggestionIDPart(strconv.Itoa(len(s.Locations)))
+	for _, location := range s.Locations {
+		appendLocation(location)
+	}
+	if s.FoundInAction == nil {
+		appendSuggestionIDPart("")
+	} else {
+		appendSuggestionIDPart("found")
+		appendLocation(*s.FoundInAction)
+	}
+
+	sum := sha256.Sum256([]byte(descriptor.String()))
+	return fmt.Sprintf("pz_%x", sum[:12])
 }
 
 // claimedValues returns the literal values already covered by earlier passes so

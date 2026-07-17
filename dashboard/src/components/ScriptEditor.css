@@ -2478,6 +2478,37 @@
   color: var(--warning);
 }
 
+.replay-preflight-alerts .btn {
+  margin-left: auto;
+}
+
+.script-secret-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--warning-border);
+  border-radius: 8px;
+  background: var(--warning-bg);
+  color: var(--warning-text);
+}
+
+.script-secret-banner > div {
+  display: grid;
+  gap: 3px;
+}
+
+.script-secret-banner strong {
+  font-size: 13px;
+}
+
+.script-secret-banner span {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
 .replay-preflight-checks {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

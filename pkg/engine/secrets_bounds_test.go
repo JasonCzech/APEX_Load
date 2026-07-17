@@ -138,6 +138,16 @@ func TestCachingSecretResolverRetriesNegativeResultAfterTTL(t *testing.T) {
 	}
 }
 
+func TestCachingSecretResolverAcceptsNilContext(t *testing.T) {
+	resolver := newCachingSecretResolver(SecretResolverFunc(func(name string) (string, bool) {
+		return "value-for-" + name, true
+	})).(*cachingSecretResolver)
+	value, ok := resolver.ResolveContext(nil, "TOKEN")
+	if !ok || value != "value-for-TOKEN" {
+		t.Fatalf("ResolveContext(nil) = %q/%v", value, ok)
+	}
+}
+
 func TestProjectScopedSecretsDoNotCrossProjectsOrFallbackToGlobal(t *testing.T) {
 	t.Setenv("APEXLOAD_AZURE_KEY_VAULT_URL", "")
 	t.Setenv("APEXLOAD_SECRET_DB_PASSWORD", "legacy-global")

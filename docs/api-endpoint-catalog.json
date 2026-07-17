@@ -2284,6 +2284,46 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/projects/{id}/secrets",
+      "operationId": "handleListProjectSecrets",
+      "summary": "List Project Secrets",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/secrets",
+      "operationId": "handleCreateProjectSecrets",
+      "summary": "Create Project Secrets",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/projects/{id}/secrets/status",
+      "operationId": "handleProjectSecretStatus",
+      "summary": "Project Secret Status",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PUT",
+      "path": "/api/v1/projects/{id}/secrets/{name}",
+      "operationId": "handleRotateProjectSecret",
+      "summary": "Rotate Project Secret",
+      "category": "Workspace \u0026 Assets",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/projects/{pid}/folders",
       "operationId": "handleListFolders",
       "summary": "List Folders",
@@ -3294,6 +3334,36 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/scripts/import/bruno/commit",
+      "operationId": "handleCommitBrunoImport",
+      "summary": "Commit Bruno Import",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/import/bruno/inspect",
+      "operationId": "handleInspectBrunoImport",
+      "summary": "Inspect Bruno Import",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/import/bruno/support-matrix",
+      "operationId": "handleBrunoSupportMatrix",
+      "summary": "Bruno Support Matrix",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/scripts/import/devweb",
       "operationId": "handleImportDevWeb",
       "summary": "Import Dev Web",
@@ -3614,6 +3684,16 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/scripts/import/secrets/migrate",
+      "operationId": "handleMigrateSourceSecrets",
+      "summary": "Migrate Source Secrets",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/scripts/import/wsdl",
       "operationId": "handleImportWSDL",
       "summary": "Import W S D L",
@@ -3717,6 +3797,66 @@
       "path": "/api/v1/scripts/{id}/browser-replay/sessions",
       "operationId": "handleStartBrowserReplayScript",
       "summary": "Start Browser Replay Script",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/{id}/bruno-imports/revisions",
+      "operationId": "handleListBrunoImportRevisions",
+      "summary": "List Bruno Import Revisions",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/{id}/bruno-imports/rollback",
+      "operationId": "handleRollbackBrunoImport",
+      "summary": "Rollback Bruno Import",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/{id}/bruno-imports/source",
+      "operationId": "handleGetBrunoImportSource",
+      "summary": "Get Bruno Import Source",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/{id}/bruno-projection/commit",
+      "operationId": "handleCommitBrunoProjection",
+      "summary": "Commit Bruno Projection",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/{id}/bruno-projection/preview",
+      "operationId": "handlePreviewBrunoProjection",
+      "summary": "Preview Bruno Projection",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/{id}/clone-draft",
+      "operationId": "handleCloneScriptDraft",
+      "summary": "Clone Script Draft",
       "category": "Script Authoring",
       "public": false,
       "authenticated": true,
@@ -3837,6 +3977,16 @@
       "path": "/api/v1/scripts/{id}/runtime-settings/report",
       "operationId": "handleGetScriptRuntimeSettingsReport",
       "summary": "Get Script Runtime Settings Report",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/{id}/secret-status",
+      "operationId": "handleScriptSecretStatus",
+      "summary": "Script Secret Status",
       "category": "Script Authoring",
       "public": false,
       "authenticated": true,

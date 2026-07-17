@@ -176,6 +176,18 @@ spec:
               value: /var/lib/apexload/archives
             - name: APEXLOAD_EXPORT_DIR
               value: /var/lib/apexload/exports
+{{- $wrappingKeyVaultKeyId := include "apexload.wrappingKeyVaultKeyId" . }}
+{{- if and (or (eq .Values.projectSecrets.provider "database") .Values.bruno.importEnabled .Values.bruno.enabled) (not $wrappingKeyVaultKeyId) }}
+            - name: APEXLOAD_WRAPPING_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.dataPlatform.secretName }}
+                  key: APEXLOAD_WRAPPING_MASTER_KEY
+{{- end }}
+{{- if or .Values.bruno.importEnabled .Values.bruno.enabled }}
+            - name: APEXLOAD_BRUNO_ARTIFACT_ROOT
+              value: {{ ternary .Values.bruno.artifactRoot "/var/lib/apexload/bruno-artifacts" .Values.bruno.enabled | quote }}
+{{- end }}
 {{- if .Values.controller.ha.enabled }}
             - name: APEXLOAD_CONTROLLER_HA
               value: "true"
@@ -213,6 +225,10 @@ spec:
             - name: grpc-tls
               mountPath: /etc/apexload/grpc-tls
               readOnly: true
+{{- if or .Values.bruno.importEnabled .Values.bruno.enabled }}
+            - name: bruno-artifacts
+              mountPath: {{ .Values.bruno.artifactRoot | quote }}
+{{- end }}
 {{- if .Values.controller.ha.enabled }}
             - name: active-endpoint-identity
               mountPath: /var/run/secrets/apexload-active-endpoint
@@ -243,6 +259,11 @@ spec:
         - name: grpc-tls
           secret:
             secretName: {{ .Values.controller.grpcTlsSecretName }}
+{{- if or .Values.bruno.importEnabled .Values.bruno.enabled }}
+        - name: bruno-artifacts
+          persistentVolumeClaim:
+            claimName: {{ required "bruno.artifactPersistence.existingClaim is required when Bruno import or execution is enabled" .Values.bruno.artifactPersistence.existingClaim | quote }}
+{{- end }}
 {{- if .Values.controller.ha.enabled }}
         - name: active-endpoint-identity
           projected:

@@ -391,6 +391,11 @@ func (s *Server) handleAIDraftGeneration(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	safeDraft, ok := prepareAuthoringSessionDraft(w, draft, nil)
+	if !ok {
+		return
+	}
+	draft = safeDraft
 	validation := buildScriptValidationResponse("", draft)
 	repairHints := buildAIRepairSuggestions(draft, validation, nil)
 	var queueItem *AIReviewQueueItem

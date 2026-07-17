@@ -11,7 +11,7 @@ Provisions everything APEX Load needs on Azure. The same Terraform stack serves 
 | Azure Cache for Redis | Live-run state + WebSocket fanout for multi-replica or HA controller. | Secret `APEXLOAD_REDIS_URL` / App Service app setting |
 | Storage account + `apexload-archives` container | Run-evidence archives (`APEXLOAD_ARCHIVE_BACKEND=azure_blob`). Account keys disabled — workload identity / managed identity only. | ConfigMap `AZURE_STORAGE_ACCOUNT`, `APEXLOAD_ARCHIVE_CONTAINER` |
 | Key Vault (RBAC) | `{{secret.*}}` script secrets and gRPC TLS PEM blobs (App Service topology). | ConfigMap `APEXLOAD_AZURE_KEY_VAULT_URL`; App Service Key Vault references |
-| User-assigned identities + federated credentials | Split workload identities for `apexload-controller` and `apexload-generator`. Controller gets Blob + Key Vault; generators get Key Vault only by default. | `serviceaccounts.yaml` client-id annotations; App Service system-assigned identity needs controller-equivalent roles |
+| User-assigned identities + federated credentials | Split workload identities for `apexload-controller` and `apexload-generator`. Controller gets Blob + Key Vault secret-management access; generators retain read-only Key Vault access. | `serviceaccounts.yaml` client-id annotations; App Service system-assigned identity needs controller-equivalent roles |
 | Private networking | Production default private endpoints/private DNS for PostgreSQL, Redis, Blob, and Key Vault. | `network_mode=private` |
 
 ## Usage
@@ -46,7 +46,8 @@ terraform output -raw key_vault_url          # → APEXLOAD_AZURE_KEY_VAULT_URL
 # Secret (never committed)
 kubectl -n apexload create secret generic apexload-data-platform \
   --from-literal=APEXLOAD_DATABASE_URL="$(terraform output -raw apexload_database_url)" \
-  --from-literal=APEXLOAD_REDIS_URL="$(terraform output -raw apexload_redis_url)"
+  --from-literal=APEXLOAD_REDIS_URL="$(terraform output -raw apexload_redis_url)" \
+  --from-literal=APEXLOAD_GRPC_AUTH_TOKEN="$(openssl rand -hex 32)"
 
 # Images (deployments/k8s/aks/kustomization.yaml)
 terraform output -raw acr_login_server       # → images newName prefix
@@ -93,10 +94,16 @@ az webapp config appsettings set -g <resource-group> -n <app-name> --settings \
   AZURE_STORAGE_ACCOUNT="$STORAGE_ACCOUNT" \
   APEXLOAD_AZURE_KEY_VAULT_URL="$KV_URL" \
   APEXLOAD_AZURE_KEY_VAULT_AUTH=azure_identity \
+  APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED=true \
   SCM_DO_BUILD_DURING_DEPLOYMENT=false
 ```
 
-The App Service's system-assigned managed identity must have `Storage Blob Data Contributor` on the storage account and `Key Vault Secrets User` on the Key Vault — the same roles as the AKS workload identity. Generator connectivity requires VNet integration and static `APEXLOAD_GENERATORS` targets (see `deployments/azure/appservice/` and `docs/CICD_INTEGRATION.md`).
+The App Service's system-assigned managed identity must have
+`Storage Blob Data Contributor` on the storage account and
+`Key Vault Secrets Officer` on the Key Vault—the same roles as the AKS
+controller workload identity. Generator connectivity requires VNet integration
+and static `APEXLOAD_GENERATORS` targets (see
+`deployments/azure/appservice/` and `docs/CICD_INTEGRATION.md`).
 
 ## Notes
 

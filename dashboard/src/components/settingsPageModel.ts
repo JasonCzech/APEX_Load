@@ -118,6 +118,9 @@ export const DEFAULT_SETTINGS: DashboardSystemSettings = {
   client_downloads: {
     enabled: true,
   },
+  script_imports: {
+    allow_source_secret_migration: false,
+  },
 }
 
 export const GENERATOR_PRESETS = [
@@ -546,6 +549,11 @@ export function normalizeDashboardSystemSettings(settings: DashboardSystemSettin
       // Default to enabled; only an explicit false disables (matches the
       // server-side default and migration behaviour).
       enabled: settings.client_downloads?.enabled !== false,
+    },
+    script_imports: {
+      ...DEFAULT_SETTINGS.script_imports,
+      ...settings.script_imports,
+      allow_source_secret_migration: settings.script_imports?.allow_source_secret_migration === true,
     },
   }
 }

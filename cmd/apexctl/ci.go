@@ -631,7 +631,9 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 				failure.Outcome, failure.Status = ciOutcomeTimedOut, "TIMED_OUT"
 			}
 			persistCICoreEvidenceBeforeAbort(args, failure)
-			_ = abortControllerCIRun(context.Background(), auth, client, deterministicCITestID(args.projectID, idempotencyKey), ciAbortReason(ctx.Err()))
+			if abortErr := abortControllerCIRun(context.Background(), auth, client, deterministicCITestID(args.projectID, idempotencyKey), ciAbortReason(ctx.Err())); abortErr != nil {
+				return failure, errors.Join(err, fmt.Errorf("controller may still be running the cancelled CI load: %w", abortErr))
+			}
 		}
 		return failure, err
 	}
@@ -656,7 +658,9 @@ func executeControllerCI(ctx context.Context, args ciArgs, variables map[string]
 			}
 			if args.abortOnCancel {
 				persistCICoreEvidenceBeforeAbort(args, result)
-				_ = abortControllerCIRun(context.Background(), auth, client, created.TestID, ciAbortReason(ctx.Err()))
+				if abortErr := abortControllerCIRun(context.Background(), auth, client, created.TestID, ciAbortReason(ctx.Err())); abortErr != nil {
+					return result, errors.Join(ctx.Err(), fmt.Errorf("controller may still be running the cancelled CI load: %w", abortErr))
+				}
 			}
 			return result, ctx.Err()
 		case <-time.After(ciPollInterval):
@@ -1534,9 +1538,17 @@ func deriveCIIdempotencyKey(request CIRunRequest) string {
 		hash := sha256.Sum256(request.Script)
 		scriptIdentity = request.ScriptPath + ":" + hex.EncodeToString(hash[:])
 	}
+	requestIdentity, _ := json.Marshal(struct {
+		Name      string      `json:"name"`
+		ReleaseID string      `json:"release_id"`
+		Execution CIExecution `json:"execution"`
+		Goals     CIGoals     `json:"goals"`
+	}{
+		Name: request.Name, ReleaseID: request.ReleaseID, Execution: request.Execution, Goals: request.Goals,
+	})
 	raw := strings.Join([]string{
 		request.Source.ServerURL, request.Source.RepositoryID, request.Source.Repository,
-		request.Source.WorkflowRef, request.Source.RunID, request.Source.RunAttempt, scriptIdentity,
+		request.Source.WorkflowRef, request.Source.RunID, request.Source.RunAttempt, scriptIdentity, string(requestIdentity),
 	}, "\x00")
 	hash := sha256.Sum256([]byte(raw))
 	return "apexload-ci-v1-" + hex.EncodeToString(hash[:])

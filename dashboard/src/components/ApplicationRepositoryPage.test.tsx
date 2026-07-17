@@ -562,6 +562,150 @@ describe('ApplicationRepositoryPage', () => {
     expect(scriptApiMock.deleteScript).toHaveBeenCalledWith('script-1')
     expect(container.textContent).toContain('Deleted 2 selected items.')
 
+    projectApiMock.deleteProject.mockResolvedValueOnce({
+      deleted: project.id,
+      external_secret_cleanup_required: true,
+      external_secret_cleanup_names: ['PAYMENTS_TOKEN'],
+      external_secret_cleanup_providers: ['azure_key_vault'],
+      secret_provider: 'azure_key_vault',
+    })
+    await act(async () => {
+      findCheckbox(container, 'Select Checkout API')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      findButton(container, 'Delete selected (1)')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(projectApiMock.deleteProject).toHaveBeenCalledWith(project.id)
+    expect(container.textContent).toContain('External project secrets retained for administrator cleanup: PAYMENTS_TOKEN (azure_key_vault).')
+
+    projectApiMock.deleteProject.mockResolvedValueOnce({
+      deleted: project.id,
+      external_secret_cleanup_required: true,
+      external_secret_cleanup_names: [],
+      external_secret_cleanup_providers: ['azure_key_vault'],
+      external_secret_cleanup_prefix: 'apexload/projects/project-1/',
+      secret_provider: 'azure_key_vault',
+    })
+    await act(async () => {
+      findCheckbox(container, 'Select Checkout API')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      findButton(container, 'Delete selected (1)')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('External project secrets retained for administrator cleanup under prefix “apexload/projects/project-1/” (azure_key_vault).')
+
+    confirmSpy.mockRestore()
+  })
+
+  it('preserves completed deletion state and external-secret cleanup guidance when a later delete and refresh fail', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const onProjectsRefresh = vi.fn().mockRejectedValue(new Error('refresh offline'))
+    projectApiMock.deleteProject.mockRejectedValueOnce(Object.assign(
+      new Error('Project deleted, but external cleanup metadata could not be finalized.'),
+      {
+        payload: {
+          deleted: project.id,
+          external_secret_cleanup_required: true,
+          external_secret_cleanup_names: ['PAYMENTS_TOKEN'],
+          external_secret_cleanup_providers: ['azure_key_vault'],
+          external_secret_cleanup_prefix: 'apexload/projects/project-1/',
+          secret_provider: 'azure_key_vault',
+        },
+      },
+    ))
+
+    await act(async () => {
+      root.render(
+        <ApplicationRepositoryPage
+          domains={[domain]}
+          activeDomain={domain}
+          activeApplication={application}
+          applicationRepository={repository}
+          categories={[category]}
+          projects={[project]}
+          canManageRepository
+          canManageProjects
+          canManageReleases
+          onDomainChange={vi.fn()}
+          onRepositoryRefresh={vi.fn()}
+          onProjectsRefresh={onProjectsRefresh}
+          onProjectCreated={vi.fn()}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const releaseCheckbox = findCheckbox(container, 'Select 2026.05')
+    const projectCheckbox = findCheckbox(container, 'Select Checkout API')
+    await act(async () => {
+      releaseCheckbox?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      projectCheckbox?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    await act(async () => {
+      findButton(container, 'Delete selected (2)')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(repositoryApiMock.deleteRelease).toHaveBeenCalledWith('release-1')
+    expect(projectApiMock.deleteProject).toHaveBeenCalledWith(project.id)
+    expect(onProjectsRefresh).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('Deleted 2 selected items.')
+    expect(container.textContent).toContain('External project secrets retained for administrator cleanup: PAYMENTS_TOKEN (azure_key_vault).')
+    expect(container.textContent).toContain('The repository refresh also failed; reload before continuing.')
+    expect(releaseCheckbox?.checked).toBe(false)
+    expect(projectCheckbox?.checked).toBe(false)
+    expect(container.textContent).not.toContain('2 items selected')
+
+    confirmSpy.mockRestore()
+  })
+
+  it('keeps external-secret prefix guidance visible when post-delete refresh fails', async () => {
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const onProjectsRefresh = vi.fn().mockRejectedValue(new Error('refresh offline'))
+    projectApiMock.deleteProject.mockResolvedValueOnce({
+      deleted: project.id,
+      external_secret_cleanup_required: true,
+      external_secret_cleanup_names: [],
+      external_secret_cleanup_providers: ['azure_key_vault'],
+      external_secret_cleanup_prefix: 'apexload/projects/project-1/',
+      secret_provider: 'azure_key_vault',
+    })
+
+    await act(async () => {
+      root.render(
+        <ApplicationRepositoryPage
+          domains={[domain]}
+          activeDomain={domain}
+          activeApplication={application}
+          applicationRepository={repository}
+          categories={[category]}
+          projects={[project]}
+          canManageRepository
+          canManageProjects
+          canManageReleases
+          onDomainChange={vi.fn()}
+          onRepositoryRefresh={vi.fn()}
+          onProjectsRefresh={onProjectsRefresh}
+          onProjectCreated={vi.fn()}
+        />,
+      )
+    })
+    await flushPromises()
+    const projectCheckbox = findCheckbox(container, 'Select Checkout API')
+    await act(async () => projectCheckbox?.click())
+    await act(async () => findButton(container, 'Delete selected (1)')?.click())
+    await flushPromises()
+
+    expect(container.textContent).toContain('Deleted 1 selected item.')
+    expect(container.textContent).toContain('External project secrets retained for administrator cleanup under prefix “apexload/projects/project-1/” (azure_key_vault).')
+    expect(container.textContent).toContain('refresh offline')
+    expect(projectCheckbox?.checked).toBe(false)
+
     confirmSpy.mockRestore()
   })
 })

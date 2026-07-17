@@ -932,14 +932,14 @@ jobs:
           SBOM_ARM64: release/assets/sbom-apexload-${{ matrix.component }}-${{ matrix.profile }}-linux-arm64.spdx.json
         run: |
           set -euo pipefail
-          cosign sign --yes --key "$COSIGN_KEY_REF" --tlog-upload=false --use-signing-config=false "${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
+          cosign sign --yes --key "$COSIGN_KEY_REF" --use-signing-config=false "${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
           for platform in amd64 arm64; do
             digest_variable="${platform^^}_DIGEST"
             sbom_variable="SBOM_${platform^^}"
             digest="${!digest_variable}"
             sbom="${!sbom_variable}"
-            cosign sign --yes --key "$COSIGN_KEY_REF" --tlog-upload=false --use-signing-config=false "${IMAGE_REPOSITORY}@${digest}"
-            cosign attest --yes --key "$COSIGN_KEY_REF" --tlog-upload=false --use-signing-config=false \
+            cosign sign --yes --key "$COSIGN_KEY_REF" --use-signing-config=false "${IMAGE_REPOSITORY}@${digest}"
+            cosign attest --yes --key "$COSIGN_KEY_REF" --use-signing-config=false \
               --type spdxjson \
               --predicate "$sbom" \
               "${IMAGE_REPOSITORY}@${digest}"
@@ -959,14 +959,14 @@ jobs:
         run: |
           set -euo pipefail
           key=env://COSIGN_PRIVATE_KEY
-          cosign sign --yes --key "$key" --tlog-upload=false --use-signing-config=false "${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
+          cosign sign --yes --key "$key" --use-signing-config=false "${IMAGE_REPOSITORY}@${IMAGE_DIGEST}"
           for platform in amd64 arm64; do
             digest_variable="${platform^^}_DIGEST"
             sbom_variable="SBOM_${platform^^}"
             digest="${!digest_variable}"
             sbom="${!sbom_variable}"
-            cosign sign --yes --key "$key" --tlog-upload=false --use-signing-config=false "${IMAGE_REPOSITORY}@${digest}"
-            cosign attest --yes --key "$key" --tlog-upload=false --use-signing-config=false \
+            cosign sign --yes --key "$key" --use-signing-config=false "${IMAGE_REPOSITORY}@${digest}"
+            cosign attest --yes --key "$key" --use-signing-config=false \
               --type spdxjson \
               --predicate "$sbom" \
               "${IMAGE_REPOSITORY}@${digest}"
@@ -985,13 +985,13 @@ jobs:
           set -euo pipefail
           public_key="$RUNNER_TEMP/cosign.pub"
           printf '%s' "$COSIGN_PUBLIC_KEY" > "$public_key"
-          cosign verify --key "$public_key" --insecure-ignore-tlog=true "${IMAGE_REPOSITORY}@${IMAGE_DIGEST}" >/dev/null
+          cosign verify --key "$public_key" "${IMAGE_REPOSITORY}@${IMAGE_DIGEST}" >/dev/null
           for platform in amd64 arm64; do
             digest_variable="${platform^^}_DIGEST"
             sbom_variable="SBOM_${platform^^}"
             digest="${!digest_variable}"
             sbom="${!sbom_variable}"
-            cosign verify --key "$public_key" --insecure-ignore-tlog=true "${IMAGE_REPOSITORY}@${digest}" >/dev/null
+            cosign verify --key "$public_key" "${IMAGE_REPOSITORY}@${digest}" >/dev/null
             ./scripts/release/verify-sbom-attestation.sh \
               "${IMAGE_REPOSITORY}@${digest}" "$public_key" "$sbom"
           done

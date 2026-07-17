@@ -28,6 +28,7 @@ const GENERAL_SETTINGS_SUBSECTION_IDS = GENERAL_SETTINGS_SUBSECTIONS.map(section
 
 export const GOVERNANCE_SETTINGS_SUBSECTIONS = [
   { id: 'schedule-defaults', title: 'Schedule Defaults' },
+  { id: 'script-imports', title: 'Script Imports' },
   { id: 'service-account-apis', title: 'Service Account APIs' },
   { id: 'recent-audit-events', title: 'Recent Audit Events' },
 ] as const
@@ -52,6 +53,7 @@ export const PROJECT_SETTINGS_SUBSECTIONS = [
   { id: 'limits', title: 'Limits' },
   { id: 'github', title: 'GitHub Policy' },
   { id: 'redaction', title: 'Redaction Rules' },
+  { id: 'secrets', title: 'Project Secrets' },
 ] as const
 
 export type ProjectSettingsSubsectionId = typeof PROJECT_SETTINGS_SUBSECTIONS[number]['id']

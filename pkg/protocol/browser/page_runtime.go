@@ -220,6 +220,9 @@ func (b *Browser) captureScreenshot(ctx context.Context, action *protocol.Action
 	if err := ctx.Err(); err != nil {
 		return "", err
 	}
+	if b.hasRuntimeSecretMaterial() {
+		return "", nil
+	}
 	opts := playwright.PageScreenshotOptions{}
 	selector := b.screenshotSelector(action)
 	page := b.currentPage()

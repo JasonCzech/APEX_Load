@@ -53,6 +53,7 @@ func (b *Browser) openBrowserContext() error {
 
 	browserContext, err := pwBrowser.NewContext(b.browserContextOptions())
 	if err != nil {
+		b.discardHARWorkingFile()
 		return err
 	}
 	b.mu.Lock()
@@ -62,12 +63,14 @@ func (b *Browser) openBrowserContext() error {
 	if err := b.installRequestPolicy(browserContext); err != nil {
 		b.stopRequestPolicyWaiters()
 		_ = browserContext.Close()
+		b.discardHARWorkingFile()
 		return err
 	}
 	if b.clientMetricsEnabled {
 		if err := browserContext.AddInitScript(playwright.Script{Content: playwright.String(browserMetricsBootstrapScript)}); err != nil {
 			b.stopRequestPolicyWaiters()
 			_ = browserContext.Close()
+			b.discardHARWorkingFile()
 			return err
 		}
 	}
@@ -78,6 +81,7 @@ func (b *Browser) openBrowserContext() error {
 	if err != nil {
 		b.stopRequestPolicyWaiters()
 		_ = browserContext.Close()
+		b.discardHARWorkingFile()
 		return err
 	}
 

@@ -23,7 +23,8 @@ Minimum production values:
 - `workloadIdentity.controllerClientId`
 - `workloadIdentity.generatorClientId`
 - `dataPlatform.secretName` pointing at a Secret with `APEXLOAD_DATABASE_URL`,
-  `APEXLOAD_REDIS_URL`, and `APEXLOAD_GRPC_AUTH_TOKEN`
+  `APEXLOAD_REDIS_URL`, `APEXLOAD_GRPC_AUTH_TOKEN`, and—when
+  `projectSecrets.provider=database`—`APEXLOAD_WRAPPING_MASTER_KEY`
 - `ingress.host`
 - `controller.publicURL` when the externally reachable controller URL is not
   exactly `https://<ingress.host>`; this stable HTTPS URL defines the
@@ -49,6 +50,46 @@ high-water and generator-side run evidence awaiting controller ingestion.
 Configure `generator.statePersistence.storageClassName` when the cluster has no
 default StorageClass, and size it with `generator.statePersistence.size` (the
 default is `10Gi`).
+
+Project Secrets are writable by default through the encrypted database
+provider. Set `projectSecrets.provider=database` and supply one stable wrapping
+key through `dataPlatform.secretName`. When `dataPlatform.createSecret=true`,
+deployment automation may provide it through
+`projectSecrets.wrappingMasterKey`. This key is required even when
+`bruno.enabled=false`.
+
+To store managed values in Azure Key Vault instead, set
+`projectSecrets.provider=azure_key_vault`. The chart sets
+`APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED=true` in the controller ConfigMap; the
+controller workload identity must have `Key Vault Secrets Officer`. Generators
+never receive the write-enable setting. See
+[Project Secrets](../../../docs/PROJECT_SECRETS.md) for security and runtime
+delivery details.
+
+Bruno source import is available independently of runner deployment. Enable it
+with `bruno.importEnabled=true` and configure a wrapping key. To enable
+canonical Bruno execution, also set `bruno.enabled=true` and provide:
+
+- `bruno.artifactPersistence.existingClaim`: a pre-created `ReadWriteMany` PVC
+  mounted by the controller and every generator for encrypted,
+  content-addressed source artifacts.
+- `bruno.egressBrokerUrl`: the governed HTTP CONNECT broker endpoint. The
+  chart fails closed without it unless `bruno.allowDirectEgress=true` is
+  explicitly selected for an isolated local cluster.
+- Either a versioned `projectSecrets.wrappingKeyVaultKeyId`, or
+  `APEXLOAD_WRAPPING_MASTER_KEY` in `dataPlatform.secretName` (the chart
+  can populate it from `projectSecrets.wrappingMasterKey` when
+  `createSecret=true`). The older `bruno.keyVaultKeyId` and
+  `bruno.artifactMasterKey` values remain compatible aliases.
+- A published `apexload-bruno-runner` image compatible with Bruno 3.5.2.
+
+The safe runner is injected as a loopback-only generator sidecar and never
+receives a Kubernetes service-account token. Developer sandbox execution is
+not enabled by this chart; it requires the separate isolated worker class
+described by the Bruno execution policy. The `bruno.maxJumps`,
+`maxRunRequestDepth`, `maxParallelRequests`, `maxOutputBytes`, and
+`maxStreamTimeoutMs` values are operator ceilings: imported scripts may select
+smaller values but cannot raise them.
 
 Set `certManager.enabled=true` when the cluster uses cert-manager to issue the
 controller/generator mTLS secrets. If the platform syncs those secrets from Key

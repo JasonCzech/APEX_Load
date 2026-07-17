@@ -38,6 +38,10 @@ data:
   # the pod's federated identity is exchanged for Key Vault tokens automatically.
   APEXLOAD_AZURE_KEY_VAULT_URL: https://change-me.vault.azure.net # CHANGE-ME: terraform output key_vault_url
   APEXLOAD_AZURE_KEY_VAULT_AUTH: azure_identity
+  # Controller-only opt-in for governed Project Secrets creation and rotation.
+  # The generator StatefulSet deliberately does not import this setting.
+  APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED: "true"
+  APEXLOAD_AZURE_KEY_VAULT_API_VERSION: "7.4"
   # Exact script-safe Key Vault names. Empty disables Key Vault interpolation;
   # never expose platform credentials such as gRPC, OIDC, or database secrets.
   APEXLOAD_AZURE_KEY_VAULT_ALLOWED_SECRETS: "" # e.g. orders-api-key,test-user-password

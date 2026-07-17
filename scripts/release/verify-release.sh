@@ -68,11 +68,10 @@ manifest="$release_dir/release-manifest.json"
 if [[ -z "$expected_commit" && -f "$release_dir/.release-tag-commit" ]]; then
   expected_commit="$(tr -d '[:space:]' < "$release_dir/.release-tag-commit")"
 fi
-if [[ -n "$expected_commit" ]]; then
-  [[ "$expected_commit" =~ ^[0-9a-f]{40}$ ]] || die "expected release commit is invalid"
-  [[ "$(jq -r '.commit' "$manifest")" == "$expected_commit" ]] \
-    || die "manifest commit does not match the verified release tag commit"
-fi
+[[ -n "$expected_commit" ]] || die "expected release commit is required"
+[[ "$expected_commit" =~ ^[0-9a-f]{40}$ ]] || die "expected release commit is invalid"
+[[ "$(jq -r '.commit' "$manifest")" == "$expected_commit" ]] \
+  || die "manifest commit does not match the verified release tag commit"
 [[ "$(jq -r '.canonical_apexctl_version' "$manifest")" == "$expected_tag" ]] \
   || die "canonical apexctl version mismatch"
 jq -e '

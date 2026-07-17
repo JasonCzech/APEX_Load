@@ -102,6 +102,43 @@ func TestBuildRedactsBeforeTruncatingReviewContent(t *testing.T) {
 	}
 }
 
+func TestRedactAssociatesStructuredSensitiveNamesWithShortValues(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		secret string
+	}{
+		{
+			name:   "Postman custom header",
+			input:  `{"key":"X-Auth-Token","value":"tiny"}`,
+			secret: "tiny",
+		},
+		{
+			name:   "reverse JSON pair",
+			input:  `{"value":"short","name":"client_secret"}`,
+			secret: "short",
+		},
+		{
+			name:   "TruClient XML argument",
+			input:  `<Argument name="Password" value="mini" selector="[data-password='mini']"/>`,
+			secret: "mini",
+		},
+		{
+			name:   "sensitive selector attribute",
+			input:  `input[data-token="brief"]`,
+			secret: "brief",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, changed := Redact(test.input)
+			if !changed || strings.Contains(got, test.secret) || !strings.Contains(got, "[REDACTED]") {
+				t.Fatalf("Redact(%q) = %q, changed=%t", test.input, got, changed)
+			}
+		})
+	}
+}
+
 func TestBuildLimitsSourceFiles(t *testing.T) {
 	files := map[string]string{}
 	for index := 0; index < MaxFiles+3; index++ {

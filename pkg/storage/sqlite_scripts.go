@@ -293,12 +293,36 @@ func (s *SQLiteStore) DeleteScriptIfUnchanged(id string, expectedUpdatedAt time.
 	if !currentUpdatedAt.Equal(expectedUpdatedAt) {
 		return false, nil
 	}
-	result, err := s.db.Exec(`DELETE FROM scripts WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, id, currentUpdatedRaw)
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`DELETE FROM bruno_source_revisions WHERE script_id = ? AND EXISTS (
+		SELECT 1 FROM scripts WHERE id = ? AND CAST(updated_at AS TEXT) = ?
+	)`, id, id, currentUpdatedRaw)
+	if err != nil {
+		return false, err
+	}
+	_ = result
+	result, err = tx.Exec(`DELETE FROM scripts WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, id, currentUpdatedRaw)
 	if err != nil {
 		return false, err
 	}
 	rows, err := result.RowsAffected()
-	return rows == 1, err
+	if err != nil || rows != 1 {
+		return false, err
+	}
+	if _, err := tx.Exec(`DELETE FROM bruno_source_artifacts WHERE id NOT IN (
+		SELECT raw_artifact_id FROM bruno_source_revisions
+		UNION SELECT sanitized_artifact_id FROM bruno_source_revisions
+	)`); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 type storedScriptJSON struct {
@@ -433,13 +457,22 @@ func (s *SQLiteStore) DeleteScript(id string) error {
 		}
 		return err
 	}
-	for _, query := range []string{
-		`DELETE FROM github_check_links WHERE script_id = ?`,
-		`DELETE FROM github_script_links WHERE script_id = ?`,
-		`DELETE FROM script_recordings WHERE script_id = ?`,
-		`DELETE FROM scripts WHERE id = ?`,
+	for _, deletion := range []struct {
+		query string
+		args  []any
+	}{
+		{query: `DELETE FROM github_check_links WHERE script_id = ?`, args: []any{id}},
+		{query: `DELETE FROM github_script_links WHERE script_id = ?`, args: []any{id}},
+		{query: `DELETE FROM script_recordings WHERE script_id = ?`, args: []any{id}},
+		{query: `DELETE FROM bruno_source_revisions WHERE script_id = ?`, args: []any{id}},
+		{query: `DELETE FROM bruno_source_artifacts WHERE id NOT IN (
+			SELECT raw_artifact_id FROM bruno_source_revisions
+			UNION
+			SELECT sanitized_artifact_id FROM bruno_source_revisions
+		)`},
+		{query: `DELETE FROM scripts WHERE id = ?`, args: []any{id}},
 	} {
-		if _, err := tx.Exec(query, id); err != nil {
+		if _, err := tx.Exec(deletion.query, deletion.args...); err != nil {
 			return err
 		}
 	}

@@ -255,10 +255,6 @@ func validateCIRunAPIResponse(response *CIRunResponse, expectedTestID string) er
 	return nil
 }
 
-func (c *ApiClient) AbortCIRun(ctx context.Context, testID string) (*CIAbortResponse, error) {
-	return c.AbortCIRunWithReason(ctx, testID, "")
-}
-
 func (c *ApiClient) AbortCIRunWithReason(ctx context.Context, testID string, reason string) (*CIAbortResponse, error) {
 	var out CIAbortResponse
 	path := "/api/v1/ci/runs/" + url.PathEscape(strings.TrimSpace(testID)) + "/abort"

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -14,18 +15,22 @@ import (
 )
 
 type VUser struct {
-	ID                   int
-	TotalVUsers          int
-	Group                string
-	Proto                protocol.Protocol
-	Script               *dsl.Script
-	Metrics              *MetricsCollector
-	ResultSink           ResultSink
-	Variables            map[string]string
-	DataProvider         *DataProvider
-	Parameters           *ParameterRuntime
-	SecretResolver       SecretResolver
-	RedactionConfig      *RedactionConfig
+	ID              int
+	TotalVUsers     int
+	Group           string
+	Proto           protocol.Protocol
+	Script          *dsl.Script
+	Metrics         *MetricsCollector
+	ResultSink      ResultSink
+	Variables       map[string]string
+	DataProvider    *DataProvider
+	Parameters      *ParameterRuntime
+	SecretResolver  SecretResolver
+	RedactionConfig *RedactionConfig
+	// runtimeRedaction publishes immutable redaction snapshots to protocol
+	// callbacks, which may run on a driver/event goroutine while the VUser adds
+	// newly extracted credentials on its execution goroutine.
+	runtimeRedaction     atomic.Pointer[RedactionConfig]
 	SnapshotStore        *SnapshotStore
 	PauseControl         PauseController
 	IterationRateLimiter *TokenBucket
@@ -111,6 +116,23 @@ func (vu *VUser) Run(ctx context.Context) {
 	logger := vu.makeLogger(logCfg)
 
 	vu.prepareRuntimeState()
+	teardownComplete := false
+	runTeardown := func() {
+		if teardownComplete || vu.SkipTeardown {
+			return
+		}
+		teardownComplete = true
+		tctx, tcancel := teardownContext()
+		pauseControl := vu.PauseControl
+		vu.PauseControl = nil
+		vu.runLifecycleActions(tctx, vu.Script.Teardown, "teardown", true, logger, logCfg, cfg.ErrorHandling)
+		vu.PauseControl = pauseControl
+		tcancel()
+	}
+	// Init and action failures must still execute user-authored compensation
+	// actions. The explicit teardown label calls the same once-only closure on
+	// the normal path; the defer covers every early return and panic unwind.
+	defer runTeardown()
 
 	// --- Init phase ---
 	if !vu.SkipInit {
@@ -450,14 +472,14 @@ func (vu *VUser) Run(ctx context.Context) {
 					iterSuccess = false
 					iterTransactionSource = result
 					if logCfg.OnErrorOnly || logCfg.Level == "extended" {
-						logger.Error("action failed", actionLogAttrs(action.Name, nil, result, logCfg, true)...)
+						logger.Error("action failed", actionLogAttrs(action.Name, nil, result, logCfg, true, vu.RedactionConfig)...)
 					}
 					if !continueOnError {
 						recordIterationTransaction(false)
 						return flowTeardown
 					}
 				} else if logCfg.Level == "extended" {
-					logger.Info("action ok", actionLogAttrs(action.Name, nil, result, logCfg, false)...)
+					logger.Info("action ok", actionLogAttrs(action.Name, nil, result, logCfg, false, vu.RedactionConfig)...)
 				}
 				applyActionThinkTime(action)
 				return flowNext
@@ -474,7 +496,10 @@ func (vu *VUser) Run(ctx context.Context) {
 				actionTxStart = time.Now()
 			}
 
-			result, err := vu.executeWithRetry(iterCtx, resolved, cfg.ErrorHandling)
+			result, err := vu.executeWithRetryStream(iterCtx, resolved, cfg.ErrorHandling, func(child *protocol.Result) error {
+				vu.recordResult(child, cfg.ErrorHandling, logCfg)
+				return nil
+			})
 			if err != nil {
 				logger.Error("action error", "action", action.Name, "err", scrubSensitiveError(err, vu.RedactionConfig))
 				iterSuccess = false
@@ -500,14 +525,14 @@ func (vu *VUser) Run(ctx context.Context) {
 				iterSuccess = false
 				iterTransactionSource = result
 				if logCfg.OnErrorOnly || logCfg.Level == "extended" {
-					logger.Error("action failed", actionLogAttrs(action.Name, resolved, result, logCfg, true)...)
+					logger.Error("action failed", actionLogAttrs(action.Name, resolved, result, logCfg, true, vu.RedactionConfig)...)
 				}
 				if !continueOnError {
 					recordIterationTransaction(false)
 					return flowTeardown
 				}
 			} else if logCfg.Level == "extended" {
-				logger.Info("action ok", actionLogAttrs(action.Name, resolved, result, logCfg, false)...)
+				logger.Info("action ok", actionLogAttrs(action.Name, resolved, result, logCfg, false, vu.RedactionConfig)...)
 			}
 
 			applyActionThinkTime(action)
@@ -548,14 +573,7 @@ func (vu *VUser) Run(ctx context.Context) {
 	}
 
 teardown:
-	if !vu.SkipTeardown {
-		tctx, tcancel := teardownContext()
-		pauseControl := vu.PauseControl
-		vu.PauseControl = nil
-		vu.runLifecycleActions(tctx, vu.Script.Teardown, "teardown", true, logger, logCfg, cfg.ErrorHandling)
-		vu.PauseControl = pauseControl
-		tcancel()
-	}
+	runTeardown()
 }
 
 func (vu *VUser) sleepActive(ctx context.Context, delay time.Duration) {
@@ -580,6 +598,7 @@ func (vu *VUser) RunLifecycleBlock(ctx context.Context, actions []dsl.Action, ph
 }
 
 func (vu *VUser) prepareRuntimeState() {
+	vu.bindRuntimeTextRedactor()
 	if vu.Variables == nil {
 		vu.Variables = make(map[string]string)
 	}
@@ -722,7 +741,10 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 			return flowNext
 		}
 		resolved := vu.resolveAction(action)
-		result, err := vu.executeWithRetry(ctx, resolved, errCfg)
+		result, err := vu.executeWithRetryStream(ctx, resolved, errCfg, func(child *protocol.Result) error {
+			vu.recordResult(child, errCfg, logCfg)
+			return nil
+		})
 		if err != nil {
 			logger.Error(phase+" action failed", "action", action.Name, "err", scrubSensitiveError(err, vu.RedactionConfig))
 			if !ignoreErrors {
@@ -769,8 +791,9 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 	}
 	tctx, tcancel := teardownContext()
 	defer tcancel()
-	if err := vu.Proto.Teardown(tctx); err != nil {
+	if err := callProtocolTeardown(tctx, vu.Proto, vu.RedactionConfig); err != nil {
 		return err
 	}
-	return vu.Proto.Init(ctx, buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", vu.secretResolver()))
+	vu.bindRuntimeTextRedactor()
+	return callProtocolInit(ctx, vu.Proto, buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", vu.secretResolver()), vu.RedactionConfig)
 }

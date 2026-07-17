@@ -24,7 +24,8 @@ interface Props {
   onComposeComponent: (component: AuthoringComponent) => void
   onOpenImportSurface: (launcher: string, mode?: string | null) => void
   scripts?: StoredScript[]
-  onStartExistingScript?: (script: StoredScript) => void
+  onStartExistingScript?: (script: StoredScript, options?: { migrateSecrets?: boolean }) => void
+  canMigrateSecrets?: boolean
   workflow?: CreateWorkflow
   onWorkflowChange?: (workflow: CreateWorkflow) => void
 }
@@ -111,6 +112,16 @@ export const defaultImportSurfaces: AuthoringImportSurface[] = [
     category: 'Contracts & Collections',
     order: 10,
     launcher: 'openapi',
+    visible: true,
+  },
+  {
+    id: 'bruno',
+    title: 'Bruno Collection',
+    description: 'Preserve and execute classic BRU or OpenCollection YAML with scripts, environments, dependencies, certificates, fixtures, and every Bruno request type.',
+    badge: 'BRU',
+    category: 'Contracts & Collections',
+    order: 15,
+    launcher: 'bruno',
     visible: true,
   },
   {
@@ -360,6 +371,7 @@ export default function ScriptCreateOptions({
   onOpenImportSurface,
   scripts = [],
   onStartExistingScript,
+  canMigrateSecrets = false,
   workflow,
   onWorkflowChange,
 }: Props) {
@@ -376,6 +388,8 @@ export default function ScriptCreateOptions({
   const [existingScriptHealth, setExistingScriptHealth] = useState('all')
   const [existingScriptSort, setExistingScriptSort] = useState<{ key: ExistingScriptSortKey; direction: ExistingScriptSortDirection }>({ key: 'name', direction: 'asc' })
   const [startNewCategory, setStartNewCategory] = useState<StartNewCategory>('templates')
+  const [sourceSecretMigrationAllowed, setSourceSecretMigrationAllowed] = useState(false)
+  const [migrateExistingSecrets, setMigrateExistingSecrets] = useState(false)
   const activeWorkflow = workflow ?? internalWorkflow
   const setActiveWorkflow = (nextWorkflow: CreateWorkflow) => {
     if (onWorkflowChange) {
@@ -551,6 +565,40 @@ export default function ScriptCreateOptions({
     }
   }, [api])
 
+  useEffect(() => {
+    if (!canMigrateSecrets || typeof api.getSystemSettings !== 'function') {
+      setSourceSecretMigrationAllowed(false)
+      setMigrateExistingSecrets(false)
+      return
+    }
+    let cancelled = false
+    void api.getSystemSettings()
+      .then(settings => {
+        if (cancelled) return
+        const allowed = settings.script_imports?.allow_source_secret_migration === true
+        setSourceSecretMigrationAllowed(allowed)
+        if (!allowed) setMigrateExistingSecrets(false)
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSourceSecretMigrationAllowed(false)
+          setMigrateExistingSecrets(false)
+        }
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [api, canMigrateSecrets])
+
+  const startExistingScript = (script: StoredScript) => {
+    if (!onStartExistingScript) return
+    if (canMigrateSecrets) {
+      onStartExistingScript(script, { migrateSecrets: migrateExistingSecrets })
+      return
+    }
+    onStartExistingScript(script)
+  }
+
   const loadImportSurfaces = () => {
     setImportSurfacesLoading(true)
     setImportSurfacesError('')
@@ -677,6 +725,19 @@ export default function ScriptCreateOptions({
             <div className="script-create-existing-summary">
               {visibleExistingScripts.length} of {scripts.length} script{scripts.length === 1 ? '' : 's'}
             </div>
+            {canMigrateSecrets && sourceSecretMigrationAllowed && (
+              <label className="credentials-source-migration script-create-secret-migration">
+                <input
+                  type="checkbox"
+                  checked={migrateExistingSecrets}
+                  onChange={event => setMigrateExistingSecrets(event.target.checked)}
+                />
+                <span>
+                  Import detected credential values
+                  <small>Admin-only and create-only. Existing project secrets are never overwritten.</small>
+                </span>
+              </label>
+            )}
             {scripts.length > 0 ? (
               <div className="script-create-existing-table-wrap">
                 <table className="script-create-existing-table">
@@ -699,7 +760,7 @@ export default function ScriptCreateOptions({
                         <tr key={script.id}>
                           <td><span className="script-health-token">Local</span></td>
                           <td className="cell-name">
-                            <button type="button" className="script-create-existing-name" onClick={() => onStartExistingScript?.(script)}>
+                            <button type="button" className="script-create-existing-name" onClick={() => startExistingScript(script)}>
                               {script.name}
                             </button>
                             <div className="script-table-meta">
@@ -732,7 +793,7 @@ export default function ScriptCreateOptions({
                           <td className="cell-muted">{formatShortDate(script.created_at)}</td>
                           <td className="cell-muted">{formatShortDate(script.last_run_at)}</td>
                           <td style={{ textAlign: 'right' }}>
-                            <button type="button" className="script-create-existing-action" onClick={() => onStartExistingScript?.(script)}>Model</button>
+                            <button type="button" className="script-create-existing-action" onClick={() => startExistingScript(script)}>Model</button>
                           </td>
                         </tr>
                       )

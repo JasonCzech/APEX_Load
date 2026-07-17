@@ -279,6 +279,9 @@ func (s *Server) reconcilePendingCIGitHubCheckIntents(ctx context.Context, store
 			}
 			continue
 		}
+		if s.ciRunCreateInFlight(intent.TestID) {
+			continue
+		}
 		if err := s.runner.recoverQueuedCIRun(intent.TestID); err != nil && !errors.Is(err, errNotExecutionLeader) {
 			slog.Warn("recovered GitHub Check but failed to start queued CI run", "test_id", intent.TestID, "error", err)
 		} else if errors.Is(err, errNotExecutionLeader) {
@@ -679,7 +682,7 @@ func (s *Server) syncCIGitHubCheck(ctx context.Context, test *ManagedTest, metad
 	}
 	link, err = store.ClaimGitHubCheckConclusion(link.ID, ciGitHubCheckConclusion(response))
 	if err != nil {
-		return link.CheckRunURL, err
+		return "", err
 	}
 	if strings.EqualFold(strings.TrimSpace(link.Status), "completed") && strings.TrimSpace(link.Conclusion) != "" {
 		return link.CheckRunURL, nil

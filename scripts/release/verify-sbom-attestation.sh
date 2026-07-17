@@ -14,7 +14,7 @@ sbom="${3:-}"
 
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
-cosign verify-attestation --key "$public_key" --insecure-ignore-tlog=true --type spdxjson --output json "$image" > "$tmp"
+cosign verify-attestation --key "$public_key" --type spdxjson --output json "$image" > "$tmp"
 expected="$(jq -S -c . "$sbom" | sha256sum | awk '{print $1}')"
 matched=0
 while IFS= read -r payload; do

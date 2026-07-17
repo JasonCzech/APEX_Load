@@ -692,6 +692,7 @@ func cloneArchiveTestGroups(groups []TestGroup) []TestGroup {
 		cloned[i].RuntimeSettings = cloneRuntimeSettings(groups[i].RuntimeSettings)
 		cloned[i].Assignment = cloneGeneratorAssignmentSettings(groups[i].Assignment)
 		cloned[i].RunLogicGoals = cloneRunLogicGoalSnapshot(groups[i].RunLogicGoals)
+		cloned[i].runtimeSecretValues = nil
 	}
 	return cloned
 }

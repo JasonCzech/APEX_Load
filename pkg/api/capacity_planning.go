@@ -704,6 +704,8 @@ func protocolDensityEnvelope(protocol string) ProtocolDensityEnvelope {
 		return protocolDensityEnvelopeWithBenchmark(ProtocolDensityEnvelope{Protocol: "java_http", MaxVUsersPerGenerator: 7000, CPUCoresPerVUser: 0.00032, MemoryMBPerVUser: 0.45, NetworkMbpsPerVUser: 0.09, CompatibilityConfidence: "calibrated_model"}, "java_http_7k_client_runtime_4vcpu_8gb")
 	case "java_vuser":
 		return protocolDensityEnvelopeWithBenchmark(ProtocolDensityEnvelope{Protocol: "java_vuser", MaxVUsersPerGenerator: 25, CPUCoresPerVUser: 0.02000, MemoryMBPerVUser: 96.0, NetworkMbpsPerVUser: 0.04, CompatibilityConfidence: "external_runner_required"}, "java_vuser_jvm_process_pool")
+	case "bruno":
+		return protocolDensityEnvelopeWithBenchmark(ProtocolDensityEnvelope{Protocol: "bruno", MaxVUsersPerGenerator: 256, CPUCoresPerVUser: 0.00600, MemoryMBPerVUser: 8.0, NetworkMbpsPerVUser: 0.10, CompatibilityConfidence: "runner_session_limit"}, "bruno_safe_runner_256_sessions")
 	case "jms":
 		return protocolDensityEnvelopeWithBenchmark(ProtocolDensityEnvelope{Protocol: "jms", MaxVUsersPerGenerator: 3000, CPUCoresPerVUser: 0.00050, MemoryMBPerVUser: 0.80, NetworkMbpsPerVUser: 0.05, CompatibilityConfidence: "calibrated_model"}, "jms_3k_session_send_4vcpu_8gb")
 	case "sap_gui":

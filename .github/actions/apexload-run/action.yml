@@ -98,6 +98,10 @@ inputs:
     description: Directory under the workspace or runner temp for JSON and JUnit evidence; symbolic-link traversal is rejected.
     required: false
     default: .apexload
+  idempotency-key:
+    description: Optional unique key for this gate. Set it when one workflow run executes multiple gates for the same script.
+    required: false
+    default: ""
   apexctl-version:
     description: Exact released apexctl version. Empty uses the version pinned by this action revision.
     required: false
@@ -213,6 +217,7 @@ runs:
         APEXLOAD_INPUT_ABORT_ON_CANCEL: ${{ inputs.abort-on-cancel }}
         APEXLOAD_INPUT_PUBLISH_CHECK: ${{ inputs.publish-check }}
         APEXLOAD_INPUT_EVIDENCE_DIRECTORY: ${{ inputs.evidence-directory }}
+        APEXLOAD_INPUT_IDEMPOTENCY_KEY: ${{ inputs.idempotency-key }}
         # These values come from GitHub's immutable workflow expression
         # context. apexctl deliberately does not trust the mutable event JSON
         # file for pull-request repository identity.

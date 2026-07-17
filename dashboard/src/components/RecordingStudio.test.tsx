@@ -28,7 +28,13 @@ const apiMock = {
   getRecording: vi.fn(),
   previewRecordingConversion: vi.fn(),
   convertRecording: vi.fn(),
+  applyImportParameterization: vi.fn(),
   importSalesforce: vi.fn(),
+  applySecretBindings: vi.fn(),
+  getProjectSecretStatuses: vi.fn(),
+  createProjectSecrets: vi.fn(),
+  migrateImportSecrets: vi.fn(),
+  discardImportSecretSession: vi.fn(),
   createScript: vi.fn(),
   startRecording: vi.fn(),
   stopRecording: vi.fn(),
@@ -199,6 +205,14 @@ describe('RecordingStudio', () => {
       review_sections: [],
       repair_suggestions: [],
       correlations: [],
+      secret_binding_requirements: [{
+        id: 'salesforce-session-token',
+        path: '/actions/0/headers/Authorization',
+        label: 'Salesforce session token',
+        context: 'Aura Bootstrap',
+        suggested_name: 'SALESFORCE_SESSION_TOKEN',
+        replacement: 'Bearer {{secret.SALESFORCE_SESSION_TOKEN}}',
+      }],
       stats: { converted_actions: 1 },
       summary: {
         salesforce_review: {
@@ -207,6 +221,23 @@ describe('RecordingStudio', () => {
         },
       },
     })
+    apiMock.applySecretBindings.mockImplementation(async ({ script }: { script: Record<string, unknown> }) => ({
+      script,
+      secret_binding_requirements: [],
+    }))
+    apiMock.getProjectSecretStatuses.mockResolvedValue({
+      project_id: 'proj-1',
+      capabilities: {
+        provider: 'encrypted_database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: false,
+      },
+      secrets: [],
+    })
+    apiMock.createProjectSecrets.mockResolvedValue({ project_id: 'proj-1', secrets: [], count: 0 })
+    apiMock.migrateImportSecrets.mockResolvedValue({ project_id: 'proj-1', secrets: [], count: 0 })
     apiMock.createScript.mockImplementation(async (script: { name?: string; protocol?: string; version?: string }) => ({
       id: 'script-1',
       name: script.name || 'Saved Script',
@@ -466,6 +497,8 @@ describe('RecordingStudio', () => {
   it('reviews a recording conversion and saves it through the shared script flow', async () => {
     const onImported = vi.fn()
     const onEdit = vi.fn()
+    let resolveSave: ((value: unknown) => void) | undefined
+    apiMock.createScript.mockReturnValueOnce(new Promise(resolve => { resolveSave = resolve }))
 
     await act(async () => {
       root.render(<RecordingStudio onImported={onImported} onEdit={onEdit} />)
@@ -532,10 +565,22 @@ describe('RecordingStudio', () => {
       return
     }
 
-    await act(async () => {
+    act(() => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    await flushPromises()
 
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    const pendingSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Saving...')
+    expect(pendingSave?.disabled).toBe(true)
+    await act(async () => {
+      resolveSave?.({
+        id: 'script-1', name: 'Checkout Preview', protocol: 'http', version: '1.0.0',
+        created_at: '2026-05-17T00:00:00Z',
+      })
+      await Promise.resolve()
+    })
     await flushPromises()
 
     expect(apiMock.convertRecording).not.toHaveBeenCalled()
@@ -547,7 +592,7 @@ describe('RecordingStudio', () => {
           source: 'recorder',
         }),
       }),
-    }), undefined)
+    }), undefined, undefined, 'rec-1')
     expect(container.textContent).toContain('Script "Checkout Preview" created with 1 correlations detected')
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [expect.objectContaining({
@@ -555,6 +600,268 @@ describe('RecordingStudio', () => {
         protocol: 'http',
       })],
     }))
+  })
+
+  it('applies recording parameterization to the draft that is saved', async () => {
+    apiMock.previewRecordingConversion.mockResolvedValueOnce({
+      script: {
+        name: 'Parameterized Recording',
+        version: '1.0.0',
+        protocol: 'http',
+        actions: [{ name: 'Get Order', type: 'request', method: 'GET', target: '/orders?customer_id=42' }],
+      },
+      correlations: [],
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      stats: {},
+      summary: {},
+      parameterization: {
+        suggestions: [{
+          id: 'pz_recording_customer',
+          kind: 'data_param',
+          var_name: 'customer_id',
+          replacement: '{{var.customer_id}}',
+          sample_value: '42',
+          confidence: 0.9,
+          rule_id: 'test.recording.customer',
+          rationale: 'Customer id should vary by virtual user',
+          auto_apply: true,
+          high_risk: false,
+          locations: [{ section: 'actions', action_index: 0, action_name: 'Get Order', field: 'target' }],
+        }],
+        summary: { total: 1, by_kind: { data_param: 1 }, auto_apply_count: 1, review_count: 0, high_risk_count: 0, pre_applied_count: 0 },
+      },
+    })
+    apiMock.applyImportParameterization.mockResolvedValueOnce({
+      script: {
+        name: 'Parameterized Recording',
+        version: '1.0.0',
+        protocol: 'http',
+        actions: [{ name: 'Get Order', type: 'request', method: 'GET', target: '/orders?customer_id={{var.customer_id}}' }],
+      },
+      diffs: [{ kind: 'value_replaced', path: '/actions/0/target', suggestion_id: 'pz_recording_customer' }],
+      applied_count: 1,
+    })
+
+    await act(async () => root.render(<RecordingStudio />))
+    await flushPromises()
+    await openProxyAdvanced(container)
+    const reviewButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Review Script')
+    await act(async () => reviewButton?.click())
+    await flushPromises()
+
+    expect(container.textContent).toContain('Parameterization Review (1)')
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.paramize-review button.btn-primary')?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Save To Script Library')
+    await act(async () => {
+      saveButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(apiMock.applyImportParameterization).toHaveBeenCalledWith(expect.objectContaining({
+      selected_ids: ['pz_recording_customer'],
+    }))
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      actions: [expect.objectContaining({ target: '/orders?customer_id={{var.customer_id}}' })],
+    }), undefined, undefined, 'rec-1')
+  })
+
+  it('shows recorder credentials and saves safe references while values are deferred', async () => {
+    const onImported = vi.fn()
+    const onEdit = vi.fn()
+    const maskedScript = {
+      name: 'Credential Preview',
+      version: '1.0.0',
+      protocol: 'http',
+      project_id: 'proj-1',
+      config: { base_url: 'https://shop.example.com' },
+      actions: [{
+        name: 'Login',
+        type: 'request',
+        method: 'POST',
+        target: '/login',
+        headers: { Authorization: 'Bearer [REDACTED]' },
+      }],
+    }
+    const safeScript = {
+      ...maskedScript,
+      actions: [{
+        ...maskedScript.actions[0],
+        headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' },
+      }],
+    }
+    apiMock.previewRecordingConversion.mockResolvedValueOnce({
+      script: maskedScript,
+      scripts: [maskedScript],
+      correlations: [],
+      warnings: [],
+      secret_binding_requirements: [{
+        id: 'login-token',
+        path: '/actions/0/headers/Authorization',
+        occurrence: 0,
+        label: 'Authorization credential',
+        context: 'Login',
+        suggested_name: 'LOGIN_TOKEN',
+        replacement: 'Bearer {{secret.LOGIN_TOKEN}}',
+      }],
+    })
+    apiMock.applySecretBindings.mockResolvedValueOnce({
+      script: safeScript,
+      secret_binding_requirements: [],
+    })
+
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: 'proj-1', name: 'Web' } as any} onImported={onImported} onEdit={onEdit} />)
+    })
+    await flushPromises()
+    await openProxyAdvanced(container)
+
+    const reviewButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Review Script')
+    await act(async () => {
+      reviewButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(container.textContent).toContain('Credentials (1)')
+    expect(container.textContent).toContain('Configure later')
+    expect(container.textContent).toContain('Save with 1 secret to configure')
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Save with 1 secret to configure')
+    const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Open In Visual Editor')
+    const bindingInput = container.querySelector<HTMLInputElement>('.secret-binding-review input[type="text"]')!
+    act(() => setInput(bindingInput, 'INVALID/NAME'))
+    expect(saveButton?.disabled).toBe(true)
+    expect(editButton?.disabled).toBe(true)
+    expect(apiMock.applySecretBindings).not.toHaveBeenCalled()
+    act(() => setInput(bindingInput, 'LOGIN_TOKEN'))
+    expect(saveButton?.disabled).toBe(false)
+    expect(editButton?.disabled).toBe(false)
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).toHaveBeenCalledWith({
+      script: expect.objectContaining({ name: 'Credential Preview' }),
+      bindings: [{ requirement_id: 'login-token', secret_name: 'LOGIN_TOKEN' }],
+    })
+    expect(apiMock.createProjectSecrets).not.toHaveBeenCalled()
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      actions: [expect.objectContaining({
+        headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' },
+      })],
+    }), 'proj-1', undefined, 'rec-1')
+    expect(onImported).toHaveBeenCalled()
+  })
+
+  it('locks recording parameterization while credentials are being prepared for the editor', async () => {
+    const maskedScript = {
+      name: 'Credential Parameterization Preview',
+      version: '1.0.0',
+      protocol: 'http',
+      project_id: 'proj-1',
+      config: { base_url: 'https://shop.example.com' },
+      actions: [{
+        name: 'Login',
+        type: 'request',
+        method: 'POST',
+        target: '/login?customer_id=42',
+        headers: { Authorization: 'Bearer [REDACTED]' },
+      }],
+    }
+    apiMock.previewRecordingConversion.mockResolvedValueOnce({
+      script: maskedScript,
+      scripts: [maskedScript],
+      correlations: [],
+      warnings: [],
+      secret_binding_requirements: [{
+        id: 'login-token',
+        path: '/actions/0/headers/Authorization',
+        occurrence: 0,
+        label: 'Authorization credential',
+        context: 'Login',
+        suggested_name: 'LOGIN_TOKEN',
+        replacement: 'Bearer {{secret.LOGIN_TOKEN}}',
+      }],
+      parameterization: {
+        suggestions: [{
+          id: 'pz_recording_customer',
+          kind: 'data_param',
+          var_name: 'customer_id',
+          replacement: '{{var.customer_id}}',
+          sample_value: '42',
+          confidence: 0.9,
+          rule_id: 'test.recording.customer',
+          rationale: 'Customer id should vary by virtual user',
+          auto_apply: true,
+          high_risk: false,
+        }],
+        summary: { total: 1, by_kind: { data_param: 1 }, auto_apply_count: 1, review_count: 0, high_risk_count: 0, pre_applied_count: 0 },
+      },
+    })
+    apiMock.applySecretBindings.mockImplementationOnce(() => new Promise(() => {}))
+
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: 'proj-1', name: 'Web' } as any} onEdit={vi.fn()} />)
+    })
+    await flushPromises()
+    await openProxyAdvanced(container)
+    const reviewButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Review Script')
+    await act(async () => reviewButton?.click())
+    await flushPromises()
+    const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.trim() === 'Open In Visual Editor')
+    await act(async () => {
+      editButton?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector<HTMLButtonElement>('.paramize-review button.btn-primary')?.disabled).toBe(true)
+    expect(container.textContent).toContain('Preparing editor...')
+  })
+
+  it('ignores a late recorder credential result after a newer conversion', async () => {
+    const buildResult = (name: string, requirements: unknown[]) => ({
+      script: { name, version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'GET /', type: 'request', method: 'GET', target: '/' }] },
+      scripts: [], correlations: [], warnings: [], secret_binding_requirements: requirements,
+    })
+    const requirement = { id: 'auth', path: '/actions/0/headers/Authorization', label: 'Authorization', context: 'Bearer credential', suggested_name: 'API_TOKEN' }
+    apiMock.previewRecordingConversion
+      .mockResolvedValueOnce(buildResult('Generation A', [requirement]))
+      .mockResolvedValueOnce(buildResult('Generation B', []))
+    let resolveApply: ((value: unknown) => void) | undefined
+    apiMock.applySecretBindings.mockReturnValueOnce(new Promise(resolve => { resolveApply = resolve }))
+
+    await act(async () => root.render(<RecordingStudio activeProject={{ id: 'proj-1', name: 'Web' } as any} />))
+    await flushPromises()
+    await openProxyAdvanced(container)
+    const reviewButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Review Script')!
+    await act(async () => reviewButton.click())
+    await flushPromises()
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Save with 1 secret to configure')!
+    act(() => saveButton.click())
+    await flushPromises()
+    await act(async () => reviewButton.click())
+    await flushPromises()
+    await act(async () => {
+      resolveApply?.({ script: buildResult('Resolved A', []).script, secret_binding_requirements: [] })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Generation B')
+    expect(container.textContent).not.toContain('Resolved A')
+    expect(apiMock.createScript).not.toHaveBeenCalled()
   })
 
   it('treats preview scripts with empty ids as unsaved drafts', async () => {
@@ -598,7 +905,12 @@ describe('RecordingStudio', () => {
     })
     await flushPromises()
 
-    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ name: 'Unsaved Preview', protocol: 'http' }), undefined)
+    expect(apiMock.createScript).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Unsaved Preview', protocol: 'http' }),
+      undefined,
+      undefined,
+      'rec-1',
+    )
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [expect.objectContaining({ name: 'Unsaved Preview', protocol: 'http' })],
     }))
@@ -687,7 +999,7 @@ describe('RecordingStudio', () => {
       config: { base_url: 'https://shop.example.com' },
       actions: [{ name: '01 - GET /', type: 'request', method: 'GET', target: '/' }],
     }
-    apiMock.convertRecording.mockResolvedValueOnce({
+    apiMock.previewRecordingConversion.mockResolvedValueOnce({
       script: {
         id: 'stored-recorder-script',
         name: 'Checkout Converted',
@@ -737,6 +1049,8 @@ describe('RecordingStudio', () => {
   it('reviews Salesforce-looking proxy recordings through the native HTTP importer', async () => {
     const onImported = vi.fn()
     const onEdit = vi.fn()
+    let resolveSave: ((value: unknown) => void) | undefined
+    apiMock.createScript.mockReturnValueOnce(new Promise(resolve => { resolveSave = resolve }))
     apiMock.listRecordings.mockResolvedValueOnce({
       sessions: [{
         id: 'rec-sf',
@@ -789,26 +1103,97 @@ describe('RecordingStudio', () => {
     expect(container.textContent).toContain('100%')
     expect(container.textContent).toContain('Review Salesforce correlation extractors before approval.')
 
-    const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Open In Visual Editor')
+    expect(container.textContent).toContain('Save with 1 secret to configure')
+    const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Open In Visual Editor')
+    const deferredSaveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Save with 1 secret to configure')
+    const bindingInput = container.querySelector<HTMLInputElement>('.secret-binding-review input[type="text"]')!
+    act(() => setInput(bindingInput, 'INVALID/NAME'))
+    expect(editButton?.disabled).toBe(true)
+    expect(deferredSaveButton?.disabled).toBe(true)
+    act(() => setInput(bindingInput, 'SALESFORCE_SESSION_TOKEN'))
+    expect(editButton?.disabled).toBe(false)
+    expect(deferredSaveButton?.disabled).toBe(false)
     expect(editButton).toBeDefined()
     if (!editButton) return
     await act(async () => {
       editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
+    await flushPromises()
     expect(onEdit).toHaveBeenCalledWith(expect.objectContaining({ name: 'Salesforce Capture HTTP', protocol: 'http' }))
 
-    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Save To Script Library')
-    expect(saveButton).toBeDefined()
+    const saveButton = container.querySelector<HTMLButtonElement>('.rec-convert-result .rec-result-actions .btn-primary')
+    expect(saveButton).not.toBeNull()
+    expect(saveButton?.disabled).toBe(false)
     if (!saveButton) return
-    await act(async () => {
+    act(() => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     await flushPromises()
 
-    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ name: 'Salesforce Capture HTTP' }), undefined)
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    expect(container.querySelector<HTMLButtonElement>('.rec-convert-result .rec-result-actions .btn-primary')?.textContent).toBe('Saving...')
+    expect(container.querySelector<HTMLButtonElement>('.rec-convert-result .rec-result-actions .btn-primary')?.disabled).toBe(true)
+    expect(apiMock.createScript).toHaveBeenCalledWith(
+      expect.objectContaining({ name: 'Salesforce Capture HTTP' }),
+      undefined,
+      undefined,
+      'rec-sf',
+    )
+    await act(async () => {
+      resolveSave?.({
+        id: 'salesforce-script', name: 'Salesforce Capture HTTP', protocol: 'http', version: '1.0.0',
+        created_at: '2026-05-17T00:00:00Z',
+      })
+      await Promise.resolve()
+    })
+    await flushPromises()
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [expect.objectContaining({ name: 'Salesforce Capture HTTP' })],
     }))
+  })
+
+  it('ignores a late Salesforce credential result after a newer native review', async () => {
+    apiMock.listRecordings.mockResolvedValueOnce({
+      sessions: [{
+        id: 'rec-sf', name: 'Salesforce Capture', status: 'stopped', started_at: '2026-05-12T20:00:00Z', base_url: 'https://acme.my.salesforce.com',
+        requests: [{ seq: 1, method: 'POST', url: 'https://acme.my.salesforce.com/aura', path: '/aura', host: 'acme.my.salesforce.com', status_code: 200, response_time_ms: 10, content_type: 'application/json', body: '', think_time_ms: 0, is_static: false }],
+        filters: { exclude_static: true },
+      }],
+    })
+    const buildResult = (name: string, requirements: unknown[]) => ({
+      scripts: [],
+      script: { name, version: '1.0.0', protocol: 'http', config: { base_url: 'https://acme.my.salesforce.com' }, actions: [{ name: 'Aura', type: 'request', method: 'POST', target: '/aura' }] },
+      warnings: [], unsupported_elements: [], assumptions: [], review_sections: [], repair_suggestions: [], correlations: [],
+      secret_binding_requirements: requirements, stats: { converted_actions: 1 }, summary: { salesforce_review: { detected: true, har_match_coverage: { coverage_pct: 100 } } },
+    })
+    const requirement = { id: 'sf-auth', path: '/actions/0/headers/Authorization', label: 'Authorization', context: 'Aura', suggested_name: 'SF_TOKEN' }
+    apiMock.importSalesforce
+      .mockResolvedValueOnce(buildResult('Salesforce A', [requirement]))
+      .mockResolvedValueOnce(buildResult('Salesforce B', []))
+    let resolveApply: ((value: unknown) => void) | undefined
+    apiMock.applySecretBindings.mockReturnValueOnce(new Promise(resolve => { resolveApply = resolve }))
+
+    await act(async () => root.render(<RecordingStudio activeProject={{ id: 'proj-1', name: 'Web' } as any} />))
+    await flushPromises()
+    await openProxyAdvanced(container)
+    const reviewButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Review Salesforce HTTP')!
+    await act(async () => reviewButton.click())
+    await flushPromises()
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === 'Save with 1 secret to configure')!
+    act(() => saveButton.click())
+    await flushPromises()
+    await act(async () => reviewButton.click())
+    await flushPromises()
+    await act(async () => {
+      resolveApply?.({ script: buildResult('Resolved Salesforce A', []).script, secret_binding_requirements: [] })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Salesforce B')
+    expect(container.textContent).not.toContain('Resolved Salesforce A')
+    expect(apiMock.createScript).not.toHaveBeenCalled()
   })
 
   it('passes the parameterize option through when toggled', async () => {
@@ -837,7 +1222,14 @@ describe('RecordingStudio', () => {
     })
     await flushPromises()
 
-    expect(apiMock.convertRecording).toHaveBeenCalledWith('rec-1', 'Checkout Capture', true)
+    expect(apiMock.previewRecordingConversion).toHaveBeenCalledWith('rec-1', 'Checkout Capture', true)
+    expect(apiMock.convertRecording).not.toHaveBeenCalled()
+    expect(container.querySelector('.rec-convert-result')?.textContent).toContain('Checkout Preview')
+
+    await act(async () => {
+      toggle.click()
+    })
+    expect(container.querySelector('.rec-convert-result')).toBeNull()
   })
 
   it('threads the capture cookies option into the start request', async () => {
@@ -1726,6 +2118,12 @@ describe('RecordingStudio', () => {
     expect(Array.from(unavailable?.querySelectorAll('button') || []).some(b => b.textContent?.includes('Install Recording Browser'))).toBe(false)
   })
 })
+
+function setInput(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set
+  setter?.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}
 
 async function flushPromises() {
   await act(async () => {

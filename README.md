@@ -211,10 +211,17 @@ Controller runtime configuration:
 - `APEXLOAD_BROWSER_EXECUTABLE`: path to a system Chromium/Chrome for browser-protocol runs (set to `/usr/bin/google-chrome` in the generator image, where Playwright's managed glibc Chromium cannot run on musl)
 - `APEXLOAD_BROWSER_SANDBOX`: set `true` to drop `--no-sandbox` and use Chromium's own sandbox where the environment supports it (unprivileged user namespaces); default keeps `--no-sandbox` because hardened pod securityContexts cannot start the sandbox
 - `APEXLOAD_AZURE_KEY_VAULT_URL`: Azure Key Vault for `{{secret.*}}` resolution; `APEXLOAD_AZURE_KEY_VAULT_AUTH` selects `token` (static `APEXLOAD_AZURE_KEY_VAULT_TOKEN`), `azure_identity` (workload/managed identity via DefaultAzureCredential), or `auto` (default); `APEXLOAD_AZURE_KEY_VAULT_SCOPE` overrides the token audience for sovereign clouds
+- `APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED`: set `true` on the controller only to use Azure Key Vault as the governed writable Project Secrets provider; the controller identity needs `Key Vault Secrets Officer`
+- `APEXLOAD_AZURE_KEY_VAULT_API_VERSION`: optional Key Vault data-plane API version for managed Project Secrets (default `7.4`)
+- `APEXLOAD_WRAPPING_MASTER_KEY`: stable 32-byte (or base64-encoded 32-byte) protocol-neutral wrapping key for encrypted database-backed Project Secrets and protected source artifacts
+- `APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID`: optional versioned Azure Key Vault cryptographic key used instead of the local wrapping master key
 - `APEXLOAD_ARCHIVE_BACKEND`: archive backend: `filesystem`, `s3`, `azure_blob`, or `gcs` (default `filesystem`)
 - `APEXLOAD_ARCHIVE_DIR`: archive root for local runs and staged remote archives (default `artifacts/archives`)
 - `APEXLOAD_ARCHIVE_BUCKET`, `APEXLOAD_ARCHIVE_CONTAINER`, `APEXLOAD_ARCHIVE_PREFIX`, `APEXLOAD_ARCHIVE_REGION`, `APEXLOAD_ARCHIVE_ENDPOINT`: object archive target metadata for enterprise deployments
 - `APEXLOAD_PROMETHEUS_REMOTE_WRITE_URL`: optional Prometheus-compatible long-term metrics retention endpoint
+
+See [Project Secrets](docs/PROJECT_SECRETS.md) for provider setup, import
+migration governance, and secure distributed delivery requirements.
 
 ## Build and Test
 

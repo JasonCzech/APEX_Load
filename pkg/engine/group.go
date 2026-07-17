@@ -15,6 +15,8 @@ import (
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
+const maxMultiGroupRuntimeSecretRedactionBytes = 32 << 20
+
 type GroupConfig struct {
 	Name            string
 	Script          *dsl.Script
@@ -187,6 +189,8 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		cfg.Groups[i].dataProvider = dataProvider
 	}
 	defaultSecretResolvers := make(map[string]SecretResolver)
+	runtimeRedactionSets := make(map[[32]byte]*RedactionConfig)
+	runtimeRedactionBytes := 0
 	for i := range cfg.Groups {
 		if cfg.Groups[i].SecretResolver == nil {
 			projectID := strings.TrimSpace(cfg.Groups[i].Script.ProjectID)
@@ -197,6 +201,29 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 			}
 			cfg.Groups[i].SecretResolver = resolver
 		}
+		resolver, values, err := snapshotReferencedSecrets(cfg.Groups[i].Script, cfg.Groups[i].SecretResolver)
+		if err != nil {
+			return nil, fmt.Errorf("group[%d] %q: inspect secret references: %s", i, cfg.Groups[i].Name, scrubSensitiveText(err.Error()))
+		}
+		cfg.Groups[i].SecretResolver = resolver
+		values = append(values, runtimeProtocolAuthCompositeValues(cfg.Groups[i].Script, resolver)...)
+		mergedValues := mergedRuntimeSecretValues(cfg.Groups[i].RedactionConfig, values)
+		key := runtimeSecretValueSetKey(mergedValues)
+		runtimeConfig := runtimeRedactionSets[key]
+		if runtimeConfig == nil {
+			runtimeConfig, err = WithSecretValueRedactionChecked(nil, mergedValues)
+			if err != nil {
+				return nil, fmt.Errorf("group[%d] %q: prepare runtime secret redaction: %s", i, cfg.Groups[i].Name, scrubSensitiveText(err.Error()))
+			}
+			if runtimeConfig != nil && runtimeConfig.runtimePatternBytes > maxMultiGroupRuntimeSecretRedactionBytes-runtimeRedactionBytes {
+				return nil, fmt.Errorf("multi-group runtime secret redaction exceeds the aggregate matcher limit")
+			}
+			if runtimeConfig != nil {
+				runtimeRedactionBytes += runtimeConfig.runtimePatternBytes
+			}
+			runtimeRedactionSets[key] = runtimeConfig
+		}
+		cfg.Groups[i].RedactionConfig = attachRuntimeSecretRedaction(cfg.Groups[i].RedactionConfig, runtimeConfig)
 	}
 	mge := &MultiGroupEngine{
 		groups:         cfg.Groups,
@@ -380,6 +407,23 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 
 	totalTargetTPS := 0.0
 	atOnceGroups := make([]GroupConfig, 0)
+	atOnceTeardownComplete := false
+	runAtOnceTeardown := func() {
+		if atOnceTeardownComplete {
+			return
+		}
+		atOnceTeardownComplete = true
+		for _, group := range atOnceGroups {
+			protoConfig := buildProtoConfigForRunModeWithSecretResolver(group.Script, "load", group.SecretResolver)
+			applyRuntimeMockNamespace(protoConfig, mge.mockNamespace)
+			tctx, tcancel := teardownContext()
+			mge.runGroupLifecycleBlock(tctx, group, protoConfig, group.Script.Teardown, "teardown")
+			tcancel()
+		}
+	}
+	// Once a group begins init-at-once it owns a cleanup obligation, including
+	// partial init and failures while starting any later closed/open group.
+	defer runAtOnceTeardown()
 	openGroupErrors := make(chan error, len(runGroups))
 groupLoop:
 	for gi, group := range runGroups {
@@ -399,11 +443,12 @@ groupLoop:
 			if err := mge.WaitIfPaused(mge.loopCtx); err != nil {
 				break groupLoop
 			}
+			atOnceGroups = append(atOnceGroups, group)
 			if !mge.runGroupLifecycleBlock(mge.baseCtx, group, protoConfig, group.Script.Init, "init") {
 				baseCancel()
+				wg.Wait()
 				return nil, fmt.Errorf("group %q init-once failed", group.Name)
 			}
-			atOnceGroups = append(atOnceGroups, group)
 		}
 		if isOpenWorkload(group.Script) {
 			arrivals, bounded := boundedArrivalLimit(group.Script, group.VUsers)
@@ -476,6 +521,7 @@ groupLoop:
 			vuserID, err := mge.allocateVUserID()
 			if err != nil {
 				baseCancel()
+				wg.Wait()
 				return nil, fmt.Errorf("group %q allocate vuser id: %w", group.Name, err)
 			}
 			if err := mge.spawnVUser(vuserID, group, protoConfig, &wg, false); err != nil {
@@ -499,13 +545,7 @@ groupLoop:
 		baseCancel()
 		return nil, err
 	}
-	for _, group := range atOnceGroups {
-		protoConfig := buildProtoConfigForRunModeWithSecretResolver(group.Script, "load", group.SecretResolver)
-		applyRuntimeMockNamespace(protoConfig, mge.mockNamespace)
-		tctx, tcancel := teardownContext()
-		mge.runGroupLifecycleBlock(tctx, group, protoConfig, group.Script.Teardown, "teardown")
-		tcancel()
-	}
+	runAtOnceTeardown()
 	if err := waitForBaselineWindow(ctx, mge.postBaseline); err != nil {
 		return nil, err
 	}
@@ -554,11 +594,13 @@ func (mge *MultiGroupEngine) runGroupLifecycleBlock(ctx context.Context, group G
 		slog.Error("failed to create lifecycle protocol", "group", group.Name, "phase", phase, "err", scrubSensitiveError(err, group.RedactionConfig))
 		return false
 	}
-	if err := vuProto.Init(ctx, protoConfig); err != nil {
-		slog.Error("failed to init lifecycle protocol", "group", group.Name, "phase", phase, "err", scrubSensitiveError(err, group.RedactionConfig))
+	bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return group.RedactionConfig })
+	if err := callProtocolInit(ctx, vuProto, protoConfig, group.RedactionConfig); err != nil {
+		slog.Error("failed to init lifecycle protocol", "group", group.Name, "phase", phase, "err", err)
+		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
 		return false
 	}
-	defer runProtocolTeardown(vuProto)
+	defer runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
 
 	vu := &VUser{
 		ID:              -1,
@@ -630,11 +672,12 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 		mge.finishReservedVUser(vuserID, wg)
 		return safeErr
 	}
-	if err := vuProto.Init(vuCtx, vuserProtoConfig(protoConfig, runtimeVUserID)); err != nil {
-		safeErr := scrubSensitiveError(err, group.RedactionConfig)
+	bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return group.RedactionConfig })
+	if err := callProtocolInit(vuCtx, vuProto, vuserProtoConfig(protoConfig, runtimeVUserID), group.RedactionConfig); err != nil {
+		safeErr := err
 		slog.Error("failed to init protocol", "group", group.Name, "vuser", runtimeVUserID, "err", safeErr)
 		cancelVUser()
-		runProtocolTeardown(vuProto)
+		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
 		mge.finishReservedVUser(vuserID, wg)
 		return safeErr
 	}
@@ -645,14 +688,21 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 	mge.metrics.SetActiveVUsers(int64(activeVUsers))
 
 	go func() {
-		defer recoverVUserGoroutine(runtimeVUserID)
+		var vu *VUser
+		redaction := func() *RedactionConfig {
+			if vu != nil {
+				return vu.RedactionConfig
+			}
+			return group.RedactionConfig
+		}
+		defer recoverVUserGoroutine(runtimeVUserID, redaction)
 		defer cancelVUser()
 		defer func() {
-			runProtocolTeardown(vuProto)
+			runProtocolTeardown(vuProto, redaction)
 			mge.finishReservedVUser(vuserID, wg)
 		}()
 
-		vu := &VUser{
+		vu = &VUser{
 			ID:                   runtimeVUserID,
 			TotalVUsers:          group.VUsers,
 			Group:                group.Name,
@@ -838,8 +888,9 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 		release()
 		return safeErr
 	}
-	if err := vuProto.Init(vuCtx, vuserProtoConfig(protoConfig, runtimeVUserID)); err != nil {
-		safeErr := scrubSensitiveError(err, group.RedactionConfig)
+	bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return group.RedactionConfig })
+	if err := callProtocolInit(vuCtx, vuProto, vuserProtoConfig(protoConfig, runtimeVUserID), group.RedactionConfig); err != nil {
+		safeErr := err
 		slog.Error("failed to init protocol for open workload worker", "group", group.Name, "worker", runtimeVUserID, "err", safeErr)
 		cancelVUser()
 		mge.mu.Lock()
@@ -849,7 +900,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 		mge.releaseVUserIDLocked(vuserID)
 		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 		mge.mu.Unlock()
-		runProtocolTeardown(vuProto)
+		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
 		release()
 		return safeErr
 	}
@@ -857,12 +908,19 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 	iterationScript := cloneSingleIterationScript(group.Script)
 	wg.Add(1)
 	go func() {
-		defer recoverVUserGoroutine(runtimeVUserID)
+		var vu *VUser
+		redaction := func() *RedactionConfig {
+			if vu != nil {
+				return vu.RedactionConfig
+			}
+			return group.RedactionConfig
+		}
+		defer recoverVUserGoroutine(runtimeVUserID, redaction)
 		defer wg.Done()
 		defer release()
 		defer cancelVUser()
 		defer func() {
-			runProtocolTeardown(vuProto)
+			runProtocolTeardown(vuProto, redaction)
 			mge.mu.Lock()
 			delete(mge.vuserCancels, vuserID)
 			delete(mge.vuserGroups, vuserID)
@@ -872,7 +930,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 			mge.mu.Unlock()
 		}()
 
-		vu := &VUser{
+		vu = &VUser{
 			ID:              runtimeVUserID,
 			Group:           group.Name,
 			Proto:           vuProto,

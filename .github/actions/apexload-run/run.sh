@@ -231,6 +231,7 @@ cmd=("$apexctl" ci run
 [[ -n "${APEXLOAD_INPUT_MAX_AVG_SERVER_PROCESSING_MS:-}" ]] && cmd+=(--max-avg-server-processing-ms "$APEXLOAD_INPUT_MAX_AVG_SERVER_PROCESSING_MS")
 [[ -n "${APEXLOAD_INPUT_MAX_AVG_TRANSFER_MS:-}" ]] && cmd+=(--max-avg-transfer-ms "$APEXLOAD_INPUT_MAX_AVG_TRANSFER_MS")
 [[ -n "${APEXLOAD_INPUT_MAX_ERROR_COUNT:-}" ]] && cmd+=(--max-error-count "$APEXLOAD_INPUT_MAX_ERROR_COUNT")
+[[ -n "${APEXLOAD_INPUT_IDEMPOTENCY_KEY:-}" ]] && cmd+=(--idempotency-key "$APEXLOAD_INPUT_IDEMPOTENCY_KEY")
 
 "${cmd[@]}"
 apexctl_exit=$?

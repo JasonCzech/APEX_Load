@@ -19,6 +19,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
@@ -42,13 +43,18 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	req.creationActor = testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
 
 	test, err := s.runner.CreateTest(req)
 	if err != nil {
+		if errors.Is(err, errServiceAccountRuntimeSecretWrite) {
+			writeError(w, http.StatusForbidden, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	if actorType == "user" || actorType == "service_account" {
 		// AttributeTestCreated sets CreatedBySubject/CreatedByDisplayName under
 		// tr.mu; writing them here directly would race the run/read paths.
@@ -486,6 +492,17 @@ func (s *Server) handleDeleteTest(w http.ResponseWriter, r *http.Request) {
 		projectID = test.ProjectID
 		name = test.Name
 		status = test.Status
+		if metadata, metadataErr := decodeCIRunMetadata(test.MaterializationKey); metadataErr == nil && metadata.PublishCheck {
+			response, responseErr := s.buildCIRunResponse(r.Context(), test)
+			if responseErr != nil {
+				writeError(w, http.StatusBadGateway, "failed to prepare the required GitHub Check before deletion: "+responseErr.Error())
+				return
+			}
+			if _, syncErr := s.syncCIGitHubCheck(r.Context(), test, metadata, response); syncErr != nil {
+				writeError(w, http.StatusBadGateway, "failed to conclude the required GitHub Check before deletion: "+syncErr.Error())
+				return
+			}
+		}
 	}
 	deleted, err := s.runner.DeleteTestWithError(canonicalID)
 	if err != nil {
@@ -650,18 +667,24 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if unresolved := discoverSecretBindingRequirements(script, 0); len(unresolved) > 0 {
-		// Requirements and opaque IDs must describe the exact disclosure-safe
-		// script representation the binding endpoint will consume. Project first
-		// so a mixed raw/redacted scalar cannot be echoed back or produce stale IDs.
-		projected := maskScriptSecrets(script)
-		if projected == nil {
-			writeError(w, http.StatusBadRequest, "failed to project script for secret binding")
-			return
-		}
-		writeSecretBindingsRequired(w, discoverSecretBindingRequirements(projected, 0))
+	// Always inspect the disclosure-safe projection. A draft that contains only
+	// an inline credential (and no literal sentinel) must receive the same
+	// guided binding response as a previously redacted import.
+	projected := maskScriptSecrets(script)
+	if projected == nil {
+		writeError(w, http.StatusBadRequest, "failed to project script for secret binding")
 		return
 	}
+	if unresolved := discoverSecretBindingRequirements(projected, 0); len(unresolved) > 0 {
+		// Requirements and opaque IDs describe the exact safe representation
+		// consumed by the binding endpoint; plaintext never appears in the error.
+		writeSecretBindingsRequired(w, unresolved)
+		return
+	}
+	// Persist the projection, not the caller's raw object. The binding scanner
+	// intentionally ignores non-executable source-review evidence, but durable
+	// storage must still never retain credentials embedded in that metadata.
+	script = projected
 	if err := reconcileMaskedScriptSecrets(script, nil); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -677,7 +700,18 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to save script: "+err.Error())
 		return
 	}
-	s.captureRecordingBaseline(stored.ID, wrapper.SourceRecordingSessionID)
+	s.captureRecordingBaseline(stored.ID, stored.ProjectID, wrapper.SourceRecordingSessionID)
+	if wrapper.SourceRecordingSessionID != "" && s.browserRecording != nil {
+		if recording, ok := s.browserRecording.Get(wrapper.SourceRecordingSessionID); ok &&
+			normalizeProjectID(recording.ProjectID) == normalizeProjectID(stored.ProjectID) {
+			s.browserRecording.NotifyConverted(wrapper.SourceRecordingSessionID, stored.ID, stored.Name)
+			s.recordAuditEvent(r, "browser_recording.convert", "success", "script", stored.ID, stored.ProjectID, map[string]any{
+				"recording_session_id": wrapper.SourceRecordingSessionID,
+				"name":                 stored.Name,
+				"guided_save":          true,
+			})
+		}
+	}
 	s.recordAuditEvent(r, "script.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": stored.Name, "folder_id": stored.FolderID})
 	writeJSON(w, http.StatusCreated, maskStoredScript(stored))
 }
@@ -744,7 +778,7 @@ func (s *Server) handleValidateScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, buildScriptValidationResponse(id, script.Script))
+	writeJSON(w, http.StatusOK, buildScriptValidationResponse(id, script.Script, s.runner.secretResolverForProject(script.ProjectID)))
 }
 
 func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Request) {
@@ -766,7 +800,7 @@ func (s *Server) handleValidateDraftScript(w http.ResponseWriter, r *http.Reques
 		script.FolderID = wrapper.FolderID
 	}
 
-	writeJSON(w, http.StatusOK, buildScriptValidationResponseWithVariables("", script, wrapper.Variables))
+	writeJSON(w, http.StatusOK, buildScriptValidationResponseWithVariables("", script, wrapper.Variables, s.runner.secretResolverForProject(script.ProjectID)))
 }
 
 func (s *Server) handleMoveScript(w http.ResponseWriter, r *http.Request) {
@@ -1058,10 +1092,42 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 	if !rawJSONHasKey(string(body), "client_downloads") {
 		settings.ClientDownloads = currentSettings.ClientDownloads
 	}
+	if !rawJSONHasKey(string(body), "script_imports") {
+		settings.ScriptImports = currentSettings.ScriptImports
+	}
 
 	settings = preserveWriteOnlySystemSettingsSecrets(settings, currentSettings)
+	policyChanged := currentSettings.ScriptImports.AllowSourceSecretMigration != settings.ScriptImports.AllowSourceSecretMigration
+	policyAuditOperationID := ""
+	if policyChanged {
+		policyAuditOperationID, err = s.beginRequiredAuditOperation(r, "system.settings.update", "system_settings", "global", "", map[string]any{
+			"allow_source_secret_migration":          settings.ScriptImports.AllowSourceSecretMigration,
+			"source_secret_migration_policy_changed": true,
+		})
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "system settings audit is unavailable; the migration policy was not changed")
+			return
+		}
+	}
 	updated, err := s.runner.updateSystemSettings(settings, expectedSettingsRevision, true)
 	if err != nil {
+		if policyAuditOperationID != "" {
+			outcome := "update_failed"
+			auditDetails := map[string]any{
+				"allow_source_secret_migration":          settings.ScriptImports.AllowSourceSecretMigration,
+				"source_secret_migration_policy_changed": true,
+			}
+			if errors.Is(err, errSystemSettingsConflict) {
+				outcome = "conflict"
+			} else if strings.Contains(err.Error(), "persist settings") {
+				outcome = "persistence_error"
+				auditDetails["commit_state"] = "ambiguous"
+			}
+			if auditErr := s.completeRequiredAuditOperation(r, policyAuditOperationID, "system.settings.update", "failed", outcome, "system_settings", "global", "", auditDetails); auditErr != nil {
+				writeError(w, http.StatusServiceUnavailable, "system settings audit outcome could not be persisted")
+				return
+			}
+		}
 		if errors.Is(err, errSystemSettingsConflict) {
 			writeError(w, http.StatusConflict, err.Error())
 			return
@@ -1069,7 +1135,19 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	s.recordAuditEvent(r, "system.settings.update", "success", "system_settings", "global", "", map[string]any{"auth_mode": updated.Auth.Mode})
+	auditDetails := map[string]any{
+		"auth_mode":                              updated.Auth.Mode,
+		"allow_source_secret_migration":          updated.ScriptImports.AllowSourceSecretMigration,
+		"source_secret_migration_policy_changed": currentSettings.ScriptImports.AllowSourceSecretMigration != updated.ScriptImports.AllowSourceSecretMigration,
+	}
+	if policyAuditOperationID != "" {
+		if auditErr := s.completeRequiredAuditOperation(r, policyAuditOperationID, "system.settings.update", "success", "updated", "system_settings", "global", "", auditDetails); auditErr != nil {
+			writeError(w, http.StatusServiceUnavailable, "system settings were updated but the migration-policy audit outcome could not be persisted; reload settings before retrying")
+			return
+		}
+	} else {
+		s.recordAuditEvent(r, "system.settings.update", "success", "system_settings", "global", "", auditDetails)
+	}
 
 	writeJSON(w, http.StatusOK, redactedSystemSettingsResponse(updated))
 }
@@ -1108,14 +1186,14 @@ type scriptValidationResponse struct {
 	AuthoringHealth             AuthoringHealth                                     `json:"authoring_health"`
 }
 
-func buildScriptValidationResponse(scriptID string, script *dsl.Script) scriptValidationResponse {
-	return buildScriptValidationResponseWithVariables(scriptID, script, nil)
+func buildScriptValidationResponse(scriptID string, script *dsl.Script, resolvers ...engine.SecretResolver) scriptValidationResponse {
+	return buildScriptValidationResponseWithVariables(scriptID, script, nil, resolvers...)
 }
 
-func buildScriptValidationResponseWithVariables(scriptID string, script *dsl.Script, variables map[string]string) scriptValidationResponse {
+func buildScriptValidationResponseWithVariables(scriptID string, script *dsl.Script, variables map[string]string, resolvers ...engine.SecretResolver) scriptValidationResponse {
 	issues := validateScript(script)
 	warnings := validationWarnings(script)
-	preflight := buildReplayPreflight(script, variables, issues, warnings)
+	preflight := buildReplayPreflight(script, variables, issues, warnings, resolvers...)
 	parity := buildValidationRuntimeSettingsParity(script)
 	counts := enterprisearchive.RuntimeSettingStatusCounts(parity)
 	readiness := enterprisearchive.BuildRTSMigrationReadiness(parity, validationRuntimeSettingMigrationPolicy(script))

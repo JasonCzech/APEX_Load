@@ -54,6 +54,53 @@ type Protocol interface {
 	HealthCheck(ctx context.Context) error
 }
 
+// StreamingProtocol is an optional extension for compound actions that produce
+// independently useful child samples before the aggregate action completes.
+// The aggregate result controls action success; emitted results pass through
+// the engine's normal metrics, archive, redaction, and snapshot path.
+type StreamingProtocol interface {
+	ExecuteStream(
+		ctx context.Context,
+		action *Action,
+		emit func(*Result) error,
+	) (*Result, error)
+}
+
+// RuntimeCapabilityProvider lets optional sidecar-backed protocols advertise
+// availability, scheduler features, and a protocol-specific VUser ceiling
+// without teaching the distributed service protocol names.
+type RuntimeCapabilityProvider interface {
+	RuntimeCapabilities() RuntimeCapabilities
+}
+
+type RuntimeHealthChecker interface{ RuntimeHealthy(context.Context) bool }
+
+type RuntimeCapabilities struct {
+	Available bool
+	Features  []string
+	MaxVUsers int64
+}
+
+// TextRedactor is a runtime-only projection used by protocol implementations
+// that retain diagnostics outside the ordinary Result pipeline (for example,
+// browser HAR artifacts). It must never be serialized or persisted.
+type TextRedactor func(string) string
+
+// RuntimeTextRedactorSetter is an optional protocol capability. The engine
+// binds it to the owning VUser so the projection follows credentials extracted
+// during execution as well as the project secrets resolved at startup.
+type RuntimeTextRedactorSetter interface {
+	SetRuntimeTextRedactor(TextRedactor)
+}
+
+// RuntimeSecretActivitySetter is an optional protocol capability for binary
+// diagnostics that cannot be safely passed through TextRedactor. The provider
+// is memory-only and reflects values discovered during the run as well as
+// secrets resolved during startup.
+type RuntimeSecretActivitySetter interface {
+	SetRuntimeSecretActivity(func() bool)
+}
+
 // CookieController is an optional capability for protocols that maintain a
 // per-VUser cookie store. The engine invokes ClearCookies when it dispatches a
 // cookie_clear action (imported from web_cleanup_cookies), discarding every
@@ -353,6 +400,9 @@ type ThinkTimeConfig struct {
 type Result struct {
 	ActionName          string        // Name of the executed action
 	BusinessTransaction bool          // True when this sample represents a completed business transaction
+	SampleKind          string        // "child" or "aggregate" for StreamingProtocol results
+	ParentActionName    string        // Aggregate action that emitted this child sample
+	Attempt             int           // 1-based execution attempt, including retries
 	Group               string        // Group/transaction name for metrics
 	Region              string        // Generator region that produced this result (per-result override; empty = use writer region)
 	StartTime           time.Time     // When the action started
@@ -389,6 +439,10 @@ type Result struct {
 	SourceActionName    string
 	SourceTransaction   string
 	SourceProfile       string
+	SourcePath          string
+	SourceUID           string
+	RequestType         string
+	OperationKind       string
 }
 
 // ErrorSnapshot captures full request/response data for post-test debugging.

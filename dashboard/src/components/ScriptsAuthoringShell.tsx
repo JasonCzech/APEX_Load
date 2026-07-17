@@ -18,10 +18,12 @@ interface Props {
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
   onImported: (result: ImportedSaveResult) => void
+  onConfigureSecrets?: (projectId: string) => void
   onEditDraft: ScriptsAuthoringSurfaceProps['onEditDraft']
   onReturnToDraftSource: () => void
-  onStartExistingScript?: (script: StoredScript) => void
+  onStartExistingScript?: (script: StoredScript, options?: { migrateSecrets?: boolean }) => void
   canManageScripts?: boolean
+  canMigrateSecrets?: boolean
   children: ReactNode
 }
 
@@ -35,10 +37,12 @@ export default function ScriptsAuthoringShell({
   onOpenLibrary,
   onOpenCreateOptions,
   onImported,
+  onConfigureSecrets,
   onEditDraft,
   onReturnToDraftSource,
   onStartExistingScript,
   canManageScripts = true,
+  canMigrateSecrets = false,
   children,
 }: Props) {
   const [createOptionsWorkflow, setCreateOptionsWorkflow] = useState<CreateWorkflow>('existing')
@@ -79,6 +83,7 @@ export default function ScriptsAuthoringShell({
         onOpenImportSurface={createOptionActions.openImportSurface}
         scripts={scripts}
         onStartExistingScript={onStartExistingScript}
+        canMigrateSecrets={canMigrateSecrets}
         workflow={createOptionsWorkflow}
         onWorkflowChange={changeCreateOptionsWorkflow}
       />
@@ -95,6 +100,7 @@ export default function ScriptsAuthoringShell({
             importMode={authoringState.importMode}
             importFiles={authoringState.importFiles}
             draftScript={authoringState.draftScript}
+            draftInitiallyDirty={authoringState.draftInitiallyDirty}
             draftEditorFocus={authoringState.draftEditorFocus}
             draftReturnTarget={authoringState.draftReturnTarget}
             authoringNotice={authoringState.authoringNotice}
@@ -106,6 +112,7 @@ export default function ScriptsAuthoringShell({
             onOpenLibrary={onOpenLibrary}
             onOpenCreateOptions={onOpenCreateOptions}
             onImported={onImported}
+            onConfigureSecrets={onConfigureSecrets}
             onEditDraft={onEditDraft}
             onReturnToDraftSource={onReturnToDraftSource}
           />

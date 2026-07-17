@@ -1412,6 +1412,14 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		ReleaseID:  schedule.ReleaseID,
 	}, occurrence.TestID, "QUEUED", leaseTerm)
 	if err == nil {
+		for _, group := range test.Groups {
+			if len(group.runtimeSecretValues) > 0 {
+				err = fmt.Errorf("%w: scenario %s contains legacy plaintext runtime credentials; save the scenario to convert them to {{secret.NAME}} references and configure Project Secrets before the next scheduled run", errUnattributedRuntimeSecretWrite, schedule.ScenarioID)
+				break
+			}
+		}
+	}
+	if err == nil {
 		err = tr.claimTestExecutionFenceWithTerm(test, leaseTerm)
 	}
 	if err != nil {

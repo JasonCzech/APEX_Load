@@ -73,6 +73,25 @@ func TestPlanHARArtifactRetentionRespectsSettings(t *testing.T) {
 	}
 }
 
+func TestPlanHARArtifactRetentionImmediatelyPurgesRawWorkingFilesEvenWhenDisabled(t *testing.T) {
+	dir := t.TempDir()
+	now := time.Now().UTC()
+	raw := writeAgedFile(t, dir, "apexload_browser_fresh.har.tmp", time.Second)
+	writeAgedFile(t, dir, "apexload_browser_fresh_scrubbed.har", time.Second)
+
+	candidates := planHARArtifactRetention(now, ArchiveRetentionSettings{Enabled: false, HARArtifactDir: dir})
+	if len(candidates) != 1 || candidates[0].Path != raw || candidates[0].Sensitivity != scrub.SensitivityRaw || candidates[0].RetentionDays != 0 {
+		t.Fatalf("disabled retention candidates = %+v, want only immediate raw purge", candidates)
+	}
+	_, pruned, failed := applyHARArtifactRetention(candidates)
+	if pruned != 1 || failed != 0 {
+		t.Fatalf("raw purge = pruned %d failed %d", pruned, failed)
+	}
+	if _, err := os.Stat(raw); !os.IsNotExist(err) {
+		t.Fatalf("raw working file survived purge: %v", err)
+	}
+}
+
 func TestApplyHARArtifactRetention(t *testing.T) {
 	dir := t.TempDir()
 	now := time.Now().UTC()

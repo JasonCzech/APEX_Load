@@ -1,10 +1,21 @@
 import { useCallback, useMemo } from 'react'
 
 import { Project, Folder, ProjectSettings } from '../../types'
+import {
+  type ProjectSecretStatusesResponse,
+  type ProjectSecretsResponse,
+  type ProjectSecretsWriteResponse,
+  type ProjectSecretWrite,
+} from '../../types/secrets'
 import { request } from '../apiClient'
 
-type DeleteEntityResponse = {
+export type DeleteEntityResponse = {
   deleted: string
+  external_secret_cleanup_required?: boolean
+  external_secret_cleanup_names?: string[]
+  external_secret_cleanup_providers?: string[]
+  external_secret_cleanup_prefix?: string
+  secret_provider?: string
 }
 
 type ProjectRequest = {
@@ -38,6 +49,38 @@ export function useProjectApi() {
 
   const deleteProject = useCallback((id: string) => request<DeleteEntityResponse>(`/projects/${id}`, { method: 'DELETE' }), [])
 
+  const listProjectSecrets = useCallback(
+    (projectId: string) => request<ProjectSecretsResponse>(`/projects/${encodeURIComponent(projectId)}/secrets`),
+    [],
+  )
+
+  const getProjectSecretStatuses = useCallback(
+    (projectId: string, names: string[]) =>
+      request<ProjectSecretStatusesResponse>(`/projects/${encodeURIComponent(projectId)}/secrets/status`, {
+        method: 'POST',
+        body: JSON.stringify({ names }),
+      }),
+    [],
+  )
+
+  const createProjectSecrets = useCallback(
+    (projectId: string, secrets: ProjectSecretWrite[]) =>
+      request<ProjectSecretsWriteResponse>(`/projects/${encodeURIComponent(projectId)}/secrets`, {
+        method: 'POST',
+        body: JSON.stringify({ secrets }),
+      }),
+    [],
+  )
+
+  const rotateProjectSecret = useCallback(
+    (projectId: string, name: string, value: string) =>
+      request<ProjectSecretsWriteResponse>(`/projects/${encodeURIComponent(projectId)}/secrets/${encodeURIComponent(name)}`, {
+        method: 'PUT',
+        body: JSON.stringify({ value }),
+      }),
+    [],
+  )
+
   const listFolders = useCallback(
     (projectId: string, category?: string) =>
       request<{ folders: Folder[]; count: number }>(`/projects/${projectId}/folders${query({ category })}`),
@@ -64,11 +107,15 @@ export function useProjectApi() {
       createProject,
       updateProject,
       deleteProject,
+      listProjectSecrets,
+      getProjectSecretStatuses,
+      createProjectSecrets,
+      rotateProjectSecret,
       listFolders,
       createFolder,
       updateFolder,
       deleteFolder,
     }),
-    [listProjects, createProject, updateProject, deleteProject, listFolders, createFolder, updateFolder, deleteFolder],
+    [listProjects, createProject, updateProject, deleteProject, listProjectSecrets, getProjectSecretStatuses, createProjectSecrets, rotateProjectSecret, listFolders, createFolder, updateFolder, deleteFolder],
   )
 }
