@@ -37,7 +37,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",
-    "@eslint/js": "^10.0.1",
+    "@eslint/js": "^9.39.4",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",
     "@types/three": "^0.185.1",
@@ -46,7 +46,7 @@
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^5.2.0",
     "eslint-plugin-react-refresh": "^0.5.3",
-    "globals": "^15.15.0",
+    "globals": "^17.7.0",
     "jsdom": "^29.1.1",
     "playwright-core-go": "npm:playwright-core@1.57.0",
     "typescript": "^5.5.3",
