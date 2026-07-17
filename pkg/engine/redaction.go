@@ -47,11 +47,11 @@ type RedactionRule struct {
 }
 
 type RedactionConfig struct {
-	Rules               []RedactionRule
-	compiled            []payloadReplacement
-	secretReplacers     []*strings.Replacer
-	runtimeSecretValues map[string]struct{}
-	runtimePatternBytes int
+	Rules                  []RedactionRule
+	compiled               []payloadReplacement
+	secretReplacers        []*strings.Replacer
+	runtimeSecretValues    map[string]struct{}
+	runtimePatternBytes    int
 	runtimeMatcherComplete bool
 }
 
@@ -350,11 +350,11 @@ func attachRuntimeSecretRedaction(config, runtime *RedactionConfig) *RedactionCo
 		return runtime
 	}
 	detached := &RedactionConfig{
-		Rules:               append([]RedactionRule(nil), config.Rules...),
-		compiled:            append([]payloadReplacement(nil), config.compiled...),
-		secretReplacers:     runtime.secretReplacers,
-		runtimeSecretValues: runtime.runtimeSecretValues,
-		runtimePatternBytes: runtime.runtimePatternBytes,
+		Rules:                  append([]RedactionRule(nil), config.Rules...),
+		compiled:               append([]payloadReplacement(nil), config.compiled...),
+		secretReplacers:        runtime.secretReplacers,
+		runtimeSecretValues:    runtime.runtimeSecretValues,
+		runtimePatternBytes:    runtime.runtimePatternBytes,
 		runtimeMatcherComplete: runtime.runtimeMatcherComplete,
 	}
 	return detached

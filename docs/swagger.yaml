@@ -7007,6 +7007,20 @@ paths:
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
         - Scripts
+  /api/v1/scripts/import/secrets/discard:
+    post:
+      summary: Discard Source Secret Session
+      description: |-
+        **Handler:** `handleDiscardSourceSecretSession`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleDiscardSourceSecretSession
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Scripts
   /api/v1/scripts/import/secrets/migrate:
     post:
       summary: Migrate Source Secrets

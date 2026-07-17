@@ -88,6 +88,9 @@ func TestHarnessOverheadUnderTarget(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping perf guardrail in -short mode")
 	}
+	if raceDetectorEnabled {
+		t.Skip("skipping wall-clock performance guardrail under the race detector")
+	}
 	res := testing.Benchmark(BenchmarkHarnessOverheadPerTransaction)
 	nsPerOp := float64(res.NsPerOp())
 	// Budget: the metrics hot path is only one component of the per-transaction

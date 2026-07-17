@@ -175,7 +175,6 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22.22.0
-          cache: false
 
       - name: Test canonical composite action helpers
         run: .github/actions/apexload-run/tests/run.sh
@@ -272,12 +271,15 @@ jobs:
       - name: Install gotestsum
         run: go install gotest.tools/gotestsum@v1.13.0
 
+      - name: Install Playwright browser runtimes for Go integration tests
+        run: go run github.com/mxschmitt/playwright-go/cmd/playwright@v0.6100.0 install --with-deps chromium webkit
+
       - name: Run race tests
         run: |
           set -euo pipefail
           mkdir -p test-results
           gotestsum --junitfile test-results/go-junit.xml -- \
-            -race -shuffle=on -count=1 -coverprofile=test-results/coverage.out ./...
+            -race -shuffle=on -count=1 -timeout=20m -coverprofile=test-results/coverage.out ./...
 
       - name: Upload Go test evidence
         if: always()
@@ -528,7 +530,6 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 22.22.0
-          cache: false
 
       - name: Enable pinned pnpm
         run: corepack enable
@@ -694,12 +695,12 @@ jobs:
             "${schema_root}/cert-manager.io" \
             "${schema_root}/monitoring.coreos.com"
           schemas=(
-            'keda.sh/scaledobject_v1alpha1.json|keda.sh/ScaledObject_v1alpha1.json|f0e0801dd04d22c875ab14b2de908143d0b293430b8c2d5d71bafcf1a4e05b4e'
-            'keda.sh/triggerauthentication_v1alpha1.json|keda.sh/TriggerAuthentication_v1alpha1.json|6dc3be31e2517d33c178015e0a943c281ab9eedaa55701ef2eadddaf7b169c36'
-            'cert-manager.io/certificate_v1.json|cert-manager.io/Certificate_v1.json|d3128cf7805dd289beb96e808e0e03294ef11affac7022fa955c370df1a767ac'
-            'cert-manager.io/issuer_v1.json|cert-manager.io/Issuer_v1.json|d92fc87966a07c2315f3745a2072cb5b408d989e3b12028b4bdb6c3af0afe2a5'
-            'monitoring.coreos.com/servicemonitor_v1.json|monitoring.coreos.com/ServiceMonitor_v1.json|8978f86e2a7cb281a9ca7bc30d857e0553666658dfe062078c51e99d3f20cd14'
-            'monitoring.coreos.com/prometheusrule_v1.json|monitoring.coreos.com/PrometheusRule_v1.json|9cd71d75b714b541a0be960b46bd961dbf1f0106071381cd88f54dfe80b8bd9d'
+            'keda.sh/scaledobject_v1alpha1.json|keda.sh/scaledobject_v1alpha1.json|f0e0801dd04d22c875ab14b2de908143d0b293430b8c2d5d71bafcf1a4e05b4e'
+            'keda.sh/triggerauthentication_v1alpha1.json|keda.sh/triggerauthentication_v1alpha1.json|6dc3be31e2517d33c178015e0a943c281ab9eedaa55701ef2eadddaf7b169c36'
+            'cert-manager.io/certificate_v1.json|cert-manager.io/certificate_v1.json|d3128cf7805dd289beb96e808e0e03294ef11affac7022fa955c370df1a767ac'
+            'cert-manager.io/issuer_v1.json|cert-manager.io/issuer_v1.json|d92fc87966a07c2315f3745a2072cb5b408d989e3b12028b4bdb6c3af0afe2a5'
+            'monitoring.coreos.com/servicemonitor_v1.json|monitoring.coreos.com/servicemonitor_v1.json|8978f86e2a7cb281a9ca7bc30d857e0553666658dfe062078c51e99d3f20cd14'
+            'monitoring.coreos.com/prometheusrule_v1.json|monitoring.coreos.com/prometheusrule_v1.json|9cd71d75b714b541a0be960b46bd961dbf1f0106071381cd88f54dfe80b8bd9d'
           )
           for entry in "${schemas[@]}"; do
             IFS='|' read -r remote_path local_path checksum <<<"$entry"
@@ -786,11 +787,11 @@ jobs:
           set -euo pipefail
           docker compose --file compose.yaml config --quiet
           docker run --rm --entrypoint /bin/promtool \
-            --volume "${PWD}/deployments/docker/prometheus:/etc/apexload:ro" \
-            "${PROMETHEUS_IMAGE}" check config /etc/apexload/prometheus.yml
+            --volume "${PWD}/deployments/docker/prometheus:/etc/prometheus:ro" \
+            "${PROMETHEUS_IMAGE}" check config /etc/prometheus/prometheus.yml
           docker run --rm --entrypoint /bin/promtool \
-            --volume "${PWD}/deployments/docker/prometheus:/etc/apexload:ro" \
-            "${PROMETHEUS_IMAGE}" check rules /etc/apexload/apexload-rules.yml
+            --volume "${PWD}/deployments/docker/prometheus:/etc/prometheus:ro" \
+            "${PROMETHEUS_IMAGE}" check rules /etc/prometheus/apexload-rules.yml
 
   containers:
     name: Container (${{ matrix.binary }}, ${{ matrix.profile }})
@@ -910,10 +911,18 @@ jobs:
         run: govulncheck ./...
 
   codeql:
-    name: CodeQL
+    name: CodeQL (${{ matrix.language }})
     if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.id == github.event.repository.id && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ github.server_url == 'https://github.com' && 'ubuntu-24.04' || 'apexload-ci-unprivileged' }}
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - language: go
+            build-mode: manual
+          - language: javascript-typescript
+            build-mode: none
     permissions:
       contents: read
       security-events: write
@@ -924,17 +933,28 @@ jobs:
           ref: ${{ inputs.checkout-ref || github.sha }}
           persist-credentials: false
 
+      - name: Setup Go from go.mod
+        if: matrix.language == 'go'
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@f58f0d11ebf5dedd870fab2f999275f7602cfa46 # codeql-bundle-v2.26.0
         with:
-          languages: go,javascript-typescript
-          build-mode: none
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
           queries: security-extended
+
+      - name: Build Go for CodeQL
+        if: matrix.language == 'go'
+        run: go build ./...
 
       - name: Analyze
         uses: github/codeql-action/analyze@f58f0d11ebf5dedd870fab2f999275f7602cfa46 # codeql-bundle-v2.26.0
         with:
-          category: /language:go-javascript-typescript
+          category: /language:${{ matrix.language }}
 
   ghes-fork-block:
     name: GHES fork policy block

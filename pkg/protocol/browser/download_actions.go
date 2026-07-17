@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
-	playwright "github.com/playwright-community/playwright-go"
+	playwright "github.com/mxschmitt/playwright-go"
 )
 
 type browserDownloadMatcher struct {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"sync"
 
-	playwright "github.com/playwright-community/playwright-go"
+	playwright "github.com/mxschmitt/playwright-go"
 )
 
 var (
@@ -149,11 +149,15 @@ func envFlagEnabled(key string) bool {
 }
 
 func RuntimeInstallWarning(engine string) string {
+	return runtimeInstallWarning(engine, browserExecutableAvailable)
+}
+
+func runtimeInstallWarning(engine string, executableAvailable func(string) error) string {
 	engine = strings.ToLower(strings.TrimSpace(engine))
 	if engine == "" || engine == "chromium" || engine == "chrome" {
 		return ""
 	}
-	if err := browserExecutableAvailable(engine); err != nil {
+	if err := executableAvailable(engine); err != nil {
 		return fmt.Sprintf("Playwright %s runtime is unavailable: %v. Run `npx playwright install %s` before replaying this browser script.", engine, err, engine)
 	}
 	return ""

@@ -153,6 +153,32 @@ func TestMeasureEndpointLatencyCapturesHTTPProbeDiagnostics(t *testing.T) {
 	}
 }
 
+func TestPerformLatencyHTTPProbeHandlesDualStackDialCallbacks(t *testing.T) {
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	server.Listener = listener
+	server.Start()
+	defer server.Close()
+
+	_, port, err := net.SplitHostPort(listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint := "http://localhost:" + port
+	target, err := (&TestRunner{}).performLatencyHTTPProbe("localhost:"+port, endpoint, http.MethodHead)
+	if err != nil || !target.LastSuccess || target.HTTPStatus != http.StatusNoContent {
+		t.Fatalf("dual-stack HTTP probe = %#v, %v", target, err)
+	}
+	if target.ConnectMs <= 0 || target.IP == "" {
+		t.Fatalf("dual-stack HTTP probe omitted connection diagnostics: %#v", target)
+	}
+}
+
 func TestMeasureEndpointLatencyFallsBackToGETWhenHEADRejected(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodHead {

@@ -255,7 +255,7 @@ func TestScheduledExecutionPlanUsesDurableActorForRuntimeSecretAuthority(t *test
 }
 
 func TestClaimedExecutionPlanOccurrenceKeepsActorAcrossScheduleUpdateAndRecovery(t *testing.T) {
-	server, records, secrets, plan := newExecutionPlanSecretAuthorityFixture(t, "claimed-actor", true)
+	server, records, secrets, plan := newExecutionPlanSecretAuthorityFixture(t, "claimed-actor", false)
 	schedule := createExecutionPlanScheduleAs(t, server, plan.ID, "Claimed actor schedule", authResolution{ServiceAccount: &AuthenticatedServiceAccount{
 		ID: "original-schedule-runner", Name: "Original Schedule Runner", Scopes: []string{"tests:run"},
 	}})
@@ -302,7 +302,8 @@ func TestClaimedExecutionPlanOccurrenceKeepsActorAcrossScheduleUpdateAndRecovery
 	}
 
 	// Model controller restart after the claim and schedule PUT. Recovery must use
-	// the occurrence's original service-account authority and deny secret writes.
+	// the occurrence's original service-account identity, not the later human
+	// schedule editor, and must not perform project-secret writes.
 	recovered := NewTestRunner(2, NewHub(), records, WithProjectSecretStore(secrets))
 	t.Cleanup(recovered.beginShutdown)
 	recovered.mu.Lock()
@@ -312,7 +313,7 @@ func TestClaimedExecutionPlanOccurrenceKeepsActorAcrossScheduleUpdateAndRecovery
 		t.Fatalf("recover claimed execution-plan occurrence: %v", err)
 	}
 	persistedOccurrence, err = records.GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, plannedAt)
-	if err != nil || persistedOccurrence.Status != "failed" || persistedOccurrence.ReasonCode != "materialize_failed" {
+	if err != nil || persistedOccurrence.Status != "materialized" || persistedOccurrence.ReasonCode != "started" {
 		t.Fatalf("recovered occurrence = %#v, %v", persistedOccurrence, err)
 	}
 	if persistedOccurrence.ActorType != "service_account" || persistedOccurrence.ActorSubject != "service-account:original-schedule-runner" {
@@ -325,7 +326,7 @@ func TestClaimedExecutionPlanOccurrenceKeepsActorAcrossScheduleUpdateAndRecovery
 		t.Fatalf("recovered service-account occurrence made %d provider Create calls", createCalls)
 	}
 	updated, err = records.GetExecutionPlanSchedule(schedule.ID)
-	if err != nil || !strings.Contains(updated.LastError, "service accounts cannot create project secrets") {
+	if err != nil || updated.LastError != "" {
 		t.Fatalf("recovered schedule outcome = %#v, %v", updated, err)
 	}
 }

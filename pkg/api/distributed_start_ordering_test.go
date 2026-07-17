@@ -179,9 +179,12 @@ func TestDistributedCommitBarrierIsChosenAfterSlowRunningPersistence(t *testing.
 }
 
 func TestDistributedSetupRPCsReceiveIndependentTimeoutBudgets(t *testing.T) {
-	timeout := 120 * time.Millisecond
+	// Keep each delayed RPC comfortably within its own budget while making the
+	// two delays exceed one shared budget. The larger absolute margin keeps the
+	// assertion meaningful under the race detector on loaded hosted runners.
+	timeout := 1500 * time.Millisecond
 	runner, test := newDistributedOrderingHarness(t, timeout, nil, func(client *generatorrpc.Client) generatorClient {
-		return &delayedSetupGeneratorClient{Client: client, delay: 80 * time.Millisecond}
+		return &delayedSetupGeneratorClient{Client: client, delay: 900 * time.Millisecond}
 	})
 	waitDistributedActivation(t, runner, test.ID)
 }

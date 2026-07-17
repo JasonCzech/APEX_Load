@@ -496,19 +496,11 @@ func TestMetricsCollector_RecordTransaction(t *testing.T) {
 
 func TestMetricsCollector_ByActionCapturesDependencyAndCorrelationMetadata(t *testing.T) {
 	mc := NewMetricsCollector(100)
-	mc.Start(50 * time.Millisecond)
-	defer mc.Stop()
-
-	mc.Record(&protocol.Result{ActionName: "login", Success: true, Duration: 10 * time.Millisecond, DependencyType: "http", DependencyTarget: "api.example.test", CorrelationID: "corr-1"})
-	mc.Record(&protocol.Result{ActionName: "login", Success: true, Duration: 20 * time.Millisecond, DependencyType: "http", DependencyTarget: "api.example.test", CorrelationID: "corr-2"})
-	mc.Record(&protocol.Result{ActionName: "login", Success: true, Duration: 25 * time.Millisecond, DependencyType: "http", DependencyTarget: "api.example.test", CorrelationID: "corr-2"})
-
-	time.Sleep(150 * time.Millisecond)
-
-	snap, ok := mc.LatestSnapshot()
-	if !ok {
-		t.Fatal("expected snapshot")
-	}
+	snap := mc.computeSnapshot([]*protocol.Result{
+		{ActionName: "login", Success: true, Duration: 10 * time.Millisecond, DependencyType: "http", DependencyTarget: "api.example.test", CorrelationID: "corr-1"},
+		{ActionName: "login", Success: true, Duration: 20 * time.Millisecond, DependencyType: "http", DependencyTarget: "api.example.test", CorrelationID: "corr-2"},
+		{ActionName: "login", Success: true, Duration: 25 * time.Millisecond, DependencyType: "http", DependencyTarget: "api.example.test", CorrelationID: "corr-2"},
+	}, 50*time.Millisecond)
 	login := snap.ByAction["login"]
 	if login == nil {
 		t.Fatal("missing action metadata for login")

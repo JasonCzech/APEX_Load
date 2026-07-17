@@ -1,6 +1,6 @@
 package browser
 
-import "github.com/playwright-community/playwright-go"
+import "github.com/mxschmitt/playwright-go"
 
 func (b *Browser) close() {
 	b.mu.Lock()

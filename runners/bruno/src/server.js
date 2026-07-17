@@ -54,7 +54,6 @@ function waitForDrainOrClose(stream, timeoutMS = DEFAULT_PENDING_DRAIN_TIMEOUT_M
 		stream.once('close', closed);
 		stream.once('error', closed);
 		timer = setTimeout(() => finish(false), timeoutMS);
-		timer.unref?.();
 	});
 }
 
@@ -121,7 +120,6 @@ async function terminateWorkerBounded(worker, timeoutMS = DEFAULT_WORKER_TERMINA
     termination,
     new Promise((resolve) => {
       timer = setTimeout(() => resolve(false), timeoutMS);
-      timer.unref?.();
     })
   ]).finally(() => clearTimeout(timer));
   // Keep a rejection handler attached to a late termination without awaiting it
@@ -153,7 +151,6 @@ async function provisionWorkerBounded(
     if (signal?.aborted) abortHandler();
     else signal?.addEventListener?.('abort', abortHandler, { once: true });
     timer = setTimeout(() => stop('Bruno worker provisioning exceeded its deadline', 504), provisionTimeoutMS);
-    timer.unref?.();
   });
   try {
     return await Promise.race([pending, interruption]);

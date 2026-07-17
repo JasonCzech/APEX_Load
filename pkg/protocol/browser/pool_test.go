@@ -1,7 +1,9 @@
 package browser
 
 import (
+	"errors"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -88,5 +90,42 @@ func TestBrowserPoolKeySeparatesLaunchSettings(t *testing.T) {
 	withExecutable := browserPoolKey("chromium", true)
 	if withExecutable == headless {
 		t.Fatal("browser pool key did not include executable override")
+	}
+}
+
+func TestRuntimeInstallWarning(t *testing.T) {
+	tests := []struct {
+		name        string
+		engine      string
+		probeError  error
+		wantWarning bool
+		wantProbe   bool
+	}{
+		{name: "default chromium", engine: "", wantWarning: false, wantProbe: false},
+		{name: "chrome channel", engine: "chrome", wantWarning: false, wantProbe: false},
+		{name: "installed webkit", engine: " WebKit ", wantWarning: false, wantProbe: true},
+		{name: "missing webkit", engine: "WebKit", probeError: errors.New("runtime missing"), wantWarning: true, wantProbe: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			probed := false
+			warning := runtimeInstallWarning(tc.engine, func(engine string) error {
+				probed = true
+				if engine != "webkit" {
+					t.Fatalf("probe engine = %q, want webkit", engine)
+				}
+				return tc.probeError
+			})
+			if probed != tc.wantProbe {
+				t.Fatalf("probe called = %t, want %t", probed, tc.wantProbe)
+			}
+			if (warning != "") != tc.wantWarning {
+				t.Fatalf("warning = %q, want warning=%t", warning, tc.wantWarning)
+			}
+			if tc.wantWarning && (!strings.Contains(warning, "Playwright webkit") || !strings.Contains(warning, "runtime missing")) {
+				t.Fatalf("warning = %q, want engine and probe error", warning)
+			}
+		})
 	}
 }

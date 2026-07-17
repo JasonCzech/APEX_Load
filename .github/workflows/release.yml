@@ -576,6 +576,7 @@ jobs:
         shell: bash
         env:
           WAILS_PLATFORM: ${{ matrix.platform }}
+          WAILS_BUILD_TAGS: ${{ runner.os == 'Linux' && 'webkit2_41' || '' }}
           RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
           RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
           RELEASE_BUILD_TIME: ${{ needs.metadata.outputs.build-time }}
@@ -583,8 +584,11 @@ jobs:
           set -euo pipefail
           bi=github.com/jasonczech/apexload/pkg/buildinfo
           cd desktop
-          wails build -clean -platform "$WAILS_PLATFORM" \
-            -ldflags "-s -w -X ${bi}.Version=${RELEASE_VERSION} -X ${bi}.Commit=${RELEASE_COMMIT} -X ${bi}.BuildTime=${RELEASE_BUILD_TIME}"
+          build_args=(build -clean -platform "$WAILS_PLATFORM" -ldflags "-s -w -X ${bi}.Version=${RELEASE_VERSION} -X ${bi}.Commit=${RELEASE_COMMIT} -X ${bi}.BuildTime=${RELEASE_BUILD_TIME}")
+          if [[ -n "${WAILS_BUILD_TAGS}" ]]; then
+            build_args+=(-tags "${WAILS_BUILD_TAGS}")
+          fi
+          wails "${build_args[@]}"
 
       - name: Build platform apexctl
         shell: bash

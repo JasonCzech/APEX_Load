@@ -11,6 +11,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 )
 
 func TestScriptValidationParityAcrossCurrentEndpoints(t *testing.T) {
@@ -125,8 +126,12 @@ func TestValidateScriptIncludesWebKitWarnings(t *testing.T) {
 	}
 
 	warnings := extractValidationWarnings(t, resp.Body.Bytes())
-	if len(warnings) != 1 || !strings.Contains(strings.ToLower(warnings[0]), "playwright") {
-		t.Fatalf("warnings = %#v, want Playwright WebKit install guidance", warnings)
+	expected := browserprotocol.RuntimeInstallWarning("webkit")
+	if expected == "" && len(warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none for an installed WebKit runtime", warnings)
+	}
+	if expected != "" && (len(warnings) != 1 || warnings[0] != expected) {
+		t.Fatalf("warnings = %#v, want %#v", warnings, []string{expected})
 	}
 }
 

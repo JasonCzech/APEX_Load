@@ -316,6 +316,12 @@ func TestProjectSecretsProvidersAreWiredForSupportedDeployments(t *testing.T) {
 			t.Fatalf("Helm schema missing Project Secrets setting %q", check)
 		}
 	}
+	if !strings.Contains(helmValues, `azureKeyVaultApiVersion: "7.4"`) {
+		t.Fatal("Helm values must default to the supported Azure Key Vault 7.4 data-plane API")
+	}
+	if !strings.Contains(helmSchema, `"pattern": "^7\\.[0-9]+$"`) {
+		t.Fatal("Helm schema must accept Azure Key Vault data-plane API versions such as 7.4")
+	}
 	for _, check := range []string{
 		"APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED",
 		`eq .Values.projectSecrets.provider "azure_key_vault"`,

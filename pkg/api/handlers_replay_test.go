@@ -16,6 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -941,8 +942,12 @@ func TestStartBrowserReplayRequestIncludesWebKitWarningsOnValidationFailure(t *t
 	}
 
 	warnings := extractValidationWarnings(t, resp.Body.Bytes())
-	if len(warnings) != 1 || !strings.Contains(strings.ToLower(warnings[0]), "playwright") {
-		t.Fatalf("warnings = %#v, want Playwright WebKit install guidance", warnings)
+	expected := browserprotocol.RuntimeInstallWarning("webkit")
+	if expected == "" && len(warnings) != 0 {
+		t.Fatalf("warnings = %#v, want none for an installed WebKit runtime", warnings)
+	}
+	if expected != "" && (len(warnings) != 1 || warnings[0] != expected) {
+		t.Fatalf("warnings = %#v, want %#v", warnings, []string{expected})
 	}
 }
 

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
-	playwright "github.com/playwright-community/playwright-go"
+	playwright "github.com/mxschmitt/playwright-go"
 )
 
 func (b *Browser) dispatchTap(ctx context.Context, action *protocol.Action, selector string) error {
@@ -147,8 +147,12 @@ func (b *Browser) runTouchScript(ctx context.Context, action *protocol.Action, s
 				force: 1,
 			};
 			if (typeof Touch === 'function') {
-				const touch = new Touch(touchLike);
-				return { changed: [touch], active: active ? [touch] : [] };
+				try {
+					const touch = new Touch(touchLike);
+					return { changed: [touch], active: active ? [touch] : [] };
+				} catch (_) {
+					// WebKit exposes Touch in some contexts where it is not constructible.
+				}
 			}
 			return { changed: [touchLike], active: active ? [touchLike] : [] };
 		};
@@ -156,15 +160,20 @@ func (b *Browser) runTouchScript(ctx context.Context, action *protocol.Action, s
 			const list = makeTouchList(clientX, clientY, active);
 			let event;
 			if (typeof TouchEvent === 'function') {
-				event = new TouchEvent(type, {
-					bubbles: true,
-					cancelable: true,
-					composed: true,
-					touches: list.active,
-					targetTouches: list.active,
-					changedTouches: list.changed,
-				});
-			} else {
+				try {
+					event = new TouchEvent(type, {
+						bubbles: true,
+						cancelable: true,
+						composed: true,
+						touches: list.active,
+						targetTouches: list.active,
+						changedTouches: list.changed,
+					});
+				} catch (_) {
+					// Fall through to an Event carrying touch-list properties.
+				}
+			}
+			if (!event) {
 				event = new Event(type, { bubbles: true, cancelable: true, composed: true });
 				Object.defineProperty(event, 'touches', { value: list.active });
 				Object.defineProperty(event, 'targetTouches', { value: list.active });

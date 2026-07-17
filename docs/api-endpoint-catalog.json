@@ -3684,6 +3684,16 @@
     },
     {
       "method": "POST",
+      "path": "/api/v1/scripts/import/secrets/discard",
+      "operationId": "handleDiscardSourceSecretSession",
+      "summary": "Discard Source Secret Session",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
       "path": "/api/v1/scripts/import/secrets/migrate",
       "operationId": "handleMigrateSourceSecrets",
       "summary": "Migrate Source Secrets",
