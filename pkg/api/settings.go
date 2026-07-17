@@ -38,6 +38,14 @@ type SystemSettings struct {
 	Prometheus       PrometheusSettings       `json:"prometheus"`
 	ClientApp        ClientAppSettings        `json:"client_app"`
 	ClientDownloads  ClientDownloadsSettings  `json:"client_downloads"`
+	ScriptImports    ScriptImportSettings     `json:"script_imports"`
+}
+
+// ScriptImportSettings contains system-admin policy gates for importing
+// credential material. Source migration is deliberately disabled by default;
+// ordinary imports still create portable {{secret.*}} bindings.
+type ScriptImportSettings struct {
+	AllowSourceSecretMigration bool `json:"allow_source_secret_migration"`
 }
 
 // GitHubSettings is the global (admin-owned) configuration for the GitHub script
@@ -587,6 +595,7 @@ func defaultSystemSettings(maxConcurrent int) SystemSettings {
 		Prometheus:       defaultPrometheusSettings(),
 		ClientApp:        defaultClientAppSettings(),
 		ClientDownloads:  defaultClientDownloadsSettings(),
+		ScriptImports:    ScriptImportSettings{},
 	}
 }
 
@@ -655,6 +664,7 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 	out.Prometheus = in.Prometheus
 	out.ClientApp = in.ClientApp
 	out.ClientDownloads = in.ClientDownloads
+	out.ScriptImports = in.ScriptImports
 	return out
 }
 

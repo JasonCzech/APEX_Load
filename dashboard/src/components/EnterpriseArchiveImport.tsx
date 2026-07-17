@@ -10,6 +10,7 @@ import { getErrorMessage } from '../utils/errorUtils'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { buildReplayStartPayload, getImportSummary, summarizeInlineData } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
+import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { salesforceApiSurfaceSummary } from './salesforceReviewSummary'
@@ -153,6 +154,16 @@ function enterpriseArchiveImportStatusIsRunning(status: EnterpriseArchiveImportQ
   return status === 'validating' || status === 'converting'
 }
 
+function nextRequestToken(tokens: Map<string, number>, key: string): number {
+  const next = (tokens.get(key) || 0) + 1
+  tokens.set(key, next)
+  return next
+}
+
+function importOptionsIdentity(options: ImportOptions): string {
+  return JSON.stringify(options)
+}
+
 function buildEnterpriseArchiveImportQueueItem(file: File, id: string): EnterpriseArchiveImportQueueItem {
   return {
     id,
@@ -167,6 +178,11 @@ function buildEnterpriseArchiveImportQueueItem(file: File, id: string): Enterpri
     replayValidationError: '',
     replayValidationWarnings: [],
     replayValidationSession: null,
+    replayReviewGeneration: -1,
+    replayScriptIndex: -1,
+    replayProjectId: '',
+    reviewGeneration: 0,
+    reviewOptionsIdentity: '',
   }
 }
 
@@ -226,6 +242,11 @@ interface EnterpriseArchiveImportQueueItem {
   replayValidationError: string
   replayValidationWarnings: string[]
   replayValidationSession: BrowserReplaySession | null
+  replayReviewGeneration: number
+  replayScriptIndex: number
+  replayProjectId: string
+  reviewGeneration: number
+  reviewOptionsIdentity: string
 }
 
 type EnterpriseArchiveSupportMatrixSection = {
@@ -587,19 +608,72 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   const runtimeCoverageCloseButtonRef = useRef<HTMLButtonElement | null>(null)
   const [reviewArtifactSaving, setReviewArtifactSaving] = useState(false)
   const [selectedResultScriptIndex, setSelectedResultScriptIndex] = useState(0)
+  const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
+  const editorActionInFlightRef = useRef(false)
+  const [editorActionPreparing, setEditorActionPreparing] = useState(false)
+  const scriptSaveInFlightRef = useRef(false)
+  const [scriptSaveInProgress, setScriptSaveInProgress] = useState(false)
+  const operationGenerationRef = useRef(0)
+  const itemRequestTokensRef = useRef<Map<string, number>>(new Map())
+  const replayRequestTokensRef = useRef<Map<string, number>>(new Map())
 
   const [options, setOptions] = useState<ImportOptions>(DEFAULT_IMPORT_OPTIONS)
   const selectedItem = useMemo(
     () => importItems.find(item => item.id === selectedItemId) || importItems[0] || null,
     [importItems, selectedItemId],
   )
+  const importItemsRef = useRef(importItems)
+  importItemsRef.current = importItems
+  const selectedItemIdRef = useRef(selectedItem?.id || '')
+  selectedItemIdRef.current = selectedItem?.id || ''
+  const selectedResultScriptIndexRef = useRef(selectedResultScriptIndex)
+  selectedResultScriptIndexRef.current = selectedResultScriptIndex
+  const reviewProjectIdRef = useRef(projectId)
+  reviewProjectIdRef.current = projectId
+  const optionsRef = useRef(options)
+  optionsRef.current = options
+  const invalidateOperationScopes = useCallback((itemIds?: readonly string[]) => {
+    void credentialReviewRef.current?.discardSourceSession()
+    operationGenerationRef.current += 1
+    const ids = itemIds || importItemsRef.current.map(item => item.id)
+    ids.forEach(id => {
+      nextRequestToken(itemRequestTokensRef.current, id)
+      nextRequestToken(replayRequestTokensRef.current, id)
+    })
+    setWorkingMode(null)
+  }, [])
+  const previousProjectIdRef = useRef(projectId)
+  useEffect(() => {
+    if (previousProjectIdRef.current === projectId) return
+    previousProjectIdRef.current = projectId
+    invalidateOperationScopes()
+    setSelectedResultScriptIndex(0)
+    setImportItems(items => items.map(item => ({
+      ...item,
+      status: 'queued',
+      result: null,
+      reviewMode: null,
+      reviewOptionsIdentity: '',
+      error: '',
+      notice: '',
+      replayValidationLoading: false,
+      replayValidationError: '',
+      replayValidationWarnings: [],
+      replayValidationSession: null,
+      replayReviewGeneration: -1,
+      replayScriptIndex: -1,
+      replayProjectId: '',
+      reviewGeneration: item.reviewGeneration + 1,
+    })))
+  }, [invalidateOperationScopes, projectId])
   const selectedHARFile = selectedItem?.harFile ?? null
   const result = selectedItem?.result ?? null
   const reviewMode = selectedItem?.reviewMode ?? null
-  const replayValidationLoading = selectedItem?.replayValidationLoading ?? false
-  const replayValidationError = selectedItem?.replayValidationError ?? ''
-  const replayValidationWarnings = selectedItem?.replayValidationWarnings ?? EMPTY_REPLAY_VALIDATION_WARNINGS
-  const replayValidationSession = selectedItem?.replayValidationSession ?? null
+  const reviewMatchesCurrentOptions = !result || selectedItem?.reviewOptionsIdentity === importOptionsIdentity(options)
+  const rawReplayValidationLoading = selectedItem?.replayValidationLoading ?? false
+  const rawReplayValidationError = selectedItem?.replayValidationError ?? ''
+  const rawReplayValidationWarnings = selectedItem?.replayValidationWarnings ?? EMPTY_REPLAY_VALIDATION_WARNINGS
+  const rawReplayValidationSession = selectedItem?.replayValidationSession ?? null
   const displayError = error || selectedItem?.error || ''
   const displayNotice = notice || selectedItem?.notice || ''
   const queuedFileCount = importItems.length
@@ -611,6 +685,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   const convertedFileCount = importItems.filter(item => item.status === 'converted').length
   const pendingValidationFileCount = Math.max(queuedFileCount - validatedFileCount - convertedFileCount, 0)
   const allQueuedArchivesValidated = queuedFileCount > 0 && importItems.every(item => item.status === 'validated')
+  const allValidatedReviewsMatchOptions = validatedItems.every(item => item.reviewOptionsIdentity === importOptionsIdentity(options))
   const selectedItemValidated = selectedItem?.status === 'validated'
   const activeImportFileCount = runningFileCount || queuedFileCount
   const importProgressMessage = workingMode === 'validate'
@@ -628,7 +703,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     : queuedFileCount === 0
       ? 'Add an enterprise script archive before validating or converting.'
       : allQueuedArchivesValidated
-        ? 'Validation passed. Conversion will save the script and open it in the editor.'
+        ? (allValidatedReviewsMatchOptions
+            ? 'Validation passed. Conversion will save the script and open it in the editor.'
+            : 'Conversion options changed. Validate the queued archive again before conversion.')
         : convertedFileCount === queuedFileCount
           ? 'Conversion complete.'
           : `${pendingValidationFileCount} archive${pendingValidationFileCount === 1 ? '' : 's'} must pass validation before conversion.`
@@ -636,10 +713,31 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   const activeResultScriptIndex = resultScripts.length > 0
     ? Math.min(selectedResultScriptIndex, resultScripts.length - 1)
     : 0
+  selectedResultScriptIndexRef.current = activeResultScriptIndex
+  const replayScopeMatches = Boolean(selectedItem)
+    && selectedItem.replayReviewGeneration === selectedItem.reviewGeneration
+    && selectedItem.replayScriptIndex === activeResultScriptIndex
+    && selectedItem.replayProjectId === (projectId || '')
+  const replayValidationLoading = replayScopeMatches ? rawReplayValidationLoading : false
+  const replayValidationError = replayScopeMatches ? rawReplayValidationError : ''
+  const replayValidationWarnings = replayScopeMatches ? rawReplayValidationWarnings : EMPTY_REPLAY_VALIDATION_WARNINGS
+  const replayValidationSession = replayScopeMatches ? rawReplayValidationSession : null
+  const reviewScope = `${selectedItem?.id || ''}:${selectedItem?.reviewGeneration ?? -1}:${activeResultScriptIndex}:${projectId || ''}`
   const importedScript = resultScripts[activeResultScriptIndex] ?? null
-  const secretBindingRequirements = importedScript
-    ? secretBindingRequirementsForScript(result?.secret_binding_requirements, activeResultScriptIndex, importedScript)
-    : []
+  // Source-secret sessions are archive-wide and single-use. Review every
+  // generated script in one credentials card so migration and binding happen
+  // once for the complete archive, regardless of the preview tab.
+  const secretBindingRequirements = result?.secret_binding_requirements || []
+  const latestPreparedReviewRef = useRef({
+    importedScript,
+    result,
+    secretBindingRequirements,
+  })
+  latestPreparedReviewRef.current = {
+    importedScript,
+    result,
+    secretBindingRequirements,
+  }
   const detectedProtocol = result?.detected_protocol ?? result?.summary?.detected_protocol ?? null
   const reviewArtifact = result?.review_artifact ?? result?.summary?.review_artifact ?? null
   const executableImport = !detectedProtocol || detectedProtocol.import_mode === 'executable'
@@ -713,8 +811,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   const browserReplayNeedsRerun = browserImport && !browserReplayInProgress && (replayValidationSession === null || browserReplayStatus === 'failed' || browserReplayStatus === 'stopped')
   const saveRequiresBrowserReplay = executableImport && browserReplayNeedsRerun
   const primarySaveDisabled = saveBlockedByProtocolGate
-    ? (!reviewArtifact || reviewArtifactSaving)
-    : (saveBlockedByMigrationPolicy || replayValidationLoading || browserReplayInProgress)
+    ? (!reviewArtifact || reviewArtifactSaving || !reviewMatchesCurrentOptions)
+    : (saveBlockedByMigrationPolicy || replayValidationLoading || browserReplayInProgress || !reviewMatchesCurrentOptions)
   const saveActionLabel = saveBlockedByProtocolGate
     ? (reviewArtifactSaving ? 'Saving Review Artifact...' : 'Save Review Artifact Instead')
     : (reviewMode === 'validation'
@@ -792,14 +890,98 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     setImportItems(items => items.map(item => item.id === itemId ? { ...item, ...patch } : item))
   }
 
+  const replaceOptionsAndInvalidate = (nextOptions: ImportOptions) => {
+    invalidateOperationScopes()
+    optionsRef.current = nextOptions
+    setOptions(nextOptions)
+    setImportItems(items => items.map(item => enterpriseArchiveImportStatusIsRunning(item.status)
+      ? {
+          ...item,
+          status: 'queued',
+          result: null,
+          reviewMode: null,
+          reviewOptionsIdentity: '',
+          error: '',
+          notice: '',
+          replayValidationLoading: false,
+          replayValidationError: '',
+          replayValidationWarnings: [],
+          replayValidationSession: null,
+          replayReviewGeneration: -1,
+          replayScriptIndex: -1,
+          replayProjectId: '',
+          reviewGeneration: item.reviewGeneration + 1,
+        }
+      : { ...item, replayValidationLoading: false }))
+  }
+
+  const prepareImportedScriptForEditor = async (): Promise<ScriptDefinition | null> => {
+    const preparedReview = latestPreparedReviewRef.current
+    if (!preparedReview.importedScript) return null
+    if (preparedReview.secretBindingRequirements.length === 0) {
+      if (JSON.stringify(preparedReview.importedScript).includes('[REDACTED]')) {
+        setError('This draft still contains a redacted credential sentinel and cannot be opened as executable script. Configure a governed secret reference first.')
+        return null
+      }
+      return preparedReview.importedScript
+    }
+    if (editorActionInFlightRef.current) return null
+
+    const sourceItemId = selectedItem?.id || ''
+    const sourceGeneration = selectedItem?.reviewGeneration
+    const sourceScriptIndex = activeResultScriptIndex
+    const sourceProjectId = reviewProjectIdRef.current
+    const requestIsCurrent = () => {
+      const current = importItemsRef.current.find(item => item.id === sourceItemId)
+      return Boolean(sourceItemId)
+        && current?.reviewGeneration === sourceGeneration
+        && selectedItemIdRef.current === sourceItemId
+        && selectedResultScriptIndexRef.current === sourceScriptIndex
+        && reviewProjectIdRef.current === sourceProjectId
+    }
+
+    editorActionInFlightRef.current = true
+    setEditorActionPreparing(true)
+    setError('')
+    try {
+      if (!credentialReviewRef.current) {
+        setError('Credential preparation is unavailable for this imported draft.')
+        return null
+      }
+      const committed = await credentialReviewRef.current.commit()
+      if (!committed || !requestIsCurrent()) return null
+      const currentReview = latestPreparedReviewRef.current
+      if (currentReview.secretBindingRequirements.length > 0) return null
+      if (currentReview.importedScript && JSON.stringify(currentReview.importedScript).includes('[REDACTED]')) {
+        setError('This draft still contains a redacted credential sentinel and cannot be opened as executable script. Configure a governed secret reference first.')
+        return null
+      }
+      return currentReview.importedScript
+    } finally {
+      editorActionInFlightRef.current = false
+      setEditorActionPreparing(false)
+    }
+  }
+
   const openImportedScriptInEditor = (focus?: DraftEditorFocus) => {
-    if (!importedScript || !onEdit) return
-    onEdit(importedScript, focus)
+    if (!onEdit) return
+    void (async () => {
+      const currentScript = await prepareImportedScriptForEditor()
+      if (currentScript) onEdit(currentScript, focus)
+    })()
   }
 
   const openSalesforceNativePreviewInEditor = () => {
     if (!salesforceNativeScript || !onEdit) return
-    onEdit(salesforceNativeScript)
+    void (async () => {
+      const preparedScript = await prepareImportedScriptForEditor()
+      if (!preparedScript) return
+      if (JSON.stringify(salesforceNativeScript).includes('[REDACTED]')) {
+        setError('The native preview still contains a redacted credential sentinel. Open the exact replay draft after configuring its secret reference instead.')
+        return
+      }
+      onEdit(salesforceNativeScript)
+    })()
   }
 
   const openImportedRuntimeSettingsInEditor = (area: string) => {
@@ -830,7 +1012,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
         const nextOptions = getRelaxedMigrationBlockOptions(options, status)
         if (!nextOptions) return
 
-        setOptions(nextOptions)
+        replaceOptionsAndInvalidate(nextOptions)
         const nextMode = reviewMode === 'validation' ? 'validate' : 'convert'
         void runReview(nextMode, nextOptions, buildMigrationPolicyRefreshNotice(nextMode, nextOptions), selectedItem ? [selectedItem.id] : undefined)
       },
@@ -845,7 +1027,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       block_non_applicable: DEFAULT_IMPORT_OPTIONS.block_non_applicable,
     }
 
-    setOptions(nextOptions)
+    replaceOptionsAndInvalidate(nextOptions)
     if (reviewMode) {
       const nextMode = reviewMode === 'validation' ? 'validate' : 'convert'
       void runReview(nextMode, nextOptions, buildMigrationPolicyRefreshNotice(nextMode, nextOptions), selectedItem ? [selectedItem.id] : undefined)
@@ -864,8 +1046,13 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     return (
       <div className="replay-panel-actions" style={style}>
         {availableButtons.map((button) => (
-          <button key={button.key} className="btn btn-secondary btn-sm" onClick={button.onClick}>
-            {button.label}
+          <button
+            key={button.key}
+            className="btn btn-secondary btn-sm"
+            onClick={button.onClick}
+            disabled={editorActionPreparing || scriptSaveInProgress}
+          >
+            {editorActionPreparing ? 'Preparing credentials...' : button.label}
           </button>
         ))}
       </div>
@@ -1024,31 +1211,44 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
 
   useEffect(() => {
     setSelectedResultScriptIndex(0)
-  }, [result, selectedItemId])
+  }, [selectedItemId])
 
   useEffect(() => {
     const sessionId = replayValidationSession?.id
-    if (!sessionId || !browserReplayInProgress || replayValidationLoading) {
+    const replayItemId = selectedItem?.id
+    const replayGeneration = selectedItem?.reviewGeneration
+    const replayScriptIndex = activeResultScriptIndex
+    const replayProjectId = projectId || ''
+    if (!sessionId || !replayItemId || replayGeneration === undefined || !browserReplayInProgress || replayValidationLoading) {
       return
     }
 
     let cancelled = false
+    const replayScopeIsCurrent = () => {
+      const current = importItemsRef.current.find(item => item.id === replayItemId)
+      return !cancelled
+        && current?.reviewGeneration === replayGeneration
+        && current.replayReviewGeneration === replayGeneration
+        && current.replayScriptIndex === replayScriptIndex
+        && current.replayProjectId === replayProjectId
+        && reviewProjectIdRef.current === projectId
+    }
 
     const refreshSession = () => {
       void api.getBrowserReplaySession(sessionId)
         .then((response) => {
-          if (cancelled || !response?.session) {
+          if (!replayScopeIsCurrent() || !response?.session) {
             return
           }
-          updateImportItem(selectedItem.id, {
+          updateImportItem(replayItemId, {
             replayValidationSession: response.session,
             replayValidationWarnings: Array.isArray(response.warnings) ? response.warnings : replayValidationWarnings,
             replayValidationError: response.session.status === 'failed' && response.session.error ? response.session.error : replayValidationError,
           })
         })
         .catch((error: unknown) => {
-          if (!cancelled) {
-            updateImportItem(selectedItem.id, {
+          if (replayScopeIsCurrent()) {
+            updateImportItem(replayItemId, {
               replayValidationError: getErrorMessage(error, 'Draft browser replay status refresh failed'),
             })
           }
@@ -1060,7 +1260,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       cancelled = true
       window.clearInterval(intervalId)
     }
-  }, [api, browserReplayInProgress, replayValidationError, replayValidationLoading, replayValidationSession?.id, replayValidationWarnings, selectedItem?.id])
+  }, [activeResultScriptIndex, api, browserReplayInProgress, projectId, replayValidationError, replayValidationLoading, replayValidationSession?.id, replayValidationWarnings, selectedItem?.id, selectedItem?.reviewGeneration])
 
   const addFilesToQueue = useCallback((fileList?: FileList | File[] | null) => {
     const incomingFiles = Array.from(fileList || [])
@@ -1112,6 +1312,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   }, [nativeDialogs, addFilesToQueue])
 
   const removeQueuedFile = (itemId: string) => {
+    invalidateOperationScopes([itemId])
     const removingSelectedItem = selectedItemId === itemId
     const nextSelectedItem = removingSelectedItem
       ? importItems.find(item => item.id !== itemId)?.id || ''
@@ -1125,6 +1326,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   }
 
   const clearQueuedFiles = () => {
+    invalidateOperationScopes()
     setImportItems([])
     setSelectedItemId('')
     setError('')
@@ -1161,8 +1363,21 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       })
       return
     }
+    invalidateOperationScopes([selectedItem.id])
     updateImportItem(selectedItem.id, {
       harFile: nextFile,
+      status: 'queued',
+      result: null,
+      reviewMode: null,
+      reviewOptionsIdentity: '',
+      reviewGeneration: selectedItem.reviewGeneration + 1,
+      replayValidationLoading: false,
+      replayValidationError: '',
+      replayValidationWarnings: [],
+      replayValidationSession: null,
+      replayReviewGeneration: -1,
+      replayScriptIndex: -1,
+      replayProjectId: '',
       error: '',
       notice: '',
     })
@@ -1170,7 +1385,24 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
 
   const clearSelectedHARFile = () => {
     if (!selectedItem) return
-    updateImportItem(selectedItem.id, { harFile: null, notice: '', error: '' })
+    invalidateOperationScopes([selectedItem.id])
+    updateImportItem(selectedItem.id, {
+      harFile: null,
+      status: 'queued',
+      result: null,
+      reviewMode: null,
+      reviewOptionsIdentity: '',
+      reviewGeneration: selectedItem.reviewGeneration + 1,
+      replayValidationLoading: false,
+      replayValidationError: '',
+      replayValidationWarnings: [],
+      replayValidationSession: null,
+      replayReviewGeneration: -1,
+      replayScriptIndex: -1,
+      replayProjectId: '',
+      notice: '',
+      error: '',
+    })
     if (harFileRef.current) {
       harFileRef.current.value = ''
     }
@@ -1184,6 +1416,22 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   ) => {
     const targetItems = importItems.filter(item => !itemIds || itemIds.includes(item.id))
     if (targetItems.length === 0) return
+    const operationGeneration = ++operationGenerationRef.current
+    const sourceProjectId = reviewProjectIdRef.current
+    const sourceOptionsIdentity = importOptionsIdentity(reviewOptions)
+    const requestTokens = new Map(targetItems.map(item => [
+      item.id,
+      nextRequestToken(itemRequestTokensRef.current, item.id),
+    ]))
+    const requestIsCurrent = (item: EnterpriseArchiveImportQueueItem) => {
+      const current = importItemsRef.current.find(candidate => candidate.id === item.id)
+      return operationGenerationRef.current === operationGeneration
+        && reviewProjectIdRef.current === sourceProjectId
+        && importOptionsIdentity(optionsRef.current) === sourceOptionsIdentity
+        && itemRequestTokensRef.current.get(item.id) === requestTokens.get(item.id)
+        && current?.file === item.file
+        && current.harFile === item.harFile
+    }
 
     const runningStatus = mode === 'validate' ? 'validating' : 'converting'
     const completeStatus = mode === 'validate' ? 'validated' : 'converted'
@@ -1192,6 +1440,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     setWorkingMode(mode)
     setError('')
     setNotice('')
+    setSelectedResultScriptIndex(0)
     setSelectedItemId(prev => targetIds.has(prev) ? prev : targetItems[0].id)
     setImportItems(items => items.map(item => targetIds.has(item.id)
       ? {
@@ -1205,6 +1454,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
           replayValidationError: '',
           replayValidationWarnings: [],
           replayValidationSession: null,
+          replayReviewGeneration: -1,
+          replayScriptIndex: -1,
+          replayProjectId: '',
+          reviewGeneration: item.reviewGeneration + 1,
         }
       : item))
 
@@ -1217,7 +1470,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       try {
         const res = await request(item.file, {
           name: useNameOverride ? reviewOptions.name || undefined : undefined,
-          project_id: projectId,
+          project_id: sourceProjectId,
           base_url: reviewOptions.base_url || undefined,
           include_assertions: reviewOptions.include_assertions,
           preserve_transactions: reviewOptions.preserve_transactions,
@@ -1225,17 +1478,20 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
           ...(item.harFile ? { har_file: item.harFile } : {}),
           ...(reviewOptions.salesforce_native ? { salesforce_native: true } : {}),
         })
+        if (!requestIsCurrent(item)) continue
         successCount += 1
         updateImportItem(item.id, {
           status: completeStatus,
           result: res,
           reviewMode: mode === 'validate' ? 'validation' : 'conversion',
+          reviewOptionsIdentity: sourceOptionsIdentity,
           error: '',
           notice: completionNotice || (mode === 'validate'
             ? 'Validation complete. Review the generated script, warnings, and preserved settings before conversion.'
             : 'Conversion complete. Review the generated script, warnings, and preserved settings before saving.'),
         })
       } catch (error: unknown) {
+        if (!requestIsCurrent(item)) continue
         failureCount += 1
         updateImportItem(item.id, {
           status: 'failed',
@@ -1245,6 +1501,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       }
     }
 
+    if (operationGenerationRef.current !== operationGeneration || reviewProjectIdRef.current !== sourceProjectId) return
     setWorkingMode(null)
     if (targetItems.length > 1) {
       const action = mode === 'validate' ? 'Validated' : 'Converted'
@@ -1260,6 +1517,26 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     if (targetItems.length !== requestedItems.length) {
       setError('Validate the queued enterprise script archive before converting it.')
       return
+    }
+    if (targetItems.some(item => item.reviewOptionsIdentity !== importOptionsIdentity(options))) {
+      setError('Conversion options changed after validation. Validate the queued archive again before converting it.')
+      return
+    }
+    const operationGeneration = ++operationGenerationRef.current
+    const sourceProjectId = reviewProjectIdRef.current
+    const sourceOptionsIdentity = importOptionsIdentity(options)
+    const requestTokens = new Map(targetItems.map(item => [
+      item.id,
+      nextRequestToken(itemRequestTokensRef.current, item.id),
+    ]))
+    const requestIsCurrent = (item: EnterpriseArchiveImportQueueItem) => {
+      const current = importItemsRef.current.find(candidate => candidate.id === item.id)
+      return operationGenerationRef.current === operationGeneration
+        && reviewProjectIdRef.current === sourceProjectId
+        && importOptionsIdentity(optionsRef.current) === sourceOptionsIdentity
+        && itemRequestTokensRef.current.get(item.id) === requestTokens.get(item.id)
+        && current?.file === item.file
+        && current.harFile === item.harFile
     }
 
     const targetIds = new Set(targetItems.map(item => item.id))
@@ -1282,6 +1559,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
           replayValidationError: '',
           replayValidationWarnings: [],
           replayValidationSession: null,
+          replayReviewGeneration: -1,
+          replayScriptIndex: -1,
+          replayProjectId: '',
+          reviewGeneration: item.reviewGeneration + 1,
         }
       : item))
 
@@ -1289,7 +1570,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       try {
         const conversionResult = await api.importEnterpriseArchive(item.file, {
           name: useNameOverride ? options.name || undefined : undefined,
-          project_id: projectId,
+          project_id: sourceProjectId,
           base_url: options.base_url || undefined,
           include_assertions: options.include_assertions,
           preserve_transactions: options.preserve_transactions,
@@ -1297,28 +1578,33 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
           ...(item.harFile ? { har_file: item.harFile } : {}),
           ...(options.salesforce_native ? { salesforce_native: true } : {}),
         })
+        if (!requestIsCurrent(item)) continue
         const scriptsToSave = getEnterpriseArchiveResultScripts(conversionResult)
         const conversionDetectedProtocol = conversionResult.detected_protocol ?? conversionResult.summary?.detected_protocol ?? null
         const conversionBlockedByProtocol = Boolean(conversionDetectedProtocol && conversionDetectedProtocol.import_mode !== 'executable')
         const conversionBlockedByMigration = Boolean(conversionResult.summary?.migration_readiness?.blocked)
         const conversionRequiresBrowserReplay = scriptsToSave.some(script => isBrowserImport(script))
         const conversionRequiresSecretBindings = (conversionResult.secret_binding_requirements?.length ?? 0) > 0
+        const conversionRequiresParameterizationReview = (conversionResult.parameterization?.suggestions || [])
+          .some(suggestion => !suggestion.pre_applied)
         if (scriptsToSave.length === 0) {
           updateImportItem(item.id, {
             status: 'converted',
             result: conversionResult,
             reviewMode: 'conversion',
+            reviewOptionsIdentity: sourceOptionsIdentity,
             error: 'Conversion completed, but no executable script was produced. Review the generated artifact before saving.',
             notice: '',
           })
           failureCount += 1
           continue
         }
-        if (conversionBlockedByProtocol || conversionBlockedByMigration || conversionRequiresBrowserReplay || conversionRequiresSecretBindings) {
+        if (conversionBlockedByProtocol || conversionBlockedByMigration || conversionRequiresBrowserReplay || conversionRequiresSecretBindings || conversionRequiresParameterizationReview) {
           updateImportItem(item.id, {
             status: 'converted',
             result: conversionResult,
             reviewMode: 'conversion',
+            reviewOptionsIdentity: sourceOptionsIdentity,
             error: '',
             notice: conversionBlockedByProtocol
               ? 'Conversion complete. Review the protocol gate before saving or promoting this archive.'
@@ -1326,7 +1612,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                 ? 'Conversion complete. Resolve migration readiness blockers before saving.'
                 : conversionRequiresBrowserReplay
                   ? 'Conversion complete. Run draft browser replay before saving this browser script.'
-                  : 'Conversion complete. Resolve the redacted credential bindings before saving.',
+                  : conversionRequiresSecretBindings
+                    ? 'Conversion complete. Resolve the redacted credential bindings before saving.'
+                    : 'Conversion complete. Review parameterization suggestions before saving.',
           })
           successCount += 1
           continue
@@ -1334,6 +1622,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
 
         const itemSavedScripts: StoredScript[] = []
         for (const script of scriptsToSave) {
+          if (!requestIsCurrent(item)) break
           const scriptToSave = isBrowserImport(script)
             ? attachTrueClientPromotionReview(script, {
               compatReport: getTrueClient2CompatReport(conversionResult, getImportMetadata(script)),
@@ -1342,9 +1631,11 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
               importWarnings: conversionResult.warnings || [],
             })
             : script
-          const savedScript = await api.createScript(scriptToSave, projectId)
+          const savedScript = await api.createScript(scriptToSave, sourceProjectId)
           itemSavedScripts.push(withFallbackPersistedScript(savedScript, scriptToSave))
         }
+
+        if (!requestIsCurrent(item)) continue
 
         savedScripts.push(...itemSavedScripts)
         successCount += 1
@@ -1352,10 +1643,12 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
           status: 'converted',
           result: conversionResult,
           reviewMode: 'conversion',
+          reviewOptionsIdentity: sourceOptionsIdentity,
           error: '',
           notice: `Converted and saved ${itemSavedScripts.length} script${itemSavedScripts.length === 1 ? '' : 's'} to the library.`,
         })
       } catch (error: unknown) {
+        if (!requestIsCurrent(item)) continue
         failureCount += 1
         updateImportItem(item.id, {
           status: 'failed',
@@ -1365,6 +1658,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       }
     }
 
+    if (operationGenerationRef.current !== operationGeneration || reviewProjectIdRef.current !== sourceProjectId) return
     setWorkingMode(null)
 
     if (savedScripts.length > 0 && onImported) {
@@ -1385,116 +1679,241 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   const startBrowserReplayValidation = async () => {
     if (!importedScript || !selectedItem) return
     const script = importedScript
+    const sourceItemId = selectedItem.id
+    const sourceGeneration = selectedItem.reviewGeneration
+    const sourceScriptIndex = activeResultScriptIndex
+    const sourceProjectId = reviewProjectIdRef.current
+    const sourceOptionsIdentity = selectedItem?.reviewOptionsIdentity || ''
+    const requestToken = nextRequestToken(replayRequestTokensRef.current, sourceItemId)
+    const requestIsCurrent = () => {
+      const current = importItemsRef.current.find(item => item.id === sourceItemId)
+      const currentScripts = getEnterpriseArchiveResultScripts(current?.result || null)
+      return replayRequestTokensRef.current.get(sourceItemId) === requestToken
+        && selectedItemIdRef.current === sourceItemId
+        && selectedResultScriptIndexRef.current === sourceScriptIndex
+        && reviewProjectIdRef.current === sourceProjectId
+        && current?.reviewOptionsIdentity === sourceOptionsIdentity
+        && importOptionsIdentity(optionsRef.current) === sourceOptionsIdentity
+        && current?.reviewGeneration === sourceGeneration
+        && currentScripts[sourceScriptIndex] === script
+    }
 
-    updateImportItem(selectedItem.id, {
+    updateImportItem(sourceItemId, {
       replayValidationLoading: true,
       replayValidationError: '',
-      replayValidationWarnings: [],
+      replayReviewGeneration: sourceGeneration,
+      replayScriptIndex: sourceScriptIndex,
+      replayProjectId: sourceProjectId || '',
     })
 
     try {
       const res = await api.startDraftBrowserReplaySession(buildReplayStartPayload(script, {
-        projectId,
+        projectId: sourceProjectId,
         ignoreThinkTime: true,
       }))
-      updateImportItem(selectedItem.id, {
+      if (!requestIsCurrent()) return false
+      updateImportItem(sourceItemId, {
         replayValidationSession: res.session,
         replayValidationWarnings: Array.isArray(res.warnings) ? res.warnings : [],
       })
       return true
     } catch (error: unknown) {
-      updateImportItem(selectedItem.id, {
+      if (!requestIsCurrent()) return false
+      updateImportItem(sourceItemId, {
         replayValidationError: getErrorMessage(error, 'Draft browser replay failed to start'),
       })
       return false
     } finally {
-      updateImportItem(selectedItem.id, { replayValidationLoading: false })
+      if (requestIsCurrent()) updateImportItem(sourceItemId, { replayValidationLoading: false })
     }
   }
 
   const handleSaveConverted = async () => {
-    if (!importedScript) return
-    if (secretBindingRequirements.length > 0) {
-      setError('Resolve every redacted credential binding before saving this script.')
+    if (scriptSaveInFlightRef.current) return
+    const preparedReview = latestPreparedReviewRef.current
+    const currentImportedScript = preparedReview.importedScript
+    if (!currentImportedScript) return
+    if (!reviewMatchesCurrentOptions) {
+      setError('Conversion options changed after this review. Refresh the review before saving the script.')
       return
     }
-    if (saveBlockedByProtocolGate) {
-      setNotice('This import is gated by protocol classification. Save the review artifact instead of promoting it as an executable script.')
-      return
-    }
-    if (saveBlockedByMigrationPolicy) {
-      setError('Saving is disabled while migration readiness is blocked by the active policy. Relax the policy or resolve the blocking runtime settings first.')
-      return
-    }
-    if (browserReplayInProgress) {
-      setNotice('Draft browser replay is still running. Wait for it to finish before saving it to the library.')
-      return
-    }
-    if (browserReplayNeedsRerun) {
-      const wasStarted = browserReplayWasStarted
-      const started = await startBrowserReplayValidation()
-      if (started) {
-        setBrowserReplayStartedNotice(wasStarted)
-      }
-      return
-    }
+    scriptSaveInFlightRef.current = true
+    let requestIsCurrent = () => false
     try {
+      const sourceItemId = selectedItem?.id || ''
+      const sourceGeneration = selectedItem?.reviewGeneration
+      const sourceScriptIndex = activeResultScriptIndex
+      const sourceProjectId = reviewProjectIdRef.current
+      const sourceOptionsIdentity = selectedItem?.reviewOptionsIdentity || ''
+      requestIsCurrent = () => {
+        const current = importItemsRef.current.find(item => item.id === sourceItemId)
+        return Boolean(sourceItemId)
+          && current?.reviewGeneration === sourceGeneration
+          && getEnterpriseArchiveResultScripts(current?.result || null)[sourceScriptIndex] === currentImportedScript
+          && selectedItemIdRef.current === sourceItemId
+          && selectedResultScriptIndexRef.current === sourceScriptIndex
+          && reviewProjectIdRef.current === sourceProjectId
+          && current?.reviewOptionsIdentity === sourceOptionsIdentity
+          && importOptionsIdentity(optionsRef.current) === sourceOptionsIdentity
+      }
+      if (preparedReview.secretBindingRequirements.length > 0) {
+        setError('Resolve every redacted credential binding before saving this script.')
+        return
+      }
+      if (saveBlockedByProtocolGate) {
+        setNotice('This import is gated by protocol classification. Save the review artifact instead of promoting it as an executable script.')
+        return
+      }
+      if (saveBlockedByMigrationPolicy) {
+        setError('Saving is disabled while migration readiness is blocked by the active policy. Relax the policy or resolve the blocking runtime settings first.')
+        return
+      }
+      if (browserReplayInProgress) {
+        setNotice('Draft browser replay is still running. Wait for it to finish before saving it to the library.')
+        return
+      }
+      if (browserReplayNeedsRerun) {
+        const wasStarted = browserReplayWasStarted
+        const started = await startBrowserReplayValidation()
+        if (started) {
+          setBrowserReplayStartedNotice(wasStarted)
+        }
+        return
+      }
+      if (!requestIsCurrent()) return
       const scriptToSave = browserImport
-        ? attachTrueClientPromotionReview(importedScript, {
+        ? attachTrueClientPromotionReview(currentImportedScript, {
           compatReport: trueClient2CompatReport,
           replaySession: replayValidationSession,
           replayWarnings: replayValidationWarnings,
-          importWarnings: result?.warnings || [],
+          importWarnings: preparedReview.result?.warnings || [],
         })
-        : importedScript
-      const savedScript = await api.createScript(scriptToSave, projectId)
+        : currentImportedScript
+      setScriptSaveInProgress(true)
+      const savedScript = await api.createScript(scriptToSave, sourceProjectId)
+      if (!requestIsCurrent()) return
       onImported?.({ scripts: [withFallbackPersistedScript(savedScript, scriptToSave)] })
     } catch (error: unknown) {
-      setError(getErrorMessage(error, 'Failed to save script'))
+      if (requestIsCurrent()) setError(getErrorMessage(error, 'Failed to save script'))
+    } finally {
+      scriptSaveInFlightRef.current = false
+      setScriptSaveInProgress(false)
     }
   }
 
   const handleSecretBindingsApply = async (bindings: SecretBindingSelection[]) => {
     if (!selectedItem || !result || !importedScript) return
-    try {
-      const resolved = await api.applySecretBindings({
-        script: importedScript,
-        script_index: activeResultScriptIndex,
-        bindings,
-      })
-      const nextScripts = resultScripts.map((script, index) => index === activeResultScriptIndex ? resolved.script : script)
-      updateImportItem(selectedItem.id, {
-        result: {
-          ...result,
+    const sourceItemId = selectedItem.id
+    const sourceGeneration = selectedItem.reviewGeneration
+    const sourceProjectId = reviewProjectIdRef.current
+    const requestIsCurrent = () => {
+      const currentItem = importItemsRef.current.find(item => item.id === sourceItemId)
+      return selectedItemIdRef.current === sourceItemId
+        && currentItem?.reviewGeneration === sourceGeneration
+        && reviewProjectIdRef.current === sourceProjectId
+    }
+    const assertCurrent = () => {
+      if (!requestIsCurrent()) throw new Error('The import result changed while credentials were being prepared. Review the current draft and try again.')
+    }
+    let resolvedResult = result
+    for (let scriptIndex = 0; scriptIndex < resultScripts.length; scriptIndex += 1) {
+      const script = resolvedResult.scripts?.[scriptIndex] || (scriptIndex === 0 ? resolvedResult.script : undefined)
+      if (!script) continue
+      const requirements = secretBindingRequirementsForScript(resolvedResult.secret_binding_requirements, scriptIndex, script)
+      const requirementIDs = new Set(requirements.map(requirement => requirement.id))
+      const scriptBindings = bindings
+        .filter(binding => (
+          typeof binding.script_index === 'number'
+            ? binding.script_index === scriptIndex
+            : requirementIDs.has(binding.requirement_id)
+        ))
+        .map(({ requirement_id, secret_name }) => ({ requirement_id, secret_name }))
+      if (scriptBindings.length === 0) continue
+      try {
+        assertCurrent()
+        const resolved = await api.applySecretBindings({ script, script_index: scriptIndex, bindings: scriptBindings })
+        assertCurrent()
+        const currentScripts = getEnterpriseArchiveResultScripts(resolvedResult)
+        const nextScripts = currentScripts.map((entry, index) => index === scriptIndex ? resolved.script : entry)
+        resolvedResult = {
+          ...resolvedResult,
           script: nextScripts[0],
           scripts: nextScripts,
           secret_binding_requirements: replaceSecretBindingRequirementsForScript(
-            result.secret_binding_requirements,
-            activeResultScriptIndex,
-            importedScript,
+            resolvedResult.secret_binding_requirements,
+            scriptIndex,
+            script,
             resolved.secret_binding_requirements,
           ),
-        },
-        error: '',
-        notice: 'Secret bindings applied. The script contains governed secret references only.',
-      })
-    } catch (error: unknown) {
-      const refreshed = refreshedSecretBindingRequirements(error)
-      if (refreshed) {
-        updateImportItem(selectedItem.id, {
-          result: {
-            ...result,
+        }
+      } catch (error: unknown) {
+        if (!requestIsCurrent()) throw error
+        const refreshed = refreshedSecretBindingRequirements(error)
+        if (refreshed) {
+          resolvedResult = {
+            ...resolvedResult,
             secret_binding_requirements: replaceSecretBindingRequirementsForScript(
-              result.secret_binding_requirements,
-              activeResultScriptIndex,
-              importedScript,
+              resolvedResult.secret_binding_requirements,
+              scriptIndex,
+              script,
               refreshed,
             ),
-          },
-        })
+          }
+          updateImportItem(selectedItem.id, { result: resolvedResult })
+        }
+        throw error
       }
-      throw error
     }
+    assertCurrent()
+    const nextScripts = getEnterpriseArchiveResultScripts(resolvedResult)
+    const previewIndex = Math.min(selectedResultScriptIndexRef.current, Math.max(nextScripts.length - 1, 0))
+    latestPreparedReviewRef.current = {
+      importedScript: nextScripts[previewIndex] || null,
+      result: resolvedResult,
+      secretBindingRequirements: resolvedResult.secret_binding_requirements || [],
+    }
+    nextRequestToken(replayRequestTokensRef.current, selectedItem.id)
+    updateImportItem(selectedItem.id, {
+      result: resolvedResult,
+      replayValidationLoading: false,
+      replayValidationError: '',
+      replayValidationWarnings: [],
+      replayValidationSession: null,
+      replayReviewGeneration: -1,
+      replayScriptIndex: -1,
+      replayProjectId: '',
+      error: '',
+      notice: 'Secret bindings applied across the generated archive. Every script contains governed secret references only.',
+    })
+  }
+
+  const handleParameterizationApplied = (parameterizedScript: ScriptDefinition) => {
+    if (!selectedItem || !result || !importedScript) return
+    const nextScripts = resultScripts.map((script, index) => index === activeResultScriptIndex ? parameterizedScript : script)
+    const nextResult = {
+      ...result,
+      script: nextScripts[0],
+      scripts: nextScripts,
+    }
+    latestPreparedReviewRef.current = {
+      importedScript: parameterizedScript,
+      result: nextResult,
+      secretBindingRequirements,
+    }
+    nextRequestToken(replayRequestTokensRef.current, selectedItem.id)
+    updateImportItem(selectedItem.id, {
+      result: nextResult,
+      reviewGeneration: selectedItem.reviewGeneration + 1,
+      replayValidationLoading: false,
+      replayValidationError: '',
+      replayValidationWarnings: [],
+      replayValidationSession: null,
+      replayReviewGeneration: -1,
+      replayScriptIndex: -1,
+      replayProjectId: '',
+      error: '',
+      notice: 'Parameterization applied to the reviewed script.',
+    })
   }
 
   const handleSaveReviewArtifact = async () => {
@@ -1539,7 +1958,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
           <h2>Import Enterprise Script Archive</h2>
           <p className="lr-subtitle">Upload a ZIP containing C-based virtual-user scripts, runtime settings, parameter files, and protocol metadata. APEX Load routes executable HTTP, SOAP, browser, database, and network archives while preserving review artifacts for sources that still require evidence or external runners.</p>
         </div>
-        {onClose && <button type="button" className="btn btn-secondary" onClick={onClose}>Back</button>}
+        {onClose && <button type="button" className="btn btn-secondary" onClick={() => { void credentialReviewRef.current?.discardSourceSession(); onClose() }}>Back</button>}
       </div>
 
       {/* Drop zone */}
@@ -1643,33 +2062,33 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
           </div>
           <div className="lr-options-grid">
             <label><span>Script Name (optional)</span>
-              <input value={options.name} onChange={e => setOptions(o => ({ ...o, name: e.target.value }))} placeholder="Auto-detected from .usr file" />
+              <input value={options.name} onChange={e => replaceOptionsAndInvalidate({ ...options, name: e.target.value })} placeholder="Auto-detected from .usr file" />
             </label>
             <label><span>Base URL Override (optional)</span>
-              <input value={options.base_url} onChange={e => setOptions(o => ({ ...o, base_url: e.target.value }))} placeholder="Auto-detected from first URL" />
+              <input value={options.base_url} onChange={e => replaceOptionsAndInvalidate({ ...options, base_url: e.target.value })} placeholder="Auto-detected from first URL" />
             </label>
             <label className="lr-checkbox">
-              <input type="checkbox" checked={options.include_assertions} onChange={e => setOptions(o => ({ ...o, include_assertions: e.target.checked }))} />
+              <input type="checkbox" checked={options.include_assertions} onChange={e => replaceOptionsAndInvalidate({ ...options, include_assertions: e.target.checked })} />
               <span>Add default status_code assertions</span>
             </label>
             <label className="lr-checkbox">
-              <input type="checkbox" checked={options.preserve_transactions} onChange={e => setOptions(o => ({ ...o, preserve_transactions: e.target.checked }))} />
+              <input type="checkbox" checked={options.preserve_transactions} onChange={e => replaceOptionsAndInvalidate({ ...options, preserve_transactions: e.target.checked })} />
               <span>Preserve transaction names in generated actions</span>
             </label>
             <label className="lr-checkbox">
-              <input type="checkbox" checked={options.salesforce_native} onChange={e => setOptions(o => ({ ...o, salesforce_native: e.target.checked }))} />
+              <input type="checkbox" checked={options.salesforce_native} onChange={e => replaceOptionsAndInvalidate({ ...options, salesforce_native: e.target.checked })} />
               <span>Build Salesforce native preview</span>
             </label>
             <label className="lr-checkbox">
-              <input type="checkbox" checked={options.block_partial} onChange={e => setOptions(o => ({ ...o, block_partial: e.target.checked }))} />
+              <input type="checkbox" checked={options.block_partial} onChange={e => replaceOptionsAndInvalidate({ ...options, block_partial: e.target.checked })} />
               <span>Treat partial runtime settings as blockers</span>
             </label>
             <label className="lr-checkbox">
-              <input type="checkbox" checked={options.block_compatibility_only} onChange={e => setOptions(o => ({ ...o, block_compatibility_only: e.target.checked }))} />
+              <input type="checkbox" checked={options.block_compatibility_only} onChange={e => replaceOptionsAndInvalidate({ ...options, block_compatibility_only: e.target.checked })} />
               <span>Treat preserved-only runtime settings as blockers</span>
             </label>
             <label className="lr-checkbox">
-              <input type="checkbox" checked={options.block_non_applicable} onChange={e => setOptions(o => ({ ...o, block_non_applicable: e.target.checked }))} />
+              <input type="checkbox" checked={options.block_non_applicable} onChange={e => replaceOptionsAndInvalidate({ ...options, block_non_applicable: e.target.checked })} />
               <span>Treat non-applicable runtime settings as blockers</span>
             </label>
           </div>
@@ -1682,6 +2101,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
           )}
           {hasPendingMigrationPolicyChanges && (
             <p className="lr-subtitle">Refresh review to apply the selected migration block policy.</p>
+          )}
+          {result && !reviewMatchesCurrentOptions && !hasPendingMigrationPolicyChanges && (
+            <p className="lr-subtitle">Conversion options changed. Refresh the review before saving or editing this draft.</p>
           )}
           {hasCustomMigrationBlockPolicy(options) && (
             <div className="replay-panel-actions" style={actionWrapStyle}>
@@ -1718,7 +2140,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
             <button className="btn btn-secondary btn-lg" onClick={() => runReview('validate')} disabled={queuedFileCount === 0 || workingMode !== null}>
               {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : validateButtonLabel}
             </button>
-            <button className="btn btn-primary btn-lg" onClick={() => convertValidatedItems()} disabled={!allQueuedArchivesValidated || workingMode !== null}>
+            <button className="btn btn-primary btn-lg" onClick={() => convertValidatedItems()} disabled={!allQueuedArchivesValidated || !allValidatedReviewsMatchOptions || workingMode !== null}>
               {workingMode === 'convert' ? <><span className="spinner" /> Converting And Saving...</> : convertButtonLabel}
             </button>
           </div>
@@ -1928,7 +2350,22 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                     className={`lr-output-row ${index === activeResultScriptIndex ? 'active' : ''}`}
                     aria-pressed={index === activeResultScriptIndex}
                     aria-label={`Review generated script ${script.name || `Script ${index + 1}`}`}
-                    onClick={() => setSelectedResultScriptIndex(index)}
+                    onClick={() => {
+                      if (index === activeResultScriptIndex) return
+                      if (selectedItem) {
+                        nextRequestToken(replayRequestTokensRef.current, selectedItem.id)
+                        updateImportItem(selectedItem.id, {
+                          replayValidationLoading: false,
+                          replayValidationError: '',
+                          replayValidationWarnings: [],
+                          replayValidationSession: null,
+                          replayReviewGeneration: -1,
+                          replayScriptIndex: -1,
+                          replayProjectId: '',
+                        })
+                      }
+                      setSelectedResultScriptIndex(index)
+                    }}
                   >
                     <span className="lr-output-main">
                       <strong>{script.name || `Generated Script ${index + 1}`}</strong>
@@ -1941,15 +2378,24 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
           )}
           <ScriptImportReview
             title={reviewMode === 'validation' ? 'Validation Review' : 'Conversion Complete'}
+            reviewGeneration={reviewScope}
             subtitle={reviewSubtitle}
             script={importedScript}
             warnings={result.warnings}
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
-            secretBindingRequirements={reviewMode === 'conversion' ? secretBindingRequirements : []}
+            parameterization={result.parameterization}
+            onParameterizationApplied={handleParameterizationApplied}
+            secretBindingRequirements={secretBindingRequirements}
             onSecretBindingsApply={handleSecretBindingsApply}
-            saving={saveBlockedByProtocolGate ? reviewArtifactSaving : workingMode === 'convert'}
+            projectId={projectId}
+            sourceSecretSessionId={result.source_secret_session_id}
+            sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
+            sourceSecretMigrationAllowed={result.source_secret_migration_allowed}
+            credentialReviewRef={credentialReviewRef}
+            saving={saveBlockedByProtocolGate ? reviewArtifactSaving : workingMode === 'convert' || scriptSaveInProgress}
+            reviewBusy={!reviewMatchesCurrentOptions || editorActionPreparing || scriptSaveInProgress}
             saveDisabled={reviewMode === 'validation'
-              ? (!selectedItemValidated || workingMode !== null || (saveBlockedByProtocolGate && (!reviewArtifact || reviewArtifactSaving)))
+              ? (!selectedItemValidated || !reviewMatchesCurrentOptions || workingMode !== null || (saveBlockedByProtocolGate && (!reviewArtifact || reviewArtifactSaving)))
               : (primarySaveDisabled || workingMode !== null)}
             saveLabel={saveActionLabel}
             onSave={saveBlockedByProtocolGate && reviewArtifact
@@ -1957,7 +2403,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
               : reviewMode === 'validation' && selectedItem
                 ? () => convertValidatedItems(validatedItemIds)
                 : handleSaveConverted}
-            onEdit={onEdit ? () => openImportedScriptInEditor() : undefined}
+            onEdit={onEdit ? () => { openImportedScriptInEditor() } : undefined}
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} /> : undefined}
           >
 

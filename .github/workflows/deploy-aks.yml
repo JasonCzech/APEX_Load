@@ -74,7 +74,7 @@ jobs:
 
       - name: Setup kubectl
         if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
-        uses: azure/setup-kubectl@776406bce94f63e41d621b960d78ee25c8b76ede # v4.0.1
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
         with:
           version: v1.34.9
 
@@ -84,9 +84,19 @@ jobs:
         with:
           version: v3.21.3
 
+      - name: Install checksum-pinned registry inspection
+        if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
+        env:
+          SKOPEO_RELEASE_BASE_URL: ${{ vars.SKOPEO_RELEASE_BASE_URL }}
+        run: |
+          set -euo pipefail
+          tool_directory="$RUNNER_TEMP/apexload-tools"
+          ./scripts/ci/install-skopeo.sh "$tool_directory"
+          printf '%s\n' "$tool_directory" >> "$GITHUB_PATH"
+
       - name: Install cosign
         if: vars.APEXLOAD_USE_PREINSTALLED_TOOLS != 'true'
-        uses: sigstore/cosign-installer@d7543c93d881b35a8faa02e8e3605f69b7a1ce62 # v3.10.0
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.1.1
 
@@ -96,6 +106,8 @@ jobs:
           [[ "$(kubectl version --client -o json | jq -r '.clientVersion.gitVersion')" == v1.34.9 ]]
           [[ "$(helm version --template '{{.Version}}')" == v3.21.3 ]]
           cosign version 2>&1 | grep -Eq 'GitVersion:[[:space:]]+v3\.1\.1([[:space:]]|$)'
+          command -v skopeo >/dev/null
+          [[ "$(skopeo --version)" == 'skopeo version 1.20.0' ]]
 
       - name: Validate release registry credentials
         env:
@@ -113,7 +125,7 @@ jobs:
           fi
 
       - name: Authenticate to the release registry
-        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4.4.0
         with:
           registry: ${{ vars.APEXLOAD_RELEASE_REGISTRY || 'ghcr.io' }}
           username: ${{ vars.APEXLOAD_RELEASE_REGISTRY_USERNAME || github.actor }}
@@ -157,6 +169,7 @@ jobs:
       - name: Verify portable release and image signatures
         id: release
         env:
+          APEXLOAD_IMAGE_INSPECTOR: skopeo
           RELEASE_TAG: ${{ github.event.client_payload.release }}
           RELEASE_PUBLIC_KEY: ${{ vars.APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM }}
           COSIGN_PUBLIC_KEY: ${{ vars.COSIGN_PUBLIC_KEY }}

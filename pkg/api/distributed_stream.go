@@ -415,6 +415,7 @@ func (b *distributedExecutionBackend) closeRemoteResources(tr *TestRunner, test 
 	test.remoteStopFinalizerRunning = false
 	test.remoteActivated = false
 	test.remoteActivationPending = false
+	clearDistributedRunSecretSnapshotsLocked(test)
 	test.remoteControlGeneration++
 	tr.mu.Unlock()
 	if lifecycleCancel != nil {

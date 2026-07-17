@@ -173,6 +173,9 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		ctx := convertContext{headers: map[string]string{}, variables: map[string]string{}, scriptProtocol: groupProtocol}
 		threadName := attrOr(tg.Element, "testname", fmt.Sprintf("Thread Group %d", i+1))
 		scriptName := opts.ScriptName
+		if scriptName != "" && len(threadGroups) > 1 {
+			scriptName = fmt.Sprintf("%s_%d", scriptName, i+1)
+		}
 		if scriptName == "" {
 			scriptName = sanitizeName(threadName)
 			if len(threadGroups) > 1 {

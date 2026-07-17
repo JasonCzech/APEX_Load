@@ -23,6 +23,14 @@ func loadScriptForRun(path string, args runArgs) (*dsl.Script, error) {
 	return applyRuntimeOverrides(script, args)
 }
 
+func loadScriptSnapshotForRun(path string, data []byte, args runArgs) (*dsl.Script, error) {
+	script, err := dsl.ParseFileSnapshot(path, data)
+	if err != nil {
+		return nil, err
+	}
+	return applyRuntimeOverrides(script, args)
+}
+
 func applyRuntimeOverrides(script *dsl.Script, args runArgs) (*dsl.Script, error) {
 	if script == nil {
 		return nil, fmt.Errorf("script is required")

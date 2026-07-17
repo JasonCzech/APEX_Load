@@ -51,6 +51,21 @@ func TestBuildProtocolEvidenceSurfacesConsumerOffsetLag(t *testing.T) {
 	}
 }
 
+func TestBuildProtocolEvidencePrefersRedactedTarget(t *testing.T) {
+	const secretTarget = "https://credential.example.test/private"
+	evidence := BuildProtocolEvidence(&Action{
+		Type:           "database_query",
+		Target:         secretTarget,
+		RedactedTarget: "[REDACTED]",
+	}, &Result{
+		Success:        true,
+		DependencyType: "database",
+	})
+	if evidence["target"] != "[REDACTED]" {
+		t.Fatalf("target evidence = %#v, want redacted target", evidence["target"])
+	}
+}
+
 func TestBuildProtocolEvidenceRecognizesSOAPAndRedactsMetadata(t *testing.T) {
 	evidence := BuildProtocolEvidence(&Action{
 		Type:            "request",

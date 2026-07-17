@@ -11,7 +11,10 @@ func (s *Server) handleCreateExecutionPlanSchedule(w http.ResponseWriter, r *htt
 		return
 	}
 	planID := r.PathValue("id")
-	schedule, err := s.runner.CreateExecutionPlanSchedule(planID, req)
+	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	schedule, err := s.runner.CreateExecutionPlanSchedule(planID, req, testCreationActor{
+		Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName,
+	})
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, errNotExecutionLeader) {
@@ -44,7 +47,10 @@ func (s *Server) handleUpdateExecutionPlanSchedule(w http.ResponseWriter, r *htt
 	}
 	planID := r.PathValue("id")
 	scheduleID := r.PathValue("schedule_id")
-	schedule, ok, err := s.runner.UpdateExecutionPlanSchedule(planID, scheduleID, req)
+	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	schedule, ok, err := s.runner.UpdateExecutionPlanSchedule(planID, scheduleID, req, testCreationActor{
+		Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName,
+	})
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, errNotExecutionLeader) {

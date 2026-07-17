@@ -27,7 +27,7 @@ The matching infrastructure lives in [`deployments/azure/terraform`](../../azure
 | PostgreSQL Flexible Server | `APEXLOAD_STORE=postgres`, `APEXLOAD_DATABASE_URL` | password in Secret |
 | Azure Cache for Redis | `APEXLOAD_CACHE_BACKEND=redis`, `APEXLOAD_REDIS_URL` (rediss://, port 6380) | access key in Secret |
 | Blob Storage | `APEXLOAD_ARCHIVE_BACKEND=azure_blob`, `APEXLOAD_ARCHIVE_CONTAINER`, `AZURE_STORAGE_ACCOUNT` | controller workload identity |
-| Key Vault | `APEXLOAD_AZURE_KEY_VAULT_URL`, `APEXLOAD_AZURE_KEY_VAULT_AUTH=azure_identity` | controller + generator workload identities |
+| Key Vault | `APEXLOAD_AZURE_KEY_VAULT_URL`, `APEXLOAD_AZURE_KEY_VAULT_AUTH=azure_identity`, controller-only `APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED=true` | controller Secrets Officer; generator Secrets User |
 | AKS headless DNS | `APEXLOAD_GENERATORS=dns://apexload-generator.apexload.svc.cluster.local:9090` | n/a |
 
 The `dns://` scheme (also usable on-prem) makes the controller re-resolve the
@@ -55,7 +55,8 @@ disabled and tokenless by default; see
    kubectl create namespace apexload --dry-run=client -o yaml | kubectl apply -f -
    kubectl -n apexload create secret generic apexload-data-platform \
      --from-literal=APEXLOAD_DATABASE_URL="$(terraform output -raw apexload_database_url)" \
-     --from-literal=APEXLOAD_REDIS_URL="$(terraform output -raw apexload_redis_url)"
+     --from-literal=APEXLOAD_REDIS_URL="$(terraform output -raw apexload_redis_url)" \
+     --from-literal=APEXLOAD_GRPC_AUTH_TOKEN="$(openssl rand -hex 32)"
    ```
 5. **Render + apply** —
    ```bash
@@ -122,12 +123,10 @@ deleting the on-prem copies.
 
 ### 4. Migrate script secrets
 
-For each `{{secret.foo_bar}}` reference, create a Key Vault secret named
-`foo-bar` (the resolver maps `_`/`.` → `-`):
-
-```bash
-az keyvault secret set --vault-name <vault> --name foo-bar --value '...'
-```
+Use Settings → Projects & Compliance → Project Secrets to create or rotate
+logical values. The controller writes them through workload identity; values
+are never returned to the browser. Existing values can still be provisioned
+out of band with `az keyvault secret set`.
 
 Workload identity replaces any on-prem `APEXLOAD_SECRET_*` env plumbing — no
 token rotation to manage. (`APEXLOAD_AZURE_KEY_VAULT_TOKEN` still works for
@@ -140,6 +139,8 @@ overrides the token audience for sovereign clouds.)
 - [ ] AKS smoke test green (`deployments/k8s/smoke-test.sh`)
 - [ ] KEDA scaling observed: queue a large test, watch `kubectl -n apexload get scaledobject,pods -w`
 - [ ] Fleet discovery: `GET /api/v1/system/services` lists all generator pods after a scale event
+- [ ] Project Secrets reports a writable `azure_key_vault` provider and the
+      controller identity has `Key Vault Secrets Officer`
 - [ ] Auth: OIDC redirect URIs updated to the new ingress hostname (`APEXLOAD_ENV=production` refuses bypass auth)
 - [ ] GitHub integration (if used): GHES webhook + OAuth callback URLs point at the new hostname
 - [ ] CI pipelines (`apexctl run --api ...`) repointed at the new URL
@@ -157,8 +158,12 @@ database dump in the opposite direction if writes happened on AKS.
 - **Controller pods are disposable**: durable state is PostgreSQL + Blob +
   Redis; `/var/lib/apexload` is an emptyDir used for staging/exports only.
 - **Controller replicas**: the AKS base keeps one controller. Use the HA
-  example only with shared PostgreSQL so execution leadership and scheduler
-  leases have a durable store.
+  overlay only with shared PostgreSQL and Redis. The overlay creates a
+  selectorless `apexload-controller-active` Service whose EndpointSlice is
+  fenced by the durable execution-lease owner and generation. CI run mutations
+  and execution-readiness route through that Service; OIDC exchange,
+  dashboard, and read traffic remain on the all-replica controller Service.
+  The leader does not publish itself until its HTTP listener has bound.
 - **mTLS certificates**: use cert-manager with
   `certificates.cert-manager.yaml`, or sync `apexload-controller-grpc-tls` and
   `apexload-generator-grpc-tls` from Key Vault CSI. The base overlay assumes

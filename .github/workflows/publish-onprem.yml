@@ -85,12 +85,16 @@ jobs:
           persist-credentials: false
 
       - name: Require hardened internal runner tools
+        env:
+          EXPECTED_RUNNER_IMAGE_DIGEST: ${{ vars.APEXLOAD_ONPREM_RUNNER_IMAGE_DIGEST }}
         run: |
           set -euo pipefail
+          [[ "$EXPECTED_RUNNER_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "${APEXLOAD_RUNNER_IMAGE_DIGEST:-}" == "$EXPECTED_RUNNER_IMAGE_DIGEST" ]]
           command -v skopeo >/dev/null
           command -v cosign >/dev/null
           command -v jq >/dev/null
-          skopeo --version | grep -F '1.20.0'
+          [[ "$(skopeo --version)" == 'skopeo version 1.20.0' ]]
           cosign version 2>&1 | grep -Eq 'GitVersion:[[:space:]]+v3\.1\.1([[:space:]]|$)'
 
       - name: Validate registry coordinates
@@ -136,6 +140,7 @@ jobs:
       - name: Download and verify signed release
         id: release
         env:
+          APEXLOAD_IMAGE_INSPECTOR: skopeo
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.event.client_payload.release }}
           REPOSITORY: ${{ github.repository }}
@@ -360,12 +365,16 @@ jobs:
           persist-credentials: false
 
       - name: Require hardened internal runner tools
+        env:
+          EXPECTED_RUNNER_IMAGE_DIGEST: ${{ vars.APEXLOAD_ONPREM_RUNNER_IMAGE_DIGEST }}
         run: |
           set -euo pipefail
+          [[ "$EXPECTED_RUNNER_IMAGE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "${APEXLOAD_RUNNER_IMAGE_DIGEST:-}" == "$EXPECTED_RUNNER_IMAGE_DIGEST" ]]
           command -v skopeo >/dev/null
           command -v cosign >/dev/null
           command -v jq >/dev/null
-          skopeo --version | grep -F '1.20.0'
+          [[ "$(skopeo --version)" == 'skopeo version 1.20.0' ]]
           cosign version 2>&1 | grep -Eq 'GitVersion:[[:space:]]+v3\.1\.1([[:space:]]|$)'
 
       - name: Download and verify the promotion contract

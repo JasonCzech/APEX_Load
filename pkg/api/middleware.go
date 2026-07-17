@@ -506,7 +506,11 @@ const (
 	harImportMaxBodyBytes               int64 = 50 << 20
 	jmeterImportMaxBodyBytes            int64 = 50 << 20
 	enterpriseArchiveImportMaxBodyBytes int64 = 100 << 20
-	defaultMaxRequestBodyBytes          int64 = 8 << 20
+	// Bruno authorization resolves project scope from the query string without
+	// pre-reading the upload. Keep the transport ceiling aligned with the
+	// default compressed upload quota plus JSON/multipart framing.
+	brunoImportMaxBodyBytes    int64 = (256 << 20) + (16 << 20)
+	defaultMaxRequestBodyBytes int64 = 8 << 20
 	// Library bundle JSON can carry many scripts/results in one transfer. Keep
 	// its historical envelope explicit rather than inheriting the CRUD default.
 	libraryBundleImportMaxBodyBytes int64 = 128 << 20

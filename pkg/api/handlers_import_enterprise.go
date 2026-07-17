@@ -57,7 +57,7 @@ func (s *Server) handleImportEnterpriseArchive(w http.ResponseWriter, r *http.Re
 	}
 	attachSalesforceReviewToEnterpriseArchiveResult(result, importReq)
 
-	writeEnterpriseArchiveImportResponse(w, http.StatusOK, result, importReq.ReadinessPolicy)
+	s.writeEnterpriseArchiveImportResponse(w, r, http.StatusOK, result, importReq.ReadinessPolicy)
 }
 
 func (s *Server) handleValidateEnterpriseArchiveImport(w http.ResponseWriter, r *http.Request) {
@@ -85,7 +85,7 @@ func (s *Server) handleValidateEnterpriseArchiveImport(w http.ResponseWriter, r 
 	}
 	attachSalesforceReviewToEnterpriseArchiveResult(result, importReq)
 
-	writeEnterpriseArchiveImportResponse(w, http.StatusOK, result, importReq.ReadinessPolicy)
+	s.writeEnterpriseArchiveImportResponse(w, r, http.StatusOK, result, importReq.ReadinessPolicy)
 }
 
 func attachSalesforceReviewToEnterpriseArchiveResult(result *enterprisearchive.ConvertResult, importReq *enterpriseArchiveImportRequest) {
@@ -254,9 +254,9 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 	}, true
 }
 
-func writeEnterpriseArchiveImportResponse(w http.ResponseWriter, status int, result *enterprisearchive.ConvertResult, readinessPolicy enterprisearchive.RuntimeSettingMigrationPolicy) {
+func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *http.Request, status int, result *enterprisearchive.ConvertResult, readinessPolicy enterprisearchive.RuntimeSettingMigrationPolicy) {
 	if result == nil {
-		writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{}))
+		writeJSON(w, status, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{}))
 		return
 	}
 	unsupportedElements := uniqueSortedStrings(result.Stats.UnsupportedFuncs)
@@ -288,7 +288,7 @@ func writeEnterpriseArchiveImportResponse(w http.ResponseWriter, status int, res
 		parameterization = buildMultiScriptParameterization(scripts)
 	}
 
-	writeJSON(w, status, newScriptImportResponse(scriptImportResponseOptions{
+	writeJSON(w, status, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Scripts:             scripts,
 		Script:              result.Script,

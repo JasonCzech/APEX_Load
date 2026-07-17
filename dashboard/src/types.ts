@@ -3898,6 +3898,10 @@ export interface DashboardClientDownloadsSettings {
   enabled: boolean
 }
 
+export interface DashboardScriptImportSettings {
+  allow_source_secret_migration: boolean
+}
+
 export interface DashboardSystemSettings {
   general: DashboardGeneralSettings
   thresholds: DashboardThresholdSettings
@@ -3910,6 +3914,7 @@ export interface DashboardSystemSettings {
   prometheus: DashboardPrometheusSettings
   client_app: DashboardClientAppSettings
   client_downloads: DashboardClientDownloadsSettings
+  script_imports: DashboardScriptImportSettings
 }
 
 export interface PrometheusPoint {

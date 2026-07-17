@@ -203,6 +203,44 @@ func TestHandleImportOpenAPI(t *testing.T) {
 	assertReviewSection(t, result.ReviewSections, "openapi_operations", "info", "getOrder")
 }
 
+func TestHandleImportOpenAPIRedactsCredentialsFromResultAndRootSummaries(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	const (
+		username = "openapi-source-user"
+		password = "openapi-source-password"
+		token    = "openapi-query-token"
+	)
+	serverURL := "https://" + username + ":" + password + "@api.example.test?access_token=" + token + "&region=east"
+	payload, err := json.Marshal(map[string]any{
+		"name":       "Protected server summary",
+		"project_id": "proj-api",
+		"content": `{
+  "openapi": "3.0.3",
+  "info": {"title": "Protected", "version": "1.0"},
+  "servers": [{"url": "` + serverURL + `"}],
+  "paths": {"/health": {"get": {"operationId": "health", "responses": {"200": {"description": "ok"}}}}}
+}`,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/openapi", bytes.NewReader(payload))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", response.Code, response.Body.String())
+	}
+	for _, secret := range []string{username, password, token} {
+		if strings.Contains(response.Body.String(), secret) {
+			t.Fatalf("OpenAPI import disclosed URL credential %q in result/root summaries: %s", secret, response.Body.String())
+		}
+	}
+	if !strings.Contains(response.Body.String(), maskedScriptSecret) || !strings.Contains(response.Body.String(), "region=east") {
+		t.Fatalf("OpenAPI URL projection did not preserve a safe summary: %s", response.Body.String())
+	}
+}
+
 func TestHandleImportOpenAPIReturnsPreflightAndCorrelations(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	payload := map[string]any{

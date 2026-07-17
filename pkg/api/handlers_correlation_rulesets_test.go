@@ -126,14 +126,14 @@ func seedScriptWithCorrelatedBaseline(t *testing.T, server *Server) *StoredScrip
 		Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
 		Actions: []dsl.Action{
 			{Name: "login", Type: "request", Method: "POST", Target: "/login"},
-			{Name: "checkout", Type: "request", Method: "POST", Target: "/checkout", Body: `{"csrf":"TOKEN1234567"}`},
+			{Name: "checkout", Type: "request", Method: "POST", Target: "/checkout", Body: `{"order_id":"ORDER1234567"}`},
 		},
 	})
 	if err := server.store.SaveScriptRecording(&storage.ScriptRecordingRecord{
 		ScriptID: stored.ID,
 		Observations: []storage.ScriptRecordingObservation{
-			{ID: 0, RequestURL: "/login", ResponseBody: `{"csrf_token":"TOKEN1234567"}`},
-			{ID: 1, RequestURL: "/checkout", RequestBody: `{"csrf":"TOKEN1234567"}`},
+			{ID: 0, RequestURL: "/login", ResponseBody: `{"order_id":"ORDER1234567"}`},
+			{ID: 1, RequestURL: "/checkout", RequestBody: `{"order_id":"ORDER1234567"}`},
 		},
 	}); err != nil {
 		t.Fatalf("save baseline: %v", err)

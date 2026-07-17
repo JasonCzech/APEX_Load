@@ -6,7 +6,7 @@ import { useApi } from '../hooks/useApi'
 import { composeComponentDraft, createApiDraft, createDatabaseDraft, createGrpcDraft, createJavaHttpDraft, createJmsDraft, createKafkaDraft, createNetworkDraft, createSoapDraft, createWebDraft, createWebSocketDraft } from './scriptDraftFactories'
 import { getErrorMessage } from '../utils/errorUtils'
 
-export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'jmeter-import' | 'recorder' | 'sample' | 'protocol-import' | 'oracle-review' | 'recorder-import' | 'java-http-import' | 'devweb-import' | 'har-import' | 'salesforce-import' | 'openapi-import' | 'raml-import' | 'postman-import' | 'wsdl-import' | 'asyncapi-import'
+export type ScriptsAuthoringSubView = 'list' | 'create-options' | 'create' | 'edit' | 'import' | 'bruno-import' | 'jmeter-import' | 'recorder' | 'sample' | 'protocol-import' | 'oracle-review' | 'recorder-import' | 'java-http-import' | 'devweb-import' | 'har-import' | 'salesforce-import' | 'openapi-import' | 'raml-import' | 'postman-import' | 'wsdl-import' | 'asyncapi-import'
 
 export interface DraftEditorFocus {
   targetAction?: string | null
@@ -26,6 +26,7 @@ export interface AuthoringState {
   editingId: string | null
   editingScript: ScriptDefinition | null
   draftScript: ScriptDefinition | null
+  draftInitiallyDirty: boolean
   draftEditorFocus: DraftEditorFocus | null
   draftReturnTarget: AuthoringReturnTarget | null
   authoringNotice: string | null
@@ -83,7 +84,7 @@ interface ScriptsAuthoringStateModel {
   openCreateOptions: () => void
   handleEdit: (id: string) => Promise<void>
   handleSavedScript: (script: StoredScript, notice?: string | null) => void
-  handleDraftEdit: (script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null) => void
+  handleDraftEdit: (script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null, options?: { initiallyDirty?: boolean }) => void
   returnToDraftSource: () => void
   startDraft: (factory: () => ScriptDefinition) => void
   createOptionActions: ScriptsCreateOptionActions
@@ -126,6 +127,8 @@ function importLauncherState(launcher: string, mode?: string | null): Pick<Autho
       return { subView: 'import', importLauncher: normalizedLauncher, importMode: normalizedMode }
     case 'jmeter':
       return { subView: 'jmeter-import', importLauncher: normalizedLauncher, importMode: normalizedMode }
+    case 'bruno':
+      return { subView: 'bruno-import', importLauncher: normalizedLauncher, importMode: normalizedMode }
     case 'sample':
       return { subView: 'sample', importLauncher: normalizedLauncher, importMode: normalizedMode }
     case 'oracle_ebusiness_review':
@@ -141,6 +144,8 @@ function aliasImportState(mode: ScriptsAuthoringSubView): Pick<AuthoringState, '
       return importLauncherState('enterprise_archive')
     case 'jmeter-import':
       return importLauncherState('jmeter')
+    case 'bruno-import':
+      return importLauncherState('bruno')
     case 'sample':
       return importLauncherState('sample', 'standard_api')
     case 'java-http-import':
@@ -177,6 +182,7 @@ function createAuthoringState(mode?: ScriptsAuthoringSubView, editId?: string): 
     editingId: editId || null,
     editingScript: null,
     draftScript: null,
+    draftInitiallyDirty: false,
     draftEditorFocus: null,
     draftReturnTarget: null,
     authoringNotice: null,
@@ -205,6 +211,7 @@ export function useScriptsAuthoringState({
       editingId: null,
       editingScript: null,
       draftScript: null,
+      draftInitiallyDirty: false,
       draftEditorFocus: null,
       draftReturnTarget: null,
       authoringNotice: null,
@@ -230,6 +237,7 @@ export function useScriptsAuthoringState({
       editingId: null,
       editingScript: null,
       draftScript: null,
+      draftInitiallyDirty: false,
       draftEditorFocus: null,
       draftReturnTarget: null,
       authoringNotice: null,
@@ -261,13 +269,14 @@ export function useScriptsAuthoringState({
   const openWSDLImport = useCallback(() => openImportSurface('wsdl'), [openImportSurface])
   const openAsyncAPIImport = useCallback(() => openImportSurface('asyncapi'), [openImportSurface])
 
-  const openDraftEditor = useCallback((script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null) => {
+  const openDraftEditor = useCallback((script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null, options?: { initiallyDirty?: boolean }) => {
     invalidateEditRequest()
     setAuthoringState({
       subView: 'create',
       editingId: null,
       editingScript: null,
       draftScript: script,
+      draftInitiallyDirty: options?.initiallyDirty === true,
       draftEditorFocus: normalizeDraftEditorFocus(focus),
       draftReturnTarget: normalizeAuthoringReturnTarget(returnTarget),
       authoringNotice: null,
@@ -337,6 +346,7 @@ export function useScriptsAuthoringState({
           editingId: id,
           editingScript: null,
           draftScript: null,
+          draftInitiallyDirty: false,
           draftEditorFocus: null,
           draftReturnTarget: null,
           authoringNotice: null,
@@ -353,6 +363,7 @@ export function useScriptsAuthoringState({
         editingId: id,
         editingScript: res.script ?? null,
         draftScript: null,
+        draftInitiallyDirty: false,
         draftEditorFocus: null,
         draftReturnTarget: null,
         authoringNotice: null,
@@ -367,6 +378,7 @@ export function useScriptsAuthoringState({
         editingId: null,
         editingScript: null,
         draftScript: null,
+        draftInitiallyDirty: false,
         draftEditorFocus: null,
         draftReturnTarget: null,
         authoringNotice: getErrorMessage(error, 'Unable to load script for editing.'),
@@ -384,6 +396,7 @@ export function useScriptsAuthoringState({
       editingId: savedScript.id,
       editingScript: savedScript.script ?? previous.draftScript ?? previous.editingScript,
       draftScript: null,
+      draftInitiallyDirty: false,
       draftEditorFocus: null,
       draftReturnTarget: null,
       authoringNotice: notice?.trim() || null,
@@ -404,6 +417,7 @@ export function useScriptsAuthoringState({
         editingId: null,
         editingScript: null,
         draftScript: null,
+        draftInitiallyDirty: false,
         draftEditorFocus: null,
         draftReturnTarget: null,
         authoringNotice: null,

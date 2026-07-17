@@ -127,7 +127,6 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		}
 		action.Metadata["source_secret_ref"] = secretName
 		action.Metadata["source_secret_function"] = convertutil.FirstNonEmpty(fn.Args[maskedBodyFuncArgKey], "lr_unmask")
-		action.Metadata["source_secret_hash"] = fn.Args[maskedBodyHashArgKey]
 		action.Metadata["body_gated_by_secret"] = true
 	}
 

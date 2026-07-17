@@ -1,9 +1,16 @@
 package api
 
 import (
+	"encoding/json"
+	"net/http"
 	"reflect"
+	"strings"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 type scriptImportResponseOptions struct {
@@ -50,6 +57,11 @@ type scriptImportRepairSuggestion struct {
 }
 
 func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
+	// Script projection already recursively sanitizes client-extensible review
+	// subtrees and redacts executable credential fields. Running the generic
+	// evidence scrubber over the projected script again would collapse
+	// structured fields such as config.http.auth into a scalar, breaking both
+	// the DSL shape and requirement-to-source-value alignment.
 	scripts := maskScriptResponseValue(opts.Scripts)
 	script := maskScriptResponseValue(opts.Script)
 	if isNilImportValue(scripts) {
@@ -64,7 +76,7 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		secretBindingRequirements = secretBindingRequirementsForImportScripts([]any{script})
 	}
 
-	warnings := opts.Warnings
+	warnings := sanitizeImportReviewStrings(opts.Warnings)
 	if warnings == nil {
 		warnings = []string{}
 	}
@@ -99,6 +111,8 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 	parameterization := opts.Parameterization
 	if parameterization == nil {
 		parameterization = &paramize.Result{Suggestions: []paramize.Suggestion{}}
+	} else {
+		parameterization = sanitizeImportParameterization(parameterization, scripts)
 	}
 
 	response := map[string]any{
@@ -106,28 +120,425 @@ func newScriptImportResponse(opts scriptImportResponseOptions) map[string]any {
 		"script":                      script,
 		"secret_binding_requirements": secretBindingRequirements,
 		"warnings":                    warnings,
-		"stats":                       stats,
-		"correlations":                correlations,
-		"assumptions":                 assumptions,
-		"unsupported_elements":        unsupported,
-		"review_sections":             reviewSections,
-		"repair_suggestions":          repairSuggestions,
-		"scenario_draft":              opts.ScenarioDraft,
-		"summary":                     summary,
-		"detected_protocol":           opts.DetectedProtocol,
-		"fidelity_report":             opts.FidelityReport,
-		"review_artifact":             opts.ReviewArtifact,
-		"source_review":               opts.SourceReview,
-		"trueclient2_compat_report":   opts.TrueClient2Compat,
-		"protocol_compat_report":      opts.ProtocolCompat,
+		"stats":                       sanitizeImportEmbeddedReviewEvidence(stats),
+		"correlations":                sanitizeImportEmbeddedReviewEvidence(sanitizeImportCorrelationCollection(correlations)),
+		"assumptions":                 sanitizeImportReviewEvidence(assumptions),
+		"unsupported_elements":        sanitizeImportReviewEvidence(unsupported),
+		"review_sections":             sanitizeImportReviewEvidence(reviewSections),
+		"repair_suggestions":          sanitizeImportReviewEvidence(repairSuggestions),
+		"scenario_draft":              sanitizeImportEmbeddedReviewEvidence(maskScriptResponseValue(opts.ScenarioDraft)),
+		"summary":                     sanitizeImportEmbeddedReviewEvidence(summary),
+		"detected_protocol":           sanitizeImportEmbeddedReviewEvidence(opts.DetectedProtocol),
+		"fidelity_report":             sanitizeImportReviewEvidence(opts.FidelityReport),
+		"review_artifact":             sanitizeImportReviewEvidence(opts.ReviewArtifact),
+		"source_review":               sanitizeImportReviewEvidence(opts.SourceReview),
+		"trueclient2_compat_report":   sanitizeImportReviewEvidence(opts.TrueClient2Compat),
+		"protocol_compat_report":      sanitizeImportReviewEvidence(opts.ProtocolCompat),
 		"parameterization":            parameterization,
-		"preflight":                   opts.Preflight,
+		"preflight":                   sanitizeImportEmbeddedReviewEvidence(opts.Preflight),
 	}
 	if opts.Result != nil {
-		response["result"] = maskScriptResponseValue(opts.Result)
+		response["result"] = sanitizeImportResponseValue(opts.Result)
 	}
 
 	return response
+}
+
+// sanitizeImportResponseValue applies both script projection and correlation
+// redaction to heterogeneous converter results. Correlation candidates are
+// commonly derived from response tokens and session identifiers, so their
+// source samples are protected material even when the converter classified
+// them as replay diagnostics rather than credentials.
+func sanitizeImportResponseValue(value any) any {
+	projected, ok := normalizeImportSanitizationValue(maskScriptResponseValue(value))
+	if !ok {
+		return nil
+	}
+	return sanitizeImportEmbeddedReviewEvidence(sanitizeImportCorrelationFields(projected, false))
+}
+
+func sanitizeImportCorrelationCollection(value any) any {
+	projected, ok := normalizeImportSanitizationValue(maskScriptResponseValue(value))
+	if !ok {
+		return []any{}
+	}
+	return sanitizeImportCorrelationFields(projected, true)
+}
+
+// sanitizeImportReviewEvidence is the last disclosure boundary for converter
+// evidence. Importers commonly repeat raw review data under root fields,
+// result.*, and script metadata. It understands sibling name/value shapes used
+// by Postman and TruClient in addition to ordinary sensitive map keys, while
+// retaining the review structure and non-secret evidence the UI relies on.
+func sanitizeImportReviewEvidence(value any) any {
+	if value == nil {
+		return nil
+	}
+	normalized, ok := normalizeImportSanitizationValue(value)
+	if !ok {
+		return nil
+	}
+	return sanitizeImportReviewNode(normalized, "", false, true)
+}
+
+// sanitizeImportEmbeddedReviewEvidence preserves ordinary converter/script
+// fields verbatim after their existing projection while finding and scrubbing
+// review subtrees at any depth. In particular, this avoids treating executable
+// URLs containing a portable token={{secret.*}} reference as raw source text.
+func sanitizeImportEmbeddedReviewEvidence(value any) any {
+	if value == nil {
+		return nil
+	}
+	normalized, ok := normalizeImportSanitizationValue(value)
+	if !ok {
+		return nil
+	}
+	return sanitizeImportReviewNode(normalized, "", false, false)
+}
+
+func sanitizeImportReviewNode(value any, key string, inheritedSensitive bool, reviewEvidence bool) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		if isScriptJSONObject(typed) {
+			// Script-shaped review payloads (for example Salesforce native
+			// previews) have already reached the executable-script projection
+			// boundary. Applying semantic review redaction again would replace
+			// structured fields such as config.http.auth with a scalar.
+			return projectScriptNode(typed, scriptProjectionContext{})
+		}
+		semanticSensitive := reviewEvidence && (inheritedSensitive || reviewMapHasSensitiveSemanticName(typed))
+		out := make(map[string]any, len(typed))
+		for childKey, child := range typed {
+			childReviewEvidence := reviewEvidence || isReviewEvidenceSubtreeKey(childKey)
+			if childReviewEvidence && isReviewSemanticNameKey(childKey) {
+				out[childKey] = sanitizeImportReviewNode(child, childKey, false, true)
+				continue
+			}
+			if childReviewEvidence && isSensitiveScriptKey(childKey) && !isSecretReferenceKey(childKey) {
+				out[childKey] = redactImportReviewValue(child)
+				continue
+			}
+			childSensitive := childReviewEvidence && semanticSensitive && (isReviewPayloadKey(childKey) || isReviewPayloadContainerKey(childKey))
+			out[childKey] = sanitizeImportReviewNode(child, childKey, childSensitive, childReviewEvidence)
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for index, child := range typed {
+			out[index] = sanitizeImportReviewNode(child, key, inheritedSensitive, reviewEvidence)
+		}
+		return out
+	case string:
+		if isImportDisclosureURLKey(key) {
+			return maskScriptURL(typed)
+		}
+		if !reviewEvidence {
+			return typed
+		}
+		if inheritedSensitive || (isSensitiveScriptKey(key) && !isSecretReferenceKey(key)) {
+			if isPortableTemplateBinding(typed) {
+				return typed
+			}
+			return projectSensitiveScriptValue(typed)
+		}
+		redacted, _ := sourceview.Redact(typed)
+		if isReviewFreeTextKey(key) {
+			redacted = scrub.Value(redacted, scrub.Policy{})
+		}
+		return redacted
+	case nil:
+		return nil
+	default:
+		if inheritedSensitive || (isSensitiveScriptKey(key) && !isSecretReferenceKey(key)) {
+			return maskedScriptSecret
+		}
+		return value
+	}
+}
+
+func isImportDisclosureURLKey(key string) bool {
+	normalized := normalizeScriptFieldName(key)
+	if normalized == "" {
+		return false
+	}
+	if strings.Contains(normalized, "url") {
+		return true
+	}
+	for _, suffix := range []string{"server", "servers", "endpoint", "endpoints", "origin", "origins", "target", "targets"} {
+		if strings.HasSuffix(normalized, suffix) {
+			return true
+		}
+	}
+	switch normalized {
+	case "server", "servers", "endpoint", "endpoints", "origin", "origins", "target", "targets":
+		return true
+	default:
+		return false
+	}
+}
+
+func reviewMapHasSensitiveSemanticName(value map[string]any) bool {
+	for key, child := range value {
+		if !isReviewSemanticNameKey(key) {
+			continue
+		}
+		name, ok := child.(string)
+		if ok && (isSensitiveScriptKey(name) || scrub.SensitiveName(name) || (scrub.Policy{}).SensitiveHeader(name)) {
+			return true
+		}
+	}
+	return false
+}
+
+func isReviewSemanticNameKey(key string) bool {
+	switch normalizeScriptFieldName(key) {
+	case "key", "name", "field", "fieldname", "label", "header", "headername", "attributename", "property":
+		return true
+	default:
+		return false
+	}
+}
+
+func isReviewPayloadKey(key string) bool {
+	switch normalizeScriptFieldName(key) {
+	case "value", "text", "content", "selector", "xpath", "regex", "sourcesnippet", "snippet", "raw", "source", "arguments":
+		return true
+	default:
+		return false
+	}
+}
+
+func isReviewPayloadContainerKey(key string) bool {
+	switch normalizeScriptFieldName(key) {
+	case "attributes", "selectorcandidates", "objectdescriptor", "objectdescriptors", "steps", "unsupportedfragments":
+		return true
+	default:
+		return false
+	}
+}
+
+func isReviewFreeTextKey(key string) bool {
+	switch normalizeScriptFieldName(key) {
+	case "content", "sourcesnippet", "snippet", "raw", "source", "arguments", "summary", "description",
+		"warning", "warnings", "assumption", "assumptions", "unsupported", "unsupportedelement",
+		"unsupportedelements", "diagnostic", "diagnostics", "issue", "issues", "note", "notes":
+		return true
+	default:
+		return false
+	}
+}
+
+func isReviewEvidenceSubtreeKey(key string) bool {
+	normalized := normalizeScriptFieldName(key)
+	if normalized == "sourcereview" || normalized == "reviewartifact" || normalized == "trueclientarchiveinspection" ||
+		normalized == "archiveinspection" || normalized == "sourcesnippet" {
+		return true
+	}
+	switch normalized {
+	case "warning", "warnings", "assumption", "assumptions", "unsupported", "unsupportedelement",
+		"unsupportedelements", "summary", "diagnostic", "diagnostics", "issue", "issues":
+		return true
+	}
+	return strings.HasSuffix(normalized, "review") || strings.HasSuffix(normalized, "inspection") || strings.HasSuffix(normalized, "reviewartifact")
+}
+
+func redactImportReviewValue(value any) any {
+	if text, ok := value.(string); ok {
+		if isPortableTemplateBinding(text) {
+			return text
+		}
+		return projectSensitiveScriptValue(text)
+	}
+	return maskedScriptSecret
+}
+
+func sanitizeImportReviewStrings(values []string) []string {
+	if values == nil {
+		return nil
+	}
+	result := make([]string, len(values))
+	for index, value := range values {
+		redacted, _ := sourceview.Redact(value)
+		result[index] = scrub.Value(redacted, scrub.Policy{})
+	}
+	return result
+}
+
+func normalizeImportSanitizationValue(value any) (any, bool) {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil, false
+	}
+	var normalized any
+	if err := json.Unmarshal(payload, &normalized); err != nil {
+		return nil, false
+	}
+	return normalized, true
+}
+
+func sanitizeImportCorrelationFields(value any, insideCorrelation bool) any {
+	switch typed := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, child := range typed {
+			if insideCorrelation {
+				switch strings.ToLower(strings.TrimSpace(key)) {
+				case "value", "sample_value", "samplevalue", "source_value", "sourcevalue",
+					"recorded_value", "recordedvalue", "literal_value", "literalvalue", "search_text", "searchtext":
+					continue
+				}
+			}
+			childIsCorrelation := insideCorrelation || strings.EqualFold(strings.TrimSpace(key), "correlations")
+			out[key] = sanitizeImportCorrelationFields(child, childIsCorrelation)
+		}
+		return out
+	case []any:
+		out := make([]any, len(typed))
+		for index, child := range typed {
+			out[index] = sanitizeImportCorrelationFields(child, insideCorrelation)
+		}
+		return out
+	default:
+		return value
+	}
+}
+
+// newScriptImportResponseWithSourceSecrets augments the disclosure-safe import
+// response with an optional, short-lived server-side migration session. Raw
+// source values never enter the returned response; the session is addressed
+// only by opaque requirement IDs.
+func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts scriptImportResponseOptions) map[string]any {
+	response := newScriptImportResponse(opts)
+	projectID, projectMatches := sourceSecretProjectIDForRequest(r, opts)
+	if s != nil {
+		response["secret_store"] = s.projectSecretCapabilities(projectID)
+	}
+	requirements, _ := response["secret_binding_requirements"].([]SecretBindingRequirement)
+	if len(requirements) == 0 || s == nil || r == nil || !projectMatches {
+		return response
+	}
+
+	values := sourceSecretValuesForImportResponse(opts, requirements)
+	if len(values) == 0 {
+		return response
+	}
+	sessionID, err := s.registerSourceSecretSession(r, projectID, values)
+	if err != nil {
+		warnings, _ := response["warnings"].([]string)
+		response["warnings"] = append(warnings, "Detected credential values could not be retained for optional migration; configure the generated secret references manually.")
+		return response
+	}
+	if sessionID == "" {
+		return response
+	}
+	for index := range requirements {
+		_, requirements[index].SourceValueAvailable = values[requirements[index].ID]
+	}
+	response["secret_binding_requirements"] = requirements
+	response["source_secret_session_id"] = sessionID
+	response["source_secret_session_expires_at"] = time.Now().UTC().Add(sourceSecretSessionTTL)
+	response["source_secret_migration_allowed"] = true
+	return response
+}
+
+// Secret parameterization is represented by the guided Credentials workflow.
+// The wire representation is intentionally a review descriptor, not a replayable
+// mutation instruction: raw literals and search text stay server-side, and the
+// apply endpoint re-derives authoritative instructions from the submitted safe
+// script and selected opaque IDs.
+func sanitizeImportParameterization(input *paramize.Result, scriptValues ...any) *paramize.Result {
+	if input == nil {
+		return &paramize.Result{Suggestions: []paramize.Suggestion{}}
+	}
+	trustedIDs, trustedScopedIDs, hasScriptContext := trustedParameterizationIDs(scriptValues...)
+	output := *input
+	output.Suggestions = make([]paramize.Suggestion, 0, len(input.Suggestions))
+	for _, suggestion := range input.Suggestions {
+		if suggestion.Kind == paramize.KindSecret {
+			continue
+		}
+		if !suggestion.PreApplied && hasScriptContext {
+			trusted := trustedIDs[suggestion.ID]
+			if suggestion.ScriptName != "" {
+				trusted = trustedScopedIDs[suggestion.ScriptName][suggestion.ID]
+			}
+			if !trusted {
+				continue
+			}
+		}
+		cloned := suggestion
+		cloned.Locations = append([]paramize.Location(nil), suggestion.Locations...)
+		for index := range cloned.Locations {
+			cloned.Locations[index].SearchText = ""
+		}
+		if suggestion.FoundInAction != nil {
+			found := *suggestion.FoundInAction
+			found.SearchText = ""
+			cloned.FoundInAction = &found
+		}
+		cloned.LiteralValue = ""
+		cloned.SampleValue = ""
+		cloned.Rationale = safeParameterizationRationale(cloned)
+		// These internal instructions are not rendered by the review UI. Keeping
+		// them off the wire makes the server-side re-derivation boundary explicit.
+		cloned.Extractor = nil
+		cloned.Parameter = nil
+		output.Suggestions = append(output.Suggestions, cloned)
+	}
+	output.Summary = paramizeSummary(output.Suggestions)
+	return &output
+}
+
+func trustedParameterizationIDs(scriptValues ...any) (map[string]bool, map[string]map[string]bool, bool) {
+	ids := map[string]bool{}
+	scoped := map[string]map[string]bool{}
+	scripts := importParameterizationScripts(scriptValues...)
+	for _, script := range scripts {
+		trusted := buildTrustedImportParameterization(script)
+		if scoped[script.Name] == nil {
+			scoped[script.Name] = map[string]bool{}
+		}
+		for _, suggestion := range trusted.Suggestions {
+			ids[suggestion.ID] = true
+			scoped[script.Name][suggestion.ID] = true
+		}
+	}
+	return ids, scoped, len(scripts) > 0
+}
+
+func importParameterizationScripts(values ...any) []*dsl.Script {
+	result := make([]*dsl.Script, 0)
+	for _, value := range values {
+		projected := maskScriptResponseValue(value)
+		nodes := make([]map[string]any, 0)
+		collectScriptJSONNodes(projected, &nodes)
+		for _, node := range nodes {
+			payload, err := json.Marshal(node)
+			if err != nil {
+				continue
+			}
+			var script dsl.Script
+			if err := json.Unmarshal(payload, &script); err != nil {
+				continue
+			}
+			result = append(result, &script)
+		}
+	}
+	return result
+}
+
+func safeParameterizationRationale(suggestion paramize.Suggestion) string {
+	if suggestion.PreApplied {
+		return "Applied during conversion; recorded values are not returned."
+	}
+	switch suggestion.Kind {
+	case paramize.KindCorrelation:
+		return "Detected a runtime correlation; review the source and usage locations before applying."
+	case paramize.KindDataParam:
+		return "Detected per-user test data; apply to bind the listed locations to a generated data source."
+	default:
+		return "Review the suggested parameterization and its usage locations before applying."
+	}
 }
 
 func isNilImportValue(value any) bool {

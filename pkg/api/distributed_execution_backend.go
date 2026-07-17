@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/engine"
 	grpcCodes "google.golang.org/grpc/codes"
 	grpcStatus "google.golang.org/grpc/status"
 )
@@ -679,6 +680,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	}
 	test.Assignment = assignment
 	test.executionGeneration = executionGeneration
+	clearDistributedRunSecretSnapshotsLocked(test)
 	tr.mu.Unlock()
 	targetSpecs := tr.enrichGeneratorTargetSpecsWithLabels(b.configuredTargetSpecs())
 	if len(targetSpecs) == 0 {
@@ -735,6 +737,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		for _, client := range clientsByTarget {
 			_ = client.Close()
 		}
+		tr.clearDistributedRunSecretSnapshots(test)
 	}
 	failStartup := func(message string) {
 		cleanup(true)
@@ -824,6 +827,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	preBaseline, postBaseline := testexec.ResourceBaselineWindows(test.ResourceBaseline)
 	preBaseline += testexec.StartDelayWindow(test.StartDelay)
 	activeGroupShards := make(map[string][]GeneratorShardSummary, len(peakGroupShards))
+	projectSecretResolvers := make(map[string]engine.SecretResolver)
 	var shardNamespaceBase uint64
 	for _, group := range test.Groups {
 		if group.script == nil {
@@ -852,6 +856,43 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 		}
 		shardNamespaceBase += uint64(len(peakShards))
 		activeGroupShards[group.Name] = cloneGeneratorShardSummaries(shards)
+
+		secretProjectID := group.script.ProjectID
+		if strings.TrimSpace(secretProjectID) == "" {
+			secretProjectID = test.ProjectID
+		}
+		secretResolver := projectSecretResolvers[secretProjectID]
+		if secretResolver == nil {
+			secretResolver = tr.secretResolverForProject(secretProjectID)
+			projectSecretResolvers[secretProjectID] = secretResolver
+		}
+		secretResolver = overlayRuntimeSecretResolver(group.runtimeSecretValues, secretResolver)
+		secretBundle, err := resolveDistributedSecretBundle(group.script, secretResolver)
+		if err != nil {
+			failStartup(fmt.Sprintf("prepare secrets for group %q: %v", group.Name, err))
+			return
+		}
+		if err := validateDistributedSecretTransport(secretBundle); err != nil {
+			failStartup(fmt.Sprintf("prepare secrets for group %q: %v", group.Name, err))
+			return
+		}
+		secretBundleID := ""
+		if len(secretBundle) > 0 {
+			secretBundleID = uuid.NewString()
+		}
+		for _, shard := range shards {
+			if strings.TrimSpace(shard.Target) == "" {
+				continue
+			}
+			if err := validateDistributedSecretTarget(shard.Target, loadByTarget[shard.Target], secretBundle); err != nil {
+				failStartup(fmt.Sprintf("prepare secrets for group %q: %v", group.Name, err))
+				return
+			}
+		}
+		if err := tr.storeDistributedRunSecretSnapshot(test, group.Name, secretBundleID, secretBundle); err != nil {
+			failStartup(fmt.Sprintf("retain run secret snapshot for group %q: %v", group.Name, err))
+			return
+		}
 
 		scriptContent, contentHash, dataFiles, err := generatorrpc.PrepareDistributedScript(group.script)
 		if err != nil {
@@ -922,6 +963,8 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 				VUserIDOffset:       shard.VUserIDOffset,
 				DataFiles:           dataFiles,
 				RedactionRules:      cloneRedactionRules(group.redactionRules),
+				SecretBundle:        secretBundle,
+				SecretBundleID:      secretBundleID,
 			})
 			rpcCancel()
 			if err != nil {

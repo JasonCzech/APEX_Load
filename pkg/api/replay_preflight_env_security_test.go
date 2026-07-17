@@ -1,8 +1,10 @@
 package api
 
 import (
+	"slices"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 )
 
@@ -30,5 +32,32 @@ func TestReplayPreflightEnvironmentChecksMirrorRuntimeIsolation(t *testing.T) {
 	}
 	if !replaySecretAvailable("", "db.password") {
 		t.Fatal("projectless local preflight did not retain the legacy binding")
+	}
+}
+
+func TestReplayPreflightDoesNotTreatPublicEnvironmentInputsAsProjectSecrets(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "Separated namespaces",
+		Protocol: "http",
+		Actions: []dsl.Action{{
+			Name:   "Request",
+			Type:   "request",
+			Method: "GET",
+			Target: "https://{{env.PUBLIC_HOST}}/resource",
+			Headers: map[string]string{
+				"Authorization": "Bearer {{secret.API_TOKEN}}",
+			},
+		}},
+	}
+	resolver := engine.SecretResolverFunc(func(name string) (string, bool) {
+		return "configured", name == "API_TOKEN"
+	})
+
+	required, missing := replaySecretRefs(script, resolver)
+	if !slices.Equal(required, []string{"API_TOKEN"}) {
+		t.Fatalf("required project secrets = %v, want [API_TOKEN]", required)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("missing project secrets = %v, want none", missing)
 	}
 }

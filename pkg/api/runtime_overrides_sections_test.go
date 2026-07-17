@@ -34,6 +34,20 @@ func TestApplyRuntimeOverridesHTTPSectionWholeReplace(t *testing.T) {
 	}
 }
 
+func TestProtectRuntimeOverrideSecretsCanonicalizesRedactionSentinels(t *testing.T) {
+	for _, sentinel := range []string{"[REDACTED]", " [redacted] ", "\t[ReDaCtEd]\n"} {
+		overrides := &RuntimeSettingsOverride{Env: map[string]string{"API_TOKEN": sentinel}}
+		if _, values, err := protectRuntimeOverrideSecrets("test", 0, &dsl.Script{}, overrides, false); err == nil || len(values) != 0 {
+			t.Fatalf("request-time protection accepted sentinel %q: values=%v err=%v", sentinel, values, err)
+		}
+		protected, values, changed, err := protectLegacyRuntimeOverrideSecrets("test", 0, &dsl.Script{}, overrides)
+		if err != nil || !changed || len(values) != 0 ||
+			!runtimeOverrideExactSecretPattern.MatchString(protected.Env["API_TOKEN"]) {
+			t.Fatalf("legacy sentinel %q was not deferred safely: protected=%#v values=%v changed=%t err=%v", sentinel, protected, values, changed, err)
+		}
+	}
+}
+
 func TestApplyRuntimeOverridesWebRuntimeSection(t *testing.T) {
 	script := &dsl.Script{}
 	o := &RuntimeSettingsOverride{

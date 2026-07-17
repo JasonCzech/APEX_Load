@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"reflect"
 	"sort"
@@ -407,6 +408,60 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	}
 	id = project.ID
 	domainID := project.DomainID
+	secretProvider := secretStoreProvider(s.projectSecretStore)
+	externalSecretCleanupNames := make([]string, 0)
+	externalSecretCleanupProviders := make([]string, 0)
+	externalSecretCleanupPrefix := ""
+	externalSecretDiscoveryComplete := true
+	var externalSecretDiscoveryErr error
+	externalSecretDiscoveryComplete, externalSecretDiscoveryErr = s.discoverProjectSecretMetadata(r.Context(), id)
+	if externalSecretDiscoveryErr != nil {
+		externalSecretDiscoveryComplete = false
+		slog.Warn("external project secret discovery incomplete; continuing with indexed cleanup guidance", "project_id", id, "reason", "provider_unavailable")
+	}
+	if metadataStore, ok := s.store.(storage.ProjectSecretMetadataStore); ok {
+		secretMetadata, err := metadataStore.ListExternalProjectSecretMetadata(id)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, "failed to enumerate externally retained project secrets")
+			return
+		}
+		seenExternalNames := make(map[string]struct{}, len(secretMetadata))
+		seenExternalProviders := make(map[string]struct{}, len(secretMetadata))
+		for _, metadata := range secretMetadata {
+			name := strings.TrimSpace(metadata.SecretName)
+			if name == "" {
+				continue
+			}
+			if _, duplicate := seenExternalNames[name]; duplicate {
+				continue
+			}
+			seenExternalNames[name] = struct{}{}
+			externalSecretCleanupNames = append(externalSecretCleanupNames, name)
+			if provider := strings.TrimSpace(metadata.Provider); provider != "" {
+				if _, duplicate := seenExternalProviders[provider]; !duplicate {
+					seenExternalProviders[provider] = struct{}{}
+					externalSecretCleanupProviders = append(externalSecretCleanupProviders, provider)
+				}
+			}
+		}
+		sort.Strings(externalSecretCleanupNames)
+		sort.Strings(externalSecretCleanupProviders)
+	}
+	if strings.Contains(secretProvider, "azure_key_vault") {
+		externalSecretCleanupPrefix = engine.ProjectSecretBindingPrefix(id)
+		foundProvider := false
+		for _, provider := range externalSecretCleanupProviders {
+			if provider == "azure_key_vault" {
+				foundProvider = true
+				break
+			}
+		}
+		if !foundProvider {
+			externalSecretCleanupProviders = append(externalSecretCleanupProviders, "azure_key_vault")
+			sort.Strings(externalSecretCleanupProviders)
+		}
+	}
+	externalSecretCleanupRequired := len(externalSecretCleanupNames) > 0 || externalSecretCleanupPrefix != ""
 	if s.runner != nil {
 		if err := s.runner.beginProjectDeletion(id); err != nil {
 			writeError(w, http.StatusConflict, err.Error())
@@ -519,19 +574,59 @@ func (s *Server) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	if s.runner != nil {
 		s.runner.forgetProject(id)
 	}
+	s.clearProjectSourceSecretSessions(id)
 	cleanupErrors := make([]string, 0)
+	if err := s.clearProjectBrunoImportSessions(id); err != nil {
+		cleanupErrors = append(cleanupErrors, "Bruno artifacts: "+err.Error())
+	}
 	for _, record := range archiveRecords {
 		if err := s.cleanupQueuedArchiveUnderFence(record); err != nil {
 			cleanupErrors = append(cleanupErrors, fmt.Sprintf("%s: %v", record.TestID, err))
 		}
 	}
 	if len(cleanupErrors) > 0 {
-		s.recordAuditEventWithProjectSnapshot(r, "project.delete", "partial", "project", id, id, domainID, map[string]any{"archive_cleanup_errors": cleanupErrors})
-		writeError(w, http.StatusInternalServerError, "project metadata was deleted but physical archive cleanup was incomplete: "+strings.Join(cleanupErrors, "; "))
+		s.recordAuditEventWithProjectSnapshot(r, "project.delete", "partial", "project", id, id, domainID, map[string]any{
+			"archive_cleanup_errors":             cleanupErrors,
+			"external_secret_cleanup_required":   externalSecretCleanupRequired,
+			"external_secret_cleanup_names":      externalSecretCleanupNames,
+			"external_secret_cleanup_providers":  externalSecretCleanupProviders,
+			"external_secret_cleanup_prefix":     externalSecretCleanupPrefix,
+			"secret_provider":                    secretProvider,
+			"external_secret_discovery_complete": externalSecretDiscoveryComplete,
+		})
+		// The project row and its governed secret metadata are already gone at
+		// this point. Preserve the external-provider cleanup guidance in the
+		// error response so an administrator is not forced to reconstruct it
+		// after a separate physical-artifact cleanup failure.
+		writeJSON(w, http.StatusInternalServerError, map[string]any{
+			"error":                              "project metadata was deleted but physical archive cleanup was incomplete: " + strings.Join(cleanupErrors, "; "),
+			"deleted":                            id,
+			"external_secret_cleanup_required":   externalSecretCleanupRequired,
+			"external_secret_cleanup_names":      externalSecretCleanupNames,
+			"external_secret_cleanup_providers":  externalSecretCleanupProviders,
+			"external_secret_cleanup_prefix":     externalSecretCleanupPrefix,
+			"secret_provider":                    secretProvider,
+			"external_secret_discovery_complete": externalSecretDiscoveryComplete,
+		})
 		return
 	}
-	s.recordAuditEventWithProjectSnapshot(r, "project.delete", "success", "project", id, id, domainID, nil)
-	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
+	s.recordAuditEventWithProjectSnapshot(r, "project.delete", "success", "project", id, id, domainID, map[string]any{
+		"external_secret_cleanup_required":   externalSecretCleanupRequired,
+		"external_secret_cleanup_names":      externalSecretCleanupNames,
+		"external_secret_cleanup_providers":  externalSecretCleanupProviders,
+		"external_secret_cleanup_prefix":     externalSecretCleanupPrefix,
+		"secret_provider":                    secretProvider,
+		"external_secret_discovery_complete": externalSecretDiscoveryComplete,
+	})
+	writeJSON(w, http.StatusOK, map[string]any{
+		"deleted":                            id,
+		"external_secret_cleanup_required":   externalSecretCleanupRequired,
+		"external_secret_cleanup_names":      externalSecretCleanupNames,
+		"external_secret_cleanup_providers":  externalSecretCleanupProviders,
+		"external_secret_cleanup_prefix":     externalSecretCleanupPrefix,
+		"secret_provider":                    secretProvider,
+		"external_secret_discovery_complete": externalSecretDiscoveryComplete,
+	})
 }
 
 func (s *Server) deleteProjectDurably(id string) (storage.LeaseFencedDeleteResult, error) {

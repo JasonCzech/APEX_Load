@@ -607,7 +607,7 @@ func (mc *MetricsCollector) computeSnapshot(results []*protocol.Result, window t
 		}
 
 		if !r.BusinessTransaction {
-			actionName := boundedDimensionKey(r.ActionName, snap.ByAction)
+			actionName := boundedDimensionKey(metricActionDimension(r), snap.ByAction)
 			am, ok := snap.ByAction[actionName]
 			if !ok {
 				am = &ActionMetrics{

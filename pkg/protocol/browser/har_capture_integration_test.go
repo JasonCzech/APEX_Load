@@ -11,6 +11,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/scrub"
+	playwright "github.com/playwright-community/playwright-go"
 )
 
 func TestNormalizeHARCapturePolicy(t *testing.T) {
@@ -138,6 +139,156 @@ func TestHARCaptureAlwaysPersistsScrubbedArtifact(t *testing.T) {
 	}
 	if !strings.Contains(string(data), "entries") {
 		t.Error("artifact does not look like a HAR document")
+	}
+}
+
+func TestFinalizeHARCaptureRedactsLowEntropyRuntimeSecrets(t *testing.T) {
+	const secret = "tiny"
+
+	dir := t.TempDir()
+	workingPath := filepath.Join(dir, "apexload_browser_runtime.har.tmp")
+	fixture := `{
+		"log": {
+			"version": "1.2",
+			"creator": {"name": "test", "version": "1"},
+			"entries": [{
+				"request": {
+					"url": "https://example.test/path/` + secret + `",
+					"headers": [],
+					"cookies": [],
+					"queryString": [{"name": "ordinary", "value": "` + secret + `"}]
+				},
+				"response": {
+					"headers": [],
+					"cookies": [],
+					"content": {"text": "prefix ` + secret + ` suffix"}
+				}
+			}]
+		}
+	}`
+	if err := os.WriteFile(workingPath, []byte(fixture), 0o600); err != nil {
+		t.Fatalf("write HAR fixture: %v", err)
+	}
+
+	b := &Browser{
+		harCapturePolicy: HARCaptureAlways,
+		harWorkingPath:   workingPath,
+	}
+	b.SetRuntimeTextRedactor(func(value string) string {
+		return strings.ReplaceAll(value, secret, scrub.Redacted)
+	})
+
+	artifactPath := b.finalizeHARCapture()
+	if artifactPath == "" {
+		t.Fatal("expected scrubbed HAR artifact")
+	}
+	data, err := os.ReadFile(artifactPath)
+	if err != nil {
+		t.Fatalf("read scrubbed HAR artifact: %v", err)
+	}
+	if strings.Contains(string(data), secret) {
+		t.Fatalf("runtime secret persisted in HAR artifact: %s", data)
+	}
+	if !strings.Contains(string(data), scrub.Redacted) {
+		t.Fatalf("HAR artifact missing redaction marker: %s", data)
+	}
+	if got := scrub.HARSensitivity(data); got != scrub.SensitivityScrubbed {
+		t.Fatalf("HAR sensitivity = %q, want %q", got, scrub.SensitivityScrubbed)
+	}
+}
+
+func TestFinalizeHARCaptureRedactsPercentEncodedRuntimeSecrets(t *testing.T) {
+	const secret = "a&b"
+	dir := t.TempDir()
+	workingPath := filepath.Join(dir, "apexload_browser_encoded.har.tmp")
+	fixture := `{"log":{"version":"1.2","creator":{"name":"test","version":"1"},"entries":[{"request":{"url":"https://example.test/?q=a%26b","headers":[],"cookies":[],"queryString":[{"name":"q","value":"a%26b"}]},"response":{"headers":[],"cookies":[],"content":{"text":"YSZi"}}}]}}`
+	if err := os.WriteFile(workingPath, []byte(fixture), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b := &Browser{harCapturePolicy: HARCaptureAlways, harWorkingPath: workingPath}
+	variants := map[string]struct{}{secret: {}, "a%26b": {}, "YSZi": {}}
+	b.SetRuntimeTextRedactor(func(value string) string {
+		for variant := range variants {
+			value = strings.ReplaceAll(value, variant, scrub.Redacted)
+		}
+		return value
+	})
+	artifact := b.finalizeHARCapture()
+	if artifact == "" {
+		t.Fatal("expected scrubbed HAR artifact")
+	}
+	data, err := os.ReadFile(artifact)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for variant := range variants {
+		if strings.Contains(string(data), variant) {
+			t.Fatalf("encoded runtime secret %q survived HAR scrubbing: %s", variant, data)
+		}
+	}
+}
+
+func TestApplyHARCaptureOptionsPurgesOrphansButPreservesActiveWorkingFiles(t *testing.T) {
+	dir := t.TempDir()
+	orphan := filepath.Join(dir, "apexload_browser_orphan.har.tmp")
+	active := filepath.Join(dir, "apexload_browser_active.har.tmp")
+	if err := os.WriteFile(orphan, []byte("raw"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(active, []byte("active"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registerRuntimeHARWorkingPath(active)
+	t.Cleanup(func() { unregisterRuntimeHARWorkingPath(active) })
+	b := &Browser{harCapturePolicy: HARCaptureAlways, harDir: dir}
+	options := &playwright.BrowserNewContextOptions{}
+	b.applyHARCaptureOptions(options)
+	t.Cleanup(func() { unregisterRuntimeHARWorkingPath(b.harWorkingPath) })
+	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
+		t.Fatalf("orphan raw HAR survived new-session purge: %v", err)
+	}
+	if _, err := os.Stat(active); err != nil {
+		t.Fatalf("active HAR was purged: %v", err)
+	}
+	if !RuntimeHARWorkingPathActive(b.harWorkingPath) {
+		t.Fatal("new HAR working path was not registered active")
+	}
+}
+
+func TestApplyHARCaptureOptionsDisablesRawCaptureForRuntimeSecrets(t *testing.T) {
+	dir := t.TempDir()
+	b := &Browser{harCapturePolicy: HARCaptureAlways, harDir: dir}
+	b.SetRuntimeSecretActivity(func() bool { return true })
+	options := &playwright.BrowserNewContextOptions{}
+	b.applyHARCaptureOptions(options)
+	if options.RecordHarPath != nil || b.harWorkingPath != "" {
+		t.Fatalf("runtime secrets enabled raw HAR capture: options=%#v path=%q", options, b.harWorkingPath)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("runtime secret gate created HAR artifacts: %#v", entries)
+	}
+}
+
+func TestDiscardHARWorkingFileUnregistersAndRemoves(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "apexload_browser_init_failure.har.tmp")
+	if err := os.WriteFile(path, []byte(`{"log":{"entries":[]}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	registerRuntimeHARWorkingPath(path)
+	b := &Browser{harWorkingPath: path}
+	b.discardHARWorkingFile()
+	if RuntimeHARWorkingPathActive(path) {
+		t.Fatal("discarded HAR working file is still registered as active")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("discarded HAR working file still exists: %v", err)
+	}
+	if b.harWorkingPath != "" {
+		t.Fatalf("browser working path = %q, want empty", b.harWorkingPath)
 	}
 }
 

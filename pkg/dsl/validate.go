@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -104,6 +105,9 @@ func ValidateScriptIssues(script *Script) []string {
 	issues = append(issues, validateRunLogicIssues(script.Config.RunLogic)...)
 	issues = append(issues, validatePacingResourceIssues(script.Config.Pacing)...)
 	issues = append(issues, validateGoalConfigIssues(script.GoalConfig)...)
+	if script.Protocol == "bruno" {
+		issues = append(issues, validateBrunoConfigIssues(script.Config.Bruno)...)
+	}
 
 	return issues
 }
@@ -175,7 +179,10 @@ func validateScriptStructureIssues(script *Script) []string {
 	return nil
 }
 
-var fileTemplateRefPattern = regexp.MustCompile(`\{\{\s*file\.([^{}\s]+)\s*\}\}`)
+var (
+	fileTemplateRefPattern      = regexp.MustCompile(`\{\{\s*file\.([^{}\s]+)\s*\}\}`)
+	brunoSecretReferencePattern = regexp.MustCompile(`^\{\{\s*secret\.[A-Za-z0-9_][A-Za-z0-9_.:/@-]{0,248}\s*\}\}$`)
+)
 
 func validateHTTPSequenceActionIssues(index int, action Action) []string {
 	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
@@ -285,7 +292,7 @@ func firstNonEmptyString(values ...string) string {
 
 func protocolAllowsEmptyBaseURL(protocolName string) bool {
 	switch strings.TrimSpace(protocolName) {
-	case "browser", "database", "network", "kafka", "eventhubs", "sap_gui", "java_vuser":
+	case "browser", "bruno", "database", "network", "kafka", "eventhubs", "sap_gui", "java_vuser":
 		return true
 	default:
 		return false
@@ -504,6 +511,15 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 		return rebaseActionIssues(fmt.Sprintf("actions[%d]", index), path, nestedIssues)
 	}
 	switch protocol {
+	case "bruno":
+		spec, ok := protocolActionSpec("bruno", action.Type)
+		if !ok {
+			return append(issues, fmt.Sprintf("%s: unsupported bruno action type %q", actionLabel(path, action), action.Type))
+		}
+		if spec.Validate != nil {
+			return append(issues, rebased(spec.Validate(index, action))...)
+		}
+		return issues
 	case "browser":
 		return append(issues, rebased(validateBrowserActionIssues(index, action))...)
 	case "websocket":
@@ -536,6 +552,52 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	}
 	if action.Target == "" {
 		issues = append(issues, fmt.Sprintf("%s: missing target", actionLabel(path, action)))
+	}
+	return issues
+}
+
+func validateBrunoConfigIssues(cfg BrunoConfig) []string {
+	var issues []string
+	if strings.TrimSpace(cfg.BundleRef) == "" {
+		issues = append(issues, "config.bruno.bundle_ref is required")
+	}
+	if digest := strings.TrimSpace(cfg.BundleSHA256); digest == "" {
+		issues = append(issues, "config.bruno.bundle_sha256 is required")
+	} else if !regexp.MustCompile(`^[a-f0-9]{64}$`).MatchString(strings.ToLower(digest)) {
+		issues = append(issues, "config.bruno.bundle_sha256 must be a lowercase SHA-256 digest")
+	}
+	switch strings.ToLower(strings.TrimSpace(cfg.Sandbox)) {
+	case "", "safe", "developer":
+	default:
+		issues = append(issues, "config.bruno.sandbox must be safe or developer")
+	}
+	if cfg.Limits.MaxJumps < 0 || cfg.Limits.MaxJumps > 1_000_000 {
+		issues = append(issues, "config.bruno.limits.max_jumps must be between 0 and 1000000")
+	}
+	if cfg.Limits.MaxRunRequestDepth < 0 || cfg.Limits.MaxRunRequestDepth > 1024 {
+		issues = append(issues, "config.bruno.limits.max_run_request_depth must be between 0 and 1024")
+	}
+	if cfg.Limits.MaxParallelRequests < 0 || cfg.Limits.MaxParallelRequests > 100_000 {
+		issues = append(issues, "config.bruno.limits.max_parallel_requests must be between 0 and 100000")
+	}
+	if cfg.Limits.MaxOutputBytes < 0 || cfg.Limits.MaxOutputBytes > 1_073_741_824 {
+		issues = append(issues, "config.bruno.limits.max_output_bytes must be between 0 and 1073741824")
+	}
+	if cfg.Limits.DefaultStreamTimeoutMs < 0 || cfg.Limits.DefaultStreamTimeoutMs > 86_400_000 {
+		issues = append(issues, "config.bruno.limits.default_stream_timeout_ms must be between 0 and 86400000")
+	}
+	bindingNames := make([]string, 0, len(cfg.SecretBindings))
+	for name := range cfg.SecretBindings {
+		bindingNames = append(bindingNames, name)
+	}
+	sort.Strings(bindingNames)
+	for _, name := range bindingNames {
+		if !brunoSecretReferencePattern.MatchString(strings.TrimSpace(cfg.SecretBindings[name])) {
+			issues = append(issues, fmt.Sprintf(
+				"config.bruno.secret_bindings[%q] must be an exact {{secret.NAME}} reference",
+				name,
+			))
+		}
 	}
 	return issues
 }

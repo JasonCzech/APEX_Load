@@ -13,6 +13,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -165,6 +166,15 @@ type fullWindowAtomicCapacityBindingPersistence interface {
 	BindCapacityReservationToTestWithWindowIfLeaseHeld(string, string, time.Time, time.Time, time.Time, string, string) (storage.CapacityBindingResult, error)
 }
 
+type runtimeSecretRecoveryState struct {
+	mu         sync.Mutex
+	timer      *time.Timer
+	at         time.Time
+	generation uint64
+	stopped    bool
+	active     map[string]struct{}
+}
+
 type TestRunner struct {
 	tests                 map[string]*ManagedTest
 	scripts               map[string]*StoredScript
@@ -204,6 +214,9 @@ type TestRunner struct {
 	auditStore            auditPersistence
 	settingsStore         settingsPersistence
 	usageStore            usageSnapshotPersistence
+	projectSecretStore    secretstore.Store
+	secretAttemptStore    storage.RuntimeSecretProvisioningAttemptStore
+	secretRecovery        runtimeSecretRecoveryState
 	// objectRepoStore resolves object_ref bindings into concrete selectors when a
 	// load run is compiled (generators have no store, so binding must resolve here).
 	objectRepoStore objectRepositoryReader
@@ -370,28 +383,30 @@ type ManagedTest struct {
 	ScriptID   string `json:"script_id,omitempty"`
 	ScriptName string `json:"script_name,omitempty"`
 
-	multiEngine                *engine.MultiGroupEngine
-	executionCtx               context.Context
-	executionGeneration        uint64
-	durationAdjustmentPrevious time.Duration
-	scaleAdjustmentPrevious    map[string]int
-	cancel                     context.CancelFunc
-	groupSpecs                 []engine.GroupConfig
-	runtimeHydrationError      string
-	historyBytes               int64
-	historyWeights             []int64
-	goalControl                *goalControllerState
-	executionBackend           testExecutionBackend
-	lastNetworkLatency         *NetworkLatency
-	latencyProbeInFlight       bool
-	latencyEndpointsCache      latencyEndpointCache
-	latencyProbeSamples        map[string][]latencyProbeSample
-	remoteTarget               string
-	remoteClient               generatorClient
-	remoteMetricsStream        *generatorrpc.MetricsStream
-	remoteGroupTargets         map[string]string
-	remoteGroupShards          map[string][]GeneratorShardSummary
-	remoteClientsByTarget      map[string]generatorClient
+	multiEngine                   *engine.MultiGroupEngine
+	executionCtx                  context.Context
+	executionGeneration           uint64
+	durationAdjustmentPrevious    time.Duration
+	scaleAdjustmentPrevious       map[string]int
+	cancel                        context.CancelFunc
+	groupSpecs                    []engine.GroupConfig
+	runtimeHydrationError         string
+	runtimeSnapshotRepairRequired bool
+	creationAdopted               bool
+	historyBytes                  int64
+	historyWeights                []int64
+	goalControl                   *goalControllerState
+	executionBackend              testExecutionBackend
+	lastNetworkLatency            *NetworkLatency
+	latencyProbeInFlight          bool
+	latencyEndpointsCache         latencyEndpointCache
+	latencyProbeSamples           map[string][]latencyProbeSample
+	remoteTarget                  string
+	remoteClient                  generatorClient
+	remoteMetricsStream           *generatorrpc.MetricsStream
+	remoteGroupTargets            map[string]string
+	remoteGroupShards             map[string][]GeneratorShardSummary
+	remoteClientsByTarget         map[string]generatorClient
 	// remoteArchiveClientsByTarget retains positively stopped evacuation
 	// sources for the final archive merge. They are deliberately excluded from
 	// active topology and every mutable-control fan-out.
@@ -406,6 +421,9 @@ type ManagedTest struct {
 	remoteMetricsLastPublishedAt time.Time
 	remoteMetricsFlushScheduled  bool
 	remoteGoalUpdateRunning      bool
+	// remoteSecretSnapshots are bounded, run-lifetime-only controller snapshots
+	// shared by initial and evacuation assignments. They are never serialized.
+	remoteSecretSnapshots map[string]distributedRunSecretSnapshot
 	// remoteActivated is set only after every assigned generator acknowledges
 	// CommitWork. The durable RUNNING transition intentionally precedes those
 	// acknowledgements, so non-stop controls must remain closed while this is
@@ -482,6 +500,10 @@ type TestGroup struct {
 	currentVUsers   int
 	script          *dsl.Script
 	redactionRules  []engine.RedactionRule
+	// runtimeSecretValues is an execution-only overlay. It is deliberately
+	// unexported so runtime override credentials cannot enter API JSON, stored
+	// group snapshots, archives, script caches, or assignment fingerprints.
+	runtimeSecretValues map[string]string
 }
 
 type GeneratorShardSummary struct {
@@ -1109,6 +1131,19 @@ func WithExecutionBackend(backend testExecutionBackend) TestRunnerOption {
 	}
 }
 
+func WithProjectSecretStore(store secretstore.Store) TestRunnerOption {
+	return func(tr *TestRunner) {
+		tr.projectSecretStore = store
+	}
+}
+
+func (tr *TestRunner) secretResolverForProject(projectID string) engine.SecretResolver {
+	if tr == nil {
+		return engine.CacheSecretResolverForRun(engine.NewProjectSecretResolver(projectID))
+	}
+	return engine.CacheSecretResolverForRun(secretstore.EngineResolver(tr.projectSecretStore, projectID))
+}
+
 func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunnerOption) *TestRunner {
 	tr := &TestRunner{
 		tests:                 make(map[string]*ManagedTest),
@@ -1152,6 +1187,9 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 			opt(tr)
 		}
 	}
+	if attemptStore, ok := any(store).(storage.RuntimeSecretProvisioningAttemptStore); ok {
+		tr.secretAttemptStore = attemptStore
+	}
 	if !tr.durableExecutionFence || tr.holdsExecutionLeadership() {
 		if err := tr.repairCapacityReservationBindings(); err != nil {
 			slog.Warn("capacity timeslot binding repair failed during startup", "error", err)
@@ -1160,6 +1198,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 	tr.loadSystemSettings(maxTests)
 	tr.loadStoredScripts()
 	tr.loadStoredScenarios()
+	tr.scheduleRuntimeOverrideSecretAttemptReconciliation()
 	tr.loadStoredTests()
 	tr.initRefKeys()
 	if tr.holdsExecutionLeadership() {
@@ -1323,6 +1362,7 @@ type CreateTestRequest struct {
 
 	scriptShakeoutProvided   bool
 	resourceBaselineProvided bool
+	creationActor            testCreationActor
 }
 
 type CreateScenarioRequest struct {
@@ -1337,6 +1377,8 @@ type CreateScenarioRequest struct {
 	RuntimeSettings  *RuntimeSettingsOverride          `json:"runtime_settings,omitempty"`
 	Groups           []CreateGroupEntry                `json:"groups"`
 	DataPools        []storage.ScenarioDataPoolBinding `json:"data_pools,omitempty"`
+
+	creationActor testCreationActor
 }
 
 type GoalConfig struct {
@@ -1415,6 +1457,9 @@ type CreateGroupEntry struct {
 	// within the diagnostic canary density envelope. Use the group Assignment
 	// to place observers on dedicated capacity or a specific load zone.
 	Role string `json:"role,omitempty"`
+	// runtimeSecretScope is a process-only namespace (normally the preassigned
+	// test UUID) used to derive non-colliding governed runtime secret names.
+	runtimeSecretScope string
 }
 
 type StartTestOptions struct {

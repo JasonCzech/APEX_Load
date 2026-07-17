@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"context"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -58,5 +59,18 @@ func TestApplyCapturedPageStateLeavesCurrentURLEmptyWhenPageURLMissing(t *testin
 	}
 	if result.PageTitle != "Untitled" {
 		t.Fatalf("PageTitle = %q, want Untitled", result.PageTitle)
+	}
+}
+
+func TestApplyCapturedPageStateSuppressesScreenshotWhenRuntimeSecretsAreActive(t *testing.T) {
+	b := &Browser{}
+	b.SetRuntimeSecretActivity(func() bool { return true })
+	result := &protocol.Result{}
+	b.applyCapturedPageState(result, capturedBrowserPageState{screenshot: "opaque-image"}, 0, 0)
+	if result.ScreenshotBase64 != "" {
+		t.Fatalf("ScreenshotBase64 = %q, want suppressed", result.ScreenshotBase64)
+	}
+	if screenshot, err := b.captureScreenshot(context.Background(), nil); err != nil || screenshot != "" {
+		t.Fatalf("captureScreenshot with active secrets = %q, %v", screenshot, err)
 	}
 }

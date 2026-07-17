@@ -17,6 +17,11 @@ const apiMock = {
   startDraftBrowserReplaySession: vi.fn(),
   getBrowserReplaySession: vi.fn(),
   applySecretBindings: vi.fn(),
+  applyImportParameterization: vi.fn(),
+  getProjectSecretStatuses: vi.fn(),
+  createProjectSecrets: vi.fn(),
+  migrateImportSecrets: vi.fn(),
+  discardImportSecretSession: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -338,6 +343,24 @@ describe('EnterpriseArchiveImport', () => {
       },
       warnings: [],
     })
+    apiMock.applyImportParameterization.mockResolvedValue({
+      script: {
+        name: 'Parameterized Enterprise Script',
+        version: '1.0.0',
+        protocol: 'http',
+        actions: [{ name: 'Get Order', type: 'request', method: 'GET', target: '/orders?customer_id={{var.customer_id}}' }],
+      },
+      diffs: [{ kind: 'value_replaced', path: '/actions/0/target', suggestion_id: 'pz_enterprise_customer' }],
+      applied_count: 1,
+    })
+    apiMock.getProjectSecretStatuses.mockResolvedValue({
+      project_id: 'project-1',
+      capabilities: { provider: 'database', writable: true, create_supported: true, replace_supported: true },
+      secrets: [],
+    })
+    apiMock.createProjectSecrets.mockResolvedValue({ project_id: 'project-1', secrets: [], count: 0 })
+    apiMock.migrateImportSecrets.mockResolvedValue({ project_id: 'project-1', secrets: [], count: 0 })
+    apiMock.discardImportSecretSession.mockResolvedValue(undefined)
   })
 
   afterEach(async () => {
@@ -699,6 +722,83 @@ describe('EnterpriseArchiveImport', () => {
     }))
   })
 
+  it('stages parameterization for review and saves the server-applied enterprise script', async () => {
+    const defaultResult = await apiMock.importEnterpriseArchive()
+    apiMock.importEnterpriseArchive.mockClear()
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
+      ...defaultResult,
+      script: {
+        name: 'Parameterized Enterprise Script',
+        version: '1.0.0',
+        protocol: 'http',
+        actions: [{ name: 'Get Order', type: 'request', method: 'GET', target: '/orders?customer_id=42' }],
+      },
+      scripts: undefined,
+      parameterization: {
+        suggestions: [{
+          id: 'pz_enterprise_customer',
+          kind: 'data_param',
+          var_name: 'customer_id',
+          replacement: '{{var.customer_id}}',
+          sample_value: '42',
+          confidence: 0.9,
+          rule_id: 'test.enterprise.customer',
+          rationale: 'Customer identifier should vary by virtual user',
+          auto_apply: true,
+          high_risk: false,
+          locations: [{ section: 'actions', action_index: 0, action_name: 'Get Order', field: 'target' }],
+        }],
+        summary: { total: 1, by_kind: { data_param: 1 }, auto_apply_count: 1, review_count: 0, high_risk_count: 0, pre_applied_count: 0 },
+      },
+      secret_binding_requirements: [],
+      summary: {
+        ...defaultResult.summary,
+        migration_readiness: {
+          score_pct: 100,
+          blocked: false,
+          summary: 'Ready',
+          policy: { block_statuses: ['blocked', 'partial', 'compatibility_only'] },
+        },
+      },
+    })
+
+    await act(async () => {
+      root.render(<EnterpriseArchiveImport projectId="project-1" />)
+    })
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    const file = new File(['zip-content'], 'parameterized.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await flushPromises()
+    await clickButton(findButton(container, 'Convert Enterprise Script Archive')!)
+
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Review parameterization suggestions before saving.')
+    expect(container.textContent).toContain('Parameterization Review — Parameterized Enterprise Script (1)')
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.paramize-review button.btn-primary')?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      findButton(container, 'Save to Script Library')?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(apiMock.applyImportParameterization).toHaveBeenCalledWith(expect.objectContaining({
+      selected_ids: ['pz_enterprise_customer'],
+    }))
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Parameterized Enterprise Script',
+      actions: [expect.objectContaining({ target: '/orders?customer_id={{var.customer_id}}' })],
+    }), 'project-1')
+  })
+
   it('stages a conversion with redacted credentials until its secret binding is applied', async () => {
     const redactedScript = {
       name: 'Redacted Enterprise Login',
@@ -759,6 +859,8 @@ describe('EnterpriseArchiveImport', () => {
       script: resolvedScript,
       secret_binding_requirements: [],
     })
+    let resolveSave: ((value: unknown) => void) | undefined
+    apiMock.createScript.mockReturnValueOnce(new Promise(resolve => { resolveSave = resolve }))
 
     await act(async () => {
       root.render(<EnterpriseArchiveImport projectId="project-1" />)
@@ -778,30 +880,209 @@ describe('EnterpriseArchiveImport', () => {
     await clickButton(convertButton!)
 
     expect(container.textContent).toContain('Resolve the redacted credential bindings before saving')
-    expect(container.textContent).toContain('Resolve Redacted Credentials (1)')
+    expect(container.textContent).toContain('Credentials (1)')
     expect(apiMock.createScript).not.toHaveBeenCalled()
-    const blockedSave = findButton(container, 'Save to Script Library')
-    expect(blockedSave?.disabled).toBe(true)
-    blockedSave?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    expect(apiMock.createScript).not.toHaveBeenCalled()
+    const save = findButton(container, 'Save with 1 secret to configure')
+    expect(save?.disabled).toBe(false)
+    act(() => {
+      save?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      save?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
 
-    const applyButton = findButton(container, 'Apply Bindings')
-    expect(applyButton).toBeDefined()
-    await clickButton(applyButton!)
-
+    expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(1)
     expect(apiMock.applySecretBindings).toHaveBeenCalledWith({
       script: redactedScript,
       script_index: 0,
       bindings: [{ requirement_id: 'login-password', secret_name: 'LOGIN_PASSWORD' }],
     })
     expect(container.textContent).toContain('{{secret.LOGIN_PASSWORD}}')
-
-    const enabledSave = findButton(container, 'Save to Script Library')
-    expect(enabledSave?.disabled).toBe(false)
-    await clickButton(enabledSave!)
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       actions: [expect.objectContaining({ body: 'password={{secret.LOGIN_PASSWORD}}' })],
     }), 'project-1')
+    expect(findButton(container, 'Saving...')?.disabled).toBe(true)
+    await act(async () => {
+      resolveSave?.({
+        id: 'saved-redacted', name: resolvedScript.name, protocol: resolvedScript.protocol,
+        version: resolvedScript.version, created_at: '2026-05-17T00:00:00Z', script: resolvedScript,
+      })
+      await Promise.resolve()
+    })
+  })
+
+  it('reviews and migrates credentials for every generated script in one archive-wide commit', async () => {
+    const first = {
+      name: 'Archive Web', version: '1.0.0', protocol: 'http', config: { base_url: '' },
+      actions: [{ name: 'Login', type: 'request', method: 'POST', target: '/login', body: 'token=[REDACTED]' }],
+    }
+    const second = {
+      name: 'Archive Database', version: '1.0.0', protocol: 'database', config: { base_url: '', database: { dsn: '[REDACTED]' } },
+      actions: [{ name: 'Query', type: 'db_query', target: 'SELECT 1' }],
+    }
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
+      scripts: [first, second], script: first,
+      warnings: [], unsupported_elements: [], assumptions: [], review_sections: [], repair_suggestions: [],
+      summary: { project_file: 'multi.usr', migration_readiness: { score_pct: 100, blocked: false, summary: 'Ready', policy: { block_statuses: [] } } },
+      stats: { total_functions: 2, converted_actions: 2, extractors: 0, think_times: 0, transactions: 0, skipped: 0 },
+      source_secret_session_id: 'archive-source-session',
+      source_secret_session_expires_at: '2099-01-01T00:00:00Z',
+      source_secret_migration_allowed: true,
+      secret_binding_requirements: [
+        { id: 'web-token', path: '/actions/0/body', label: 'Web token', context: 'Login token', suggested_name: 'CREDENTIAL', script_index: 0, script_name: first.name, source_value_available: true },
+        { id: 'database-dsn', path: '/config/database/dsn', label: 'Database DSN', context: 'Database credential', suggested_name: 'CREDENTIAL', script_index: 1, script_name: second.name, source_value_available: true },
+      ],
+    })
+    apiMock.applySecretBindings
+      .mockResolvedValueOnce({
+        script: { ...first, actions: [{ ...first.actions[0], body: 'token={{secret.CREDENTIAL}}' }] },
+        secret_binding_requirements: [],
+      })
+      .mockResolvedValueOnce({
+        script: { ...second, config: { ...second.config, database: { dsn: '{{secret.CREDENTIAL_2}}' } } },
+        secret_binding_requirements: [],
+      })
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['zip'], 'multi.zip', { type: 'application/zip' })] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Convert Enterprise Script Archive')!)
+
+    expect(container.textContent).toContain('Credentials (2)')
+    expect(Array.from(container.querySelectorAll<HTMLInputElement>('.secret-binding-review input[type="text"]')).map(input => input.value)).toEqual([
+      'CREDENTIAL',
+      'CREDENTIAL_2',
+    ])
+    const migrate = container.querySelector<HTMLInputElement>('.credentials-source-migration input')!
+    await act(async () => migrate.click())
+    await clickButton(findButton(container, 'Save with 0 secrets to configure') || findButton(container, 'Save')!)
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.migrateImportSecrets).toHaveBeenCalledTimes(1)
+    expect(apiMock.migrateImportSecrets).toHaveBeenCalledWith({
+      project_id: 'project-1',
+      source_secret_session_id: 'archive-source-session',
+      secrets: [
+        { requirement_id: 'web-token', secret_name: 'CREDENTIAL' },
+        { requirement_id: 'database-dsn', secret_name: 'CREDENTIAL_2' },
+      ],
+    })
+    expect(apiMock.applySecretBindings).toHaveBeenNthCalledWith(1, {
+      script: first,
+      script_index: 0,
+      bindings: [{ requirement_id: 'web-token', secret_name: 'CREDENTIAL' }],
+    })
+    expect(apiMock.applySecretBindings).toHaveBeenNthCalledWith(2, {
+      script: second,
+      script_index: 1,
+      bindings: [{ requirement_id: 'database-dsn', secret_name: 'CREDENTIAL_2' }],
+    })
+    expect(apiMock.discardImportSecretSession).not.toHaveBeenCalled()
+  })
+
+  it('does not publish a late credential result after the selected generated script changes', async () => {
+    const first = { name: 'Generation A', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'Login', type: 'request', target: '/' }] }
+    const second = { name: 'Generation B', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'Browse', type: 'request', target: '/browse' }] }
+    apiMock.importEnterpriseArchive.mockResolvedValueOnce({
+      scripts: [first, second], script: first,
+      warnings: [], unsupported_elements: [], assumptions: [], review_sections: [], repair_suggestions: [],
+      summary: { project_file: 'race.usr', migration_readiness: { score_pct: 100, blocked: false, summary: 'Ready', policy: { block_statuses: [] } } },
+      stats: { total_functions: 2, converted_actions: 2, extractors: 0, think_times: 0, transactions: 0, skipped: 0 },
+      secret_binding_requirements: [{ id: 'auth', path: '/actions/0/headers/Authorization', label: 'Authorization', context: 'Bearer credential', suggested_name: 'API_TOKEN', script_index: 0, script_name: 'Generation A' }],
+    })
+    let resolveApply: ((value: unknown) => void) | undefined
+    apiMock.applySecretBindings.mockReturnValueOnce(new Promise(resolve => { resolveApply = resolve }))
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['zip'], 'race.zip', { type: 'application/zip' })] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    await clickButton(findButton(container, 'Convert Enterprise Script Archive')!)
+    const save = findButton(container, 'Save with 1 secret to configure')!
+    act(() => save.click())
+    await flushPromises()
+    expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(1)
+
+    const secondTab = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.getAttribute('aria-label') === 'Review generated script Generation B')!
+    await act(async () => secondTab.click())
+    await act(async () => {
+      resolveApply?.({ script: { ...first, name: 'Resolved A' }, secret_binding_requirements: [] })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.querySelector('.script-import-review-preview pre')?.textContent).toContain('Generation B')
+    expect(container.querySelector('.script-import-review-preview pre')?.textContent).not.toContain('Resolved A')
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+  })
+
+  it('shows validation credentials and queues focused editor links through safe binding preparation', async () => {
+    const onEdit = vi.fn()
+    const redactedScript = {
+      name: 'Validated Login', version: '1.0.0', protocol: 'http', config: { base_url: '' },
+      actions: [{ name: 'Login', type: 'request', method: 'POST', target: '/login', body: 'password=[REDACTED]' }],
+    }
+    const resolvedScript = {
+      ...redactedScript,
+      actions: [{ ...redactedScript.actions[0], body: 'password={{secret.LOGIN_PASSWORD}}' }],
+    }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce({
+      scripts: [redactedScript], script: redactedScript,
+      warnings: [], unsupported_elements: ['web_custom_request'], assumptions: [],
+      review_sections: [{
+        key: 'unsupported_elements', title: 'Unsupported Source Elements', severity: 'blocker',
+        summary: 'Review the unsupported source call.', items: ['web_custom_request'],
+      }],
+      repair_suggestions: [{
+        id: 'unsupported-login', category: 'unsupported', severity: 'blocker', title: 'Review Login',
+        description: 'Review the converted login action.', action: 'Open editor', target_action: 'Login',
+      }],
+      summary: {
+        project_file: 'Login.usr', unsupported_function_count: 1,
+        migration_readiness: { score_pct: 100, blocked: false, summary: 'Ready', policy: { block_statuses: [] } },
+      },
+      stats: { total_functions: 1, converted_actions: 1, extractors: 0, think_times: 0, transactions: 0, skipped: 0 },
+      secret_binding_requirements: [{
+        id: 'login-password', path: '/actions/0/body', label: 'Login password', context: 'Form credential',
+        suggested_name: 'LOGIN_PASSWORD', script_index: 0, script_name: redactedScript.name,
+      }],
+    })
+    apiMock.applySecretBindings.mockResolvedValueOnce({ script: resolvedScript, secret_binding_requirements: [] })
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onEdit={onEdit} />))
+    await flushPromises()
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"][accept=".zip"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['zip'], 'validation-login.zip')] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    expect(container.textContent).toContain('Validation Review')
+    expect(container.textContent).toContain('Credentials (1)')
+    expect(findButton(container, 'Open In Visual Editor with 1 secret to configure')).toBeDefined()
+    const focusedEditorLink = findButton(container, 'Open First Unsupported Action In Editor')
+    expect(focusedEditorLink).toBeDefined()
+    await clickButton(focusedEditorLink!)
+
+    expect(apiMock.applySecretBindings).toHaveBeenCalledWith({
+      script: redactedScript,
+      script_index: 0,
+      bindings: [{ requirement_id: 'login-password', secret_name: 'LOGIN_PASSWORD' }],
+    })
+    expect(onEdit).toHaveBeenCalledTimes(1)
+    expect(onEdit).toHaveBeenCalledWith(resolvedScript, { targetAction: 'Login' })
+    expect(JSON.stringify(onEdit.mock.calls[0]?.[0])).not.toContain('[REDACTED]')
   })
 
   it('shows and switches generated scripts for multi-script enterprise archive results', async () => {

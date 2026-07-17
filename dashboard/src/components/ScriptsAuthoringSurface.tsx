@@ -7,17 +7,20 @@ import LazyLoadBoundary from './LazyLoadBoundary'
 
 const ScriptEditor = lazy(() => import('./ScriptEditor'))
 const EnterpriseArchiveImport = lazy(() => import('./EnterpriseArchiveImport'))
+const BrunoImport = lazy(() => import('./BrunoImport'))
 const JMeterImport = lazy(() => import('./JMeterImport'))
 const RecordingStudio = lazy(() => import('./RecordingStudio'))
 const SampleScriptImport = lazy(() => import('./SampleScriptImport'))
 const ProtocolAssetImport = lazy(() => import('./ProtocolAssetImport'))
 const OracleEBusinessReviewImport = lazy(() => import('./OracleEBusinessReviewImport'))
+const YAMLImportChooser = lazy(() => import('./YAMLImportChooser'))
 
 export interface ScriptsAuthoringSurfaceProps {
   subView: ScriptsAuthoringSubView
   importLauncher?: string | null
   importMode?: string | null
   draftScript: ScriptDefinition | null
+  draftInitiallyDirty: boolean
   draftEditorFocus: DraftEditorFocus | null
   draftReturnTarget: AuthoringReturnTarget | null
   authoringNotice: string | null
@@ -30,6 +33,7 @@ export interface ScriptsAuthoringSurfaceProps {
   onOpenLibrary: () => void
   onOpenCreateOptions: () => void
   onImported: (result: ImportedSaveResult) => void
+  onConfigureSecrets?: (projectId: string) => void
   onEditDraft: (script: ScriptDefinition, focus?: DraftEditorFocus, returnTarget?: AuthoringReturnTarget | null) => void
   onReturnToDraftSource: () => void
 }
@@ -84,12 +88,14 @@ function ScriptsAuthoringContent({
   importFiles,
   editingId,
   editingScript,
+  draftInitiallyDirty,
   projectId,
   activeProject,
   onSaved,
   onOpenLibrary,
   onOpenCreateOptions,
   onImported,
+  onConfigureSecrets,
   onEditDraft,
   onReturnToDraftSource,
 }: ScriptsAuthoringSurfaceProps) {
@@ -119,12 +125,12 @@ function ScriptsAuthoringContent({
                 {draftReturnTarget.description && <span>{draftReturnTarget.description}</span>}
               </div>
               {authoringNotice && <div className="settings-notice">{authoringNotice}</div>}
-              <ScriptEditor initialScript={draftScript} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} onSave={onSaved} onClose={closeCreateEditor} />
+              <ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} onSave={onSaved} onClose={closeCreateEditor} />
             </div>
           </div>
         )
       }
-      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} onSave={onSaved} onClose={closeCreateEditor} /></div>
+      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} onSave={onSaved} onClose={closeCreateEditor} /></div>
     case 'edit':
       return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
     case 'import':
@@ -137,6 +143,10 @@ function ScriptsAuthoringContent({
       return renderCreateOptionsSurface(
         <JMeterImport initialFile={importFiles?.[0] || null} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
+    case 'bruno-import':
+      return renderCreateOptionsSurface(
+        <BrunoImport initialFiles={importFiles || undefined} projectId={projectId} onImported={onImported} onConfigureSecrets={onConfigureSecrets} onClose={onOpenCreateOptions} />,
+      )
     case 'recorder':
       return renderCreateOptionsSurface(
         <RecordingStudio activeProject={activeProject} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
@@ -146,6 +156,11 @@ function ScriptsAuthoringContent({
         <SampleScriptImport initialFiles={importFiles || undefined} preset={importMode === 'java_http' ? 'java-http' : 'default'} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )
     case 'protocol-import':
+      if (importLauncher === 'yaml_chooser') {
+        return renderCreateOptionsSurface(
+          <YAMLImportChooser initialFiles={importFiles || undefined} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
+        )
+      }
       return renderCreateOptionsSurface(
         <ProtocolAssetImport kind={protocolKindForLauncher(importLauncher)} initialFile={importFiles?.[0] || null} initialMode={importMode} projectId={projectId} onImported={onImported} onEdit={onEditDraft} onClose={onOpenCreateOptions} />,
       )

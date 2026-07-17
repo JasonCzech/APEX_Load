@@ -48,6 +48,9 @@ const apiMock = {
   updateDataPoolRow: vi.fn(),
   deleteDataPoolRow: vi.fn(),
   listTests: vi.fn(),
+  listProjectSecrets: vi.fn(),
+  createProjectSecrets: vi.fn(),
+  rotateProjectSecret: vi.fn(),
 }
 
 const applicationApiMock = {
@@ -221,6 +224,7 @@ describe('SettingsPage', () => {
     window.localStorage.removeItem('apexload.settings.governanceSubsection')
     window.localStorage.removeItem('apexload.settings.capacitySubsection')
     window.localStorage.removeItem('apexload.settings.projectSubsection')
+    window.localStorage.removeItem('apexload.settings.projectId')
     window.localStorage.removeItem('apexload.settings.integrationSubsection')
 
     apiMock.getSystemSettings.mockResolvedValue({
@@ -680,6 +684,23 @@ describe('SettingsPage', () => {
       ],
       count: 1,
     })
+    apiMock.listProjectSecrets.mockImplementation(async (projectId: string) => ({
+      project_id: projectId,
+      capabilities: {
+        provider: 'encrypted_database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: false,
+      },
+      secrets: [],
+      count: 0,
+    }))
+    apiMock.createProjectSecrets.mockResolvedValue({ project_id: 'project-1', secrets: [], count: 1 })
+    apiMock.rotateProjectSecret.mockResolvedValue({
+      project_id: 'project-1',
+      secret: { name: 'LOGIN_TOKEN', provider: 'encrypted_database', writable: true },
+    })
   })
 
   afterEach(async () => {
@@ -694,6 +715,7 @@ describe('SettingsPage', () => {
     window.localStorage.removeItem('apexload.settings.governanceSubsection')
     window.localStorage.removeItem('apexload.settings.capacitySubsection')
     window.localStorage.removeItem('apexload.settings.projectSubsection')
+    window.localStorage.removeItem('apexload.settings.projectId')
     window.localStorage.removeItem('apexload.settings.integrationSubsection')
   })
 
@@ -787,7 +809,7 @@ describe('SettingsPage', () => {
     expect(governancePanel).toBeTruthy()
     const governanceTabs = Array.from(governancePanel?.querySelectorAll(':scope > .settings-subsection-layout > .settings-subnav .settings-subnav-label') || [])
       .map(tab => tab.textContent)
-    expect(governanceTabs).toEqual(['Schedule Defaults', 'Service Account APIs', 'Recent Audit Events'])
+    expect(governanceTabs).toEqual(['Schedule Defaults', 'Script Imports', 'Service Account APIs', 'Recent Audit Events'])
     expect(findSettingsSubnavButton(governancePanel || generalSection, 'Schedule Defaults')?.getAttribute('aria-selected')).toBe('true')
     expect(governancePanel?.querySelector('#settings-governance-panel-schedule-defaults')?.hasAttribute('hidden')).toBe(false)
     expect(governancePanel?.querySelector('#settings-governance-panel-service-account-apis')?.hasAttribute('hidden')).toBe(true)
@@ -835,6 +857,35 @@ describe('SettingsPage', () => {
     }))
   })
 
+  it('keeps source credential migration default-off and saves an explicit system-admin opt-in', async () => {
+    apiMock.updateSystemSettings.mockImplementation(async (settings) => settings)
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+    await selectGeneralSubnav(generalSection, 'Governance')
+    await selectSettingsSubnav(generalSection, 'Script Imports')
+
+    const policyInput = findSettingInput(generalSection, 'Allow source secret migration')
+    expect(policyInput?.checked).toBe(false)
+    expect(policyInput?.disabled).toBe(false)
+    await act(async () => policyInput?.click())
+
+    const saveButton = findButton('Save Changes')
+    expect(saveButton?.disabled).toBe(false)
+    await act(async () => saveButton?.click())
+    await flushPromises()
+
+    expect(apiMock.updateSystemSettings).toHaveBeenCalledWith(expect.objectContaining({
+      script_imports: { allow_source_secret_migration: true },
+    }))
+  })
+
   it('subdivides capacity, project, and integration settings into focused panels', async () => {
     await act(async () => {
       renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
@@ -871,6 +922,112 @@ describe('SettingsPage', () => {
     expect(integrationsSection.querySelector('#settings-integrations-panel-notifications')?.hasAttribute('hidden')).toBe(false)
     await selectSettingsSubnav(integrationsSection, 'Prometheus')
     expect(integrationsSection.querySelector('#settings-integrations-panel-prometheus')?.hasAttribute('hidden')).toBe(false)
+  })
+
+  it('opens Project Secrets for the requested project and scopes permissions to that selection', async () => {
+    projectApiMock.listProjects.mockResolvedValueOnce({
+      projects: [
+        {
+          id: 'project-1',
+          domain_id: 'domain-retail',
+          name: 'Alpha Checkout',
+          created_at: '2026-05-15T00:00:00Z',
+          updated_at: '2026-05-15T00:00:00Z',
+        },
+        {
+          id: 'project-2',
+          domain_id: 'domain-payments',
+          name: 'Zulu Payments',
+          created_at: '2026-05-16T00:00:00Z',
+          updated_at: '2026-05-16T00:00:00Z',
+        },
+      ],
+      count: 2,
+    })
+    apiMock.getAuthEffectiveAccess.mockImplementation(async (projectId?: string) => ({
+      enabled: true,
+      authenticated: true,
+      project_id: projectId,
+      resources: [{
+        id: 'scripts_and_projects',
+        name: 'Scripts and projects',
+        description: '',
+        operations: [
+          { id: 'manage_scripts', label: 'Manage scripts', allowed: projectId === 'project-2' },
+          { id: 'manage_projects', label: 'Manage projects', allowed: false },
+          { id: 'manage_system', label: 'Manage system', allowed: false },
+        ],
+      }],
+    }))
+    apiMock.listProjectSecrets.mockImplementation(async (projectId: string) => ({
+      project_id: projectId,
+      capabilities: {
+        provider: 'encrypted_database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: false,
+      },
+      secrets: [{
+        project_id: projectId,
+        name: 'PAYMENTS_TOKEN',
+        provider: 'encrypted_database',
+        writable: true,
+        created_at: '2026-05-16T00:00:00Z',
+        updated_at: '2026-05-16T00:00:00Z',
+      }],
+      count: 1,
+    }))
+    window.localStorage.setItem('apexload.settings.focusSection', 'projects')
+    window.localStorage.setItem('apexload.settings.projectSubsection', JSON.stringify('secrets'))
+    window.localStorage.setItem('apexload.settings.projectId', 'project-2')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const projectSection = container.querySelector('#settings-section-projects')
+    expect(projectSection).not.toBeNull()
+    expect(projectSection?.querySelector('.settings-app-card.active')?.textContent).toContain('Zulu Payments')
+    expect(projectSection?.querySelector('#settings-projects-panel-secrets')?.hasAttribute('hidden')).toBe(false)
+    expect(projectSection?.textContent).toContain('Write-only credentials for Zulu Payments')
+    expect(projectSection?.textContent).toContain('Editors may create missing secrets')
+    const rotateButton = Array.from(projectSection?.querySelectorAll<HTMLButtonElement>('button') || [])
+      .find(button => button.textContent?.trim() === 'Rotate')
+    expect(rotateButton?.disabled).toBe(true)
+    expect(apiMock.getAuthEffectiveAccess).toHaveBeenCalledWith('project-2', expect.objectContaining({
+      domain_id: 'domain-payments',
+    }))
+    expect(apiMock.listProjectSecrets).toHaveBeenCalledWith('project-2')
+    expect(window.localStorage.getItem('apexload.settings.projectId')).toBeNull()
+  })
+
+  it('fails closed when a Project Secrets navigation target is no longer available', async () => {
+    window.localStorage.setItem('apexload.settings.focusSection', 'projects')
+    window.localStorage.setItem('apexload.settings.projectSubsection', JSON.stringify('secrets'))
+    window.localStorage.setItem('apexload.settings.projectId', 'deleted-project')
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+
+    const projectSection = container.querySelector('#settings-section-projects')
+    expect(projectSection).not.toBeNull()
+    expect(projectSection?.querySelector('.settings-app-card.active')).toBeNull()
+    expect(projectSection?.textContent).toContain('No fallback project was selected')
+    expect(container.textContent).toContain('The project requested for secret configuration is no longer available')
+    expect(apiMock.listProjectSecrets).not.toHaveBeenCalled()
+    expect(window.localStorage.getItem('apexload.settings.projectId')).toBeNull()
+
+    const recoveryButton = Array.from(projectSection?.querySelectorAll<HTMLButtonElement>('button') || [])
+      .find(button => button.textContent?.trim() === 'Choose an available project')
+    expect(recoveryButton).toBeDefined()
+    await act(async () => recoveryButton?.click())
+    expect(projectSection?.querySelector('#settings-projects-panel-catalog')?.hasAttribute('hidden')).toBe(false)
   })
 
   it('edits Prometheus integration settings', async () => {
@@ -1973,6 +2130,11 @@ describe('SettingsPage', () => {
     await selectGeneralSubnav(generalSection, 'Governance')
     expect(findSettingsSubnavButton(generalSection, 'Schedule Defaults')?.getAttribute('aria-selected')).toBe('true')
     expect(generalSection.textContent).toContain('Global Settings Permission Required')
+
+    await selectSettingsSubnav(generalSection, 'Script Imports')
+    const migrationPolicyInput = findSettingInput(generalSection, 'Allow source secret migration')
+    expect(migrationPolicyInput?.disabled).toBe(true)
+    expect(generalSection.textContent).toContain('Only a system administrator can change source-secret migration policy.')
 
     await selectSettingsSubnav(generalSection, 'Service Account APIs')
     expect(generalSection.textContent).toContain('Access & API Keys')

@@ -1,6 +1,7 @@
 package browser
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -28,6 +29,64 @@ const (
 	HARCaptureAlways      = "always"
 )
 
+var activeRuntimeHARWorkingPaths sync.Map
+
+func normalizedRuntimeHARWorkingPath(path string) string {
+	path = filepath.Clean(strings.TrimSpace(path))
+	if absolute, err := filepath.Abs(path); err == nil {
+		return absolute
+	}
+	return path
+}
+
+// RuntimeHARWorkingPathActive lets the controller retention sweep distinguish
+// a live Playwright writer from an orphan left by a crashed/legacy session.
+func RuntimeHARWorkingPathActive(path string) bool {
+	_, ok := activeRuntimeHARWorkingPaths.Load(normalizedRuntimeHARWorkingPath(path))
+	return ok
+}
+
+func registerRuntimeHARWorkingPath(path string) {
+	activeRuntimeHARWorkingPaths.Store(normalizedRuntimeHARWorkingPath(path), struct{}{})
+}
+
+func unregisterRuntimeHARWorkingPath(path string) {
+	activeRuntimeHARWorkingPaths.Delete(normalizedRuntimeHARWorkingPath(path))
+}
+
+func (b *Browser) discardHARWorkingFile() {
+	workingPath := b.harWorkingPath
+	if workingPath == "" {
+		return
+	}
+	b.harWorkingPath = ""
+	unregisterRuntimeHARWorkingPath(workingPath)
+	_ = os.Remove(workingPath)
+}
+
+func purgeInactiveRuntimeHARWorkingFiles(dir string) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 ||
+			!strings.HasPrefix(name, "apexload_browser_") || !strings.HasSuffix(name, ".har.tmp") {
+			continue
+		}
+		path := filepath.Join(dir, name)
+		if RuntimeHARWorkingPathActive(path) {
+			continue
+		}
+		info, statErr := os.Lstat(path)
+		if statErr != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
+			continue
+		}
+		_ = os.Remove(path)
+	}
+}
+
 func normalizeHARCapturePolicy(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
 	case HARCaptureOnError:
@@ -48,14 +107,18 @@ func normalizeHARCapturePolicy(value string) string {
 // the evidence exists by the time the error happens; the file is discarded at
 // close when no error occurred.
 func (b *Browser) applyHARCaptureOptions(contextOptions *playwright.BrowserNewContextOptions) {
-	if b.harCapturePolicy == HARCaptureOff || b.harCapturePolicy == "" {
+	if b.harCapturePolicy == HARCaptureOff || b.harCapturePolicy == "" || b.hasRuntimeSecretMaterial() {
 		return
 	}
 	dir := b.harDir
 	if dir == "" {
 		dir = os.TempDir()
 	}
+	// Raw HARs are only working files. Clear legacy/crash leftovers before a
+	// new session starts; active writers are registered and skipped.
+	purgeInactiveRuntimeHARWorkingFiles(dir)
 	b.harWorkingPath = filepath.Join(dir, fmt.Sprintf("apexload_browser_%d.har.tmp", time.Now().UnixNano()))
+	registerRuntimeHARWorkingPath(b.harWorkingPath)
 	contextOptions.RecordHarPath = playwright.String(b.harWorkingPath)
 	contextOptions.RecordHarContent = playwright.HarContentPolicyEmbed
 }
@@ -186,6 +249,7 @@ func (b *Browser) finalizeHARCapture() string {
 	if workingPath == "" {
 		return ""
 	}
+	defer unregisterRuntimeHARWorkingPath(workingPath)
 	b.harWorkingPath = ""
 
 	b.mu.Lock()
@@ -240,6 +304,14 @@ func (b *Browser) finalizeHARCapture() string {
 			"policy", b.harCapturePolicy, "error", err)
 		return ""
 	}
+	if redactor := b.currentRuntimeTextRedactor(); redactor != nil {
+		scrubbed, err = redactRuntimeHARText(scrubbed, redactor)
+		if err != nil {
+			slog.Warn("browser HAR runtime secret redaction failed; discarding capture to avoid persisting secrets",
+				"policy", b.harCapturePolicy, "error", err)
+			return ""
+		}
+	}
 
 	artifactPath := strings.TrimSuffix(workingPath, ".har.tmp") + "_" + scrub.SensitivityScrubbed + ".har"
 	if err := os.WriteFile(artifactPath, scrubbed, 0o600); err != nil {
@@ -257,6 +329,47 @@ func (b *Browser) finalizeHARCapture() string {
 		"sla_breach_seen", slaBreachSeen,
 		"manual_seen", manualSeen)
 	return artifactPath
+}
+
+func (b *Browser) currentRuntimeTextRedactor() protocol.TextRedactor {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.runtimeTextRedactor
+}
+
+func redactRuntimeHARText(data []byte, redactor protocol.TextRedactor) ([]byte, error) {
+	if redactor == nil {
+		return data, nil
+	}
+	var document any
+	if err := json.Unmarshal(data, &document); err != nil {
+		return nil, fmt.Errorf("decode scrubbed HAR: %w", err)
+	}
+	document = redactRuntimeHARNode(document, redactor)
+	encoded, err := json.Marshal(document)
+	if err != nil {
+		return nil, fmt.Errorf("encode scrubbed HAR: %w", err)
+	}
+	return encoded, nil
+}
+
+func redactRuntimeHARNode(value any, redactor protocol.TextRedactor) any {
+	switch typed := value.(type) {
+	case string:
+		return redactor(typed)
+	case []any:
+		for index := range typed {
+			typed[index] = redactRuntimeHARNode(typed[index], redactor)
+		}
+		return typed
+	case map[string]any:
+		for key, nested := range typed {
+			typed[key] = redactRuntimeHARNode(nested, redactor)
+		}
+		return typed
+	default:
+		return value
+	}
 }
 
 func browserActionRequestsHARCapture(action *protocol.Action) bool {

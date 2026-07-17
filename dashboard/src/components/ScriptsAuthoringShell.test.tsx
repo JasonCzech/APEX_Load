@@ -140,11 +140,13 @@ function createState(subView: AuthoringState['subView'], overrides: Partial<Auth
     importLauncher: null,
     importMode: null,
     ...overrides,
+    draftInitiallyDirty: overrides.draftInitiallyDirty ?? false,
   }
 }
 
 const importSurfaces = [
   surface('openapi', 'OpenAPI / Swagger', 'OpenAPI', 'Contracts & Collections', 10, 'openapi', 'Generate HTTP scripts from OpenAPI 3.x or Swagger 2.0 contracts.'),
+  surface('bruno', 'Bruno Collection', 'Bruno', 'Contracts & Collections', 15, 'bruno', 'Preserve and execute Bruno collections without translating source behavior.'),
   surface('postman', 'Postman Collection', 'Postman', 'Contracts & Collections', 20, 'postman', 'Convert Postman collections and environments into script drafts.'),
   surface('wsdl', 'WSDL / SOAP', 'WSDL', 'Contracts & Collections', 30, 'wsdl', 'Import SOAP services and operations from WSDL.'),
   surface('asyncapi', 'AsyncAPI', 'AsyncAPI', 'Contracts & Collections', 40, 'asyncapi', 'Model event-driven flows from AsyncAPI contracts.'),
@@ -312,7 +314,7 @@ describe('ScriptsAuthoringShell', () => {
     expect(container.textContent).toContain('Broker Config')
     expect(container.textContent).toContain('Oracle E-Business / Siebel Review')
     expect(container.textContent).not.toContain('Import SOAP Assets')
-    expect(container.querySelectorAll('.script-create-import-groups .script-create-option')).toHaveLength(15)
+    expect(container.querySelectorAll('.script-create-import-groups .script-create-option')).toHaveLength(16)
     expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('OpenAPI / Swagger'))).toHaveLength(1)
     expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('Postman Collection'))).toHaveLength(1)
     expect(Array.from(container.querySelectorAll('button')).filter(button => button.textContent?.includes('WSDL / SOAP'))).toHaveLength(1)

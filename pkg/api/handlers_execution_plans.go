@@ -298,26 +298,26 @@ type ExecutionPlanMaterializeResult struct {
 // HTTP handler and the recurring execution-plan scheduler; callers are
 // responsible for the execution-leader gate (the HTTP handler and the leader-only
 // scheduler sweep both satisfy it).
-func (tr *TestRunner) MaterializeAndRunExecutionPlan(plan *storage.ExecutionPlan, attribSubject, attribDisplayName string) (*ExecutionPlanMaterializeResult, error) {
-	return tr.materializeAndRunExecutionPlan(plan, attribSubject, attribDisplayName, "")
+func (tr *TestRunner) MaterializeAndRunExecutionPlan(plan *storage.ExecutionPlan, attribSubject, attribDisplayName string, actors ...testCreationActor) (*ExecutionPlanMaterializeResult, error) {
+	return tr.materializeAndRunExecutionPlan(plan, attribSubject, attribDisplayName, "", actors...)
 }
 
-func (tr *TestRunner) materializeAndRunExecutionPlan(plan *storage.ExecutionPlan, attribSubject, attribDisplayName, runNameOverride string) (*ExecutionPlanMaterializeResult, error) {
-	return tr.materializeAndRunExecutionPlanWithRunID(plan, attribSubject, attribDisplayName, runNameOverride, "")
+func (tr *TestRunner) materializeAndRunExecutionPlan(plan *storage.ExecutionPlan, attribSubject, attribDisplayName, runNameOverride string, actors ...testCreationActor) (*ExecutionPlanMaterializeResult, error) {
+	return tr.materializeAndRunExecutionPlanWithRunID(plan, attribSubject, attribDisplayName, runNameOverride, "", actors...)
 }
 
 // materializeAndRunExecutionPlanWithRunID is the idempotent scheduler-facing
 // variant. A non-empty runIDOverride is anchored before test side effects and is
 // reused on occurrence replay after a controller crash.
-func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.ExecutionPlan, attribSubject, attribDisplayName, runNameOverride, runIDOverride string) (*ExecutionPlanMaterializeResult, error) {
+func (tr *TestRunner) materializeAndRunExecutionPlanWithRunID(plan *storage.ExecutionPlan, attribSubject, attribDisplayName, runNameOverride, runIDOverride string, actors ...testCreationActor) (*ExecutionPlanMaterializeResult, error) {
 	leaseTerm, err := tr.captureExecutionLeaseTerm()
 	if err != nil {
 		return nil, err
 	}
-	return tr.materializeAndRunExecutionPlanWithRunIDAndTerm(plan, attribSubject, attribDisplayName, runNameOverride, runIDOverride, leaseTerm)
+	return tr.materializeAndRunExecutionPlanWithRunIDAndTerm(plan, attribSubject, attribDisplayName, runNameOverride, runIDOverride, leaseTerm, actors...)
 }
 
-func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *storage.ExecutionPlan, attribSubject, attribDisplayName, runNameOverride, runIDOverride string, leaseTerm executionLeaseTerm) (*ExecutionPlanMaterializeResult, error) {
+func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *storage.ExecutionPlan, attribSubject, attribDisplayName, runNameOverride, runIDOverride string, leaseTerm executionLeaseTerm, actors ...testCreationActor) (*ExecutionPlanMaterializeResult, error) {
 	if plan == nil {
 		return nil, errors.New("execution plan is required")
 	}
@@ -355,6 +355,10 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *stora
 	runName := strings.TrimSpace(runNameOverride)
 	if runName == "" {
 		runName = strings.TrimSpace(plan.Name)
+	}
+	creationActor := executionPlanCreationActor(attribSubject, attribDisplayName, actors...)
+	if err := tr.preflightExecutionPlanRuntimeSecretAuthority(plan, runName, runIDOverride, creationActor); err != nil {
+		return nil, err
 	}
 	// Governance gate: a plan whose aggregate peak exceeds the project VUser quota
 	// requires a project-admin approval before it can run.
@@ -398,7 +402,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *stora
 
 	var result *ExecutionPlanMaterializeResult
 	if plan.RunMode == "sequential" {
-		run, err := tr.startExecutionPlanRunWithIDAndTerm(plan, attribSubject, attribDisplayName, runName, runIDOverride, leaseTerm, gateApproval)
+		run, err := tr.startExecutionPlanRunWithIDAndTermActor(plan, attribSubject, attribDisplayName, runName, runIDOverride, leaseTerm, creationActor, gateApproval)
 		if err != nil {
 			return nil, err
 		}
@@ -433,7 +437,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *stora
 				anchorTimeslotUsed = true
 			}
 		}
-		snapshot := executionPlanRunEntrySnapshot(entry, runName, attribSubject, attribDisplayName, effectiveTimeslot, gateApproval)
+		snapshot := executionPlanRunEntrySnapshot(entry, runName, attribSubject, attribDisplayName, effectiveTimeslot, gateApproval, creationActor)
 		snapshot.TestID = testID
 		snapshot.Status = status
 		snapshot.Detail = detail
@@ -484,7 +488,7 @@ func (tr *TestRunner) materializeAndRunExecutionPlanWithRunIDAndTerm(plan *stora
 		err := tr.validateExecutionPlanApprovalMaterialization(plan.ID, runID, gateApproval)
 		var createRequest CreateTestRequest
 		if err == nil {
-			createRequest, err = buildPlanEntryCreateRequest(runName, plan.ProjectID, planTimeslot, entry)
+			createRequest, err = buildPlanEntryCreateRequest(runName, plan.ProjectID, planTimeslot, entry, creationActor)
 			if err == nil {
 				createRequest.MaterializationKey = runEntry.MaterializationKey
 				createRequest.ExecutionPlanApproval = gateApproval
@@ -832,7 +836,9 @@ func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *
 		attribSubject = actorSubject
 	}
 
-	result, err := s.runner.MaterializeAndRunExecutionPlan(plan, attribSubject, actorDisplayName)
+	result, err := s.runner.MaterializeAndRunExecutionPlan(plan, attribSubject, actorDisplayName, testCreationActor{
+		Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName,
+	})
 	if err != nil {
 		if errors.Is(err, errNotExecutionLeader) {
 			writeError(w, http.StatusServiceUnavailable, "execution leader is unavailable")
@@ -840,6 +846,13 @@ func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *
 		}
 		if errors.Is(err, errExecutionPlanRunPersistence) {
 			writeError(w, http.StatusServiceUnavailable, "execution-plan run persistence is temporarily unavailable")
+			return
+		}
+		if errors.Is(err, errServiceAccountRuntimeSecretWrite) || errors.Is(err, errUnattributedRuntimeSecretWrite) {
+			s.recordAuditEvent(r, "execution_plan.run", "failure", "execution_plan", plan.ID, plan.ProjectID, map[string]any{
+				"reason": "secret_write_denied", "actor": actorDisplayName,
+			})
+			writeError(w, http.StatusForbidden, err.Error())
 			return
 		}
 		writeError(w, http.StatusBadRequest, err.Error())

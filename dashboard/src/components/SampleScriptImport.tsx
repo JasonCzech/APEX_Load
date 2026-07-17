@@ -22,6 +22,7 @@ import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
 import { createJavaHttpDraft } from './scriptDraftFactories'
 import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
+import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import SourceMappingReview from './SourceMappingReview'
 import ReplayPreflightCard from './ReplayPreflightCard'
 import { buildLocalReplayPreflight } from './replayPreflightUtils'
@@ -430,14 +431,45 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
   const saveTask = useAsyncTask<StoredScript>()
   const [options, dispatchOptions] = useReducer(sampleImportOptionsReducer, initialOptions)
   const [assetUploads, setAssetUploads] = useState<AssetUploadState>({})
+  const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const desktop = isDesktopSurface()
   const nativeDialogs = desktop && canUseNativeDialogs()
 
+  const result = convertTask.value
+  const latestResultRef = useRef<SampleImportResult | null>(result)
+  latestResultRef.current = result
+  const reviewGenerationRef = useRef(0)
+  const [reviewGeneration, setReviewGeneration] = useState(0)
+  const advanceReviewGeneration = useCallback(() => {
+    const next = reviewGenerationRef.current + 1
+    reviewGenerationRef.current = next
+    setReviewGeneration(next)
+    return next
+  }, [])
+  const reviewScope = `${reviewGeneration}:${projectId || ''}`
+  const reviewProjectIdRef = useRef(projectId)
+  reviewProjectIdRef.current = projectId
+  const resetConvertTask = convertTask.reset
+  const resetSaveTask = saveTask.reset
+  const invalidateSampleSource = useCallback(() => {
+    void credentialReviewRef.current?.discardSourceSession()
+    const generation = advanceReviewGeneration()
+    resetConvertTask()
+    resetSaveTask()
+    setMessageError('')
+    setAssetUploads({})
+    return generation
+  }, [advanceReviewGeneration, resetConvertTask, resetSaveTask])
   const updateOption = <K extends keyof SampleImportOptions>(field: K, value: SampleImportOptions[K]) => {
+    invalidateSampleSource()
     dispatchOptions({ type: 'update', field, value })
   }
-
-  const result = convertTask.value
+  const previousProjectIdRef = useRef(projectId)
+  useEffect(() => {
+    if (previousProjectIdRef.current === projectId) return
+    previousProjectIdRef.current = projectId
+    invalidateSampleSource()
+  }, [invalidateSampleSource, projectId])
   const error = messageError || convertTask.error || saveTask.error
   const converting = convertTask.pending
   const saving = saveTask.pending
@@ -450,6 +482,7 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
   const replayPreflight = reviewedScript ? (result?.preflight || buildLocalReplayPreflight(reviewedScript)) : null
 
   const handleFormatChange = (nextFormat: SampleFormat) => {
+    invalidateSampleSource()
     const template = getSampleTemplate(preset, nextFormat)
     setFormat(nextFormat)
     setPrimaryContent(template.primary)
@@ -460,13 +493,10 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
     setSecondaryFileNames([])
     setPrimaryMergedCount(0)
     setSecondaryMergedCount(0)
-    convertTask.reset()
-    saveTask.clearError()
-    setMessageError('')
-    setAssetUploads({})
   }
 
   const handlePresetChange = (nextPreset: SampleImportPreset) => {
+    invalidateSampleSource()
     const nextFormat = defaultFormatByPreset[nextPreset]
     const template = getSampleTemplate(nextPreset, nextFormat)
     setPreset(nextPreset)
@@ -479,18 +509,16 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
     setSecondaryFileNames([])
     setPrimaryMergedCount(0)
     setSecondaryMergedCount(0)
-    convertTask.reset()
-    saveTask.clearError()
-    setMessageError('')
-    setAssetUploads({})
   }
 
-  const resetConvertTask = convertTask.reset
-  const clearSaveTaskError = saveTask.clearError
   const handleFilesLoad = useCallback(async (files: File[], target: 'primary' | 'secondary', formatOverride?: SampleFormat) => {
+    const sourceGeneration = invalidateSampleSource()
+    const sourceProjectId = reviewProjectIdRef.current
+    const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration && reviewProjectIdRef.current === sourceProjectId
     const effectiveFormat = formatOverride || format
     try {
       const loaded = await Promise.all(files.map(async (file) => ({ file, text: await file.text() })))
+      if (!requestIsCurrent()) return
       const normalized: LoadedSample[] = loaded.map(item => ({ name: item.file.name, text: item.text }))
       if (target === 'primary') {
         const merged = mergePrimarySamples(effectiveFormat, normalized)
@@ -508,12 +536,10 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
         setSecondaryMergedCount(merged.mergedCount)
       }
       setMessageError('')
-      resetConvertTask()
-      clearSaveTaskError()
     } catch (error: unknown) {
-      setMessageError(getErrorMessage(error, `Failed to read ${files[0]?.name || 'sample file'}`))
+      if (requestIsCurrent()) setMessageError(getErrorMessage(error, `Failed to read ${files[0]?.name || 'sample file'}`))
     }
-  }, [clearSaveTaskError, format, resetConvertTask])
+  }, [format, invalidateSampleSource])
 
   // Load a set of externally-dropped files exactly ONCE, when that set changes —
   // not on every format/preset change. initialFiles is held in authoring state
@@ -664,14 +690,18 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
       return
     }
 
+    const sourceGeneration = advanceReviewGeneration()
+    const sourceProjectId = reviewProjectIdRef.current
+    const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration
+      && reviewProjectIdRef.current === sourceProjectId
     setMessageError('')
-    saveTask.clearError()
+    resetSaveTask()
     try {
       await convertTask.run(
         async () => {
           const res = await api.importSample({
             name: options.name || undefined,
-            project_id: projectId,
+            project_id: sourceProjectId,
             format,
             content: primaryContent,
             response_content: secondaryContent || undefined,
@@ -689,6 +719,10 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
           const correlatedScript = attachImportCorrelationSuggestions(finalScript, 'sample-import', res.correlations)
           const warnings = isJavaHttpPreset ? appendJavaHTTPWarnings(finalScript, res.warnings) : res.warnings
 
+          if (!requestIsCurrent()) {
+            throw new Error('The sample source changed while conversion was running. Review the current input and try again.')
+          }
+
           return {
             ...res,
             script: correlatedScript,
@@ -697,42 +731,62 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
         },
         { clearValue: true },
       )
-      setAssetUploads({})
+      if (requestIsCurrent()) setAssetUploads({})
     } catch (error: unknown) {
-      setMessageError(getErrorMessage(error, 'Sample conversion failed'))
+      if (requestIsCurrent()) setMessageError(getErrorMessage(error, 'Sample conversion failed'))
     }
   }
 
   const handleSave = async () => {
-    const reviewedScript = result?.script ?? result?.scripts?.[0]
-    if (!reviewedScript) return
+    const sourceGeneration = reviewGenerationRef.current
+    const sourceProjectId = reviewProjectIdRef.current
+    const sourceResult = latestResultRef.current
+    const scriptToSave = latestResultRef.current?.script ?? latestResultRef.current?.scripts?.[0]
+    if (!scriptToSave) return
+    const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration
+      && reviewProjectIdRef.current === sourceProjectId
+      && latestResultRef.current === sourceResult
     setMessageError('')
     try {
       const savedScript = await saveTask.run(async () => {
-        return api.createScript(reviewedScript, projectId)
+        return api.createScript(scriptToSave, sourceProjectId)
       })
-      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, reviewedScript)] })
+      if (requestIsCurrent()) onImported?.({ scripts: [withFallbackPersistedScript(savedScript, scriptToSave)] })
     } catch (error: unknown) {
-      setMessageError(getErrorMessage(error, 'Failed to save generated script'))
+      if (requestIsCurrent()) setMessageError(getErrorMessage(error, 'Failed to save generated script'))
     }
+  }
+
+  const handleEdit = () => {
+    const currentScript = latestResultRef.current?.script ?? latestResultRef.current?.scripts?.[0]
+    if (currentScript) onEdit?.(currentScript)
   }
 
   const handleParameterizationApplied = (parameterizedScript: ScriptDefinition) => {
     if (!result) return
+    advanceReviewGeneration()
+    resetSaveTask()
     const preflight = buildLocalReplayPreflight(parameterizedScript)
     convertTask.setValue(replaceImportResultScript(result, attachReplayPreflight(parameterizedScript, preflight), preflight))
   }
 
   const handleSecretBindingsApply = async (bindings: SecretBindingSelection[]) => {
     if (!result || !reviewedScript) return
+    const sourceGeneration = reviewGenerationRef.current
+    const sourceProjectId = reviewProjectIdRef.current
+    const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration && reviewProjectIdRef.current === sourceProjectId
     try {
       const resolved = await api.applySecretBindings({ script: reviewedScript, bindings })
+      if (!requestIsCurrent()) throw new Error('The import result changed while credentials were being prepared. Review the current draft and try again.')
       const preflight = buildLocalReplayPreflight(resolved.script)
-      convertTask.setValue({
+      const nextResult = {
         ...replaceImportResultScript(result, attachReplayPreflight(resolved.script, preflight), preflight),
         secret_binding_requirements: resolved.secret_binding_requirements,
-      })
+      }
+      latestResultRef.current = nextResult
+      convertTask.setValue(nextResult)
     } catch (error: unknown) {
+      if (!requestIsCurrent()) throw error
       const refreshed = refreshedSecretBindingRequirements(error)
       if (refreshed) convertTask.setValue({ ...result, secret_binding_requirements: refreshed })
       throw error
@@ -741,6 +795,8 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
 
   const handleAssetUpload = async (source: ScriptDataSource, file: File) => {
     if (!result || !reviewedScript) return
+    const sourceGeneration = advanceReviewGeneration()
+    const sourceProjectId = reviewProjectIdRef.current
     const targetIndex = (reviewedScript.data_sources || []).indexOf(source)
     const key = assetUploadKey(source, targetIndex)
     setMessageError('')
@@ -754,6 +810,7 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
         name: source.name,
         content_type: source.content_type || file.type || undefined,
       })
+      if (reviewGenerationRef.current !== sourceGeneration || reviewProjectIdRef.current !== sourceProjectId) return
       const mergedScript = mergeUploadedFileAsset(reviewedScript, targetIndex, uploaded.data_source)
       const preflight = buildLocalReplayPreflight(mergedScript)
       const scriptWithPreflight = attachReplayPreflight(mergedScript, preflight)
@@ -763,6 +820,7 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
         [key]: { pending: false, fileName: file.name },
       }))
     } catch (error: unknown) {
+      if (reviewGenerationRef.current !== sourceGeneration || reviewProjectIdRef.current !== sourceProjectId) return
       setAssetUploads(prev => ({
         ...prev,
         [key]: {
@@ -785,7 +843,7 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
               : 'Create a APEX Load script from raw HTTP, curl, REST JSON, or HAR data, then layer in runtime details before saving.'}
           </p>
         </div>
-        {onClose && <button type="button" className="btn btn-secondary" onClick={onClose}>Back</button>}
+        {onClose && <button type="button" className="btn btn-secondary" onClick={() => { void credentialReviewRef.current?.discardSourceSession(); onClose() }}>Back</button>}
       </div>
 
       <div className="sample-import-card">
@@ -852,7 +910,7 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
                 </div>
               </div>
             )}
-            <textarea value={primaryContent} onChange={e => setPrimaryContent(e.target.value)} rows={format === 'curl' ? 8 : 14} spellCheck={false} />
+            <textarea value={primaryContent} onChange={e => { invalidateSampleSource(); setPrimaryContent(e.target.value) }} rows={format === 'curl' ? 8 : 14} spellCheck={false} />
           </label>
 
           {(format === 'raw_http' || format === 'curl') && (
@@ -892,7 +950,7 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
                   </div>
                 </div>
               )}
-              <textarea value={secondaryContent} onChange={e => setSecondaryContent(e.target.value)} rows={10} spellCheck={false} />
+              <textarea value={secondaryContent} onChange={e => { invalidateSampleSource(); setSecondaryContent(e.target.value) }} rows={10} spellCheck={false} />
             </label>
           )}
         </div>
@@ -1003,6 +1061,7 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
         <div className="sample-import-result">
           <ScriptImportReview
             title="3. Review Generated Script"
+            reviewGeneration={reviewScope}
             subtitle={`${result.stats.converted_actions} action(s) derived from ${result.stats.total_requests} request sample(s).`}
             script={reviewedScript}
             warnings={result.warnings}
@@ -1012,10 +1071,15 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
             onParameterizationApplied={handleParameterizationApplied}
             secretBindingRequirements={result.secret_binding_requirements}
             onSecretBindingsApply={handleSecretBindingsApply}
+            projectId={projectId}
+            sourceSecretSessionId={result.source_secret_session_id}
+            sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
+            sourceSecretMigrationAllowed={result.source_secret_migration_allowed}
+            credentialReviewRef={credentialReviewRef}
             saving={saving}
             saveDisabled={hasMissingFileAssets}
             onSave={handleSave}
-            onEdit={onEdit ? () => onEdit(reviewedScript) : undefined}
+            onEdit={onEdit ? handleEdit : undefined}
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={reviewedScript} title="Source Comparison" /> : undefined}
           >
             {replayPreflight && (

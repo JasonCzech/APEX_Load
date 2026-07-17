@@ -74,7 +74,12 @@ export default tseslint.config(
     rules: {
       ...(includeLegacyA11yWarnings ? legacyA11yWarningRules : {}),
       ...blockingA11yRules,
-      ...reactHooks.configs.recommended.rules,
+      // v7's `recommended` preset now enables React Compiler diagnostics in
+      // addition to the two correctness rules used by the previous major.
+      // Keep this dependency-only upgrade behaviorally stable; compiler-rule
+      // adoption belongs in a dedicated cleanup with its own migration plan.
+      'react-hooks/rules-of-hooks': 'error',
+      'react-hooks/exhaustive-deps': 'warn',
       '@typescript-eslint/no-explicit-any': 'off',
       'react-refresh/only-export-components': ['warn', {
         allowConstantExport: true,

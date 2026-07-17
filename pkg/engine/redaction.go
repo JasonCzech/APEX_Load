@@ -1,10 +1,19 @@
 package engine
 
 import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/binary"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"math"
+	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -24,6 +33,11 @@ const (
 	MaxRedactionPatternBytes     = 4 << 10
 	MaxRedactionReplacementBytes = 4 << 10
 	MaxRedactionPolicyBytes      = 256 << 10
+
+	// Runtime secret matchers are derived from write-only values and include
+	// reversible encodings that can appear in retained protocol evidence. Keep
+	// their compiled input bounded independently from the raw secret snapshot.
+	maxRuntimeSecretRedactionPatternBytes = 16 << 20
 )
 
 type RedactionRule struct {
@@ -33,8 +47,12 @@ type RedactionRule struct {
 }
 
 type RedactionConfig struct {
-	Rules    []RedactionRule
-	compiled []payloadReplacement
+	Rules               []RedactionRule
+	compiled            []payloadReplacement
+	secretReplacers     []*strings.Replacer
+	runtimeSecretValues map[string]struct{}
+	runtimePatternBytes int
+	runtimeMatcherComplete bool
 }
 
 var sensitiveSnapshotHeaderNames = map[string]struct{}{
@@ -138,6 +156,365 @@ func (c *RedactionConfig) ScrubText(value string) string {
 	return scrubSensitiveTextWithConfig(value, c)
 }
 
+// HasRuntimeSecretMaterial reports whether the config contains exact,
+// memory-only runtime values. Protocols use this signal to suppress binary
+// evidence (notably screenshots), which cannot be safely text-redacted.
+func (c *RedactionConfig) HasRuntimeSecretMaterial() bool {
+	return c != nil && len(c.runtimeSecretValues) > 0
+}
+
+// WithSecretValueRedaction returns a detached runtime-only redaction config
+// that replaces exact resolved credential values anywhere retained evidence is
+// scrubbed. Values are kept out of Rules so they cannot be serialized into
+// assignments, archives, API responses, or policy snapshots.
+func WithSecretValueRedaction(config *RedactionConfig, values []string) *RedactionConfig {
+	detached, _ := withSecretValueRedaction(config, values, false)
+	return detached
+}
+
+// WithSecretValueRedactionChecked constructs a complete exact-value matcher or
+// fails closed if every reversible spelling cannot fit within the bounded
+// runtime matcher budget. Runtime entry points use this form before executing
+// untrusted protocol code.
+func WithSecretValueRedactionChecked(config *RedactionConfig, values []string) (*RedactionConfig, error) {
+	return withSecretValueRedaction(config, values, true)
+}
+
+func withSecretValueRedaction(config *RedactionConfig, values []string, requireComplete bool) (*RedactionConfig, error) {
+	if config != nil {
+		allPresent := true
+		hasValue := false
+		for _, value := range values {
+			if value == "" {
+				continue
+			}
+			hasValue = true
+			if _, exists := config.runtimeSecretValues[value]; !exists {
+				allPresent = false
+				break
+			}
+		}
+		if (!hasValue && (!requireComplete || config.runtimeMatcherComplete || len(config.runtimeSecretValues) == 0)) ||
+			(hasValue && allPresent && (!requireComplete || config.runtimeMatcherComplete)) {
+			return config, nil
+		}
+	}
+
+	unique := make(map[string]struct{}, len(values))
+	if config != nil {
+		for value := range config.runtimeSecretValues {
+			unique[value] = struct{}{}
+		}
+	}
+	for _, value := range values {
+		if value != "" {
+			unique[value] = struct{}{}
+		}
+	}
+	if len(unique) == 0 {
+		return config, nil
+	}
+
+	orderedValues := make([]string, 0, len(unique))
+	for value := range unique {
+		orderedValues = append(orderedValues, value)
+	}
+	sort.Slice(orderedValues, func(i, j int) bool {
+		if len(orderedValues[i]) == len(orderedValues[j]) {
+			return orderedValues[i] < orderedValues[j]
+		}
+		return len(orderedValues[i]) > len(orderedValues[j])
+	})
+
+	variants := make(map[string]struct{}, len(unique)*8)
+	ordered := make([]string, 0, len(unique)*8)
+	patternBytes := 0
+	addVariant := func(variant string, required bool) error {
+		if variant == "" || variant == redactedPayloadValue {
+			return nil
+		}
+		if _, exists := variants[variant]; exists {
+			return nil
+		}
+		replacement := runtimeSecretPlaceholder(variant)
+		candidateBytes := len(variant) + len(replacement)
+		if candidateBytes > maxRuntimeSecretRedactionPatternBytes-patternBytes {
+			if requireComplete || required {
+				return errors.New("resolved secrets exceed the runtime redaction matcher limit")
+			}
+			return nil
+		}
+		patternBytes += candidateBytes
+		variants[variant] = struct{}{}
+		ordered = append(ordered, variant)
+		return nil
+	}
+
+	// Raw spellings are mandatory even for the compatibility wrapper. Snapshot
+	// and extraction budgets keep their aggregate material below this ceiling.
+	for _, value := range orderedValues {
+		if err := addVariant(value, true); err != nil {
+			return nil, err
+		}
+	}
+
+	budgetExhausted := false
+	for _, value := range orderedValues {
+		for _, variant := range runtimeSecretRedactionVariants(value) {
+			before := len(ordered)
+			if err := addVariant(variant, false); err != nil {
+				return nil, err
+			}
+			if !requireComplete && len(ordered) == before {
+				if _, exists := variants[variant]; !exists && variant != "" && variant != redactedPayloadValue {
+					budgetExhausted = true
+					break
+				}
+			}
+		}
+		if budgetExhausted {
+			break
+		}
+	}
+	sort.Slice(ordered, func(i, j int) bool {
+		if len(ordered[i]) == len(ordered[j]) {
+			return ordered[i] < ordered[j]
+		}
+		return len(ordered[i]) > len(ordered[j])
+	})
+	replacements := make([]string, 0, len(ordered)*2)
+	for _, value := range ordered {
+		replacements = append(replacements, value, runtimeSecretPlaceholder(value))
+	}
+	detached := &RedactionConfig{}
+	if config != nil {
+		detached.Rules = append([]RedactionRule(nil), config.Rules...)
+		detached.compiled = append([]payloadReplacement(nil), config.compiled...)
+	}
+	detached.runtimeSecretValues = unique
+	detached.runtimePatternBytes = patternBytes
+	detached.runtimeMatcherComplete = requireComplete
+	detached.secretReplacers = []*strings.Replacer{strings.NewReplacer(replacements...)}
+	return detached, nil
+}
+
+func runtimeSecretPlaceholder(value string) string {
+	// strings.Replacer performs the multi-pattern match efficiently. A
+	// same-width internal placeholder guarantees that even a one-byte secret
+	// cannot amplify attacker-controlled evidence before retained bounds apply.
+	return strings.Repeat("\x00", len(value))
+}
+
+func mergedRuntimeSecretValues(config *RedactionConfig, values []string) []string {
+	unique := make(map[string]struct{}, len(values))
+	if config != nil {
+		for value := range config.runtimeSecretValues {
+			if value != "" {
+				unique[value] = struct{}{}
+			}
+		}
+	}
+	for _, value := range values {
+		if value != "" {
+			unique[value] = struct{}{}
+		}
+	}
+	ordered := make([]string, 0, len(unique))
+	for value := range unique {
+		ordered = append(ordered, value)
+	}
+	sort.Strings(ordered)
+	return ordered
+}
+
+func runtimeSecretValueSetKey(values []string) [sha256.Size]byte {
+	hash := sha256.New()
+	var length [8]byte
+	for _, value := range values {
+		binary.BigEndian.PutUint64(length[:], uint64(len(value)))
+		_, _ = hash.Write(length[:])
+		_, _ = hash.Write([]byte(value))
+	}
+	var key [sha256.Size]byte
+	copy(key[:], hash.Sum(nil))
+	return key
+}
+
+// attachRuntimeSecretRedaction keeps custom policy state detached per group
+// while sharing the immutable exact-secret matcher for identical value sets.
+func attachRuntimeSecretRedaction(config, runtime *RedactionConfig) *RedactionConfig {
+	if runtime == nil {
+		return config
+	}
+	if config == nil || (len(config.Rules) == 0 && len(config.compiled) == 0) {
+		return runtime
+	}
+	detached := &RedactionConfig{
+		Rules:               append([]RedactionRule(nil), config.Rules...),
+		compiled:            append([]payloadReplacement(nil), config.compiled...),
+		secretReplacers:     runtime.secretReplacers,
+		runtimeSecretValues: runtime.runtimeSecretValues,
+		runtimePatternBytes: runtime.runtimePatternBytes,
+		runtimeMatcherComplete: runtime.runtimeMatcherComplete,
+	}
+	return detached
+}
+
+func runtimeSecretRedactionVariants(value string) []string {
+	// Keep this expansion explicitly bounded. Resolved secret snapshots are also
+	// byte/entry bounded, but a Cartesian expansion of every reversible encoding
+	// would still create excessive per-result replacement work.
+	const maxVariants = 64
+	variants := make([]string, 0, maxVariants)
+	seen := make(map[string]struct{}, maxVariants)
+	add := func(candidate string) {
+		if candidate == "" || len(variants) >= maxVariants {
+			return
+		}
+		if _, exists := seen[candidate]; exists {
+			return
+		}
+		seen[candidate] = struct{}{}
+		variants = append(variants, candidate)
+	}
+	addEncoded := func(candidate string, includeHex bool) {
+		add(candidate)
+		queryEscaped := url.QueryEscape(candidate)
+		percentSpaceEscaped := strings.ReplaceAll(queryEscaped, "+", "%20")
+		pathEscaped := url.PathEscape(candidate)
+		add(queryEscaped)
+		add(lowerPercentEscapes(queryEscaped))
+		add(percentSpaceEscaped)
+		add(lowerPercentEscapes(percentSpaceEscaped))
+		add(pathEscaped)
+		add(lowerPercentEscapes(pathEscaped))
+		add(base64.StdEncoding.EncodeToString([]byte(candidate)))
+		add(base64.RawStdEncoding.EncodeToString([]byte(candidate)))
+		add(base64.URLEncoding.EncodeToString([]byte(candidate)))
+		add(base64.RawURLEncoding.EncodeToString([]byte(candidate)))
+		if includeHex {
+			hexValue := hex.EncodeToString([]byte(candidate))
+			add(hexValue)
+			add(strings.ToUpper(hexValue))
+		}
+	}
+
+	// Raw reversible encodings are the most common and retain priority if the
+	// fixed variant budget is exhausted.
+	addEncoded(value, true)
+
+	// Evidence often contains a response body as text rather than as a parsed
+	// object. In that representation a quote/control character from a secret is
+	// JSON escaped, and HTML/XML echoes entity-escape metacharacters. Include both
+	// Go's HTML-safe JSON form and the common non-HTML-safe form, plus the named,
+	// decimal, and hexadecimal entity spellings used by browsers and servers.
+	jsonHTMLSafe := jsonEscapedSecret(value, true)
+	jsonPlain := jsonEscapedSecret(value, false)
+	htmlNamed := escapeRuntimeSecretEntities(value, "&quot;", "&#39;")
+	xmlNamed := escapeRuntimeSecretEntities(value, "&quot;", "&apos;")
+	escaped := []string{
+		jsonHTMLSafe,
+		upperJSONUnicodeEscapes(jsonHTMLSafe),
+		jsonPlain,
+		strings.ReplaceAll(jsonPlain, "/", `\/`),
+		html.EscapeString(value),
+		htmlNamed,
+		xmlNamed,
+		escapeRuntimeSecretEntities(value, "&#x22;", "&#x27;"),
+	}
+	// Reserve space for every direct escaped spelling before adding composite
+	// encodings. Otherwise early candidates could exhaust the fixed budget and
+	// leave a later HTML/XML spelling unprotected.
+	for _, candidate := range escaped {
+		add(candidate)
+	}
+	// Prioritize representative composite spellings that commonly appear when
+	// neutral JSON/HTML evidence is subsequently URL- or base64-encoded.
+	for _, candidate := range []string{
+		url.QueryEscape(jsonPlain),
+		strings.ReplaceAll(url.QueryEscape(jsonPlain), "+", "%20"),
+		base64.StdEncoding.EncodeToString([]byte(htmlNamed)),
+		base64.RawStdEncoding.EncodeToString([]byte(htmlNamed)),
+		base64.StdEncoding.EncodeToString([]byte(xmlNamed)),
+		url.QueryEscape(xmlNamed),
+	} {
+		add(candidate)
+	}
+	for _, candidate := range escaped {
+		// URL/base64 encodings of the escaped representation cover the common
+		// composite cases without recursively expanding the entire set.
+		addEncoded(candidate, false)
+	}
+	return variants
+}
+
+func upperJSONUnicodeEscapes(value string) string {
+	if !strings.Contains(value, `\u`) {
+		return value
+	}
+	bytes := []byte(value)
+	for index := 0; index+5 < len(bytes); index++ {
+		if bytes[index] != '\\' || bytes[index+1] != 'u' {
+			continue
+		}
+		for offset := 2; offset <= 5; offset++ {
+			if bytes[index+offset] >= 'a' && bytes[index+offset] <= 'f' {
+				bytes[index+offset] -= 'a' - 'A'
+			}
+		}
+		index += 5
+	}
+	return string(bytes)
+}
+
+func jsonEscapedSecret(value string, escapeHTML bool) string {
+	var encoded []byte
+	if escapeHTML {
+		encoded, _ = json.Marshal(value)
+	} else {
+		var buffer bytes.Buffer
+		encoder := json.NewEncoder(&buffer)
+		encoder.SetEscapeHTML(false)
+		if err := encoder.Encode(value); err != nil {
+			return ""
+		}
+		encoded = bytes.TrimSpace(buffer.Bytes())
+	}
+	if len(encoded) < 2 || encoded[0] != '"' || encoded[len(encoded)-1] != '"' {
+		return ""
+	}
+	return string(encoded[1 : len(encoded)-1])
+}
+
+func escapeRuntimeSecretEntities(value, quote, apostrophe string) string {
+	return strings.NewReplacer(
+		"&", "&amp;",
+		"<", "&lt;",
+		">", "&gt;",
+		`"`, quote,
+		"'", apostrophe,
+	).Replace(value)
+}
+
+func lowerPercentEscapes(value string) string {
+	if !strings.Contains(value, "%") {
+		return value
+	}
+	buf := []byte(value)
+	for index := 0; index+2 < len(buf); index++ {
+		if buf[index] != '%' {
+			continue
+		}
+		for offset := 1; offset <= 2; offset++ {
+			if buf[index+offset] >= 'A' && buf[index+offset] <= 'F' {
+				buf[index+offset] += 'a' - 'A'
+			}
+		}
+		index += 2
+	}
+	return string(buf)
+}
+
 func scrubSensitiveResult(result *protocol.Result, config *RedactionConfig) {
 	scrubSensitiveResultWithOptions(result, config, true)
 }
@@ -162,6 +539,12 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 	result.DOMSummary = scrubSensitiveDOMSummary(result.DOMSummary, config)
 	result.Extractions = scrubSensitiveExtractions(result.Extractions, config)
 	result.ProtocolEvidence = scrubSensitiveEvidenceMap(result.ProtocolEvidence, config)
+	if config.HasRuntimeSecretMaterial() {
+		// Screenshots are opaque pixels/base64. Exact text replacement cannot
+		// prove the rendered secret is gone, so governed runtime material makes
+		// screenshot retention fail closed.
+		result.ScreenshotBase64 = ""
+	}
 	if result.Snapshot == nil {
 		return
 	}
@@ -177,6 +560,9 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 	result.Snapshot.ConsoleEntries = scrubSensitiveConsoleEntries(result.Snapshot.ConsoleEntries, config)
 	result.Snapshot.NetworkEntries = scrubSensitiveNetworkEntries(result.Snapshot.NetworkEntries, config)
 	result.Snapshot.DOMSummary = scrubSensitiveDOMSummary(result.Snapshot.DOMSummary, config)
+	if config.HasRuntimeSecretMaterial() {
+		result.Snapshot.ScreenshotBase64 = ""
+	}
 }
 
 // scrubSensitiveResultMetadata covers the scalar dimensions copied into live
@@ -186,6 +572,8 @@ func scrubSensitiveResultWithOptions(result *protocol.Result, config *RedactionC
 // identifier survive an otherwise valid custom redaction policy.
 func scrubSensitiveResultMetadata(result *protocol.Result, config *RedactionConfig) {
 	result.ActionName = scrubSensitiveTextWithConfig(result.ActionName, config)
+	result.SampleKind = scrubSensitiveTextWithConfig(result.SampleKind, config)
+	result.ParentActionName = scrubSensitiveTextWithConfig(result.ParentActionName, config)
 	result.Group = scrubSensitiveTextWithConfig(result.Group, config)
 	result.Region = scrubSensitiveTextWithConfig(result.Region, config)
 	result.CorrelationID = scrubSensitiveTextWithConfig(result.CorrelationID, config)
@@ -197,6 +585,10 @@ func scrubSensitiveResultMetadata(result *protocol.Result, config *RedactionConf
 	result.SourceActionName = scrubSensitiveTextWithConfig(result.SourceActionName, config)
 	result.SourceTransaction = scrubSensitiveTextWithConfig(result.SourceTransaction, config)
 	result.SourceProfile = scrubSensitiveTextWithConfig(result.SourceProfile, config)
+	result.SourcePath = scrubSensitiveTextWithConfig(result.SourcePath, config)
+	result.SourceUID = scrubSensitiveTextWithConfig(result.SourceUID, config)
+	result.RequestType = scrubSensitiveTextWithConfig(result.RequestType, config)
+	result.OperationKind = scrubSensitiveTextWithConfig(result.OperationKind, config)
 
 	if result.ClientMetrics != nil {
 		result.ClientMetrics.DeviceProfile = scrubSensitiveTextWithConfig(result.ClientMetrics.DeviceProfile, config)
@@ -214,7 +606,7 @@ func scrubSensitiveResultMetadata(result *protocol.Result, config *RedactionConf
 	}
 }
 
-// scrubSensitiveStructuredResult runs before the first bounded projection. It
+// scrubSensitiveStructuredResult runs before the bounded projection. It
 // handles key-aware extraction values and typed/heterogeneous adapter evidence
 // that the generic evidence bounder cannot otherwise preserve safely. Runtime
 // variables have already received the raw extraction values at this point.
@@ -222,7 +614,6 @@ func scrubSensitiveStructuredResult(result *protocol.Result, config *RedactionCo
 	if result == nil {
 		return
 	}
-	result.Extractions = boundedResultStringMap(result.Extractions, maxResultExtractions, maxResultExtractionBytes)
 	result.Extractions = scrubSensitiveExtractions(result.Extractions, config)
 	result.ProtocolEvidence = scrubSensitiveEvidenceMap(result.ProtocolEvidence, config)
 }
@@ -275,7 +666,12 @@ func scrubSensitiveEvidenceMap(input map[string]any, config *RedactionConfig) ma
 	if len(input) == 0 {
 		return input
 	}
-	builtIn, _ := scrub.Structured(input, scrub.Policy{}).(map[string]any)
+	// Apply exact runtime variants before the generic structured scrubber. A
+	// high-entropy pre-pass can otherwise redact only the unpadded portion of a
+	// base64 value, preventing the exact composite variant from matching while
+	// leaving encoding punctuation behind.
+	runtimeSafe, _ := scrubRuntimeSecretEvidenceValue(input, config).(map[string]any)
+	builtIn, _ := scrub.Structured(runtimeSafe, scrub.Policy{}).(map[string]any)
 	if len(builtIn) == 0 {
 		return nil
 	}
@@ -283,6 +679,36 @@ func scrubSensitiveEvidenceMap(input map[string]any, config *RedactionConfig) ma
 		builtIn[key] = scrubSensitiveEvidenceValue(value, config)
 	}
 	return builtIn
+}
+
+func scrubRuntimeSecretEvidenceValue(value any, config *RedactionConfig) any {
+	if config == nil || len(config.secretReplacers) == 0 {
+		return value
+	}
+	switch typed := value.(type) {
+	case string:
+		return scrubRuntimeSecretText(typed, config)
+	case []any:
+		out := make([]any, len(typed))
+		for index := range typed {
+			out[index] = scrubRuntimeSecretEvidenceValue(typed[index], config)
+		}
+		return out
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		for key, entry := range typed {
+			out[key] = scrubRuntimeSecretEvidenceValue(entry, config)
+		}
+		return out
+	case map[string]string:
+		out := make(map[string]string, len(typed))
+		for key, entry := range typed {
+			out[key] = scrubRuntimeSecretText(entry, config)
+		}
+		return out
+	default:
+		return value
+	}
 }
 
 func scrubSensitiveEvidenceValue(value any, config *RedactionConfig) any {
@@ -354,7 +780,11 @@ func scrubSensitiveTextWithConfig(value string, config *RedactionConfig) string 
 		return value
 	}
 
-	redacted := value
+	// Exact runtime values and their reversible encodings must run first.
+	// Generic credential regexes can otherwise rewrite only a prefix (for
+	// example, at an escaped JSON quote) and prevent the exact matcher from
+	// finding the remaining secret.
+	redacted := scrubRuntimeSecretText(value, config)
 	for _, pattern := range payloadRedactionPatterns {
 		redacted = pattern.re.ReplaceAllString(redacted, pattern.repl)
 	}
@@ -363,6 +793,7 @@ func scrubSensitiveTextWithConfig(value string, config *RedactionConfig) string 
 			redacted = pattern.re.ReplaceAllString(redacted, pattern.repl)
 		}
 	}
+	redacted = scrubRuntimeSecretText(redacted, config)
 	redacted = highEntropyTokenPattern.ReplaceAllStringFunc(redacted, func(candidate string) string {
 		if !looksSensitiveToken(candidate) {
 			return candidate
@@ -370,6 +801,50 @@ func scrubSensitiveTextWithConfig(value string, config *RedactionConfig) string 
 		return redactedPayloadValue
 	})
 	return scrub.Value(redacted, scrub.Policy{})
+}
+
+func scrubRuntimeSecretText(value string, config *RedactionConfig) string {
+	if config == nil {
+		return value
+	}
+	for _, replacer := range config.secretReplacers {
+		value = replacer.Replace(value)
+	}
+	return expandRuntimeSecretPlaceholders(value)
+}
+
+func expandRuntimeSecretPlaceholders(value string) string {
+	if !strings.ContainsRune(value, '\x00') {
+		return value
+	}
+	// Preserve the public [REDACTED] contract for ordinary matches, but cap
+	// growth to one marker beyond the original evidence size. Once that budget
+	// would be exceeded, a same-width opaque run remains fail-closed without
+	// causing replacement amplification.
+	maxOutput := len(value) + len(redactedPayloadValue)
+	var out strings.Builder
+	out.Grow(min(maxOutput, len(value)+len(redactedPayloadValue)))
+	for offset := 0; offset < len(value); {
+		index := strings.IndexByte(value[offset:], 0)
+		if index < 0 {
+			out.WriteString(value[offset:])
+			break
+		}
+		index += offset
+		out.WriteString(value[offset:index])
+		end := index + 1
+		for end < len(value) && value[end] == 0 {
+			end++
+		}
+		remaining := len(value) - end
+		if out.Len()+len(redactedPayloadValue)+remaining <= maxOutput {
+			out.WriteString(redactedPayloadValue)
+		} else {
+			out.WriteString(strings.Repeat("*", end-index))
+		}
+		offset = end
+	}
+	return out.String()
 }
 
 func looksSensitiveToken(value string) bool {

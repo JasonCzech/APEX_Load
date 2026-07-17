@@ -187,7 +187,7 @@ func (tr *TestRunner) failInterruptedParallelExecutionPlanRun(run *storage.Execu
 				failedCount++
 				continue
 			}
-			req, err := buildPlanEntryCreateRequest(entry.RunName, run.ProjectID, nil, executionPlanEntryFromRunEntry(*entry))
+			req, err := buildPlanEntryCreateRequest(entry.RunName, run.ProjectID, nil, executionPlanEntryFromRunEntry(*entry), executionPlanRunEntryCreationActor(*entry))
 			if err == nil {
 				req.MaterializationKey = entry.MaterializationKey
 				req.ExecutionPlanApproval = approval
@@ -336,6 +336,7 @@ func (tr *TestRunner) rehydrateSequentialExecutionPlanRun(run *storage.Execution
 	if len(statuses) > 0 {
 		st.attribSubject = statuses[0].AttribSubject
 		st.attribName = statuses[0].AttribName
+		st.creationActor = executionPlanRunEntryCreationActor(statuses[0])
 		if approvalID := strings.TrimSpace(statuses[0].ApprovalID); approvalID != "" && tr.execPlanScheduleStore != nil {
 			approval, err := tr.execPlanScheduleStore.GetExecutionPlanApproval(approvalID)
 			if err != nil {
@@ -571,7 +572,7 @@ func (tr *TestRunner) materializeRecoveredSequentialTest(action sequentialPlanRe
 	if err := tr.validateExecutionPlanApprovalMaterialization(planID, action.runID, approval); err != nil {
 		return nil, err
 	}
-	req, err := buildPlanEntryCreateRequest(snapshot.RunName, projectID, nil, executionPlanEntryFromRunEntry(snapshot))
+	req, err := buildPlanEntryCreateRequest(snapshot.RunName, projectID, nil, executionPlanEntryFromRunEntry(snapshot), executionPlanRunEntryCreationActor(snapshot))
 	if err != nil {
 		return nil, err
 	}

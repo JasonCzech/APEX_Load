@@ -12,6 +12,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 type GeneratorEvacuationImpact struct {
@@ -326,7 +327,7 @@ func (b *distributedExecutionBackend) EvacuateGenerator(tr *TestRunner, test *Ma
 		return impacts, fmt.Errorf("generator evacuation refused: %s", strings.Join(refused, "; "))
 	}
 
-	openedStreams, newlyAssigned, touchedTargets, rollback, err := b.applyEvacuationShardAdjustments(executionCtx, remoteLifecycleCtx, test, testID, executionGeneration, remainingDuration, steadyElapsed, startPaused, groupByName, clientsByTarget, streamsByTarget, shardsByGroup, nextByGroup, target)
+	openedStreams, newlyAssigned, touchedTargets, rollback, err := b.applyEvacuationShardAdjustments(executionCtx, remoteLifecycleCtx, tr, test, testID, executionGeneration, remainingDuration, steadyElapsed, startPaused, groupByName, clientsByTarget, streamsByTarget, shardsByGroup, nextByGroup, target)
 	if err != nil {
 		var uncertain *distributedEvacuationUncertainError
 		if errors.As(err, &uncertain) {
@@ -614,7 +615,7 @@ func generatorSupportsEvacuationAssignmentState(snapshot generatorLoadSnapshot) 
 	return snapshot.HeartbeatOK && stringSliceContainsEqualFold(snapshot.CompatibleFeatures, generatorrpc.FeatureEvacuationAssignmentStateV1)
 }
 
-func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent context.Context, metricsParent context.Context, managedTest *ManagedTest, testID string, executionGeneration uint64, remainingDuration time.Duration, steadyElapsed time.Duration, startPaused bool, groups map[string]TestGroup, clients map[string]generatorClient, streams map[string]*generatorrpc.MetricsStream, previousByGroup map[string][]GeneratorShardSummary, nextByGroup map[string][]GeneratorShardSummary, evacuatedTarget string) (map[string]*generatorrpc.MetricsStream, map[string]map[string]struct{}, map[string]struct{}, func() error, error) {
+func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent context.Context, metricsParent context.Context, tr *TestRunner, managedTest *ManagedTest, testID string, executionGeneration uint64, remainingDuration time.Duration, steadyElapsed time.Duration, startPaused bool, groups map[string]TestGroup, clients map[string]generatorClient, streams map[string]*generatorrpc.MetricsStream, previousByGroup map[string][]GeneratorShardSummary, nextByGroup map[string][]GeneratorShardSummary, evacuatedTarget string) (map[string]*generatorrpc.MetricsStream, map[string]map[string]struct{}, map[string]struct{}, func() error, error) {
 	if parent == nil {
 		parent = context.Background()
 	}
@@ -708,6 +709,29 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 				if !ok || group.script == nil {
 					return fail(fmt.Errorf("group %q has no compiled script for evacuation", groupName))
 				}
+				runSecrets, found := tr.distributedRunSecretSnapshot(managedTest, groupName)
+				if !found {
+					names, inspectErr := engine.ReferencedSecretNames(group.script)
+					if inspectErr != nil {
+						return fail(fmt.Errorf("inspect evacuation secrets for group %q", groupName))
+					}
+					if len(names) > 0 {
+						return fail(fmt.Errorf("run secret snapshot for group %q is unavailable; fail closed and restart the saved test", groupName))
+					}
+				}
+				secretBundle := runSecrets.Values
+				if err := validateDistributedSecretTransport(secretBundle); err != nil {
+					return fail(fmt.Errorf("prepare evacuation secrets for group %q: %w", groupName, err))
+				}
+				secretBundleID := runSecrets.ID
+				if len(secretBundle) > 0 {
+					ctx, cancel := context.WithTimeout(parent, b.timeout)
+					snapshot := b.probeGeneratorLoad(ctx, shard.Target, client)
+					cancel()
+					if err := validateDistributedSecretTarget(shard.Target, snapshot, secretBundle); err != nil {
+						return fail(fmt.Errorf("prepare evacuation secrets for group %q: %w", groupName, err))
+					}
+				}
 				if _, ok := client.(coordinatedWorkCommitClient); !ok {
 					return fail(fmt.Errorf("generator %q does not support staged evacuation commit", shard.Target))
 				}
@@ -749,6 +773,8 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 					StartPaused:           startPaused,
 					DataFiles:             dataFiles,
 					RedactionRules:        cloneRedactionRules(group.redactionRules),
+					SecretBundle:          secretBundle,
+					SecretBundleID:        secretBundleID,
 				})
 				cancel()
 				if assignErr != nil || !assignment.Accepted {
@@ -1068,6 +1094,7 @@ func (b *distributedExecutionBackend) detachEvacuationResources(tr *TestRunner, 
 		test.remoteTargetStates = nil
 		test.remoteActivated = false
 		test.remoteActivationPending = false
+		clearDistributedRunSecretSnapshotsLocked(test)
 		test.remoteControlGeneration++
 	}
 	tr.mu.Unlock()

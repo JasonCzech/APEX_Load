@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
@@ -51,9 +52,6 @@ func planHARArtifactRetention(now time.Time, settings ArchiveRetentionSettings) 
 }
 
 func planHARArtifactRetentionLimit(now time.Time, settings ArchiveRetentionSettings, limit int) []HARArtifactPruneCandidate {
-	if !settings.Enabled {
-		return nil
-	}
 	if limit <= 0 {
 		return nil
 	}
@@ -61,9 +59,13 @@ func planHARArtifactRetentionLimit(now time.Time, settings ArchiveRetentionSetti
 	if retentionDays <= 0 {
 		retentionDays = defaultHARRetentionDays
 	}
-	retention, ok := checkedDuration(retentionDays, 24*time.Hour)
-	if !ok || retention <= 0 {
-		return nil
+	retention := time.Duration(0)
+	if settings.Enabled {
+		var ok bool
+		retention, ok = checkedDuration(retentionDays, 24*time.Hour)
+		if !ok || retention <= 0 {
+			return nil
+		}
 	}
 	dir := strings.TrimSpace(settings.HARArtifactDir)
 	if dir == "" {
@@ -94,16 +96,28 @@ func planHARArtifactRetentionLimit(now time.Time, settings ArchiveRetentionSetti
 			if err != nil || info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() {
 				continue
 			}
-			expiredAt := info.ModTime().Add(retention)
-			if now.Before(expiredAt) {
+			path := filepath.Join(dir, entry.Name())
+			rawWorkingFile := strings.HasSuffix(entry.Name(), harArtifactTempSuffix)
+			if rawWorkingFile && browserprotocol.RuntimeHARWorkingPathActive(path) {
 				continue
 			}
-			path := filepath.Join(dir, entry.Name())
+			if !rawWorkingFile && !settings.Enabled {
+				continue
+			}
+			expiredAt := info.ModTime()
+			candidateRetentionDays := 0
+			if !rawWorkingFile {
+				expiredAt = info.ModTime().Add(retention)
+				candidateRetentionDays = retentionDays
+				if now.Before(expiredAt) {
+					continue
+				}
+			}
 			candidates = append(candidates, HARArtifactPruneCandidate{
 				Path:          path,
 				Sensitivity:   harArtifactSensitivity(entry.Name()),
 				SizeBytes:     info.Size(),
-				RetentionDays: retentionDays,
+				RetentionDays: candidateRetentionDays,
 				ModifiedAt:    info.ModTime().UTC(),
 				ExpiredAt:     expiredAt.UTC(),
 				identity:      info,
@@ -156,6 +170,9 @@ func removeHARArtifactCandidate(candidate HARArtifactPruneCandidate) error {
 	name := filepath.Base(path)
 	if path == "." || !isHARArtifactName(name) || candidate.identity == nil {
 		return fmt.Errorf("HAR retention candidate is incomplete")
+	}
+	if strings.HasSuffix(name, harArtifactTempSuffix) && browserprotocol.RuntimeHARWorkingPathActive(path) {
+		return fmt.Errorf("HAR working file %q is active", name)
 	}
 	root, err := openArchiveDirectoryNoSymlink(filepath.Dir(path))
 	if err != nil {

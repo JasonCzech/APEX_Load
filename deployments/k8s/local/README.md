@@ -26,6 +26,12 @@ it should apply cleanly on a fresh Docker Desktop cluster with no CRDs.
 - Generator StatefulSet: `apexload-generator`
 - Controller PVC: `apexload-controller-data`
 
+The local controller enables encrypted database-backed Project Secrets with a
+development-only wrapping key embedded in the manifest. Replace it before
+retaining real credentials. Because this local overlay does not provision gRPC
+TLS, secret-bearing distributed runs fail closed; the production Helm, on-prem,
+and AKS deployments provide authenticated TLS delivery.
+
 Audited Kubernetes restart controls are available as an explicit local opt-in
 via [restart-controls.example.yaml](restart-controls.example.yaml). They stay
 disabled and tokenless by default; see

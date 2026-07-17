@@ -182,23 +182,18 @@ func (tr *TestRunner) saveNewManagedTestRecordWithTerm(test *ManagedTest, leaseT
 		} else {
 			result, lastErr = store.CreateTestAndBindCapacityReservation(record, slotID, now)
 		}
-		if lastErr == nil && result == storage.CapacityBindingBound {
-			stored, storedErr := tr.testStore.GetTest(test.ID)
-			reservation, reservationErr := tr.reservationStore.GetCapacityReservation(slotID)
-			if storedErr == nil && reservationErr == nil && sameTestMaterialization(stored, record) && reservation != nil &&
-				reservation.BoundTestID != nil && strings.TrimSpace(*reservation.BoundTestID) == test.ID {
+		if lastErr == nil && (result == storage.CapacityBindingBound || result == storage.CapacityBindingTestExists) {
+			materialized, verifyErr := tr.capacityBindingMaterialized(record, slotID)
+			if materialized {
 				return nil
 			}
-			if storedErr == nil && stored != nil && !sameTestMaterialization(stored, record) {
-				return fmt.Errorf("%w: test %s", errTestIdentityCollision, test.ID)
+			if errors.Is(verifyErr, errTestIdentityCollision) {
+				return verifyErr
 			}
-			lastErr = errors.Join(storedErr, reservationErr)
-		} else if lastErr == nil && result == storage.CapacityBindingTestExists {
-			stored, lookupErr := tr.testStore.GetTest(test.ID)
-			if lookupErr == nil && !sameTestMaterialization(stored, record) {
-				return fmt.Errorf("%w: test %s", errTestIdentityCollision, test.ID)
+			lastErr = verifyErr
+			if lastErr == nil {
+				lastErr = capacityBindingResultError(result)
 			}
-			lastErr = capacityBindingResultError(result)
 		} else if lastErr == nil {
 			lastErr = capacityBindingResultError(result)
 		}
@@ -207,6 +202,27 @@ func (tr *TestRunner) saveNewManagedTestRecordWithTerm(test *ManagedTest, leaseT
 		}
 	}
 	return fmt.Errorf("bind timeslot and persist test: %w", lastErr)
+}
+
+// capacityBindingMaterialized verifies the full durable outcome after either a
+// successful create-and-bind result or an idempotent retry that finds the test
+// already present. This makes a retry safe when the original transaction
+// committed but its response was lost: the durable test identity and the
+// reservation ownership must both match before creation is treated as complete.
+func (tr *TestRunner) capacityBindingMaterialized(intended *storage.TestRecord, slotID string) (bool, error) {
+	stored, storedErr := tr.testStore.GetTest(intended.ID)
+	reservation, reservationErr := tr.reservationStore.GetCapacityReservation(slotID)
+	if storedErr == nil && stored != nil && !sameTestMaterialization(stored, intended) {
+		return false, fmt.Errorf("%w: test %s", errTestIdentityCollision, intended.ID)
+	}
+	if storedErr != nil || reservationErr != nil {
+		return false, errors.Join(storedErr, reservationErr)
+	}
+	if stored == nil || reservation == nil || !sameTestMaterialization(stored, intended) ||
+		reservation.BoundTestID == nil || strings.TrimSpace(*reservation.BoundTestID) != intended.ID {
+		return false, fmt.Errorf("test %s and timeslot %s were not durably materialized together", intended.ID, slotID)
+	}
+	return true, nil
 }
 
 func sameTestMaterialization(stored, intended *storage.TestRecord) bool {

@@ -54,7 +54,7 @@ func (s *Server) handleImportDevWeb(w http.ResponseWriter, r *http.Request) {
 	protocolCompat := buildDevWebProtocolCompatReport(result)
 	persistProtocolCompatReport(result.Script, "devweb", protocolCompat)
 
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
 		Warnings:            result.Warnings,
@@ -90,7 +90,7 @@ func (s *Server) handleImportK6(w http.ResponseWriter, r *http.Request) {
 	if issues := validateScript(result.Script); len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
 		Warnings:            result.Warnings,

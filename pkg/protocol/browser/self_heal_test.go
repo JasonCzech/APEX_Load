@@ -1,9 +1,12 @@
 package browser
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -165,6 +168,56 @@ func TestSelectorSelfHealBudgetSpentIncludesProbeFailures(t *testing.T) {
 	stats := selectorSelfHealStats{Attempts: 1, ProbeFailures: 2}
 	if got := stats.budgetSpent(); got != 3 {
 		t.Fatalf("budgetSpent = %d, want 3", got)
+	}
+}
+
+func TestRecordSelfHealRedactsRuntimeSecretSelectors(t *testing.T) {
+	const secret = "short-source-secret"
+
+	b := &Browser{}
+	b.SetRuntimeTextRedactor(func(value string) string {
+		return strings.ReplaceAll(value, secret, "[REDACTED]")
+	})
+	action := &protocol.Action{
+		Name:             "Click account",
+		Selector:         `[data-token='` + secret + `']`,
+		RedactedSelector: `[data-token='[REDACTED]']`,
+	}
+	result := &protocol.Result{}
+
+	var logBuf bytes.Buffer
+	previous := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuf, nil)))
+	defer slog.SetDefault(previous)
+
+	b.recordSelfHeal(
+		action,
+		result,
+		action.Selector,
+		`#fallback-`+secret,
+		selector.Candidate{Kind: "css", Confidence: 95},
+		selectorSelfHealStats{Attempts: 1},
+	)
+	failedResult := &protocol.Result{}
+	b.recordSelfHealMetrics(action, failedResult, action.Selector, false, selectorSelfHealStats{})
+
+	evidence, err := json.Marshal(map[string]any{
+		"successful_heal": result.ProtocolEvidence,
+		"failed_heal":     failedResult.ProtocolEvidence,
+	})
+	if err != nil {
+		t.Fatalf("marshal self-heal evidence: %v", err)
+	}
+	for label, value := range map[string]string{
+		"log":      logBuf.String(),
+		"evidence": string(evidence),
+	} {
+		if strings.Contains(value, secret) {
+			t.Fatalf("%s leaked runtime selector secret: %s", label, value)
+		}
+		if !strings.Contains(value, "[REDACTED]") {
+			t.Fatalf("%s missing redaction marker: %s", label, value)
+		}
 	}
 }
 

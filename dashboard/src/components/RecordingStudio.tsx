@@ -6,7 +6,11 @@ import { API_ORIGIN, apiFetch, trimTrailingSlash } from '../hooks/apiClient'
 import { type BrowserRecorderAvailability, type BrowserRecorderSession } from '../hooks/api/useBrowserRecorderApi'
 import { isWailsLocation } from '../desktop/desktopBridge'
 import { Project, type StoredScript } from '../types'
-import { type RecorderImportResult, type SalesforceImportResult } from '../types/scriptImports'
+import {
+  type RecorderImportResult,
+  type SalesforceImportResult,
+  type SecretBindingSelection,
+} from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import {
   composeHttpURL,
@@ -22,6 +26,11 @@ import {
   platformLabel,
 } from './clientDownloadPlatforms'
 import PageViewToggle from './PageViewToggle'
+import ParameterizationReview from './ParameterizationReview'
+import SecretBindingReview, {
+  type PreparedSecretBindings,
+  type SecretBindingReviewHandle,
+} from './SecretBindingReview'
 import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import {
@@ -438,6 +447,41 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   const [recordingAgentChecksumStatus, setRecordingAgentChecksumStatus] = useState('')
   const convertTask = useAsyncTask<RecorderImportResult>()
   const salesforceTask = useAsyncTask<SalesforceImportResult>()
+  const convertedCredentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
+  const salesforceCredentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
+  const convertedReviewGenerationRef = useRef(0)
+  const salesforceReviewGenerationRef = useRef(0)
+  const [convertedReviewGeneration, setConvertedReviewGeneration] = useState(0)
+  const [salesforceReviewGeneration, setSalesforceReviewGeneration] = useState(0)
+  const advanceConvertedReviewGeneration = useCallback(() => {
+    const next = convertedReviewGenerationRef.current + 1
+    convertedReviewGenerationRef.current = next
+    setConvertedReviewGeneration(next)
+    return next
+  }, [])
+  const advanceSalesforceReviewGeneration = useCallback(() => {
+    const next = salesforceReviewGenerationRef.current + 1
+    salesforceReviewGenerationRef.current = next
+    setSalesforceReviewGeneration(next)
+    return next
+  }, [])
+  const convertedPreparedScriptRef = useRef<ScriptDefinition | null>(null)
+  const salesforcePreparedScriptRef = useRef<ScriptDefinition | null>(null)
+  // A conversion can be launched directly from any session card without
+  // selecting that session in the request-detail panel. Keep provenance with
+  // the review result instead of deriving it later from selectedSession.
+  const convertedSourceRecordingSessionIDRef = useRef<string | null>(null)
+  const salesforceSourceRecordingSessionIDRef = useRef<string | null>(null)
+  const [convertedPreparedSecrets, setConvertedPreparedSecrets] = useState<PreparedSecretBindings | null>(null)
+  const [salesforcePreparedSecrets, setSalesforcePreparedSecrets] = useState<PreparedSecretBindings | null>(null)
+  const [convertedParameterizationApplying, setConvertedParameterizationApplying] = useState(false)
+  const [salesforceParameterizationApplying, setSalesforceParameterizationApplying] = useState(false)
+  const [convertedCredentialActionInProgress, setConvertedCredentialActionInProgress] = useState(false)
+  const [salesforceCredentialActionInProgress, setSalesforceCredentialActionInProgress] = useState(false)
+  const convertedSaveInFlightRef = useRef(false)
+  const salesforceSaveInFlightRef = useRef(false)
+  const [convertedSaveInProgress, setConvertedSaveInProgress] = useState(false)
+  const [salesforceSaveInProgress, setSalesforceSaveInProgress] = useState(false)
   const resetConvertTask = convertTask.reset
   const resetSalesforceTask = salesforceTask.reset
   const refreshInFlightRef = useRef<{ projectId?: string; request: Promise<void> } | null>(null)
@@ -725,6 +769,8 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   }, [api, activeProject?.id])
 
   useLayoutEffect(() => {
+    void convertedCredentialReviewRef.current?.discardSourceSession()
+    void salesforceCredentialReviewRef.current?.discardSourceSession()
     if (feedbackTimerRef.current !== null) {
       window.clearTimeout(feedbackTimerRef.current)
       feedbackTimerRef.current = null
@@ -736,9 +782,17 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
     setBrowserSessions([])
     setBrowserPanelSessionId(null)
     setFeedback('')
+    setConvertedParameterizationApplying(false)
+    setSalesforceParameterizationApplying(false)
+    setConvertedCredentialActionInProgress(false)
+    setSalesforceCredentialActionInProgress(false)
+    advanceConvertedReviewGeneration()
+    advanceSalesforceReviewGeneration()
     resetConvertTask()
     resetSalesforceTask()
-  }, [activeProject?.id, resetConvertTask, resetSalesforceTask])
+    convertedSourceRecordingSessionIDRef.current = null
+    salesforceSourceRecordingSessionIDRef.current = null
+  }, [activeProject?.id, advanceConvertedReviewGeneration, advanceSalesforceReviewGeneration, resetConvertTask, resetSalesforceTask])
 
   useEffect(() => {
     void refresh()
@@ -748,6 +802,8 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
 
   useEffect(() => () => {
     if (feedbackTimerRef.current !== null) window.clearTimeout(feedbackTimerRef.current)
+    void convertedCredentialReviewRef.current?.discardSourceSession()
+    void salesforceCredentialReviewRef.current?.discardSourceSession()
   }, [])
 
   useEffect(() => {
@@ -1031,6 +1087,12 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
 
   const handlePreviewConversion = async (session: RecordingSession) => {
     try {
+      setConvertedParameterizationApplying(false)
+      setConvertedCredentialActionInProgress(false)
+      advanceConvertedReviewGeneration()
+      convertedPreparedScriptRef.current = null
+      convertedSourceRecordingSessionIDRef.current = session.id
+      setConvertedPreparedSecrets(null)
       const result = await convertTask.run(
         () => api.previewRecordingConversion(session.id, session.name, parameterizeInputs),
         { clearValue: true },
@@ -1062,6 +1124,12 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
 
   const handleReviewSalesforceSession = async (session: RecordingSession) => {
     try {
+      setSalesforceParameterizationApplying(false)
+      setSalesforceCredentialActionInProgress(false)
+      advanceSalesforceReviewGeneration()
+      salesforcePreparedScriptRef.current = null
+      salesforceSourceRecordingSessionIDRef.current = session.id
+      setSalesforcePreparedSecrets(null)
       const result = await salesforceTask.run(async () => {
         const res = await apiFetch(`/recorder/${session.id}/export?format=har`)
         if (!res.ok) {
@@ -1085,12 +1153,18 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
 
   const handleConvert = async (session: RecordingSession) => {
     try {
+      setConvertedParameterizationApplying(false)
+      setConvertedCredentialActionInProgress(false)
+      advanceConvertedReviewGeneration()
+      convertedPreparedScriptRef.current = null
+      convertedSourceRecordingSessionIDRef.current = session.id
+      setConvertedPreparedSecrets(null)
       const result = await convertTask.run(
-        () => api.convertRecording(session.id, session.name, parameterizeInputs),
+        () => api.previewRecordingConversion(session.id, session.name, parameterizeInputs),
         { clearValue: true },
       )
       if (!isCurrentProject()) return
-      showFeedback(`Script "${result.script?.name || session.name}" created with ${result.correlations?.length || 0} correlations detected`)
+      showFeedback(`Script draft "${result.script?.name || session.name}" is ready with ${result.correlations?.length || 0} correlations detected`)
     } catch (e: any) {
       if (isCurrentProject()) showFeedback(e.message, 'error')
     }
@@ -1104,59 +1178,197 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
     return attachImportCorrelationSuggestions(script, 'recorder', convertTask.value?.correlations)
   }
 
-  const handleEditConvertedScript = () => {
+  const handleApplyConvertedSecretBindings = async (bindings: SecretBindingSelection[]) => {
+    const result = convertTask.value
     const script = buildReviewedScript()
-    if (!script) {
-      return
+    if (!result || !script) return
+    const sourceGeneration = convertedReviewGenerationRef.current
+    const sourceProjectId = refreshScopeRef.current.projectId
+    const resolved = await api.applySecretBindings({ script, bindings })
+    if (convertedReviewGenerationRef.current !== sourceGeneration || refreshScopeRef.current.projectId !== sourceProjectId) {
+      throw new Error('The recording conversion changed while credentials were being prepared. Review the current draft and try again.')
     }
-    onEdit?.(script)
+    const preparedScript = attachImportCorrelationSuggestions(resolved.script, 'recorder', result.correlations)
+    convertedPreparedScriptRef.current = preparedScript
+    convertTask.setValue({
+      ...result,
+      script: preparedScript,
+      scripts: result.scripts?.length
+        ? result.scripts.map((entry, index) => index === 0 ? preparedScript : entry)
+        : [preparedScript],
+      secret_binding_requirements: resolved.secret_binding_requirements,
+    })
+  }
+
+  const handleApplyConvertedParameterization = (parameterizedScript: ScriptDefinition) => {
+    const result = convertTask.value
+    if (!result) return
+    convertedCredentialReviewRef.current?.preserveEditsForNextReviewGeneration()
+    advanceConvertedReviewGeneration()
+    const preparedScript = attachImportCorrelationSuggestions(parameterizedScript, 'recorder', result.correlations)
+    convertedPreparedScriptRef.current = null
+    convertTask.setValue({
+      ...result,
+      script: preparedScript,
+      scripts: result.scripts?.length
+        ? result.scripts.map((entry, index) => index === 0 ? preparedScript : entry)
+        : [preparedScript],
+    })
+  }
+
+  const prepareConvertedScript = async (): Promise<ScriptDefinition | null> => {
+    const requirements = convertTask.value?.secret_binding_requirements || []
+    if (requirements.length === 0) return buildReviewedScript()
+    const sourceGeneration = convertedReviewGenerationRef.current
+    const sourceProjectId = refreshScopeRef.current.projectId
+    convertedPreparedScriptRef.current = null
+    const committed = await convertedCredentialReviewRef.current?.commit()
+    return committed
+      && convertedReviewGenerationRef.current === sourceGeneration
+      && refreshScopeRef.current.projectId === sourceProjectId
+      ? convertedPreparedScriptRef.current
+      : null
+  }
+
+  const handleEditConvertedScript = async () => {
+    if (convertedCredentialActionInProgress) return
+    setConvertedCredentialActionInProgress(true)
+    try {
+      const script = await prepareConvertedScript()
+      if (script) onEdit?.(script)
+    } finally {
+      setConvertedCredentialActionInProgress(false)
+    }
   }
 
   const handleSaveConvertedScript = async () => {
-    const script = buildReviewedScript()
-    if (!script) {
-      const stored = recorderImportStoredScript(convertTask.value)
-      if (stored) {
-        onImported?.({ scripts: [stored] })
-        showFeedback(`Script "${stored.name}" is already in the script library`)
-      }
-      return
-    }
+    if (convertedSaveInFlightRef.current) return
+    convertedSaveInFlightRef.current = true
+    setConvertedSaveInProgress(true)
+    const sourceGeneration = convertedReviewGenerationRef.current
+    const sourceProjectId = refreshScopeRef.current.projectId
+    const sourceRecordingSessionId = convertedSourceRecordingSessionIDRef.current || undefined
+    const requestIsCurrent = () => (
+      convertedReviewGenerationRef.current === sourceGeneration
+      && refreshScopeRef.current.projectId === sourceProjectId
+    )
     try {
+      const hasSecretRequirements = (convertTask.value?.secret_binding_requirements?.length || 0) > 0
+      const script = await prepareConvertedScript()
+      if (!requestIsCurrent()) return
+      if (!script) {
+        if (hasSecretRequirements) return
+        const stored = recorderImportStoredScript(convertTask.value)
+        if (stored) {
+          onImported?.({ scripts: [stored] })
+          showFeedback(`Script "${stored.name}" is already in the script library`)
+        }
+        return
+      }
       const stored = recorderImportStoredScript(convertTask.value)
       if (stored) {
         onImported?.({ scripts: [withFallbackPersistedScript(stored, script)] })
         showFeedback(`Script "${stored.name}" is already in the script library`)
         return
       }
-      const savedScript = await api.createScript(script, activeProject?.id)
-      if (!isCurrentProject()) return
+      const savedScript = await api.createScript(script, sourceProjectId, undefined, sourceRecordingSessionId)
+      if (!requestIsCurrent()) return
       showFeedback(`Script "${script.name}" created with ${convertTask.value?.correlations?.length || 0} correlations detected`)
       onImported?.({ scripts: [withFallbackPersistedScript(savedScript, script)] })
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, 'error')
+      if (requestIsCurrent()) showFeedback(e.message, 'error')
+    } finally {
+      convertedSaveInFlightRef.current = false
+      setConvertedSaveInProgress(false)
     }
   }
 
-  const handleEditSalesforceScript = () => {
-    const script = salesforceTask.value?.script || salesforceTask.value?.scripts?.[0]
-    if (script) {
-      onEdit?.(script)
+  const handleApplySalesforceSecretBindings = async (bindings: SecretBindingSelection[]) => {
+    const result = salesforceTask.value
+    const script = result?.script || result?.scripts?.[0]
+    if (!result || !script) return
+    const sourceGeneration = salesforceReviewGenerationRef.current
+    const sourceProjectId = refreshScopeRef.current.projectId
+    const resolved = await api.applySecretBindings({ script, bindings })
+    if (salesforceReviewGenerationRef.current !== sourceGeneration || refreshScopeRef.current.projectId !== sourceProjectId) {
+      throw new Error('The Salesforce draft changed while credentials were being prepared. Review the current draft and try again.')
+    }
+    salesforcePreparedScriptRef.current = resolved.script
+    salesforceTask.setValue({
+      ...result,
+      script: resolved.script,
+      scripts: result.scripts?.length
+        ? result.scripts.map((entry, index) => index === 0 ? resolved.script : entry)
+        : [resolved.script],
+      secret_binding_requirements: resolved.secret_binding_requirements,
+    })
+  }
+
+  const handleApplySalesforceParameterization = (parameterizedScript: ScriptDefinition) => {
+    const result = salesforceTask.value
+    if (!result) return
+    salesforceCredentialReviewRef.current?.preserveEditsForNextReviewGeneration()
+    advanceSalesforceReviewGeneration()
+    salesforcePreparedScriptRef.current = null
+    salesforceTask.setValue({
+      ...result,
+      script: parameterizedScript,
+      scripts: result.scripts?.length
+        ? result.scripts.map((entry, index) => index === 0 ? parameterizedScript : entry)
+        : [parameterizedScript],
+    })
+  }
+
+  const prepareSalesforceScript = async (): Promise<ScriptDefinition | null> => {
+    const result = salesforceTask.value
+    const script = result?.script || result?.scripts?.[0]
+    if (!script) return null
+    if ((result?.secret_binding_requirements?.length || 0) === 0) return script
+    const sourceGeneration = salesforceReviewGenerationRef.current
+    const sourceProjectId = refreshScopeRef.current.projectId
+    salesforcePreparedScriptRef.current = null
+    const committed = await salesforceCredentialReviewRef.current?.commit()
+    return committed
+      && salesforceReviewGenerationRef.current === sourceGeneration
+      && refreshScopeRef.current.projectId === sourceProjectId
+      ? salesforcePreparedScriptRef.current
+      : null
+  }
+
+  const handleEditSalesforceScript = async () => {
+    if (salesforceCredentialActionInProgress) return
+    setSalesforceCredentialActionInProgress(true)
+    try {
+      const script = await prepareSalesforceScript()
+      if (script) onEdit?.(script)
+    } finally {
+      setSalesforceCredentialActionInProgress(false)
     }
   }
 
   const handleSaveSalesforceScript = async () => {
-    const script = salesforceTask.value?.script || salesforceTask.value?.scripts?.[0]
-    if (!script) {
-      return
-    }
+    if (salesforceSaveInFlightRef.current) return
+    salesforceSaveInFlightRef.current = true
+    setSalesforceSaveInProgress(true)
+    const sourceGeneration = salesforceReviewGenerationRef.current
+    const sourceProjectId = refreshScopeRef.current.projectId
+    const sourceRecordingSessionId = salesforceSourceRecordingSessionIDRef.current || undefined
+    const requestIsCurrent = () => (
+      salesforceReviewGenerationRef.current === sourceGeneration
+      && refreshScopeRef.current.projectId === sourceProjectId
+    )
     try {
-      const savedScript = await api.createScript(script, activeProject?.id)
-      if (!isCurrentProject()) return
+      const script = await prepareSalesforceScript()
+      if (!script || !requestIsCurrent()) return
+      const savedScript = await api.createScript(script, sourceProjectId, undefined, sourceRecordingSessionId)
+      if (!requestIsCurrent()) return
       showFeedback(`Salesforce HTTP script "${script.name}" saved to the script library`)
       onImported?.({ scripts: [withFallbackPersistedScript(savedScript, script)] })
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, 'error')
+      if (requestIsCurrent()) showFeedback(e.message, 'error')
+    } finally {
+      salesforceSaveInFlightRef.current = false
+      setSalesforceSaveInProgress(false)
     }
   }
 
@@ -1182,9 +1394,27 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
   const convertedStoredScript = recorderImportStoredScript(convertResult)
   const convertedReviewScript = recorderImportReviewScript(convertResult)
   const convertedScript = convertedReviewScript || convertedStoredScript
+  const convertedSecretRequirements = convertResult?.secret_binding_requirements || []
+  const convertedCredentialsValid = convertedSecretRequirements.length === 0 || convertedPreparedSecrets?.valid === true
+  const convertedDeferredSecretCount = convertedPreparedSecrets?.configureLaterCount ??
+    new Set(convertedSecretRequirements.map(requirement => requirement.suggested_name)).size
+  const convertedSaveLabel = convertedSaveInProgress
+    ? 'Saving...'
+    : convertedDeferredSecretCount > 0
+      ? `Save with ${convertedDeferredSecretCount} ${convertedDeferredSecretCount === 1 ? 'secret' : 'secrets'} to configure`
+      : 'Save To Script Library'
   const converting = convertTask.pending
   const salesforceResult = salesforceTask.value
   const salesforceScript = salesforceResult?.script || salesforceResult?.scripts?.[0]
+  const salesforceSecretRequirements = salesforceResult?.secret_binding_requirements || []
+  const salesforceCredentialsValid = salesforceSecretRequirements.length === 0 || salesforcePreparedSecrets?.valid === true
+  const salesforceDeferredSecretCount = salesforcePreparedSecrets?.configureLaterCount ??
+    new Set(salesforceSecretRequirements.map(requirement => requirement.suggested_name)).size
+  const salesforceSaveLabel = salesforceSaveInProgress
+    ? 'Saving...'
+    : salesforceDeferredSecretCount > 0
+      ? `Save with ${salesforceDeferredSecretCount} ${salesforceDeferredSecretCount === 1 ? 'secret' : 'secrets'} to configure`
+      : 'Save To Script Library'
   const reviewingSalesforce = salesforceTask.pending
   const browserUnavailableReason = browserAvailability?.reason?.trim() || ''
   const browserUnavailableCode = browserAvailability?.code?.trim() || ''
@@ -1205,7 +1435,11 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
           <h2>Recording Studio</h2>
           <p className="page-subtitle">Record a browser session and convert it to a test script</p>
         </div>
-        {onClose && <button type="button" className="btn btn-secondary" onClick={onClose}>Back</button>}
+        {onClose && <button type="button" className="btn btn-secondary" onClick={() => {
+          void convertedCredentialReviewRef.current?.discardSourceSession()
+          void salesforceCredentialReviewRef.current?.discardSourceSession()
+          onClose()
+        }}>Back</button>}
       </div>
 
       {feedback && (
@@ -1798,7 +2032,15 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
             <input
               type="checkbox"
               checked={parameterizeInputs}
-              onChange={e => setParameterizeInputs(e.target.checked)}
+              onChange={e => {
+                void convertedCredentialReviewRef.current?.discardSourceSession()
+                advanceConvertedReviewGeneration()
+                resetConvertTask()
+                convertedPreparedScriptRef.current = null
+                convertedSourceRecordingSessionIDRef.current = null
+                setConvertedPreparedSecrets(null)
+                setParameterizeInputs(e.target.checked)
+              }}
             />
             Parameterize input values (promote recorded form/query inputs into a data source)
           </label>
@@ -2005,6 +2247,30 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
       {convertResult && convertedScript && (
         <div className="rec-convert-result">
           <h3 className="rec-section-title">Conversion Result</h3>
+          {convertedSecretRequirements.length > 0 && (
+            <SecretBindingReview
+              ref={convertedCredentialReviewRef}
+              requirements={convertedSecretRequirements}
+              reviewGeneration={`${convertedReviewGeneration}:${activeProject?.id || ''}`}
+              projectId={activeProject?.id}
+              sourceSecretSessionId={convertResult.source_secret_session_id}
+              sourceSecretSessionExpiresAt={convertResult.source_secret_session_expires_at}
+              sourceMigrationAllowed={convertResult.source_secret_migration_allowed}
+              disabled={convertedSaveInProgress || convertedCredentialActionInProgress || convertedParameterizationApplying}
+              onApply={handleApplyConvertedSecretBindings}
+              onPreparedChange={setConvertedPreparedSecrets}
+            />
+          )}
+          {convertResult.parameterization && (convertResult.parameterization.suggestions?.length || 0) > 0 && convertedReviewScript && (
+            <ParameterizationReview
+              parameterization={convertResult.parameterization}
+              script={convertedReviewScript}
+              reviewGeneration={`${convertedReviewGeneration}:${activeProject?.id || ''}`}
+              disabled={convertedSaveInProgress || convertedCredentialActionInProgress}
+              onApplyingChange={setConvertedParameterizationApplying}
+              onApplied={handleApplyConvertedParameterization}
+            />
+          )}
           <div className="rec-result-summary">
             <div className="rec-result-item">
               <span className="rec-result-label">Script</span>
@@ -2020,8 +2286,8 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
             </div>
           </div>
           <div className="rec-result-actions">
-            <button className="btn btn-primary" type="button" onClick={handleSaveConvertedScript}>Save To Script Library</button>
-            {onEdit && <button className="btn btn-secondary" type="button" onClick={handleEditConvertedScript} disabled={!convertedReviewScript}>Open In Visual Editor</button>}
+            <button className="btn btn-primary" type="button" onClick={() => { void handleSaveConvertedScript() }} disabled={!convertedCredentialsValid || convertedSaveInProgress || convertedCredentialActionInProgress || convertedParameterizationApplying}>{convertedSaveLabel}</button>
+            {onEdit && <button className="btn btn-secondary" type="button" onClick={() => { void handleEditConvertedScript() }} disabled={!convertedReviewScript || !convertedCredentialsValid || convertedSaveInProgress || convertedCredentialActionInProgress || convertedParameterizationApplying}>{convertedCredentialActionInProgress ? 'Preparing editor...' : 'Open In Visual Editor'}</button>}
           </div>
 
           {convertResult.correlations && convertResult.correlations.length > 0 && (
@@ -2071,6 +2337,30 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
       {salesforceResult && salesforceScript && (
         <div className="rec-convert-result">
           <h3 className="rec-section-title">Salesforce HTTP Draft</h3>
+          {salesforceSecretRequirements.length > 0 && (
+            <SecretBindingReview
+              ref={salesforceCredentialReviewRef}
+              requirements={salesforceSecretRequirements}
+              reviewGeneration={`${salesforceReviewGeneration}:${activeProject?.id || ''}`}
+              projectId={activeProject?.id}
+              sourceSecretSessionId={salesforceResult.source_secret_session_id}
+              sourceSecretSessionExpiresAt={salesforceResult.source_secret_session_expires_at}
+              sourceMigrationAllowed={salesforceResult.source_secret_migration_allowed}
+              disabled={salesforceSaveInProgress || salesforceCredentialActionInProgress || salesforceParameterizationApplying}
+              onApply={handleApplySalesforceSecretBindings}
+              onPreparedChange={setSalesforcePreparedSecrets}
+            />
+          )}
+          {salesforceResult.parameterization && (salesforceResult.parameterization.suggestions?.length || 0) > 0 && (
+            <ParameterizationReview
+              parameterization={salesforceResult.parameterization}
+              script={salesforceScript}
+              reviewGeneration={`${salesforceReviewGeneration}:${activeProject?.id || ''}`}
+              disabled={salesforceSaveInProgress || salesforceCredentialActionInProgress}
+              onApplyingChange={setSalesforceParameterizationApplying}
+              onApplied={handleApplySalesforceParameterization}
+            />
+          )}
           <div className="rec-result-summary">
             <div className="rec-result-item">
               <span className="rec-result-label">Script</span>
@@ -2086,8 +2376,8 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
             </div>
           </div>
           <div className="rec-result-actions">
-            <button className="btn btn-primary" type="button" onClick={handleSaveSalesforceScript}>Save To Script Library</button>
-            {onEdit && <button className="btn btn-secondary" type="button" onClick={handleEditSalesforceScript}>Open In Visual Editor</button>}
+            <button className="btn btn-primary" type="button" onClick={() => { void handleSaveSalesforceScript() }} disabled={!salesforceCredentialsValid || salesforceSaveInProgress || salesforceCredentialActionInProgress || salesforceParameterizationApplying}>{salesforceSaveLabel}</button>
+            {onEdit && <button className="btn btn-secondary" type="button" onClick={() => { void handleEditSalesforceScript() }} disabled={!salesforceCredentialsValid || salesforceSaveInProgress || salesforceCredentialActionInProgress || salesforceParameterizationApplying}>{salesforceCredentialActionInProgress ? 'Preparing editor...' : 'Open In Visual Editor'}</button>}
           </div>
           {(salesforceResult.warnings?.length || 0) > 0 && (
             <div className="rec-warnings">

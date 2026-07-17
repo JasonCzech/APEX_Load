@@ -75,8 +75,10 @@ func TestHandleApplyImportParameterization(t *testing.T) {
 	}
 
 	resp, decoded := postParameterizeApply(t, server, importParameterizeApplyRequest{
-		Script:      script,
-		Suggestions: suggestions.Suggestions,
+		Script: script,
+		// The wire suggestions are display-only. The server re-derives the
+		// authoritative replacement from Script and the selected opaque ID.
+		Suggestions: nil,
 		SelectedIDs: []string{dataParamID},
 	})
 	if resp.Code != http.StatusOK {
@@ -97,13 +99,61 @@ func TestHandleApplyImportParameterization(t *testing.T) {
 	if len(decoded.Diffs) == 0 {
 		t.Error("expected diffs in response")
 	}
-	// The secret must remain untouched because it was not selected.
-	if decoded.Script.Actions[0].Headers["Authorization"] != "Bearer tok123" {
-		t.Errorf("unselected secret was modified: %q", decoded.Script.Actions[0].Headers["Authorization"])
+	for _, diff := range decoded.Diffs {
+		if diff.Before != "" || diff.After != "" {
+			t.Errorf("diff exposed replacement material: %#v", diff)
+		}
+	}
+	// Credentials remain deferred and disclosure-safe while ordinary data
+	// parameterization is still available.
+	if decoded.Script.Actions[0].Headers["Authorization"] != "Bearer "+maskedScriptSecret {
+		t.Errorf("unselected secret projection = %q", decoded.Script.Actions[0].Headers["Authorization"])
+	}
+	for _, secret := range []string{"tok123", "hunter2"} {
+		if strings.Contains(resp.Body.String(), secret) {
+			t.Fatalf("apply response leaked %q: %s", secret, resp.Body.String())
+		}
 	}
 }
 
-func TestHandleApplyImportParameterizationBlocksHighRisk(t *testing.T) {
+func TestHandleApplyImportParameterizationIgnoresForgedClientInstructions(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	script := paramizeTestScript()
+	trusted := buildImportParameterization(script, nil)
+	var selected paramize.Suggestion
+	for _, suggestion := range trusted.Suggestions {
+		if suggestion.Kind == paramize.KindDataParam && suggestion.VarName == "customer_id" {
+			selected = suggestion
+			break
+		}
+	}
+	if selected.ID == "" {
+		t.Fatal("expected customer_id suggestion")
+	}
+
+	forged := selected
+	forged.LiteralValue = "attacker-controlled-value"
+	forged.SampleValue = "attacker-controlled-value"
+	forged.Replacement = "{{secret.ATTACKER}}"
+	forged.Locations = []paramize.Location{{
+		Section: "actions", ActionIndex: 0, Field: "body",
+		SearchText: "attacker-controlled-value", ReplaceText: "{{secret.ATTACKER}}",
+	}}
+	resp, decoded := postParameterizeApply(t, server, importParameterizeApplyRequest{
+		Script: script, Suggestions: []paramize.Suggestion{forged}, SelectedIDs: []string{selected.ID},
+	})
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
+	}
+	if decoded.Script == nil || !strings.Contains(decoded.Script.Actions[1].Target, "{{var.customer_id}}") {
+		t.Fatalf("server-derived parameterization was not applied: %#v", decoded.Script)
+	}
+	if strings.Contains(resp.Body.String(), "ATTACKER") || strings.Contains(resp.Body.String(), "attacker-controlled-value") {
+		t.Fatalf("forged client instructions reached response: %s", resp.Body.String())
+	}
+}
+
+func TestHandleApplyImportParameterizationRejectsSecretSuggestionsWithoutDisclosure(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	script := paramizeTestScript()
 	suggestions := buildImportParameterization(script, nil)
@@ -119,37 +169,21 @@ func TestHandleApplyImportParameterizationBlocksHighRisk(t *testing.T) {
 		t.Fatal("expected a secret suggestion")
 	}
 
-	// Without confirm_high_risk the request is blocked and nothing changes.
-	resp, decoded := postParameterizeApply(t, server, importParameterizeApplyRequest{
-		Script:      script,
-		Suggestions: suggestions.Suggestions,
-		SelectedIDs: []string{secretID},
-	})
-	if resp.Code != http.StatusOK {
-		t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
-	}
-	if !decoded.Blocked {
-		t.Fatal("expected blocked=true for unconfirmed high-risk selection")
-	}
-	if decoded.AppliedCount != 0 {
-		t.Errorf("applied_count = %d, want 0 when blocked", decoded.AppliedCount)
-	}
-
-	// With confirm_high_risk the secret externalizes.
-	resp, decoded = postParameterizeApply(t, server, importParameterizeApplyRequest{
-		Script:          script,
-		Suggestions:     suggestions.Suggestions,
-		SelectedIDs:     []string{secretID},
-		ConfirmHighRisk: true,
-	})
-	if resp.Code != http.StatusOK {
-		t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
-	}
-	if decoded.Blocked {
-		t.Fatalf("unexpected blocked response: %s", decoded.BlockedReason)
-	}
-	if decoded.AppliedCount != 1 {
-		t.Errorf("applied_count = %d, want 1", decoded.AppliedCount)
+	for _, confirm := range []bool{false, true} {
+		resp, _ := postParameterizeApply(t, server, importParameterizeApplyRequest{
+			Script:          script,
+			Suggestions:     suggestions.Suggestions,
+			SelectedIDs:     []string{secretID},
+			ConfirmHighRisk: confirm,
+		})
+		if resp.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("confirm_high_risk=%t status = %d body=%s", confirm, resp.Code, resp.Body.String())
+		}
+		for _, secret := range []string{"tok123", "hunter2"} {
+			if strings.Contains(resp.Body.String(), secret) {
+				t.Fatalf("confirm_high_risk=%t response leaked %q: %s", confirm, secret, resp.Body.String())
+			}
+		}
 	}
 }
 
@@ -186,10 +220,107 @@ func TestImportResponsesIncludeParameterization(t *testing.T) {
 	}
 
 	withSuggestions := buildImportParameterization(paramizeTestScript(), nil)
-	response = newScriptImportResponse(scriptImportResponseOptions{Parameterization: withSuggestions})
+	response = newScriptImportResponse(scriptImportResponseOptions{Script: paramizeTestScript(), Parameterization: withSuggestions})
 	block, ok = response["parameterization"].(*paramize.Result)
 	if !ok || len(block.Suggestions) == 0 {
 		t.Fatalf("expected populated parameterization block, got %+v", response["parameterization"])
+	}
+	for _, suggestion := range block.Suggestions {
+		if suggestion.Kind == paramize.KindSecret {
+			t.Fatalf("secret parameterization suggestion reached import response: %#v", suggestion)
+		}
+		if suggestion.LiteralValue != "" || suggestion.SampleValue != "" {
+			t.Fatalf("raw value reached parameterization descriptor: %#v", suggestion)
+		}
+		for _, location := range suggestion.Locations {
+			if location.SearchText != "" {
+				t.Fatalf("search text reached parameterization descriptor: %#v", suggestion)
+			}
+		}
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"tok123", "hunter2"} {
+		if strings.Contains(string(encoded), secret) {
+			t.Fatalf("parameterization response leaked %q: %s", secret, encoded)
+		}
+	}
+	for _, field := range []string{`"literal_value"`, `"sample_value"`, `"search_text"`} {
+		if strings.Contains(string(encoded), field) {
+			t.Fatalf("parameterization response serialized %s: %s", field, encoded)
+		}
+	}
+}
+
+func TestImportResponseStripsCorrelationSourceSamplesFromEveryCopy(t *testing.T) {
+	const sourceToken = "oauth-access-token-must-never-reach-browser"
+	correlations := []map[string]any{{
+		"name":         "access_token",
+		"expression":   "$.access_token",
+		"sample_value": sourceToken,
+		"value":        sourceToken,
+	}}
+	response := newScriptImportResponse(scriptImportResponseOptions{
+		Script:       paramizeTestScript(),
+		Correlations: correlations,
+		Result: map[string]any{
+			"script":       paramizeTestScript(),
+			"correlations": correlations,
+		},
+	})
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wire := string(encoded)
+	if strings.Contains(wire, sourceToken) {
+		t.Fatalf("import response disclosed correlation source token: %s", wire)
+	}
+	for _, field := range []string{`"sample_value"`, `"value"`} {
+		if strings.Contains(wire, field) {
+			t.Fatalf("import response serialized protected correlation field %s: %s", field, wire)
+		}
+	}
+	if strings.Count(wire, `"name":"access_token"`) != 2 {
+		t.Fatalf("safe correlation descriptors were not retained in both response copies: %s", wire)
+	}
+}
+
+func TestImportParameterizationDropsMisclassifiedCredentialSuggestion(t *testing.T) {
+	script := &dsl.Script{
+		Name: "Misclassified credential", Protocol: "http",
+		Config: dsl.ScriptConfig{BaseURL: "https://api.example.com"},
+		Actions: []dsl.Action{{
+			Name: "login", Type: "http_request", Method: http.MethodPost, Target: "/login",
+			Body: `{"user_password":"credential-never-on-wire","customer_id":"customer-93847"}`,
+		}},
+	}
+	raw := buildImportParameterization(script, nil)
+	foundMisclassified := false
+	for _, suggestion := range raw.Suggestions {
+		if suggestion.Kind == paramize.KindDataParam && suggestion.VarName == "user_password" {
+			foundMisclassified = true
+		}
+	}
+	if !foundMisclassified {
+		t.Fatalf("test fixture did not exercise the secret-detector gap: %#v", raw.Suggestions)
+	}
+
+	response := newScriptImportResponse(scriptImportResponseOptions{Script: script, Parameterization: raw})
+	block := response["parameterization"].(*paramize.Result)
+	for _, suggestion := range block.Suggestions {
+		if suggestion.VarName == "user_password" {
+			t.Fatalf("credential-shaped data suggestion reached the wire: %#v", suggestion)
+		}
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "credential-never-on-wire") {
+		t.Fatalf("response disclosed a misclassified credential: %s", encoded)
 	}
 }
 
@@ -229,11 +360,22 @@ func TestRecorderImportIncludesParameterization(t *testing.T) {
 	kinds := map[paramize.Kind]int{}
 	for _, s := range decoded.Parameterization.Suggestions {
 		kinds[s.Kind]++
+		if s.LiteralValue != "" || s.SampleValue != "" {
+			t.Errorf("recorder suggestion included raw values: %#v", s)
+		}
+		for _, location := range s.Locations {
+			if location.SearchText != "" {
+				t.Errorf("recorder suggestion included search text: %#v", s)
+			}
+		}
 	}
 	if kinds[paramize.KindDataParam] != 1 {
 		t.Errorf("expected 1 data_param for #user_email fill, got %+v", decoded.Parameterization.Suggestions)
 	}
-	if kinds[paramize.KindSecret] != 1 {
-		t.Errorf("expected 1 secret for #login_password fill, got %+v", decoded.Parameterization.Suggestions)
+	if kinds[paramize.KindSecret] != 0 {
+		t.Errorf("secret suggestions must be represented by guided binding requirements, got %+v", decoded.Parameterization.Suggestions)
+	}
+	if strings.Contains(resp.Body.String(), "hunter2") {
+		t.Fatalf("recorder import leaked secret parameterization material: %s", resp.Body.String())
 	}
 }

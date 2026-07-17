@@ -281,7 +281,18 @@ func normalizeGeneratorInventoryEntry(entry GeneratorInventoryEntry) GeneratorIn
 }
 
 func defaultSupportedProtocols() []string {
-	protocols := protocol.List()
+	registered := protocol.List()
+	protocols := registered[:0]
+	for _, name := range registered {
+		// Bruno requires a runner plus project-scoped immutable artifact
+		// delivery. Unknown/legacy generator inventory must not inherit it from
+		// the controller's compile-time registry; a live heartbeat or explicit
+		// target declaration must prove support.
+		if strings.EqualFold(strings.TrimSpace(name), "bruno") {
+			continue
+		}
+		protocols = append(protocols, name)
+	}
 	sort.Strings(protocols)
 	return protocols
 }

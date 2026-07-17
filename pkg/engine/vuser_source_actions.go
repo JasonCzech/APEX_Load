@@ -119,6 +119,14 @@ func (vu *VUser) handleHTTPOAuth2TokenAction(ctx context.Context, action dsl.Act
 	if err != nil {
 		return fmt.Errorf("http_oauth2_token %q: %w", action.Name, err)
 	}
+	redactionConfig, err := WithSecretValueRedactionChecked(vu.RedactionConfig, []string{token.AccessToken})
+	if err != nil {
+		return fmt.Errorf("http_oauth2_token %q: prepare token redaction: %s", action.Name, scrubSensitiveText(err.Error()))
+	}
+	// Install the exact matcher before the token becomes visible to templates,
+	// logs, protocol actions, or retained evidence.
+	vu.RedactionConfig = redactionConfig
+	vu.runtimeRedaction.Store(redactionConfig)
 	vu.ensureVariables()
 	writeVariableAlias := func(key, value string) {
 		vu.Variables[key] = value

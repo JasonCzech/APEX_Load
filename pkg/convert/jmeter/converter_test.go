@@ -1068,3 +1068,42 @@ func TestConvertJMXFlattensDynamicWhileCondition(t *testing.T) {
 		t.Fatalf("diagnostics = %#v, want WhileController flattening warning", result.Unsupported)
 	}
 }
+
+func TestConvertJMXMakesMultiThreadGroupNameOverrideUnique(t *testing.T) {
+	const multiGroupJMX = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Readers" enabled="true"/><hashTree>
+        <HTTPSamplerProxy testname="Read" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.path">/read</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy><hashTree/>
+      </hashTree>
+      <ThreadGroup testname="Writers" enabled="true"/><hashTree>
+        <HTTPSamplerProxy testname="Write" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.path">/write</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+        </HTTPSamplerProxy><hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+
+	result, err := ConvertJMX([]byte(multiGroupJMX), ConvertOptions{FileName: "multi.jmx", ScriptName: "Orders"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	if len(result.Scripts) != 2 {
+		t.Fatalf("scripts = %d, want 2", len(result.Scripts))
+	}
+	if got := []string{result.Scripts[0].Name, result.Scripts[1].Name}; got[0] != "Orders_1" || got[1] != "Orders_2" {
+		t.Fatalf("script names = %#v, want unique override names", got)
+	}
+	if result.ScenarioDraft != nil {
+		t.Fatalf("scenario draft = %#v, want none without scenario option", result.ScenarioDraft)
+	}
+}

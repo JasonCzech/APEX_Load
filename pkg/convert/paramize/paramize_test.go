@@ -392,6 +392,53 @@ func TestSuggestDeterministicOrderingAndIDs(t *testing.T) {
 	}
 }
 
+func TestSuggestionIDDoesNotFingerprintHiddenValues(t *testing.T) {
+	first := Suggest(httpScript(dsl.Action{
+		Name:    "login",
+		Type:    "http_request",
+		Target:  "/login",
+		Headers: map[string]string{"X-Api-Key": "first-hidden-value"},
+	}), allClasses())
+	second := Suggest(httpScript(dsl.Action{
+		Name:    "login",
+		Type:    "http_request",
+		Target:  "/login",
+		Headers: map[string]string{"X-Api-Key": "second-hidden-value"},
+	}), allClasses())
+
+	firstSecrets := findByKind(first.Suggestions, KindSecret)
+	secondSecrets := findByKind(second.Suggestions, KindSecret)
+	if len(firstSecrets) != 1 || len(secondSecrets) != 1 {
+		t.Fatalf("expected one secret suggestion in each result, got %d and %d", len(firstSecrets), len(secondSecrets))
+	}
+	if firstSecrets[0].LiteralValue == secondSecrets[0].LiteralValue {
+		t.Fatal("test setup must use distinct hidden values")
+	}
+	if firstSecrets[0].ID != secondSecrets[0].ID {
+		t.Fatalf("public IDs fingerprint hidden values: %q != %q", firstSecrets[0].ID, secondSecrets[0].ID)
+	}
+
+	preApplied := func(sample string) string {
+		opts := Options{PreApplied: []PreAppliedCorrelation{{
+			Name:        "csrf",
+			Source:      "body",
+			Expression:  `"csrf":"([^"]+)"`,
+			ExtractType: "regex",
+			SampleValue: sample,
+			FoundInStep: 1,
+			UsedInSteps: []int{2},
+		}}}
+		result := Suggest(httpScript(dsl.Action{Name: "request", Type: "http_request", Target: "/"}), opts)
+		if len(result.Suggestions) != 1 {
+			t.Fatalf("expected one pre-applied suggestion, got %d", len(result.Suggestions))
+		}
+		return result.Suggestions[0].ID
+	}
+	if firstID, secondID := preApplied("first-sample"), preApplied("second-sample"); firstID != secondID {
+		t.Fatalf("pre-applied public IDs fingerprint hidden samples: %q != %q", firstID, secondID)
+	}
+}
+
 func TestNameRegistryAvoidsCollisions(t *testing.T) {
 	script := httpScript(dsl.Action{Name: "a", Type: "http_request", Target: "/u?user_id=1"})
 	script.Parameters = []dsl.Parameter{{Name: "user_id", Type: "list", Values: []string{"x"}}}

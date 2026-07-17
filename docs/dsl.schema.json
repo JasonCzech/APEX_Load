@@ -2288,6 +2288,103 @@
             "properties": {
               "type": {
                 "enum": [
+                  "bruno_run"
+                ]
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "description": "Executes a selectable Bruno collection, folder, request, or tag set from the immutable source bundle.",
+            "properties": {
+              "params": {
+                "properties": {
+                  "bail": {
+                    "description": "Stop after the first request, test, or assertion failure.",
+                    "type": "boolean"
+                  },
+                  "data_source": {
+                    "description": "CSV/JSON data source or bundled relative path.",
+                    "type": "string"
+                  },
+                  "delay_ms": {
+                    "description": "Delay between selected requests.",
+                    "maximum": 3600000,
+                    "type": "integer"
+                  },
+                  "environment": {
+                    "description": "Collection environment override.",
+                    "type": "string"
+                  },
+                  "exclude_tags": {
+                    "description": "Exclude items carrying one of these tags.",
+                    "type": "array"
+                  },
+                  "execution": {
+                    "description": "Data-iteration execution mode; requests remain in Bruno source order within each iteration.",
+                    "enum": [
+                      "sequential",
+                      "parallel"
+                    ],
+                    "type": "string"
+                  },
+                  "global_environment": {
+                    "description": "Workspace global-environment override.",
+                    "type": "string"
+                  },
+                  "include_tags": {
+                    "description": "Only execute items carrying one of these tags.",
+                    "type": "array"
+                  },
+                  "max_parallel": {
+                    "description": "Bounded data-iteration concurrency when execution is parallel.",
+                    "maximum": 100000,
+                    "type": "integer"
+                  },
+                  "paths": {
+                    "description": "Relative collection paths selected for execution.",
+                    "type": "array"
+                  },
+                  "persist_session_across_iterations": {
+                    "description": "Retain this VUser's Bruno runtime variables, cookies, and connections between APEX iterations.",
+                    "type": "boolean"
+                  },
+                  "recursive": {
+                    "description": "Recursively execute selected folders.",
+                    "type": "boolean"
+                  },
+                  "selection": {
+                    "description": "Selection kind; defaults to collection.",
+                    "enum": [
+                      "collection",
+                      "folder",
+                      "request",
+                      "tag"
+                    ],
+                    "type": "string"
+                  },
+                  "stream_timeout_ms": {
+                    "description": "Deadline for long-lived gRPC or WebSocket work.",
+                    "maximum": 86400000,
+                    "type": "integer"
+                  },
+                  "tests_only": {
+                    "description": "Run only requests containing executable tests or assertions.",
+                    "type": "boolean"
+                  }
+                },
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "enum": [
                   "control_break"
                 ]
               }
@@ -6044,6 +6141,7 @@
             "browser_wait_response",
             "browser_ws_assert",
             "browser_ws_wait",
+            "bruno_run",
             "commit",
             "control_break",
             "control_continue",
@@ -6450,6 +6548,88 @@
         },
         "width": {
           "maximum": 8192,
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "BrunoConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "bundle_ref": {
+          "type": "string"
+        },
+        "bundle_sha256": {
+          "type": "string"
+        },
+        "compatibility_version": {
+          "type": "string"
+        },
+        "default_environment": {
+          "type": "string"
+        },
+        "default_global_environment": {
+          "type": "string"
+        },
+        "dependency_snapshot_ref": {
+          "type": "string"
+        },
+        "limits": {
+          "$ref": "#/$defs/BrunoRuntimeLimits"
+        },
+        "manifest_sha256": {
+          "type": "string"
+        },
+        "persist_session_across_iterations": {
+          "type": "boolean"
+        },
+        "runner_profile": {
+          "type": "string"
+        },
+        "sandbox": {
+          "type": "string"
+        },
+        "secret_bindings": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "source_format": {
+          "type": "string"
+        },
+        "source_revision": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "BrunoRuntimeLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "default_stream_timeout_ms": {
+          "maximum": 86400000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_jumps": {
+          "maximum": 1000000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_output_bytes": {
+          "maximum": 1073741824,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_parallel_requests": {
+          "maximum": 100000,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "max_run_request_depth": {
+          "maximum": 1024,
           "minimum": 0,
           "type": "integer"
         }
@@ -7788,6 +7968,9 @@
         },
         "browser": {
           "$ref": "#/$defs/BrowserConfig"
+        },
+        "bruno": {
+          "$ref": "#/$defs/BrunoConfig"
         },
         "database": {
           "$ref": "#/$defs/DatabaseConfig"

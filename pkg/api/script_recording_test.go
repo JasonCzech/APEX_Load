@@ -4,8 +4,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
+	"github.com/jasonczech/apexload/pkg/recorder"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -161,5 +163,107 @@ func TestPersistRecordedBaselineWithoutKeyKeepsOnlyScrubbedView(t *testing.T) {
 	}
 	if record.Sensitivity != scrub.SensitivityScrubbed || record.EncryptedCorrelationObservations != "" || strings.Contains(record.Observations[0].RequestBody, "secret-value") {
 		t.Fatalf("keyless recording retained raw detail: %#v", record)
+	}
+}
+
+func TestCaptureRecordingBaselinePersistsSameProjectProxySession(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	proxyRecorder := recorder.New("127.0.0.1:0")
+	session, err := proxyRecorder.StartSessionForProject("proxy-session", "Checkout", "project-a", recorder.SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.Requests = append(session.Requests, recorder.RecordedRequest{
+		Seq:          1,
+		Method:       "POST",
+		URL:          "https://shop.example.test/login",
+		Body:         `{"username":"alice","password":"secret"}`,
+		ResponseBody: `{"token":"recorded-token"}`,
+	})
+
+	server := &Server{store: store, recorder: proxyRecorder}
+	server.captureRecordingBaseline("script-same-project", "project-a", session.ID)
+
+	record, err := store.GetScriptRecording("script-same-project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record == nil {
+		t.Fatal("same-project proxy recording baseline was not persisted")
+	}
+	if record.Source != "proxy_recording" {
+		t.Fatalf("baseline source = %q, want proxy_recording", record.Source)
+	}
+	if record.RequestCount != 1 || len(record.Observations) != 1 || record.Observations[0].ID != 0 {
+		t.Fatalf("baseline = %#v, want one action-aligned observation", record)
+	}
+}
+
+func TestCaptureRecordingBaselineRejectsCrossProjectProxySession(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	proxyRecorder := recorder.New("127.0.0.1:0")
+	session, err := proxyRecorder.StartSessionForProject("proxy-session", "Checkout", "project-a", recorder.SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.Requests = append(session.Requests, recorder.RecordedRequest{Seq: 1, Method: "GET", URL: "https://shop.example.test/cart"})
+
+	server := &Server{store: store, recorder: proxyRecorder}
+	server.captureRecordingBaseline("script-other-project", "project-b", session.ID)
+
+	record, err := store.GetScriptRecording("script-other-project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record != nil {
+		t.Fatalf("cross-project recording baseline was persisted: %#v", record)
+	}
+}
+
+func TestCaptureRecordingBaselineDoesNotMapBrowserUIActionsToProxyObservations(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	// Deliberately create the same id in both recorder namespaces. The browser
+	// session must win source resolution: UI steps do not share action indexes
+	// with proxy/HAR requests, so attaching the proxy baseline would be unsafe.
+	const sessionID = "shared-recording-id"
+	proxyRecorder := recorder.New("127.0.0.1:0")
+	proxySession, err := proxyRecorder.StartSessionForProject(sessionID, "Proxy", "project-a", recorder.SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxySession.Requests = append(proxySession.Requests, recorder.RecordedRequest{Seq: 1, Method: "GET", URL: "https://shop.example.test/api/cart"})
+
+	browserManager := NewBrowserRecordingManager(nil)
+	browserManager.sessions[sessionID] = &BrowserRecordingSession{
+		ID:        sessionID,
+		Name:      "Browser",
+		ProjectID: "project-a",
+		Status:    BrowserRecordingStopped,
+		StartedAt: time.Now(),
+	}
+	server := &Server{store: store, recorder: proxyRecorder, browserRecording: browserManager}
+	server.captureRecordingBaseline("browser-ui-script", "project-a", sessionID)
+
+	record, err := store.GetScriptRecording("browser-ui-script")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record != nil {
+		t.Fatalf("browser UI script received an unrelated HTTP baseline: %#v", record)
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type jmeterImportRequest struct {
@@ -215,7 +216,7 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 	preflight := buildReplayPreflight(result.Script, nil, issues, result.Warnings)
 	attachImportReplayPreflight(result.Script, req.Format, preflight)
 
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
 		Warnings:            result.Warnings,
@@ -370,6 +371,21 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	// Updates must pass the same disclosure-safe binding gate as creates. In
+	// particular, a PUT must not become a back door for introducing a new raw
+	// password, token, or executable [REDACTED] sentinel into durable storage.
+	projected := maskScriptSecrets(script)
+	if projected == nil {
+		writeError(w, http.StatusBadRequest, "failed to project script for secret binding")
+		return
+	}
+	if unresolved := discoverSecretBindingRequirements(projected, 0); len(unresolved) > 0 {
+		writeSecretBindingsRequired(w, unresolved)
+		return
+	}
+	// Persist the projection so non-executable import/review metadata is scrubbed
+	// too; requirements deliberately cover only executable locations.
+	script = projected
 	if err := reconcileMaskedScriptSecrets(script, stored.Script); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -409,6 +425,24 @@ func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
 		return
 	}
+	var brunoArtifacts []storage.BrunoSourceArtifact
+	if brunoStore, ok := s.store.(storage.BrunoImportStore); ok && stored.Protocol == "bruno" {
+		if revisions, listErr := brunoStore.ListBrunoSourceRevisions(id, stored.ProjectID); listErr == nil {
+			seen := make(map[string]struct{})
+			for _, revision := range revisions {
+				for _, artifactID := range []string{revision.RawArtifactID, revision.SanitizedArtifactID} {
+					if _, exists := seen[artifactID]; exists {
+						continue
+					}
+					artifact, getErr := brunoStore.GetBrunoSourceArtifact(artifactID, stored.ProjectID)
+					if getErr == nil {
+						brunoArtifacts = append(brunoArtifacts, *artifact)
+						seen[artifactID] = struct{}{}
+					}
+				}
+			}
+		}
+	}
 	deleted, err := s.runner.DeleteScriptDurableInProject(id, authorizedProjectOr(r, stored.ProjectID))
 	if err != nil {
 		if errors.Is(err, errScriptConcurrentChange) {
@@ -422,6 +456,7 @@ func (s *Server) handleDeleteScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
+	s.cleanupUnreferencedBrunoArtifacts(brunoArtifacts)
 	s.recordAuditEvent(r, "script.delete", "success", "script", id, stored.ProjectID, map[string]any{"name": stored.Name, "folder_id": stored.FolderID})
 	writeJSON(w, http.StatusOK, map[string]string{"deleted": id})
 }

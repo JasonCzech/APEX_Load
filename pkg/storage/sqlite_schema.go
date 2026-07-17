@@ -244,6 +244,54 @@ func schemaCreateTableStatements() []string {
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS project_secrets (
+			project_id TEXT NOT NULL REFERENCES projects(id),
+			secret_name TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			ciphertext TEXT NOT NULL,
+			wrapped_key_json TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			created_by TEXT,
+			PRIMARY KEY(project_id, secret_name)
+		)`,
+		`CREATE TABLE IF NOT EXISTS project_secret_provider_metadata (
+			project_id TEXT NOT NULL REFERENCES projects(id),
+			secret_name TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL,
+			created_by TEXT,
+			PRIMARY KEY(project_id, secret_name)
+		)`,
+		`CREATE TABLE IF NOT EXISTS protected_source_secret_sessions (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL REFERENCES projects(id),
+			actor_subject TEXT NOT NULL,
+			capacity_slot INTEGER NOT NULL UNIQUE CHECK(capacity_slot >= 0 AND capacity_slot < 128),
+			ciphertext TEXT NOT NULL,
+			wrapped_key_json TEXT NOT NULL,
+			expires_at DATETIME NOT NULL,
+			created_at DATETIME NOT NULL,
+			claim_token TEXT,
+			claim_expires_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS runtime_secret_provisioning_attempts (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL REFERENCES projects(id),
+			resource_type TEXT NOT NULL DEFAULT 'test',
+			test_id TEXT NOT NULL UNIQUE,
+			materialization_key TEXT NOT NULL DEFAULT '',
+			ref_key TEXT NOT NULL DEFAULT '',
+			commit_fingerprint TEXT NOT NULL DEFAULT '',
+			actor_subject TEXT NOT NULL UNIQUE,
+			audit_actor_type TEXT NOT NULL DEFAULT 'system',
+			audit_actor_subject TEXT NOT NULL DEFAULT 'controller:test-creation',
+			audit_actor_display_name TEXT NOT NULL DEFAULT '',
+			secret_names_json TEXT NOT NULL,
+			lease_expires_at DATETIME NOT NULL,
+			created_at DATETIME NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS folders (
 			id TEXT PRIMARY KEY,
 			project_id TEXT NOT NULL,
@@ -274,6 +322,40 @@ func schemaCreateTableStatements() []string {
 			teardown TEXT,
 			created_at DATETIME,
 			updated_at DATETIME
+		)`,
+		`CREATE TABLE IF NOT EXISTS bruno_source_artifacts (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL REFERENCES projects(id),
+			artifact_kind TEXT NOT NULL,
+			backend_key TEXT NOT NULL,
+			sha256 TEXT NOT NULL,
+			size_bytes INTEGER NOT NULL,
+			manifest_sha256 TEXT,
+			source_format TEXT,
+			encryption_json TEXT NOT NULL,
+			lifecycle_state TEXT NOT NULL,
+			created_at DATETIME NOT NULL,
+			UNIQUE(project_id, artifact_kind, sha256)
+		)`,
+		`CREATE TABLE IF NOT EXISTS bruno_source_revisions (
+			id TEXT PRIMARY KEY,
+			script_id TEXT NOT NULL REFERENCES scripts(id),
+			project_id TEXT NOT NULL REFERENCES projects(id),
+			parent_revision_id TEXT REFERENCES bruno_source_revisions(id),
+			active_flag INTEGER NOT NULL DEFAULT 0,
+			raw_artifact_id TEXT NOT NULL REFERENCES bruno_source_artifacts(id),
+			sanitized_artifact_id TEXT NOT NULL REFERENCES bruno_source_artifacts(id),
+			source_format TEXT NOT NULL,
+			compatibility_version TEXT NOT NULL,
+			identity_map_json TEXT NOT NULL,
+			import_options_json TEXT NOT NULL,
+			dependency_snapshot_ref TEXT,
+			security_profile_json TEXT NOT NULL,
+			change_summary_json TEXT NOT NULL,
+			secret_bindings_json TEXT NOT NULL,
+			canonical_script_json TEXT NOT NULL,
+			created_by TEXT,
+			created_at DATETIME NOT NULL
 		)`,
 		`CREATE TABLE IF NOT EXISTS tests (
 			id TEXT PRIMARY KEY,
@@ -769,6 +851,9 @@ func schemaCreateTableStatements() []string {
 			disabled_from DATETIME,
 			disabled_until DATETIME,
 			last_error TEXT,
+			actor_type TEXT NOT NULL DEFAULT 'system',
+			actor_subject TEXT NOT NULL DEFAULT 'controller:execution-plan-schedule',
+			actor_display_name TEXT NOT NULL DEFAULT '',
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
 			FOREIGN KEY(plan_id) REFERENCES execution_plans(id)
@@ -805,6 +890,9 @@ func schemaCreateTableStatements() []string {
 			reason_code TEXT,
 			run_id TEXT,
 			conflict_summary TEXT,
+			actor_type TEXT NOT NULL DEFAULT 'system',
+			actor_subject TEXT NOT NULL DEFAULT 'controller:execution-plan-schedule-occurrence',
+			actor_display_name TEXT NOT NULL DEFAULT '',
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL,
 			UNIQUE(schedule_id, planned_at),
@@ -972,8 +1060,23 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "execution_plan_runs.transition_token", query: `ALTER TABLE execution_plan_runs ADD COLUMN transition_token TEXT NOT NULL DEFAULT ''`},
 		{name: "execution_plan_schedule_occurrences.revision", query: `ALTER TABLE execution_plan_schedule_occurrences ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
 		{name: "execution_plan_schedule_occurrences.transition_token", query: `ALTER TABLE execution_plan_schedule_occurrences ADD COLUMN transition_token TEXT NOT NULL DEFAULT ''`},
+		{name: "execution_plan_schedule_occurrences.actor_type", query: `ALTER TABLE execution_plan_schedule_occurrences ADD COLUMN actor_type TEXT NOT NULL DEFAULT 'legacy'`},
+		{name: "execution_plan_schedule_occurrences.actor_subject", query: `ALTER TABLE execution_plan_schedule_occurrences ADD COLUMN actor_subject TEXT NOT NULL DEFAULT 'controller:execution-plan-schedule-occurrence-legacy'`},
+		{name: "execution_plan_schedule_occurrences.actor_display_name", query: `ALTER TABLE execution_plan_schedule_occurrences ADD COLUMN actor_display_name TEXT NOT NULL DEFAULT ''`},
+		{name: "execution_plan_schedules.actor_type", query: `ALTER TABLE execution_plan_schedules ADD COLUMN actor_type TEXT NOT NULL DEFAULT 'legacy'`},
+		{name: "execution_plan_schedules.actor_subject", query: `ALTER TABLE execution_plan_schedules ADD COLUMN actor_subject TEXT NOT NULL DEFAULT 'controller:execution-plan-schedule-legacy'`},
+		{name: "execution_plan_schedules.actor_display_name", query: `ALTER TABLE execution_plan_schedules ADD COLUMN actor_display_name TEXT NOT NULL DEFAULT ''`},
 		{name: "provisioning_requests.revision", query: `ALTER TABLE provisioning_requests ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
 		{name: "provisioning_requests.attempt_token", query: `ALTER TABLE provisioning_requests ADD COLUMN attempt_token TEXT`},
+		{name: "protected_source_secret_sessions.claim_token", query: `ALTER TABLE protected_source_secret_sessions ADD COLUMN claim_token TEXT`},
+		{name: "protected_source_secret_sessions.claim_expires_at", query: `ALTER TABLE protected_source_secret_sessions ADD COLUMN claim_expires_at DATETIME`},
+		{name: "runtime_secret_provisioning_attempts.materialization_key", query: `ALTER TABLE runtime_secret_provisioning_attempts ADD COLUMN materialization_key TEXT NOT NULL DEFAULT ''`},
+		{name: "runtime_secret_provisioning_attempts.ref_key", query: `ALTER TABLE runtime_secret_provisioning_attempts ADD COLUMN ref_key TEXT NOT NULL DEFAULT ''`},
+		{name: "runtime_secret_provisioning_attempts.resource_type", query: `ALTER TABLE runtime_secret_provisioning_attempts ADD COLUMN resource_type TEXT NOT NULL DEFAULT 'test'`},
+		{name: "runtime_secret_provisioning_attempts.commit_fingerprint", query: `ALTER TABLE runtime_secret_provisioning_attempts ADD COLUMN commit_fingerprint TEXT NOT NULL DEFAULT ''`},
+		{name: "runtime_secret_provisioning_attempts.audit_actor_type", query: `ALTER TABLE runtime_secret_provisioning_attempts ADD COLUMN audit_actor_type TEXT NOT NULL DEFAULT 'system'`},
+		{name: "runtime_secret_provisioning_attempts.audit_actor_subject", query: `ALTER TABLE runtime_secret_provisioning_attempts ADD COLUMN audit_actor_subject TEXT NOT NULL DEFAULT 'controller:test-creation'`},
+		{name: "runtime_secret_provisioning_attempts.audit_actor_display_name", query: `ALTER TABLE runtime_secret_provisioning_attempts ADD COLUMN audit_actor_display_name TEXT NOT NULL DEFAULT ''`},
 	}
 }
 
@@ -1018,6 +1121,16 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_correlation_rulesets_project ON correlation_rulesets(project_id)`, "idx_correlation_rulesets_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_monitoring_collectors_project ON monitoring_collectors(project_id)`, "idx_monitoring_collectors_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_reusable_blocks_project ON reusable_blocks(project_id)`, "idx_reusable_blocks_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_bruno_artifacts_project_hash ON bruno_source_artifacts(project_id, artifact_kind, sha256)`, "idx_bruno_artifacts_project_hash"},
+	{`CREATE INDEX IF NOT EXISTS idx_bruno_revisions_script_created ON bruno_source_revisions(script_id, created_at)`, "idx_bruno_revisions_script_created"},
+	{`CREATE INDEX IF NOT EXISTS idx_bruno_revisions_project_active ON bruno_source_revisions(project_id, active_flag)`, "idx_bruno_revisions_project_active"},
+	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_bruno_revisions_one_active ON bruno_source_revisions(script_id, project_id) WHERE active_flag = 1`, "idx_bruno_revisions_one_active"},
+	{`CREATE INDEX IF NOT EXISTS idx_project_secrets_project_updated ON project_secrets(project_id, updated_at)`, "idx_project_secrets_project_updated"},
+	{`CREATE INDEX IF NOT EXISTS idx_project_secret_provider_metadata_project_updated ON project_secret_provider_metadata(project_id, updated_at)`, "idx_project_secret_provider_metadata_project_updated"},
+	{`CREATE INDEX IF NOT EXISTS idx_protected_source_secret_sessions_expiry ON protected_source_secret_sessions(expires_at)`, "idx_protected_source_secret_sessions_expiry"},
+	{`CREATE INDEX IF NOT EXISTS idx_protected_source_secret_sessions_project ON protected_source_secret_sessions(project_id)`, "idx_protected_source_secret_sessions_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_runtime_secret_attempts_expiry ON runtime_secret_provisioning_attempts(lease_expires_at)`, "idx_runtime_secret_attempts_expiry"},
+	{`CREATE INDEX IF NOT EXISTS idx_runtime_secret_attempts_project ON runtime_secret_provisioning_attempts(project_id)`, "idx_runtime_secret_attempts_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_github_check_intents_updated ON github_check_intents(updated_at)`, "idx_github_check_intents_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_github_check_intents_project ON github_check_intents(project_id)`, "idx_github_check_intents_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_github_check_links_test ON github_check_links(test_id)`, "idx_github_check_links_test"},
@@ -1039,6 +1152,11 @@ func (s *SQLiteStore) init() error {
 	for _, q := range schemaCreateTableStatements() {
 		if _, err := s.db.Exec(q); err != nil {
 			return fmt.Errorf("failed to run migration query: %w", err)
+		}
+	}
+	if s.db.dialect == storeDialectPostgres {
+		if _, err := s.db.Exec(`ALTER TABLE bruno_source_artifacts ALTER COLUMN size_bytes TYPE BIGINT`); err != nil {
+			return fmt.Errorf("migrate Bruno artifact size to BIGINT: %w", err)
 		}
 	}
 
