@@ -787,11 +787,11 @@ jobs:
           set -euo pipefail
           docker compose --file compose.yaml config --quiet
           docker run --rm --entrypoint /bin/promtool \
-            --volume "${PWD}/deployments/docker/prometheus:/etc/apexload:ro" \
-            "${PROMETHEUS_IMAGE}" check config /etc/apexload/prometheus.yml
+            --volume "${PWD}/deployments/docker/prometheus:/etc/prometheus:ro" \
+            "${PROMETHEUS_IMAGE}" check config /etc/prometheus/prometheus.yml
           docker run --rm --entrypoint /bin/promtool \
-            --volume "${PWD}/deployments/docker/prometheus:/etc/apexload:ro" \
-            "${PROMETHEUS_IMAGE}" check rules /etc/apexload/apexload-rules.yml
+            --volume "${PWD}/deployments/docker/prometheus:/etc/prometheus:ro" \
+            "${PROMETHEUS_IMAGE}" check rules /etc/prometheus/apexload-rules.yml
 
   containers:
     name: Container (${{ matrix.binary }}, ${{ matrix.profile }})
