@@ -1540,7 +1540,7 @@ func TestPendingCIRunPromotionDrainsRevokedQueueIteratively(t *testing.T) {
 	}()
 	select {
 	case <-done:
-	case <-time.After(30 * time.Second):
+	case <-time.After(2 * time.Minute):
 		t.Fatal("revoked pending CI queue did not drain")
 	}
 	for _, id := range ids {

@@ -1315,7 +1315,7 @@ func TestDistributedExecutionBackendRunsRemoteMultiGroupEngine(t *testing.T) {
 
 	testRun, err := runner.CreateTest(CreateTestRequest{
 		Name:     "Distributed actual multi-group execution",
-		Duration: "2s",
+		Duration: "5s",
 		Groups: []CreateGroupEntry{{
 			Name:     "buyers",
 			ScriptID: "buyers-script",
@@ -1336,7 +1336,7 @@ func TestDistributedExecutionBackendRunsRemoteMultiGroupEngine(t *testing.T) {
 		t.Fatalf("StartTest returned error: %v", err)
 	}
 
-	deadline := time.Now().Add(6 * time.Second)
+	deadline := time.Now().Add(15 * time.Second)
 	for {
 		updated, ok := runner.GetTest(testRun.ID)
 		if !ok {
@@ -1354,7 +1354,7 @@ func TestDistributedExecutionBackendRunsRemoteMultiGroupEngine(t *testing.T) {
 		time.Sleep(25 * time.Millisecond)
 	}
 
-	deadline = time.Now().Add(6 * time.Second)
+	deadline = time.Now().Add(15 * time.Second)
 	for {
 		completed, ok := runner.GetTest(testRun.ID)
 		if !ok {

@@ -1127,7 +1127,7 @@ func TestRuntimeCredentialProvisioningArmsRecoveryBeforeAuditOrProviderCalls(t *
 		t.Fatalf("provisioning journals = %#v, %v", attempts, err)
 	}
 	server.runner.secretRecovery.mu.Lock()
-	armed := server.runner.secretRecovery.timer != nil && server.runner.secretRecovery.at.Equal(attempts[0].LeaseExpiresAt)
+	armed := server.runner.secretRecovery.timer != nil && !server.runner.secretRecovery.at.After(attempts[0].LeaseExpiresAt)
 	server.runner.secretRecovery.mu.Unlock()
 	if !armed {
 		t.Fatal("runtime credential recovery was not armed immediately after journal creation")

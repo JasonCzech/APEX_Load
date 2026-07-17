@@ -183,7 +183,9 @@ func removeHARArtifactCandidate(candidate HARArtifactPruneCandidate) error {
 	if err != nil {
 		return err
 	}
-	if current.Mode()&os.ModeSymlink != 0 || !current.Mode().IsRegular() || !os.SameFile(candidate.identity, current) {
+	if current.Mode()&os.ModeSymlink != 0 || !current.Mode().IsRegular() ||
+		!os.SameFile(candidate.identity, current) || current.Size() != candidate.SizeBytes ||
+		!current.ModTime().UTC().Equal(candidate.ModifiedAt) {
 		return fmt.Errorf("HAR artifact %q changed after retention planning", name)
 	}
 	tombstone, err := archiveTemporaryName(".", name+".retention")
