@@ -695,12 +695,12 @@ jobs:
             "${schema_root}/cert-manager.io" \
             "${schema_root}/monitoring.coreos.com"
           schemas=(
-            'keda.sh/scaledobject_v1alpha1.json|keda.sh/ScaledObject_v1alpha1.json|f0e0801dd04d22c875ab14b2de908143d0b293430b8c2d5d71bafcf1a4e05b4e'
-            'keda.sh/triggerauthentication_v1alpha1.json|keda.sh/TriggerAuthentication_v1alpha1.json|6dc3be31e2517d33c178015e0a943c281ab9eedaa55701ef2eadddaf7b169c36'
-            'cert-manager.io/certificate_v1.json|cert-manager.io/Certificate_v1.json|d3128cf7805dd289beb96e808e0e03294ef11affac7022fa955c370df1a767ac'
-            'cert-manager.io/issuer_v1.json|cert-manager.io/Issuer_v1.json|d92fc87966a07c2315f3745a2072cb5b408d989e3b12028b4bdb6c3af0afe2a5'
-            'monitoring.coreos.com/servicemonitor_v1.json|monitoring.coreos.com/ServiceMonitor_v1.json|8978f86e2a7cb281a9ca7bc30d857e0553666658dfe062078c51e99d3f20cd14'
-            'monitoring.coreos.com/prometheusrule_v1.json|monitoring.coreos.com/PrometheusRule_v1.json|9cd71d75b714b541a0be960b46bd961dbf1f0106071381cd88f54dfe80b8bd9d'
+            'keda.sh/scaledobject_v1alpha1.json|keda.sh/scaledobject_v1alpha1.json|f0e0801dd04d22c875ab14b2de908143d0b293430b8c2d5d71bafcf1a4e05b4e'
+            'keda.sh/triggerauthentication_v1alpha1.json|keda.sh/triggerauthentication_v1alpha1.json|6dc3be31e2517d33c178015e0a943c281ab9eedaa55701ef2eadddaf7b169c36'
+            'cert-manager.io/certificate_v1.json|cert-manager.io/certificate_v1.json|d3128cf7805dd289beb96e808e0e03294ef11affac7022fa955c370df1a767ac'
+            'cert-manager.io/issuer_v1.json|cert-manager.io/issuer_v1.json|d92fc87966a07c2315f3745a2072cb5b408d989e3b12028b4bdb6c3af0afe2a5'
+            'monitoring.coreos.com/servicemonitor_v1.json|monitoring.coreos.com/servicemonitor_v1.json|8978f86e2a7cb281a9ca7bc30d857e0553666658dfe062078c51e99d3f20cd14'
+            'monitoring.coreos.com/prometheusrule_v1.json|monitoring.coreos.com/prometheusrule_v1.json|9cd71d75b714b541a0be960b46bd961dbf1f0106071381cd88f54dfe80b8bd9d'
           )
           for entry in "${schemas[@]}"; do
             IFS='|' read -r remote_path local_path checksum <<<"$entry"
