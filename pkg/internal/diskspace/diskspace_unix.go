@@ -19,7 +19,7 @@ func AvailablePath(path string) (int64, error) {
 	if err := unix.Statfs(path, &stat); err != nil {
 		return 0, fmt.Errorf("stat filesystem for %q: %w", path, err)
 	}
-	return availableBytesFromStat(uint64(stat.Bavail), int64(stat.Bsize))
+	return availableBytesFromStat(stat.Bavail, int64(stat.Bsize))
 }
 
 // AvailableFile returns the bytes available to the current process on the
@@ -32,7 +32,7 @@ func AvailableFile(file *os.File) (int64, error) {
 	if err := unix.Fstatfs(int(file.Fd()), &stat); err != nil {
 		return 0, fmt.Errorf("stat filesystem for file %q: %w", file.Name(), err)
 	}
-	return availableBytesFromStat(uint64(stat.Bavail), int64(stat.Bsize))
+	return availableBytesFromStat(stat.Bavail, int64(stat.Bsize))
 }
 
 func availableBytesFromStat(availableBlocks uint64, blockSize int64) (int64, error) {

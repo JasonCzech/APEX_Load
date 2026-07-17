@@ -107,13 +107,18 @@ jobs:
         shell: bash
         env:
           WAILS_PLATFORM: ${{ matrix.platform }}
+          WAILS_BUILD_TAGS: ${{ runner.os == 'Linux' && 'webkit2_41' || '' }}
           BUILD_VERSION: ${{ steps.version.outputs.version }}
           BUILD_TIME: ${{ steps.version.outputs.build_time }}
         run: |
           set -euo pipefail
           BI=github.com/jasonczech/apexload/pkg/buildinfo
           cd desktop
-          wails build -clean -platform "${WAILS_PLATFORM}" -ldflags "-s -w -X ${BI}.Version=${BUILD_VERSION} -X ${BI}.Commit=${GITHUB_SHA} -X ${BI}.BuildTime=${BUILD_TIME}"
+          build_args=(build -clean -platform "${WAILS_PLATFORM}" -ldflags "-s -w -X ${BI}.Version=${BUILD_VERSION} -X ${BI}.Commit=${GITHUB_SHA} -X ${BI}.BuildTime=${BUILD_TIME}")
+          if [[ -n "${WAILS_BUILD_TAGS}" ]]; then
+            build_args+=(-tags "${WAILS_BUILD_TAGS}")
+          fi
+          wails "${build_args[@]}"
 
       - name: Smoke-test Windows backend
         if: runner.os == 'Windows'

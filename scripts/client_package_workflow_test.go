@@ -47,6 +47,8 @@ func TestClientPackageWorkflowKeepsReleaseCredentialsIsolated(t *testing.T) {
 	release := string(releaseRaw)
 	for _, required := range []string{
 		"environment: client-release",
+		"WAILS_BUILD_TAGS",
+		"webkit2_41",
 		"APEXLOAD_MACOS_CERTIFICATE_P12_BASE64",
 		"APEXLOAD_MACOS_CODESIGN_IDENTITY",
 		"APEXLOAD_MACOS_NOTARY_KEY_P8_BASE64",
@@ -129,6 +131,9 @@ func TestClientPackageWorkflowValidatesOnPullRequests(t *testing.T) {
 		"node-version: 22.22.0",
 		"cache: false",
 		"wails/v2/cmd/wails@v2.12.0", // pinned, not @latest
+		"WAILS_BUILD_TAGS",
+		"webkit2_41",
+		`build_args+=(-tags "${WAILS_BUILD_TAGS}")`,
 		"name: Smoke-test Windows backend",
 		"go test -count=1 ./pkg/internal/diskspace",
 		"TestStageArchiveDownload",

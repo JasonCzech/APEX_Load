@@ -119,7 +119,7 @@ func loadZIP(data []byte, limits Limits) ([]sourceFile, error) {
 		if mode.Type() != 0 {
 			return nil, fmt.Errorf("Bruno archive entry %q is not a regular file", entry.Name)
 		}
-		if entry.UncompressedSize64 > uint64(limits.MaxFileBytes) || entry.UncompressedSize64 > uint64(^uint64(0)>>1) {
+		if entry.UncompressedSize64 > uint64(limits.MaxFileBytes) || entry.UncompressedSize64 > ^uint64(0)>>1 {
 			return nil, fmt.Errorf("Bruno archive entry %q exceeds the per-file limit", entry.Name)
 		}
 		size := int64(entry.UncompressedSize64)
