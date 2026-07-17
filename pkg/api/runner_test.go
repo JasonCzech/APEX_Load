@@ -4021,7 +4021,7 @@ func TestScriptAndTestCrudPersistThroughStoreHelpers(t *testing.T) {
 		Version:  "1.0.0",
 	}
 	runner.StoreScript(script)
-	if len(store.savedScripts) != 1 || store.savedScripts[0] != script {
+	if len(store.savedScripts) != 1 || store.savedScripts[0].ID != script.ID || store.savedScripts[0].Name != script.Name {
 		t.Fatalf("expected initial SaveScript call with stored script, got %#v", store.savedScripts)
 	}
 
@@ -4033,7 +4033,7 @@ func TestScriptAndTestCrudPersistThroughStoreHelpers(t *testing.T) {
 	if _, ok := runner.UpdateScript("script-1", updatedScript); !ok {
 		t.Fatal("expected UpdateScript to succeed")
 	}
-	if len(store.savedScripts) != 2 || store.savedScripts[1] != updatedScript {
+	if len(store.savedScripts) != 2 || store.savedScripts[1].Name != updatedScript.Name || store.savedScripts[1].Version != updatedScript.Version {
 		t.Fatalf("expected SaveScript to be called for update, got %#v", store.savedScripts)
 	}
 	if store.savedScripts[1].ID != "script-1" {

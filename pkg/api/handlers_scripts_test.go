@@ -128,8 +128,8 @@ func TestHandleCreateAndUpdateScriptPreservesExtendedRTSSettings(t *testing.T) {
 				ProxyMode: "custom",
 				Proxy: dsl.ProxyConfig{
 					URL:      "http://proxy.example.com:8080",
-					Username: "proxy-user",
-					Password: "proxy-pass",
+					Username: "{{secret.PROXY_USERNAME}}",
+					Password: "{{secret.PROXY_PASSWORD}}",
 				},
 			},
 			Browser: dsl.BrowserConfig{
@@ -3688,11 +3688,12 @@ func TestAuthoringCapabilitiesEndpoint(t *testing.T) {
 			t.Fatalf("import surface %q has empty category", surface.ID)
 		}
 	}
-	if len(visibleSurfaces) != 15 {
-		t.Fatalf("visible import surfaces = %d, want 15 (%#v)", len(visibleSurfaces), visibleSurfaces)
+	if len(visibleSurfaces) != 16 {
+		t.Fatalf("visible import surfaces = %d, want 16 (%#v)", len(visibleSurfaces), visibleSurfaces)
 	}
 	expectedSurfaces := map[string]string{
 		"openapi":                 "Contracts & Collections",
+		"bruno":                   "Contracts & Collections",
 		"postman":                 "Contracts & Collections",
 		"wsdl":                    "Contracts & Collections",
 		"asyncapi":                "Contracts & Collections",
@@ -4846,7 +4847,7 @@ func TestPreviewAuthoringCorrelationReturnsDiffWithoutPersisting(t *testing.T) {
 			"config":{"base_url":"https://example.test"},
 			"actions":[
 				{"name":"Login","type":"request","method":"POST","target":"/login"},
-				{"name":"Cart","type":"request","method":"GET","target":"/cart?session=abc12345","headers":{"X-Session":"abc12345"}}
+				{"name":"Cart","type":"request","method":"GET","target":"/cart?order_ref=abc12345","headers":{"X-Order-Ref":"abc12345"}}
 			]
 		}
 	}`)
@@ -4885,18 +4886,26 @@ func TestPreviewAuthoringCorrelationReturnsDiffWithoutPersisting(t *testing.T) {
 	if preview.Draft.Actions[0].Extractors[0].Name != "corr_session" {
 		t.Fatalf("preview extractors = %#v, want corr_session on source action", preview.Draft.Actions[0].Extractors)
 	}
-	if preview.Draft.Actions[1].Target != "/cart?session={{var.corr_session}}" || preview.Draft.Actions[1].Headers["X-Session"] != "{{var.corr_session}}" {
+	if preview.Draft.Actions[1].Target != "/cart?order_ref={{var.corr_session}}" || preview.Draft.Actions[1].Headers["X-Order-Ref"] != "{{var.corr_session}}" {
 		t.Fatalf("preview usage action = %#v, want variable replacements", preview.Draft.Actions[1])
 	}
 	if len(preview.Changes) != 3 {
 		t.Fatalf("changes = %#v, want extractor plus target/header diffs", preview.Changes)
+	}
+	if strings.Contains(previewResp.Body.String(), "abc12345") {
+		t.Fatalf("correlation preview disclosed sample value: %s", previewResp.Body.String())
+	}
+	for _, change := range preview.Changes {
+		if change.Before != "" || change.After != "" {
+			t.Fatalf("correlation preview disclosed diff values: %#v", preview.Changes)
+		}
 	}
 
 	loaded, ok := server.getAuthoringSession(httptest.NewRecorder(), created.ID)
 	if !ok {
 		t.Fatal("expected persisted authoring session")
 	}
-	if len(loaded.Draft.Actions[0].Extractors) != 0 || loaded.Draft.Actions[1].Target != "/cart?session=abc12345" {
+	if len(loaded.Draft.Actions[0].Extractors) != 0 || loaded.Draft.Actions[1].Target != "/cart?order_ref=abc12345" {
 		t.Fatalf("persisted draft = %#v, want unchanged after preview", loaded.Draft)
 	}
 }
@@ -4921,7 +4930,7 @@ func TestApplyAuthoringCorrelationPersistsDraftAndReviewState(t *testing.T) {
 			"config":{"base_url":"https://example.test"},
 			"actions":[
 				{"name":"Login","type":"request","method":"POST","target":"/login"},
-				{"name":"Cart","type":"request","method":"GET","target":"/cart?session=abc12345"}
+				{"name":"Cart","type":"request","method":"GET","target":"/cart?order_ref=abc12345"}
 			]
 		}
 	}`)
@@ -4964,7 +4973,7 @@ func TestApplyAuthoringCorrelationPersistsDraftAndReviewState(t *testing.T) {
 	if persisted.Status != "editing" {
 		t.Fatalf("status = %q, want editing", persisted.Status)
 	}
-	if persisted.Draft.Actions[0].Extractors[0].Name != "corr_session" || persisted.Draft.Actions[1].Target != "/cart?session={{var.corr_session}}" {
+	if persisted.Draft.Actions[0].Extractors[0].Name != "corr_session" || persisted.Draft.Actions[1].Target != "/cart?order_ref={{var.corr_session}}" {
 		t.Fatalf("persisted draft = %#v, want applied correlation", persisted.Draft)
 	}
 	lastPreview, ok := persisted.ReviewState["last_correlation_preview"].(map[string]any)
@@ -4993,7 +5002,7 @@ func TestBatchAuthoringCorrelationAppliesHighConfidenceAndBlocksMediumRisk(t *te
 			"config":{"base_url":"https://example.test"},
 			"actions":[
 				{"name":"Login","type":"request","method":"POST","target":"/login"},
-				{"name":"Cart","type":"request","method":"GET","target":"/cart?csrf=csrf-high-123456&order=order-medium-123456"}
+				{"name":"Cart","type":"request","method":"GET","target":"/cart?checkout_ref=high-123456&order=medium-123456"}
 			]
 		}
 	}`)
@@ -5012,8 +5021,8 @@ func TestBatchAuthoringCorrelationAppliesHighConfidenceAndBlocksMediumRisk(t *te
 		"apply": true,
 		"auto_apply_high_confidence": true,
 		"repairs": [
-			{"name":"corr_csrf","expression":"$.csrf","sample_value":"csrf-high-123456","found_action_index":1,"used_action_indexes":[2],"confidence":0.91,"severity":"error"},
-			{"name":"corr_order","expression":"$.order","sample_value":"order-medium-123456","found_action_index":1,"used_action_indexes":[2],"confidence":0.62,"severity":"error"}
+			{"name":"corr_checkout","expression":"$.checkout_ref","sample_value":"high-123456","found_action_index":1,"used_action_indexes":[2],"confidence":0.91,"severity":"error"},
+			{"name":"corr_order","expression":"$.order","sample_value":"medium-123456","found_action_index":1,"used_action_indexes":[2],"confidence":0.62,"severity":"error"}
 		]
 	}`)
 	applyReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/authoring/sessions/"+created.ID+"/correlations/preview", bytes.NewReader(applyBody))
@@ -5037,7 +5046,7 @@ func TestBatchAuthoringCorrelationAppliesHighConfidenceAndBlocksMediumRisk(t *te
 		t.Fatalf("GetAuthoringSession returned error: %v", err)
 	}
 	target := persisted.Draft.Actions[1].Target
-	if !strings.Contains(target, "{{var.corr_csrf}}") || strings.Contains(target, "{{var.corr_order}}") {
+	if !strings.Contains(target, "{{var.corr_checkout}}") || strings.Contains(target, "{{var.corr_order}}") {
 		t.Fatalf("target = %q, want only high-confidence repair applied", target)
 	}
 	state, ok := persisted.ReviewState["last_correlation_batch_preview"].(map[string]any)
@@ -5224,6 +5233,9 @@ func TestHandleSaveJMeterImportPersistsScriptsAndScenario(t *testing.T) {
 				"type":   "GET",
 				"method": "GET",
 				"target": "/home",
+				"headers": map[string]string{
+					"Authorization": "Bearer imported-jmeter-token",
+				},
 			}},
 		}},
 		"scenario_draft": map[string]any{
@@ -5266,6 +5278,17 @@ func TestHandleSaveJMeterImportPersistsScriptsAndScenario(t *testing.T) {
 	}
 	if result.Scenario == nil || result.Scenario.ScriptCount != 1 {
 		t.Fatalf("expected saved scenario, got %#v", result.Scenario)
+	}
+	stored, ok := server.runner.GetScript(result.Scripts[0].ID)
+	if !ok || stored == nil || stored.Script == nil {
+		t.Fatal("saved JMeter script was not available")
+	}
+	authorization := stored.Script.Actions[0].Headers["Authorization"]
+	if strings.Contains(authorization, "imported-jmeter-token") || strings.Contains(authorization, maskedScriptSecret) {
+		t.Fatalf("stored JMeter authorization was not converted to a safe secret reference: %q", authorization)
+	}
+	if !strings.Contains(authorization, "{{secret.") {
+		t.Fatalf("stored JMeter authorization = %q, want secret reference", authorization)
 	}
 }
 

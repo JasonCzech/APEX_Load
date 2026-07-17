@@ -22,6 +22,8 @@ func compactMetricsResult(input *protocol.Result) *protocol.Result {
 	}
 	out := *input
 	out.ActionName = boundedMetricString(input.ActionName, maxMetricLabelBytes)
+	out.SampleKind = boundedMetricString(input.SampleKind, maxMetricLabelBytes)
+	out.ParentActionName = boundedMetricString(input.ParentActionName, maxMetricLabelBytes)
 	out.Group = boundedMetricString(input.Group, maxMetricLabelBytes)
 	out.Region = boundedMetricString(input.Region, maxMetricLabelBytes)
 	out.CorrelationID = boundedMetricString(input.CorrelationID, maxMetricLabelBytes)
@@ -44,6 +46,10 @@ func compactMetricsResult(input *protocol.Result) *protocol.Result {
 	out.SourceActionName = ""
 	out.SourceTransaction = ""
 	out.SourceProfile = ""
+	out.SourcePath = ""
+	out.SourceUID = ""
+	out.RequestType = ""
+	out.OperationKind = ""
 	out.Extractions = nil
 	if operation := strings.TrimSpace(input.Extractions["soap_operation"]); operation != "" {
 		out.Extractions = map[string]string{"soap_operation": boundedMetricString(operation, maxMetricLabelBytes)}
@@ -64,6 +70,21 @@ func compactMetricsResult(input *protocol.Result) *protocol.Result {
 		out.ServerTelemetry = &server
 	}
 	return &out
+}
+
+func metricActionDimension(result *protocol.Result) string {
+	if result == nil {
+		return ""
+	}
+	name := strings.TrimSpace(result.ActionName)
+	switch strings.ToLower(strings.TrimSpace(result.SampleKind)) {
+	case "child":
+		return "child:" + name
+	case "aggregate":
+		return "aggregate:" + name
+	default:
+		return name
+	}
 }
 
 func boundedMetricString(value string, maxBytes int) string {

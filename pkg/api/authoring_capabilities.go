@@ -176,6 +176,16 @@ func authoringImportSurfaces() []AuthoringImportSurface {
 			Visible:     true,
 		},
 		{
+			ID:          "bruno",
+			Title:       "Bruno Collection",
+			Description: "Preserve and execute classic BRU or OpenCollection YAML with scripts, environments, dependencies, certificates, fixtures, and every Bruno request type.",
+			Badge:       "BRU",
+			Category:    "Contracts & Collections",
+			Order:       15,
+			Launcher:    "bruno",
+			Visible:     true,
+		},
+		{
 			ID:          "postman",
 			Title:       "Postman Collection",
 			Description: "Convert collection folders, requests, variables, and auth placeholders into a reviewable HTTP script.",

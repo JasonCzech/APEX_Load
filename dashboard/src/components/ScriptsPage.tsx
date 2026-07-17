@@ -14,11 +14,16 @@ import PageViewToggle from './PageViewToggle'
 import LibraryFederationControls from './LibraryFederationControls'
 import { useLibraryFederation } from './useLibraryFederation'
 import { type NavPage } from './Sidebar'
-import { type ScriptDefinition } from '../types/scripts'
+import { type ScriptSecretStatus } from '../types/secrets'
 import { useScriptsLibraryModel } from './useScriptsLibraryModel'
 import { type ImportedSaveResult, type ScriptsAuthoringSubView, useScriptsAuthoringState } from './useScriptsAuthoringState'
 import { getErrorMessage } from '../utils/errorUtils'
 import { useHasTopbarContributionProvider, useTopbarContribution } from '../hooks/TopbarContributionProvider'
+import { prepareProjectSecretsSettingsNavigation } from './projectSecretsNavigation'
+import {
+  formatSourceSecretSessionFailure,
+  sourceSecretSessionIsExpired,
+} from './sourceSecretSession'
 
 interface Props {
   applicationRepository?: ApplicationRepository | null
@@ -46,6 +51,8 @@ const healthFilters: Array<{ key: AuthoringHealthFilter; label: string }> = [
   { key: 'runtime_warning', label: 'Runtime Warning' },
   { key: 'ai_guardrail', label: 'AI Guardrail' },
 ]
+
+const SECRET_STATUS_CONCURRENCY = 8
 
 function buildImportedSaveNotice(result: ImportedSaveResult): string | null {
   const savedCount = result.scripts.length
@@ -100,24 +107,6 @@ function scriptSearchText(script: StoredScript) {
   ].filter(Boolean).join(' ').toLowerCase()
 }
 
-function cloneScriptDraft(source: ScriptDefinition, fallbackName: string, projectId?: string): ScriptDefinition {
-  const cloned = JSON.parse(JSON.stringify(source)) as ScriptDefinition
-  delete cloned.id
-  delete cloned.created_at
-  delete cloned.updated_at
-  delete cloned.folder_id
-  cloned.name = `${(source.name || fallbackName || 'Script').trim()} (Copy)`
-  cloned.version = cloned.version || '1.0.0'
-  cloned.config = cloned.config || { base_url: '' }
-  cloned.actions = cloned.actions || []
-  if (projectId) {
-    cloned.project_id = projectId
-  } else {
-    delete cloned.project_id
-  }
-  return cloned
-}
-
 export default function ScriptsPage({ applicationRepository, initialMode = 'list', initialEditId, nativeImportRequest, onNativeImportRequestHandled, onSelectScenario, onNavigate, onAuthoringStateChange }: Props) {
   const api = useApi()
   const { activeProject } = useProject()
@@ -127,6 +116,9 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   const [authoringSessions, setAuthoringSessions] = useState<AuthoringSession[]>([])
   const [correlationPreviews, setCorrelationPreviews] = useState<Record<string, AuthoringCorrelationPreviewResponse>>({})
   const [correlationErrors, setCorrelationErrors] = useState<Record<string, string>>({})
+  const [secretStatusByScript, setSecretStatusByScript] = useState<Record<string, ScriptSecretStatus>>({})
+  const [secretStatusStateByScript, setSecretStatusStateByScript] = useState<Record<string, 'loading' | 'ready' | 'error'>>({})
+  const [secretStatusRetryGeneration, setSecretStatusRetryGeneration] = useState(0)
   const [libraryQuery, setLibraryQuery] = useState('')
   const [healthFilter, setHealthFilter] = useState<AuthoringHealthFilter>('all')
   const [releaseFilter, setReleaseFilter] = useState('all')
@@ -136,6 +128,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
   const projectScopeRef = useRef({ id: activeProjectId, generation: 0 })
   const scriptsRequestGenerationRef = useRef(0)
   const authoringSessionsRequestGenerationRef = useRef(0)
+  const modelExistingRequestGenerationRef = useRef(0)
 
   if (projectScopeRef.current.id !== activeProjectId) {
     projectScopeRef.current = {
@@ -144,6 +137,7 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     }
     scriptsRequestGenerationRef.current += 1
     authoringSessionsRequestGenerationRef.current += 1
+    modelExistingRequestGenerationRef.current += 1
   }
 
   const isProjectScopeCurrent = useCallback((scope: { id: string | undefined; generation: number }) => (
@@ -163,6 +157,53 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     try { window.localStorage.setItem('apexload.settings.focusSection', 'integrations') } catch { /* storage unavailable */ }
     onNavigate?.('settings')
   }, [onNavigate])
+
+  const openProjectSecrets = useCallback((script?: StoredScript) => {
+    prepareProjectSecretsSettingsNavigation(script?.project_id || activeProjectId)
+    if (onNavigate) onNavigate('settings')
+    else window.location.hash = '#/settings'
+  }, [activeProjectId, onNavigate])
+
+  useEffect(() => {
+    if (scripts.length === 0) {
+      setSecretStatusByScript({})
+      setSecretStatusStateByScript({})
+      return
+    }
+    if (typeof api.getScriptSecretStatus !== 'function') {
+      setSecretStatusByScript({})
+      setSecretStatusStateByScript(Object.fromEntries(scripts.map(script => [script.id, 'error'])))
+      return
+    }
+    let cancelled = false
+    setSecretStatusByScript({})
+    setSecretStatusStateByScript(Object.fromEntries(scripts.map(script => [script.id, 'loading'])))
+    let nextIndex = 0
+    const worker = async () => {
+      while (!cancelled) {
+        const index = nextIndex
+        nextIndex += 1
+        const script = scripts[index]
+        if (!script) return
+        try {
+          const status = await api.getScriptSecretStatus(script.id)
+          if (cancelled) return
+          setSecretStatusByScript(current => ({ ...current, [script.id]: status }))
+          setSecretStatusStateByScript(current => ({ ...current, [script.id]: 'ready' }))
+        } catch {
+          if (cancelled) return
+          setSecretStatusStateByScript(current => ({ ...current, [script.id]: 'error' }))
+        }
+      }
+    }
+    void Promise.all(Array.from(
+      { length: Math.min(SECRET_STATUS_CONCURRENCY, scripts.length) },
+      () => worker(),
+    ))
+    return () => {
+      cancelled = true
+    }
+  }, [api, scripts, secretStatusRetryGeneration])
 
   const refresh = useCallback(async () => {
     const projectId = activeProjectId
@@ -235,6 +276,12 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     authoringProjectIdRef.current = activeProjectId
     openLibrary()
   }, [activeProjectId, openLibrary])
+  useLayoutEffect(() => {
+    // Any authoring navigation invalidates an in-flight Model Existing result.
+    // This prevents a late clone from reopening the editor after the operator
+    // deliberately moved elsewhere.
+    modelExistingRequestGenerationRef.current += 1
+  }, [authoringState.editingId, authoringState.subView])
   const openImportFiles = createOptionActions.openImportFiles
 
   useEffect(() => {
@@ -245,6 +292,13 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
 
   const canManageScripts = useMemo(
     () => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_scripts'),
+    [effectiveAuthAccessResources],
+  )
+  const canMigrateSecrets = useMemo(
+    () => (
+      isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_projects', false)
+      || isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_system', false)
+    ),
     [effectiveAuthAccessResources],
   )
 
@@ -553,26 +607,75 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
     }
   }, [handleDraftEdit])
 
-  const handleStartExistingScript = useCallback(async (script: StoredScript) => {
+  const handleStartExistingScript = useCallback(async (script: StoredScript, options?: { migrateSecrets?: boolean }) => {
     const scope = { ...projectScopeRef.current }
-    let source = script.script
-    if (!source) {
+    const requestGeneration = ++modelExistingRequestGenerationRef.current
+    const requestIsCurrent = () => (
+      modelExistingRequestGenerationRef.current === requestGeneration
+      && isProjectScopeCurrent(scope)
+    )
+    try {
+      const response = await api.cloneScriptDraft(script.id, {
+        import_detected_credential_values: options?.migrateSecrets === true,
+      })
+      let migrationNotice = ''
+      let sourceSessionConsumed = false
       try {
-        const response = await api.getScript(script.id)
-        if (!isProjectScopeCurrent(scope)) return
-        source = response.script ?? undefined
-      } catch (error) {
-        if (!isProjectScopeCurrent(scope)) return
-        appendLibraryNotice(getErrorMessage(error, 'Unable to load script before cloning.'))
-        return
+        if (!requestIsCurrent()) return
+        if (options?.migrateSecrets && response.source_secret_session_id && activeProjectId) {
+          if (sourceSecretSessionIsExpired(response.source_secret_session_expires_at)) {
+            migrationNotice = 'The safe draft was opened without importing detected credential values because the protected source session expired. Configure its project secrets manually.'
+          } else try {
+            const sourceBacked = (response.secret_binding_requirements || [])
+              .filter(requirement => requirement.source_value_available)
+            const names = Array.from(new Set(sourceBacked.map(requirement => requirement.suggested_name).filter(Boolean)))
+            const status = names.length > 0
+              ? await api.getProjectSecretStatuses(activeProjectId, names)
+              : null
+            if (!requestIsCurrent()) return
+            const configured = new Set((status?.secrets || [])
+              .filter(secret => secret.configured)
+              .map(secret => secret.name))
+            const migrationBindings = sourceBacked
+              .filter(requirement => !configured.has(requirement.suggested_name))
+              .map(requirement => ({
+                requirement_id: requirement.id,
+                secret_name: requirement.suggested_name,
+              }))
+            if (migrationBindings.length > 0) {
+              if (!requestIsCurrent()) return
+              await api.migrateImportSecrets({
+                project_id: activeProjectId,
+                source_secret_session_id: response.source_secret_session_id,
+                secrets: migrationBindings,
+              })
+              sourceSessionConsumed = true
+            }
+          } catch (error) {
+            migrationNotice = `The safe draft was opened without importing detected credential values. ${formatSourceSecretSessionFailure(error)}`
+          }
+        }
+      } finally {
+        if (response.source_secret_session_id && activeProjectId && !sourceSessionConsumed) {
+          try {
+            await api.discardImportSecretSession({
+              project_id: activeProjectId,
+              source_secret_session_id: response.source_secret_session_id,
+            })
+          } catch {
+            if (requestIsCurrent() && !migrationNotice) {
+              migrationNotice = 'The protected source credential session could not be discarded and will expire automatically.'
+            }
+          }
+        }
       }
+      if (!requestIsCurrent()) return
+      handleDraftEdit(response.script, undefined, undefined, { initiallyDirty: true })
+      if (migrationNotice) appendLibraryNotice(migrationNotice)
+    } catch (error) {
+      if (!requestIsCurrent()) return
+      appendLibraryNotice(getErrorMessage(error, 'Unable to create a safe draft from this script.'))
     }
-    if (!isProjectScopeCurrent(scope)) return
-    if (!source) {
-      appendLibraryNotice(`Unable to clone "${script.name}": the script body is unavailable.`)
-      return
-    }
-    handleDraftEdit(cloneScriptDraft(source, script.name, activeProjectId))
   }, [activeProjectId, api, appendLibraryNotice, handleDraftEdit, isProjectScopeCurrent])
 
   const handleApproveAuthoringSession = useCallback(async (session: AuthoringSession) => {
@@ -651,10 +754,12 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
         onOpenLibrary={openLibrary}
         onOpenCreateOptions={openCreateOptions}
         onImported={handleImported}
+        onConfigureSecrets={() => openProjectSecrets()}
         onEditDraft={handleDraftEdit}
         onReturnToDraftSource={returnToDraftSource}
         onStartExistingScript={handleStartExistingScript}
         canManageScripts={canManageScripts}
+        canMigrateSecrets={canMigrateSecrets}
       >
       <div className="page">
         <div className="page-header">
@@ -766,6 +871,10 @@ export default function ScriptsPage({ applicationRepository, initialMode = 'list
             onCreate={scripts.length === 0 && !libraryQuery.trim() && healthFilter === 'all' && releaseFilter === 'all' ? openCreateOptions : undefined}
             federation={scriptFederation}
             github={canManageScripts && githubReady ? { enabled: true, onPush: setGithubPushScript, statusByScript: githubStatusByScript } : undefined}
+            secretStatusByScript={secretStatusByScript}
+            secretStatusStateByScript={secretStatusStateByScript}
+            onConfigureSecrets={onNavigate ? openProjectSecrets : undefined}
+            onRetrySecretStatus={() => setSecretStatusRetryGeneration(generation => generation + 1)}
           />
         </div>
         <div className="page-section">

@@ -113,9 +113,11 @@ download_asset "$release_url/SHA256SUMS" "$checksums" $((4 * 1024 * 1024))
 download_asset "$release_url/$asset" "$binary" $((512 * 1024 * 1024))
 download_asset "$release_url/release-manifest.json" "$manifest" $((16 * 1024 * 1024))
 
-signing_key="${APEXLOAD_INPUT_RELEASE_PUBLIC_KEY:-}"
-if [[ -z "$signing_key" && -f "$GITHUB_ACTION_PATH/release-signing-key.pem" ]]; then
+signing_key=""
+if [[ -f "$GITHUB_ACTION_PATH/release-signing-key.pem" ]]; then
   signing_key="$GITHUB_ACTION_PATH/release-signing-key.pem"
+elif [[ -n "${APEXLOAD_INPUT_RELEASE_PUBLIC_KEY:-}" ]]; then
+  signing_key="$APEXLOAD_INPUT_RELEASE_PUBLIC_KEY"
 fi
 if [[ -n "$signing_key" ]]; then
   [[ -f "$signing_key" ]] || die configuration_error "release-public-key does not exist"

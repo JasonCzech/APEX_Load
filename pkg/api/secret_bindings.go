@@ -18,6 +18,7 @@ import (
 	"unicode"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 const (
@@ -28,7 +29,7 @@ const (
 var (
 	// The portable template parser permits at most 256 characters inside {{ }}.
 	// "secret." consumes seven, leaving 249 for the caller-selected name.
-	logicalSecretNamePattern = regexp.MustCompile(`^[A-Z0-9][A-Z0-9_]{0,248}$`)
+	logicalSecretNamePattern = regexp.MustCompile(`^[A-Z0-9_]{1,249}$`)
 	redactedValueKeyPattern  = regexp.MustCompile(`(?i)(?:["'<]|^)([A-Za-z][A-Za-z0-9_.-]{0,63})(?:["'>])?\s*[:=]\s*["']?$`)
 )
 
@@ -36,16 +37,17 @@ var (
 // executable script field. Path is an RFC 6901 JSON Pointer to the containing
 // string; Occurrence distinguishes multiple sentinels in that same string.
 type SecretBindingRequirement struct {
-	ID            string `json:"id"`
-	Path          string `json:"path"`
-	Occurrence    int    `json:"occurrence"`
-	Label         string `json:"label"`
-	Context       string `json:"context"`
-	SuggestedName string `json:"suggested_name"`
-	Replacement   string `json:"replacement,omitempty"`
-	ScriptIndex   int    `json:"script_index"`
-	ScriptID      string `json:"script_id,omitempty"`
-	ScriptName    string `json:"script_name,omitempty"`
+	ID                   string `json:"id"`
+	Path                 string `json:"path"`
+	Occurrence           int    `json:"occurrence"`
+	Label                string `json:"label"`
+	Context              string `json:"context"`
+	SuggestedName        string `json:"suggested_name"`
+	Replacement          string `json:"replacement,omitempty"`
+	ScriptIndex          int    `json:"script_index"`
+	ScriptID             string `json:"script_id,omitempty"`
+	ScriptName           string `json:"script_name,omitempty"`
+	SourceValueAvailable bool   `json:"source_value_available,omitempty"`
 }
 
 type secretBindingSelection struct {
@@ -89,6 +91,88 @@ func discoverSecretBindingRequirements(script *dsl.Script, scriptIndex int) []Se
 }
 
 func discoverSecretBindingRequirementsValue(raw any, scriptIndex int) []SecretBindingRequirement {
+	registry := newSecretSuggestionRegistry()
+	reserveExistingSecretNames(raw, registry)
+	return discoverSecretBindingRequirementsValueWithRegistry(raw, scriptIndex, registry)
+}
+
+type secretSuggestionRegistry struct {
+	used map[string]struct{}
+	next map[string]int
+}
+
+func newSecretSuggestionRegistry() *secretSuggestionRegistry {
+	return &secretSuggestionRegistry{
+		used: make(map[string]struct{}),
+		next: make(map[string]int),
+	}
+}
+
+func (registry *secretSuggestionRegistry) reserve(name string) {
+	if registry == nil {
+		return
+	}
+	name, err := engine.NormalizeLogicalSecretName(name)
+	if err != nil || !logicalSecretNamePattern.MatchString(name) {
+		return
+	}
+	registry.used[name] = struct{}{}
+	if registry.next[name] < 2 {
+		registry.next[name] = 2
+	}
+}
+
+func (registry *secretSuggestionRegistry) allocate(base string) string {
+	if registry == nil {
+		registry = newSecretSuggestionRegistry()
+	}
+	base = strings.TrimSpace(base)
+	if len(base) > 249 {
+		base = base[:249]
+	}
+	if base == "" {
+		base = "IMPORTED_SECRET"
+	}
+	if _, exists := registry.used[base]; !exists {
+		registry.used[base] = struct{}{}
+		registry.next[base] = 2
+		return base
+	}
+	for suffixNumber := registry.next[base]; ; suffixNumber++ {
+		suffix := "_" + strconv.Itoa(suffixNumber)
+		prefix := base
+		if len(prefix)+len(suffix) > 249 {
+			prefix = prefix[:249-len(suffix)]
+		}
+		candidate := prefix + suffix
+		if _, exists := registry.used[candidate]; exists {
+			continue
+		}
+		registry.used[candidate] = struct{}{}
+		registry.next[base] = suffixNumber + 1
+		return candidate
+	}
+}
+
+func reserveExistingSecretNames(raw any, registry *secretSuggestionRegistry) {
+	payload, err := json.Marshal(raw)
+	if err != nil {
+		return
+	}
+	var script dsl.Script
+	if err := json.Unmarshal(payload, &script); err != nil {
+		return
+	}
+	names, err := engine.ReferencedSecretNames(&script)
+	if err != nil {
+		return
+	}
+	for _, name := range names {
+		registry.reserve(name)
+	}
+}
+
+func discoverSecretBindingRequirementsValueWithRegistry(raw any, scriptIndex int, registry *secretSuggestionRegistry) []SecretBindingRequirement {
 	scriptMap, ok := raw.(map[string]any)
 	if !ok || !isScriptJSONObject(scriptMap) {
 		return []SecretBindingRequirement{}
@@ -98,15 +182,14 @@ func discoverSecretBindingRequirementsValue(raw any, scriptIndex int) []SecretBi
 	internal := make([]internalSecretBindingRequirement, 0)
 	discoverRedactedValues(scriptMap, "", redactionTraversalContext{}, scriptIndex, scriptID, scriptName, &internal)
 
-	// Redaction destroys identity, so repeated suggestions must remain distinct
-	// unless the user explicitly chooses to reuse a logical binding.
-	seenNames := make(map[string]int, len(internal))
+	// Redaction destroys identity, so every occurrence in an import batch gets a
+	// distinct default. Users can still explicitly choose the same logical name
+	// when they know two locations intentionally share one credential.
 	result := make([]SecretBindingRequirement, 0, len(internal))
 	for _, requirement := range internal {
-		base := requirement.SuggestedName
-		seenNames[base]++
-		if seenNames[base] > 1 {
-			requirement.SuggestedName = fmt.Sprintf("%s_%d", base, seenNames[base])
+		suggestedName := registry.allocate(requirement.SuggestedName)
+		if suggestedName != requirement.SuggestedName {
+			requirement.SuggestedName = suggestedName
 			requirement.Replacement = replaceRedactedOccurrence(
 				requirement.sourceValue,
 				requirement.Occurrence,
@@ -469,9 +552,9 @@ func applySecretBindings(script *dsl.Script, scriptIndex int, bindings []secretB
 		if _, ok := known[id]; !ok {
 			return nil, requirements, &staleSecretBindingRequirementsError{requirements: requirements}
 		}
-		name := strings.TrimSpace(binding.SecretName)
-		if !logicalSecretNamePattern.MatchString(name) {
-			return nil, nil, fmt.Errorf("secret_name for %q must be a canonical logical name of 1-249 uppercase letters, digits, or '_'", id)
+		name, err := engine.NormalizeLogicalSecretName(binding.SecretName)
+		if err != nil || !logicalSecretNamePattern.MatchString(name) {
+			return nil, nil, fmt.Errorf("secret_name for %q must contain 1-249 letters, digits, underscores, dots, or hyphens", id)
 		}
 		selected[id] = name
 	}
@@ -503,6 +586,32 @@ func applySecretBindings(script *dsl.Script, scriptIndex int, bindings []secretB
 	}
 	remaining := discoverSecretBindingRequirements(projected, scriptIndex)
 	return projected, remaining, nil
+}
+
+func applySuggestedSecretBindings(script *dsl.Script, scriptIndex int) (*dsl.Script, []SecretBindingRequirement, error) {
+	masked := maskScriptSecrets(script)
+	if masked == nil {
+		return nil, nil, fmt.Errorf("failed to project script for secret binding")
+	}
+	requirements := discoverSecretBindingRequirements(masked, scriptIndex)
+	if len(requirements) == 0 {
+		return masked, requirements, nil
+	}
+	bindings := make([]secretBindingSelection, 0, len(requirements))
+	for _, requirement := range requirements {
+		bindings = append(bindings, secretBindingSelection{
+			RequirementID: requirement.ID,
+			SecretName:    requirement.SuggestedName,
+		})
+	}
+	resolved, remaining, err := applySecretBindings(masked, scriptIndex, bindings)
+	if err != nil {
+		return nil, requirements, err
+	}
+	if len(remaining) != 0 {
+		return nil, requirements, fmt.Errorf("failed to apply every suggested secret binding")
+	}
+	return resolved, requirements, nil
 }
 
 func applySecretBindingReplacements(value any, path string, replacements map[string]map[int]string) any {
@@ -553,8 +662,12 @@ func secretBindingRequirementsForImportScripts(value any) []SecretBindingRequire
 	nodes := make([]map[string]any, 0)
 	collectScriptJSONNodes(value, &nodes)
 	result := make([]SecretBindingRequirement, 0)
+	registry := newSecretSuggestionRegistry()
+	for _, node := range nodes {
+		reserveExistingSecretNames(node, registry)
+	}
 	for index, node := range nodes {
-		result = append(result, discoverSecretBindingRequirementsValue(node, index)...)
+		result = append(result, discoverSecretBindingRequirementsValueWithRegistry(node, index, registry)...)
 	}
 	if result == nil {
 		return []SecretBindingRequirement{}

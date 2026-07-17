@@ -1,3 +1,9 @@
+{{- if and .Values.bruno.enabled (not .Values.bruno.artifactPersistence.existingClaim) }}
+{{- fail "bruno.artifactPersistence.existingClaim is required when Bruno execution is enabled" }}
+{{- end }}
+{{- if and .Values.bruno.enabled (not .Values.bruno.egressBrokerUrl) (not .Values.bruno.allowDirectEgress) }}
+{{- fail "Bruno execution requires bruno.egressBrokerUrl; bruno.allowDirectEgress is only an explicit local override" }}
+{{- end }}
 apiVersion: v1
 kind: Service
 metadata:
@@ -82,6 +88,43 @@ spec:
               value: production
             - name: APEXLOAD_GENERATOR_MAX_VUSERS
               value: {{ .Values.generator.maxVUsers | quote }}
+{{- if .Values.bruno.enabled }}
+            - name: APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED
+              value: "true"
+            - name: APEXLOAD_BRUNO_ARTIFACT_ROOT
+              value: {{ .Values.bruno.artifactRoot | quote }}
+            - name: APEXLOAD_BRUNO_RUNNER_URL
+              value: http://127.0.0.1:8097
+            - name: APEXLOAD_BRUNO_SAFE_EXECUTION_ENABLED
+              value: "true"
+            - name: APEXLOAD_BRUNO_DEVELOPER_EXECUTION_ENABLED
+              value: "false"
+            - name: APEXLOAD_BRUNO_EGRESS_BROKER_URL
+              value: {{ .Values.bruno.egressBrokerUrl | quote }}
+            - name: APEXLOAD_BRUNO_ALLOW_DIRECT_EGRESS
+              value: {{ .Values.bruno.allowDirectEgress | quote }}
+            - name: APEXLOAD_BRUNO_MAX_JUMPS
+              value: {{ .Values.bruno.maxJumps | quote }}
+            - name: APEXLOAD_BRUNO_MAX_RUN_REQUEST_DEPTH
+              value: {{ .Values.bruno.maxRunRequestDepth | quote }}
+            - name: APEXLOAD_BRUNO_MAX_PARALLEL_REQUESTS
+              value: {{ .Values.bruno.maxParallelRequests | quote }}
+            - name: APEXLOAD_BRUNO_MAX_OUTPUT_BYTES
+              value: {{ .Values.bruno.maxOutputBytes | quote }}
+            - name: APEXLOAD_BRUNO_MAX_STREAM_TIMEOUT_MS
+              value: {{ .Values.bruno.maxStreamTimeoutMs | quote }}
+{{- $wrappingKeyVaultKeyId := include "apexload.wrappingKeyVaultKeyId" . }}
+{{- if $wrappingKeyVaultKeyId }}
+            - name: APEXLOAD_WRAPPING_KEY_VAULT_KEY_ID
+              value: {{ $wrappingKeyVaultKeyId | quote }}
+{{- else }}
+            - name: APEXLOAD_WRAPPING_MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.dataPlatform.secretName }}
+                  key: APEXLOAD_WRAPPING_MASTER_KEY
+{{- end }}
+{{- end }}
             - name: APEXLOAD_GENERATOR_STATE_DIR
               value: /var/lib/apexload-generator
             - name: APEXLOAD_ARCHIVE_DIR
@@ -129,6 +172,11 @@ spec:
             - name: grpc-tls
               mountPath: /etc/apexload/grpc-tls
               readOnly: true
+{{- if .Values.bruno.enabled }}
+            - name: bruno-artifacts
+              mountPath: {{ .Values.bruno.artifactRoot | quote }}
+              readOnly: true
+{{- end }}
           ports:
             - name: grpc
               containerPort: 9090
@@ -146,6 +194,61 @@ spec:
             periodSeconds: 20
           resources:
 {{ toYaml .Values.generator.resources | indent 12 }}
+{{- if .Values.bruno.enabled }}
+        - name: bruno-runner
+          image: {{ include "apexload.brunoRunnerImage" . | quote }}
+          imagePullPolicy: {{ .Values.bruno.runner.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: APEXLOAD_BRUNO_RUNNER_ADDR
+              value: 127.0.0.1
+            - name: APEXLOAD_BRUNO_RUNNER_PORT
+              value: "8097"
+            - name: APEXLOAD_BRUNO_EGRESS_BROKER_URL
+              value: {{ .Values.bruno.egressBrokerUrl | quote }}
+            - name: APEXLOAD_BRUNO_ALLOW_DIRECT_EGRESS
+              value: {{ .Values.bruno.allowDirectEgress | quote }}
+            - name: APEXLOAD_BRUNO_DEVELOPER_WORKER
+              value: "false"
+            - name: APEXLOAD_BRUNO_MAX_SESSIONS
+              value: {{ .Values.bruno.maxSessions | quote }}
+            - name: APEXLOAD_BRUNO_MAX_PENDING_EVENTS
+              value: {{ .Values.bruno.maxPendingEvents | quote }}
+            - name: APEXLOAD_BRUNO_MAX_BUNDLE_BYTES
+              value: {{ .Values.bruno.maxBundleBytes | quote }}
+            - name: APEXLOAD_BRUNO_SESSION_TTL_MS
+              value: {{ .Values.bruno.sessionTtlMs | quote }}
+            - name: APEXLOAD_BRUNO_SESSION_IDLE_TTL_MS
+              value: {{ .Values.bruno.sessionIdleTtlMs | quote }}
+          ports:
+            - name: bruno-runner
+              containerPort: 8097
+          volumeMounts:
+            - name: bruno-runner-tmp
+              mountPath: /tmp
+          startupProbe:
+            exec:
+              command: ["node", "-e", "fetch('http://127.0.0.1:8097/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            exec:
+              command: ["node", "-e", "fetch('http://127.0.0.1:8097/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+            periodSeconds: 10
+            timeoutSeconds: 3
+          livenessProbe:
+            exec:
+              command: ["node", "-e", "fetch('http://127.0.0.1:8097/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+{{ toYaml .Values.bruno.runner.resources | indent 12 }}
+{{- end }}
       volumes:
         - name: tmp
           emptyDir:
@@ -153,6 +256,14 @@ spec:
         - name: grpc-tls
           secret:
             secretName: {{ .Values.generator.grpcTlsSecretName }}
+{{- if .Values.bruno.enabled }}
+        - name: bruno-artifacts
+          persistentVolumeClaim:
+            claimName: {{ .Values.bruno.artifactPersistence.existingClaim | quote }}
+        - name: bruno-runner-tmp
+          emptyDir:
+            sizeLimit: {{ .Values.bruno.runner.scratch.tmpSizeLimit }}
+{{- end }}
   persistentVolumeClaimRetentionPolicy:
     whenDeleted: Retain
     whenScaled: Retain

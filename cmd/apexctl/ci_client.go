@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -137,6 +138,7 @@ type CIAPIError struct {
 	Method     string
 	Path       string
 	StatusCode int
+	RetryAfter time.Duration
 }
 
 func (e *CIAPIError) Error() string {
@@ -253,10 +255,6 @@ func validateCIRunAPIResponse(response *CIRunResponse, expectedTestID string) er
 	return nil
 }
 
-func (c *ApiClient) AbortCIRun(ctx context.Context, testID string) (*CIAbortResponse, error) {
-	return c.AbortCIRunWithReason(ctx, testID, "")
-}
-
 func (c *ApiClient) AbortCIRunWithReason(ctx context.Context, testID string, reason string) (*CIAbortResponse, error) {
 	var out CIAbortResponse
 	path := "/api/v1/ci/runs/" + url.PathEscape(strings.TrimSpace(testID)) + "/abort"
@@ -311,6 +309,7 @@ func (c *ApiClient) ciJSON(ctx context.Context, method, path string, payload any
 			Method:     method,
 			Path:       path,
 			StatusCode: response.StatusCode,
+			RetryAfter: parseCIRetryAfter(response.Header.Get("Retry-After"), time.Now()),
 		}
 	}
 	if out == nil {
@@ -320,6 +319,35 @@ func (c *ApiClient) ciJSON(ctx context.Context, method, path string, payload any
 		return fmt.Errorf("decode %s response: %w", path, err)
 	}
 	return nil
+}
+
+func parseCIRetryAfter(value string, now time.Time) time.Duration {
+	const maxRetryAfter = 24 * time.Hour
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+	if seconds, err := strconv.ParseInt(value, 10, 64); err == nil {
+		if seconds <= 0 {
+			return 0
+		}
+		if seconds >= int64(maxRetryAfter/time.Second) {
+			return maxRetryAfter
+		}
+		return time.Duration(seconds) * time.Second
+	}
+	retryAt, err := http.ParseTime(value)
+	if err != nil {
+		return 0
+	}
+	delay := retryAt.Sub(now)
+	if delay <= 0 {
+		return 0
+	}
+	if delay > maxRetryAfter {
+		return maxRetryAfter
+	}
+	return delay
 }
 
 func decodeBoundedSingleJSON(reader io.Reader, maxBytes int64, out any) error {

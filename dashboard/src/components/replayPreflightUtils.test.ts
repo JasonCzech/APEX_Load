@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
-import { buildLocalReplayPreflight } from './replayPreflightUtils'
+import { buildLocalReplayPreflight, reconcileReplayPreflightSecretStatus } from './replayPreflightUtils'
 
 const baseScript: ScriptDefinition = {
   name: 'API Smoke',
@@ -45,7 +45,7 @@ describe('buildLocalReplayPreflight', () => {
           type: 'GET',
           method: 'GET',
           target: '/users/{{var.account_id}}/{{var.user_id}}/{{param.user_id}}/{{data.users.id}}',
-          headers: { Authorization: 'Bearer {{env.API_TOKEN}}' },
+          headers: { Authorization: 'Bearer {{secret.API_TOKEN}}' },
         },
       ],
     }, { account_id: 'acct-1' })
@@ -53,7 +53,128 @@ describe('buildLocalReplayPreflight', () => {
     expect(preflight.valid).toBe(true)
     expect(preflight.missing_variables).toEqual([])
     expect(preflight.required_secrets).toEqual(['API_TOKEN'])
+    expect(preflight.missing_secrets).toEqual(['API_TOKEN'])
     expect(preflight.checks?.find(check => check.id === 'secrets')?.status).toBe('warn')
+  })
+
+  it('detects project secret references in script configuration without treating env values as project secrets', () => {
+    const preflight = buildLocalReplayPreflight({
+      ...baseScript,
+      config: {
+        base_url: 'https://api.example.com',
+        http: {
+          auth: {
+            type: 'basic',
+            username: '{{env.API_USERNAME}}',
+            password: '{{secret.LOGIN_PASSWORD}}',
+          },
+        },
+      },
+    })
+
+    expect(preflight.required_secrets).toEqual(['LOGIN_PASSWORD'])
+    expect(preflight.missing_secrets).toEqual(['LOGIN_PASSWORD'])
+  })
+
+  it('collects dedicated logical secret fields while excluding provenance and review-only actions', () => {
+    const preflight = buildLocalReplayPreflight({
+      ...baseScript,
+      config: {
+        ...baseScript.config,
+        database: { dsn_secret: 'database.dsn' },
+      },
+      metadata: {
+        import: {
+          source: 'fixture',
+          preserved: { source_secret: '{{secret.PROVENANCE_ONLY}}' },
+        },
+      },
+      actions: [
+        ...baseScript.actions,
+        {
+          name: 'Source review',
+          type: 'source_review',
+          target: '{{secret.REVIEW_ONLY}}',
+          params: { dsn_secret: 'REVIEW_DSN' },
+        },
+      ],
+    })
+
+    expect(preflight.required_secrets).toEqual(['DATABASE_DSN'])
+  })
+
+  it('uses authoritative project status so configured references are not shown as missing', () => {
+    const local = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [{
+        ...baseScript.actions[0],
+        headers: { Authorization: 'Bearer {{secret.API_TOKEN}}' },
+      }],
+    })
+
+    const reconciled = reconcileReplayPreflightSecretStatus(local, [
+      { name: 'API_TOKEN', configured: true },
+    ], true)
+
+    expect(reconciled.required_secrets).toEqual(['API_TOKEN'])
+    expect(reconciled.missing_secrets).toEqual([])
+    expect(reconciled.checks?.find(check => check.id === 'secrets')).toMatchObject({
+      status: 'pass',
+      detail: '1 project secret configured.',
+    })
+  })
+
+  it('makes authoritative missing project secrets a blocking preflight prerequisite', () => {
+    const local = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [{
+        ...baseScript.actions[0],
+        headers: { Authorization: 'Bearer {{secret.API_TOKEN}}' },
+      }],
+    })
+
+    const reconciled = reconcileReplayPreflightSecretStatus(local, [
+      { name: 'API_TOKEN', configured: false },
+    ], true)
+
+    expect(reconciled.valid).toBe(false)
+    expect(reconciled.missing_secrets).toEqual(['API_TOKEN'])
+    expect(reconciled.checks?.find(check => check.id === 'secrets')).toMatchObject({
+      status: 'fail',
+      detail: 'Configure missing project secret: API_TOKEN.',
+    })
+  })
+
+  it('does not claim draft references are missing before the project-scoped status probe completes', () => {
+    const local = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [{
+        ...baseScript.actions[0],
+        headers: { Authorization: 'Bearer {{secret.API_TOKEN}}' },
+      }],
+    })
+
+    const checking = reconcileReplayPreflightSecretStatus(local, [], false)
+
+    expect(checking.valid).toBe(false)
+    expect(checking.missing_secrets).toEqual([])
+    expect(checking.checks?.find(check => check.id === 'secrets')?.detail).toBe('Checking project secret configuration…')
+  })
+
+  it('distinguishes an unavailable project status probe from a missing secret', () => {
+    const local = buildLocalReplayPreflight({
+      ...baseScript,
+      actions: [{
+        ...baseScript.actions[0],
+        headers: { Authorization: 'Bearer {{secret.API_TOKEN}}' },
+      }],
+    })
+
+    const unavailable = reconcileReplayPreflightSecretStatus(local, [], false, true)
+
+    expect(unavailable.valid).toBe(false)
+    expect(unavailable.missing_secrets).toEqual([])
+    expect(unavailable.checks?.find(check => check.id === 'secrets')?.detail).toBe('Project secret status is temporarily unavailable.')
   })
 
   it('makes extractor variables available only to later actions', () => {

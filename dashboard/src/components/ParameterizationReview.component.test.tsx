@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, useState } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -140,8 +140,38 @@ describe('ParameterizationReview', () => {
       selected_ids: ['pz_auto'],
       confirm_high_risk: false,
     }))
-    expect(onApplied).toHaveBeenCalledWith(parameterizedScript, expect.any(Array))
+    expect(onApplied).toHaveBeenCalledWith(parameterizedScript, expect.any(Array), ['pz_auto'])
     expect(container.textContent).toContain('Applied 1 change(s)')
+  })
+
+  it('locks selection and apply while the surrounding workflow is mutating', async () => {
+    act(() => {
+      root.render(
+        <ParameterizationReview
+          parameterization={buildParameterization([
+            suggestion({ id: 'pz_auto', auto_apply: true }),
+            suggestion({ id: 'pz_review', auto_apply: false }),
+          ])}
+          script={script}
+          disabled
+          onApplied={vi.fn()}
+        />,
+      )
+    })
+
+    const checkboxes = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+    const applyButton = container.querySelector<HTMLButtonElement>('button.btn-primary')!
+    expect(checkboxes.every(checkbox => checkbox.disabled)).toBe(true)
+    expect(applyButton.disabled).toBe(true)
+
+    await act(async () => {
+      checkboxes[1].click()
+      applyButton.click()
+      await Promise.resolve()
+    })
+
+    expect(checkboxes[1].checked).toBe(false)
+    expect(applyMock).not.toHaveBeenCalled()
   })
 
   it('allows the selection to be applied again after the user changes it', async () => {
@@ -214,6 +244,92 @@ describe('ParameterizationReview', () => {
     })
     expect(container.textContent).not.toContain('Applied 1 change(s)')
     expect(container.querySelector<HTMLButtonElement>('button.btn-primary')?.textContent).toContain('Apply Selected (1)')
+  })
+
+  it('preserves applied state when the parent advances its stale-request generation after apply', async () => {
+    const parameterization = buildParameterization([
+      suggestion({ id: 'pz_auto', auto_apply: true }),
+    ])
+    applyMock.mockResolvedValue({
+      script: { ...script, name: 'Parameterized' },
+      diffs: [{ kind: 'value_replaced', path: '/actions/0/target', suggestion_id: 'pz_auto' }],
+      applied_count: 1,
+    })
+
+    function Harness() {
+      const [generation, setGeneration] = useState(1)
+      const [currentScript, setCurrentScript] = useState(script)
+      return (
+        <ParameterizationReview
+          parameterization={parameterization}
+          script={currentScript}
+          reviewGeneration={generation}
+          onApplied={nextScript => {
+            setGeneration(current => current + 1)
+            setCurrentScript(nextScript)
+          }}
+        />
+      )
+    }
+
+    act(() => root.render(<Harness />))
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button.btn-primary')?.click()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Applied 1 change(s)')
+    expect(container.querySelector<HTMLButtonElement>('button.btn-primary')?.textContent).toContain('Reapply Selected (1)')
+  })
+
+  it('drops a late apply response after the review generation changes', async () => {
+    let resolveApply: ((value: unknown) => void) | undefined
+    applyMock.mockImplementationOnce(() => new Promise(resolve => { resolveApply = resolve }))
+    const parameterization = buildParameterization([suggestion({ id: 'pz_auto', auto_apply: true })])
+    const onApplied = vi.fn()
+    const onApplyingChange = vi.fn()
+
+    act(() => {
+      root.render(
+        <ParameterizationReview
+          parameterization={parameterization}
+          script={script}
+          reviewGeneration="review-1"
+          onApplyingChange={onApplyingChange}
+          onApplied={onApplied}
+        />,
+      )
+    })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('button.btn-primary')?.click()
+      await Promise.resolve()
+    })
+    expect(onApplyingChange).toHaveBeenCalledWith(true)
+
+    act(() => {
+      root.render(
+        <ParameterizationReview
+          parameterization={parameterization}
+          script={script}
+          reviewGeneration="review-2"
+          onApplyingChange={onApplyingChange}
+          onApplied={onApplied}
+        />,
+      )
+    })
+    expect(onApplyingChange).toHaveBeenLastCalledWith(false)
+
+    await act(async () => {
+      resolveApply?.({
+        script: { ...script, name: 'Late parameterized script' },
+        diffs: [{ kind: 'value_replaced', path: '/actions/0/target', suggestion_id: 'pz_auto' }],
+        applied_count: 1,
+      })
+      await Promise.resolve()
+    })
+
+    expect(onApplied).not.toHaveBeenCalled()
+    expect(container.textContent).not.toContain('Applied 1 change(s)')
   })
 
   it('passes confirm_high_risk when a secret row is selected', async () => {

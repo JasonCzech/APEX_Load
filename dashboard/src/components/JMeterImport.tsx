@@ -8,8 +8,8 @@ import { isDesktopSurface } from '../desktop/desktopBridge'
 import { canUseNativeDialogs, filesFromDroppedPaths, pickFilesViaBridge } from '../desktop/desktopFiles'
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
 import ParameterizationReview from './ParameterizationReview'
-import SecretBindingReview from './SecretBindingReview'
 import ScriptImportReview from './ScriptImportReview'
+import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScripts } from './importSaveUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
@@ -62,12 +62,48 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
   const [supportNotes, setSupportNotes] = useState<string[]>([])
   const [reviewMode, setReviewMode] = useState<ReviewMode | null>(null)
   const [result, setResult] = useState<ImportResult | null>(null)
+  const latestResultRef = useRef<ImportResult | null>(result)
+  latestResultRef.current = result
+  const selectedFileRef = useRef<File | null>(file)
+  selectedFileRef.current = file
+  const reviewGenerationRef = useRef(0)
+  const [reviewGeneration, setReviewGeneration] = useState(0)
+  const advanceReviewGeneration = useCallback(() => {
+    const next = reviewGenerationRef.current + 1
+    reviewGenerationRef.current = next
+    setReviewGeneration(next)
+    return next
+  }, [])
+  const reviewScope = `${reviewGeneration}:${projectId || ''}`
+  const reviewProjectIdRef = useRef(projectId)
+  reviewProjectIdRef.current = projectId
+  const [parameterizationApplyingByScript, setParameterizationApplyingByScript] = useState<Record<string, boolean>>({})
+  const parameterizationApplying = Object.values(parameterizationApplyingByScript).some(Boolean)
+  const [credentialActionInProgress, setCredentialActionInProgress] = useState(false)
+  const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
+  const invalidateReview = useCallback(() => {
+    void credentialReviewRef.current?.discardSourceSession()
+    advanceReviewGeneration()
+    setWorkingMode(null)
+    setSaving(false)
+    setResult(null)
+    setReviewMode(null)
+    setNotice('')
+    setParameterizationApplyingByScript({})
+    setCredentialActionInProgress(false)
+  }, [advanceReviewGeneration])
   const [options, setOptions] = useState({
     name: '',
     base_url: '',
     include_assertions: true,
     scenario_draft: true,
   })
+  const previousProjectIdRef = useRef(projectId)
+  useEffect(() => {
+    if (previousProjectIdRef.current === projectId) return
+    previousProjectIdRef.current = projectId
+    invalidateReview()
+  }, [invalidateReview, projectId])
   const supportMatrixSections = summarizeSupportMatrix(supportMatrix)
   const coverageSections = summarizeSupportMatrixEntries(supportEntries)
   const extractorSummary = summarizeImportExtractors(result?.scripts || [])
@@ -107,12 +143,11 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
       setError('Please upload a JMeter .jmx test plan.')
       return
     }
+    invalidateReview()
     setFile(nextFile)
     setError('')
     setNotice('')
-    setReviewMode(null)
-    setResult(null)
-  }, [])
+  }, [invalidateReview])
 
   useEffect(() => {
     if (initialFile) {
@@ -147,6 +182,12 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
 
   const handleImport = async () => {
     if (!file) return
+    const sourceGeneration = advanceReviewGeneration()
+    const sourceProjectId = reviewProjectIdRef.current
+    const sourceFile = file
+    const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration
+      && reviewProjectIdRef.current === sourceProjectId
+      && selectedFileRef.current === sourceFile
     setWorkingMode('convert')
     setError('')
     setNotice('')
@@ -159,18 +200,25 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
         include_assertions: options.include_assertions,
         scenario_draft: options.scenario_draft,
       })
+      if (!requestIsCurrent()) return
       setResult(response)
       setReviewMode('conversion')
       setNotice('Conversion complete. Review the generated scripts, warnings, and assumptions before saving.')
     } catch (error: unknown) {
-      setError(getErrorMessage(error, 'JMeter import failed'))
+      if (requestIsCurrent()) setError(getErrorMessage(error, 'JMeter import failed'))
     } finally {
-      setWorkingMode(null)
+      if (requestIsCurrent()) setWorkingMode(null)
     }
   }
 
   const handleValidate = async () => {
     if (!file) return
+    const sourceGeneration = advanceReviewGeneration()
+    const sourceProjectId = reviewProjectIdRef.current
+    const sourceFile = file
+    const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration
+      && reviewProjectIdRef.current === sourceProjectId
+      && selectedFileRef.current === sourceFile
     setWorkingMode('validate')
     setError('')
     setNotice('')
@@ -183,43 +231,52 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
         include_assertions: options.include_assertions,
         scenario_draft: options.scenario_draft,
       })
+      if (!requestIsCurrent()) return
       setResult(response)
       setReviewMode('validation')
       setNotice('Validation complete. Review the generated scripts and warnings before saving.')
     } catch (error: unknown) {
-      setError(getErrorMessage(error, 'JMeter validation failed'))
+      if (requestIsCurrent()) setError(getErrorMessage(error, 'JMeter validation failed'))
     } finally {
-      setWorkingMode(null)
+      if (requestIsCurrent()) setWorkingMode(null)
     }
   }
 
-  const handleParameterizationApplied = (scriptName: string) => (parameterizedScript: ScriptDefinition) => {
+  const handleParameterizationApplied = (scriptIndex: number) => (parameterizedScript: ScriptDefinition) => {
+    credentialReviewRef.current?.preserveEditsForNextReviewGeneration()
+    advanceReviewGeneration()
+    setSaving(false)
     setResult(prev => {
       if (!prev) return prev
-      const scripts = (prev.scripts || []).map(script => (script.name === scriptName ? parameterizedScript : script))
-      const primary = prev.script?.name === scriptName ? parameterizedScript : prev.script
+      const scripts = (prev.scripts || []).map((script, index) => (index === scriptIndex ? parameterizedScript : script))
+      const primary = scriptIndex === 0 ? parameterizedScript : prev.script
       return { ...prev, scripts, script: primary }
     })
   }
 
   const handleSaveConverted = async () => {
-    if (!result?.scripts?.length) return
-    if ((result.secret_binding_requirements?.length ?? 0) > 0) {
-      setError('Resolve every redacted credential binding before saving the generated scripts.')
-      return
-    }
+    const resultToSave = latestResultRef.current
+    if (!resultToSave?.scripts?.length) return
+    const sourceGeneration = reviewGenerationRef.current
+    const sourceProjectId = reviewProjectIdRef.current
+    const sourceFile = selectedFileRef.current
+    const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration
+      && reviewProjectIdRef.current === sourceProjectId
+      && selectedFileRef.current === sourceFile
+      && latestResultRef.current === resultToSave
     setSaving(true)
     setError('')
     setNotice('')
     try {
-      const scripts = result.scripts.map(script => script.project_id ? script : { ...script, project_id: projectId })
+      const scripts = resultToSave.scripts.map(script => script.project_id ? script : { ...script, project_id: sourceProjectId })
       const response = await api.saveJMeterImport({
         scripts,
-        scenario_draft: result.scenario_draft,
+        scenario_draft: resultToSave.scenario_draft,
       })
-      const savedScripts = withFallbackPersistedScripts(response.scripts, result.scripts)
+      const savedScripts = withFallbackPersistedScripts(response.scripts, resultToSave.scripts)
       const scenarioText = response.scenario ? ' and scenario draft' : ''
-      setNotice(`Saved ${response.count || result.scripts.length} script${result.scripts.length === 1 ? '' : 's'}${scenarioText} to the library.`)
+      if (!requestIsCurrent()) return
+      setNotice(`Saved ${response.count || resultToSave.scripts.length} script${resultToSave.scripts.length === 1 ? '' : 's'}${scenarioText} to the library.`)
       if (savedScripts.length) {
         onImported?.({
           scripts: savedScripts,
@@ -227,45 +284,79 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
         })
       }
     } catch (error: unknown) {
-      setError(getErrorMessage(error, 'Failed to save converted scripts'))
+      if (requestIsCurrent()) setError(getErrorMessage(error, 'Failed to save converted scripts'))
     } finally {
-      setSaving(false)
+      if (requestIsCurrent()) setSaving(false)
     }
   }
 
-  const handleSecretBindingsApply = (script: ScriptDefinition, scriptIndex: number) => async (bindings: SecretBindingSelection[]) => {
-    try {
-      const resolved = await api.applySecretBindings({ script, script_index: scriptIndex, bindings })
-      setResult(prev => {
-        if (!prev) return prev
-        const scripts = (prev.scripts || []).map((entry, index) => index === scriptIndex ? resolved.script : entry)
-        return {
-          ...prev,
-          scripts,
-          script: scriptIndex === 0 ? resolved.script : prev.script,
+  const handleEditConverted = () => {
+    const currentScript = getPrimaryScript(latestResultRef.current)
+    if (currentScript) onEdit?.(currentScript)
+  }
+
+  const handleSecretBindingsApply = async (bindings: SecretBindingSelection[]) => {
+    if (!result) return
+    const sourceGeneration = reviewGenerationRef.current
+    const sourceProjectId = reviewProjectIdRef.current
+    const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration && reviewProjectIdRef.current === sourceProjectId
+    const assertCurrent = () => {
+      if (!requestIsCurrent()) throw new Error('The import result changed while credentials were being prepared. Review the current draft and try again.')
+    }
+    let resolvedResult = result
+    for (let scriptIndex = 0; scriptIndex < resolvedResult.scripts.length; scriptIndex += 1) {
+      const script = resolvedResult.scripts[scriptIndex]
+      const requirements = secretBindingRequirementsForScript(resolvedResult.secret_binding_requirements, scriptIndex, script)
+      const requirementIDs = new Set(requirements.map(requirement => requirement.id))
+      const scriptBindings = bindings
+        .filter(binding => (
+          typeof binding.script_index === 'number'
+            ? binding.script_index === scriptIndex
+            : requirementIDs.has(binding.requirement_id)
+        ))
+        .map(({ requirement_id, secret_name }) => ({ requirement_id, secret_name }))
+      if (scriptBindings.length === 0) continue
+      try {
+        assertCurrent()
+        const resolved = await api.applySecretBindings({
+          script,
+          script_index: scriptIndex,
+          bindings: scriptBindings,
+        })
+        assertCurrent()
+        resolvedResult = {
+          ...resolvedResult,
+          scripts: resolvedResult.scripts.map((entry, index) => index === scriptIndex ? resolved.script : entry),
+          script: scriptIndex === 0 ? resolved.script : resolvedResult.script,
           secret_binding_requirements: replaceSecretBindingRequirementsForScript(
-            prev.secret_binding_requirements,
+            resolvedResult.secret_binding_requirements,
             scriptIndex,
             script,
             resolved.secret_binding_requirements,
           ),
         }
-      })
-    } catch (error: unknown) {
-      const refreshed = refreshedSecretBindingRequirements(error)
-      if (refreshed) {
-        setResult(prev => prev ? {
-          ...prev,
-          secret_binding_requirements: replaceSecretBindingRequirementsForScript(
-            prev.secret_binding_requirements,
-            scriptIndex,
-            script,
-            refreshed,
-          ),
-        } : prev)
+      } catch (error: unknown) {
+        if (!requestIsCurrent()) throw error
+        const refreshed = refreshedSecretBindingRequirements(error)
+        if (refreshed) {
+          resolvedResult = {
+            ...resolvedResult,
+            secret_binding_requirements: replaceSecretBindingRequirementsForScript(
+              resolvedResult.secret_binding_requirements,
+              scriptIndex,
+              script,
+              refreshed,
+            ),
+          }
+          latestResultRef.current = resolvedResult
+          setResult(resolvedResult)
+        }
+        throw error
       }
-      throw error
     }
+    assertCurrent()
+    latestResultRef.current = resolvedResult
+    setResult(resolvedResult)
   }
 
   return (
@@ -277,7 +368,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
             Upload a <code>.jmx</code> plan and convert HTTP thread groups into APEX Load reusable scripts. The importer preserves variables, CSV data sources, headers, timers, and review notes where possible.
           </p>
         </div>
-        {onClose && <button type="button" className="btn btn-secondary" onClick={onClose}>Back</button>}
+        {onClose && <button type="button" className="btn btn-secondary" onClick={() => { void credentialReviewRef.current?.discardSourceSession(); onClose() }}>Back</button>}
       </div>
 
       <div
@@ -307,7 +398,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
               <span className="lr-filename">{file.name}</span>
               <span className="lr-filesize">{(file.size / 1024).toFixed(1)} KB</span>
             </div>
-            <button className="btn btn-sm btn-ghost" onClick={event => { event.stopPropagation(); setFile(null); setResult(null); setNotice(''); setReviewMode(null) }}>Change</button>
+            <button className="btn btn-sm btn-ghost" onClick={event => { event.stopPropagation(); invalidateReview(); setFile(null) }}>Change</button>
           </div>
         ) : (
           <div className="lr-drop-content">
@@ -322,17 +413,17 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
         <h3 className="lr-section-title">Conversion Options</h3>
         <div className="lr-options-grid">
           <label><span>Script Name Override</span>
-            <input value={options.name} onChange={event => setOptions(prev => ({ ...prev, name: event.target.value }))} placeholder="Default: thread group name" />
+            <input value={options.name} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, name: event.target.value })) }} placeholder="Default: thread group name" />
           </label>
           <label><span>Base URL Override</span>
-            <input value={options.base_url} onChange={event => setOptions(prev => ({ ...prev, base_url: event.target.value }))} placeholder="Default: HTTP Request Defaults or first sampler" />
+            <input value={options.base_url} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, base_url: event.target.value })) }} placeholder="Default: HTTP Request Defaults or first sampler" />
           </label>
           <label className="lr-checkbox">
-            <input type="checkbox" checked={options.include_assertions} onChange={event => setOptions(prev => ({ ...prev, include_assertions: event.target.checked }))} />
+            <input type="checkbox" checked={options.include_assertions} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, include_assertions: event.target.checked })) }} />
             <span>Add default status_code assertions</span>
           </label>
           <label className="lr-checkbox">
-            <input type="checkbox" checked={options.scenario_draft} onChange={event => setOptions(prev => ({ ...prev, scenario_draft: event.target.checked }))} />
+            <input type="checkbox" checked={options.scenario_draft} onChange={event => { invalidateReview(); setOptions(prev => ({ ...prev, scenario_draft: event.target.checked })) }} />
             <span>Generate scenario draft from thread groups</span>
           </label>
         </div>
@@ -430,6 +521,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
         <div className="lr-result">
           <ScriptImportReview
             title={reviewMode === 'validation' ? 'Validation Review' : 'Conversion Review'}
+            reviewGeneration={reviewScope}
             subtitle={reviewMode === 'validation'
               ? 'This preview came from the dry-run validator. You can still save the reviewed assets if the output looks correct.'
               : 'This preview came from the converter and is ready for final review before saving.'}
@@ -439,11 +531,19 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
             warningsTitle={`Conversion Warnings (${result.warnings.length})`}
             unsupportedElements={result.unsupported_elements}
             reviewSections={result.review_sections}
+            secretBindingRequirements={result.secret_binding_requirements}
+            onSecretBindingsApply={handleSecretBindingsApply}
+            projectId={projectId}
+            sourceSecretSessionId={result.source_secret_session_id}
+            sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
+            sourceSecretMigrationAllowed={result.source_secret_migration_allowed}
+            credentialReviewRef={credentialReviewRef}
             saving={saving}
-            saveDisabled={(result.secret_binding_requirements?.length ?? 0) > 0}
+            reviewBusy={parameterizationApplying}
+            onReviewBusyChange={setCredentialActionInProgress}
             saveLabel={`${reviewMode === 'validation' ? 'Save Reviewed' : 'Save'} ${result.scripts?.length || 0} Script${(result.scripts?.length || 0) === 1 ? '' : 's'}`}
             onSave={handleSaveConverted}
-            onEdit={onEdit && primaryScript ? () => onEdit(primaryScript) : undefined}
+            onEdit={onEdit && primaryScript ? handleEditConverted : undefined}
             editLabel={result.scripts.length > 1 ? 'Open First Script In Visual Editor' : 'Open In Visual Editor'}
             previewTitle="Import Preview"
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={primaryScript} title="Source Comparison" /> : undefined}
@@ -467,25 +567,16 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
               </div>
             )}
 
-            {(result.scripts || []).map((script, scriptIndex) => {
-              const requirements = secretBindingRequirementsForScript(result.secret_binding_requirements, scriptIndex, script)
-              if (requirements.length === 0) return null
-              return (
-                <SecretBindingReview
-                  key={`secret-bindings-${scriptIndex}-${script.name}`}
-                  requirements={requirements}
-                  onApply={handleSecretBindingsApply(script, scriptIndex)}
-                />
-              )
-            })}
-
-            {(result.secret_binding_requirements?.length ?? 0) === 0 && parameterization && parameterization.suggestions.length > 0 && (result.scripts || []).map(script => (
+            {parameterization && parameterization.suggestions.length > 0 && (result.scripts || []).map((script, scriptIndex) => (
               <ParameterizationReview
-                key={`paramize-${script.name}`}
+                key={`paramize-${scriptIndex}-${script.name}`}
                 parameterization={parameterization}
                 script={script}
                 scriptName={script.name}
-                onApplied={handleParameterizationApplied(script.name)}
+                reviewGeneration={reviewScope}
+                disabled={saving || workingMode !== null || parameterizationApplying || credentialActionInProgress}
+                onApplyingChange={applying => setParameterizationApplyingByScript(current => ({ ...current, [scriptIndex]: applying }))}
+                onApplied={handleParameterizationApplied(scriptIndex)}
               />
             ))}
 

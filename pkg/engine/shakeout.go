@@ -11,36 +11,72 @@ import (
 // RunScriptShakeout executes one init-and-action pass for a single script instance.
 // Any protocol initialization failure, init failure, or unsuccessful action fails the shakeout.
 func RunScriptShakeout(ctx context.Context, groupName string, script *dsl.Script) error {
+	return RunScriptShakeoutWithSecretResolver(ctx, groupName, script, nil)
+}
+
+// RunScriptShakeoutWithSecretResolver executes a shakeout with an explicitly
+// governed secret source. A nil resolver preserves the standalone CLI/runtime
+// behavior and resolves from the script's default project-scoped providers.
+func RunScriptShakeoutWithSecretResolver(ctx context.Context, groupName string, script *dsl.Script, resolver SecretResolver) error {
 	if script == nil {
 		return fmt.Errorf("script is required")
+	}
+	secretResolver := resolver
+	if secretResolver == nil {
+		secretResolver = defaultSecretResolverForScript(script)
+	}
+	resolutionCtx, resolutionCancel := WithSecretResolutionBudget(ctx)
+	secretResolver, secretValues, err := snapshotReferencedSecretsContext(resolutionCtx, script, secretResolver)
+	resolutionCancel()
+	if err != nil {
+		return fmt.Errorf("inspect script secret references: %s", scrubSensitiveText(err.Error()))
+	}
+	secretValues = append(secretValues, runtimeProtocolAuthCompositeValues(script, secretResolver)...)
+	redactionConfig, err := WithSecretValueRedactionChecked(nil, secretValues)
+	if err != nil {
+		return fmt.Errorf("prepare runtime secret redaction: %s", scrubSensitiveText(err.Error()))
 	}
 
 	proto, err := protocol.Get(script.Protocol)
 	if err != nil {
-		return fmt.Errorf("protocol init: %s", scrubSensitiveText(err.Error()))
+		return fmt.Errorf("protocol init: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
 	}
 
-	secretResolver := defaultSecretResolverForScript(script)
-	if err := proto.Init(ctx, buildProtoConfigForRunModeWithSecretResolver(script, "replay", secretResolver)); err != nil {
-		return fmt.Errorf("protocol init: %s", scrubSensitiveText(err.Error()))
+	bindProtocolRuntimeRedaction(proto, func() *RedactionConfig { return redactionConfig })
+	if err := callProtocolInit(ctx, proto, buildProtoConfigForRunModeWithSecretResolver(script, "replay", secretResolver), redactionConfig); err != nil {
+		runProtocolTeardown(proto, func() *RedactionConfig { return redactionConfig })
+		return fmt.Errorf("protocol init: %s", err)
 	}
-	defer runProtocolTeardown(proto)
+	defer runProtocolTeardown(proto, func() *RedactionConfig { return redactionConfig })
+
+	vu := &VUser{
+		ID:              0,
+		Group:           groupName,
+		Proto:           proto,
+		Script:          script,
+		Metrics:         NewMetricsCollector(16),
+		Variables:       make(map[string]string),
+		SecretResolver:  secretResolver,
+		RedactionConfig: redactionConfig,
+	}
+	vu.bindRuntimeTextRedactor()
+	// Register DSL cleanup as soon as the protocol-backed VUser exists. It runs
+	// before the already-deferred protocol teardown and uses an independent,
+	// bounded context even when data-source startup, init, or a main action
+	// failed/cancelled.
+	defer func() {
+		teardownCtx, teardownCancel := teardownContext()
+		defer teardownCancel()
+		for _, action := range script.Teardown {
+			_ = runShakeoutAction(teardownCtx, vu, action, "teardown")
+		}
+	}()
 
 	dataProvider, err := NewDataProvider(script.DataSources)
 	if err != nil {
-		return fmt.Errorf("data source init: %s", scrubSensitiveText(err.Error()))
+		return fmt.Errorf("data source init: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
 	}
-
-	vu := &VUser{
-		ID:             0,
-		Group:          groupName,
-		Proto:          proto,
-		Script:         script,
-		Metrics:        NewMetricsCollector(16),
-		Variables:      make(map[string]string),
-		DataProvider:   dataProvider,
-		SecretResolver: secretResolver,
-	}
+	vu.DataProvider = dataProvider
 	vu.loadDataRow()
 
 	for _, action := range script.Init {
@@ -54,12 +90,6 @@ func RunScriptShakeout(ctx context.Context, groupName string, script *dsl.Script
 			return err
 		}
 	}
-
-	teardownCtx, teardownCancel := teardownContext()
-	for _, action := range script.Teardown {
-		_ = runShakeoutAction(teardownCtx, vu, action, "teardown")
-	}
-	teardownCancel()
 
 	return nil
 }

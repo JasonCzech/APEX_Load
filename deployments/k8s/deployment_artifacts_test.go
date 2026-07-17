@@ -237,6 +237,188 @@ func TestDockerComposeIncludesGeneratorFleet(t *testing.T) {
 	}
 }
 
+func TestDockerComposeIncludesBrunoRunnerAndSharedEncryptedArtifacts(t *testing.T) {
+	compose := readTextFile(t, "../../compose.yaml")
+	for _, check := range []string{
+		"bruno-runner:",
+		"context: ./runners/bruno",
+		"network_mode: service:generator",
+		"APEXLOAD_BRUNO_RUNNER_URL: http://127.0.0.1:8097",
+		"APEXLOAD_BRUNO_ARTIFACT_ROOT: /var/lib/apexload-bruno",
+		"bruno-artifacts:/var/lib/apexload-bruno",
+	} {
+		if !strings.Contains(compose, check) {
+			t.Fatalf("compose.yaml missing Bruno runtime check %q", check)
+		}
+	}
+}
+
+func TestHelmBrunoExecutionUsesLoopbackRunnerAndSharedEncryptedArtifacts(t *testing.T) {
+	values := readTextFile(t, "../helm/apexload/values.yaml")
+	generator := readTextFile(t, "../helm/apexload/templates/generator.yaml")
+	controller := readTextFile(t, "../helm/apexload/templates/controller.yaml")
+	for _, check := range []string{
+		"enabled: false",
+		"compatibilityVersion: \"3.5.2\"",
+		"existingClaim:",
+		"egressBrokerUrl:",
+		"maxSessions: 256",
+		"repository: apexload-bruno-runner",
+	} {
+		if !strings.Contains(values, check) {
+			t.Fatalf("Helm values missing Bruno runtime check %q", check)
+		}
+	}
+	for _, check := range []string{
+		`fail "Bruno execution requires bruno.egressBrokerUrl`,
+		"APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED",
+		"APEXLOAD_BRUNO_RUNNER_URL",
+		"http://127.0.0.1:8097",
+		"name: bruno-runner",
+		"APEXLOAD_BRUNO_MAX_SESSIONS",
+		"APEXLOAD_BRUNO_MAX_JUMPS",
+		"APEXLOAD_BRUNO_MAX_RUN_REQUEST_DEPTH",
+		"APEXLOAD_BRUNO_MAX_PARALLEL_REQUESTS",
+		"APEXLOAD_BRUNO_MAX_OUTPUT_BYTES",
+		"APEXLOAD_BRUNO_MAX_STREAM_TIMEOUT_MS",
+		"readOnly: true",
+	} {
+		if !strings.Contains(generator, check) {
+			t.Fatalf("Helm generator template missing Bruno runtime check %q", check)
+		}
+	}
+	for _, check := range []string{"APEXLOAD_BRUNO_ARTIFACT_ROOT", "name: bruno-artifacts", "existingClaim"} {
+		if !strings.Contains(controller, check) {
+			t.Fatalf("Helm controller template missing Bruno artifact check %q", check)
+		}
+	}
+}
+
+func TestProjectSecretsProvidersAreWiredForSupportedDeployments(t *testing.T) {
+	helmValues := readTextFile(t, "../helm/apexload/values.yaml")
+	helmSchema := readTextFile(t, "../helm/apexload/values.schema.json")
+	helmConfig := readTextFile(t, "../helm/apexload/templates/configmap.yaml")
+	helmController := readTextFile(t, "../helm/apexload/templates/controller.yaml")
+	helmSecret := readTextFile(t, "../helm/apexload/templates/secret.yaml")
+	for _, check := range []string{
+		"projectSecrets:",
+		"provider: database",
+		"wrappingMasterKey:",
+		"wrappingKeyVaultKeyId:",
+		"azureKeyVaultApiVersion:",
+	} {
+		if !strings.Contains(helmValues, check) {
+			t.Fatalf("Helm values missing Project Secrets setting %q", check)
+		}
+	}
+	for _, check := range []string{`"database"`, `"azure_key_vault"`, `"azureKeyVaultApiVersion"`} {
+		if !strings.Contains(helmSchema, check) {
+			t.Fatalf("Helm schema missing Project Secrets setting %q", check)
+		}
+	}
+	for _, check := range []string{
+		"APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED",
+		`eq .Values.projectSecrets.provider "azure_key_vault"`,
+		"APEXLOAD_AZURE_KEY_VAULT_API_VERSION",
+	} {
+		if !strings.Contains(helmConfig, check) {
+			t.Fatalf("Helm ConfigMap missing Project Secrets provider wiring %q", check)
+		}
+	}
+	for _, check := range []string{
+		`eq .Values.projectSecrets.provider "database"`,
+		"APEXLOAD_WRAPPING_MASTER_KEY",
+		"projectSecrets.wrappingMasterKey",
+	} {
+		if !strings.Contains(helmSecret, check) {
+			t.Fatalf("Helm Secret template missing encrypted database provider wiring %q", check)
+		}
+	}
+	for _, check := range []string{
+		`eq .Values.projectSecrets.provider "database"`,
+		"name: APEXLOAD_WRAPPING_MASTER_KEY",
+		"key: APEXLOAD_WRAPPING_MASTER_KEY",
+	} {
+		if !strings.Contains(helmController, check) {
+			t.Fatalf("Helm controller template missing required wrapping-key reference %q", check)
+		}
+	}
+
+	compose := readTextFile(t, "../../compose.yaml")
+	localController := readTextFile(t, "local/controller-deployment.yaml")
+	onPremSecret := readTextFile(t, "onprem/secret.example.yaml")
+	for name, content := range map[string]string{
+		"compose":          compose,
+		"local controller": localController,
+		"on-prem Secret":   onPremSecret,
+	} {
+		if !strings.Contains(content, "APEXLOAD_WRAPPING_MASTER_KEY") {
+			t.Fatalf("%s must configure the encrypted database Project Secrets wrapping key", name)
+		}
+	}
+
+	aksConfig := readTextFile(t, "aks/configmap.yaml")
+	aksGenerator := readTextFile(t, "aks/generator-statefulset.yaml")
+	if !strings.Contains(aksConfig, `APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED: "true"`) {
+		t.Fatal("AKS controller ConfigMap must enable the governed Azure Key Vault Project Secrets provider")
+	}
+	if strings.Contains(aksGenerator, "APEXLOAD_AZURE_KEY_VAULT_WRITE_ENABLED") {
+		t.Fatal("AKS generators must never receive Azure Key Vault write authority")
+	}
+
+	identity := readTextFile(t, "../azure/terraform/identity.tf")
+	controllerRole := regexp.MustCompile(`(?s)resource "azurerm_role_assignment" "workload_keyvault" \{.*?\n\}`).FindString(identity)
+	if !strings.Contains(controllerRole, `role_definition_name = "Key Vault Secrets Officer"`) {
+		t.Fatal("Terraform must grant the controller Key Vault secret-management authority")
+	}
+	generatorRole := regexp.MustCompile(`(?s)resource "azurerm_role_assignment" "generator_keyvault" \{.*?\n\}`).FindString(identity)
+	if !strings.Contains(generatorRole, `role_definition_name = "Key Vault Secrets User"`) {
+		t.Fatal("Terraform must keep generator Key Vault authority read-only")
+	}
+}
+
+func TestProductionDeploymentsSecureDistributedSecretDelivery(t *testing.T) {
+	for _, deployment := range []struct {
+		name       string
+		controller string
+		generator  string
+	}{
+		{
+			name:       "AKS",
+			controller: readTextFile(t, "aks/configmap.yaml"),
+			generator:  readTextFile(t, "aks/generator-statefulset.yaml"),
+		},
+		{
+			name:       "on-prem",
+			controller: readTextFile(t, "onprem/configmap.yaml"),
+			generator:  readTextFile(t, "onprem/generator-statefulset.yaml"),
+		},
+		{
+			name:       "Helm",
+			controller: readTextFile(t, "../helm/apexload/templates/configmap.yaml"),
+			generator:  readTextFile(t, "../helm/apexload/templates/generator.yaml"),
+		},
+	} {
+		t.Run(deployment.name, func(t *testing.T) {
+			for _, check := range []string{
+				"APEXLOAD_GRPC_TLS_CERT",
+				"APEXLOAD_GRPC_TLS_KEY",
+				"APEXLOAD_GRPC_TLS_CA",
+			} {
+				if !strings.Contains(deployment.controller, check) {
+					t.Fatalf("controller deployment missing authenticated TLS setting %q", check)
+				}
+				if !strings.Contains(deployment.generator, check) {
+					t.Fatalf("generator deployment missing authenticated TLS setting %q", check)
+				}
+			}
+			if !strings.Contains(deployment.generator, "APEXLOAD_GRPC_AUTH_TOKEN") {
+				t.Fatal("generator deployment missing the shared gRPC bearer-token reference")
+			}
+		})
+	}
+}
+
 func TestLocalKubernetesUsesDNSFleetDiscovery(t *testing.T) {
 	controller := readTextFile(t, "local/controller-deployment.yaml")
 	for _, check := range []string{

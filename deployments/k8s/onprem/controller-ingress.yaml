@@ -29,6 +29,23 @@ spec:
     - host: apexload.example.internal # CHANGE-ME
       http:
         paths:
+          # CI run mutations and execution-readiness must reach only the
+          # admitted execution leader. OIDC exchange remains on the ordinary
+          # all-replica Service so authentication survives leader failover.
+          - path: /api/v1/ci
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/system/execution-readiness
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
           - path: /
             pathType: Prefix
             backend:

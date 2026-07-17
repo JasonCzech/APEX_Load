@@ -870,3 +870,59 @@ func TestStartTestQueuesWhenConfiguredMaxConcurrentReached(t *testing.T) {
 		t.Fatalf("test status = %s, want PENDING", queued.Status)
 	}
 }
+
+func TestSourceSecretMigrationPolicyRequiresDurableAudit(t *testing.T) {
+	t.Run("intent failure prevents mutation", func(t *testing.T) {
+		store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer store.Close()
+		server := NewServer(ServerConfig{Store: store})
+		settings := server.runner.GetSystemSettings()
+		settings.ScriptImports.AllowSourceSecretMigration = true
+		body, err := json.Marshal(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		server.store = &selectiveAuditFailureStore{Store: store, action: "system.settings.update", status: "pending"}
+		request := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
+		response := httptest.NewRecorder()
+		server.handleUpdateSystemSettings(response, request)
+		if response.Code != http.StatusServiceUnavailable {
+			t.Fatalf("policy intent audit response = %d %s", response.Code, response.Body.String())
+		}
+		if server.runner.GetSystemSettings().ScriptImports.AllowSourceSecretMigration {
+			t.Fatal("policy changed without a durable intent audit")
+		}
+	})
+
+	t.Run("outcome failure is not acknowledged as success", func(t *testing.T) {
+		store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer store.Close()
+		server := NewServer(ServerConfig{Store: store})
+		settings := server.runner.GetSystemSettings()
+		settings.ScriptImports.AllowSourceSecretMigration = true
+		body, err := json.Marshal(settings)
+		if err != nil {
+			t.Fatal(err)
+		}
+		server.store = &selectiveAuditFailureStore{Store: store, action: "system.settings.update", status: "success"}
+		request := httptest.NewRequest(http.MethodPut, "/api/v1/system/settings", bytes.NewReader(body))
+		response := httptest.NewRecorder()
+		server.handleUpdateSystemSettings(response, request)
+		if response.Code != http.StatusServiceUnavailable {
+			t.Fatalf("policy outcome audit response = %d %s", response.Code, response.Body.String())
+		}
+		if !server.runner.GetSystemSettings().ScriptImports.AllowSourceSecretMigration {
+			t.Fatal("expected the committed policy state to remain visible for reconciliation")
+		}
+		events, err := store.ListAuditEvents(storage.AuditEventFilter{Action: "system.settings.update", Limit: 10})
+		if err != nil || len(events) != 1 || events[0].Status != "pending" {
+			t.Fatalf("durable policy audit intent = %#v, %v", events, err)
+		}
+	})
+}

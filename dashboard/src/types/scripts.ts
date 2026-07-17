@@ -523,7 +523,31 @@ export interface ScriptConfig {
   jms?: JMSConfig
   sapgui?: SAPGUIConfig
   kafka?: KafkaConfig
+  bruno?: BrunoConfig
   observability?: ObservabilityConfig
+}
+
+export interface BrunoConfig {
+  bundle_ref?: string
+  bundle_sha256?: string
+  manifest_sha256?: string
+  source_format?: string
+  source_revision?: string
+  compatibility_version?: string
+  dependency_snapshot_ref?: string
+  default_environment?: string
+  default_global_environment?: string
+  sandbox?: 'safe' | 'developer' | string
+  runner_profile?: string
+  persist_session_across_iterations?: boolean
+  limits?: {
+    max_jumps?: number
+    max_run_request_depth?: number
+    max_parallel_requests?: number
+    max_output_bytes?: number
+    default_stream_timeout_ms?: number
+  }
+  secret_bindings?: Record<string, string>
 }
 
 export interface WebSocketConfig {

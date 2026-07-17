@@ -17,6 +17,7 @@ import (
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	_ "github.com/jasonczech/apexload/pkg/protocol/http"
 	"google.golang.org/grpc"
@@ -141,6 +142,68 @@ func TestStartTestDispatchesThroughExecutionBackend(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("expected execution backend to be invoked")
+	}
+}
+
+func TestStartTestRequiresConfiguredStaticSecretsWithoutInvalidatingSavedScript(t *testing.T) {
+	const (
+		projectID  = "project-start-secret-preflight"
+		secretName = "API_TOKEN"
+	)
+	runner := NewTestRunner(1, NewHub(), nil)
+	spy := &executionBackendSpy{called: make(chan string, 1)}
+	runner.setExecutionBackend(spy)
+	runner.StoreScript(&dsl.Script{
+		ID:        "script-start-secret-preflight",
+		ProjectID: projectID,
+		Name:      "Deferred credential script",
+		Protocol:  "http",
+		Version:   "1.0.0",
+		Actions: []dsl.Action{{
+			Name:    "request",
+			Type:    "GET",
+			Target:  "/",
+			Headers: map[string]string{"Authorization": "Bearer {{secret.API_TOKEN}}"},
+		}},
+	})
+	testRun, err := runner.CreateTest(CreateTestRequest{
+		Name:      "Deferred credential run",
+		ProjectID: projectID,
+		Duration:  "30s",
+		ScriptID:  "script-start-secret-preflight",
+		VUsers:    1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = runner.StartTest(testRun.ID)
+	if err == nil || !strings.Contains(err.Error(), secretName) || !strings.Contains(err.Error(), "configure") {
+		t.Fatalf("StartTest missing-secret error = %v", err)
+	}
+	if current, ok := runner.GetTest(testRun.ID); !ok || current.Status != "QUEUED" {
+		t.Fatalf("failed start changed saved run: %#v", current)
+	}
+	if stored, ok := runner.GetScript("script-start-secret-preflight"); !ok || stored.Script.Actions[0].Headers["Authorization"] != "Bearer {{secret.API_TOKEN}}" {
+		t.Fatalf("failed start changed saved script: %#v", stored)
+	}
+	select {
+	case id := <-spy.called:
+		t.Fatalf("backend launched missing-secret test %q", id)
+	default:
+	}
+
+	t.Setenv(engine.ProjectSecretEnvironmentName(projectID, secretName), "configured-at-launch")
+	if err := runner.StartTest(testRun.ID); err != nil {
+		t.Fatalf("StartTest with configured secret: %v", err)
+	}
+	select {
+	case id := <-spy.called:
+		if id != testRun.ID {
+			t.Fatalf("backend received test %q, want %q", id, testRun.ID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("configured secret did not permit backend launch")
 	}
 }
 

@@ -141,10 +141,16 @@ func (b *Browser) selectorPresent(ctx context.Context, action *protocol.Action, 
 }
 
 func (b *Browser) recordSelfHeal(action *protocol.Action, result *protocol.Result, primary string, healed string, candidate selector.Candidate, stats selectorSelfHealStats) {
+	safePrimary := primary
+	if action != nil && strings.TrimSpace(action.RedactedSelector) != "" {
+		safePrimary = action.RedactedSelector
+	}
+	safePrimary = b.redactRuntimeText(safePrimary)
+	safeHealed := b.redactRuntimeText(healed)
 	slog.Warn("browser selector self-healed",
 		"action", action.Name,
-		"primary_selector", primary,
-		"healed_selector", healed,
+		"primary_selector", safePrimary,
+		"healed_selector", safeHealed,
 		"candidate_kind", candidate.Kind,
 		"candidate_confidence", candidate.Confidence)
 	if result == nil {
@@ -153,11 +159,11 @@ func (b *Browser) recordSelfHeal(action *protocol.Action, result *protocol.Resul
 	if result.ProtocolEvidence == nil {
 		result.ProtocolEvidence = map[string]any{}
 	}
-	b.recordSelfHealMetrics(action, result, primary, true, stats)
+	b.recordSelfHealMetrics(action, result, safePrimary, true, stats)
 	evidence := map[string]any{
 		"action":           action.Name,
-		"primary_selector": primary,
-		"healed_selector":  healed,
+		"primary_selector": safePrimary,
+		"healed_selector":  safeHealed,
 		"candidate_kind":   candidate.Kind,
 		"confidence":       candidate.Confidence,
 		"reason":           candidate.Reason,
@@ -181,9 +187,14 @@ func (b *Browser) recordSelfHealMetrics(action *protocol.Action, result *protoco
 	if result.ProtocolEvidence == nil {
 		result.ProtocolEvidence = map[string]any{}
 	}
+	safePrimary := primary
+	if action != nil && strings.TrimSpace(action.RedactedSelector) != "" {
+		safePrimary = action.RedactedSelector
+	}
+	safePrimary = b.redactRuntimeText(safePrimary)
 	metrics := map[string]any{
 		"action":           action.Name,
-		"primary_selector": primary,
+		"primary_selector": safePrimary,
 		"attempts":         stats.Attempts,
 		"probe_failures":   stats.ProbeFailures,
 		"cache_hit":        stats.CacheHit,

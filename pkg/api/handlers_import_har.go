@@ -50,7 +50,7 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 		if salesforceAugmentation.Script != result.Script {
 			preApplied = nil
 		}
-		writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+		writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 			Result:              result,
 			Script:              salesforceAugmentation.Script,
 			Warnings:            result.Warnings,
@@ -74,7 +74,7 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 	preflight := buildReplayPreflight(result.Script, nil, issues, result.Warnings)
 	attachImportReplayPreflight(result.Script, "har", preflight)
 
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
 		Warnings:            result.Warnings,

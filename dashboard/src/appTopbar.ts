@@ -76,6 +76,8 @@ export function pageTitleForScriptSubView(subView?: string): string {
       return 'Import Enterprise Script Archive'
     case 'jmeter-import':
       return 'Import JMeter'
+    case 'bruno-import':
+      return 'Import Bruno'
     case 'recorder':
       return 'Record Browser'
     case 'sample':

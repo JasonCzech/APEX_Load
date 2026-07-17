@@ -154,6 +154,7 @@ func TestAuthoritativeCIWorkflowContract(t *testing.T) {
 		"expected_skipped=",
 		"go test",
 		"-race -shuffle=on -count=1",
+		"CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build",
 		"jms_servicebus_real",
 		"npm run lint:a11y",
 		"npm audit --audit-level=high",
@@ -514,7 +515,7 @@ func TestRequiredAggregationEnforcesEventSpecificResults(t *testing.T) {
 
 	fullJobs := []string{
 		"workflow-policy", "go-quality", "go-tests", "build", "protocol-tags",
-		"dashboard", "deployment-artifacts", "containers", "govulncheck", "codeql",
+		"dashboard", "bruno-runner", "deployment-artifacts", "containers", "govulncheck", "codeql",
 	}
 	results := func(defaultResult string) map[string]map[string]string {
 		out := map[string]map[string]string{}

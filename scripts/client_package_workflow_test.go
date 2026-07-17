@@ -125,9 +125,16 @@ func TestClientPackageWorkflowValidatesOnPullRequests(t *testing.T) {
 	checks := []string{
 		"pull_request:",
 		"branches: [main]",
+		"- '**/*.go'",
 		"node-version: 22.22.0",
 		"cache: false",
 		"wails/v2/cmd/wails@v2.12.0", // pinned, not @latest
+		"name: Smoke-test Windows backend",
+		"go test -count=1 ./pkg/internal/diskspace",
+		"TestStageArchiveDownload",
+		"TestGeneratorArchiveWriterEnforcesByteAndFreeSpaceBounds",
+		"go build -trimpath ./cmd/...",
+		"/api/v1/system/health",
 	}
 	for _, check := range checks {
 		if !strings.Contains(workflow, check) {

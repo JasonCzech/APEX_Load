@@ -28,6 +28,8 @@ import {
 } from '../../types'
 import { type AuthoringTemplate } from '../../types'
 import { type CorrelationDiagnoseResponse, type CorrelationStep, type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
+import { type CloneScriptDraftResponse, type DiscardImportSecretSessionRequest, type MigrateImportSecretsRequest, type MigrateImportSecretsResponse, type ScriptSecretStatus } from '../../types/secrets'
+import { type BrunoInspectResponse, type BrunoProjectionPreview, type BrunoSourceRevision, type BrunoSupportMatrixResponse, type CommitBrunoImportRequest, type CommitBrunoImportResponse } from '../../types/scriptImports'
 
 export interface ScriptRecordingStatus {
   exists: boolean
@@ -37,7 +39,7 @@ export interface ScriptRecordingStatus {
   captured_at?: string
 }
 import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type ApplySecretBindingsRequest, type ApplySecretBindingsResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
-import { apiFetch, request } from '../apiClient'
+import { ApiError, apiFetch, request } from '../apiClient'
 
 type ScriptListResponse = {
   scripts: StoredScript[]
@@ -245,8 +247,16 @@ export function useScriptApi() {
   )
 
   const createScript = useCallback(
-    (script: ScriptDefinition, projectId?: string, folderId?: string | null) =>
-      request<StoredScript>('/scripts', { method: 'POST', body: JSON.stringify({ script, project_id: projectId, folder_id: folderId }) }),
+    (script: ScriptDefinition, projectId?: string, folderId?: string | null, sourceRecordingSessionId?: string) =>
+      request<StoredScript>('/scripts', {
+        method: 'POST',
+        body: JSON.stringify({
+          script,
+          project_id: projectId,
+          folder_id: folderId,
+          source_recording_session_id: sourceRecordingSessionId,
+        }),
+      }),
     [],
   )
 
@@ -267,6 +277,38 @@ export function useScriptApi() {
   )
 
   const validateScript = useCallback((id: string) => request<ScriptValidationResponse>(`/scripts/${id}/validate`, { method: 'POST' }), [])
+
+  const getScriptSecretStatus = useCallback(
+    (id: string) => request<ScriptSecretStatus>(`/scripts/${encodeURIComponent(id)}/secret-status`),
+    [],
+  )
+
+  const cloneScriptDraft = useCallback(
+    (id: string, options?: { import_detected_credential_values?: boolean }) =>
+      request<CloneScriptDraftResponse>(`/scripts/${encodeURIComponent(id)}/clone-draft`, {
+        method: 'POST',
+        body: JSON.stringify(options || {}),
+      }),
+    [],
+  )
+
+  const migrateImportSecrets = useCallback(
+    (payload: MigrateImportSecretsRequest) =>
+      request<MigrateImportSecretsResponse>('/scripts/import/secrets/migrate', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    [],
+  )
+
+  const discardImportSecretSession = useCallback(
+    (payload: DiscardImportSecretSessionRequest) =>
+      request<void>('/scripts/import/secrets/discard', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      }),
+    [],
+  )
 
   const validateDraftScript = useCallback(
     (script: ScriptDefinition, projectId?: string, folderId?: string | null, variables?: Record<string, string>) =>
@@ -995,6 +1037,96 @@ export function useScriptApi() {
     [],
   )
 
+  const getBrunoSupportMatrix = useCallback(
+    () => request<BrunoSupportMatrixResponse>('/scripts/import/bruno/support-matrix'),
+    [],
+  )
+
+  const inspectBrunoImport = useCallback(
+    async (
+      files: File[],
+      options: {
+        project_id: string
+        name?: string
+        sandbox?: 'safe' | 'developer'
+        sync_script_id?: string
+        run_options?: {
+          default_environment?: string
+          default_global_environment?: string
+          selection?: string
+          paths?: string[]
+          include_tags?: string[]
+          exclude_tags?: string[]
+          recursive?: boolean
+          execution?: string
+          bail?: boolean
+          tests_only?: boolean
+          delay_ms?: number
+          stream_timeout_ms?: number
+          persist_session?: boolean
+        }
+      },
+    ): Promise<BrunoInspectResponse> => {
+      if (files.length === 0) throw new Error('At least one Bruno source file is required.')
+      const formData = new FormData()
+      formData.append('project_id', options.project_id)
+      if (options.name) formData.append('name', options.name)
+      if (options.sandbox) formData.append('sandbox', options.sandbox)
+      if (options.sync_script_id) formData.append('sync_script_id', options.sync_script_id)
+      if (options.run_options) formData.append('options', JSON.stringify(options.run_options))
+      const directoryUpload = files.length > 1 || files.some(file => Boolean(file.webkitRelativePath))
+      files.forEach(file => {
+        const relative = file.webkitRelativePath || file.name
+        const field = directoryUpload ? `file:${encodeURIComponent(relative)}` : 'file'
+        formData.append(field, file, file.name)
+      })
+	      const response = await apiFetch(`/scripts/import/bruno/inspect?project_id=${encodeURIComponent(options.project_id)}`, { method: 'POST', body: formData })
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ error: response.statusText }))
+        const message = typeof payload?.error === 'string' ? payload.error : response.statusText
+        throw new ApiError(message, response.status, payload)
+      }
+      return response.json() as Promise<BrunoInspectResponse>
+    },
+    [],
+  )
+
+  const commitBrunoImport = useCallback(
+    (payload: CommitBrunoImportRequest) =>
+      request<CommitBrunoImportResponse>('/scripts/import/bruno/commit', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+
+  const listBrunoRevisions = useCallback(
+    (scriptId: string) =>
+      request<{ revisions: BrunoSourceRevision[]; count: number }>(`/scripts/${scriptId}/bruno-imports/revisions`),
+    [],
+  )
+
+  const rollbackBrunoRevision = useCallback(
+    (scriptId: string, revisionId: string, expectedActiveRevisionId?: string) =>
+      request<{ revision: BrunoSourceRevision }>(`/scripts/${scriptId}/bruno-imports/rollback`, {
+        method: 'POST',
+        body: JSON.stringify({
+          revision_id: revisionId,
+          expected_active_revision_id: expectedActiveRevisionId,
+        }),
+      }),
+    [],
+  )
+
+  const previewBrunoProjection = useCallback(
+    (scriptId: string) =>
+      request<BrunoProjectionPreview>(`/scripts/${scriptId}/bruno-projection/preview`, { method: 'POST' }),
+    [],
+  )
+
+  const commitBrunoProjection = useCallback(
+    (scriptId: string) =>
+      request<Record<string, unknown>>(`/scripts/${scriptId}/bruno-projection/commit`, { method: 'POST' }),
+    [],
+  )
+
   const applyImportParameterization = useCallback(
     (payload: ApplyParameterizationRequest) =>
       request<ApplyParameterizationResponse>('/scripts/import/parameterize/apply', { method: 'POST', body: JSON.stringify(payload) }),
@@ -1095,6 +1227,10 @@ export function useScriptApi() {
       deleteScript,
       moveScript,
       validateScript,
+      getScriptSecretStatus,
+      cloneScriptDraft,
+      migrateImportSecrets,
+      discardImportSecretSession,
       validateDraftScript,
       listAuthoringCapabilities,
       listAuthoringTemplates,
@@ -1166,6 +1302,13 @@ export function useScriptApi() {
       validatePostmanImport,
       importWSDL,
       importAsyncAPI,
+      getBrunoSupportMatrix,
+      inspectBrunoImport,
+      commitBrunoImport,
+      listBrunoRevisions,
+      rollbackBrunoRevision,
+      previewBrunoProjection,
+      commitBrunoProjection,
       applyImportParameterization,
       applySecretBindings,
       suggestParameterization,
@@ -1194,6 +1337,10 @@ export function useScriptApi() {
       deleteScript,
       moveScript,
       validateScript,
+      getScriptSecretStatus,
+      cloneScriptDraft,
+      migrateImportSecrets,
+      discardImportSecretSession,
       validateDraftScript,
       listAuthoringCapabilities,
       listAuthoringTemplates,
@@ -1265,6 +1412,13 @@ export function useScriptApi() {
       validatePostmanImport,
       importWSDL,
       importAsyncAPI,
+      getBrunoSupportMatrix,
+      inspectBrunoImport,
+      commitBrunoImport,
+      listBrunoRevisions,
+      rollbackBrunoRevision,
+      previewBrunoProjection,
+      commitBrunoProjection,
       applyImportParameterization,
       applySecretBindings,
       suggestParameterization,

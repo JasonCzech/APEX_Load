@@ -2,7 +2,7 @@ import { type SecretBindingRequirement } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 
 export const MAX_SECRET_BINDING_NAME_LENGTH = 249
-const secretBindingNamePattern = /^[A-Z0-9][A-Z0-9_]{0,248}$/
+const secretBindingNamePattern = /^[A-Z0-9_]{1,249}$/
 
 export function isValidSecretBindingName(value: string): boolean {
   return secretBindingNamePattern.test(value.trim())

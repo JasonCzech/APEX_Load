@@ -42,6 +42,25 @@ func validatePersistentLibraryScript(script *dsl.Script) error {
 	return nil
 }
 
+// preparePersistentLibraryScript is the final defense shared by every durable
+// library write. HTTP handlers provide richer structured binding responses,
+// but internal import/sync/authoring callers must not be able to bypass the
+// invariant: executable credentials require {{secret.*}} references, and only
+// the disclosure-safe projection may reach storage.
+func preparePersistentLibraryScript(script, prior *dsl.Script) (*dsl.Script, error) {
+	projected := maskScriptSecrets(script)
+	if projected == nil {
+		return nil, fmt.Errorf("failed to project script for durable secret binding")
+	}
+	if unresolved := discoverSecretBindingRequirements(projected, 0); len(unresolved) > 0 {
+		return nil, fmt.Errorf("script contains executable credentials that require logical secret bindings")
+	}
+	if err := reconcileMaskedScriptSecrets(projected, prior); err != nil {
+		return nil, err
+	}
+	return projected, nil
+}
+
 func (tr *TestRunner) rejectActivePrivateCISnapshotMutationLocked(id string) error {
 	if tr != nil && tr.privateCISnapshots[strings.TrimSpace(id)] > 0 {
 		return fmt.Errorf("script %q is a private CI execution snapshot", strings.TrimSpace(id))
@@ -115,21 +134,25 @@ func (tr *TestRunner) StoreScriptDurable(script *dsl.Script) (*StoredScript, err
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 
-	if script.ID == "" {
-		script.ID = uuid.New().String()
+	scriptID := strings.TrimSpace(script.ID)
+	if scriptID == "" {
+		scriptID = uuid.New().String()
 	}
-	if err := tr.rejectActivePrivateCISnapshotMutationLocked(script.ID); err != nil {
+	if err := tr.rejectActivePrivateCISnapshotMutationLocked(scriptID); err != nil {
 		return nil, err
 	}
-	script.ProjectID = normalizeProjectID(script.ProjectID)
-	existing := tr.scripts[script.ID]
+	existing := tr.scripts[scriptID]
 	var prior *dsl.Script
 	if existing != nil {
 		prior = existing.Script
 	}
-	if err := reconcileMaskedScriptSecrets(script, prior); err != nil {
+	projected, err := preparePersistentLibraryScript(script, prior)
+	if err != nil {
 		return nil, err
 	}
+	script = projected
+	script.ID = scriptID
+	script.ProjectID = normalizeProjectID(script.ProjectID)
 	if existing != nil && normalizeProjectID(existing.ProjectID) != script.ProjectID {
 		return nil, fmt.Errorf("script %s belongs to project %s and cannot be overwritten from project %s", script.ID, normalizeProjectID(existing.ProjectID), script.ProjectID)
 	}
@@ -198,9 +221,11 @@ func (tr *TestRunner) StoreScriptDurable(script *dsl.Script) (*StoredScript, err
 					!current.UpdatedAt.Equal(existing.Script.UpdatedAt) {
 					return nil, errScriptConcurrentChange
 				}
-				if err := reconcileMaskedScriptSecrets(script, current); err != nil {
+				projected, err := preparePersistentLibraryScript(script, current)
+				if err != nil {
 					return nil, err
 				}
+				script = projected
 				script.CreatedAt = current.CreatedAt
 				store, ok := tr.scriptStore.(conditionalScriptPersistence)
 				if !ok {
@@ -241,15 +266,19 @@ func (tr *TestRunner) CreateScriptDurable(script *dsl.Script) (*StoredScript, er
 	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
-	if script.ID == "" {
-		script.ID = uuid.New().String()
+	scriptID := strings.TrimSpace(script.ID)
+	if scriptID == "" {
+		scriptID = uuid.New().String()
 	}
-	if err := tr.rejectActivePrivateCISnapshotMutationLocked(script.ID); err != nil {
+	if err := tr.rejectActivePrivateCISnapshotMutationLocked(scriptID); err != nil {
 		return nil, err
 	}
-	if err := reconcileMaskedScriptSecrets(script, nil); err != nil {
+	projected, err := preparePersistentLibraryScript(script, nil)
+	if err != nil {
 		return nil, err
 	}
+	script = projected
+	script.ID = scriptID
 	script.ProjectID = normalizeProjectID(script.ProjectID)
 	if err := tr.projectDeletionErrorLocked(script.ProjectID); err != nil {
 		return nil, err
@@ -354,9 +383,11 @@ func (tr *TestRunner) UpdateScriptDurableIfUnchanged(script, expected *dsl.Scrip
 	if err := tr.projectDeletionErrorLocked(script.ProjectID); err != nil {
 		return nil, false, err
 	}
-	if err := reconcileMaskedScriptSecrets(script, expected); err != nil {
+	projected, err := preparePersistentLibraryScript(script, expected)
+	if err != nil {
 		return nil, false, err
 	}
+	script = projected
 	if strings.TrimSpace(script.Version) == "" {
 		script.Version = "1"
 	}
@@ -544,6 +575,9 @@ func (tr *TestRunner) ReplayScriptDefinition(script *dsl.Script, opts engine.Rep
 		return nil, err
 	}
 	opts.RedactionRules = effectiveRedactionRules
+	if opts.SecretResolver == nil {
+		opts.SecretResolver = tr.secretResolverForProject(script.ProjectID)
+	}
 	return engine.ReplayScript(context.Background(), script, opts)
 }
 
@@ -636,6 +670,10 @@ func (tr *TestRunner) MoveScriptDurableInProject(id string, folderID *string, ex
 		} else {
 			candidate := cloneScriptDefinition(current)
 			candidate.FolderID = cloneStringPtr(folderID)
+			candidate, err = preparePersistentLibraryScript(candidate, current)
+			if err != nil {
+				return false, err
+			}
 			moved, err := store.UpdateScriptIfUnchanged(candidate, current.UpdatedAt)
 			if err != nil {
 				return false, err
@@ -698,9 +736,11 @@ func (tr *TestRunner) UpdateScriptDurableInProject(id string, script *dsl.Script
 	if err := verifyScriptMutationOwnership(current, expectedProjectID); err != nil {
 		return nil, false, err
 	}
-	if err := reconcileMaskedScriptSecrets(script, current); err != nil {
+	projected, err := preparePersistentLibraryScript(script, current)
+	if err != nil {
 		return nil, false, err
 	}
+	script = projected
 	if err := tr.projectDeletionErrorLocked(current.ProjectID); err != nil {
 		return nil, false, err
 	}

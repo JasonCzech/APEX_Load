@@ -122,6 +122,75 @@ describe('ScriptsLibraryTable federation', () => {
     expect(chipTexts[1]).toContain('runtime parity · warning · 8')
   })
 
+  it('surfaces missing project secrets and links to configuration', async () => {
+    const onConfigureSecrets = vi.fn()
+    await act(async () => {
+      root.render(
+        <ScriptsLibraryTable
+          {...baseProps}
+          secretStatusByScript={{
+            [script.id]: {
+              script_id: script.id,
+              project_id: 'project-1',
+              required: ['ORDER_API_TOKEN'],
+              configured: [],
+              missing: ['ORDER_API_TOKEN'],
+              secrets: [{ name: 'ORDER_API_TOKEN', configured: false }],
+              capabilities: {
+                provider: 'database',
+                writable: true,
+                create_supported: true,
+                replace_supported: true,
+                source_secret_migration_policy_enabled: false,
+              },
+            },
+          }}
+          onConfigureSecrets={onConfigureSecrets}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('1 secret missing')
+    const configure = findButton('Configure secrets')
+    await act(async () => configure?.click())
+    expect(onConfigureSecrets).toHaveBeenCalledWith(script)
+  })
+
+  it('never presents a secret-backed script as healthy when credential status is unavailable', async () => {
+    const secretBackedScript: StoredScript = {
+      ...script,
+      script: {
+        name: script.name,
+        version: script.version,
+        protocol: 'http',
+        config: { base_url: 'https://api.example.test' },
+        actions: [{ name: 'Call API', type: 'request', target: '/', headers: { Authorization: 'Bearer {{secret.ORDER_API_TOKEN}}' } }],
+      },
+      authoring_health: { score: 100, status: 'ready', inputs: [] },
+    }
+    const onConfigureSecrets = vi.fn()
+    const onRetrySecretStatus = vi.fn()
+    await act(async () => {
+      root.render(
+        <ScriptsLibraryTable
+          {...baseProps}
+          scripts={[secretBackedScript]}
+          secretStatusStateByScript={{ [script.id]: 'error' }}
+          onConfigureSecrets={onConfigureSecrets}
+          onRetrySecretStatus={onRetrySecretStatus}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Secret status unavailable')
+    expect(container.textContent).toContain('secret status unknown')
+    expect(container.textContent).not.toContain('ready')
+    await act(async () => findButton('Configure secrets')?.click())
+    await act(async () => findButton('Retry secret check')?.click())
+    expect(onConfigureSecrets).toHaveBeenCalledWith(secretBackedScript)
+    expect(onRetrySecretStatus).toHaveBeenCalledWith(secretBackedScript)
+  })
+
   it('adds a Source column and renders local and remote rows with transfer actions', async () => {
     const federation = makeFederation()
     await act(async () => {

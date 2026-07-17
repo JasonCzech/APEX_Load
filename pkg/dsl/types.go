@@ -65,6 +65,7 @@ type ScriptConfig struct {
 	BaseURL       string              `json:"base_url"`
 	ThinkTime     ThinkTimeConfig     `json:"think_time,omitempty"`
 	Pacing        PacingConfig        `json:"pacing,omitempty"`
+	Bruno         BrunoConfig         `json:"bruno,omitempty"`
 	HTTP          HTTPConfig          `json:"http,omitempty"`
 	WebRuntime    WebRuntimeConfig    `json:"web_runtime,omitempty"`
 	WebSocket     WebSocketConfig     `json:"websocket,omitempty"`
@@ -83,6 +84,36 @@ type ScriptConfig struct {
 	RunLogic      RunLogicConfig      `json:"run_logic,omitempty"`
 	Observability ObservabilityConfig `json:"observability,omitempty"`
 	Log           LogConfig           `json:"log,omitempty"`
+}
+
+// BrunoConfig binds a canonical APEX script to an immutable Bruno source
+// revision. The source bundle remains the authority; the bruno_run action
+// selects which part of that bundle to execute.
+type BrunoConfig struct {
+	BundleRef                      string             `json:"bundle_ref,omitempty"`
+	BundleSHA256                   string             `json:"bundle_sha256,omitempty"`
+	ManifestSHA256                 string             `json:"manifest_sha256,omitempty"`
+	SourceFormat                   string             `json:"source_format,omitempty"`
+	SourceRevision                 string             `json:"source_revision,omitempty"`
+	CompatibilityVersion           string             `json:"compatibility_version,omitempty"`
+	DependencySnapshotRef          string             `json:"dependency_snapshot_ref,omitempty"`
+	DefaultEnvironment             string             `json:"default_environment,omitempty"`
+	DefaultGlobalEnvironment       string             `json:"default_global_environment,omitempty"`
+	Sandbox                        string             `json:"sandbox,omitempty"`
+	RunnerProfile                  string             `json:"runner_profile,omitempty"`
+	PersistSessionAcrossIterations bool               `json:"persist_session_across_iterations,omitempty"`
+	Limits                         BrunoRuntimeLimits `json:"limits,omitempty"`
+	SecretBindings                 map[string]string  `json:"secret_bindings,omitempty"`
+}
+
+// BrunoRuntimeLimits are author-controlled ceilings. Operator-owned runner
+// policy may reduce these values but never raise them.
+type BrunoRuntimeLimits struct {
+	MaxJumps               int `json:"max_jumps,omitempty" jsonschema:"minimum=0,maximum=1000000"`
+	MaxRunRequestDepth     int `json:"max_run_request_depth,omitempty" jsonschema:"minimum=0,maximum=1024"`
+	MaxParallelRequests    int `json:"max_parallel_requests,omitempty" jsonschema:"minimum=0,maximum=100000"`
+	MaxOutputBytes         int `json:"max_output_bytes,omitempty" jsonschema:"minimum=0,maximum=1073741824"`
+	DefaultStreamTimeoutMs int `json:"default_stream_timeout_ms,omitempty" jsonschema:"minimum=0,maximum=86400000"`
 }
 
 type ObservabilityConfig struct {

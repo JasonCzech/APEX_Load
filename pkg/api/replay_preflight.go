@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"regexp"
@@ -38,7 +39,12 @@ var replayTemplateRefPattern = regexp.MustCompile(`\{\{\s*(var|env|data|param|se
 
 const replayPreflightMaxControlDepth = 32
 
-func buildReplayPreflight(script *dsl.Script, variables map[string]string, issues []string, warnings []string) *ReplayPreflight {
+func buildReplayPreflight(script *dsl.Script, variables map[string]string, issues []string, warnings []string, resolvers ...engine.SecretResolver) *ReplayPreflight {
+	var secretResolver engine.SecretResolver
+	if len(resolvers) > 0 {
+		secretResolver = resolvers[0]
+	}
+	controllerManagedSecrets := secretResolver != nil
 	reviewGateIssues := replayReviewGateIssues(script)
 	messagingIssues, messagingWarnings, messagingChecks := replayMessagingPreflight(script)
 	actionCount := replayActionDefinitionCount(script)
@@ -54,19 +60,24 @@ func buildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 		Warnings:             append(append([]string(nil), warnings...), messagingWarnings...),
 	}
 	preflight.MissingVariables = replayMissingVariables(script, variables)
-	preflight.RequiredSecrets, preflight.MissingSecrets = replaySecretRefs(script)
+	preflight.RequiredSecrets, preflight.MissingSecrets = replaySecretRefs(script, secretResolver)
 	dataWarnings := replayDataSourceWarnings(script)
 	if len(dataWarnings) > 0 {
 		preflight.Warnings = append(preflight.Warnings, dataWarnings...)
 	}
-	// A secret missing on the controller does NOT invalidate the script: secrets
-	// are resolved at runtime on the generators, which have their own secret/env
-	// stores. Surface it as a warning so the operator can confirm the binding,
-	// rather than blocking the run.
 	if len(preflight.MissingSecrets) > 0 {
-		preflight.Warnings = append(preflight.Warnings, fmt.Sprintf("secret(s) not resolvable on the controller and must be provided to the generators at runtime: %s", strings.Join(preflight.MissingSecrets, ", ")))
+		if controllerManagedSecrets {
+			preflight.Warnings = append(preflight.Warnings, fmt.Sprintf("configure project secret(s) before replay: %s", strings.Join(preflight.MissingSecrets, ", ")))
+		} else {
+			// Import and authoring previews intentionally have no governed
+			// project resolver. They remain saveable and show configure-later
+			// guidance instead of pretending the legacy environment probe is a
+			// complete project-secret status check.
+			preflight.Warnings = append(preflight.Warnings, fmt.Sprintf("secret(s) require project configuration before execution: %s", strings.Join(preflight.MissingSecrets, ", ")))
+		}
 	}
-	preflight.Valid = preflight.Valid && len(reviewGateIssues) == 0 && len(messagingIssues) == 0 && len(preflight.MissingVariables) == 0 && len(dataWarnings) == 0
+	preflight.Valid = preflight.Valid && len(reviewGateIssues) == 0 && len(messagingIssues) == 0 && len(preflight.MissingVariables) == 0 && len(dataWarnings) == 0 &&
+		(!controllerManagedSecrets || len(preflight.MissingSecrets) == 0)
 	preflight.Checks = []ReplayPreflightCheck{
 		{
 			ID:     "validation",
@@ -87,11 +98,9 @@ func buildReplayPreflight(script *dsl.Script, variables map[string]string, issue
 			Detail: replayListDetail(preflight.MissingVariables, "All replay variables are seeded or extracted before use."),
 		},
 		{
-			ID:    "secrets",
-			Label: "Secret bindings",
-			// Missing secrets warn (resolved on generators at runtime); they never
-			// fail the check.
-			Status: replayCheckStatus(true, len(preflight.MissingSecrets) > 0 || len(preflight.RequiredSecrets) > 0),
+			ID:     "secrets",
+			Label:  "Secret bindings",
+			Status: replayCheckStatus(!controllerManagedSecrets || len(preflight.MissingSecrets) == 0, len(preflight.RequiredSecrets) > 0),
 			Detail: replaySecretDetail(preflight.RequiredSecrets, preflight.MissingSecrets),
 		},
 		{
@@ -352,24 +361,49 @@ func replaySequenceChildExtractors(action dsl.Action) []dsl.Extractor {
 	return extractors
 }
 
-func replaySecretRefs(script *dsl.Script) ([]string, []string) {
+func replaySecretRefs(script *dsl.Script, resolvers ...engine.SecretResolver) ([]string, []string) {
 	if script == nil {
 		return nil, nil
 	}
+	var resolver engine.SecretResolver
+	if len(resolvers) > 0 {
+		resolver = resolvers[0]
+	}
 	required := make(map[string]struct{})
 	missing := make(map[string]struct{})
-	for _, action := range replayOrderedActions(script) {
-		for _, ref := range replayTemplateRefs(action, "env") {
-			required[ref] = struct{}{}
-			if !engine.ScriptEnvAvailable(ref) {
-				missing[ref] = struct{}{}
-			}
+	checkedSecrets := make(map[string]struct{})
+	secretNames, err := engine.ReferencedSecretNames(script)
+	if err != nil {
+		secretNames = nil
+		for _, action := range replayOrderedActions(script) {
+			secretNames = append(secretNames, replayTemplateRefs(action, "secret")...)
 		}
-		for _, ref := range replayTemplateRefs(action, "secret") {
+	}
+	if resolver != nil {
+		ctx, cancel := engine.WithSecretResolutionBudget(context.Background())
+		_, unresolved, resolutionErr := engine.ResolveSecretNames(ctx, secretNames, resolver)
+		cancel()
+		if resolutionErr != nil {
+			unresolved = append([]string(nil), secretNames...)
+		}
+		for _, ref := range secretNames {
 			required[ref] = struct{}{}
-			if !replaySecretAvailable(script.ProjectID, ref) {
-				missing[ref] = struct{}{}
-			}
+		}
+		for _, ref := range unresolved {
+			missing[ref] = struct{}{}
+		}
+		return sortedSetKeys(required), sortedSetKeys(missing)
+	}
+	for _, ref := range secretNames {
+		if _, checked := checkedSecrets[ref]; checked {
+			continue
+		}
+		checkedSecrets[ref] = struct{}{}
+		required[ref] = struct{}{}
+		available := false
+		available = replaySecretAvailable(script.ProjectID, ref)
+		if !available {
+			missing[ref] = struct{}{}
 		}
 	}
 	return sortedSetKeys(required), sortedSetKeys(missing)
@@ -579,7 +613,7 @@ func replayListDetail(values []string, empty string) string {
 
 func replaySecretDetail(required []string, missing []string) string {
 	if len(required) == 0 {
-		return "No environment secret references detected."
+		return "No project secret references detected."
 	}
 	if len(missing) > 0 {
 		return "Missing: " + strings.Join(missing, ", ")

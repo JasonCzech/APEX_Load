@@ -125,6 +125,37 @@ describe('SampleScriptImport', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('ignores a conversion that finishes after a source option changes', async () => {
+    let resolveImport: ((value: unknown) => void) | undefined
+    apiMock.importSample.mockImplementationOnce(() => new Promise(resolve => { resolveImport = resolve }))
+    await act(async () => {
+      root.render(<SampleScriptImport projectId="project-1" />)
+    })
+
+    const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Convert Sample'))
+    await act(async () => {
+      convert?.click()
+      await Promise.resolve()
+    })
+    const nameInput = container.querySelector<HTMLInputElement>('input[placeholder="Order Flow Sample"]')
+    await act(async () => {
+      if (nameInput) setControlValue(nameInput, 'Changed while converting')
+    })
+    await act(async () => {
+      resolveImport?.({
+        script: { name: 'Stale result', protocol: 'http', config: { base_url: 'https://stale.test' }, actions: [] },
+        warnings: [],
+        correlations: [],
+        stats: { format: 'rest_json', total_requests: 1, converted_actions: 0, assertions: 0, extractors: 0, correlations_detected: 0 },
+      })
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).not.toContain('3. Review Generated Script')
+    expect(container.textContent).not.toContain('Stale result')
+  })
+
   it('renders the Java over HTTP sample close action as a Back button', async () => {
     const onClose = vi.fn()
 
@@ -230,7 +261,7 @@ describe('SampleScriptImport', () => {
     }))
   })
 
-  it('blocks saving a redacted sample until its secret binding is applied', async () => {
+  it('applies a prefilled secret reference from the primary save action', async () => {
     const redactedScript = {
       name: 'Imported Login',
       version: '1.0.0',
@@ -281,30 +312,56 @@ describe('SampleScriptImport', () => {
     await act(async () => convertButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
 
-    const blockedSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save To Script Library'))
-    expect(blockedSave?.disabled).toBe(true)
-    blockedSave?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    expect(apiMock.createScript).not.toHaveBeenCalled()
-
-    const applyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Apply Bindings'))
-    expect(applyButton).toBeDefined()
-    await act(async () => applyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save with 1 secret to configure'))
+    expect(save?.disabled).toBe(false)
+    await act(async () => save?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
 
     expect(apiMock.applySecretBindings).toHaveBeenCalledWith(expect.objectContaining({
       bindings: [{ requirement_id: 'login-auth', secret_name: 'LOGIN_TOKEN' }],
     }))
     expect(container.textContent).toContain('{{secret.LOGIN_TOKEN}}')
-
-    const enabledSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save To Script Library'))
-    expect(enabledSave?.disabled).toBe(false)
-    await act(async () => enabledSave?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    await flushPromises()
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       actions: [expect.objectContaining({
         headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' },
       })],
     }), undefined)
+  })
+
+  it('keeps a newer conversion when an older credential application resolves late', async () => {
+    const result = (name: string, requirements: unknown[]) => ({
+      script: { name, version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'GET /', type: 'request', method: 'GET', target: '/' }] },
+      warnings: [], unsupported_elements: [], assumptions: [], review_sections: [], repair_suggestions: [], correlations: [],
+      stats: { format: 'raw_http', total_requests: 1, converted_actions: 1, assertions: 0, extractors: 0, correlations_detected: 0 },
+      secret_binding_requirements: requirements,
+    })
+    const requirement = { id: 'auth', path: '/actions/0/headers/Authorization', label: 'Authorization', context: 'Bearer credential', suggested_name: 'API_TOKEN' }
+    apiMock.importSample
+      .mockResolvedValueOnce(result('Generation A', [requirement]))
+      .mockResolvedValueOnce(result('Generation B', []))
+    let resolveApply: ((value: unknown) => void) | undefined
+    apiMock.applySecretBindings.mockReturnValueOnce(new Promise(resolve => { resolveApply = resolve }))
+
+    await act(async () => root.render(<SampleScriptImport />))
+    const convertButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert Sample'))!
+    await act(async () => convertButton.click())
+    await flushPromises()
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save with 1 secret to configure'))!
+    act(() => saveButton.click())
+    await flushPromises()
+    expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(1)
+
+    await act(async () => convertButton.click())
+    await flushPromises()
+    await act(async () => {
+      resolveApply?.({ script: result('Resolved A', []).script, secret_binding_requirements: [] })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Generation B')
+    expect(container.textContent).not.toContain('Resolved A')
+    expect(apiMock.createScript).not.toHaveBeenCalled()
   })
 
   it('stores sample authentication options as governed secret references', async () => {

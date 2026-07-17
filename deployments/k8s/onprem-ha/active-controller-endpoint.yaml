@@ -1,0 +1,46 @@
+# The selectorless active-controller Service is backed by this slice in HA.
+# Only the admitted execution leader may patch this exact resource; ordinary
+# dashboard, authentication, and read traffic stays balanced across replicas.
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  name: apexload-controller-active
+  labels:
+    kubernetes.io/service-name: apexload-controller-active
+    endpointslice.kubernetes.io/managed-by: apexload-controller
+  annotations:
+    apexload.io/execution-lease-owner: ""
+    apexload.io/execution-lease-generation: "0"
+addressType: IPv4
+ports:
+  - name: http
+    protocol: TCP
+    port: 8080
+endpoints: []
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: apexload-controller-active-endpoint
+rules:
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+    resourceNames:
+      - apexload-controller-active
+    verbs:
+      - get
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: apexload-controller-active-endpoint
+subjects:
+  - kind: ServiceAccount
+    name: apexload-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: apexload-controller-active-endpoint

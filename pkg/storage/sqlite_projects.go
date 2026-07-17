@@ -1345,6 +1345,12 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		// Script-derived sensitive records and project repository contents.
 		{`DELETE FROM github_script_links WHERE script_id IN (SELECT id FROM scripts WHERE project_id = ?)`, []any{id}},
 		{`DELETE FROM script_recordings WHERE script_id IN (SELECT id FROM scripts WHERE project_id = ?)`, []any{id}},
+		{`DELETE FROM bruno_source_revisions WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM bruno_source_artifacts WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM protected_source_secret_sessions WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM runtime_secret_provisioning_attempts WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM project_secrets WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM project_secret_provider_metadata WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM scripts WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM folders WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM user_role_bindings WHERE scope_type = 'project' AND scope_id = ?`, []any{id}},

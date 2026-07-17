@@ -57,24 +57,26 @@ const (
 // contention. Call MetricsSnapshot() periodically (e.g., every second) to
 // extract aggregated metrics during or after a run.
 type Engine struct {
-	script   *dsl.Script
-	vusers   int
-	duration time.Duration
-	rampUp   time.Duration
-	metrics  *MetricsCollector
-	data     *DataProvider
-	mu       sync.Mutex // guards cancel
-	cancel   context.CancelFunc
-	softStop context.CancelFunc
-	secrets  SecretResolver
+	script    *dsl.Script
+	vusers    int
+	duration  time.Duration
+	rampUp    time.Duration
+	metrics   *MetricsCollector
+	data      *DataProvider
+	mu        sync.Mutex // guards cancel
+	cancel    context.CancelFunc
+	softStop  context.CancelFunc
+	secrets   SecretResolver
+	redaction *RedactionConfig
 }
 
 // Config contains configuration for Engine creation.
 type Config struct {
-	Script   *dsl.Script   // Test script (required)
-	VUsers   int           // Number of virtual users (required, > 0)
-	Duration time.Duration // Total test duration (required, > 0)
-	RampUp   time.Duration // Ramp-up period (can be 0 for immediate start)
+	Script         *dsl.Script   // Test script (required)
+	VUsers         int           // Number of virtual users (required, > 0)
+	Duration       time.Duration // Total test duration (required, > 0)
+	RampUp         time.Duration // Ramp-up period (can be 0 for immediate start)
+	SecretResolver SecretResolver
 }
 
 // RunResult contains final test results after execution completes.
@@ -110,14 +112,28 @@ func New(cfg Config) (*Engine, error) {
 	if err != nil {
 		return nil, fmt.Errorf("initialize data sources: %s", scrubSensitiveText(err.Error()))
 	}
+	secretResolver := cfg.SecretResolver
+	if secretResolver == nil {
+		secretResolver = newDefaultSecretResolverForProject(cfg.Script.ProjectID)
+	}
+	secretResolver, secretValues, err := snapshotReferencedSecrets(cfg.Script, secretResolver)
+	if err != nil {
+		return nil, fmt.Errorf("inspect script secret references: %s", scrubSensitiveText(err.Error()))
+	}
+	secretValues = append(secretValues, runtimeProtocolAuthCompositeValues(cfg.Script, secretResolver)...)
+	redactionConfig, err := WithSecretValueRedactionChecked(nil, secretValues)
+	if err != nil {
+		return nil, fmt.Errorf("prepare runtime secret redaction: %s", scrubSensitiveText(err.Error()))
+	}
 	return &Engine{
-		script:   cfg.Script,
-		vusers:   cfg.VUsers,
-		duration: cfg.Duration,
-		rampUp:   cfg.RampUp,
-		metrics:  NewMetricsCollector(10000),
-		data:     dataProvider,
-		secrets:  newDefaultSecretResolverForProject(cfg.Script.ProjectID),
+		script:    cfg.Script,
+		vusers:    cfg.VUsers,
+		duration:  cfg.Duration,
+		rampUp:    cfg.RampUp,
+		metrics:   NewMetricsCollector(10000),
+		data:      dataProvider,
+		secrets:   secretResolver,
+		redaction: redactionConfig,
 	}, nil
 }
 
@@ -130,7 +146,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 
 	proto, err := protocol.Get(e.script.Protocol)
 	if err != nil {
-		return nil, fmt.Errorf("protocol init: %s", scrubSensitiveText(err.Error()))
+		return nil, fmt.Errorf("protocol init: %s", scrubSensitiveTextWithConfig(err.Error(), e.redaction))
 	}
 
 	protoConfig := buildProtoConfigForRunModeWithSecretResolver(e.script, "load", e.secrets)
@@ -138,8 +154,8 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	applyRuntimeMockNamespace(protoConfig, mockNamespace)
 	releaseMockNamespace := protocol.AcquireRuntimeNamespace(mockNamespace)
 	defer releaseMockNamespace()
-	if err := proto.HealthCheck(ctx); err != nil {
-		slog.Warn("health check failed, proceeding anyway", "err", scrubSensitiveError(err, nil))
+	if err := callProtocolHealthCheck(ctx, proto, e.redaction); err != nil {
+		slog.Warn("health check failed, proceeding anyway", "err", err)
 	}
 
 	e.metrics.Start(time.Second)
@@ -211,16 +227,17 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 
 		vuProto, err := protocol.Get(e.script.Protocol)
 		if err != nil {
-			safeErr := scrubSensitiveError(err, nil)
+			safeErr := scrubSensitiveError(err, e.redaction)
 			slog.Error("failed to create protocol for vuser", "vuser", vuserID, "err", safeErr)
 			wg.Done()
 			startupErr = safeErr
 			break
 		}
-		if err := vuProto.Init(ctx, vuserProtoConfig(protoConfig, vuserID)); err != nil {
-			safeErr := scrubSensitiveError(err, nil)
+		bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return e.redaction })
+		if err := callProtocolInit(ctx, vuProto, vuserProtoConfig(protoConfig, vuserID), e.redaction); err != nil {
+			safeErr := err
 			slog.Error("failed to init protocol for vuser", "vuser", vuserID, "err", safeErr)
-			runProtocolTeardown(vuProto)
+			runProtocolTeardown(vuProto, func() *RedactionConfig { return e.redaction })
 			wg.Done()
 			startupErr = safeErr
 			break
@@ -229,18 +246,26 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 		e.metrics.SetActiveVUsers(activeVUsers.Add(1))
 
 		go func() {
-			defer recoverVUserGoroutine(vuserID)
+			var vu *VUser
+			redaction := func() *RedactionConfig {
+				if vu != nil {
+					return vu.RedactionConfig
+				}
+				return e.redaction
+			}
+			defer recoverVUserGoroutine(vuserID, redaction)
 			defer wg.Done()
-			defer runProtocolTeardown(vuProto)
+			defer runProtocolTeardown(vuProto, redaction)
 			defer func() { e.metrics.SetActiveVUsers(activeVUsers.Add(-1)) }()
 
-			vu := &VUser{
+			vu = &VUser{
 				ID:                   vuserID,
 				TotalVUsers:          e.vusers,
 				Proto:                vuProto,
 				Script:               e.script,
 				Metrics:              e.metrics,
 				SecretResolver:       e.secrets,
+				RedactionConfig:      e.redaction,
 				IterationRateLimiter: iterationRateLimiter,
 				Rendezvous:           rendezvous,
 				ExecutionGoals:       executionGoals,
@@ -354,37 +379,46 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 		setActive(1)
 
 		go func(workerID int) {
-			defer recoverVUserGoroutine(workerID)
+			var vu *VUser
+			redaction := func() *RedactionConfig {
+				if vu != nil {
+					return vu.RedactionConfig
+				}
+				return e.redaction
+			}
+			defer recoverVUserGoroutine(workerID, redaction)
 			defer wg.Done()
 			defer limiter.release()
 			defer func() { setActive(-1) }()
 
 			vuProto, err := protocol.Get(e.script.Protocol)
 			if err != nil {
-				safeErr := scrubSensitiveError(err, nil)
+				safeErr := scrubSensitiveError(err, e.redaction)
 				slog.Error("failed to create protocol for arrival worker", "arrival", workerID, "err", safeErr)
 				recordInitError(safeErr)
 				return
 			}
-			if err := vuProto.Init(ctx, vuserProtoConfig(protoConfig, workerID)); err != nil {
-				safeErr := scrubSensitiveError(err, nil)
+			bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return e.redaction })
+			if err := callProtocolInit(ctx, vuProto, vuserProtoConfig(protoConfig, workerID), e.redaction); err != nil {
+				safeErr := err
 				slog.Error("failed to init protocol for arrival worker", "arrival", workerID, "err", safeErr)
 				recordInitError(safeErr)
-				runProtocolTeardown(vuProto)
+				runProtocolTeardown(vuProto, redaction)
 				return
 			}
-			defer runProtocolTeardown(vuProto)
+			defer runProtocolTeardown(vuProto, redaction)
 			initializedWorkers.Add(1)
 
-			vu := &VUser{
-				ID:             workerID,
-				Proto:          vuProto,
-				Script:         iterationScript,
-				Metrics:        e.metrics,
-				SecretResolver: e.secrets,
-				ExecutionGoals: executionGoals,
-				HardStopCtx:    ctx,
-				DataProvider:   e.data,
+			vu = &VUser{
+				ID:              workerID,
+				Proto:           vuProto,
+				Script:          iterationScript,
+				Metrics:         e.metrics,
+				SecretResolver:  e.secrets,
+				RedactionConfig: e.redaction,
+				ExecutionGoals:  executionGoals,
+				HardStopCtx:     ctx,
+				DataProvider:    e.data,
 			}
 			vu.Run(loopCtx)
 		}(arrival)

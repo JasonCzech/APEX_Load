@@ -33,3 +33,22 @@ func TestScriptSecretEnvAvailableDoesNotExposeValue(t *testing.T) {
 		t.Fatal("availability helper accepted a raw process-environment name")
 	}
 }
+
+func TestExternalSecretResolversRejectRedactionSentinels(t *testing.T) {
+	for _, value := range []string{"[REDACTED]", " [redacted] ", "\t[ReDaCtEd]\n"} {
+		t.Run(value, func(t *testing.T) {
+			resolver := SecretResolverFunc(func(string) (string, bool) {
+				return value, true
+			})
+			resolved, ok := ResolveSecret(nil, resolver, "SERVICE_TOKEN")
+			if ok || resolved != "" {
+				t.Fatalf("ResolveSecret() = %q, %v; want missing", resolved, ok)
+			}
+
+			t.Setenv("APEXLOAD_SECRET_SERVICE_TOKEN", value)
+			if ScriptSecretEnvAvailable("service-token") {
+				t.Fatal("redaction sentinel was reported as an available environment secret")
+			}
+		})
+	}
+}

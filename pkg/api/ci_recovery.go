@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 )
@@ -12,8 +13,12 @@ import (
 // process startup or after acquiring execution leadership, when no request on
 // this replica can still be in the middle of materializing these rows.
 func (tr *TestRunner) recoverQueuedCIRuns() error {
-	if tr == nil || !tr.isExecutionLeader() {
+	if tr == nil || !tr.holdsExecutionLeadership() {
 		return nil
+	}
+	term, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return err
 	}
 	tr.mu.RLock()
 	ids := make([]string, 0)
@@ -27,18 +32,26 @@ func (tr *TestRunner) recoverQueuedCIRuns() error {
 	}
 	tr.mu.RUnlock()
 	for _, id := range ids {
-		if err := tr.recoverQueuedCIRun(id); err != nil {
+		if err := tr.recoverQueuedCIRunWithTerm(id, term); err != nil {
 			if errors.Is(err, errNotExecutionLeader) || errors.Is(err, errRunnerShuttingDown) {
 				return err
 			}
-			return fmt.Errorf("recover queued CI run %s: %w", id, err)
+			slog.Warn("queued CI run recovery failed; continuing with remaining runs", "test_id", id, "error", err)
 		}
 	}
 	return nil
 }
 
 func (tr *TestRunner) recoverQueuedCIRun(id string) error {
-	if tr == nil || !tr.isExecutionLeader() {
+	term, err := tr.captureExecutionLeaseTerm()
+	if err != nil {
+		return err
+	}
+	return tr.recoverQueuedCIRunWithTerm(id, term)
+}
+
+func (tr *TestRunner) recoverQueuedCIRunWithTerm(id string, term executionLeaseTerm) error {
+	if tr == nil || !tr.executionLeaseTermCurrent(term) {
 		return errNotExecutionLeader
 	}
 	tr.mu.RLock()
@@ -68,12 +81,12 @@ func (tr *TestRunner) recoverQueuedCIRun(id string) error {
 			return nil
 		}
 	}
-	if err := tr.StartTest(id); err != nil {
+	if err := tr.startTestWithOptionsAndExpectedTerm(id, StartTestOptions{}, &term); err != nil {
 		if errors.Is(err, errNotExecutionLeader) || errors.Is(err, errRunnerShuttingDown) {
 			return err
 		}
 		message := "controller could not recover queued CI run: " + err.Error()
-		if terminalErr := tr.failCIRunBeforeExecution(id, message); terminalErr != nil {
+		if terminalErr := tr.failCIRunBeforeExecutionWithTerm(id, message, true, &term); terminalErr != nil {
 			return errors.Join(err, terminalErr)
 		}
 		return nil
@@ -131,12 +144,16 @@ func (tr *TestRunner) failCIRunBeforeExecutionDuringPromotion(id, message string
 }
 
 func (tr *TestRunner) failCIRunBeforeExecutionWithPromotion(id, message string, promotePending bool) error {
-	if tr == nil || !tr.isExecutionLeader() {
-		return errNotExecutionLeader
+	return tr.failCIRunBeforeExecutionWithTerm(id, message, promotePending, nil)
+}
+
+func (tr *TestRunner) failCIRunBeforeExecutionWithTerm(id, message string, promotePending bool, expectedTerm *executionLeaseTerm) error {
+	if err := tr.validateExpectedStartTerm(expectedTerm); err != nil {
+		return err
 	}
 	tr.mu.Lock()
 	current := tr.tests[id]
-	if current == nil || ciRunTerminal(current.Status) {
+	if current == nil || !ciRunAwaitingExecution(current) {
 		tr.mu.Unlock()
 		return nil
 	}
@@ -144,10 +161,28 @@ func (tr *TestRunner) failCIRunBeforeExecutionWithPromotion(id, message string, 
 		tr.mu.Unlock()
 		return fmt.Errorf("test is not a controller-backed CI run")
 	}
-	if claimErr := tr.claimTestExecutionFence(current); claimErr != nil {
+	var claimErr error
+	if expectedTerm != nil {
+		claimErr = tr.claimTestExecutionFenceWithTerm(current, *expectedTerm)
+	} else {
+		claimErr = tr.claimTestExecutionFence(current)
+	}
+	if claimErr != nil {
 		tr.mu.Unlock()
 		return claimErr
 	}
 	tr.mu.Unlock()
 	return tr.completeTestRunWithPendingPromotion(current, "FAILED", time.Now().UTC(), strings.TrimSpace(message), nil, promotePending)
+}
+
+func ciRunAwaitingExecution(test *ManagedTest) bool {
+	if test == nil || test.StartedAt != nil || test.cancel != nil || test.executionCtx != nil {
+		return false
+	}
+	switch strings.ToUpper(strings.TrimSpace(test.Status)) {
+	case "QUEUED", "SCHEDULED", "PENDING", "RESERVED", "SHAKEOUT_REVIEW":
+		return true
+	default:
+		return false
+	}
 }

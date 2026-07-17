@@ -14,6 +14,11 @@ const apiMock = {
   importJMeter: vi.fn(),
   saveJMeterImport: vi.fn(),
   applySecretBindings: vi.fn(),
+  getProjectSecretStatuses: vi.fn(),
+  createProjectSecrets: vi.fn(),
+  migrateImportSecrets: vi.fn(),
+  discardImportSecretSession: vi.fn(),
+  applyImportParameterization: vi.fn(),
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -85,6 +90,25 @@ describe('JMeterImport', () => {
     })
     apiMock.importJMeter.mockReset()
     apiMock.saveJMeterImport.mockReset()
+    apiMock.getProjectSecretStatuses.mockResolvedValue({
+      project_id: 'project-1',
+      capabilities: {
+        provider: 'database',
+        writable: true,
+        create_supported: true,
+        replace_supported: true,
+        source_secret_migration_policy_enabled: false,
+      },
+      secrets: [],
+    })
+    apiMock.createProjectSecrets.mockResolvedValue({ project_id: 'project-1', secrets: [], count: 0 })
+    apiMock.migrateImportSecrets.mockResolvedValue({ project_id: 'project-1', secrets: [], count: 0 })
+    apiMock.discardImportSecretSession.mockResolvedValue(undefined)
+    apiMock.applyImportParameterization.mockImplementation(async ({ script }: { script: { actions?: Array<{ target?: string }> } }) => ({
+      script: { ...script, actions: (script.actions || []).map(action => ({ ...action, target: `${action.target}?parameterized=true` })) },
+      diffs: [],
+      applied_count: 1,
+    }))
   })
 
   afterEach(async () => {
@@ -93,6 +117,43 @@ describe('JMeterImport', () => {
     })
     container.remove()
     vi.clearAllMocks()
+  })
+
+  it('ignores a conversion response after an import option changes', async () => {
+    let resolveImport: ((value: unknown) => void) | undefined
+    apiMock.importJMeter.mockImplementationOnce(() => new Promise(resolve => { resolveImport = resolve }))
+    await act(async () => {
+      root.render(<JMeterImport projectId="project-1" />)
+    })
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['<jmeterTestPlan />'], 'race.jmx')] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const convert = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Convert JMeter Plan'))
+    await act(async () => {
+      convert?.click()
+      await Promise.resolve()
+    })
+    const includeAssertions = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))[0]
+    await act(async () => includeAssertions?.click())
+    await act(async () => {
+      resolveImport?.({
+        scripts: [{ name: 'Stale JMeter result', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [], data_sources: [] }],
+        warnings: [],
+        unsupported_elements: [],
+        assumptions: [],
+        review_sections: [],
+        repair_suggestions: [],
+        stats: { thread_groups: 1, samplers: 0, total_samplers: 0, skipped_samplers: 0, converted_actions: 0, headers: 0, variables: 0, csv_sources: 0, assertions: 0, timers: 0, unsupported: 0 },
+        summary: { file_name: 'race.jmx' },
+      })
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).not.toContain('Stale JMeter result')
+    expect(container.textContent).not.toContain('Review Converted Scripts')
   })
 
   it('renders the import close action as a Back button', async () => {
@@ -365,13 +426,10 @@ describe('JMeterImport', () => {
     await act(async () => validateButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
     await flushPromises()
 
-    const blockedSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save Reviewed 2 Scripts'))
-    expect(blockedSave?.disabled).toBe(true)
-    blockedSave?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    expect(apiMock.saveJMeterImport).not.toHaveBeenCalled()
-
-    const applyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Apply Bindings'))
-    await act(async () => applyButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save Reviewed 2 Scripts with 1 secret to configure'))
+    expect(saveButton?.disabled).toBe(false)
+    await act(async () => saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    await flushPromises()
     await flushPromises()
 
     expect(apiMock.applySecretBindings).toHaveBeenCalledWith({
@@ -380,11 +438,6 @@ describe('JMeterImport', () => {
       bindings: [{ requirement_id: 'database-dsn', secret_name: 'ORDERS_DSN' }],
     })
     expect(container.textContent).toContain('{{secret.ORDERS_DSN}}')
-
-    const enabledSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save Reviewed 2 Scripts'))
-    expect(enabledSave?.disabled).toBe(false)
-    await act(async () => enabledSave?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
-    await flushPromises()
     expect(apiMock.saveJMeterImport).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [
         expect.objectContaining({ name: 'Orders HTTP' }),
@@ -394,6 +447,90 @@ describe('JMeterImport', () => {
         }),
       ],
     }))
+  })
+
+  it('uses script indexes for duplicate legacy names when parameterizing a multi-script review', async () => {
+    const first = { name: 'Shared Override', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'First', type: 'request', method: 'GET', target: '/first' }] }
+    const second = { name: 'Shared Override', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'Second', type: 'request', method: 'GET', target: '/second' }] }
+    apiMock.validateJMeterImport.mockResolvedValueOnce({
+      scripts: [first, second], script: first,
+      warnings: [], unsupported_elements: [], assumptions: [], review_sections: [], repair_suggestions: [],
+      stats: { thread_groups: 2, samplers: 2, total_samplers: 2, skipped_samplers: 0, converted_actions: 2, headers: 0, variables: 0, csv_sources: 0, assertions: 0, timers: 0, unsupported: 0 },
+      summary: { file_name: 'duplicates.jmx' },
+      parameterization: { suggestions: [{
+        id: 'shared-param', kind: 'data_param', confidence: 0.9, reason: 'Repeated value',
+        script_name: 'Shared Override', variable_name: 'customer', literal_value: '42', sample_value: '42',
+        replacement: '{{var.customer}}', locations: ['/actions/0/target'], auto_apply: true,
+      }] },
+      secret_binding_requirements: [],
+    })
+    apiMock.saveJMeterImport.mockResolvedValue({ count: 2, scripts: [] })
+
+    await act(async () => root.render(<JMeterImport projectId="project-1" />))
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['<jmeterTestPlan/>'], 'duplicates.jmx')] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const validate = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Validate Only'))!
+    await act(async () => validate.click())
+    await flushPromises()
+
+    const applyButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).filter(button => button.textContent?.includes('Apply Selected'))
+    expect(applyButtons).toHaveLength(2)
+    await act(async () => applyButtons[1].click())
+    await flushPromises()
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save Reviewed 2 Scripts'))!
+    await act(async () => save.click())
+    await flushPromises()
+
+    expect(apiMock.saveJMeterImport).toHaveBeenCalledWith(expect.objectContaining({
+      scripts: [
+        expect.objectContaining({ actions: [expect.objectContaining({ target: '/first' })] }),
+        expect.objectContaining({ actions: [expect.objectContaining({ target: '/second?parameterized=true' })] }),
+      ],
+    }))
+  })
+
+  it('ignores a late credential result after a newer JMeter review', async () => {
+    const buildResult = (name: string, requirements: unknown[]) => ({
+      scripts: [{ name, version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'GET /', type: 'request', method: 'GET', target: '/' }] }],
+      script: { name, version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [{ name: 'GET /', type: 'request', method: 'GET', target: '/' }] },
+      warnings: [], unsupported_elements: [], assumptions: [], review_sections: [], repair_suggestions: [],
+      stats: { thread_groups: 1, samplers: 1, total_samplers: 1, skipped_samplers: 0, converted_actions: 1, headers: 0, variables: 0, csv_sources: 0, assertions: 0, timers: 0, unsupported: 0 },
+      summary: { file_name: 'race.jmx' },
+      secret_binding_requirements: requirements,
+    })
+    const requirement = { id: 'auth', path: '/actions/0/headers/Authorization', label: 'Authorization', context: 'Bearer credential', suggested_name: 'API_TOKEN', script_index: 0 }
+    apiMock.validateJMeterImport
+      .mockResolvedValueOnce(buildResult('Generation A', [requirement]))
+      .mockResolvedValueOnce(buildResult('Generation B', []))
+    let resolveApply: ((value: unknown) => void) | undefined
+    apiMock.applySecretBindings.mockReturnValueOnce(new Promise(resolve => { resolveApply = resolve }))
+
+    await act(async () => root.render(<JMeterImport projectId="project-1" />))
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['<jmeterTestPlan />'], 'race.jmx')] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const validateButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Validate Only'))!
+    await act(async () => validateButton.click())
+    await flushPromises()
+    const saveButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('with 1 secret to configure'))!
+    act(() => saveButton.click())
+    await flushPromises()
+    await act(async () => validateButton.click())
+    await flushPromises()
+    await act(async () => {
+      resolveApply?.({ script: buildResult('Resolved A', []).script, secret_binding_requirements: [] })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Generation B')
+    expect(container.textContent).not.toContain('Resolved A')
+    expect(apiMock.saveJMeterImport).not.toHaveBeenCalled()
   })
 
   it('adds the active project id when saving reviewed scripts', async () => {

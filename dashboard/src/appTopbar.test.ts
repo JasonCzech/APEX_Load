@@ -31,6 +31,7 @@ describe('app topbar helpers', () => {
     expect(pageTitleForScriptSubView('create')).toBe('Create Script')
     expect(pageTitleForScriptSubView('edit')).toBe('Edit Script')
     expect(pageTitleForScriptSubView('openapi-import')).toBe('Import OpenAPI')
+    expect(pageTitleForScriptSubView('bruno-import')).toBe('Import Bruno')
     expect(pageTitleForScriptSubView('raml-import')).toBe('Import RAML')
     expect(pageTitleForScriptSubView('protocol-import')).toBe('Import From Source')
     expect(pageTitleForScriptSubView('oracle-review')).toBe('Oracle E-Business Review')

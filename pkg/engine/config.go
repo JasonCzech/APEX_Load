@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"encoding/base64"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -22,6 +23,37 @@ func buildProtoConfigForRunModeWithSecretResolver(script *dsl.Script, runMode st
 		cfg["apexload_run_mode"] = runMode
 	}
 	return cfg
+}
+
+// runtimeProtocolAuthCompositeValues returns protocol-generated credential
+// spellings that do not contain either raw component. Exact redaction of the
+// username and password alone cannot match a Basic-auth base64 payload echoed
+// by a server.
+func runtimeProtocolAuthCompositeValues(script *dsl.Script, resolver SecretResolver) []string {
+	if script == nil {
+		return nil
+	}
+	config := buildProtoConfigWithSecretResolver(script, resolver)
+	values := make([]string, 0, 8)
+	addBasic := func(usernameKey, passwordKey string, enabled bool) {
+		if !enabled {
+			return
+		}
+		username := protocol.ConfigString(config, usernameKey)
+		password := protocol.ConfigString(config, passwordKey)
+		if username == "" && password == "" {
+			return
+		}
+		payload := base64.StdEncoding.EncodeToString([]byte(username + ":" + password))
+		values = append(values, username, password, payload, "Basic "+payload)
+	}
+	addBasic("auth_username", "auth_password", strings.EqualFold(strings.TrimSpace(protocol.ConfigString(config, "auth_type")), "basic"))
+	addBasic("proxy_username", "proxy_password", protocol.ConfigString(config, "proxy_username") != "" || protocol.ConfigString(config, "proxy_password") != "")
+	addBasic("browser_http_credentials_username", "browser_http_credentials_password",
+		protocol.ConfigString(config, "browser_http_credentials_username") != "" || protocol.ConfigString(config, "browser_http_credentials_password") != "")
+	addBasic("browser_proxy_username", "browser_proxy_password",
+		protocol.ConfigString(config, "browser_proxy_username") != "" || protocol.ConfigString(config, "browser_proxy_password") != "")
+	return values
 }
 
 // normalizeSourceIPs trims, drops blanks, and de-duplicates a source-IP pool.
@@ -56,12 +88,16 @@ func normalizeSourceIPs(ips []string) []string {
 func vuserProtoConfig(base map[string]any, vuserID int) map[string]any {
 	pool, hasPool := base["web_source_ips"].([]string)
 	profiles, hasProfiles := base["web_network_profiles"].([]dsl.NetworkProfileWeight)
-	if (!hasPool || len(pool) == 0) && (!hasProfiles || len(profiles) == 0) {
+	_, isBruno := base["bruno_bundle_ref"]
+	if (!hasPool || len(pool) == 0) && (!hasProfiles || len(profiles) == 0) && !isBruno {
 		return base
 	}
 	clone := make(map[string]any, len(base)+4)
 	for k, v := range base {
 		clone[k] = v
+	}
+	if isBruno {
+		clone["vuser_id"] = float64(vuserID)
 	}
 	if hasPool && len(pool) > 0 {
 		idx := vuserID % len(pool)
@@ -148,13 +184,15 @@ func injectNetworkSimulation(cfg map[string]any, profile dsl.NetworkProfileWeigh
 
 func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResolver) map[string]any {
 	cfg := map[string]any{
-		"base_url": script.Config.BaseURL,
+		"base_url":   script.Config.BaseURL,
+		"project_id": script.ProjectID,
 	}
 	if script.Metadata != nil && script.Metadata.RuntimePolicy != nil && len(script.Metadata.RuntimePolicy.AllowedTargetHosts) > 0 {
 		cfg[protocol.TargetPolicyConfigKey] = append([]string(nil), script.Metadata.RuntimePolicy.AllowedTargetHosts...)
 	}
 
 	appendHTTPConfig(cfg, script)
+	appendBrunoConfig(cfg, script)
 	appendWebSocketConfig(cfg, script)
 	appendGRPCConfig(cfg, script)
 	appendJavaHTTPConfig(cfg, script)

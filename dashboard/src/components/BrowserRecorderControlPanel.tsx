@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 
 import { useApi } from '../hooks/useApi'
 import { downloadBlob } from '../utils/fileUtils'
@@ -8,7 +8,11 @@ import {
   type BrowserRecorderTransactionSuggestion,
 } from '../hooks/api/useBrowserRecorderApi'
 import { type BrowserReplayReport, type ReplayRepairSuggestion, type StoredScript } from '../types'
-import { type RecorderImportResult, type SalesforceImportResult } from '../types/scriptImports'
+import {
+  type RecorderImportResult,
+  type SalesforceImportResult,
+  type SecretBindingSelection,
+} from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import {
   composeHttpURL,
@@ -18,6 +22,17 @@ import {
 } from '../utils/httpUrlInput'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import BrowserReplayProgress from './BrowserReplayProgress'
+import { withFallbackPersistedScript } from './importSaveUtils'
+import ParameterizationReview from './ParameterizationReview'
+import SecretBindingReview, {
+  type PreparedSecretBindings,
+  type SecretBindingReviewHandle,
+} from './SecretBindingReview'
+import {
+  refreshedSecretBindingRequirements,
+  replaceSecretBindingRequirementsForScript,
+  secretBindingRequirementsForScript,
+} from './secretBindingUtils'
 import './RecordingStudio.css'
 
 const SECTIONS: { value: string; label: string }[] = [
@@ -103,6 +118,11 @@ function hasSalesforceSignal(session: BrowserRecorderSession, preview?: Recorder
   ].some(signal => text.includes(signal))
 }
 
+function importResultScripts(result?: RecorderImportResult | SalesforceImportResult | null): ScriptDefinition[] {
+  if (result?.scripts?.length) return result.scripts
+  return result?.script ? [result.script] : []
+}
+
 export interface BrowserRecorderControlPanelProps {
   sessionId: string
   /** Rendered as its own chrome-less page (popup window route). */
@@ -127,6 +147,10 @@ export default function BrowserRecorderControlPanel({
   const [scriptName, setScriptName] = useState('')
   const [preview, setPreview] = useState<RecorderImportResult | null>(null)
   const [salesforceDraft, setSalesforceDraft] = useState<SalesforceImportResult | null>(null)
+  const [previewPreparedSecrets, setPreviewPreparedSecrets] = useState<PreparedSecretBindings | null>(null)
+  const [salesforcePreparedSecrets, setSalesforcePreparedSecrets] = useState<PreparedSecretBindings | null>(null)
+  const [previewParameterizationApplying, setPreviewParameterizationApplying] = useState(false)
+  const [salesforceParameterizationApplying, setSalesforceParameterizationApplying] = useState(false)
   const [savedScript, setSavedScript] = useState<StoredScript | null>(null)
   const [busy, setBusy] = useState(false)
   const [feedback, setFeedback] = useState('')
@@ -145,6 +169,27 @@ export default function BrowserRecorderControlPanel({
   const refreshInFlightRef = useRef<{ sessionId: string; request: Promise<void> } | null>(null)
   const sessionScopeRef = useRef({ sessionId, generation: 0 })
   const feedbackTimerRef = useRef<number | null>(null)
+  const previewCredentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
+  const salesforceCredentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
+  const previewReviewGenerationRef = useRef(0)
+  const salesforceReviewGenerationRef = useRef(0)
+  const [previewReviewGeneration, setPreviewReviewGeneration] = useState(0)
+  const [salesforceReviewGeneration, setSalesforceReviewGeneration] = useState(0)
+  const advancePreviewReviewGeneration = useCallback(() => {
+    const next = previewReviewGenerationRef.current + 1
+    previewReviewGenerationRef.current = next
+    setPreviewReviewGeneration(next)
+    return next
+  }, [])
+  const advanceSalesforceReviewGeneration = useCallback(() => {
+    const next = salesforceReviewGenerationRef.current + 1
+    salesforceReviewGenerationRef.current = next
+    setSalesforceReviewGeneration(next)
+    return next
+  }, [])
+  const previewPreparedScriptsRef = useRef<ScriptDefinition[] | null>(null)
+  const salesforcePreparedScriptsRef = useRef<ScriptDefinition[] | null>(null)
+  const previewRequestKeyRef = useRef('')
 
   if (sessionScopeRef.current.sessionId !== sessionId) {
     sessionScopeRef.current = {
@@ -200,6 +245,8 @@ export default function BrowserRecorderControlPanel({
   }, [api, sessionId])
 
   useEffect(() => {
+    void previewCredentialReviewRef.current?.discardSourceSession()
+    void salesforceCredentialReviewRef.current?.discardSourceSession()
     if (feedbackTimerRef.current !== null) {
       window.clearTimeout(feedbackTimerRef.current)
       feedbackTimerRef.current = null
@@ -207,8 +254,17 @@ export default function BrowserRecorderControlPanel({
     setSession(null)
     setLoadError('')
     setScriptName('')
+    advancePreviewReviewGeneration()
+    advanceSalesforceReviewGeneration()
     setPreview(null)
     setSalesforceDraft(null)
+    setPreviewParameterizationApplying(false)
+    setSalesforceParameterizationApplying(false)
+    setPreviewPreparedSecrets(null)
+    setSalesforcePreparedSecrets(null)
+    previewPreparedScriptsRef.current = null
+    salesforcePreparedScriptsRef.current = null
+    previewRequestKeyRef.current = ''
     setSavedScript(null)
     setSuggestions([])
     setReplaySessionId(null)
@@ -224,10 +280,12 @@ export default function BrowserRecorderControlPanel({
     setAlsoCreateHTTP(false)
     setParameterizeInputs(false)
     void refresh()
-  }, [refresh, sessionId])
+  }, [advancePreviewReviewGeneration, advanceSalesforceReviewGeneration, refresh, sessionId])
 
   useEffect(() => () => {
     if (feedbackTimerRef.current !== null) window.clearTimeout(feedbackTimerRef.current)
+    void previewCredentialReviewRef.current?.discardSourceSession()
+    void salesforceCredentialReviewRef.current?.discardSourceSession()
   }, [])
 
   const live = !!session && LIVE_STATUSES.has(session.status)
@@ -413,13 +471,20 @@ export default function BrowserRecorderControlPanel({
   }
 
   const handlePreview = async () => {
+    setPreviewParameterizationApplying(false)
+    advancePreviewReviewGeneration()
     setBusy(true)
     try {
       const result = await api.previewBrowserRecordingConversion(sessionId, convertRequest())
       if (!isCurrentSession()) return
+      previewPreparedScriptsRef.current = null
+      setPreviewPreparedSecrets(null)
       setPreview(result)
+      previewRequestKeyRef.current = JSON.stringify(convertRequest())
       const suggestions = result.parameterization?.summary?.total ?? 0
-      showFeedback(`Preview generated with ${result.script?.actions?.length || 0} actions and ${suggestions} parameterization suggestions`)
+      const scripts = importResultScripts(result)
+      const actionCount = scripts.reduce((total, script) => total + (script.actions?.length || 0), 0)
+      showFeedback(`Preview generated with ${actionCount} actions and ${suggestions} parameterization suggestions`)
     } catch (e: any) {
       if (isCurrentSession()) showFeedback(e.message, 'error')
     } finally {
@@ -427,36 +492,176 @@ export default function BrowserRecorderControlPanel({
     }
   }
 
+  async function applyBindingsToResult<T extends RecorderImportResult | SalesforceImportResult>(
+    result: T,
+    bindings: SecretBindingSelection[],
+    publish: (next: T) => void,
+    requestIsCurrent: () => boolean,
+  ): Promise<T> {
+    let resolvedResult = result
+    let scripts = importResultScripts(result)
+    for (let scriptIndex = 0; scriptIndex < scripts.length; scriptIndex += 1) {
+      const script = scripts[scriptIndex]
+      const requirements = secretBindingRequirementsForScript(
+        resolvedResult.secret_binding_requirements,
+        scriptIndex,
+        script,
+      )
+      const requirementIDs = new Set(requirements.map(requirement => requirement.id))
+      const scriptBindings = bindings.filter(binding => requirementIDs.has(binding.requirement_id))
+      if (scriptBindings.length === 0) continue
+      try {
+        if (!requestIsCurrent()) throw new Error('The recording draft changed while credentials were being prepared. Review the current draft and try again.')
+        const resolved = await api.applySecretBindings({
+          script,
+          script_index: scriptIndex,
+          bindings: scriptBindings,
+        })
+        if (!requestIsCurrent()) throw new Error('The recording draft changed while credentials were being prepared. Review the current draft and try again.')
+        scripts = scripts.map((entry, index) => index === scriptIndex ? resolved.script : entry)
+        resolvedResult = {
+          ...resolvedResult,
+          script: scripts[0],
+          scripts,
+          secret_binding_requirements: replaceSecretBindingRequirementsForScript(
+            resolvedResult.secret_binding_requirements,
+            scriptIndex,
+            script,
+            resolved.secret_binding_requirements,
+          ),
+        }
+      } catch (error: unknown) {
+        if (!requestIsCurrent()) throw error
+        const refreshed = refreshedSecretBindingRequirements(error)
+        if (refreshed) {
+          resolvedResult = {
+            ...resolvedResult,
+            secret_binding_requirements: replaceSecretBindingRequirementsForScript(
+              resolvedResult.secret_binding_requirements,
+              scriptIndex,
+              script,
+              refreshed,
+            ),
+          }
+          publish(resolvedResult)
+        }
+        throw error
+      }
+    }
+    if (!requestIsCurrent()) throw new Error('The recording draft changed while credentials were being prepared. Review the current draft and try again.')
+    publish(resolvedResult)
+    return resolvedResult
+  }
+
+  const handleApplyPreviewSecretBindings = async (bindings: SecretBindingSelection[]) => {
+    if (!preview) return
+    const sourceGeneration = previewReviewGenerationRef.current
+    const sourceSession = { ...sessionScopeRef.current }
+    const requestIsCurrent = () => previewReviewGenerationRef.current === sourceGeneration
+      && sessionScopeRef.current.sessionId === sourceSession.sessionId
+      && sessionScopeRef.current.generation === sourceSession.generation
+    const resolved = await applyBindingsToResult(preview, bindings, next => {
+      if (isCurrentSession()) setPreview(next)
+    }, requestIsCurrent)
+    if (!isCurrentSession()) return
+    previewPreparedScriptsRef.current = importResultScripts(resolved)
+  }
+
+  const handleApplyPreviewParameterization = (scriptIndex: number) => (parameterizedScript: ScriptDefinition) => {
+    if (!preview) return
+    const scripts = importResultScripts(preview)
+    if (!scripts[scriptIndex]) return
+    previewCredentialReviewRef.current?.preserveEditsForNextReviewGeneration()
+    advancePreviewReviewGeneration()
+    previewPreparedScriptsRef.current = null
+    const nextScripts = scripts.map((entry, index) => index === scriptIndex ? parameterizedScript : entry)
+    setPreview({
+      ...preview,
+      script: nextScripts[0],
+      scripts: nextScripts,
+    })
+  }
+
+  const preparePreviewScripts = async (result: RecorderImportResult): Promise<ScriptDefinition[] | null> => {
+    if ((result.secret_binding_requirements?.length || 0) === 0) return importResultScripts(result)
+    const sourceGeneration = previewReviewGenerationRef.current
+    const sourceSession = { ...sessionScopeRef.current }
+    previewPreparedScriptsRef.current = null
+    const committed = await previewCredentialReviewRef.current?.commit()
+    return committed
+      && previewReviewGenerationRef.current === sourceGeneration
+      && sessionScopeRef.current.sessionId === sourceSession.sessionId
+      && sessionScopeRef.current.generation === sourceSession.generation
+      ? previewPreparedScriptsRef.current
+      : null
+  }
+
+  const saveScriptsWithRollback = async (scripts: ScriptDefinition[]): Promise<StoredScript[]> => {
+    const created: StoredScript[] = []
+    try {
+      for (const script of scripts) {
+        const stored = await api.createScript(script, session?.project_id, undefined, sessionId)
+        created.push(stored)
+      }
+    } catch (error: unknown) {
+      const cleanupResults = await Promise.allSettled(
+        [...created].reverse().map(stored => api.deleteScript(stored.id)),
+      )
+      const cleanupFailures = cleanupResults
+        .map((result, index) => result.status === 'rejected' ? created[created.length - 1 - index] : null)
+        .filter((stored): stored is StoredScript => stored !== null)
+      const saveError = error instanceof Error && error.message.trim()
+        ? error.message.trim()
+        : 'an unexpected error occurred'
+
+      if (cleanupFailures.length > 0) {
+        const remaining = cleanupFailures.map(stored => `“${stored.name}”`).join(', ')
+        throw new Error(
+          `Could not save all scripts: ${saveError}. Automatic cleanup failed for ${remaining}; delete ${cleanupFailures.length === 1 ? 'it' : 'them'} from the Script Library before retrying.`,
+        )
+      }
+
+      const cleanupSummary = created.length === 0
+        ? 'No scripts were created.'
+        : `${created.length === 1 ? 'The script created' : `All ${created.length} scripts created`} before the failure ${created.length === 1 ? 'was' : 'were'} removed, so no partial import remains.`
+      throw new Error(`Could not save all scripts: ${saveError}. ${cleanupSummary}`)
+    }
+
+    return created.map((stored, index) => withFallbackPersistedScript(stored, scripts[index]))
+  }
+
   const handleSave = async () => {
     if (!confirmReplaySaveRisk()) return
     setBusy(true)
     try {
-      if (api.browserRecorderBridge) {
-        const result = await api.previewBrowserRecordingConversion(sessionId, convertRequest())
+      const requestKey = JSON.stringify(convertRequest())
+      const hadCurrentPreview = preview !== null && previewRequestKeyRef.current === requestKey
+      let result = hadCurrentPreview ? preview : null
+      if (!result) {
+        advancePreviewReviewGeneration()
+        result = await api.previewBrowserRecordingConversion(sessionId, convertRequest())
         if (!isCurrentSession()) return
-        const scripts = (result.scripts?.length ? result.scripts : result.script ? [result.script] : []) as ScriptDefinition[]
-        if (scripts.length === 0) {
-          throw new Error('Conversion produced no scripts to save')
-        }
-        const saved = await Promise.all(scripts.map(script => api.createScript(script, session?.project_id)))
-        if (!isCurrentSession()) return
-        const primary = saved[0]
-        setSavedScript(primary)
+        previewPreparedScriptsRef.current = null
+        setPreviewPreparedSecrets(null)
         setPreview(result)
-        onImported?.({ scripts: saved })
-        showFeedback(`Saved ${saved.length === 1 ? `script "${primary.name}"` : `${saved.length} scripts`} to the remote script library`)
+        previewRequestKeyRef.current = requestKey
+      }
+      if (!hadCurrentPreview && (result.secret_binding_requirements?.length || 0) > 0) {
+        showFeedback('Credentials detected. Review the optional values below, then save with the prefilled references.')
         return
       }
-
-      const result = await api.convertBrowserRecording(sessionId, convertRequest())
+      const scripts = await preparePreviewScripts(result)
+      if (!scripts) return
       if (!isCurrentSession()) return
-      const stored = result.script as unknown as StoredScript | undefined
-      if (stored) {
-        setSavedScript(stored)
-        onImported?.({ scripts: [stored] })
-      }
-      const httpNote = result.http_script ? ` (plus HTTP script "${result.http_script.name}")` : ''
-      showFeedback(`Script "${stored?.name || scriptName}" saved to the script library${httpNote}`)
+      if (scripts.length === 0) throw new Error('Conversion produced no scripts to save')
+      const persisted = await saveScriptsWithRollback(scripts)
+      if (!isCurrentSession()) return
+      setSavedScript(persisted[0])
+      onImported?.({ scripts: persisted })
+      const libraryLabel = api.browserRecorderBridge ? 'remote script library' : 'script library'
+      showFeedback(persisted.length === 1
+        ? `Script "${persisted[0].name}" saved to the ${libraryLabel}`
+        : `Saved ${persisted.length} scripts to the ${libraryLabel}`)
     } catch (e: any) {
       if (isCurrentSession()) showFeedback(e.message, 'error')
     } finally {
@@ -584,11 +789,34 @@ export default function BrowserRecorderControlPanel({
     showFeedback(`Selector promoted for step #${seq}; verifying again`)
   }
 
-  const editableScript = (preview?.script as ScriptDefinition | undefined) || savedScript?.script
+  const editableScript = importResultScripts(preview)[0] || savedScript?.script
+  const previewParameterizationPanels = useMemo(() => {
+    const parameterization = preview?.parameterization
+    if (!parameterization?.suggestions?.length) return []
+    return importResultScripts(preview).flatMap((script, scriptIndex) => {
+      const suggestions = parameterization.suggestions.filter(suggestion =>
+        suggestion.script_name
+          ? suggestion.script_name === script.name
+          : scriptIndex === 0,
+      )
+      return suggestions.length > 0
+        ? [{
+            script,
+            scriptIndex,
+            parameterization: { ...parameterization, suggestions },
+          }]
+        : []
+    })
+  }, [preview])
 
-  const handleOpenEditor = () => {
-    if (editableScript) {
-      onEdit?.(editableScript)
+  const handleOpenEditor = async () => {
+    if (!preview) return
+    setBusy(true)
+    try {
+      const scripts = await preparePreviewScripts(preview)
+      if (isCurrentSession() && scripts?.[0]) onEdit?.(scripts[0])
+    } finally {
+      if (isCurrentSession()) setBusy(false)
     }
   }
 
@@ -612,6 +840,8 @@ export default function BrowserRecorderControlPanel({
 
   const handleReviewSalesforceHTTP = async () => {
     if (!session) return
+    setSalesforceParameterizationApplying(false)
+    advanceSalesforceReviewGeneration()
     setBusy(true)
     try {
       const res = await api.exportBrowserRecording(sessionId, 'har')
@@ -628,6 +858,8 @@ export default function BrowserRecorderControlPanel({
         project_id: session.project_id,
       })
       if (!isCurrentSession()) return
+      salesforcePreparedScriptsRef.current = null
+      setSalesforcePreparedSecrets(null)
       setSalesforceDraft(result)
       const script = result.script || result.scripts?.[0]
       showFeedback(`Salesforce HTTP draft ready with ${script?.actions?.length || 0} actions`)
@@ -638,16 +870,60 @@ export default function BrowserRecorderControlPanel({
     }
   }
 
+  const handleApplySalesforceSecretBindings = async (bindings: SecretBindingSelection[]) => {
+    if (!salesforceDraft) return
+    const sourceGeneration = salesforceReviewGenerationRef.current
+    const sourceSession = { ...sessionScopeRef.current }
+    const requestIsCurrent = () => salesforceReviewGenerationRef.current === sourceGeneration
+      && sessionScopeRef.current.sessionId === sourceSession.sessionId
+      && sessionScopeRef.current.generation === sourceSession.generation
+    const resolved = await applyBindingsToResult(salesforceDraft, bindings, next => {
+      if (isCurrentSession()) setSalesforceDraft(next)
+    }, requestIsCurrent)
+    if (!isCurrentSession()) return
+    salesforcePreparedScriptsRef.current = importResultScripts(resolved)
+  }
+
+  const handleApplySalesforceParameterization = (parameterizedScript: ScriptDefinition) => {
+    if (!salesforceDraft) return
+    salesforceCredentialReviewRef.current?.preserveEditsForNextReviewGeneration()
+    advanceSalesforceReviewGeneration()
+    salesforcePreparedScriptsRef.current = null
+    setSalesforceDraft({
+      ...salesforceDraft,
+      script: parameterizedScript,
+      scripts: salesforceDraft.scripts?.length
+        ? salesforceDraft.scripts.map((entry, index) => index === 0 ? parameterizedScript : entry)
+        : [parameterizedScript],
+    })
+  }
+
+  const prepareSalesforceScripts = async (): Promise<ScriptDefinition[] | null> => {
+    if (!salesforceDraft) return null
+    if ((salesforceDraft.secret_binding_requirements?.length || 0) === 0) return importResultScripts(salesforceDraft)
+    const sourceGeneration = salesforceReviewGenerationRef.current
+    const sourceSession = { ...sessionScopeRef.current }
+    salesforcePreparedScriptsRef.current = null
+    const committed = await salesforceCredentialReviewRef.current?.commit()
+    return committed
+      && salesforceReviewGenerationRef.current === sourceGeneration
+      && sessionScopeRef.current.sessionId === sourceSession.sessionId
+      && sessionScopeRef.current.generation === sourceSession.generation
+      ? salesforcePreparedScriptsRef.current
+      : null
+  }
+
   const handleSaveSalesforceDraft = async () => {
-    const script = salesforceDraft?.script || salesforceDraft?.scripts?.[0]
-    if (!script) return
     setBusy(true)
     try {
-      const saved = await api.createScript(script, session?.project_id)
+      const scripts = await prepareSalesforceScripts()
+      if (!scripts?.length) return
       if (!isCurrentSession()) return
-      setSavedScript(saved)
-      onImported?.({ scripts: [saved] })
-      showFeedback(`Salesforce HTTP script "${saved.name}" saved to the script library`)
+      const persisted = await saveScriptsWithRollback(scripts)
+      if (!isCurrentSession()) return
+      setSavedScript(persisted[0])
+      onImported?.({ scripts: persisted })
+      showFeedback(`Saved ${persisted.length === 1 ? `Salesforce HTTP script "${persisted[0].name}"` : `${persisted.length} Salesforce HTTP scripts`} to the script library`)
     } catch (e: any) {
       if (isCurrentSession()) showFeedback(e.message, 'error')
     } finally {
@@ -655,10 +931,13 @@ export default function BrowserRecorderControlPanel({
     }
   }
 
-  const handleOpenSalesforceDraft = () => {
-    const script = salesforceDraft?.script || salesforceDraft?.scripts?.[0]
-    if (script) {
-      onEdit?.(script)
+  const handleOpenSalesforceDraft = async () => {
+    setBusy(true)
+    try {
+      const scripts = await prepareSalesforceScripts()
+      if (isCurrentSession() && scripts?.[0]) onEdit?.(scripts[0])
+    } finally {
+      if (isCurrentSession()) setBusy(false)
     }
   }
 
@@ -700,6 +979,22 @@ export default function BrowserRecorderControlPanel({
   const showSalesforceHandoff = session.har_available && hasSalesforceSignal(session, preview)
   const salesforceScript = salesforceDraft?.script || salesforceDraft?.scripts?.[0] || null
   const salesforceReview = salesforceDraft?.summary?.salesforce_review
+  const previewSecretRequirements = preview?.secret_binding_requirements || []
+  const previewDeferredSecretCount = previewSecretRequirements.length === 0
+    ? 0
+    : previewPreparedSecrets?.configureLaterCount ??
+      new Set(previewSecretRequirements.map(requirement => requirement.suggested_name)).size
+  const previewSaveLabel = previewDeferredSecretCount > 0
+    ? `Save with ${previewDeferredSecretCount} ${previewDeferredSecretCount === 1 ? 'secret' : 'secrets'} to configure`
+    : 'Save to Script Library'
+  const salesforceSecretRequirements = salesforceDraft?.secret_binding_requirements || []
+  const salesforceDeferredSecretCount = salesforceSecretRequirements.length === 0
+    ? 0
+    : salesforcePreparedSecrets?.configureLaterCount ??
+      new Set(salesforceSecretRequirements.map(requirement => requirement.suggested_name)).size
+  const salesforceSaveLabel = salesforceDeferredSecretCount > 0
+    ? `Save with ${salesforceDeferredSecretCount} ${salesforceDeferredSecretCount === 1 ? 'secret' : 'secrets'} to configure`
+    : 'Save Salesforce HTTP Script'
 
   return (
     <div className={`brp-panel ${standalone ? 'brp-standalone' : ''}`} data-testid="browser-recorder-panel">
@@ -710,7 +1005,11 @@ export default function BrowserRecorderControlPanel({
           <span className={`brp-status brp-status-${session.status}`}>{statusLabel(session)}</span>
         </div>
         {onDismiss && !live && (
-          <button type="button" className="rec-inline-action" onClick={onDismiss}>Dismiss</button>
+          <button type="button" className="rec-inline-action" onClick={() => {
+            void previewCredentialReviewRef.current?.discardSourceSession()
+            void salesforceCredentialReviewRef.current?.discardSourceSession()
+            onDismiss()
+          }}>Dismiss</button>
         )}
       </div>
 
@@ -987,28 +1286,55 @@ export default function BrowserRecorderControlPanel({
       {stopped && (
         <div className="brp-convert">
           <div className="brp-convert-title">Save as Script</div>
+          {previewSecretRequirements.length > 0 && (
+            <SecretBindingReview
+              ref={previewCredentialReviewRef}
+              requirements={previewSecretRequirements}
+              reviewGeneration={`${previewReviewGeneration}:${sessionId}`}
+              projectId={session.project_id}
+              sourceSecretSessionId={preview?.source_secret_session_id}
+              sourceSecretSessionExpiresAt={preview?.source_secret_session_expires_at}
+              sourceMigrationAllowed={preview?.source_secret_migration_allowed}
+              disabled={busy || previewParameterizationApplying}
+              onApply={handleApplyPreviewSecretBindings}
+              onPreparedChange={setPreviewPreparedSecrets}
+            />
+          )}
+          {previewParameterizationPanels.map(({ parameterization, script, scriptIndex }) => (
+            <ParameterizationReview
+              key={`${scriptIndex}:${script.name}`}
+              parameterization={parameterization}
+              script={script}
+              scriptName={script.name}
+              reviewGeneration={`${previewReviewGeneration}:${sessionId}`}
+              disabled={busy}
+              onApplyingChange={setPreviewParameterizationApplying}
+              onApplied={handleApplyPreviewParameterization(scriptIndex)}
+            />
+          ))}
           <div className="rec-form-row">
             <label className="rec-label" htmlFor="browser-recording-script-name">Script Name</label>
             <input
               id="browser-recording-script-name"
               className="rec-input"
               value={scriptName}
-              onChange={e => setScriptName(e.target.value)}
+              onChange={e => { advancePreviewReviewGeneration(); setScriptName(e.target.value) }}
+              disabled={busy}
               placeholder="e.g. Login & Checkout Flow"
             />
           </div>
           <label className="rec-checkbox-row">
-            <input type="checkbox" checked={splitAtTransactions} onChange={e => setSplitAtTransactions(e.target.checked)} />
+            <input type="checkbox" checked={splitAtTransactions} disabled={busy} onChange={e => { advancePreviewReviewGeneration(); setSplitAtTransactions(e.target.checked) }} />
             <span>Split into one script per transaction</span>
           </label>
           {session.har_available && (
             <label className="rec-checkbox-row">
-              <input type="checkbox" checked={alsoCreateHTTP} onChange={e => setAlsoCreateHTTP(e.target.checked)} />
+              <input type="checkbox" checked={alsoCreateHTTP} disabled={busy} onChange={e => { advancePreviewReviewGeneration(); setAlsoCreateHTTP(e.target.checked) }} />
               <span>Also create a protocol-level HTTP script from the recorded HAR</span>
             </label>
           )}
           <label className="rec-checkbox-row">
-            <input type="checkbox" checked={parameterizeInputs} onChange={e => setParameterizeInputs(e.target.checked)} />
+            <input type="checkbox" checked={parameterizeInputs} disabled={busy} onChange={e => { advancePreviewReviewGeneration(); setParameterizeInputs(e.target.checked) }} />
             <span>Parameterize inputs</span>
           </label>
           {!lastVerifyReport && (
@@ -1030,9 +1356,9 @@ export default function BrowserRecorderControlPanel({
             {showSalesforceHandoff && (
               <button className="btn btn-secondary" onClick={handleReviewSalesforceHTTP} disabled={busy}>Review Salesforce HTTP Draft</button>
             )}
-            <button className="btn btn-primary" onClick={handleSave} disabled={busy}>Save to Script Library</button>
+            <button className="btn btn-primary" onClick={handleSave} disabled={busy || previewParameterizationApplying || previewPreparedSecrets?.valid === false}>{previewSaveLabel}</button>
             {onEdit && (
-              <button className="btn btn-secondary" onClick={handleOpenEditor} disabled={busy || !editableScript}>
+              <button className="btn btn-secondary" onClick={() => { void handleOpenEditor() }} disabled={busy || previewParameterizationApplying || !editableScript || previewPreparedSecrets?.valid === false}>
                 Open in Visual Editor
               </button>
             )}
@@ -1055,6 +1381,30 @@ export default function BrowserRecorderControlPanel({
           )}
           {salesforceDraft && salesforceScript && (
             <div className="brp-preview-summary">
+              {salesforceSecretRequirements.length > 0 && (
+                <SecretBindingReview
+                  ref={salesforceCredentialReviewRef}
+                  requirements={salesforceSecretRequirements}
+                  reviewGeneration={`${salesforceReviewGeneration}:${sessionId}`}
+                  projectId={session.project_id}
+                  sourceSecretSessionId={salesforceDraft.source_secret_session_id}
+                  sourceSecretSessionExpiresAt={salesforceDraft.source_secret_session_expires_at}
+                  sourceMigrationAllowed={salesforceDraft.source_secret_migration_allowed}
+                  disabled={busy || salesforceParameterizationApplying}
+                  onApply={handleApplySalesforceSecretBindings}
+                  onPreparedChange={setSalesforcePreparedSecrets}
+                />
+              )}
+              {salesforceDraft.parameterization && (salesforceDraft.parameterization.suggestions?.length || 0) > 0 && salesforceScript && (
+                <ParameterizationReview
+                  parameterization={salesforceDraft.parameterization}
+                  script={salesforceScript}
+                  reviewGeneration={`${salesforceReviewGeneration}:${sessionId}`}
+                  disabled={busy}
+                  onApplyingChange={setSalesforceParameterizationApplying}
+                  onApplied={handleApplySalesforceParameterization}
+                />
+              )}
               <div>
                 Salesforce HTTP draft: {salesforceScript.actions?.length || 0} actions
                 {salesforceReview?.har_match_coverage &&
@@ -1068,9 +1418,9 @@ export default function BrowserRecorderControlPanel({
                 </div>
               )}
               <div className="brp-actions">
-                <button className="btn btn-primary" onClick={handleSaveSalesforceDraft} disabled={busy}>Save Salesforce HTTP Script</button>
+                <button className="btn btn-primary" onClick={() => { void handleSaveSalesforceDraft() }} disabled={busy || salesforceParameterizationApplying || salesforcePreparedSecrets?.valid === false}>{salesforceSaveLabel}</button>
                 {onEdit && (
-                  <button className="btn btn-secondary" onClick={handleOpenSalesforceDraft} disabled={busy}>Open Salesforce Draft</button>
+                  <button className="btn btn-secondary" onClick={() => { void handleOpenSalesforceDraft() }} disabled={busy || salesforceParameterizationApplying || salesforcePreparedSecrets?.valid === false}>Open Salesforce Draft</button>
                 )}
               </div>
             </div>

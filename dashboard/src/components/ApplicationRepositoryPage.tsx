@@ -13,7 +13,7 @@ import {
   TestSummary,
 } from '../types'
 import { useRepositoryApi } from '../hooks/api/useRepositoryApi'
-import { useProjectApi } from '../hooks/api/useProjectApi'
+import { useProjectApi, type DeleteEntityResponse } from '../hooks/api/useProjectApi'
 import { useScriptApi } from '../hooks/api/useScriptApi'
 import { useTestApi } from '../hooks/api/useTestApi'
 import StatusBadge from './StatusBadge'
@@ -113,6 +113,16 @@ const TIMEFRAME_OPTIONS = [
 function getErrorMessage(err: unknown, fallback = 'Unable to load assets') {
   if (err instanceof Error && err.message) return err.message
   return fallback
+}
+
+function deleteEntityResponseFromError(err: unknown): DeleteEntityResponse | null {
+  if (!err || typeof err !== 'object') return null
+  const payload = (err as { payload?: unknown }).payload
+  if (!payload || typeof payload !== 'object') return null
+  const candidate = payload as Partial<DeleteEntityResponse>
+  return typeof candidate.deleted === 'string' && candidate.deleted.trim()
+    ? candidate as DeleteEntityResponse
+    : null
 }
 
 function plural(count: number, singular: string, pluralLabel = `${singular}s`) {
@@ -538,8 +548,7 @@ export default function ApplicationRepositoryPage({
   const deleteRepositoryRow = useCallback(async (row: RepositoryAssetRow) => {
     switch (row.kind) {
       case 'project':
-        await projectApi.deleteProject(row.id)
-        break
+        return projectApi.deleteProject(row.id)
       case 'release':
         await repositoryApi.deleteRelease(row.id)
         break
@@ -593,17 +602,88 @@ export default function ApplicationRepositoryPage({
     setBulkBusy(true)
     setError('')
     setStatus('')
+    const externalSecretCleanupNames = new Set<string>()
+    const externalSecretCleanupProviders = new Set<string>()
+    const externalSecretCleanupPrefixes = new Set<string>()
+    const deletedRows: RepositoryAssetRow[] = []
+    let externalSecretCleanupRequired = false
+    let failureStage: 'delete' | 'refresh' = 'delete'
+
+    const cleanupNotice = () => {
+      const cleanupProviders = externalSecretCleanupProviders.size > 0
+        ? ` (${Array.from(externalSecretCleanupProviders).sort().join(', ')})`
+        : ''
+      if (externalSecretCleanupNames.size > 0) {
+        return ` External project secrets retained for administrator cleanup: ${Array.from(externalSecretCleanupNames).sort().join(', ')}${cleanupProviders}.`
+      }
+      if (externalSecretCleanupPrefixes.size > 0) {
+        return ` External project secrets retained for administrator cleanup under ${Array.from(externalSecretCleanupPrefixes).sort().map(prefix => `prefix “${prefix}”`).join(', ')}${cleanupProviders}.`
+      }
+      return externalSecretCleanupRequired
+        ? ` External project secrets were retained and require administrator cleanup${cleanupProviders}.`
+        : ''
+    }
+
+    const publishDeletionStatus = () => {
+      if (deletedRows.length === 0) return
+      const unchanged = selectedRows.length - deletedRows.length
+      setStatus(`Deleted ${plural(deletedRows.length, 'selected item')}${unchanged > 0 ? `; ${plural(unchanged, 'item')} unchanged.` : '.'}${cleanupNotice()}`)
+    }
+
+    const removeDeletedSelections = () => {
+      if (deletedRows.length === 0) return
+      const deletedKeys = new Set(deletedRows.map(repositoryRowKey))
+      setSelectedRowKeys(prev => new Set(Array.from(prev).filter(key => !deletedKeys.has(key))))
+    }
+
+    const recordExternalSecretCleanup = (result?: DeleteEntityResponse) => {
+      if (!result?.external_secret_cleanup_required) return
+      externalSecretCleanupRequired = true
+      ;(result.external_secret_cleanup_names || []).forEach(name => externalSecretCleanupNames.add(name))
+      ;(result.external_secret_cleanup_providers || []).forEach(provider => externalSecretCleanupProviders.add(provider))
+      if (result.external_secret_cleanup_prefix) externalSecretCleanupPrefixes.add(result.external_secret_cleanup_prefix)
+      if (result.secret_provider) externalSecretCleanupProviders.add(result.secret_provider)
+    }
+
     try {
       for (const row of deletableSelectedRows) {
-        await deleteRepositoryRow(row)
+        try {
+          const result = await deleteRepositoryRow(row)
+          deletedRows.push(row)
+          recordExternalSecretCleanup(result)
+        } catch (err) {
+          // Project deletion can durably complete while cleanup/index removal
+          // reports a non-2xx response. The API preserves the deletion and
+          // external-provider guidance in that error payload; treat the row as
+          // deleted before surfacing the failure.
+          const partial = deleteEntityResponseFromError(err)
+          if (row.kind === 'project' && partial?.deleted === row.id) {
+            deletedRows.push(row)
+            recordExternalSecretCleanup(partial)
+          }
+          throw err
+        }
       }
-      const deletedKeys = new Set(deletableSelectedRows.map(repositoryRowKey))
-      setSelectedRowKeys(prev => new Set(Array.from(prev).filter(key => !deletedKeys.has(key))))
-      await refreshAfterBulkChange(deletableSelectedRows)
-      const unchanged = selectedRows.length - deletableSelectedRows.length
-      setStatus(`Deleted ${plural(count, 'selected item')}${unchanged > 0 ? `; ${plural(unchanged, 'item')} unchanged.` : '.'}`)
+      removeDeletedSelections()
+      publishDeletionStatus()
+      failureStage = 'refresh'
+      await refreshAfterBulkChange(deletedRows)
     } catch (err) {
-      setError(getErrorMessage(err, 'Unable to delete selected repository items.'))
+      removeDeletedSelections()
+      publishDeletionStatus()
+      let refreshAlsoFailed = false
+      if (failureStage === 'delete' && deletedRows.length > 0) {
+        try {
+          await refreshAfterBulkChange(deletedRows)
+        } catch {
+          refreshAlsoFailed = true
+        }
+      }
+      const fallback = failureStage === 'refresh'
+        ? 'Items were deleted, but the repository could not be refreshed.'
+        : 'Unable to delete all selected repository items.'
+      const suffix = refreshAlsoFailed ? ' The repository refresh also failed; reload before continuing.' : ''
+      setError(`${getErrorMessage(err, fallback)}${suffix}`)
     } finally {
       setBulkBusy(false)
     }
@@ -682,9 +762,8 @@ export default function ApplicationRepositoryPage({
         </label>
       </div>
 
-      {(status || error) && (
-        <div className={error ? 'form-error' : 'form-success'}>{error || status}</div>
-      )}
+      {status && <div className="form-success" role="status">{status}</div>}
+      {error && <div className="form-error" role="alert">{error}</div>}
 
       <section className="repository-catalog-shell">
         <div className="repository-catalog-toolbar">

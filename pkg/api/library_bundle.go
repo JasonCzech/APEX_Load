@@ -1050,6 +1050,10 @@ func (s *Server) importLibraryScenario(item LibraryBundleItem, projectID string,
 		action = "updated"
 	}
 	req := cloneScenarioRequestForLibrary(item.Scenario.Request)
+	req.creationActor = testCreationActor{
+		Type:    "legacy",
+		Subject: "controller:library-import-unattributed",
+	}
 	dependencies := make(map[string]LibraryDependency, len(item.Dependencies))
 	for _, dependency := range item.Dependencies {
 		if normalizeLibraryKind(dependency.Kind) == "script" && strings.TrimSpace(dependency.ID) != "" {

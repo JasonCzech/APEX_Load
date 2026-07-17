@@ -39,13 +39,14 @@ func (s *Server) handleSuggestScriptParameterization(w http.ResponseWriter, r *h
 		EnableDataParams: true,
 		EnableSecrets:    true,
 	})
+	safeResult := sanitizeImportParameterization(&result, stored.Script)
 
 	s.recordAuditEvent(r, "script.parameterize.suggest", "success", "script", id, stored.Script.ProjectID, map[string]any{
 		"suggestions": len(result.Suggestions),
 	})
 
 	writeJSON(w, http.StatusOK, scriptParameterizeSuggestResponse{
-		Result: result,
-		Note:   "Correlation detection needs captured request/response samples, which a saved script does not carry — this scan covers hardcoded data parameters and secrets only.",
+		Result: *safeResult,
+		Note:   "Correlation detection needs captured request/response samples, which a saved script does not carry. Credential values are managed through Project Secrets and are never returned by this scan.",
 	})
 }

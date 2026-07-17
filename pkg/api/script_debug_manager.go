@@ -217,6 +217,7 @@ func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req Scri
 			RuntimeProfile:  &session.RuntimeProfile,
 			Variables:       req.Variables,
 			RedactionRules:  req.RedactionRules,
+			SecretResolver:  req.SecretResolver,
 			IgnoreThinkTime: ignoreThinkTime,
 			DebugController: scriptDebugController{manager: m, session: session},
 			OnProgress: func(event engine.ReplayProgressEvent) {

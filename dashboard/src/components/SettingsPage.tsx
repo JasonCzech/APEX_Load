@@ -35,6 +35,7 @@ import {
 import EntitlementsPanel from './EntitlementsPanel'
 import EntitlementHeadroom from './EntitlementHeadroom'
 import ProjectPoolQuotasCard from './ProjectPoolQuotasCard'
+import ProjectSecretsPanel from './ProjectSecretsPanel'
 import {
   formatAccessOperation,
   formatAuditActor,
@@ -92,6 +93,7 @@ import DesktopNotificationsToggle from './DesktopNotificationsToggle'
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { useTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
+import { consumeProjectSecretsSettingsProjectId } from './projectSecretsNavigation'
 
 const SETTINGS_SECTION_TOPBAR_LABELS: Record<SettingsSectionId, string> = {
   general: 'General',
@@ -294,6 +296,8 @@ export default function SettingsPage({
   const [projectDraftGitHubAutomationIdentity, setProjectDraftGitHubAutomationIdentity] = useState('')
   const [projectActionError, setProjectActionError] = useState('')
   const [projectActionMessage, setProjectActionMessage] = useState('')
+  const [missingRequestedProjectId, setMissingRequestedProjectId] = useState('')
+  const [projectSecretCount, setProjectSecretCount] = useState(0)
   const [archiveRetentionPlan, setArchiveRetentionPlan] = useState<ArchiveRetentionPlanResponse | null>(null)
   const [archiveRetentionActionError, setArchiveRetentionActionError] = useState('')
   const [archiveRetentionActionMessage, setArchiveRetentionActionMessage] = useState('')
@@ -406,9 +410,13 @@ export default function SettingsPage({
   useEffect(() => {
     let cancelled = false
     const loadEffectiveAccess = async () => {
+      const selectedAccessProject = projects.find(project => project.id === selectedProjectId)
+      const accessProjectId = selectedAccessProject?.id || activeProject?.id
+      const accessDomainId = selectedAccessProject?.domain_id || activeProject?.domain_id
+      setEffectiveAuthAccessResources([])
       try {
-        const response = await api.getAuthEffectiveAccess(activeProject?.id, {
-          domain_id: activeProject?.domain_id,
+        const response = await api.getAuthEffectiveAccess(accessProjectId, {
+          domain_id: accessDomainId,
           application_repository_id: applicationRepository?.id,
         })
         if (!cancelled) {
@@ -425,7 +433,7 @@ export default function SettingsPage({
     return () => {
       cancelled = true
     }
-  }, [activeProject?.id, activeProject?.domain_id, api, applicationRepository?.id])
+  }, [activeProject?.domain_id, activeProject?.id, api, applicationRepository?.id, projects, selectedProjectId])
 
   useEffect(() => {
   let cancelled = false
@@ -608,6 +616,7 @@ export default function SettingsPage({
   const canManageSystem = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_system'), [effectiveAuthAccessResources])
   const canManageDomains = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_domains', false), [effectiveAuthAccessResources])
   const canManageProjects = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_projects'), [effectiveAuthAccessResources])
+  const canManageScripts = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_scripts'), [effectiveAuthAccessResources])
   const canManageServiceAccounts = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_service_accounts'), [effectiveAuthAccessResources])
   const canViewAudit = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'view_audit'), [effectiveAuthAccessResources])
   const canSave = validationErrors.length === 0 && !loading && hasUnsavedChanges && canManageSystem
@@ -704,9 +713,10 @@ export default function SettingsPage({
   }), [auditEvents.length, settings.auth.mode, settings.general.max_concurrent_tests, systemReadiness?.status, usageAccounting])
   const governanceSubsectionSummaries = useMemo<Record<GovernanceSettingsSubsectionId, string>>(() => ({
     'schedule-defaults': formatSchedulePolicyLabel(settings.schedule_defaults.approval_policy || 'auto'),
+    'script-imports': settings.script_imports.allow_source_secret_migration ? 'Migration enabled' : 'Migration disabled',
     'service-account-apis': `${serviceAccounts.length} account${serviceAccounts.length === 1 ? '' : 's'}`,
     'recent-audit-events': `${auditEvents.length} event${auditEvents.length === 1 ? '' : 's'}`,
-  }), [auditEvents.length, serviceAccounts.length, settings.schedule_defaults.approval_policy])
+  }), [auditEvents.length, serviceAccounts.length, settings.schedule_defaults.approval_policy, settings.script_imports.allow_source_secret_migration])
   const capacitySubsectionSummaries = useMemo<Record<CapacitySettingsSubsectionId, string>>(() => ({
     availability: `${availabilitySnapshot?.effective_available_generators ?? settings.capacity_planning.availability.configured_available_generators} available`,
     generator: `${settings.capacity_planning.generator.cpu_cores} CPU / ${settings.capacity_planning.generator.memory_mb} MB`,
@@ -726,7 +736,8 @@ export default function SettingsPage({
     limits: selectedProject ? selectedProject.name : 'Select project',
     github: projectDraftGitHubEnabled ? 'Enabled' : 'Disabled',
     redaction: `${customRuleCount} rule${customRuleCount === 1 ? '' : 's'}`,
-  }), [customRuleCount, projectDraftGitHubEnabled, projects.length, selectedProject])
+    secrets: `${projectSecretCount} configured`,
+  }), [customRuleCount, projectDraftGitHubEnabled, projectSecretCount, projects.length, selectedProject])
   const integrationSubsectionSummaries = useMemo<Record<IntegrationSettingsSubsectionId, string>>(() => ({
     library: activeProject?.name || 'Project scoped',
     github: settings.github.enabled ? 'Enabled' : 'Disabled',
@@ -779,7 +790,20 @@ export default function SettingsPage({
         }
 
         const nextProjects = sortProjects(response.projects || [])
-        const nextSelected = nextProjects[0] || null
+        const requestedProjectId = consumeProjectSecretsSettingsProjectId()
+        const requestedProject = requestedProjectId
+          ? nextProjects.find(project => project.id === requestedProjectId) || null
+          : null
+        const requestedProjectMissing = Boolean(requestedProjectId && !requestedProject)
+        // A Configure secrets deep link is a governed project-scoped action. If
+        // its target disappeared (or access was revoked), do not silently switch
+        // the write-only form to a different project.
+        const nextSelected = requestedProjectMissing
+          ? null
+          : requestedProject
+            || nextProjects.find(project => project.id === activeProject?.id)
+            || nextProjects[0]
+            || null
         setProjects(nextProjects)
         setSelectedProjectId(nextSelected?.id || '')
         setProjectDraftName(nextSelected?.name || '')
@@ -789,7 +813,10 @@ export default function SettingsPage({
         setProjectDraftMaxVUsersPerTest(nextSelected?.settings?.max_vusers_per_test !== undefined ? String(nextSelected.settings.max_vusers_per_test) : '')
         setProjectDraftMaxTestDurationMinutes(nextSelected?.settings?.max_test_duration_minutes !== undefined ? String(nextSelected.settings.max_test_duration_minutes) : '')
         loadProjectGitHubDraft(nextSelected?.settings?.github)
-        setProjectActionError('')
+        setMissingRequestedProjectId(requestedProjectMissing ? requestedProjectId : '')
+        setProjectActionError(requestedProjectMissing
+          ? 'The project requested for secret configuration is no longer available or you no longer have access. Choose an available project explicitly before entering a credential.'
+          : '')
       } catch (error: unknown) {
         if (!cancelled) {
           setProjectActionError(getErrorMessage(error, 'Unable to load projects'))
@@ -801,7 +828,7 @@ export default function SettingsPage({
     return () => {
       cancelled = true
     }
-  }, [loadProjectGitHubDraft, projectApi])
+  }, [activeProject?.id, loadProjectGitHubDraft, projectApi])
 
   useEffect(() => {
     if (domains.length === 0) {
@@ -991,6 +1018,18 @@ export default function SettingsPage({
       schedule_defaults: {
         ...prev.schedule_defaults,
         [key]: value,
+      },
+    }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
+  const updateScriptImports = (allowSourceSecretMigration: boolean) => {
+    setSettings(prev => ({
+      ...prev,
+      script_imports: {
+        ...prev.script_imports,
+        allow_source_secret_migration: allowSourceSecretMigration,
       },
     }))
     setSaveMessage('')
@@ -1401,6 +1440,8 @@ export default function SettingsPage({
   }
 
   const selectProject = (project: Project | null) => {
+    setMissingRequestedProjectId('')
+    setProjectSecretCount(0)
     setSelectedProjectId(project?.id || '')
     setProjectDraftName(project?.name || '')
     setProjectDraftRules(toDraftRedactionRules(project?.settings?.redaction_rules))
@@ -2741,6 +2782,50 @@ export default function SettingsPage({
                         </div>
                       </div>
                     )}
+                  </div>
+                </section>
+
+                <section
+                  id="settings-governance-panel-script-imports"
+                  className="settings-subpanel"
+                  role="tabpanel"
+                  aria-labelledby="settings-governance-tab-script-imports"
+                  hidden={activeGovernanceSubsection !== 'script-imports'}
+                >
+                  <div className="settings-group">
+                    <div className="settings-subsection">
+                      <div className="settings-manager-summary">
+                        <div className="setting-info">
+                          <span className="setting-label">Source Credential Migration</span>
+                          <span className="setting-desc">
+                            Controls whether project and system administrators may opt in to copying recoverable credential values from a protected import session into the project secret provider.
+                          </span>
+                        </div>
+                        <span className={`script-health-token ${settings.script_imports.allow_source_secret_migration ? 'warning' : ''}`}>
+                          {settings.script_imports.allow_source_secret_migration ? 'enabled' : 'disabled'}
+                        </span>
+                      </div>
+                      <div className="setting-row">
+                        <div className="setting-info">
+                          <span className="setting-label">Allow source secret migration</span>
+                          <span className="setting-desc">
+                            Default off. Enabling exposes an unchecked import option to administrators only. Imports remain create-only and never overwrite an existing project secret.
+                          </span>
+                        </div>
+                        <label className="settings-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={settings.script_imports.allow_source_secret_migration}
+                            disabled={!canManageSystem}
+                            onChange={event => updateScriptImports(event.target.checked)}
+                          />
+                          <span>{settings.script_imports.allow_source_secret_migration ? 'Allowed' : 'Blocked'}</span>
+                        </label>
+                      </div>
+                      {!canManageSystem && (
+                        <p className="settings-notice">Only a system administrator can change source-secret migration policy.</p>
+                      )}
+                    </div>
                   </div>
                 </section>
 
@@ -4168,24 +4253,51 @@ export default function SettingsPage({
                   </div>
                 </section>
 
-                <div className="settings-subsection settings-subsection-actions">
-                  {projectDraftValidationError && <p className="settings-error-inline">{projectDraftValidationError}</p>}
-                  {!canManageProjects && <p className="settings-error-inline">Current session can view this project but cannot change project governance.</p>}
-                  <div className="settings-inline-actions">
-                    <button
-                      className="btn btn-primary"
-                      type="button"
-                      onClick={saveProjectCompliance}
-                      disabled={!projectHasUnsavedChanges || Boolean(projectDraftValidationError) || !canManageProjects}
-                    >
-                      Save Project Governance
-                    </button>
+                <section
+                  id="settings-projects-panel-secrets"
+                  className="settings-subpanel"
+                  role="tabpanel"
+                  aria-labelledby="settings-projects-tab-secrets"
+                  hidden={activeProjectSubsection !== 'secrets'}
+                >
+                  <ProjectSecretsPanel
+                    projectId={selectedProject.id}
+                    projectName={selectedProject.name}
+                    canCreate={canManageScripts || canManageProjects || canManageSystem}
+                    canRotate={canManageProjects || canManageSystem}
+                    onCountChange={setProjectSecretCount}
+                  />
+                </section>
+
+                {activeProjectSubsection !== 'secrets' && activeProjectSubsection !== 'catalog' && (
+                  <div className="settings-subsection settings-subsection-actions">
+                    {projectDraftValidationError && <p className="settings-error-inline">{projectDraftValidationError}</p>}
+                    {!canManageProjects && <p className="settings-error-inline">Current session can view this project but cannot change project governance.</p>}
+                    <div className="settings-inline-actions">
+                      <button
+                        className="btn btn-primary"
+                        type="button"
+                        onClick={saveProjectCompliance}
+                        disabled={!projectHasUnsavedChanges || Boolean(projectDraftValidationError) || !canManageProjects}
+                      >
+                        Save Project Governance
+                      </button>
+                    </div>
                   </div>
-                </div>
+                )}
               </>
             ) : (
               <div className="settings-subsection settings-empty-subpanel">
-                <p className="new-test-inline-note">Select a project to edit its compliance defaults.</p>
+                <p className="new-test-inline-note">
+                  {missingRequestedProjectId
+                    ? 'The requested Project Secrets target is unavailable. No fallback project was selected.'
+                    : 'Select a project to edit its compliance defaults.'}
+                </p>
+                {missingRequestedProjectId && projects.length > 0 && (
+                  <button className="btn btn-secondary" type="button" onClick={() => setActiveProjectSubsection('catalog')}>
+                    Choose an available project
+                  </button>
+                )}
               </div>
             )}
           </div>

@@ -71,7 +71,11 @@ func (b *Browser) applyCapturedPageState(result *protocol.Result, pageState capt
 	result.PageTitle = pageState.pageTitle
 	result.DOMSummary = pageState.domSummary
 	result.HTML = pageState.html
-	result.ScreenshotBase64 = pageState.screenshot
+	if b.hasRuntimeSecretMaterial() {
+		result.ScreenshotBase64 = ""
+	} else {
+		result.ScreenshotBase64 = pageState.screenshot
+	}
 	result.ConsoleEntries = b.consoleEntriesSince(consoleStart)
 	result.NetworkEntries = b.networkEntriesSince(networkStart)
 }

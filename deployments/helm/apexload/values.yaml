@@ -52,6 +52,19 @@ dataPlatform:
   apiKeyRateLimitPerMinute: "600"
   idempotencyKeyTTL: 15m
 
+projectSecrets:
+  # database encrypts values in the configured SQLite/PostgreSQL store.
+  # azure_key_vault stores values in dataPlatform.keyVaultUrl and keeps only
+  # managed metadata in the database.
+  provider: database
+  # The controller uses one wrapping key for encrypted project secrets and
+  # encrypted Bruno source artifacts. Prefer supplying the master key through
+  # dataPlatform.secretName. These inline values are intended for secret-value
+  # injection by deployment automation when dataPlatform.createSecret=true.
+  wrappingMasterKey: ""
+  wrappingKeyVaultKeyId: ""
+  azureKeyVaultApiVersion: "7.4"
+
 workloadIdentity:
   enabled: true
   controllerClientId: ""
@@ -68,6 +81,9 @@ controller:
   ciOIDCAudience: ""
   ha:
     enabled: false
+    # EndpointSlice address family for the leader-only controller Service.
+    # Set IPv6 for IPv6-only clusters.
+    endpointAddressType: IPv4
   serviceAccountName: apexload-controller
   grpcTlsSecretName: apexload-controller-grpc-tls
   resources:
@@ -113,6 +129,51 @@ generator:
       - ReadWriteOnce
     storageClassName: ""
     size: 10Gi
+
+bruno:
+  # Import and execution are independently gated. Both require protected
+  # artifact retention; only execution requires the runner and shared PVC.
+  importEnabled: false
+  enabled: false
+  compatibilityVersion: "3.5.2"
+  artifactRoot: /var/lib/apexload-bruno
+  artifactPersistence:
+    # Existing ReadWriteMany claim mounted by controller and every generator.
+    existingClaim: ""
+  # Prefer a versioned Key Vault key id. When empty, the data-platform Secret
+  # must contain the protocol-neutral APEXLOAD_WRAPPING_MASTER_KEY.
+  keyVaultKeyId: ""
+  artifactMasterKey: ""
+  egressBrokerUrl: ""
+  # Intended only for isolated local clusters. Production should use the
+  # governed broker and enforce pod-level egress policy externally.
+  allowDirectEgress: false
+  maxSessions: 256
+  maxPendingEvents: 10000
+  maxBundleBytes: 4294967296
+  sessionTtlMs: 86400000
+  sessionIdleTtlMs: 1800000
+  maxJumps: 10000
+  maxRunRequestDepth: 64
+  maxParallelRequests: 100
+  maxOutputBytes: 4194304
+  maxStreamTimeoutMs: 60000
+  runner:
+    image:
+      repository: apexload-bruno-runner
+      tag: ""
+      pullPolicy: Always
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+        ephemeral-storage: 1Gi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+        ephemeral-storage: 6Gi
+    scratch:
+      tmpSizeLimit: 4Gi
 
 ingress:
   enabled: true

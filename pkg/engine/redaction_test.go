@@ -1,8 +1,10 @@
 package engine
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -350,6 +352,113 @@ func TestVUserRecordResultScrubsMetricAndArchiveMetadata(t *testing.T) {
 		if strings.Contains(value, secret) || !strings.Contains(value, redactedPayloadValue) {
 			t.Fatalf("metadata value[%d] = %q, want custom secret redacted", index, value)
 		}
+	}
+}
+
+func TestVUserRecordResultScrubsLongRuntimeSecretsBeforeEvidenceBounds(t *testing.T) {
+	secret := strings.Repeat("q", maxResultErrorBytes+(8<<10))
+	config := WithSecretValueRedaction(nil, []string{secret})
+	sink := &captureResultSink{}
+	vu := &VUser{
+		Group:           "long-secret-result",
+		Metrics:         NewMetricsCollector(2),
+		ResultSink:      sink,
+		Variables:       map[string]string{},
+		RedactionConfig: config,
+	}
+	result := &protocol.Result{
+		ActionName:       "action-" + secret,
+		ErrorMessage:     "error-" + secret,
+		ResponseBody:     "body-" + secret,
+		Extractions:      map[string]string{"ordinary": "extraction-" + secret},
+		ProtocolEvidence: map[string]any{"ordinary": "evidence-" + secret},
+		Snapshot:         &protocol.ErrorSnapshot{ResponseBody: "snapshot-" + secret},
+		Success:          false,
+	}
+
+	vu.recordResult(result, dsl.ErrorHandlingConfig{SnapshotOnError: true}, dsl.LogConfig{})
+	if sink.result == nil {
+		t.Fatal("result did not reach archive/metrics sink")
+	}
+	encoded, err := json.Marshal(sink.result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte(strings.Repeat("q", 256))) || !bytes.Contains(encoded, []byte(redactedPayloadValue)) {
+		t.Fatalf("bounded result retained a prefix of a long runtime secret: %s", encoded)
+	}
+}
+
+func TestRuntimeSecretRedactionRunsBeforeGenericCredentialPatterns(t *testing.T) {
+	const secret = `abc"UNIQUELEAK`
+	config, err := WithSecretValueRedactionChecked(nil, []string{secret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := &protocol.Result{
+		ResponseBody: `{"token":"` + jsonEscapedSecret(secret, false) + `"}`,
+		ErrorMessage: `token=` + jsonEscapedSecret(secret, false),
+	}
+
+	scrubSensitiveResult(result, config)
+
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(encoded, []byte("UNIQUELEAK")) || bytes.Contains(encoded, []byte(secret)) {
+		t.Fatalf("generic redaction mutated an encoded secret before its exact match: %s", encoded)
+	}
+	if !bytes.Contains(encoded, []byte(redactedPayloadValue)) {
+		t.Fatalf("exact runtime secret marker missing: %s", encoded)
+	}
+}
+
+func TestRuntimeSecretRedactionDoesNotAmplifyShortMatches(t *testing.T) {
+	config, err := WithSecretValueRedactionChecked(nil, []string{"a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input := strings.Repeat("a", 1<<20)
+	got := config.ScrubText(input)
+	if len(got) > len(input) {
+		t.Fatalf("one-byte secret expanded evidence from %d to %d bytes", len(input), len(got))
+	}
+	if strings.Contains(got, "a") {
+		t.Fatal("one-byte runtime secret survived exact redaction")
+	}
+}
+
+func TestRuntimeSecretRedactionRejectsUnboundedExpandedMatchers(t *testing.T) {
+	values := make([]string, maxCachedSecrets)
+	for index := range values {
+		values[index] = fmt.Sprintf("%04d-%s", index, strings.Repeat(`a/"<&'?`, 570))
+	}
+	if _, err := WithSecretValueRedactionChecked(nil, values); err == nil || !strings.Contains(err.Error(), "matcher limit") {
+		t.Fatalf("expanded matcher admission error = %v", err)
+	}
+}
+
+func TestRuntimeSecretRedactionReusesCompleteMatcherForDuplicateValues(t *testing.T) {
+	config, err := WithSecretValueRedactionChecked(nil, []string{"stable-basic-auth-value"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(config.secretReplacers) != 1 {
+		t.Fatalf("secret replacers = %d, want 1", len(config.secretReplacers))
+	}
+	replacer := config.secretReplacers[0]
+
+	reused, err := WithSecretValueRedactionChecked(config, []string{
+		"",
+		"stable-basic-auth-value",
+		"stable-basic-auth-value",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reused != config || reused.secretReplacers[0] != replacer {
+		t.Fatal("duplicate runtime secret values rebuilt the exact-value matcher")
 	}
 }
 

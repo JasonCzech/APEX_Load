@@ -4013,6 +4013,90 @@ paths:
             type: string
       tags:
         - Projects
+  /api/v1/projects/{id}/secrets:
+    get:
+      summary: List Project Secrets
+      description: |-
+        **Handler:** `handleListProjectSecrets`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleListProjectSecrets
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+    post:
+      summary: Create Project Secrets
+      description: |-
+        **Handler:** `handleCreateProjectSecrets`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleCreateProjectSecrets
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+  /api/v1/projects/{id}/secrets/{name}:
+    put:
+      summary: Rotate Project Secret
+      description: |-
+        **Handler:** `handleRotateProjectSecret`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleRotateProjectSecret
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
+  /api/v1/projects/{id}/secrets/status:
+    post:
+      summary: Project Secret Status
+      description: |-
+        **Handler:** `handleProjectSecretStatus`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleProjectSecretStatus
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Projects
   /api/v1/projects/{pid}/folders:
     get:
       summary: List Folders
@@ -5687,6 +5771,126 @@ paths:
             type: string
       tags:
         - Scripts
+  /api/v1/scripts/{id}/bruno-imports/revisions:
+    get:
+      summary: List Bruno Import Revisions
+      description: |-
+        **Handler:** `handleListBrunoImportRevisions`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleListBrunoImportRevisions
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scripts
+  /api/v1/scripts/{id}/bruno-imports/rollback:
+    post:
+      summary: Rollback Bruno Import
+      description: |-
+        **Handler:** `handleRollbackBrunoImport`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleRollbackBrunoImport
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scripts
+  /api/v1/scripts/{id}/bruno-imports/source:
+    get:
+      summary: Get Bruno Import Source
+      description: |-
+        **Handler:** `handleGetBrunoImportSource`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleGetBrunoImportSource
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scripts
+  /api/v1/scripts/{id}/bruno-projection/commit:
+    post:
+      summary: Commit Bruno Projection
+      description: |-
+        **Handler:** `handleCommitBrunoProjection`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleCommitBrunoProjection
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scripts
+  /api/v1/scripts/{id}/bruno-projection/preview:
+    post:
+      summary: Preview Bruno Projection
+      description: |-
+        **Handler:** `handlePreviewBrunoProjection`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handlePreviewBrunoProjection
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scripts
+  /api/v1/scripts/{id}/clone-draft:
+    post:
+      summary: Clone Script Draft
+      description: |-
+        **Handler:** `handleCloneScriptDraft`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleCloneScriptDraft
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scripts
   /api/v1/scripts/{id}/debug/sessions:
     post:
       summary: Start Script Debug Script
@@ -5915,6 +6119,26 @@ paths:
 
         **Access Control:** Requires Authentication (Role based on specific entity)
       operationId: handleGetScriptRuntimeSettingsReport
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Scripts
+  /api/v1/scripts/{id}/secret-status:
+    get:
+      summary: Script Secret Status
+      description: |-
+        **Handler:** `handleScriptSecretStatus`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleScriptSecretStatus
       responses:
         "200":
           description: Successful operation
@@ -6287,6 +6511,48 @@ paths:
 
         **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin
       operationId: handleBrokerConfigSupportMatrix
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+        - Scripts
+  /api/v1/scripts/import/bruno/commit:
+    post:
+      summary: Commit Bruno Import
+      description: |-
+        **Handler:** `handleCommitBrunoImport`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleCommitBrunoImport
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Scripts
+  /api/v1/scripts/import/bruno/inspect:
+    post:
+      summary: Inspect Bruno Import
+      description: |-
+        **Handler:** `handleInspectBrunoImport`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleInspectBrunoImport
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Scripts
+  /api/v1/scripts/import/bruno/support-matrix:
+    get:
+      summary: Bruno Support Matrix
+      description: |-
+        **Handler:** `handleBrunoSupportMatrix`
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin
+      operationId: handleBrunoSupportMatrix
       responses:
         "200":
           description: Successful operation
@@ -6741,6 +7007,20 @@ paths:
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
         - Scripts
+  /api/v1/scripts/import/secrets/migrate:
+    post:
+      summary: Migrate Source Secrets
+      description: |-
+        **Handler:** `handleMigrateSourceSecrets`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleMigrateSourceSecrets
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Scripts
   /api/v1/scripts/import/wsdl:
     post:
       summary: Import W S D L
@@ -6935,6 +7215,21 @@ paths:
         "200":
           description: Successful operation
       x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+        - System
+  /api/v1/system/execution-readiness:
+    get:
+      summary: Execution Readiness
+      description: |-
+        **Handler:** `handleExecutionReadiness`
+
+        **Access Control:** Public (no authentication required)
+      operationId: handleExecutionReadiness
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Public (no authentication required)
+      security: []
       tags:
         - System
   /api/v1/system/generators/drain:

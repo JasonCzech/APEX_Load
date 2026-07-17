@@ -52,7 +52,7 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 		preApplied = nil
 	}
 
-	writeJSON(w, http.StatusOK, newScriptImportResponse(scriptImportResponseOptions{
+	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Script:              augmented.Script,
 		Warnings:            result.Warnings,

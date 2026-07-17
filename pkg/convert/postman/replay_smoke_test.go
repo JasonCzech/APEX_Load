@@ -13,8 +13,9 @@ import (
 )
 
 // TestPostmanImportReplaySmokeChainsBearerToken proves the headline chain works
-// end-to-end: a login request's test script captures the access token, and a
-// later request replays it in its Authorization header.
+// end-to-end: a login request's test script captures the access token, a later
+// request replays it in its Authorization header, and replay evidence does not
+// disclose it.
 func TestPostmanImportReplaySmokeChainsBearerToken(t *testing.T) {
 	var mu sync.Mutex
 	var profileAuth string
@@ -72,8 +73,8 @@ func TestPostmanImportReplaySmokeChainsBearerToken(t *testing.T) {
 	if !report.Success {
 		t.Fatalf("replay failed: %s events=%#v", report.Error, report.Events)
 	}
-	if got := report.FinalVariables["token"]; got != "tok-abc" {
-		t.Fatalf("captured token = %q, want tok-abc", got)
+	if got := report.FinalVariables["token"]; got != "[REDACTED]" {
+		t.Fatalf("reported token = %q, want [REDACTED]", got)
 	}
 	mu.Lock()
 	defer mu.Unlock()

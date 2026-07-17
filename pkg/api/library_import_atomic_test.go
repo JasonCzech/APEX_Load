@@ -1069,9 +1069,16 @@ func TestDurableLibraryImportClaimMasksRollbackSecrets(t *testing.T) {
 	server := NewServer(ServerConfig{Store: store})
 	prior := libraryTestScript("local-secret", "Local Secret", storage.DefaultProjectID, "/secret")
 	prior.Config.HTTP.Auth.Password = "claim-must-not-persist-this-password"
-	stored, err := server.runner.CreateScriptDurable(prior)
-	if err != nil {
+	// Model a pre-upgrade row; current durable APIs reject plaintext credentials.
+	if err := store.SaveScript(prior); err != nil {
 		t.Fatal(err)
+	}
+	if err := server.runner.reloadStoredScripts(); err != nil {
+		t.Fatal(err)
+	}
+	stored, ok := server.runner.GetScript(prior.ID)
+	if !ok {
+		t.Fatal("legacy script was not loaded")
 	}
 	remote := libraryTestScript("remote-secret", "Remote Secret", "source-project", "/remote")
 	item := LibraryBundleItem{Kind: "script", SourceInstanceID: "source", SourceItemID: remote.ID, ProjectID: "source-project", Script: remote, ContentHash: hashLibraryScript(remote)}

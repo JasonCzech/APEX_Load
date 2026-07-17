@@ -19,6 +19,7 @@ type BrowserReplayStartRequest struct {
 	IgnoreThinkTime *bool                  `json:"ignore_think_time,omitempty"`
 	Script          *dsl.Script            `json:"script,omitempty"`
 	Preflight       *ReplayPreflight       `json:"-"`
+	SecretResolver  engine.SecretResolver  `json:"-"`
 }
 
 func (s *Server) handleStartBrowserReplayDraftScript(w http.ResponseWriter, r *http.Request) {
@@ -79,17 +80,27 @@ func (s *Server) handleStartBrowserReplayScript(w http.ResponseWriter, r *http.R
 
 func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.Request, id string, script *dsl.Script, req BrowserReplayStartRequest) {
 	script = applyBrowserReplayOverrides(script, req)
+	var prepared bool
+	script, prepared = prepareTransientExecutableScript(w, script)
+	if !prepared {
+		return
+	}
 	resolvedScript, refWarnings, refIssues := resolveObjectRefs(s.store, script)
 	if resolvedScript != nil {
 		script = resolvedScript
 	}
+	script, prepared = prepareTransientExecutableScript(w, script)
+	if !prepared {
+		return
+	}
 	issues := append(validateScriptForReplay(script), refIssues...)
 	warnings := append(validationWarnings(script), refWarnings...)
-	preflight := buildReplayPreflight(script, req.Variables, issues, warnings)
-	if len(issues) > 0 {
+	secretResolver := s.runner.secretResolverForProject(script.ProjectID)
+	preflight := buildReplayPreflight(script, req.Variables, issues, warnings, secretResolver)
+	if len(issues) > 0 || len(preflight.MissingSecrets) > 0 {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"script_id": id,
-			"valid":     false,
+			"valid":     preflight.Valid,
 			"issues":    issues,
 			"warnings":  warnings,
 			"preflight": preflight,
@@ -102,6 +113,7 @@ func (s *Server) handleStartBrowserReplayRequest(w http.ResponseWriter, r *http.
 	}
 
 	req.Preflight = preflight
+	req.SecretResolver = secretResolver
 	session := s.browserReplay.Start(id, script, req)
 	s.recordAuditEvent(r, "browser_replay.session.start", "success", "browser_replay_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "script_name": script.Name, "status": session.Status, "start_paused": req.StartPaused})
 	writeJSON(w, http.StatusOK, map[string]any{

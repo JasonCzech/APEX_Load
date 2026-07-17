@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useApi } from '../hooks/useApi'
 import {
@@ -16,7 +16,10 @@ interface Props {
   // Restricts the panel to suggestions scoped to one script of a multi-script
   // import (JMeter); omit for single-script imports.
   scriptName?: string
-  onApplied: (script: ScriptDefinition, diffs: ParameterizationDiff[]) => void
+  reviewGeneration?: string | number
+  disabled?: boolean
+  onApplyingChange?: (applying: boolean) => void
+  onApplied: (script: ScriptDefinition, diffs: ParameterizationDiff[], selectedIds: string[]) => void
 }
 
 const kindLabels: Record<string, string> = {
@@ -43,7 +46,7 @@ function initialSelection(suggestions: ParameterizationSuggestion[]): Record<str
 
 function suggestionDisplayValue(suggestion: ParameterizationSuggestion): string {
   if (suggestion.kind === 'secret' || suggestion.high_risk) return '••••••'
-  return suggestion.sample_value || suggestion.literal_value
+  return suggestion.sample_value || suggestion.literal_value || 'Detected value'
 }
 
 function diffDisplayValue(
@@ -59,7 +62,7 @@ function diffDisplayValue(
   return '••••••'
 }
 
-export default function ParameterizationReview({ parameterization, script, scriptName, onApplied }: Props) {
+export default function ParameterizationReview({ parameterization, script, scriptName, reviewGeneration = 0, disabled = false, onApplyingChange, onApplied }: Props) {
   const api = useApi()
   const suggestions = useMemo(
     () => (parameterization.suggestions ?? []).filter(s => !scriptName || !s.script_name || s.script_name === scriptName),
@@ -71,24 +74,59 @@ export default function ParameterizationReview({ parameterization, script, scrip
   const [diffs, setDiffs] = useState<ParameterizationDiff[]>([])
   const [error, setError] = useState('')
   const [blockedReason, setBlockedReason] = useState('')
+  const reviewIdentity = `${String(reviewGeneration)}\u0000${scriptName || ''}`
+  const activeReviewIdentityRef = useRef(reviewIdentity)
+  const previousReviewIdentityRef = useRef(reviewIdentity)
+  const previousParameterizationRef = useRef(parameterization)
+  const selfAppliedSourceIdentityRef = useRef<string | null>(null)
+  const preserveAppliedIdentityRef = useRef<string | null>(null)
+  const previousParameterization = previousParameterizationRef.current
+  if (previousReviewIdentityRef.current !== reviewIdentity) {
+    if (
+      selfAppliedSourceIdentityRef.current === previousReviewIdentityRef.current
+      && previousParameterization === parameterization
+    ) {
+      preserveAppliedIdentityRef.current = reviewIdentity
+      selfAppliedSourceIdentityRef.current = null
+    }
+    previousReviewIdentityRef.current = reviewIdentity
+  }
+  if (previousParameterization !== parameterization) {
+    previousParameterizationRef.current = parameterization
+    selfAppliedSourceIdentityRef.current = null
+  }
+  activeReviewIdentityRef.current = reviewIdentity
+  const onApplyingChangeRef = useRef(onApplyingChange)
+  onApplyingChangeRef.current = onApplyingChange
+  const mountedRef = useRef(true)
 
-  // Reset only when the reviewed import actually changes, keyed by the
-  // `parameterization` prop's IDENTITY — not the `script` prop and not a content
-  // signature. On a successful apply every call site lifts the parameterized
-  // script back into `script` via `{ ...result, script }`, which keeps the same
-  // `parameterization` object reference, so the apply flow no longer wipes its
-  // own "Applied N change(s)" badge/diffs/selection. A genuinely new import
-  // supplies a fresh `parameterization` object and DOES reset — including
-  // re-importing the same file, which a content signature would have treated as
-  // unchanged and left showing a stale "applied" state over the new raw script.
   useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+    }
+  }, [])
+
+  // A genuinely new parameterization or review generation resets this panel.
+  // Successful application is the one exception: callers advance their review
+  // generation to invalidate concurrent save/credential work, so preserve the
+  // applied badge and diffs across that exact same-parameterization transition.
+  useEffect(() => {
+    if (preserveAppliedIdentityRef.current === reviewIdentity) {
+      preserveAppliedIdentityRef.current = null
+      setApplying(false)
+      onApplyingChangeRef.current?.(false)
+      return
+    }
     setSelected(initialSelection(suggestions))
+    setApplying(false)
+    onApplyingChangeRef.current?.(false)
     setApplied(false)
     setDiffs([])
     setError('')
     setBlockedReason('')
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [parameterization, scriptName])
+  }, [parameterization, reviewIdentity, scriptName])
 
   if (suggestions.length === 0) return null
 
@@ -101,7 +139,7 @@ export default function ParameterizationReview({ parameterization, script, scrip
   const suggestionsById = new Map(suggestions.map(s => [s.id, s]))
 
   const toggle = (suggestion: ParameterizationSuggestion) => {
-    if (suggestion.pre_applied) return
+    if (suggestion.pre_applied || applying || disabled) return
     setSelected(prev => ({ ...prev, [suggestion.id]: !prev[suggestion.id] }))
     if (applied) {
       setApplied(false)
@@ -110,8 +148,11 @@ export default function ParameterizationReview({ parameterization, script, scrip
   }
 
   const handleApply = async () => {
-    if (selectedIds.length === 0 || applying) return
+    if (selectedIds.length === 0 || applying || disabled) return
+    const sourceIdentity = activeReviewIdentityRef.current
+    const requestIsCurrent = () => mountedRef.current && activeReviewIdentityRef.current === sourceIdentity
     setApplying(true)
+    onApplyingChangeRef.current?.(true)
     setError('')
     setBlockedReason('')
     try {
@@ -123,17 +164,30 @@ export default function ParameterizationReview({ parameterization, script, scrip
         // rows start unchecked, so confirmation rides along with the selection.
         confirm_high_risk: selectedHighRisk,
       })
+      if (!requestIsCurrent()) return
       if (response.blocked) {
         setBlockedReason(response.blocked_reason || 'Selection blocked: high-risk suggestions need explicit confirmation.')
         return
       }
       setDiffs(response.diffs ?? [])
       setApplied(true)
-      onApplied(response.script, response.diffs ?? [])
+      selfAppliedSourceIdentityRef.current = sourceIdentity
+      window.setTimeout(() => {
+        if (
+          selfAppliedSourceIdentityRef.current === sourceIdentity
+          && activeReviewIdentityRef.current === sourceIdentity
+        ) {
+          selfAppliedSourceIdentityRef.current = null
+        }
+      }, 0)
+      onApplied(response.script, response.diffs ?? [], selectedIds)
     } catch (err: unknown) {
-      setError(getErrorMessage(err, 'Failed to apply parameterization'))
+      if (requestIsCurrent()) setError(getErrorMessage(err, 'Failed to apply parameterization'))
     } finally {
-      setApplying(false)
+      if (requestIsCurrent()) {
+        setApplying(false)
+        onApplyingChangeRef.current?.(false)
+      }
     }
   }
 
@@ -141,13 +195,13 @@ export default function ParameterizationReview({ parameterization, script, scrip
     <div className="paramize-review">
       <div className="paramize-review-header">
         <div>
-          <h4>Parameterization Review ({suggestions.length})</h4>
+          <h4>Parameterization Review{scriptName ? ` — ${scriptName}` : ''} ({suggestions.length})</h4>
           <p>
             Detected values that should be parameterized before this script runs at load.
             High-confidence suggestions are pre-selected; review each row, then apply the selection.
           </p>
         </div>
-        <button className="btn btn-primary" onClick={handleApply} disabled={applying || selectedIds.length === 0}>
+        <button className="btn btn-primary" onClick={handleApply} disabled={disabled || applying || selectedIds.length === 0}>
           {applying ? 'Applying...' : `${applied ? 'Reapply' : 'Apply'} Selected (${selectedIds.length})`}
         </button>
         {applied && <span className="paramize-applied-badge">Applied {diffs.length} change(s)</span>}
@@ -171,6 +225,7 @@ export default function ParameterizationReview({ parameterization, script, scrip
                     : <input
                         type="checkbox"
                         checked={!!selected[suggestion.id]}
+                        disabled={disabled || applying}
                         onChange={() => toggle(suggestion)}
                       />}
                   <span className="paramize-item-name">{suggestion.var_name}</span>
