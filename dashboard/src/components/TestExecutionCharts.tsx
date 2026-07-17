@@ -184,7 +184,7 @@ function sameGraphCursor(left: GraphCursorState | null | undefined, right: Graph
 
 interface RechartsMouseEvent {
   activeLabel?: string | number
-  activeTooltipIndex?: number
+  activeTooltipIndex?: number | string | null
   activePayload?: Array<{ payload?: { timestampMs?: number } }>
 }
 
@@ -1015,7 +1015,11 @@ export default function TestExecutionCharts({
     )
   }
 
-  const handleChartMouseMove = (chartId: string, event?: RechartsMouseEvent) => {
+  const handleChartMouseMove = (
+    chartId: string,
+    event?: RechartsMouseEvent,
+    data?: ReadonlyArray<{ timestampMs?: number }>,
+  ) => {
     setHoveredChartId(current => current === chartId ? current : chartId)
     const activeLabel = event?.activeLabel
     let nextCursor: GraphCursorState | null = null
@@ -1023,7 +1027,15 @@ export default function TestExecutionCharts({
       // Key the shared crosshair on the hovered sample's timestamp (from the
       // Recharts active payload), not a positional index — so it lines up on
       // every chart regardless of how each was downsampled.
+      const activeIndex = typeof event?.activeTooltipIndex === 'number'
+        ? event.activeTooltipIndex
+        : typeof event?.activeTooltipIndex === 'string' && event.activeTooltipIndex.trim() !== ''
+          ? Number(event.activeTooltipIndex)
+          : Number.NaN
       const timestampMs = event?.activePayload?.[0]?.payload?.timestampMs
+        ?? (Number.isInteger(activeIndex) && activeIndex >= 0
+          ? data?.[activeIndex]?.timestampMs
+          : undefined)
       nextCursor = activeLabel !== undefined || typeof timestampMs === 'number'
         ? { label: activeLabel, timestampMs }
         : null
@@ -1234,7 +1246,7 @@ export default function TestExecutionCharts({
     tabIndex: 0,
     'aria-label': `Show ${label} axis label`,
     onClick: (...args: unknown[]) => openAxisLabelPopover(args.find(isAxisInteractionEvent) ?? null, label),
-    onKeyDown: (event: ReactKeyboardEvent<Element>) => {
+    onKeyDown: (_tick: unknown, _index: number, event: ReactKeyboardEvent<SVGTextElement>) => {
       if (event.key === 'Enter' || event.key === ' ') {
         openAxisLabelPopover(event, label)
       }
@@ -2492,7 +2504,7 @@ export default function TestExecutionCharts({
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -2515,7 +2527,7 @@ export default function TestExecutionCharts({
               <ComposedChart
                 data={displayChartData}
                 margin={chartMargin}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderLoadImpactAxis()}
@@ -2549,7 +2561,7 @@ export default function TestExecutionCharts({
               <ComposedChart
                 data={displayChartData}
                 margin={chartMargin}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderLoadImpactAxis()}
@@ -2586,7 +2598,7 @@ export default function TestExecutionCharts({
               <ComposedChart
                 data={displayChartData}
                 margin={chartMargin}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 {renderTimeAxis()}
@@ -2617,7 +2629,7 @@ export default function TestExecutionCharts({
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -2666,7 +2678,7 @@ export default function TestExecutionCharts({
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -2730,7 +2742,7 @@ export default function TestExecutionCharts({
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -2756,7 +2768,7 @@ export default function TestExecutionCharts({
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -2792,7 +2804,7 @@ export default function TestExecutionCharts({
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
@@ -2830,7 +2842,7 @@ export default function TestExecutionCharts({
                 syncId="metrics"
                 margin={chartMargin}
                 onMouseDown={(event) => onChartMouseDown(event?.activeLabel)}
-                onMouseMove={(event) => handleChartMouseMove(chart.id, event)}
+                onMouseMove={(event) => handleChartMouseMove(chart.id, event, displayChartData)}
                 onMouseUp={onZoom}
               >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />

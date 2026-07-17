@@ -408,7 +408,7 @@ export default function TestExecutionScenarioPreview({
                   labelFormatter={(value) => formatTimeCompact(Number(value))}
                   contentStyle={chartTooltipContentStyle}
                   labelStyle={chartTooltipLabelStyle}
-                  formatter={(value: number, name: string) => [value, name === 'total' ? 'Total' : name]}
+                  formatter={(value, name) => [value ?? 0, name === 'total' ? 'Total' : name ?? '']}
                 />
                 <Legend verticalAlign="top" height={32} />
                 {test.groups.map((group, index) => (

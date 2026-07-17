@@ -2332,7 +2332,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                         labelFormatter={(value) => `Time: ${formatTimeCompact(Number(value))}`}
                         contentStyle={{ ...chartTooltipContentStyle, borderRadius: 8, fontSize: '12px' }}
                         labelStyle={chartTooltipLabelStyle}
-                        formatter={(value: number, name: string) => [value, name === 'total' ? 'Total VUsers' : name]}
+                        formatter={(value, name) => [value ?? 0, name === 'total' ? 'Total VUsers' : name ?? '']}
                       />
                       {effectiveScenarioGroups.map((group, index) => (
                         <Area

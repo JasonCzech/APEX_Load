@@ -1,4 +1,4 @@
-import { useMemo, useReducer } from 'react'
+import { type ReactNode, useMemo, useReducer } from 'react'
 import {
   Area,
   Brush,
@@ -43,7 +43,7 @@ const LANES: LaneConfig[] = [
   { id: 'errors', title: 'Error Rate', yLabel: '%', unit: '%', domain: [0, 'auto'] },
 ]
 
-function formatTooltipValue(value: unknown, _name: unknown, item: { dataKey?: string | number }) {
+function formatTooltipValue(value: unknown, _name: unknown, item: { dataKey?: unknown }): [ReactNode, string] {
   if (typeof value !== 'number' || !Number.isFinite(value)) return ['n/a', String(item.dataKey || '')]
   const key = String(item.dataKey || '')
   const suffix = key.toLowerCase().includes('error') ? '%' : key.toLowerCase().includes('ms') || key.toLowerCase().includes('p95') ? ' ms' : ''
