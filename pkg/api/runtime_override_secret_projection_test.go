@@ -1130,10 +1130,21 @@ func TestRuntimeCredentialProvisioningArmsRecoveryBeforeAuditOrProviderCalls(t *
 		t.Fatalf("provisioning journals = %#v, %v", attempts, err)
 	}
 	runner.secretRecovery.mu.Lock()
-	armed := runner.secretRecovery.timer != nil && runner.secretRecovery.at.Equal(attempts[0].LeaseExpiresAt)
+	armed := runner.secretRecovery.timer != nil
+	scheduledAt := runner.secretRecovery.at
 	runner.secretRecovery.mu.Unlock()
 	if !armed {
 		t.Fatal("runtime credential recovery was not armed immediately after journal creation")
+	}
+	// Durable timestamps are normalized to microsecond precision. The in-memory
+	// timer retains the clock's native precision, which can be nanoseconds on
+	// Linux, so exact equality is not a portable assertion.
+	leaseDelta := scheduledAt.Sub(attempts[0].LeaseExpiresAt)
+	if leaseDelta < 0 {
+		leaseDelta = -leaseDelta
+	}
+	if leaseDelta >= time.Microsecond {
+		t.Fatalf("runtime credential recovery scheduled for %s, journal lease is %s (delta %s)", scheduledAt, attempts[0].LeaseExpiresAt, leaseDelta)
 	}
 	secrets.mu.Lock()
 	createCalls := secrets.createCalls
