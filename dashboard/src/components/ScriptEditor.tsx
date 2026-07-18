@@ -2525,6 +2525,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     warnings,
     closeReplayScreenshot,
   } = useScriptEditorState(initialScript)
+  const [replayStartPending, setReplayStartPending] = useState(false)
   const [initialSaveRequired, setInitialSaveRequired] = useState(initiallyDirty)
   const initialSaveSourceRef = useRef({ script: initialScript, initiallyDirty })
   useEffect(() => {
@@ -4672,6 +4673,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     setWarnings([])
     openReplayDebugger()
     setReplaying(true)
+    setReplayStartPending(true)
     let debugSessionStarted = false
     try {
       const currentScript = resolveCurrentScript()
@@ -4781,6 +4783,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         success: false,
       }))
     } finally {
+      setReplayStartPending(false)
       if (!debugSessionStarted) {
         setReplaying(false)
       }
@@ -5566,7 +5569,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   // (e.g. a breakpoint on the first action pauses before the start response resolves),
   // which the WebSocket handler would otherwise drop.
   useEffect(() => {
-    if (!activeReplaySessionId || !replaying) return
+    if (!activeReplaySessionId || !replaying || replayStartPending) return
     let cancelled = false
     const reconcile = async () => {
       try {
@@ -5608,7 +5611,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     void reconcile()
     const timer = window.setInterval(reconcile, 1200)
     return () => { cancelled = true; window.clearInterval(timer) }
-  }, [activeReplaySessionId, replaying, api, setActiveReplaySessionId, setBrowserReplaySession, setError, setReplayActivity, setReplayReport, setReplaying])
+  }, [activeReplaySessionId, replaying, replayStartPending, api, setActiveReplaySessionId, setBrowserReplaySession, setError, setReplayActivity, setReplayReport, setReplaying])
 
   const addDataSource = () => {
     const nextIndex = (script.data_sources?.length || 0) + 1

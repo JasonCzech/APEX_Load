@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { type ReactNode, useMemo, useState } from 'react'
 import { Folder } from '../types'
 import './FolderTree.css'
 
@@ -14,20 +14,20 @@ interface TreeItem {
 interface Props {
   title: string
   rootLabel?: string
-  headerActions?: JSX.Element
+  headerActions?: ReactNode
   category: FolderCategory
   folders: Folder[]
   items: TreeItem[]
   selectedFolderId?: string | null
   onSelectFolder: (folderId?: string | null) => void
   selectedItemId?: string | null
-  details?: JSX.Element
+  details?: ReactNode
   onSelectItem?: (id: string) => void
   onCreateFolder: (parentId: string | null) => void
   onRenameFolder: (id: string, name: string) => void
   onDeleteFolder: (id: string) => void
   onMoveItem?: (itemId: string, folderId: string | null) => void
-  renderItemExtra?: (item: TreeItem) => JSX.Element | null
+  renderItemExtra?: (item: TreeItem) => ReactNode
 }
 
 function folderLabel(category: FolderCategory): string {
@@ -125,7 +125,7 @@ export default function FolderTree({
     })
   }
 
-  const renderFolder = (folder: Folder, depth = 0): JSX.Element => {
+  const renderFolder = (folder: Folder, depth = 0): ReactNode => {
     const childFolders = childrenByParent.get(folder.id) || []
     const childCount = childFolders.length
     const isExpanded = expanded.has(folder.id)

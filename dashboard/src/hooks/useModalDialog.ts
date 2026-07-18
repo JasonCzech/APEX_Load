@@ -1,9 +1,9 @@
 import { RefObject, useEffect, useRef } from 'react'
 
 interface ModalDialogOptions {
-  dialogRef: RefObject<HTMLElement>
+  dialogRef: RefObject<HTMLElement | null>
   enabled?: boolean
-  initialFocusRef?: RefObject<HTMLElement>
+  initialFocusRef?: RefObject<HTMLElement | null>
   onClose?: () => void
 }
 

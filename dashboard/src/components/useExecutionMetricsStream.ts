@@ -65,7 +65,7 @@ export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
   // Guard a late-resolving backfill against a test switch or unmount.
   const activeTestIdRef = useRef(testId)
   activeTestIdRef.current = testId
-  const lastSeenTimestampRef = useRef<string | undefined>()
+  const lastSeenTimestampRef = useRef<string | undefined>(undefined)
   const mountedRef = useRef(true)
   useEffect(() => {
     mountedRef.current = true

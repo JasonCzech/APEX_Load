@@ -82,7 +82,7 @@ export function registerDropZone(element: HTMLElement, handler: DropHandler): ()
 // useDesktopFileDrop registers a ref'd element as a native drop target. The
 // element must also carry the `--wails-drop-target: drop` CSS marker.
 export function useDesktopFileDrop(
-  ref: React.RefObject<HTMLElement>,
+  ref: React.RefObject<HTMLElement | null>,
   onPaths: DropHandler,
   enabled: boolean,
 ) {

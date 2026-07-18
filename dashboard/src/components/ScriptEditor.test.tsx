@@ -2893,6 +2893,7 @@ describe('ScriptEditor', () => {
       runReplayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
+    await flushReact()
 
     const authorTab = findWorkspaceTab(container, 'Author')
     expect(authorTab).toBeDefined()
@@ -6328,6 +6329,7 @@ describe('ScriptEditor', () => {
       replayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       await Promise.resolve()
     })
+    await flushReact()
 
     const exportButton = findButtonByTitle(container, 'Download Debug JSON')
     expect(exportButton).toBeDefined()

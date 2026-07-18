@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react'
 import { type WebSocketConnectionState } from '../hooks/useWebSocket'
 import { useAuthApi } from '../hooks/api/useAuthApi'
 import { resolveApiResourceUrl } from '../hooks/apiClient'
@@ -33,7 +33,7 @@ interface Props {
   showAccess?: boolean
 }
 
-const NAV_ITEMS: { id: NavPage; label: string; icon: JSX.Element; requiresAccess?: boolean }[] = [
+const NAV_ITEMS: { id: NavPage; label: string; icon: ReactNode; requiresAccess?: boolean }[] = [
   {
     id: 'dashboard',
     label: 'Dashboard',
