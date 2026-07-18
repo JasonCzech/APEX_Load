@@ -323,30 +323,20 @@ describe('Sidebar', () => {
     expect(onNavigate).toHaveBeenCalledWith('docs')
   })
 
-  it('links the dedicated fleet workspace from the main dashboard navigation', async () => {
-    const onNavigate = vi.fn()
-
+  it('omits redundant fleet and schedules destinations from the sidebar', async () => {
     await act(async () => {
       root.render(
         <Sidebar
           active="dashboard"
-          onNavigate={onNavigate}
+          onNavigate={vi.fn()}
           connectionState="connected"
         />,
       )
     })
 
-    const fleetButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Fleet')
-    expect(fleetButton).toBeDefined()
-    if (!fleetButton) {
-      return
-    }
-
-    await act(async () => {
-      fleetButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
-
-    expect(onNavigate).toHaveBeenCalledWith('fleet')
+    const labels = Array.from(container.querySelectorAll('.sidebar-nav .nav-label')).map(label => label.textContent)
+    expect(labels).not.toContain('Fleet')
+    expect(labels).not.toContain('Schedules')
   })
 
   it('places primary workflow destinations in the requested sidebar order', async () => {

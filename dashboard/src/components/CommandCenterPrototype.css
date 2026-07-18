@@ -475,7 +475,7 @@
 
 .command-hero-metric {
   min-width: 0;
-  height: var(--command-view-switch-height);
+  min-height: var(--command-view-switch-height);
   display: grid;
   align-content: center;
   gap: 4px;
