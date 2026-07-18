@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import PrometheusPanelCard from './PrometheusPanelCard'
+import { thresholdAwareYAxisMax } from './prometheusPanelCardModel'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -36,5 +37,15 @@ describe('PrometheusPanelCard imported panel kinds', () => {
     expect(container.querySelectorAll('.imported-panel-heatmap-row span')).toHaveLength(1)
     await act(async () => root.render(<PrometheusPanelCard title="CPU" kind="single_value" value={95} series={series} thresholds={[{ value: 90, color: 'red', severity: 'critical' }]} />))
     expect(container.querySelector('.stat-tile-critical')).not.toBeNull()
+  })
+
+  it('expands the line-chart domain to include imported thresholds', () => {
+    expect(thresholdAwareYAxisMax(300, [
+      { value: undefined, color: 'green', severity: 'normal' },
+      { value: 5_000, color: 'red', severity: 'critical' },
+    ])).toBe(5_000)
+    expect(thresholdAwareYAxisMax(6_000, [
+      { value: 5_000, color: 'red', severity: 'critical' },
+    ])).toBe(6_000)
   })
 })

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/grafana"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 type trackingGraphDataSource struct {
@@ -22,10 +23,23 @@ type trackingGraphDataSource struct {
 
 type queryCaptureDataSource struct{ queries []graphRangeQuery }
 
+type deadlineCaptureDataSource struct{ remaining time.Duration }
+
 func (d *queryCaptureDataSource) ID() string              { return "capture" }
 func (d *queryCaptureDataSource) Available() (bool, bool) { return true, true }
 func (d *queryCaptureDataSource) QueryRange(_ context.Context, query graphRangeQuery) ([]PrometheusSeries, error) {
 	d.queries = append(d.queries, query)
+	return []PrometheusSeries{{Key: query.SeriesKeyPrefix, Values: []PrometheusPoint{{Value: 1}}}}, nil
+}
+
+func (d *deadlineCaptureDataSource) ID() string              { return "deadline-capture" }
+func (d *deadlineCaptureDataSource) Available() (bool, bool) { return true, true }
+func (d *deadlineCaptureDataSource) QueryRange(ctx context.Context, query graphRangeQuery) ([]PrometheusSeries, error) {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return nil, errors.New("query context has no deadline")
+	}
+	d.remaining = time.Until(deadline)
 	return []PrometheusSeries{{Key: query.SeriesKeyPrefix, Values: []PrometheusPoint{{Value: 1}}}}, nil
 }
 
@@ -96,6 +110,36 @@ func TestResolveDashboardPanelsHappyPath(t *testing.T) {
 		if !strings.HasPrefix(p.Series[0].Key, "gdash_dash1_") {
 			t.Fatalf("series key %q not namespaced", p.Series[0].Key)
 		}
+	}
+}
+
+func TestResolveStoredDashboardResultUsesSelectedGrafanaTimeout(t *testing.T) {
+	server, _ := newGrafanaDashboardAPIServer(t)
+	t.Setenv("APEXLOAD_TEST_GRAFANA_TIMEOUT_TOKEN", "token")
+	settings := server.runner.GetSystemSettings()
+	settings.Prometheus.TimeoutSeconds = 1
+	settings.Grafana = GrafanaSettings{
+		Enabled:                   true,
+		BaseURL:                   "https://grafana.example.com",
+		ServiceAccountTokenEnvVar: "APEXLOAD_TEST_GRAFANA_TIMEOUT_TOKEN",
+		TimeoutSeconds:            2,
+	}
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	ds := &deadlineCaptureDataSource{}
+	now := time.Now().UTC()
+	dashboard := &storage.GrafanaDashboard{
+		ID: "dashboard-1", ProjectID: "proj-a", Name: "Infra",
+		Panels: []grafana.Panel{linePanel(1, "Up", `up{project_id="$project_id"}`)},
+	}
+	result, _ := server.resolveStoredDashboardResult(context.Background(), ds, dashboard, "", now, now.Add(time.Minute), 15)
+	if len(result.Panels) != 1 || result.Panels[0].Error != "" {
+		t.Fatalf("resolved panels = %#v", result.Panels)
+	}
+	wantBudget := dashboardTotalTimeout(settings.Grafana.TimeoutSeconds)
+	if ds.remaining < wantBudget-500*time.Millisecond || ds.remaining > wantBudget {
+		t.Fatalf("dashboard deadline remaining = %s, want budget %s derived from Grafana's timeout", ds.remaining, wantBudget)
 	}
 }
 

@@ -109,8 +109,14 @@ func (s *Server) handlePatchGrafanaDashboard(w http.ResponseWriter, r *http.Requ
 	}
 	if patch.Bindings != nil {
 		next := make(map[string]string, len(*patch.Bindings))
+		seen := make(map[string]struct{}, len(*patch.Bindings))
 		for name, value := range *patch.Bindings {
 			name = strings.TrimSpace(name)
+			if _, duplicate := seen[name]; duplicate {
+				writeError(w, http.StatusBadRequest, "binding "+name+" was supplied more than once")
+				return
+			}
+			seen[name] = struct{}{}
 			if _, declared := dashboard.Bindings[name]; !declared {
 				writeError(w, http.StatusBadRequest, "binding "+name+" is not declared by this dashboard")
 				return
@@ -377,7 +383,7 @@ func (s *Server) resolveStoredDashboardResult(ctx context.Context, ds graphDataS
 }
 
 func (s *Server) resolveStoredDashboardResultWithBudget(ctx context.Context, ds graphDataSource, d *storage.GrafanaDashboard, testID string, start, end time.Time, stepSeconds int, aggregatePoints, aggregateBytes *atomic.Int64, querySemaphore chan struct{}) (DashboardPanelsResult, bool) {
-	settings := normalizePrometheusSettings(s.runner.GetSystemSettings().Prometheus)
+	settings := s.runner.GetSystemSettings()
 	panels := resolveDashboardPanels(ctx, ds, dashboardResolvePlan{
 		dashboardID: d.ID,
 		panels:      d.Panels,
@@ -389,7 +395,7 @@ func (s *Server) resolveStoredDashboardResultWithBudget(ctx context.Context, ds 
 		start:                  start,
 		end:                    end,
 		stepSeconds:            stepSeconds,
-		perQueryTimeoutSeconds: settings.TimeoutSeconds,
+		perQueryTimeoutSeconds: graphDataSourceTimeoutSeconds(settings),
 		aggregatePointsUsed:    aggregatePoints,
 		aggregatePointsMax:     maxImportedDashboardsPointsTotal,
 		aggregateBytesUsed:     aggregateBytes,

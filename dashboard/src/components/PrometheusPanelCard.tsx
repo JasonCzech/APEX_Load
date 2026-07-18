@@ -3,6 +3,7 @@ import { CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer,
 
 import type { ImportedDashboardPanelKind, ImportedDashboardPanelThreshold, PrometheusSeries } from '../types'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
+import { thresholdAwareYAxisMax } from './prometheusPanelCardModel'
 import { prometheusChartData } from './testExecutionChartModel'
 import StatTile from './StatTile'
 
@@ -38,6 +39,10 @@ export default function PrometheusPanelCard({ title, unit, kind, series = [], va
   const rows = useMemo(
     () => (kind === 'line' ? prometheusChartData({ id: title, title, unit, series: combinedSeries }) : []),
     [combinedSeries, kind, title, unit],
+  )
+  const yAxisDomain = useMemo<[number, (dataMax: number) => number]>(
+    () => [0, (dataMax: number) => thresholdAwareYAxisMax(dataMax, thresholds)],
+    [thresholds],
   )
 
   if (kind === 'single_value') {
@@ -104,7 +109,7 @@ export default function PrometheusPanelCard({ title, unit, kind, series = [], va
           <ComposedChart data={rows} margin={{ top: 8, right: 12, bottom: 4, left: 4 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
             <XAxis dataKey="time" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} minTickGap={40} />
-            <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} width={52} />
+            <YAxis domain={yAxisDomain} tick={{ fontSize: 11, fill: 'var(--text-muted)' }} width={52} />
             <Tooltip contentStyle={chartTooltipContentStyle} labelStyle={chartTooltipLabelStyle} />
             {thresholds.filter(step => step.value !== undefined).map((step, index) => (
               <ReferenceLine key={`${step.value}-${index}`} y={step.value} stroke={step.severity === 'critical' ? 'var(--danger)' : step.severity === 'warning' ? 'var(--warning)' : step.severity === 'normal' ? 'var(--success)' : 'var(--text-muted)'} strokeDasharray="5 4" label={{ value: `${step.value}${unit ? ` ${unit}` : ''}`, fill: 'var(--text-muted)', fontSize: 10 }} />

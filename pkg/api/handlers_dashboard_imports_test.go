@@ -507,6 +507,36 @@ func TestGrafanaImportFoldsIntervalVariableIntoBindings(t *testing.T) {
 	}
 }
 
+func TestUpdateGrafanaDashboardRejectsBindingsThatCollideAfterTrimming(t *testing.T) {
+	server, projectID := newGrafanaDashboardAPIServer(t)
+	content := `{"title":"Bound","schemaVersion":39,
+		"templating":{"list":[{"name":"region","type":"custom"}]},
+		"panels":[{"id":1,"type":"timeseries","title":"Up","targets":[{"expr":"up{project_id=\"$project_id\",region=\"$region\"}","refId":"A"}]}]}`
+	inspection := importGrafanaDashboard(t, server, projectID, content)
+	commit := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboards/import/grafana/commit",
+		map[string]any{"project_id": projectID, "import_session_id": inspection.ImportSessionID, "bindings": map[string]string{"region": "us"}})
+	if commit.Code != http.StatusCreated {
+		t.Fatalf("commit status=%d body=%s", commit.Code, commit.Body.String())
+	}
+	var dashboard storage.GrafanaDashboard
+	if err := json.Unmarshal(commit.Body.Bytes(), &dashboard); err != nil {
+		t.Fatal(err)
+	}
+
+	update := dashboardAPIRequest(t, server, http.MethodPatch, "/api/v1/monitoring/dashboards/"+url.PathEscape(dashboard.ID),
+		map[string]any{"bindings": map[string]string{"region": "us", " region": "eu"}})
+	if update.Code != http.StatusBadRequest {
+		t.Fatalf("update status=%d body=%s, want 400", update.Code, update.Body.String())
+	}
+	stored, err := server.store.GetGrafanaDashboard(dashboard.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Bindings["region"] != "us" {
+		t.Fatalf("stored bindings changed after rejected update: %#v", stored.Bindings)
+	}
+}
+
 func TestGrafanaImportIgnoresUnusedUnsafeConstant(t *testing.T) {
 	server, projectID := newGrafanaDashboardAPIServer(t)
 	content := `{"title":"V","schemaVersion":39,

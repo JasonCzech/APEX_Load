@@ -64,7 +64,7 @@ type dashboardResolvePlan struct {
 	start       time.Time
 	end         time.Time
 	stepSeconds int
-	// perQueryTimeoutSeconds is the configured Prometheus timeout; the whole-dashboard
+	// perQueryTimeoutSeconds is the selected datasource timeout; the whole-dashboard
 	// budget is derived from it.
 	perQueryTimeoutSeconds int
 	aggregatePointsUsed    *atomic.Int64
