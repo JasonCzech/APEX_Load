@@ -11,6 +11,7 @@ const DEFAULT_SECTION_ORDER = [
   'verdict',
   'kpis',
   'timeline',
+  'imported_dashboards',
   'sla',
   'diagnostics',
   'compare',
@@ -20,6 +21,9 @@ const DEFAULT_SECTION_ORDER = [
 const SECTION_ALIASES: Record<string, string> = {
   actions: 'sla',
   artifact_integrity: 'diagnostics',
+  // The Go report profiles declare this section as "dashboard_panels"; the Run Report
+  // renders it under the "imported_dashboards" lens id.
+  dashboard_panels: 'imported_dashboards',
   audit_identity: 'diagnostics',
   authorization: 'diagnostics',
   browser: 'diagnostics',
@@ -57,8 +61,8 @@ const SECTION_ALIASES: Record<string, string> = {
 }
 
 const FALLBACK_PROFILE_SECTIONS: Record<ReportLens, string[]> = {
-  executive: ['verdict', 'kpis', 'timeline', 'sla', 'compare', 'exports'],
-  engineer: ['verdict', 'kpis', 'timeline', 'sla', 'diagnostics', 'compare', 'exports'],
+  executive: ['verdict', 'kpis', 'timeline', 'imported_dashboards', 'sla', 'compare', 'exports'],
+  engineer: ['verdict', 'kpis', 'timeline', 'imported_dashboards', 'sla', 'diagnostics', 'compare', 'exports'],
   audit: ['verdict', 'kpis', 'timeline', 'sla', 'diagnostics', 'exports'],
 }
 
@@ -97,7 +101,14 @@ export function reportSectionLens(report: RunArchiveReport | null, lens: ReportL
     ...DEFAULT_SECTION_ORDER,
     ...included,
   ]).filter(section => included.includes(section) || DEFAULT_SECTION_ORDER.includes(section))
-  const visibleSections = ordered.filter(section => included.includes(section) || ['verdict', 'kpis', 'timeline', 'sla', 'exports'].includes(section))
+  // imported_dashboards is not part of the Go archive report (it comes from a separate
+  // snapshot endpoint), so it never appears in a profile's included_sections. Keep it
+  // always-on for executive/engineer lenses; the section component renders nothing when
+  // the run had no imported dashboards, so there is no clutter.
+  const alwaysOn = lens === 'audit'
+    ? ['verdict', 'kpis', 'timeline', 'sla', 'exports']
+    : ['verdict', 'kpis', 'timeline', 'imported_dashboards', 'sla', 'exports']
+  const visibleSections = ordered.filter(section => included.includes(section) || alwaysOn.includes(section))
   return {
     visibleSections,
     sectionSet: new Set(visibleSections),

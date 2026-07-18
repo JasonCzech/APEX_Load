@@ -1,7 +1,7 @@
 import { type ComponentProps } from 'react'
 import { LineChart, YAxis } from 'recharts'
 
-import type { MetricsHistoryPoint, PrometheusGraph } from '../types'
+import type { ImportedDashboardResult, MetricsHistoryPoint, PrometheusGraph } from '../types'
 import {
   isRouteLatencyTotalSeriesKey,
   routeLatencyDetailSeriesKey,
@@ -11,10 +11,23 @@ import type { LoadImpactMetric, LoadImpactRow } from './loadImpactModel'
 
 export type ChartDomain = ComponentProps<typeof YAxis>['domain']
 
+export interface ImportedPanelRef {
+  dashboardId: string
+  dashboardTitle: string
+  panelId: number
+  kind: 'line' | 'single_value'
+}
+
+export interface ImportedStatValue {
+  value?: number
+  unit?: string
+  error?: string
+}
+
 export interface ChartConfig {
   id: string
   title: string
-  type: 'area' | 'line-multi' | 'line-latency' | 'area-multi' | 'area-stacked' | 'line-io' | 'line-network' | 'line-impact' | 'line-prometheus' | 'line-load-impact' | 'line-load-impact-percentiles' | 'load-impact-heatmap'
+  type: 'area' | 'line-multi' | 'line-latency' | 'area-multi' | 'area-stacked' | 'line-io' | 'line-network' | 'line-impact' | 'line-prometheus' | 'line-load-impact' | 'line-load-impact-percentiles' | 'load-impact-heatmap' | 'stat-tile'
   dataKey?: string
   color?: string
   totalKey?: string
@@ -24,6 +37,10 @@ export interface ChartConfig {
   defaultMetricKeys?: string[]
   loadImpactMetric?: LoadImpactMetric
   prometheusGraph?: PrometheusGraph
+  // Imported Grafana dashboard panels.
+  importedPanel?: ImportedPanelRef
+  statValue?: ImportedStatValue
+  importedError?: string
 }
 
 export type ChartMetricRowKind = 'transaction' | 'percentile' | 'other'
@@ -304,6 +321,62 @@ export function buildPrometheusCharts(graphs: PrometheusGraph[]): ChartConfig[] 
   }))
 }
 
+export function isImportedDashboardChart(chart: ChartConfig): boolean {
+  return Boolean(chart.importedPanel)
+}
+
+export function isStatTileChart(chart: ChartConfig): boolean {
+  return chart.type === 'stat-tile'
+}
+
+// buildImportedDashboardCharts turns resolved imported-dashboard panels into chart
+// cards: line panels reuse the existing 'line-prometheus' renderer, single-value
+// panels become 'stat-tile' cards. Chart ids are the backend's globally-namespaced
+// panel keys; a defensive de-dup guarantees they can never collide with the static
+// chartConfigs ids (which would silently corrupt the id-keyed order/hidden state).
+export function buildImportedDashboardCharts(dashboards: ImportedDashboardResult[]): ChartConfig[] {
+  const seen = new Set<string>()
+  const charts: ChartConfig[] = []
+  dashboards.forEach(dashboard => {
+    dashboard.panels.forEach(panel => {
+      const id = `gdash_${dashboard.dashboard_id}_${panel.panel_id}`
+      if (seen.has(id)) return
+      seen.add(id)
+		const titleParts = [dashboard.dashboard_title, panel.row_title, panel.title]
+			.map(part => part?.trim())
+			.filter((part, index, parts): part is string => Boolean(part) && parts.indexOf(part) === index)
+		const chartTitle = titleParts.join(' · ') || panel.title
+      const importedPanel: ImportedPanelRef = {
+        dashboardId: dashboard.dashboard_id,
+        dashboardTitle: dashboard.dashboard_title ?? '',
+        panelId: panel.panel_id,
+        kind: panel.kind,
+      }
+      if (panel.kind === 'single_value') {
+        charts.push({
+          id,
+			title: chartTitle,
+          type: 'stat-tile',
+          importedPanel,
+          statValue: { value: panel.value, unit: panel.unit, error: panel.error },
+        })
+        return
+      }
+		const graph: PrometheusGraph = { id, title: chartTitle, unit: panel.unit, series: panel.series ?? [] }
+      charts.push({
+        id,
+		title: chartTitle,
+        type: 'line-prometheus',
+        defaultMetricKeys: graph.series.map(series => series.key),
+        prometheusGraph: graph,
+        importedPanel,
+        importedError: panel.error,
+      })
+    })
+  })
+  return charts
+}
+
 function prometheusPointTimestampMs(timestamp: string | undefined, timestampMs: number | undefined) {
   if (typeof timestampMs === 'number' && Number.isFinite(timestampMs)) return timestampMs
   const parsed = timestamp ? Date.parse(timestamp) : Number.NaN
@@ -505,6 +578,16 @@ export function defaultHiddenChartIds(charts: ChartConfig[], visibleLoadImpactCh
       && !explicitlyVisible.has(chart.id)
     ))
     .map(chart => chart.id)
+}
+
+// presetExemptChartIds returns the ids of charts built dynamically at runtime
+// (the Prometheus pack; imported dashboard panels once they are wired in). Monitor
+// presets curate only the *static* chartConfigs list, so chartStateForMonitorPreset
+// would classify every dynamic chart as "remaining" and hide it. These charts
+// default visible instead — the same exemption loadImpactDefaultVisibleChartIds
+// already applies to load-impact charts.
+export function presetExemptChartIds(charts: ChartConfig[]): string[] {
+  return charts.filter(chart => isPrometheusChart(chart) || isImportedDashboardChart(chart)).map(chart => chart.id)
 }
 
 export const monitorPresets = [

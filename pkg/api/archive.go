@@ -315,6 +315,36 @@ type RunArchiveReport struct {
 	// multi-run trend is attached at the storage-aware handler layer via
 	// (*Server).attachReleaseTrend. It stays nil for runs with no release association.
 	ReleaseTrend *RunArchiveReleaseTrendSummary `json:"release_trend,omitempty"`
+	// DashboardPanels is the compact summary of the imported Grafana dashboard panels
+	// captured for this run. Like ReleaseTrend it is nil by default and attached at the
+	// storage-aware handler layer (attachDashboardPanels) from the run's frozen
+	// snapshot, so buildRunArchiveReport stays a pure function of one archive record.
+	DashboardPanels *RunArchiveDashboardPanels `json:"dashboard_panels,omitempty"`
+}
+
+// RunArchiveDashboardPanels is a report-friendly digest of a run's imported dashboard
+// snapshot: per-panel summary statistics rather than the full resolved time series.
+type RunArchiveDashboardPanels struct {
+	CapturedAt time.Time             `json:"captured_at,omitempty"`
+	Dashboards []RunArchiveDashboard `json:"dashboards"`
+}
+
+type RunArchiveDashboard struct {
+	Title  string                     `json:"title"`
+	Panels []RunArchiveDashboardPanel `json:"panels"`
+}
+
+type RunArchiveDashboardPanel struct {
+	Title       string   `json:"title"`
+	Kind        string   `json:"kind"`
+	Unit        string   `json:"unit,omitempty"`
+	SeriesCount int      `json:"series_count,omitempty"`
+	Min         *float64 `json:"min,omitempty"`
+	Avg         *float64 `json:"avg,omitempty"`
+	Max         *float64 `json:"max,omitempty"`
+	Last        *float64 `json:"last,omitempty"`
+	Value       *float64 `json:"value,omitempty"`
+	Error       string   `json:"error,omitempty"`
 }
 
 type RunArchiveReportProfile struct {

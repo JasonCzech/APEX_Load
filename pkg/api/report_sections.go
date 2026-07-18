@@ -334,6 +334,10 @@ func buildReportSectionRegistry() map[string]reportSectionRenderer {
 			return csvNote(write, "graphs", "Time-series graphs are available in the HTML report; see summary_timeline rows for the underlying data.")
 		}})
 
+	add(reportSectionRenderer{ID: "dashboard_panels", Label: "Imported Dashboard Panels",
+		PDF: dashboardPanelsPDF,
+		CSV: dashboardPanelsCSV})
+
 	// --- Risks / findings / root cause ------------------------------------
 	add(reportSectionRenderer{ID: "risk_summary", Label: "Top Risks",
 		PDF: func(d *runArchiveHTMLReportData, lines *[]string) {

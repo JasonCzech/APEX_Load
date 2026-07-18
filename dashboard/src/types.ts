@@ -3947,6 +3947,124 @@ export interface PrometheusGraphsResponse {
   graphs: PrometheusGraph[]
 }
 
+// Imported Grafana dashboards.
+export type ImportedDashboardPanelKind = 'line' | 'single_value'
+
+export interface ImportedDashboardTarget {
+  ref_id?: string
+  expr: string
+  legend_format?: string
+  label_fields?: string[]
+}
+
+export interface ImportedDashboardPanelDef {
+  panel_id: number
+  title: string
+  kind: ImportedDashboardPanelKind
+  unit?: string
+  grid_pos?: { x: number; y: number; w: number; h: number }
+  targets?: ImportedDashboardTarget[]
+  row_title?: string
+  datasource_uid?: string
+}
+
+export interface ImportedDashboardDef {
+  source_title?: string
+  source_uid?: string
+  schema_version?: number
+  panels: ImportedDashboardPanelDef[]
+}
+
+export interface ImportedDashboardVariableBinding {
+  name: string
+  kind: 'auto' | 'required' | 'rejected'
+  grafana_type?: string
+  label?: string
+  resolved_to?: string
+  default?: string
+  options?: string[]
+  reason?: string
+  used_by?: string[]
+}
+
+export interface ImportedDashboard {
+  id: string
+  project_id: string
+  name: string
+  description?: string
+  source_title?: string
+  source_uid?: string
+  schema_version?: number
+  enabled: boolean
+  panels: ImportedDashboardPanelDef[]
+  bindings?: Record<string, string>
+  created_at?: string
+  updated_at?: string
+}
+
+// A resolved panel — line panels carry series (same shape as PrometheusGraph),
+// single-value tiles carry value. error is set when that panel's query failed.
+export interface ImportedDashboardResolvedPanel {
+  panel_id: number
+  title: string
+  kind: ImportedDashboardPanelKind
+  unit?: string
+  grid_pos?: { x: number; y: number; w: number; h: number }
+  row_title?: string
+  series?: PrometheusSeries[]
+  value?: number
+  error?: string
+}
+
+export interface ImportedDashboardResult {
+  dashboard_id: string
+  dashboard_title?: string
+  datasource_id?: string
+  panels: ImportedDashboardResolvedPanel[]
+}
+
+export interface ImportedDashboardGraphsResponse {
+  enabled: boolean
+  configured: boolean
+  datasource_id?: string
+  generated_at: string
+  start?: string
+  end?: string
+  step_seconds?: number
+  dashboards: ImportedDashboardResult[]
+}
+
+export interface ImportedDashboardReviewSection {
+  key: string
+  title: string
+  severity: string
+  summary: string
+  items: string[]
+}
+
+export interface ImportedDashboardImportReview {
+  import_session_id: string
+  expires_at: string
+  dashboard: ImportedDashboardDef
+  stats: {
+    panels_seen: number
+    panels_converted: number
+    line_charts: number
+    single_value_tiles: number
+    targets: number
+    rows_expanded: number
+    unsupported_panel_types?: string[]
+    variables_resolved: number
+    variables_requiring_binding: number
+  }
+  warnings?: string[]
+  assumptions?: string[]
+  review_sections?: ImportedDashboardReviewSection[]
+  bindings?: ImportedDashboardVariableBinding[]
+  required_bindings?: string[]
+  has_blockers: boolean
+}
+
 // --- GitHub script sync (per-user connection + browse/import/push) ---
 
 export interface GitHubConfigResponse {

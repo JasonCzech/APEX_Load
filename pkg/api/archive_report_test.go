@@ -612,8 +612,19 @@ func TestRunArchiveReportProfilesAreConsistentAndRenderable(t *testing.T) {
 func consistencyMatrixReport() *RunArchiveReport {
 	completedAt := time.Date(2026, time.June, 9, 18, 0, 0, 0, time.UTC)
 	scheduled := completedAt.Add(-time.Hour)
+	matrixAvg := 20.0
 	return &RunArchiveReport{
 		SchemaVersion: runArchiveReportSchemaVersion,
+		DashboardPanels: &RunArchiveDashboardPanels{
+			CapturedAt: completedAt,
+			Dashboards: []RunArchiveDashboard{{
+				Title: "Infra",
+				Panels: []RunArchiveDashboardPanel{
+					{Title: "CPU", Kind: "line", Unit: "%", SeriesCount: 1, Min: &matrixAvg, Avg: &matrixAvg, Max: &matrixAvg, Last: &matrixAvg},
+					{Title: "Up", Kind: "single_value", Value: &matrixAvg},
+				},
+			}},
+		},
 		Manifest: &RunArchiveManifest{
 			SchemaVersion: archiveSchemaVersion,
 			TestID:        "test-matrix",

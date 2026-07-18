@@ -3703,6 +3703,154 @@ paths:
             type: string
       tags:
         - Monitoring
+  /api/v1/monitoring/dashboards:
+    get:
+      summary: List Grafana Dashboards
+      description: |-
+        **Handler:** `handleListGrafanaDashboards`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleListGrafanaDashboards
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Monitoring
+  /api/v1/monitoring/dashboards/{id}:
+    delete:
+      summary: Delete Grafana Dashboard
+      description: |-
+        **Handler:** `handleDeleteGrafanaDashboard`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleDeleteGrafanaDashboard
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Monitoring
+    get:
+      summary: Get Grafana Dashboard
+      description: |-
+        **Handler:** `handleGetGrafanaDashboard`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleGetGrafanaDashboard
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Monitoring
+    patch:
+      summary: Patch Grafana Dashboard
+      description: |-
+        **Handler:** `handlePatchGrafanaDashboard`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handlePatchGrafanaDashboard
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Monitoring
+  /api/v1/monitoring/dashboards/{id}/panels:
+    get:
+      summary: Query Grafana Dashboard Panels
+      description: |-
+        **Handler:** `handleQueryGrafanaDashboardPanels`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleQueryGrafanaDashboardPanels
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      tags:
+        - Monitoring
+  /api/v1/monitoring/dashboards/graphs:
+    get:
+      summary: Imported Dashboard Graphs
+      description: |-
+        **Handler:** `handleImportedDashboardGraphs`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleImportedDashboardGraphs
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Monitoring
+  /api/v1/monitoring/dashboards/import/grafana:
+    post:
+      summary: Import Grafana Dashboard
+      description: |-
+        **Handler:** `handleImportGrafanaDashboard`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleImportGrafanaDashboard
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Monitoring
+  /api/v1/monitoring/dashboards/import/grafana/commit:
+    post:
+      summary: Commit Grafana Dashboard Import
+      description: |-
+        **Handler:** `handleCommitGrafanaDashboardImport`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleCommitGrafanaDashboardImport
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Monitoring
+  /api/v1/monitoring/dashboards/import/grafana/support-matrix:
+    get:
+      summary: Grafana Dashboard Support Matrix
+      description: |-
+        **Handler:** `handleGrafanaDashboardSupportMatrix`
+
+        **Access Control:** Roles: Viewer, Editor, ProjectAdmin, SystemAdmin
+      operationId: handleGrafanaDashboardSupportMatrix
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: 'Roles: Viewer, Editor, ProjectAdmin, SystemAdmin'
+      tags:
+        - Monitoring
   /api/v1/monitoring/packs:
     get:
       summary: List Infrastructure Monitor Packs

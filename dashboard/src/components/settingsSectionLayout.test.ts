@@ -108,6 +108,7 @@ describe('settingsSectionLayout', () => {
       'library',
       'github',
       'prometheus',
+      'dashboards',
       'notifications',
     ])
     expect(isGovernanceSettingsSubsectionId('service-account-apis')).toBe(true)

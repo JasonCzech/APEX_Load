@@ -509,8 +509,11 @@ const (
 	// Bruno authorization resolves project scope from the query string without
 	// pre-reading the upload. Keep the transport ceiling aligned with the
 	// default compressed upload quota plus JSON/multipart framing.
-	brunoImportMaxBodyBytes    int64 = (256 << 20) + (16 << 20)
-	defaultMaxRequestBodyBytes int64 = 8 << 20
+	brunoImportMaxBodyBytes int64 = (256 << 20) + (16 << 20)
+	// A Grafana dashboard JSON is a single document with a bounded panel count
+	// (grafana.MaxPanels); it is nowhere near script-import scale.
+	grafanaDashboardImportMaxBodyBytes int64 = 8 << 20
+	defaultMaxRequestBodyBytes         int64 = 8 << 20
 	// Library bundle JSON can carry many scripts/results in one transfer. Keep
 	// its historical envelope explicit rather than inheriting the CRUD default.
 	libraryBundleImportMaxBodyBytes int64 = 128 << 20

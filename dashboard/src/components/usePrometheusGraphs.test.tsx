@@ -132,4 +132,17 @@ describe('usePrometheusGraphs', () => {
     // The interval poll fires exactly one additional fetch.
     expect(getPrometheusGraphs).toHaveBeenCalledTimes(2)
   })
+
+  it('does not overlap interval polls while a request is in flight', async () => {
+    let resolveRequest!: (response: PrometheusGraphsResponse) => void
+    getPrometheusGraphs.mockImplementation(() => new Promise(resolve => { resolveRequest = resolve }))
+    const base = Date.parse('2026-06-12T12:00:00Z')
+    await render(runningTest(), [point(base), point(base + 2000)])
+    await act(async () => {
+      vi.advanceTimersByTime(20_000)
+      await Promise.resolve()
+    })
+    expect(getPrometheusGraphs).toHaveBeenCalledTimes(1)
+    await act(async () => { resolveRequest(okResponse()); await Promise.resolve() })
+  })
 })

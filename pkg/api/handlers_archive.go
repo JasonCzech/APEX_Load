@@ -455,6 +455,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 		testID := r.PathValue("id")
 		profileID := r.URL.Query().Get("profile")
 		s.attachReleaseTrendForProfile(report, profileID)
+		s.attachDashboardPanelsForProfile(report, profileID)
 		if profileID == "audit" {
 			report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
 		}
@@ -489,6 +490,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			return
 		}
 		s.attachReleaseTrendForProfile(report, profile.ID)
+		s.attachDashboardPanelsForProfile(report, profile.ID)
 		// The audit PDF carries the tamper-evidence banner, so re-verify the archive
 		// against its recorded artifact hashes before rendering it.
 		if profile.ID == "audit" {
@@ -515,6 +517,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 	// trend unconditionally (still a no-op for runs with no release association).
 	attachReportVerdictAndSLA(report)
 	s.attachReleaseTrend(report)
+	s.attachDashboardPanels(report)
 	if r.URL.Query().Get("profile") == "audit" {
 		report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
 	}
@@ -577,6 +580,7 @@ func (s *Server) handleGetRunArchiveReportsBatch(w http.ResponseWriter, r *http.
 		}
 		attachReportVerdictAndSLA(report)
 		s.attachReleaseTrend(report)
+		s.attachDashboardPanels(report)
 		encodedBytes := archiveJSONWeight(report)
 		if encodedBytes < 0 {
 			errorsByID[id] = "archive report could not be encoded"
@@ -935,6 +939,7 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 	// Attach release-over-release trend before rendering — only for profiles that
 	// actually display the section (executive), so engineer/audit avoid the cost.
 	s.attachReleaseTrendForProfile(report, profile)
+	s.attachDashboardPanelsForProfile(report, profile)
 	// The audit profile renders a tamper-evidence banner, so re-verify the archive
 	// against its recorded artifact hashes here. Gated on the audit profile to keep
 	// the SHA-256 re-hash off the lighter engineer/executive render paths.

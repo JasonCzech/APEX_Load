@@ -2104,6 +2104,96 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/monitoring/dashboards",
+      "operationId": "handleListGrafanaDashboards",
+      "summary": "List Grafana Dashboards",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitoring/dashboards/graphs",
+      "operationId": "handleImportedDashboardGraphs",
+      "summary": "Imported Dashboard Graphs",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/dashboards/import/grafana",
+      "operationId": "handleImportGrafanaDashboard",
+      "summary": "Import Grafana Dashboard",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/dashboards/import/grafana/commit",
+      "operationId": "handleCommitGrafanaDashboardImport",
+      "summary": "Commit Grafana Dashboard Import",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitoring/dashboards/import/grafana/support-matrix",
+      "operationId": "handleGrafanaDashboardSupportMatrix",
+      "summary": "Grafana Dashboard Support Matrix",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Roles: Viewer, Editor, ProjectAdmin, SystemAdmin"
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/v1/monitoring/dashboards/{id}",
+      "operationId": "handleDeleteGrafanaDashboard",
+      "summary": "Delete Grafana Dashboard",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitoring/dashboards/{id}",
+      "operationId": "handleGetGrafanaDashboard",
+      "summary": "Get Grafana Dashboard",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/v1/monitoring/dashboards/{id}",
+      "operationId": "handlePatchGrafanaDashboard",
+      "summary": "Patch Grafana Dashboard",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/monitoring/dashboards/{id}/panels",
+      "operationId": "handleQueryGrafanaDashboardPanels",
+      "summary": "Query Grafana Dashboard Panels",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/monitoring/packs",
       "operationId": "handleListInfrastructureMonitorPacks",
       "summary": "List Infrastructure Monitor Packs",

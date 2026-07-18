@@ -8179,6 +8179,98 @@ col.results-actions-col {
   padding: 16px;
 }
 
+/* Imported Grafana dashboards panel. */
+.settings-inline-warning,
+.settings-inline-error,
+.settings-inline-notice {
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+  margin: 8px 0;
+}
+.settings-inline-warning {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+.settings-inline-error {
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
+  color: var(--danger);
+}
+.settings-inline-notice {
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+  color: var(--text-muted);
+}
+.imported-dashboards-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.imported-dashboards-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.imported-dashboards-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.imported-dashboards-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.imported-dashboards-review-panels {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 12px 0;
+}
+.imported-dashboards-review-panel {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.imported-dashboards-review-panel code {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.imported-dashboards-badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  white-space: nowrap;
+}
+.imported-dashboards-badge.badge-single_value {
+  background: color-mix(in srgb, var(--chart-4) 16%, transparent);
+  color: var(--chart-4);
+}
+.imported-dashboards-unsupported ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+}
+.imported-dashboards-review-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
 .settings-subsection {
   grid-column: 1 / -1;
 }

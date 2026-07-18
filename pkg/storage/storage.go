@@ -168,6 +168,21 @@ type Store interface {
 	// (health + last-seen) without rewriting the rest of the row.
 	UpdateMonitoringCollectorHealth(id string, health string, lastSeenAt time.Time) error
 
+	// Imported Grafana dashboards (panel definitions rendered as APEX graph cards).
+	SaveGrafanaDashboard(dashboard *GrafanaDashboard) error
+	UpdateGrafanaDashboardIfUnchanged(dashboard *GrafanaDashboard, expectedUpdatedAt time.Time) (bool, error)
+	GetGrafanaDashboard(id string) (*GrafanaDashboard, error)
+	ListGrafanaDashboards(projectID string, limit int, offset int) ([]*GrafanaDashboard, error)
+	DeleteGrafanaDashboardIfUnchanged(id, projectID string, expectedUpdatedAt time.Time) (bool, error)
+	SaveGrafanaImportSession(session *GrafanaImportSession, maxActive int, maxActiveBytes int64) error
+	GetGrafanaImportSession(id, projectID string, now time.Time) (*GrafanaImportSession, error)
+	ClaimGrafanaImportSession(id, projectID, token string, now time.Time, staleAfter time.Duration) (*GrafanaImportSession, bool, error)
+	ReleaseGrafanaImportSession(id, projectID, token string) error
+	DeleteClaimedGrafanaImportSession(id, projectID, token string) (bool, error)
+	DeleteExpiredGrafanaImportSessions(now time.Time) (int64, error)
+	SaveGrafanaDashboardSnapshot(snapshot *GrafanaDashboardSnapshot) error
+	GetGrafanaDashboardSnapshot(testID, projectID string) (*GrafanaDashboardSnapshot, error)
+
 	// Reusable blocks: user-saved authoring components, scoped per project.
 	SaveReusableBlock(block *ReusableBlock) error
 	GetReusableBlock(id string) (*ReusableBlock, error)

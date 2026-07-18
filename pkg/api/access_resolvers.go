@@ -934,6 +934,18 @@ var resolveMonitoringCollectorProjectID = entityProjectIDResolver("monitoring co
 
 var resolveReusableBlockCreateProjectID = bodyProjectIDResolver("project_id is required for project-scoped reusable blocks")
 
+// resolveGrafanaDashboardProjectID looks up an imported dashboard's owning project for
+// {id}-scoped access checks.
+var resolveGrafanaDashboardProjectID = entityProjectIDResolver("grafana dashboard not found", "failed to load grafana dashboard", func(store storage.Store, id string) (string, error) {
+	dashboard, err := store.GetGrafanaDashboard(id)
+	if err != nil {
+		return "", err
+	}
+	return dashboard.ProjectID, nil
+})
+
+var resolveGrafanaDashboardCommitProjectID = bodyProjectIDResolver("project_id is required for grafana dashboard import commit")
+
 var resolveReusableBlockProjectID = entityProjectIDResolver("reusable block not found", "failed to load reusable block", func(store storage.Store, id string) (string, error) {
 	block, err := store.GetReusableBlock(id)
 	if err != nil {

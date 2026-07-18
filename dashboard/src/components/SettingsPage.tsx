@@ -88,6 +88,7 @@ import './CreateTestModal.css'
 import { downloadBlob } from '../utils/fileUtils'
 import LibraryFederationPanel from './LibraryFederationPanel'
 import GitHubIntegrationPanel from './GitHubIntegrationPanel'
+import ImportedDashboardsPanel from './ImportedDashboardsPanel'
 import PageViewToggle from './PageViewToggle'
 import DesktopNotificationsToggle from './DesktopNotificationsToggle'
 import { isDesktopSurface } from '../desktop/desktopBridge'
@@ -742,6 +743,7 @@ export default function SettingsPage({
     library: activeProject?.name || 'Project scoped',
     github: settings.github.enabled ? 'Enabled' : 'Disabled',
     prometheus: settings.prometheus.enabled ? 'Enabled' : 'Disabled',
+    dashboards: 'Grafana import',
     notifications: `${notificationWebhookCount} webhook${notificationWebhookCount === 1 ? '' : 's'}`,
   }), [activeProject?.name, notificationWebhookCount, settings.github.enabled, settings.prometheus.enabled])
 
@@ -4549,6 +4551,20 @@ export default function SettingsPage({
                   </div>
                 </div>
               </div>
+            </section>
+
+            <section
+              id="settings-integrations-panel-dashboards"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-integrations-tab-dashboards"
+              hidden={activeIntegrationSubsection !== 'dashboards'}
+            >
+              <ImportedDashboardsPanel
+                projects={projects}
+                defaultProjectId={selectedProjectId}
+                prometheusConfigured={settings.prometheus.enabled && settings.prometheus.base_url.trim() !== ''}
+              />
             </section>
 
             <section
