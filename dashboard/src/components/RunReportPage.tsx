@@ -298,7 +298,7 @@ export default function RunReportPage({
           showBaseline={Boolean(effectiveCompareId && baselineSummaryHistory.length)}
         />
       )}
-      {lensSections.sectionSet.has('imported_dashboards') && <ImportedDashboardPanels test={test} />}
+      {lensSections.sectionSet.has('imported_dashboards') && <ImportedDashboardPanels test={test} baselineTest={baselineReadyTest} />}
       {lensSections.sectionSet.has('sla') && (
         <TransactionSlaScoreboard
           rows={slaRows}

@@ -233,7 +233,10 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	// Imported Grafana dashboards.
 	routeAuth(http.MethodGet, "/api/v1/monitoring/dashboards/import/grafana/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodPost, "/api/v1/monitoring/dashboards/import/grafana", editorImportAccess(resolveImportProjectIDFromJSONOrForm, grafanaDashboardImportMaxBodyBytes)),
-	routeAuth(http.MethodPost, "/api/v1/monitoring/dashboards/import/grafana/commit", editorProjectAccess(resolveGrafanaDashboardCommitProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/monitoring/dashboards/import/grafana/live", editorImportAccess(resolveImportProjectIDFromJSONOrForm, grafanaDashboardImportMaxBodyBytes)),
+	routeAuth(http.MethodPost, "/api/v1/monitoring/dashboards/import/grafana/commit", editorImportAccess(resolveGrafanaDashboardCommitProjectID, 65536)),
+	routeAuth(http.MethodPost, "/api/v1/monitoring/dashboards/import/grafana/preview", editorImportAccess(resolveGrafanaDashboardCommitProjectID, 65536)),
+	routeAuth(http.MethodPost, "/api/v1/monitoring/dashboards/import/grafana/label-values", editorImportAccess(resolveGrafanaDashboardCommitProjectID, 65536)),
 	routeAuth(http.MethodGet, "/api/v1/monitoring/dashboards", viewerProjectAccess(resolveProjectIDFromQuery)),
 	routeAuth(http.MethodGet, "/api/v1/monitoring/dashboards/graphs", viewerProjectAccess(resolveProjectIDFromQuery)),
 	routeAuth(http.MethodGet, "/api/v1/monitoring/dashboards/{id}", viewerProjectAccess(resolveGrafanaDashboardProjectID)),

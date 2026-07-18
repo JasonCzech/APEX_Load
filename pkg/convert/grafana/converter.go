@@ -36,12 +36,18 @@ const (
 	MaxDatasourceJSONBytes = 4096
 	MaxOverridesPerPanel   = 128
 	MaxOverrideProperties  = 128
+	MaxGridY               = 512
+	MaxGridHeight          = 64
+	MaxThresholdSteps      = 32
+	MaxThresholdColorBytes = 64
 )
 
 // Panel kinds in APEX vocabulary (not Grafana's).
 const (
 	PanelKindLine        = "line"
 	PanelKindSingleValue = "single_value"
+	PanelKindTable       = "table"
+	PanelKindHeatmap     = "heatmap"
 )
 
 type ImportRequest struct {
@@ -61,6 +67,8 @@ type ConvertStats struct {
 	PanelsConverted           int      `json:"panels_converted"`
 	LineCharts                int      `json:"line_charts"`
 	SingleValueTiles          int      `json:"single_value_tiles"`
+	Tables                    int      `json:"tables"`
+	Heatmaps                  int      `json:"heatmaps"`
 	Targets                   int      `json:"targets"`
 	RowsExpanded              int      `json:"rows_expanded"`
 	UnsupportedPanelTypes     []string `json:"unsupported_panel_types,omitempty"`
@@ -115,14 +123,21 @@ type Dashboard struct {
 }
 
 type Panel struct {
-	PanelID       int      `json:"panel_id"`
-	Title         string   `json:"title"`
-	Kind          string   `json:"kind"`
-	Unit          string   `json:"unit,omitempty"`
-	GridPos       GridPos  `json:"grid_pos"`
-	Targets       []Target `json:"targets"`
-	RowTitle      string   `json:"row_title,omitempty"`
-	DatasourceUID string   `json:"datasource_uid,omitempty"`
+	PanelID       int              `json:"panel_id"`
+	Title         string           `json:"title"`
+	Kind          string           `json:"kind"`
+	Unit          string           `json:"unit,omitempty"`
+	GridPos       GridPos          `json:"grid_pos"`
+	Targets       []Target         `json:"targets"`
+	RowTitle      string           `json:"row_title,omitempty"`
+	DatasourceUID string           `json:"datasource_uid,omitempty"`
+	Thresholds    []PanelThreshold `json:"thresholds,omitempty"`
+}
+
+type PanelThreshold struct {
+	Value    *float64 `json:"value,omitempty"`
+	Color    string   `json:"color"`
+	Severity string   `json:"severity"`
 }
 
 type GridPos struct {
@@ -133,22 +148,25 @@ type GridPos struct {
 }
 
 type Target struct {
-	RefID        string   `json:"ref_id"`
-	Expr         string   `json:"expr"`
-	LegendFormat string   `json:"legend_format,omitempty"`
-	LabelFields  []string `json:"label_fields,omitempty"`
+	RefID         string   `json:"ref_id"`
+	Expr          string   `json:"expr"`
+	LegendFormat  string   `json:"legend_format,omitempty"`
+	LabelFields   []string `json:"label_fields,omitempty"`
+	DatasourceUID string   `json:"datasource_uid,omitempty"`
 }
 
 type VariableBinding struct {
-	Name        string   `json:"name"`
-	Kind        string   `json:"kind"`
-	GrafanaType string   `json:"grafana_type"`
-	Label       string   `json:"label,omitempty"`
-	ResolvedTo  string   `json:"resolved_to,omitempty"`
-	Default     string   `json:"default,omitempty"`
-	Options     []string `json:"options,omitempty"`
-	Reason      string   `json:"reason"`
-	UsedBy      []string `json:"used_by,omitempty"`
+	Name          string   `json:"name"`
+	Kind          string   `json:"kind"`
+	GrafanaType   string   `json:"grafana_type"`
+	Label         string   `json:"label,omitempty"`
+	ResolvedTo    string   `json:"resolved_to,omitempty"`
+	Default       string   `json:"default,omitempty"`
+	Options       []string `json:"options,omitempty"`
+	Query         string   `json:"query,omitempty"`
+	DatasourceUID string   `json:"datasource_uid,omitempty"`
+	Reason        string   `json:"reason"`
+	UsedBy        []string `json:"used_by,omitempty"`
 }
 
 var legendTokenPattern = regexp.MustCompile(`\{\{\s*([a-zA-Z_][a-zA-Z0-9_]*)\s*\}\}`)
@@ -228,10 +246,15 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 		dashboard.Panels = append(dashboard.Panels, panel)
 		stats.PanelsConverted++
-		if panel.Kind == PanelKindLine {
+		switch panel.Kind {
+		case PanelKindLine:
 			stats.LineCharts++
-		} else {
+		case PanelKindSingleValue:
 			stats.SingleValueTiles++
+		case PanelKindTable:
+			stats.Tables++
+		case PanelKindHeatmap:
+			stats.Heatmaps++
 		}
 		stats.Targets += len(panel.Targets)
 	}
@@ -260,7 +283,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	if len(dashboard.Panels) == 0 {
-		col.Add(diag.Blocker, "dashboard", "panels", "no supported panels were found; a dashboard must contain at least one importable timeseries/graph or stat/gauge panel")
+		col.Add(diag.Blocker, "dashboard", "panels", "no supported panels were found; a dashboard must contain at least one importable timeseries/graph, stat/gauge, table, or heatmap panel")
 	}
 
 	return &ConvertResult{
@@ -391,7 +414,7 @@ func convertPanel(
 	if !supported {
 		unsupportedTypes[panelType] = struct{}{}
 		col.Add(diag.Warning, "panel", panelLocation(loc, title),
-			fmt.Sprintf("panel type %q is not supported; APEX renders line charts (timeseries/graph) and single-value tiles (stat/gauge) only", p.Type))
+			fmt.Sprintf("panel type %q is not supported; APEX renders timeseries/graph, stat/gauge, table, and heatmap panels", p.Type))
 		return Panel{}, false
 	}
 
@@ -410,6 +433,8 @@ func convertPanel(
 	}
 
 	unit := resolvePanelUnit(p, loc, title, col, assumptions)
+	thresholds := resolvePanelThresholds(p, loc, title, col)
+	warnDroppedPanelConstructs(p, loc, title, col)
 
 	targets := []Target{}
 	targetInputs := p.Targets
@@ -449,7 +474,90 @@ func convertPanel(
 		Targets:       targets,
 		RowTitle:      fp.rowTitle,
 		DatasourceUID: datasourceUIDForStorage(panelDS),
+		Thresholds:    thresholds,
 	}, true
+}
+
+func resolvePanelThresholds(p rawPanel, loc, title string, col *diag.Collector) []PanelThreshold {
+	raw := p.FieldConfig.Defaults.Thresholds
+	if len(raw.Steps) == 0 {
+		return nil
+	}
+	if mode := strings.ToLower(strings.TrimSpace(raw.Mode)); mode != "" && mode != "absolute" {
+		col.Add(diag.Warning, "panel thresholds", panelLocation(loc, title), fmt.Sprintf("threshold mode %q is not evaluated; only absolute thresholds are supported", raw.Mode))
+		return nil
+	}
+	if len(raw.Steps) > MaxThresholdSteps {
+		col.Add(diag.Blocker, "panel thresholds", panelLocation(loc, title), fmt.Sprintf("panel declares more than %d threshold steps", MaxThresholdSteps))
+		raw.Steps = raw.Steps[:MaxThresholdSteps]
+	}
+	out := make([]PanelThreshold, 0, len(raw.Steps))
+	for _, step := range raw.Steps {
+		color := strings.ToLower(strings.TrimSpace(step.Color))
+		if color == "" {
+			color = "neutral"
+		}
+		if len(color) > MaxThresholdColorBytes {
+			col.Add(diag.Warning, "panel thresholds", panelLocation(loc, title), "threshold color exceeds its size limit and was normalized to neutral")
+			color = "neutral"
+		}
+		severity := thresholdSeverity(color)
+		if severity == "unknown" {
+			col.Add(diag.Warning, "panel thresholds", panelLocation(loc, title), fmt.Sprintf("threshold color %q has no SLA severity mapping; its line is rendered neutral and it does not affect the run verdict", color))
+		}
+		out = append(out, PanelThreshold{Value: step.Value, Color: color, Severity: severity})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Value == nil && out[j].Value == nil {
+			return false
+		}
+		if out[i].Value == nil {
+			return true
+		}
+		if out[j].Value == nil {
+			return false
+		}
+		return *out[i].Value < *out[j].Value
+	})
+	return out
+}
+
+func thresholdSeverity(color string) string {
+	color = strings.ToLower(strings.TrimSpace(color))
+	switch color {
+	case "red", "dark-red", "semi-dark-red", "super-light-red":
+		return "critical"
+	case "orange", "yellow", "dark-orange", "semi-dark-orange", "dark-yellow", "semi-dark-yellow":
+		return "warning"
+	case "green", "dark-green", "semi-dark-green", "blue", "dark-blue":
+		return "normal"
+	}
+	if strings.HasSuffix(color, "-red") {
+		return "critical"
+	}
+	if strings.HasSuffix(color, "-orange") || strings.HasSuffix(color, "-yellow") {
+		return "warning"
+	}
+	if strings.HasSuffix(color, "-green") || strings.HasSuffix(color, "-blue") {
+		return "normal"
+	}
+	return "unknown"
+}
+
+func warnDroppedPanelConstructs(p rawPanel, loc, title string, col *diag.Collector) {
+	location := panelLocation(loc, title)
+	if trimmed := strings.TrimSpace(string(p.Repeat)); trimmed != "" && trimmed != "null" && trimmed != `""` {
+		col.Add(diag.Warning, "panel repeat", location, "panel.repeat is not reproduced; one panel is imported without repetition")
+	}
+	if len(p.Links) > 0 || len(p.FieldConfig.Defaults.Links) > 0 {
+		col.Add(diag.Info, "panel links", location, "panel and data links are not reproduced")
+	}
+	if len(p.FieldConfig.Defaults.Mappings) > 0 {
+		col.Add(diag.Info, "value mappings", location, "value mappings are not reproduced; raw numeric values are rendered")
+	}
+	if len(p.Transformations) > 0 {
+		col.Add(diag.Warning, "transformations", location, "Grafana transformations are not reproduced; datasource results are rendered directly")
+	}
 }
 
 func convertTarget(
@@ -528,10 +636,11 @@ func convertTarget(
 	}
 
 	return Target{
-		RefID:        strings.TrimSpace(rt.RefID),
-		Expr:         expr,
-		LegendFormat: strings.TrimSpace(rt.LegendFormat),
-		LabelFields:  legendLabelFields(rt.LegendFormat),
+		RefID:         strings.TrimSpace(rt.RefID),
+		Expr:          expr,
+		LegendFormat:  strings.TrimSpace(rt.LegendFormat),
+		LabelFields:   legendLabelFields(rt.LegendFormat),
+		DatasourceUID: datasourceUIDForStorage(targetDS),
 	}, true
 }
 
@@ -588,6 +697,10 @@ func panelKind(panelType string) (string, bool) {
 		return PanelKindLine, true
 	case "stat", "gauge":
 		return PanelKindSingleValue, true
+	case "table":
+		return PanelKindTable, true
+	case "heatmap":
+		return PanelKindHeatmap, true
 	default:
 		return "", false
 	}
@@ -649,8 +762,24 @@ func normalizeGridPos(g rawGridPos, loc, title string, col *diag.Collector) Grid
 		out.X = 0
 		clamped = true
 	}
+	if out.X+out.W > 24 {
+		out.W = 24 - out.X
+		clamped = true
+	}
+	if out.Y < 0 {
+		out.Y = 0
+		clamped = true
+	}
+	if out.Y > MaxGridY {
+		out.Y = MaxGridY
+		clamped = true
+	}
 	if out.H <= 0 {
 		out.H = 8
+		clamped = true
+	}
+	if out.H > MaxGridHeight {
+		out.H = MaxGridHeight
 		clamped = true
 	}
 	if clamped {
@@ -678,74 +807,83 @@ func legendLabelFields(legend string) []string {
 }
 
 var (
-	matchAllNamePattern = regexp.MustCompile(`\{\s*__name__\s*=~\s*"\.[\*\+]"\s*\}`)
-	bareEmptySelector   = regexp.MustCompile(`(^|[^A-Za-z0-9_:\])"'])\{\s*\}`)
-	runScopeMatcher     = regexp.MustCompile(`^\s*(project_id|test_id)\s*=\s*"(\$project_id|\$\{project_id\}|\[\[project_id\]\]|\$test_id|\$\{test_id\}|\[\[test_id\]\])"\s*$`)
+	matchAllNamePattern     = regexp.MustCompile(`\{\s*__name__\s*=~\s*"\.[\*\+]"\s*\}`)
+	bareEmptySelector       = regexp.MustCompile(`(^|[^A-Za-z0-9_:\])"'])\{\s*\}`)
+	runScopeMatcher         = regexp.MustCompile(`^\s*(project_id|test_id)\s*=\s*"(\$project_id|\$\{project_id\}|\[\[project_id\]\]|\$test_id|\$\{test_id\}|\[\[test_id\]\])"\s*$`)
+	resolvedRunScopeMatcher = regexp.MustCompile(`^\s*(project_id|test_id)\s*=\s*"([^"\\]*)"\s*$`)
 )
 
 func hasMatchAllSelector(expr string) bool {
 	return bareEmptySelector.MatchString(expr) || matchAllNamePattern.MatchString(expr)
 }
 
-func hasRunScopeMatcher(expr string) bool {
-	for i := 0; i < len(expr); i++ {
-		if expr[i] == '"' {
-			i = skipPromQLString(expr, i)
-			continue
-		}
-		if expr[i] != '{' {
-			continue
-		}
-		end := selectorEnd(expr, i+1)
-		if end < 0 {
-			return false
-		}
-		for _, matcher := range splitSelectorMatchers(expr[i+1 : end]) {
-			parts := runScopeMatcher.FindStringSubmatch(matcher)
-			if len(parts) != 3 {
-				continue
-			}
-			name := parts[1]
-			token := strings.Trim(parts[2], "${}[]")
-			if token == name {
-				return true
-			}
-		}
-		i = end
-	}
-	return false
-}
-
 // IsRunScopedExpression is the query-time defense for persisted/legacy dashboard
 // rows. Import validation uses the same parser, so storage corruption or an older
 // importer cannot bypass project/run scoping at execution.
 func IsRunScopedExpression(expr string) bool {
-	expr = strings.TrimSpace(expr)
-	if expr == "" || !hasRunScopeMatcher(expr) {
+	return isRunScopedExpression(expr, selectorHasRunScope, true)
+}
+
+// IsRunScopedResolvedExpression validates the concrete PromQL produced after
+// template substitution. Every vector selector must retain an exact matcher for the
+// authorized test or project.
+func IsRunScopedResolvedExpression(expr, testID, projectID string) bool {
+	testID = strings.TrimSpace(testID)
+	projectID = strings.TrimSpace(projectID)
+	if testID == "" && projectID == "" {
 		return false
 	}
+	return isRunScopedExpression(expr, func(selector string) bool {
+		for _, matcher := range splitSelectorMatchers(selector) {
+			parts := resolvedRunScopeMatcher.FindStringSubmatch(matcher)
+			if len(parts) != 3 {
+				continue
+			}
+			if parts[1] == reservedTestID && testID != "" && parts[2] == testID {
+				return true
+			}
+			if parts[1] == reservedProjectID && projectID != "" && parts[2] == projectID {
+				return true
+			}
+		}
+		return false
+	}, false)
+}
+
+func isRunScopedExpression(expr string, selectorScoped func(string) bool, allowTemplateTokens bool) bool {
+	expr = strings.TrimSpace(expr)
+	if expr == "" {
+		return false
+	}
+	sawSelector := false
 	for i := 0; i < len(expr); {
 		switch {
 		case expr[i] == '"':
 			i = skipPromQLString(expr, i) + 1
 		case expr[i] == '{':
 			end := selectorEnd(expr, i+1)
-			if end < 0 || !selectorHasRunScope(expr[i+1:end]) {
+			if end < 0 || !selectorScoped(expr[i+1:end]) {
 				return false
 			}
+			sawSelector = true
 			i = end + 1
 		case expr[i] == '$':
+			if !allowTemplateTokens {
+				return false
+			}
 			end := skipTemplateToken(expr, i)
-			name := templateTokenName(expr[i:end])
-			if !strings.HasPrefix(name, "__") && !tokenIsRangeDuration(expr, i, end) {
+			if end <= i || templateTokenName(expr[i:end]) == "" {
 				return false
 			}
 			i = end
 		case expr[i] == '[' && i+1 < len(expr) && expr[i+1] == '[':
+			if !allowTemplateTokens {
+				return false
+			}
 			if relativeEnd := strings.Index(expr[i+2:], "]]"); relativeEnd >= 0 {
 				end := i + relativeEnd + 4
 				name := strings.TrimSpace(expr[i+2 : end-2])
-				if !strings.HasPrefix(name, "__") {
+				if name == "" {
 					return false
 				}
 				i = end
@@ -767,6 +905,12 @@ func IsRunScopedExpression(expr string) bool {
 				i = end + 1
 				continue
 			}
+			if aggregationKeyword(identifier) {
+				if next < len(expr) && (expr[next] == '(' || followedByGroupingKeyword(expr[next:])) {
+					continue
+				}
+				return false
+			}
 			if promKeyword(identifier) || (next < len(expr) && (expr[next] == '(' || expr[next] == '{')) {
 				continue
 			}
@@ -781,7 +925,7 @@ func IsRunScopedExpression(expr string) bool {
 			i++
 		}
 	}
-	return true
+	return sawSelector
 }
 
 func selectorHasRunScope(selector string) bool {
@@ -823,11 +967,29 @@ func groupingKeyword(identifier string) bool {
 
 func promKeyword(identifier string) bool {
 	switch strings.ToLower(identifier) {
-	case "and", "or", "unless", "bool", "offset", "sum", "min", "max", "avg", "group", "stddev", "stdvar", "count", "count_values", "bottomk", "topk", "quantile", "limitk", "limit_ratio", "atan2", "inf", "nan":
+	case "and", "or", "unless", "bool", "offset", "group_left", "group_right", "atan2", "inf", "nan":
 		return true
 	default:
 		return false
 	}
+}
+
+func aggregationKeyword(identifier string) bool {
+	switch strings.ToLower(identifier) {
+	case "sum", "min", "max", "avg", "group", "stddev", "stdvar", "count", "count_values", "bottomk", "topk", "quantile", "limitk", "limit_ratio":
+		return true
+	default:
+		return false
+	}
+}
+
+func followedByGroupingKeyword(expr string) bool {
+	for _, keyword := range []string{"by", "without"} {
+		if strings.HasPrefix(expr, keyword) && (len(expr) == len(keyword) || !isPromIdentifierPart(expr[len(keyword)])) {
+			return true
+		}
+	}
+	return false
 }
 
 func balancedParenEnd(expr string, open int) int {
@@ -869,15 +1031,6 @@ func templateTokenName(token string) string {
 		return strings.TrimSpace(token[2 : len(token)-1])
 	}
 	return strings.TrimPrefix(token, "$")
-}
-
-func tokenIsRangeDuration(expr string, start, end int) bool {
-	left := start - 1
-	for left >= 0 && (expr[left] == ' ' || expr[left] == '\t' || expr[left] == '\r' || expr[left] == '\n') {
-		left--
-	}
-	right := nextNonSpace(expr, end)
-	return left >= 0 && expr[left] == '[' && right < len(expr) && (expr[right] == ']' || expr[right] == ':')
 }
 
 func skipPromQLString(expr string, quote int) int {
@@ -957,18 +1110,19 @@ func datasourceAllowed(ds datasourceRef, scope, loc, title string, col *diag.Col
 	// Grafana built-in defaults, or an explicit Prometheus type/name.
 	if dsType == "prometheus" || dsType == "" && isDefaultDatasourceName(uidLower) {
 		if dsType == "prometheus" && ds.UID != "" {
-			assumptions["Datasource UIDs are ignored; all panels query the single APEX-configured Prometheus."] = struct{}{}
+			assumptions["Datasource UIDs are retained: direct-Prometheus mode ignores them, while Grafana-proxy mode routes each target by UID."] = struct{}{}
 		}
 		return true
 	}
 	if dsType == "" {
-		// Bare string name that is not a known default: assume Prometheus but note it.
-		assumptions["Named datasources are ignored; all panels query the single APEX-configured Prometheus."] = struct{}{}
+		// Bare string name that is not a known default: retain it as a proxy UID,
+		// while direct-Prometheus mode safely ignores it.
+		assumptions["Named datasource references are retained for Grafana-proxy routing and ignored in direct-Prometheus mode."] = struct{}{}
 		return true
 	}
 	col.Add(diag.Warning, scope+" datasource", panelLocation(loc, title),
-		fmt.Sprintf("datasource type %q is not Prometheus; the panel was excluded", ds.Type))
-	return false
+		fmt.Sprintf("datasource type %q requires the Grafana proxy backend; direct-Prometheus mode will return a panel error", ds.Type))
+	return true
 }
 
 func isDefaultDatasourceName(uidLower string) bool {

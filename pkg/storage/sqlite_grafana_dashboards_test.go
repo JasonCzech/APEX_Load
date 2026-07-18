@@ -31,7 +31,7 @@ func sampleDashboard(id, projectID string) *GrafanaDashboard {
 		ID: id, ProjectID: projectID, Name: "Infra", SourceTitle: "Infra Dashboard",
 		SourceSHA256: "abc123", SchemaVersion: 39, Enabled: true,
 		Panels: []grafana.Panel{{
-			PanelID: 1, Title: "CPU", Kind: grafana.PanelKindLine, Unit: "%",
+			PanelID: 1, Title: "CPU", Kind: grafana.PanelKindLine, Unit: "%", GridPos: grafana.GridPos{W: 12, H: 8},
 			Targets: []grafana.Target{{RefID: "A", Expr: "cpu", LabelFields: []string{"instance"}}},
 		}},
 		Bindings:    map[string]string{"env": "prod"},
@@ -76,6 +76,33 @@ func TestGrafanaDashboardListScopedToProject(t *testing.T) {
 	}
 	if len(listA) != 1 || listA[0].ID != "dash-a" {
 		t.Fatalf("project-a list = %#v, want only dash-a", listA)
+	}
+}
+
+func TestGrafanaDashboardReimportUpdatesExistingSourceUID(t *testing.T) {
+	store := newGrafanaDashboardTestStore(t)
+	first := sampleDashboard("dash-original", "project-a")
+	first.SourceUID = "grafana-uid"
+	first.Description = "curated description"
+	if err := store.SaveGrafanaDashboard(first); err != nil {
+		t.Fatal(err)
+	}
+	second := sampleDashboard("dash-new-random-id", "project-a")
+	second.SourceUID = first.SourceUID
+	second.SourceSHA256 = "new-sha"
+	second.Panels[0].Title = "Updated CPU"
+	if err := store.SaveGrafanaDashboard(second); err != nil {
+		t.Fatal(err)
+	}
+	if second.ID != first.ID {
+		t.Fatalf("reimport id = %q, want %q", second.ID, first.ID)
+	}
+	list, err := store.ListGrafanaDashboards("project-a", 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(list) != 1 || list[0].Panels[0].Title != "Updated CPU" || list[0].Description != "curated description" {
+		t.Fatalf("synced dashboards = %#v", list)
 	}
 }
 
@@ -165,9 +192,27 @@ func TestGrafanaDashboardRejectsInvalidRuntimeShape(t *testing.T) {
 	store := newGrafanaDashboardTestStore(t)
 
 	invalidKind := sampleDashboard("dash-invalid-kind", "project-a")
-	invalidKind.Panels[0].Kind = "table"
+	invalidKind.Panels[0].Kind = "pie"
 	if err := store.SaveGrafanaDashboard(invalidKind); err == nil {
 		t.Fatal("expected unsupported panel kind to be rejected")
+	}
+
+	invalidGrid := sampleDashboard("dash-invalid-grid", "project-a")
+	invalidGrid.Panels[0].GridPos.X = 24
+	if err := store.SaveGrafanaDashboard(invalidGrid); err == nil {
+		t.Fatal("expected invalid grid position to be rejected")
+	}
+
+	invalidThreshold := sampleDashboard("dash-invalid-threshold", "project-a")
+	invalidThreshold.Panels[0].Thresholds = []grafana.PanelThreshold{{Color: "red", Severity: "catastrophic"}}
+	if err := store.SaveGrafanaDashboard(invalidThreshold); err == nil {
+		t.Fatal("expected invalid threshold severity to be rejected")
+	}
+
+	invalidBinding := sampleDashboard("dash-invalid-binding", "project-a")
+	invalidBinding.Bindings = map[string]string{"project_id": "other"}
+	if err := store.SaveGrafanaDashboard(invalidBinding); err == nil {
+		t.Fatal("expected reserved binding to be rejected")
 	}
 
 	tooManyQueries := sampleDashboard("dash-too-many-queries", "project-a")

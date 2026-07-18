@@ -76,9 +76,10 @@ func (s *Server) handlePatchGrafanaDashboard(w http.ResponseWriter, r *http.Requ
 	}
 	expectedUpdatedAt := dashboard.UpdatedAt
 	var patch struct {
-		Name        *string `json:"name"`
-		Description *string `json:"description"`
-		Enabled     *bool   `json:"enabled"`
+		Name        *string            `json:"name"`
+		Description *string            `json:"description"`
+		Enabled     *bool              `json:"enabled"`
+		Bindings    *map[string]string `json:"bindings"`
 	}
 	if !decodeJSONBody(w, r, &patch) {
 		return
@@ -105,6 +106,26 @@ func (s *Server) handlePatchGrafanaDashboard(w http.ResponseWriter, r *http.Requ
 	}
 	if patch.Enabled != nil {
 		dashboard.Enabled = *patch.Enabled
+	}
+	if patch.Bindings != nil {
+		next := make(map[string]string, len(*patch.Bindings))
+		for name, value := range *patch.Bindings {
+			name = strings.TrimSpace(name)
+			if _, declared := dashboard.Bindings[name]; !declared {
+				writeError(w, http.StatusBadRequest, "binding "+name+" is not declared by this dashboard")
+				return
+			}
+			if !grafana.ValidateBindingName(name) || grafana.IsReservedBindingName(name) || !grafana.ValidateBindingValue(value) {
+				writeError(w, http.StatusBadRequest, "binding "+name+" is invalid")
+				return
+			}
+			next[name] = value
+		}
+		if len(next) != len(dashboard.Bindings) {
+			writeError(w, http.StatusBadRequest, "every existing dashboard binding must be supplied")
+			return
+		}
+		dashboard.Bindings = next
 	}
 	updated, err := s.store.UpdateGrafanaDashboardIfUnchanged(dashboard, expectedUpdatedAt)
 	if err != nil {
@@ -174,11 +195,10 @@ func (s *Server) handleQueryGrafanaDashboardPanels(w http.ResponseWriter, r *htt
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	result, failed := s.resolveDashboardResult(r, ds, dashboard, start, end, stepSeconds)
-	if failed {
-		writeError(w, http.StatusBadGateway, "dashboard panels failed to query the datasource")
-		return
-	}
+	// Panel resolution is fail-soft even when every panel fails. Returning the
+	// per-panel diagnostics is the point of the explicit "Test now" workflow; a
+	// generic 502 would hide the broken query or authentication detail.
+	result, _ := s.resolveDashboardResult(r, ds, dashboard, start, end, stepSeconds)
 	resp.Start, resp.End = start, end
 	// Filtering does not resample immutable snapshot points. Preserve the capture's
 	// actual step; use the requested step only for legacy snapshots that omitted it.

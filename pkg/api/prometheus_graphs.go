@@ -288,6 +288,13 @@ func queryPrometheusRange(
 	if err != nil {
 		return nil, err
 	}
+	if strings.TrimSpace(settings.BearerTokenEnvVar) != "" {
+		token := settings.bearerToken()
+		if token == "" {
+			return nil, fmt.Errorf("Prometheus bearer token environment variable %s is not set", settings.BearerTokenEnvVar)
+		}
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err

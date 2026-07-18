@@ -108,21 +108,53 @@ func TestConvertLiftsCollapsedRowChildren(t *testing.T) {
 	}
 }
 
-func TestConvertReportsUnsupportedPanelTypes(t *testing.T) {
+func TestConvertSupportsTableAndHeatmapPanelTypes(t *testing.T) {
 	content := `{"title":"Mixed","schemaVersion":39,"panels":[
 		{"id":1,"type":"timeseries","title":"OK","targets":[{"expr":"up","refId":"A"}]},
 		{"id":2,"type":"table","title":"Grid","targets":[{"expr":"up","refId":"A"}]},
 		{"id":3,"type":"heatmap","title":"Heat","targets":[{"expr":"up","refId":"A"}]}
 	]}`
 	res := mustConvert(t, content)
-	if len(res.Dashboard.Panels) != 1 {
-		t.Fatalf("panels = %d, want 1", len(res.Dashboard.Panels))
+	if len(res.Dashboard.Panels) != 3 {
+		t.Fatalf("panels = %d, want 3", len(res.Dashboard.Panels))
 	}
-	if !hasDiagContaining(res, diag.Warning, `panel type "table" is not supported`) {
-		t.Fatalf("expected table unsupported warning; got %v", res.Unsupported.Strings())
+	if res.Dashboard.Panels[1].Kind != PanelKindTable || res.Dashboard.Panels[2].Kind != PanelKindHeatmap {
+		t.Fatalf("panel kinds = %q, %q", res.Dashboard.Panels[1].Kind, res.Dashboard.Panels[2].Kind)
 	}
-	if len(res.Stats.UnsupportedPanelTypes) != 2 {
-		t.Fatalf("unsupported types = %v, want table+heatmap", res.Stats.UnsupportedPanelTypes)
+	if res.Stats.Tables != 1 || res.Stats.Heatmaps != 1 || len(res.Stats.UnsupportedPanelTypes) != 0 {
+		t.Fatalf("stats = %+v", res.Stats)
+	}
+}
+
+func TestConvertPreservesThresholdsAndWarnsOnDroppedConstructs(t *testing.T) {
+	content := `{"title":"Thresholds","schemaVersion":39,"panels":[{"id":1,"type":"timeseries","title":"CPU","repeat":"pod","links":[{"title":"details"}],"transformations":[{"id":"reduce"}],"fieldConfig":{"defaults":{"thresholds":{"mode":"absolute","steps":[{"color":"red","value":90},{"color":"green","value":null}]},"mappings":[{"type":"value"}]}},"targets":[{"expr":"cpu","refId":"A"}]}]}`
+	res := mustConvert(t, content)
+	if len(res.Dashboard.Panels) != 1 || len(res.Dashboard.Panels[0].Thresholds) != 2 {
+		t.Fatalf("thresholds = %#v", res.Dashboard.Panels)
+	}
+	steps := res.Dashboard.Panels[0].Thresholds
+	if steps[0].Value != nil || steps[0].Severity != "normal" || steps[1].Value == nil || *steps[1].Value != 90 || steps[1].Severity != "critical" {
+		t.Fatalf("sorted threshold steps = %#v", steps)
+	}
+	for _, phrase := range []string{"panel.repeat", "links", "value mappings", "transformations"} {
+		if !hasDiagContaining(res, diag.Warning, phrase) && !hasDiagContaining(res, diag.Info, phrase) {
+			t.Fatalf("missing diagnostic %q in %v", phrase, res.Unsupported.Strings())
+		}
+	}
+}
+
+func TestConvertThresholdSortHandlesDuplicateBaseSteps(t *testing.T) {
+	res := mustConvert(t, `{"title":"Thresholds","schemaVersion":39,"panels":[{"id":1,"type":"timeseries","fieldConfig":{"defaults":{"thresholds":{"mode":"absolute","steps":[{"color":"green","value":null},{"color":"blue","value":null},{"color":"red","value":90}]}}},"targets":[{"expr":"cpu","refId":"A"}]}]}`)
+	steps := res.Dashboard.Panels[0].Thresholds
+	if len(steps) != 3 || steps[0].Value != nil || steps[1].Value != nil || steps[2].Value == nil || *steps[2].Value != 90 {
+		t.Fatalf("sorted duplicate base threshold steps = %#v", steps)
+	}
+}
+
+func TestConvertWarnsWhenThresholdColorHasNoSLAMapping(t *testing.T) {
+	res := mustConvert(t, `{"title":"Thresholds","schemaVersion":39,"panels":[{"id":1,"type":"timeseries","fieldConfig":{"defaults":{"thresholds":{"mode":"absolute","steps":[{"color":"#f2495c","value":90}]}}},"targets":[{"expr":"cpu","refId":"A"}]}]}`)
+	if !hasDiagContaining(res, diag.Warning, "no SLA severity mapping") || res.Dashboard.Panels[0].Thresholds[0].Severity != "unknown" {
+		t.Fatalf("threshold diagnostics=%v steps=%#v", res.Unsupported.Strings(), res.Dashboard.Panels[0].Thresholds)
 	}
 }
 
@@ -187,21 +219,35 @@ func TestConvertBlocksFormatModifier(t *testing.T) {
 	}
 }
 
-func TestConvertExcludesNonPrometheusDatasource(t *testing.T) {
+func TestConvertRetainsNonPrometheusDatasourceForGrafanaProxy(t *testing.T) {
 	content := `{"title":"DS","schemaVersion":39,"panels":[
 		{"id":1,"type":"timeseries","title":"Prom","datasource":{"type":"prometheus","uid":"abc"},"targets":[{"expr":"up","refId":"A"}]},
 		{"id":2,"type":"timeseries","title":"Loki","datasource":{"type":"loki","uid":"xyz"},"targets":[{"expr":"{app=\"x\"}","refId":"A"}]}
 	]}`
 	res := mustConvert(t, content)
-	if len(res.Dashboard.Panels) != 1 || res.Dashboard.Panels[0].Title != "Prom" {
-		t.Fatalf("expected only the Prometheus panel; got %d", len(res.Dashboard.Panels))
+	if len(res.Dashboard.Panels) != 2 || res.Dashboard.Panels[1].Title != "Loki" {
+		t.Fatalf("expected both panels for proxy resolution; got %d", len(res.Dashboard.Panels))
 	}
-	if !hasDiagContaining(res, diag.Warning, `datasource type "loki" is not Prometheus`) {
-		t.Fatalf("expected loki exclusion warning; got %v", res.Unsupported.Strings())
+	if !hasDiagContaining(res, diag.Warning, `requires the Grafana proxy backend`) {
+		t.Fatalf("expected proxy requirement warning; got %v", res.Unsupported.Strings())
 	}
 	// The Prometheus panel's datasource uid is stored for the future proxy backend.
 	if res.Dashboard.Panels[0].DatasourceUID != "abc" {
 		t.Fatalf("datasource uid = %q, want abc", res.Dashboard.Panels[0].DatasourceUID)
+	}
+	if res.Dashboard.Panels[1].DatasourceUID != "xyz" {
+		t.Fatalf("loki datasource uid = %q, want xyz", res.Dashboard.Panels[1].DatasourceUID)
+	}
+}
+
+func TestConvertPreservesPerTargetDatasourceUID(t *testing.T) {
+	content := `{"title":"Mixed","schemaVersion":39,"panels":[{"id":1,"type":"timeseries","title":"Mixed","datasource":{"type":"prometheus","uid":"panel-prom"},"targets":[{"expr":"up","refId":"A"},{"expr":"{project_id=\"$project_id\"}","refId":"B","datasource":{"type":"loki","uid":"target-loki"}}]}]}`
+	res := mustConvert(t, content)
+	if len(res.Dashboard.Panels) != 1 || len(res.Dashboard.Panels[0].Targets) != 2 {
+		t.Fatalf("panels = %#v", res.Dashboard.Panels)
+	}
+	if got := res.Dashboard.Panels[0].Targets[1].DatasourceUID; got != "target-loki" {
+		t.Fatalf("target datasource UID = %q", got)
 	}
 }
 
@@ -274,8 +320,9 @@ func TestConvertRunScopeCannotBeSpoofedInsideAStringOrOtherLabel(t *testing.T) {
 		`up{project_id=~"$project_id"}`,
 		`up{project_id="$test_id"}`,
 		`up{project_id="$project_id"} + secret_metric`,
+		`up{project_id="$project_id"} + sum`,
+		`up{project_id="$project_id"} + min`,
 		`up{project_id="$project_id"} + other{tenant="elsewhere"}`,
-		`up{project_id="$project_id"} + $extra`,
 	} {
 		res, err := Convert(ImportRequest{ProjectID: "project-a", Content: `{"title":"Spoof","schemaVersion":39,"templating":{"list":[{"name":"extra","type":"custom"}]},"panels":[{"id":1,"type":"timeseries","targets":[{"expr":` + fmt.Sprintf("%q", expr) + `}]}]}`})
 		if err != nil {
@@ -284,6 +331,10 @@ func TestConvertRunScopeCannotBeSpoofedInsideAStringOrOtherLabel(t *testing.T) {
 		if !hasBlockerContaining(res, "not run-scoped") {
 			t.Fatalf("spoofed scope %q was accepted: %v", expr, res.Unsupported.Strings())
 		}
+	}
+	withScalarBinding, err := Convert(ImportRequest{ProjectID: "project-a", Content: `{"title":"Scoped variable","schemaVersion":39,"templating":{"list":[{"name":"extra","type":"custom"}]},"panels":[{"id":1,"type":"timeseries","targets":[{"expr":"up{project_id=\"$project_id\"} + $extra"}]}]}`})
+	if err != nil || withScalarBinding.HasBlockers() {
+		t.Fatalf("scoped expression with a resolvable scalar binding rejected: err=%v diagnostics=%v", err, withScalarBinding.Unsupported.Strings())
 	}
 	for _, expr := range []string{
 		`sum by (instance) (rate(http_total{project_id="$project_id"}[$__interval]))`,

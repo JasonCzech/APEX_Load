@@ -26,14 +26,17 @@ type rawDashboard struct {
 }
 
 type rawPanel struct {
-	ID          int             `json:"id"`
-	Type        string          `json:"type"`
-	Title       string          `json:"title"`
-	Datasource  json.RawMessage `json:"datasource"`
-	GridPos     rawGridPos      `json:"gridPos"`
-	Targets     []rawTarget     `json:"targets"`
-	Panels      []rawPanel      `json:"panels"` // children of a collapsed row
-	FieldConfig rawFieldConfig  `json:"fieldConfig"`
+	ID              int               `json:"id"`
+	Type            string            `json:"type"`
+	Title           string            `json:"title"`
+	Datasource      json.RawMessage   `json:"datasource"`
+	GridPos         rawGridPos        `json:"gridPos"`
+	Targets         []rawTarget       `json:"targets"`
+	Panels          []rawPanel        `json:"panels"` // children of a collapsed row
+	FieldConfig     rawFieldConfig    `json:"fieldConfig"`
+	Repeat          json.RawMessage   `json:"repeat"`
+	Links           []json.RawMessage `json:"links"`
+	Transformations []json.RawMessage `json:"transformations"`
 }
 
 type rawGridPos struct {
@@ -56,9 +59,22 @@ type rawTarget struct {
 
 type rawFieldConfig struct {
 	Defaults struct {
-		Unit string `json:"unit"`
+		Unit       string            `json:"unit"`
+		Thresholds rawThresholds     `json:"thresholds"`
+		Mappings   []json.RawMessage `json:"mappings"`
+		Links      []json.RawMessage `json:"links"`
 	} `json:"defaults"`
 	Overrides []rawOverride `json:"overrides"`
+}
+
+type rawThresholds struct {
+	Mode  string             `json:"mode"`
+	Steps []rawThresholdStep `json:"steps"`
+}
+
+type rawThresholdStep struct {
+	Color string   `json:"color"`
+	Value *float64 `json:"value"`
 }
 
 type rawOverride struct {
@@ -79,6 +95,7 @@ type rawVariable struct {
 	Type       string            `json:"type"`
 	Label      string            `json:"label"`
 	Query      json.RawMessage   `json:"query"`
+	Datasource json.RawMessage   `json:"datasource"`
 	Current    rawVariablePick   `json:"current"`
 	Options    []rawVariablePick `json:"options"`
 	Multi      bool              `json:"multi"`

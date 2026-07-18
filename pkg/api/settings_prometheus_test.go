@@ -129,4 +129,7 @@ func TestValidatePrometheusSettings(t *testing.T) {
 	if err := validatePrometheusSettings(PrometheusSettings{Enabled: true, BaseURL: "http://localhost:9090", TimeoutSeconds: 5}); err != nil {
 		t.Fatalf("configured prometheus host should be allowlisted for validation, got: %v", err)
 	}
+	if err := validatePrometheusSettings(PrometheusSettings{Enabled: true, BaseURL: "http://localhost:9090", TimeoutSeconds: 5, BearerTokenEnvVar: "BAD-NAME"}); err == nil {
+		t.Fatal("invalid bearer token environment variable name should fail")
+	}
 }

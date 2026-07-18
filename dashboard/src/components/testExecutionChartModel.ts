@@ -1,7 +1,7 @@
 import { type ComponentProps } from 'react'
 import { LineChart, YAxis } from 'recharts'
 
-import type { ImportedDashboardResult, MetricsHistoryPoint, PrometheusGraph } from '../types'
+import type { ImportedDashboardPanelKind, ImportedDashboardResult, MetricsHistoryPoint, PrometheusGraph } from '../types'
 import {
   isRouteLatencyTotalSeriesKey,
   routeLatencyDetailSeriesKey,
@@ -15,7 +15,7 @@ export interface ImportedPanelRef {
   dashboardId: string
   dashboardTitle: string
   panelId: number
-  kind: 'line' | 'single_value'
+  kind: ImportedDashboardPanelKind
 }
 
 export interface ImportedStatValue {

@@ -177,13 +177,33 @@ export function useSystemApi() {
       request<ImportedDashboardImportReview>('/monitoring/dashboards/import/grafana', { method: 'POST', body: JSON.stringify(payload) }),
     [],
   )
+  const importGrafanaDashboardByUID = useCallback(
+    (payload: { project_id: string; uid: string; name?: string }) =>
+      request<ImportedDashboardImportReview>('/monitoring/dashboards/import/grafana/live', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
   const commitGrafanaDashboardImport = useCallback(
     (payload: { project_id: string; import_session_id: string; name?: string; bindings?: Record<string, string> }) =>
       request<ImportedDashboard>('/monitoring/dashboards/import/grafana/commit', { method: 'POST', body: JSON.stringify(payload) }),
     [],
   )
+  const previewGrafanaDashboardImport = useCallback(
+    (payload: { project_id: string; import_session_id: string; bindings?: Record<string, string>; test_id?: string; start?: string; end?: string; step_seconds?: number }) =>
+      request<ImportedDashboardGraphsResponse>('/monitoring/dashboards/import/grafana/preview', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+  const resolveGrafanaImportLabelValues = useCallback(
+    (payload: { project_id: string; import_session_id: string; variable: string; bindings?: Record<string, string>; test_id?: string }) =>
+      request<{ variable: string; options: string[] }>('/monitoring/dashboards/import/grafana/label-values', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+  const getImportedDashboardPanels = useCallback(
+    (id: string, params: { test_id?: string; start: string; end: string; step_seconds: number }) =>
+      request<ImportedDashboardGraphsResponse>(`/monitoring/dashboards/${encodeURIComponent(id)}/panels${buildQuery(params)}`),
+    [],
+  )
   const patchImportedDashboard = useCallback(
-    (id: string, payload: { name?: string; description?: string; enabled?: boolean }) =>
+    (id: string, payload: { name?: string; description?: string; enabled?: boolean; bindings?: Record<string, string> }) =>
       request<ImportedDashboard>(`/monitoring/dashboards/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(payload) }),
     [],
   )
@@ -276,7 +296,11 @@ export function useSystemApi() {
       getImportedDashboardGraphs,
       listImportedDashboards,
       importGrafanaDashboard,
+      importGrafanaDashboardByUID,
       commitGrafanaDashboardImport,
+      previewGrafanaDashboardImport,
+      resolveGrafanaImportLabelValues,
+      getImportedDashboardPanels,
       patchImportedDashboard,
       deleteImportedDashboard,
       getReportProfiles,
@@ -297,6 +321,6 @@ export function useSystemApi() {
       getSystemSettings,
       updateSystemSettings,
     }),
-    [getAuthEffectiveAccess, getAuthEffectiveAccessForPrincipal, getAuthAccessMatrix, getAuthPolicy, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, onboardAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, revokeAuthUserSessions, deleteAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, getAccessReview, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getConfigDefaults, getSystemInventory, getRestartCapabilities, executeRestart, getSystemReadiness, getSystemServices, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getPrometheusGraphs, getImportedDashboardGraphs, listImportedDashboards, importGrafanaDashboard, commitGrafanaDashboardImport, patchImportedDashboard, deleteImportedDashboard, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, ackFleetAlert, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
+    [getAuthEffectiveAccess, getAuthEffectiveAccessForPrincipal, getAuthAccessMatrix, getAuthPolicy, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, onboardAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, revokeAuthUserSessions, deleteAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, getAccessReview, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getConfigDefaults, getSystemInventory, getRestartCapabilities, executeRestart, getSystemReadiness, getSystemServices, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getPrometheusGraphs, getImportedDashboardGraphs, listImportedDashboards, importGrafanaDashboard, importGrafanaDashboardByUID, commitGrafanaDashboardImport, previewGrafanaDashboardImport, resolveGrafanaImportLabelValues, getImportedDashboardPanels, patchImportedDashboard, deleteImportedDashboard, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, ackFleetAlert, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
   )
 }

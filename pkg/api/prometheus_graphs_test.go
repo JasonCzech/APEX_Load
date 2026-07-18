@@ -384,3 +384,43 @@ func prometheusGraphRequestForTest(start time.Time, end time.Time, stepSeconds i
 	}.Encode()
 	return httptest.NewRequest(http.MethodGet, reqURL, nil)
 }
+
+func TestQueryPrometheusRangeUsesBearerTokenFromEnvironment(t *testing.T) {
+	t.Setenv("APEXLOAD_TEST_PROMETHEUS_TOKEN", "secret-token")
+	var authorization string
+	prom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authorization = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[]}}`))
+	}))
+	defer prom.Close()
+	settings := PrometheusSettings{Enabled: true, BaseURL: prom.URL, TimeoutSeconds: 5, BearerTokenEnvVar: "APEXLOAD_TEST_PROMETHEUS_TOKEN"}
+	start := time.Now().UTC().Add(-time.Minute)
+	if _, err := queryPrometheusRange(context.Background(), prom.Client(), settings, buildPrometheusAllowMap(settings), "up", start, start.Add(time.Minute), 15, maxPrometheusResponseBytes); err != nil {
+		t.Fatal(err)
+	}
+	if authorization != "Bearer secret-token" {
+		t.Fatalf("Authorization = %q", authorization)
+	}
+}
+
+func TestQueryPrometheusRangeFailsClosedWhenBearerTokenEnvironmentIsMissing(t *testing.T) {
+	t.Setenv("APEXLOAD_TEST_MISSING_PROMETHEUS_TOKEN", "")
+	requests := 0
+	prom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer prom.Close()
+	settings := PrometheusSettings{Enabled: true, BaseURL: prom.URL, TimeoutSeconds: 5, BearerTokenEnvVar: "APEXLOAD_TEST_MISSING_PROMETHEUS_TOKEN"}
+	start := time.Now().UTC().Add(-time.Minute)
+	if _, err := queryPrometheusRange(context.Background(), prom.Client(), settings, buildPrometheusAllowMap(settings), "up", start, start.Add(time.Minute), 15, maxPrometheusResponseBytes); err == nil || !strings.Contains(err.Error(), "is not set") {
+		t.Fatalf("missing token error = %v", err)
+	}
+	if requests != 0 {
+		t.Fatalf("unauthenticated requests = %d, want 0", requests)
+	}
+	if _, configured := newPromGraphDataSource(settings).Available(); configured {
+		t.Fatal("datasource reported configured with a missing bearer token")
+	}
+}

@@ -1,7 +1,7 @@
-import { useMemo } from 'react'
-import { CartesianGrid, ComposedChart, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { useMemo, type ReactNode } from 'react'
+import { CartesianGrid, ComposedChart, Line, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 
-import type { PrometheusSeries } from '../types'
+import type { ImportedDashboardPanelKind, ImportedDashboardPanelThreshold, PrometheusSeries } from '../types'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import { prometheusChartData } from './testExecutionChartModel'
 import StatTile from './StatTile'
@@ -11,11 +11,14 @@ const SERIES_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'va
 interface Props {
   title: string
   unit?: string
-  kind: 'line' | 'single_value'
+  kind: ImportedDashboardPanelKind
   series?: PrometheusSeries[]
   value?: number
   error?: string
   height?: number
+  thresholds?: ImportedDashboardPanelThreshold[]
+  baselineSeries?: PrometheusSeries[]
+  baselineValue?: number
 }
 
 // PrometheusPanelCard renders a single resolved imported-dashboard panel — a line
@@ -23,17 +26,66 @@ interface Props {
 // standalone: it reuses the pure prometheusChartData pivot and the shared tooltip theme
 // but does NOT import TestExecutionCharts, so the static results surfaces stay clear of
 // that component's live zoom/cursor state and its bundle weight.
-export default function PrometheusPanelCard({ title, unit, kind, series = [], value, error, height = 200 }: Props) {
+export default function PrometheusPanelCard({ title, unit, kind, series = [], value, error, height = 200, thresholds = [], baselineSeries = [], baselineValue }: Props) {
+  const combinedSeries = useMemo(() => {
+    if (baselineSeries.length === 0 || series.length === 0) return series
+    const earliest = (items: PrometheusSeries[]) => items.reduce((minimum, item) => item.values.reduce((valueMinimum, point) => Math.min(valueMinimum, point.timestamp_ms), minimum), Number.POSITIVE_INFINITY)
+    const currentStart = earliest(series)
+    const baselineStart = earliest(baselineSeries)
+    const delta = Number.isFinite(currentStart) && Number.isFinite(baselineStart) ? currentStart - baselineStart : 0
+    return [...series, ...baselineSeries.map(item => ({ ...item, key: `${item.key}__baseline`, label: `Baseline ${item.label}`, values: item.values.map(point => ({ ...point, timestamp_ms: point.timestamp_ms + delta, timestamp: new Date(point.timestamp_ms + delta).toISOString() })) }))]
+  }, [baselineSeries, series])
   const rows = useMemo(
-    () => (kind === 'line' ? prometheusChartData({ id: title, title, unit, series }) : []),
-    [kind, series, title, unit],
+    () => (kind === 'line' ? prometheusChartData({ id: title, title, unit, series: combinedSeries }) : []),
+    [combinedSeries, kind, title, unit],
   )
 
   if (kind === 'single_value') {
+    const active = typeof value === 'number'
+      ? thresholds.filter(step => step.value === undefined || value >= step.value).slice(-1)[0]
+      : undefined
+    const sparkline = series.flatMap(item => item.values.map(point => point.value)).slice(-120)
     return (
       <div className="imported-panel-card imported-panel-card-tile">
-        <StatTile title={title} value={value} unit={unit} error={error} />
+        <StatTile title={title} value={value} unit={unit} error={error} sparkline={sparkline} tone={active?.severity} baselineValue={baselineValue} />
       </div>
+    )
+  }
+
+  if (kind === 'table') {
+    return (
+      <PanelShell title={title} unit={unit} error={error} empty={series.length === 0}>
+        <div className="imported-panel-table-wrap">
+          <table className="imported-panel-table">
+            <thead><tr><th>Series</th><th>Latest</th><th>Time</th></tr></thead>
+            <tbody>{series.map(item => {
+              const latest = item.values[item.values.length - 1]
+              return <tr key={item.key}><td>{item.label || item.key}</td><td>{latest ? `${latest.value}${unit ? ` ${unit}` : ''}` : '—'}</td><td>{latest ? new Date(latest.timestamp_ms).toLocaleString() : '—'}</td></tr>
+            })}</tbody>
+          </table>
+        </div>
+      </PanelShell>
+    )
+  }
+
+  if (kind === 'heatmap') {
+    const heatSeries = series.slice(0, 20)
+    const values = heatSeries.flatMap(item => item.values.slice(-60).map(point => point.value))
+    const minValue = values.length ? Math.min(...values) : 0
+    const maxValue = values.length ? Math.max(...values) : 0
+    return (
+      <PanelShell title={title} unit={unit} error={error} empty={values.length === 0}>
+        <div className="imported-panel-heatmap" role="img" aria-label={`${title} heatmap`}>
+          {heatSeries.map(item => (
+            <div className="imported-panel-heatmap-row" key={item.key} title={item.label || item.key}>
+              {item.values.slice(-60).map(point => {
+                const intensity = maxValue === minValue ? 0.5 : (point.value - minValue) / (maxValue - minValue)
+                return <span key={point.timestamp_ms} title={`${item.label || item.key}: ${point.value}${unit ? ` ${unit}` : ''}`} style={{ opacity: 0.18 + intensity * 0.82 }} />
+              })}
+            </div>
+          ))}
+        </div>
+      </PanelShell>
     )
   }
 
@@ -54,17 +106,21 @@ export default function PrometheusPanelCard({ title, unit, kind, series = [], va
             <XAxis dataKey="time" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} minTickGap={40} />
             <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} width={52} />
             <Tooltip contentStyle={chartTooltipContentStyle} labelStyle={chartTooltipLabelStyle} />
-            {series.map((s, index) => (
+            {thresholds.filter(step => step.value !== undefined).map((step, index) => (
+              <ReferenceLine key={`${step.value}-${index}`} y={step.value} stroke={step.severity === 'critical' ? 'var(--danger)' : step.severity === 'warning' ? 'var(--warning)' : step.severity === 'normal' ? 'var(--success)' : 'var(--text-muted)'} strokeDasharray="5 4" label={{ value: `${step.value}${unit ? ` ${unit}` : ''}`, fill: 'var(--text-muted)', fontSize: 10 }} />
+            ))}
+            {combinedSeries.map((s, index) => (
               <Line
                 key={s.key}
                 type="monotone"
                 dataKey={s.key}
                 name={s.label || s.key}
-                stroke={SERIES_COLORS[index % SERIES_COLORS.length]}
+                stroke={SERIES_COLORS[(s.key.endsWith('__baseline') ? Math.max(0, index - series.length) : index) % SERIES_COLORS.length]}
                 dot={false}
                 strokeWidth={1.5}
                 isAnimationActive={false}
                 connectNulls={false}
+                strokeDasharray={s.key.endsWith('__baseline') ? '5 4' : undefined}
               />
             ))}
           </ComposedChart>
@@ -72,4 +128,11 @@ export default function PrometheusPanelCard({ title, unit, kind, series = [], va
       )}
     </div>
   )
+}
+
+function PanelShell({ title, unit, error, empty, children }: { title: string; unit?: string; error?: string; empty: boolean; children: ReactNode }) {
+  return <div className="imported-panel-card">
+    <div className="imported-panel-card-header"><span className="imported-panel-card-title">{title}</span>{unit ? <span className="imported-panel-card-unit">{unit}</span> : null}</div>
+    {error ? <div className="chart-empty-state chart-error-state" role="status">{error}</div> : empty ? <div className="chart-empty-state" role="status">No data in this window</div> : children}
+  </div>
 }

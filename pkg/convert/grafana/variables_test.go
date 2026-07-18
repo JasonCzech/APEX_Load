@@ -16,6 +16,16 @@ func TestResolvePanelExprBuiltins(t *testing.T) {
 	}
 }
 
+func TestResolvePanelExprAutoIntervalVariableUsesComputedStep(t *testing.T) {
+	got, err := ResolvePanelExpr("rate(x[$__auto_interval_window])", QueryResolution{StepSeconds: 17, RangeSeconds: 300})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "rate(x[17s])" {
+		t.Fatalf("resolved expression = %q", got)
+	}
+}
+
 func TestResolvePanelExprRateInterval(t *testing.T) {
 	q := QueryResolution{StepSeconds: 5, RangeSeconds: 60}
 	got, err := ResolvePanelExpr("rate(x[$__rate_interval])", q)
@@ -41,6 +51,32 @@ func TestResolvePanelExprReservedAndUserBindings(t *testing.T) {
 	}
 	if got != `http_requests_total{test_id="run-123",env="prod"}` {
 		t.Fatalf("got %q", got)
+	}
+}
+
+func TestRunScopedExpressionAllowsResolvableUserVariables(t *testing.T) {
+	expr := `http_requests_total{project_id="$project_id",env="$env"}`
+	if !IsRunScopedExpression(expr) {
+		t.Fatalf("expected user-bound expression to retain project scope")
+	}
+	resolved, err := ResolvePanelExpr(expr, QueryResolution{ProjectID: "project-a", Bindings: map[string]string{"env": "prod"}})
+	if err != nil || strings.Contains(resolved, "$") {
+		t.Fatalf("resolved=%q err=%v", resolved, err)
+	}
+}
+
+func TestRunScopedResolvedExpressionRequiresAuthorizedLiteralOnEverySelector(t *testing.T) {
+	if !IsRunScopedResolvedExpression(`up{project_id="project-a",env="prod"}`, "", "project-a") {
+		t.Fatal("expected concrete authorized project matcher to be accepted")
+	}
+	for _, expr := range []string{
+		`up{project_id="project-b"}`,
+		`up{project_id="project-a"} + secret_metric`,
+		`up{project_id="project-a"} + other{project_id="project-b"}`,
+	} {
+		if IsRunScopedResolvedExpression(expr, "", "project-a") {
+			t.Fatalf("resolved expression %q unexpectedly accepted", expr)
+		}
 	}
 }
 

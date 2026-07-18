@@ -17,15 +17,19 @@ import (
 // that panel's query failed — the resolve is fail-soft so one bad panel never blanks
 // the whole dashboard.
 type DashboardPanel struct {
-	PanelID  int                `json:"panel_id"`
-	Title    string             `json:"title"`
-	Kind     string             `json:"kind"`
-	Unit     string             `json:"unit,omitempty"`
-	GridPos  grafana.GridPos    `json:"grid_pos"`
-	RowTitle string             `json:"row_title,omitempty"`
-	Series   []PrometheusSeries `json:"series,omitempty"`
-	Value    *float64           `json:"value,omitempty"`
-	Error    string             `json:"error,omitempty"`
+	PanelID            int                      `json:"panel_id"`
+	Title              string                   `json:"title"`
+	Kind               string                   `json:"kind"`
+	Unit               string                   `json:"unit,omitempty"`
+	GridPos            grafana.GridPos          `json:"grid_pos"`
+	RowTitle           string                   `json:"row_title,omitempty"`
+	Series             []PrometheusSeries       `json:"series,omitempty"`
+	Value              *float64                 `json:"value,omitempty"`
+	Error              string                   `json:"error,omitempty"`
+	Thresholds         []grafana.PanelThreshold `json:"thresholds,omitempty"`
+	ThresholdEvaluated bool                     `json:"threshold_evaluated,omitempty"`
+	ThresholdBreached  bool                     `json:"threshold_breached,omitempty"`
+	ThresholdDetail    string                   `json:"threshold_detail,omitempty"`
 }
 
 // DashboardPanelsResult is the resolved-panel set for one dashboard over a window.
@@ -118,12 +122,13 @@ func resolveOnePanel(
 	bytesUsed *atomic.Int64,
 ) DashboardPanel {
 	result := DashboardPanel{
-		PanelID:  panel.PanelID,
-		Title:    panel.Title,
-		Kind:     panel.Kind,
-		Unit:     panel.Unit,
-		GridPos:  panel.GridPos,
-		RowTitle: panel.RowTitle,
+		PanelID:    panel.PanelID,
+		Title:      panel.Title,
+		Kind:       panel.Kind,
+		Unit:       panel.Unit,
+		GridPos:    panel.GridPos,
+		RowTitle:   panel.RowTitle,
+		Thresholds: panel.Thresholds,
 	}
 	keyPrefix := dashboardPanelKeyPrefix(plan.dashboardID, panel.PanelID)
 	allSeries := make([]PrometheusSeries, 0, len(panel.Targets))
@@ -138,6 +143,14 @@ func resolveOnePanel(
 			result.Error = dashboardPanelError(err)
 			return result
 		}
+		// A binding is deliberately constrained to a small character set, but some
+		// combinations (for example "foo+bar" in a scalar position) can still alter
+		// PromQL structure. Re-parse the concrete expression so a safe stored template
+		// cannot turn into an unscoped selector after substitution.
+		if (strings.TrimSpace(resolution.ProjectID) != "" || strings.TrimSpace(resolution.TestID) != "") && !grafana.IsRunScopedResolvedExpression(expr, resolution.TestID, resolution.ProjectID) {
+			result.Error = "resolved query is not run-scoped and was blocked before datasource execution"
+			return result
+		}
 		remainingSeries := maxDashboardSeriesPerPanel - seriesUsed
 		if remainingSeries <= 0 {
 			result.Error = fmt.Sprintf("panel exceeded its aggregate series limit of %d", maxDashboardSeriesPerPanel)
@@ -145,7 +158,7 @@ func resolveOnePanel(
 		}
 		series, err := ds.QueryRange(ctx, graphRangeQuery{
 			Expr:            expr,
-			DatasourceUID:   panel.DatasourceUID,
+			DatasourceUID:   firstNonEmptyString(target.DatasourceUID, panel.DatasourceUID),
 			Start:           plan.start,
 			End:             plan.end,
 			StepSeconds:     plan.stepSeconds,
@@ -184,10 +197,55 @@ func resolveOnePanel(
 			return result
 		}
 		result.Value = latestSeriesValue(allSeries)
+		// Retain a bounded tail for the stat-tile sparkline. Query/resource budgets
+		// were already enforced above; trimming here also keeps terminal snapshots
+		// compact without issuing a second datasource request.
+		result.Series = trimPrometheusSeriesTail(allSeries, 120)
 	} else {
 		result.Series = allSeries
 	}
+	result.ThresholdEvaluated, result.ThresholdBreached, result.ThresholdDetail = evaluatePanelThresholds(panel.Thresholds, allSeries)
 	return result
+}
+
+func evaluatePanelThresholds(thresholds []grafana.PanelThreshold, series []PrometheusSeries) (bool, bool, string) {
+	if len(thresholds) == 0 {
+		return false, false, ""
+	}
+	evaluated := false
+	for _, item := range series {
+		for _, point := range item.Values {
+			evaluated = true
+			var active *grafana.PanelThreshold
+			for _, step := range thresholds {
+				if step.Value == nil || point.Value >= *step.Value {
+					stepCopy := step
+					active = &stepCopy
+				}
+			}
+			if active != nil && active.Severity == "critical" {
+				return true, true, fmt.Sprintf("%s entered critical threshold range at %g", item.Label, point.Value)
+			}
+		}
+	}
+	return evaluated, false, ""
+}
+
+func trimPrometheusSeriesTail(series []PrometheusSeries, limit int) []PrometheusSeries {
+	if limit <= 0 || len(series) == 0 {
+		return nil
+	}
+	out := make([]PrometheusSeries, len(series))
+	for i, item := range series {
+		out[i] = item
+		out[i].Labels = cloneStringMap(item.Labels)
+		start := 0
+		if len(item.Values) > limit {
+			start = len(item.Values) - limit
+		}
+		out[i].Values = append([]PrometheusPoint(nil), item.Values[start:]...)
+	}
+	return out
 }
 
 func dashboardPanelError(err error) string {
@@ -233,13 +291,14 @@ func reservePoints(used *atomic.Int64, points, limit int64) bool {
 
 func failedPanel(panel grafana.Panel, msg string) DashboardPanel {
 	return DashboardPanel{
-		PanelID:  panel.PanelID,
-		Title:    panel.Title,
-		Kind:     panel.Kind,
-		Unit:     panel.Unit,
-		GridPos:  panel.GridPos,
-		RowTitle: panel.RowTitle,
-		Error:    msg,
+		PanelID:    panel.PanelID,
+		Title:      panel.Title,
+		Kind:       panel.Kind,
+		Unit:       panel.Unit,
+		GridPos:    panel.GridPos,
+		RowTitle:   panel.RowTitle,
+		Thresholds: panel.Thresholds,
+		Error:      msg,
 	}
 }
 

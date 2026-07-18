@@ -20,6 +20,15 @@ type trackingGraphDataSource struct {
 	maximum atomic.Int64
 }
 
+type queryCaptureDataSource struct{ queries []graphRangeQuery }
+
+func (d *queryCaptureDataSource) ID() string              { return "capture" }
+func (d *queryCaptureDataSource) Available() (bool, bool) { return true, true }
+func (d *queryCaptureDataSource) QueryRange(_ context.Context, query graphRangeQuery) ([]PrometheusSeries, error) {
+	d.queries = append(d.queries, query)
+	return []PrometheusSeries{{Key: query.SeriesKeyPrefix, Values: []PrometheusPoint{{Value: 1}}}}, nil
+}
+
 func (d *trackingGraphDataSource) ID() string              { return "tracking" }
 func (d *trackingGraphDataSource) Available() (bool, bool) { return true, true }
 func (d *trackingGraphDataSource) QueryRange(context.Context, graphRangeQuery) ([]PrometheusSeries, error) {
@@ -204,8 +213,8 @@ func TestResolveDashboardPanelsSingleValueTile(t *testing.T) {
 	if *panels[0].Value != 9 {
 		t.Fatalf("tile value = %v, want newest sample 9", *panels[0].Value)
 	}
-	if len(panels[0].Series) != 0 {
-		t.Fatalf("tile must not carry series")
+	if len(panels[0].Series) != 1 || len(panels[0].Series[0].Values) != 2 {
+		t.Fatalf("tile sparkline series = %#v", panels[0].Series)
 	}
 }
 
@@ -226,6 +235,19 @@ func TestResolveDashboardPanelsRejectsAmbiguousSingleValueSeries(t *testing.T) {
 	})
 	if len(panels) != 1 || !strings.Contains(panels[0].Error, "multiple series") || panels[0].Value != nil {
 		t.Fatalf("ambiguous tile = %#v, want explicit error", panels)
+	}
+}
+
+func TestEvaluatePanelThresholdsMarksCriticalRange(t *testing.T) {
+	warn := 70.0
+	critical := 90.0
+	evaluated, breached, detail := evaluatePanelThresholds([]grafana.PanelThreshold{
+		{Value: nil, Severity: "normal"},
+		{Value: &warn, Severity: "warning"},
+		{Value: &critical, Severity: "critical"},
+	}, []PrometheusSeries{{Label: "api-1", Values: []PrometheusPoint{{Value: 75}, {Value: 91}}}})
+	if !evaluated || !breached || !strings.Contains(detail, "api-1") {
+		t.Fatalf("evaluated=%t breached=%t detail=%q", evaluated, breached, detail)
 	}
 }
 
@@ -274,6 +296,42 @@ func TestResolveDashboardPanelsBlocksLegacyUnscopedStoredQuery(t *testing.T) {
 	}
 	if queries != 0 {
 		t.Fatalf("datasource received %d queries, want zero", queries)
+	}
+}
+
+func TestResolveDashboardPanelsRevalidatesScopeAfterBindingSubstitution(t *testing.T) {
+	now := time.Date(2026, time.June, 12, 14, 0, 0, 0, time.UTC)
+	queries := 0
+	ds, closeFn := newDashboardTestDataSource(t, func(w http.ResponseWriter, r *http.Request) {
+		queries++
+		_, _ = w.Write([]byte(fakePromMatrix()))
+	})
+	defer closeFn()
+	panels := resolveDashboardPanels(context.Background(), ds, dashboardResolvePlan{
+		dashboardID: "bound", panels: []grafana.Panel{linePanel(1, "Unsafe binding", `up{project_id="$project_id"} + $extra`)},
+		resolution: grafana.QueryResolution{ProjectID: "project-a", Bindings: map[string]string{"extra": "foo+bar"}},
+		start:      now, end: now.Add(time.Minute), stepSeconds: 15, perQueryTimeoutSeconds: 5,
+	})
+	if len(panels) != 1 || !strings.Contains(panels[0].Error, "resolved query is not run-scoped") {
+		t.Fatalf("expected structurally unsafe binding to be blocked, got %#v", panels)
+	}
+	if queries != 0 {
+		t.Fatalf("datasource received %d queries, want zero", queries)
+	}
+}
+
+func TestResolveDashboardPanelsUsesPerTargetDatasourceUID(t *testing.T) {
+	now := time.Date(2026, time.June, 12, 14, 0, 0, 0, time.UTC)
+	ds := &queryCaptureDataSource{}
+	panel := linePanel(1, "Mixed", `up{project_id="$project_id"}`)
+	panel.DatasourceUID = "panel-default"
+	panel.Targets[0].DatasourceUID = "target-override"
+	panels := resolveDashboardPanels(context.Background(), ds, dashboardResolvePlan{
+		dashboardID: "routed", panels: []grafana.Panel{panel}, resolution: grafana.QueryResolution{ProjectID: "project-a"},
+		start: now, end: now.Add(time.Minute), stepSeconds: 15, perQueryTimeoutSeconds: 5,
+	})
+	if len(panels) != 1 || panels[0].Error != "" || len(ds.queries) != 1 || ds.queries[0].DatasourceUID != "target-override" {
+		t.Fatalf("panels=%#v queries=%#v", panels, ds.queries)
 	}
 }
 

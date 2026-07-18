@@ -36,6 +36,7 @@ type SystemSettings struct {
 	Auth             AuthSettings             `json:"auth"`
 	GitHub           GitHubSettings           `json:"github"`
 	Prometheus       PrometheusSettings       `json:"prometheus"`
+	Grafana          GrafanaSettings          `json:"grafana"`
 	ClientApp        ClientAppSettings        `json:"client_app"`
 	ClientDownloads  ClientDownloadsSettings  `json:"client_downloads"`
 	ScriptImports    ScriptImportSettings     `json:"script_imports"`
@@ -76,9 +77,42 @@ type GitHubSettings struct {
 }
 
 type PrometheusSettings struct {
-	Enabled        bool   `json:"enabled"`
-	BaseURL        string `json:"base_url,omitempty"`
-	TimeoutSeconds int    `json:"timeout_seconds,omitempty"`
+	Enabled           bool   `json:"enabled"`
+	BaseURL           string `json:"base_url,omitempty"`
+	TimeoutSeconds    int    `json:"timeout_seconds,omitempty"`
+	BearerTokenEnvVar string `json:"bearer_token_env_var,omitempty"`
+	AllowLabelValues  bool   `json:"allow_label_values"`
+}
+
+type GrafanaSettings struct {
+	Enabled                   bool   `json:"enabled"`
+	BaseURL                   string `json:"base_url,omitempty"`
+	ServiceAccountTokenEnvVar string `json:"service_account_token_env_var,omitempty"`
+	TimeoutSeconds            int    `json:"timeout_seconds,omitempty"`
+}
+
+func normalizeGrafanaSettings(in GrafanaSettings) GrafanaSettings {
+	in.BaseURL = strings.TrimRight(strings.TrimSpace(in.BaseURL), "/")
+	in.ServiceAccountTokenEnvVar = strings.TrimSpace(in.ServiceAccountTokenEnvVar)
+	if in.TimeoutSeconds == 0 {
+		in.TimeoutSeconds = 10
+	}
+	return in
+}
+
+func (g GrafanaSettings) token() string {
+	if strings.TrimSpace(g.ServiceAccountTokenEnvVar) == "" {
+		return ""
+	}
+	return strings.TrimSpace(envValue(g.ServiceAccountTokenEnvVar))
+}
+
+func (g GrafanaSettings) allowlistHosts() []string {
+	parsed, err := url.Parse(strings.TrimSpace(g.BaseURL))
+	if err != nil || parsed.Hostname() == "" {
+		return nil
+	}
+	return []string{parsed.Hostname()}
 }
 
 type ClientAppSettings struct {
@@ -169,6 +203,7 @@ func normalizePrometheusSettings(in PrometheusSettings) PrometheusSettings {
 	defaults := defaultPrometheusSettings()
 	out := in
 	out.BaseURL = strings.TrimRight(strings.TrimSpace(out.BaseURL), "/")
+	out.BearerTokenEnvVar = strings.TrimSpace(out.BearerTokenEnvVar)
 	if out.BaseURL == "" && defaults.BaseURL != "" {
 		out.BaseURL = defaults.BaseURL
 	}
@@ -176,6 +211,30 @@ func normalizePrometheusSettings(in PrometheusSettings) PrometheusSettings {
 		out.TimeoutSeconds = defaults.TimeoutSeconds
 	}
 	return out
+}
+
+// bearerToken resolves the Prometheus credential at request time. Only the
+// environment-variable name is persisted in system settings; the secret value never
+// crosses the settings API or a durable storage boundary.
+func (p PrometheusSettings) bearerToken() string {
+	if strings.TrimSpace(p.BearerTokenEnvVar) == "" {
+		return ""
+	}
+	return strings.TrimSpace(envValue(p.BearerTokenEnvVar))
+}
+
+func validSecretEnvVarName(name string) bool {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return true
+	}
+	for i, r := range name {
+		if (r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z') || r == '_' || (i > 0 && r >= '0' && r <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // rawJSONHasKey reports whether the top-level JSON object in raw contains key.
@@ -593,6 +652,7 @@ func defaultSystemSettings(maxConcurrent int) SystemSettings {
 		Auth:             defaultAuthSettings(),
 		GitHub:           defaultGitHubSettings(),
 		Prometheus:       defaultPrometheusSettings(),
+		Grafana:          normalizeGrafanaSettings(GrafanaSettings{}),
 		ClientApp:        defaultClientAppSettings(),
 		ClientDownloads:  defaultClientDownloadsSettings(),
 		ScriptImports:    ScriptImportSettings{},
@@ -662,6 +722,7 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 		out.GitHub.Scopes = append([]string(nil), in.GitHub.Scopes...)
 	}
 	out.Prometheus = in.Prometheus
+	out.Grafana = in.Grafana
 	out.ClientApp = in.ClientApp
 	out.ClientDownloads = in.ClientDownloads
 	out.ScriptImports = in.ScriptImports
@@ -710,6 +771,7 @@ func normalizeLoadedSystemSettings(in SystemSettings, defaultMaxConcurrent int) 
 	out.Auth = normalizeAuthSettings(out.Auth)
 	out.GitHub = normalizeGitHubSettings(out.GitHub)
 	out.Prometheus = normalizePrometheusSettings(out.Prometheus)
+	out.Grafana = normalizeGrafanaSettings(out.Grafana)
 	out.ClientApp = normalizeClientAppSettings(out.ClientApp)
 	out.ClientDownloads = normalizeClientDownloadsSettings(out.ClientDownloads)
 
@@ -862,8 +924,41 @@ func validateSystemSettings(settings SystemSettings) error {
 	if err := validatePrometheusSettings(settings.Prometheus); err != nil {
 		return err
 	}
+	if err := validateGrafanaSettings(settings.Grafana); err != nil {
+		return err
+	}
 	if err := validateClientAppSettings(settings.ClientApp); err != nil {
 		return err
+	}
+	return nil
+}
+
+func validateGrafanaSettings(settings GrafanaSettings) error {
+	settings = normalizeGrafanaSettings(settings)
+	if settings.TimeoutSeconds <= 0 || settings.TimeoutSeconds > 60 {
+		return fmt.Errorf("grafana.timeout_seconds must be between 1 and 60")
+	}
+	if !validSecretEnvVarName(settings.ServiceAccountTokenEnvVar) {
+		return fmt.Errorf("grafana.service_account_token_env_var must be a valid environment variable name")
+	}
+	if !settings.Enabled {
+		return nil
+	}
+	if settings.BaseURL == "" || settings.ServiceAccountTokenEnvVar == "" {
+		return fmt.Errorf("grafana.base_url and grafana.service_account_token_env_var are required when grafana is enabled")
+	}
+	allow := map[string]struct{}{}
+	for _, host := range settings.allowlistHosts() {
+		allow[strings.ToLower(host)] = struct{}{}
+	}
+	if err := validateOutboundURLAllowingHosts(settings.BaseURL, allow); err != nil {
+		return fmt.Errorf("grafana.base_url %w", err)
+	}
+	if productionMode() {
+		parsed, _ := url.Parse(settings.BaseURL)
+		if parsed == nil || parsed.Scheme != "https" {
+			return fmt.Errorf("grafana.base_url must use https in production")
+		}
 	}
 	return nil
 }
@@ -879,6 +974,9 @@ func validateClientAppSettings(settings ClientAppSettings) error {
 
 func validatePrometheusSettings(settings PrometheusSettings) error {
 	normalized := normalizePrometheusSettings(settings)
+	if !validSecretEnvVarName(normalized.BearerTokenEnvVar) {
+		return fmt.Errorf("prometheus.bearer_token_env_var must be a valid environment variable name")
+	}
 	if normalized.TimeoutSeconds <= 0 {
 		return fmt.Errorf("prometheus.timeout_seconds must be > 0")
 	}
@@ -900,6 +998,12 @@ func validatePrometheusSettings(settings PrometheusSettings) error {
 	}
 	if err := validateOutboundURLAllowingHosts(normalized.BaseURL, allow); err != nil {
 		return fmt.Errorf("prometheus.base_url %w", err)
+	}
+	if normalized.BearerTokenEnvVar != "" && productionMode() {
+		parsed, _ := url.Parse(normalized.BaseURL)
+		if parsed == nil || !strings.EqualFold(parsed.Scheme, "https") {
+			return fmt.Errorf("prometheus.base_url must use https when bearer authentication is configured in production")
+		}
 	}
 	return nil
 }
@@ -1592,6 +1696,7 @@ func (tr *TestRunner) updateSystemSettings(settings SystemSettings, expectedRevi
 	normalized.ArchiveRetention = normalizeArchiveRetentionSettings(normalized.ArchiveRetention)
 	normalized.Auth = normalizeAuthSettings(normalized.Auth)
 	normalized.Prometheus = normalizePrometheusSettings(normalized.Prometheus)
+	normalized.Grafana = normalizeGrafanaSettings(normalized.Grafana)
 	normalized.ClientApp = normalizeClientAppSettings(normalized.ClientApp)
 	normalized.ClientDownloads = normalizeClientDownloadsSettings(normalized.ClientDownloads)
 	if err := validateSystemSettings(normalized); err != nil {

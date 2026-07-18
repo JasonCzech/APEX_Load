@@ -83,15 +83,6 @@ func (tr *TestRunner) finalizeRunArchiveDurablyUnderFence(ctx context.Context, t
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	snapshotCtx, cancelSnapshot := context.WithTimeout(ctx, importedDashboardSnapshotTimeout)
-	// Best-effort: the imported-dashboard snapshot is a secondary observability
-	// artifact and must never gate archive publication. A failure here (a storage
-	// hiccup, a marshal error) is logged and swallowed so the run's archive still
-	// finalizes; Prometheus outages are already handled per-panel inside the capture.
-	if err := tr.captureImportedDashboardSnapshot(snapshotCtx, test, record.CompletedAt); err != nil {
-		slog.Warn("archive finalization: imported dashboard snapshot capture failed", "test", test.ID, "err", err)
-	}
-	cancelSnapshot()
 	recordCopy := *record
 	job := &storage.ArchiveFinalizationJob{
 		TestID:           strings.TrimSpace(test.ID),
@@ -220,6 +211,23 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderFence(ctx context.Contex
 		return fmt.Errorf("test %s is unavailable for archive finalization", job.TestID)
 	}
 
+	snapshotRetryNeeded := false
+	snapshotCtx, cancelSnapshot := context.WithTimeout(ctx, importedDashboardSnapshotTimeout)
+	snapshotErr := tr.captureImportedDashboardSnapshotAttempt(snapshotCtx, test, job.ArchiveRecord.CompletedAt, strings.TrimSpace(job.RefreshToken) != "" && job.Attempts >= 2)
+	cancelSnapshot()
+	if snapshotErr != nil {
+		if strings.TrimSpace(job.RefreshToken) != "" {
+			return fmt.Errorf("capture imported dashboard snapshot: %w", snapshotErr)
+		}
+		snapshotRetryNeeded = true
+		slog.Warn("archive finalization: imported dashboard snapshot deferred to durable backfill", "test", test.ID, "err", snapshotErr)
+	} else if err := tr.applyImportedDashboardThresholdVerdict(test); err != nil {
+		return fmt.Errorf("apply imported dashboard threshold verdict: %w", err)
+	}
+	if strings.TrimSpace(job.RefreshToken) != "" && job.Attempts >= 2 {
+		slog.Info("archive finalization: imported dashboard snapshot retry budget exhausted; persisted fail-soft evidence", "test", test.ID, "attempts", job.Attempts+1)
+	}
+
 	record := &job.ArchiveRecord
 	if strings.TrimSpace(record.TestID) == "" {
 		record.TestID = job.TestID
@@ -283,6 +291,14 @@ func (tr *TestRunner) processArchiveFinalizationJobUnderFence(ctx context.Contex
 	}
 	if !tr.isExecutionLeader() {
 		return errNotExecutionLeader
+	}
+	if snapshotRetryNeeded {
+		refreshOutbox := tr.archiveRefreshOutbox()
+		if refreshOutbox == nil {
+			slog.Warn("archive finalization: imported dashboard snapshot backfill is not durable with the configured store", "test", test.ID)
+		} else if _, err := refreshOutbox.BumpArchiveRefreshJob(job.TestID); err != nil {
+			return fmt.Errorf("enqueue imported dashboard snapshot backfill: %w", err)
+		}
 	}
 	if outbox != nil {
 		committed, err := outbox.CompleteArchiveFinalization(job.TestID, job.IntentToken, job.RefreshToken, record)
@@ -413,7 +429,14 @@ func (tr *TestRunner) processArchiveRefreshJob(ctx context.Context, snapshot *st
 	if durableTest != nil {
 		managed = managedTestFromRecord(durableTest)
 	}
-	return tr.processArchiveFinalizationJobUnderFence(ctx, job, managed)
+	err = tr.processArchiveFinalizationJobUnderFence(ctx, job, managed)
+	if err != nil {
+		// Refresh retries bind to a finalization intent but do not pass through the
+		// normal finalization worker. Annotate that intent here so bounded backfill
+		// retries can eventually persist fail-soft evidence instead of looping forever.
+		tr.markArchiveFinalizationFailed(job.TestID, job.IntentToken, err)
+	}
+	return err
 }
 
 func (tr *TestRunner) archiveOperationContext(parent context.Context) (context.Context, context.CancelFunc) {

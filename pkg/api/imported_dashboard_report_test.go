@@ -16,6 +16,7 @@ func TestBuildRunArchiveDashboardPanels(t *testing.T) {
 			Panels: []DashboardPanel{
 				{
 					PanelID: 1, Title: "CPU", Kind: "line", Unit: "%",
+					ThresholdEvaluated: true, ThresholdBreached: true, ThresholdDetail: "api-1 entered critical threshold range at 95",
 					Series: []PrometheusSeries{{Key: "k", Label: "a", Values: []PrometheusPoint{
 						{TimestampMs: 1, Value: 10}, {TimestampMs: 2, Value: 30}, {TimestampMs: 3, Value: 20},
 					}}},
@@ -33,11 +34,24 @@ func TestBuildRunArchiveDashboardPanels(t *testing.T) {
 	if cpu.SeriesCount != 1 || cpu.Min == nil || *cpu.Min != 10 || cpu.Max == nil || *cpu.Max != 30 || cpu.Avg == nil || *cpu.Avg != 20 || cpu.Last == nil || *cpu.Last != 20 {
 		t.Fatalf("cpu summary wrong: %#v", cpu)
 	}
+	if !cpu.ThresholdEvaluated || !cpu.ThresholdBreached || !strings.Contains(cpu.ThresholdDetail, "critical threshold") {
+		t.Fatalf("threshold summary wrong: %#v", cpu)
+	}
 	if got.Dashboards[0].Panels[1].Value == nil || *got.Dashboards[0].Panels[1].Value != 1 {
 		t.Fatalf("tile value wrong: %#v", got.Dashboards[0].Panels[1])
 	}
 	if got.Dashboards[0].Panels[2].Error != "query failed" {
 		t.Fatalf("error not preserved: %#v", got.Dashboards[0].Panels[2])
+	}
+}
+
+func TestImportedDashboardThresholdProducesFailedReportVerdict(t *testing.T) {
+	report := &RunArchiveReport{DashboardPanels: &RunArchiveDashboardPanels{Dashboards: []RunArchiveDashboard{{
+		Title: "Infra", Panels: []RunArchiveDashboardPanel{{Title: "CPU", ThresholdBreached: true, ThresholdDetail: "entered critical threshold range at 95"}},
+	}}}}
+	verdict := deriveReportVerdict(report)
+	if !verdict.Failed || verdict.Status != reportVerdictFail || !strings.Contains(verdict.Explanation, "Infra / CPU") {
+		t.Fatalf("verdict = %#v", verdict)
 	}
 }
 

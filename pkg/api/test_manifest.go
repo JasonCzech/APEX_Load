@@ -600,6 +600,9 @@ func (tr *TestRunner) persistTestManifestArtifact(test *ManagedTest, record *sto
 	if err != nil {
 		return err
 	}
+	archiveManifest.SLAEvaluated = archiveManifest.SLAEvaluated || test.ciSLAEvaluated
+	archiveManifest.SLABreached = archiveManifest.SLABreached || test.ciSLABreached
+	archiveManifest.SLADetails = compactNonEmptyStrings(append(archiveManifest.SLADetails, test.ciSLADetails...)...)
 	if err := validateImmutableArchiveArtifactIntegrity(record.ArchivePath, archiveManifest); err != nil {
 		return err
 	}

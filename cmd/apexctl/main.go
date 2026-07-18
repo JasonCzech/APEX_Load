@@ -359,7 +359,7 @@ Commands:
   run       Execute a performance test
   ci        Run a CI performance gate locally or through a controller
   script    Validate or explain a JSON DSL script
-  import    Import a source collection (including full-fidelity Bruno)
+  import    Import a source collection or Grafana dashboard
   status    Print a test's current status + SLA verdict (exits 1 on breach/failure)
   wait      Block until a started test finishes, then report SLA verdict
   archive   Inspect an archived run (verify re-checks artifact SHA-256 integrity)
@@ -393,6 +393,7 @@ Examples:
   apexctl script explain --script order-flow.json
   apexctl import bruno --api http://localhost:8080 --path ./collection --project <id>
   apexctl import bruno --api http://localhost:8080 --path request.yml --project <id> --sync <script-id>
+  apexctl import grafana --api http://localhost:8080 --path dashboard.json --project <id>
   apexctl run --script order-flow.json -env target_namespace=pr-123 --base-url https://preview.example.com
   apexctl run --script order-flow.json --p95-latency-ms 800 --max-error-pct 2.5
   apexctl run --api http://localhost:8080 --script order-flow.json --format json

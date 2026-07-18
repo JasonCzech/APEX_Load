@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/grafana"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -129,6 +132,55 @@ func TestArchiveFinalizationPersistsIntentBeforeAdjuncts(t *testing.T) {
 	}
 	if _, err := store.GetArchiveFinalizationJob(testID); !errors.Is(err, sql.ErrNoRows) {
 		t.Fatalf("successful finalization left outbox job: %v", err)
+	}
+}
+
+func TestArchiveFinalizationPublishesAndQueuesFailedDashboardSnapshot(t *testing.T) {
+	archiveRoot := t.TempDir()
+	t.Setenv("APEXLOAD_ARCHIVE_DIR", archiveRoot)
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	const testID = "snapshot-backfill"
+	test, record := createArchiveFinalizationTest(t, store, testID, archiveRoot)
+	if err := store.SaveGrafanaDashboard(&storage.GrafanaDashboard{
+		ID: "dash-snapshot", ProjectID: storage.DefaultProjectID, Name: "Infra", SourceTitle: "Infra",
+		SourceSHA256: "abc", SchemaVersion: 39, Enabled: true,
+		Panels: []grafana.Panel{{PanelID: 1, Title: "CPU", Kind: grafana.PanelKindLine, GridPos: grafana.GridPos{W: 12, H: 8}, Targets: []grafana.Target{{RefID: "A", Expr: `up{test_id="$test_id"}`}}}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	prometheus := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+	}))
+	defer prometheus.Close()
+	runner := NewTestRunner(1, NewHub(), store)
+	settings := runner.GetSystemSettings()
+	settings.Prometheus = PrometheusSettings{Enabled: true, BaseURL: prometheus.URL, TimeoutSeconds: 1}
+	if _, err := runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.finalizeRunArchiveDurably(context.Background(), test, record, true); err != nil {
+		t.Fatalf("primary archive publication was blocked by snapshot failure: %v", err)
+	}
+	if _, err := store.GetRunArchive(testID); err != nil {
+		t.Fatalf("published archive missing: %v", err)
+	}
+	refresh, err := store.GetArchiveRefreshJob(testID)
+	if err != nil || refresh == nil {
+		t.Fatalf("durable snapshot backfill missing: job=%+v err=%v", refresh, err)
+	}
+	if _, err := store.GetGrafanaDashboardSnapshot(testID, storage.DefaultProjectID); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("failed snapshot should not have been persisted on first attempt: %v", err)
+	}
+	if err := runner.processArchiveRefreshJob(context.Background(), refresh); err == nil {
+		t.Fatal("unavailable Prometheus unexpectedly completed the first backfill")
+	}
+	pending, err := store.GetArchiveFinalizationJob(testID)
+	if err != nil || pending.Attempts != 1 {
+		t.Fatalf("backfill attempt was not durably counted: job=%+v err=%v", pending, err)
 	}
 }
 

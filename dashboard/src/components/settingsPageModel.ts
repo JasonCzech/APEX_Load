@@ -111,6 +111,14 @@ export const DEFAULT_SETTINGS: DashboardSystemSettings = {
     enabled: false,
     base_url: '',
     timeout_seconds: 5,
+    bearer_token_env_var: '',
+    allow_label_values: false,
+  },
+  grafana: {
+    enabled: false,
+    base_url: '',
+    service_account_token_env_var: '',
+    timeout_seconds: 10,
   },
   client_app: {
     availability: 'disabled',
@@ -446,6 +454,12 @@ export function validateSettings(settings: DashboardSystemSettings): string[] {
   if (!Number.isInteger(settings.prometheus.timeout_seconds) || settings.prometheus.timeout_seconds < 1 || settings.prometheus.timeout_seconds > 60) {
     errors.push('Prometheus timeout must be an integer between 1 and 60 seconds.')
   }
+  if (settings.grafana?.enabled && (!settings.grafana.base_url.trim() || !settings.grafana.service_account_token_env_var.trim())) {
+    errors.push('Grafana proxy requires a server URL and service-account token environment variable.')
+  }
+  if (settings.grafana && (!Number.isInteger(settings.grafana.timeout_seconds) || settings.grafana.timeout_seconds < 1 || settings.grafana.timeout_seconds > 60)) {
+    errors.push('Grafana timeout must be an integer between 1 and 60 seconds.')
+  }
   const clientAppAvailability = settings.client_app?.availability || 'disabled'
   if (clientAppAvailability !== 'enabled' && clientAppAvailability !== 'disabled') {
     errors.push('Desktop client availability must be enabled or disabled.')
@@ -537,6 +551,16 @@ export function normalizeDashboardSystemSettings(settings: DashboardSystemSettin
       enabled: Boolean(settings.prometheus?.enabled),
       base_url: settings.prometheus?.base_url || '',
       timeout_seconds: Number(settings.prometheus?.timeout_seconds || DEFAULT_SETTINGS.prometheus.timeout_seconds),
+      bearer_token_env_var: settings.prometheus?.bearer_token_env_var || '',
+      allow_label_values: Boolean(settings.prometheus?.allow_label_values),
+    },
+    grafana: {
+      ...DEFAULT_SETTINGS.grafana!,
+      ...settings.grafana,
+      enabled: Boolean(settings.grafana?.enabled),
+      base_url: settings.grafana?.base_url || '',
+      service_account_token_env_var: settings.grafana?.service_account_token_env_var || '',
+      timeout_seconds: Number(settings.grafana?.timeout_seconds || DEFAULT_SETTINGS.grafana!.timeout_seconds),
     },
     client_app: {
       ...DEFAULT_SETTINGS.client_app,

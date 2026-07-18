@@ -1523,6 +1523,19 @@
   font-size: 0.8rem;
   color: var(--danger);
 }
+
+.stat-tile-warning { border-color: var(--warning); background: color-mix(in srgb, var(--warning) 8%, var(--surface)); }
+.stat-tile-critical { border-color: var(--danger); background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
+.stat-tile-normal { border-color: var(--success); }
+.stat-tile-sparkline { width: 100%; height: 30px; margin-top: 8px; overflow: visible; }
+.stat-tile-sparkline polyline { stroke: currentColor; stroke-width: 1.5; opacity: .65; }
+.imported-panel-table-wrap { overflow: auto; max-height: 240px; }
+.imported-panel-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+.imported-panel-table th, .imported-panel-table td { padding: 0.42rem 0.55rem; border-bottom: 1px solid var(--border); text-align: left; }
+.imported-panel-table th { color: var(--text-muted); font-weight: 600; }
+.imported-panel-heatmap { display: grid; gap: 2px; padding: 0.65rem; overflow: hidden; }
+.imported-panel-heatmap-row { display: flex; min-height: 10px; gap: 2px; }
+.imported-panel-heatmap-row span { flex: 1 1 0; min-width: 2px; border-radius: 1px; background: var(--chart-1); }
 .chart-error-state {
   color: var(--danger);
 }

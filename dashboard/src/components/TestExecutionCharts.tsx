@@ -21,6 +21,7 @@ import { useModalDialog } from '../hooks/useModalDialog'
 import { buildGeneratorImpactView, type GeneratorImpactVerdict } from './generatorImpact'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
 import StatTile from './StatTile'
+import PrometheusPanelCard from './PrometheusPanelCard'
 import {
   buildLoadImpactModel,
   formatLoadImpactValue,
@@ -501,6 +502,7 @@ export default function TestExecutionCharts({
   const [tableSortByChart, setTableSortByChart] = useState<Record<string, MetricTableSort>>({})
   const [selectedMetricByChart, setSelectedMetricByChart] = useState<Record<string, string | null>>({})
   const [localActiveGraphGroupTab, setLocalActiveGraphGroupTab] = useState<GraphGroupTabId>('test_results')
+  const [activeImportedDashboardId, setActiveImportedDashboardId] = useState('')
   const [selectedRouteLatencyKey, setSelectedRouteLatencyKey] = useState('')
   const [chartMenu, setChartMenu] = useState<{ chartId: string; x: number; y: number } | null>(null)
   const [axisLabelPopover, setAxisLabelPopover] = useState<AxisLabelPopover>(null)
@@ -544,6 +546,11 @@ export default function TestExecutionCharts({
   const loadImpactCharts = useMemo(() => buildLoadImpactCharts(loadImpactRows), [loadImpactRows])
   const prometheusGraphCharts = useMemo(() => buildPrometheusCharts(prometheusGraphs), [prometheusGraphs])
   const importedDashboardCharts = useMemo(() => buildImportedDashboardCharts(importedDashboards), [importedDashboards])
+  const importedDashboardTabs = useMemo(() => importedDashboards.filter(dashboard => dashboard.panels.length > 0), [importedDashboards])
+  useEffect(() => {
+    if (importedDashboardTabs.length === 0) { setActiveImportedDashboardId(''); return }
+    if (!importedDashboardTabs.some(dashboard => dashboard.dashboard_id === activeImportedDashboardId)) setActiveImportedDashboardId(importedDashboardTabs[0].dashboard_id)
+  }, [activeImportedDashboardId, importedDashboardTabs])
   const prometheusChartDataById = useMemo(
     () => new Map(
       [...prometheusGraphCharts, ...importedDashboardCharts]
@@ -834,11 +841,14 @@ export default function TestExecutionCharts({
     : visibleCharts
   const dedicatedHeatmapMode = enableGraphGroupTabs && activeGraphGroupTab === 'under_load' && underLoadDisplayMode === 'heatmap'
   const graphModeWithoutHeatmap = enableGraphGroupTabs && activeGraphGroupTab === 'under_load' && underLoadDisplayMode === 'graphs'
-  const displayModeCharts = dedicatedHeatmapMode
+  const unscopedDisplayModeCharts = dedicatedHeatmapMode
     ? orderedCharts.filter(isLoadImpactHeatmapChart).slice(0, 1)
     : graphModeWithoutHeatmap
       ? tabbedCharts.filter(chart => !isLoadImpactHeatmapChart(chart))
       : tabbedCharts
+  const displayModeCharts = activeGraphGroupTab === 'imported' && activeImportedDashboardId
+    ? unscopedDisplayModeCharts.filter(chart => chart.importedPanel?.dashboardId === activeImportedDashboardId)
+    : unscopedDisplayModeCharts
   const displayedCharts = expandedChart
     ? [
         ...displayModeCharts.filter(chart => chart.id === expandedChart),
@@ -2274,6 +2284,16 @@ export default function TestExecutionCharts({
         </div>
       </div>
 
+      {activeGraphGroupTab === 'imported' && importedDashboardTabs.length > 1 && (
+        <div className="graph-group-tabs" role="tablist" aria-label="Imported dashboards">
+          {importedDashboardTabs.map(dashboard => (
+            <button key={dashboard.dashboard_id} type="button" role="tab" className={`graph-group-tab ${activeImportedDashboardId === dashboard.dashboard_id ? 'active' : ''}`} aria-selected={activeImportedDashboardId === dashboard.dashboard_id} onClick={() => setActiveImportedDashboardId(dashboard.dashboard_id)}>
+              <span>{dashboard.dashboard_title || 'Dashboard'}</span><small>{dashboard.panels.length}</small>
+            </button>
+          ))}
+        </div>
+      )}
+
       {loadImpactError && <p className="scenario-script-status error">{loadImpactError}</p>}
       {prometheusError && <p className="scenario-script-status error">{prometheusError}</p>}
       {terminalStatus && (
@@ -2553,6 +2573,8 @@ export default function TestExecutionCharts({
                     // cap, unresolved variable) — surface the message instead of a
                     // silently-empty chart so fail-soft does not read as no-data.
                     <div className="chart-empty-state chart-error-state" role="status">{chart.importedError}</div>
+                  ) : chart.importedPanel?.kind === 'table' || chart.importedPanel?.kind === 'heatmap' ? (
+                    <PrometheusPanelCard title={chart.title} unit={chart.prometheusGraph?.unit} kind={chart.importedPanel.kind} series={chart.prometheusGraph?.series} height={chartHeight} />
                   ) : (
                   <ResponsiveContainer width="100%" height={chartHeight}>
             {chart.type === 'area' ? (

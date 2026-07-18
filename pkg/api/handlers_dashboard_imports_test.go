@@ -55,7 +55,7 @@ const importFixtureDashboard = `{
 	"panels":[
 		{"id":1,"type":"stat","title":"Up","targets":[{"expr":"apexload_up{project_id=\"$project_id\"}","refId":"A"}]},
 		{"id":2,"type":"timeseries","title":"CPU","fieldConfig":{"defaults":{"unit":"percent"}},"targets":[{"expr":"cpu{project_id=\"$project_id\"}","refId":"A","legendFormat":"{{instance}}"}]},
-		{"id":3,"type":"table","title":"Grid","targets":[{"expr":"up","refId":"A"}]}
+		{"id":3,"type":"table","title":"Grid","targets":[{"expr":"up{project_id=\"$project_id\"}","refId":"A"}]}
 	]
 }`
 
@@ -80,20 +80,11 @@ func TestGrafanaImportTwoPhaseCommit(t *testing.T) {
 	if resp.ImportSessionID == "" {
 		t.Fatal("expected an import session id")
 	}
-	if len(resp.Dashboard.Panels) != 2 {
-		t.Fatalf("imported panels = %d, want 2 (table excluded)", len(resp.Dashboard.Panels))
+	if len(resp.Dashboard.Panels) != 3 {
+		t.Fatalf("imported panels = %d, want 3", len(resp.Dashboard.Panels))
 	}
-	// The unsupported table panel is surfaced explicitly with its type, not dropped.
-	var sawTableReview bool
-	for _, section := range resp.ReviewSections {
-		for _, item := range section.Items {
-			if bytesContains(item, `"table"`) {
-				sawTableReview = true
-			}
-		}
-	}
-	if !sawTableReview {
-		t.Fatalf("expected the table panel surfaced as unsupported; sections=%v", resp.ReviewSections)
+	if resp.Dashboard.Panels[2].Kind != "table" {
+		t.Fatalf("table kind = %q", resp.Dashboard.Panels[2].Kind)
 	}
 
 	commit := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboards/import/grafana/commit",
@@ -105,7 +96,7 @@ func TestGrafanaImportTwoPhaseCommit(t *testing.T) {
 	if err := json.Unmarshal(commit.Body.Bytes(), &stored); err != nil {
 		t.Fatalf("decode commit: %v", err)
 	}
-	if !stored.Enabled || len(stored.Panels) != 2 {
+	if !stored.Enabled || len(stored.Panels) != 3 {
 		t.Fatalf("stored dashboard = %#v", stored)
 	}
 	if stored.CreatedBy == "" {
@@ -124,6 +115,138 @@ func TestGrafanaImportTwoPhaseCommit(t *testing.T) {
 	_ = json.Unmarshal(list.Body.Bytes(), &listResp)
 	if listResp.Count != 1 || listResp.Dashboards[0].ID != stored.ID {
 		t.Fatalf("list = %#v, want the committed dashboard", listResp)
+	}
+}
+
+func TestGrafanaImportLabelValuesResolvesGovernedOptions(t *testing.T) {
+	prom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if query := r.URL.Query().Get("query"); !strings.Contains(query, `project_id="proj-a"`) {
+			t.Errorf("query is not project scoped: %q", query)
+		} else if !strings.Contains(query, `cluster="prod"`) {
+			t.Errorf("query did not resolve its constant variable: %q", query)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"instance":"api-2"},"values":[[1,"1"]]},{"metric":{"instance":"api-1"},"values":[[1,"1"]]}]}}`))
+	}))
+	defer prom.Close()
+	server, projectID := newGrafanaDashboardAPIServer(t)
+	settings := server.runner.GetSystemSettings()
+	settings.Prometheus = PrometheusSettings{Enabled: true, BaseURL: prom.URL, TimeoutSeconds: 5, AllowLabelValues: true}
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	content := `{"title":"Options","schemaVersion":39,"templating":{"list":[{"name":"cluster","type":"constant","query":"prod"},{"name":"instance","type":"query","query":"label_values(up{project_id=\"$project_id\",cluster=\"$cluster\"}, instance)"}]},"panels":[{"id":1,"type":"timeseries","title":"Up","targets":[{"expr":"up{project_id=\"$project_id\"}","refId":"A"}]}]}`
+	inspection := importGrafanaDashboard(t, server, projectID, content)
+	rec := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboards/import/grafana/label-values", map[string]any{"project_id": projectID, "import_session_id": inspection.ImportSessionID, "variable": "instance"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response struct {
+		Options []string `json:"options"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(response.Options, ",") != "api-1,api-2" {
+		t.Fatalf("options = %#v", response.Options)
+	}
+}
+
+func TestGrafanaImportPreviewResolvesPanelsBeforeCommit(t *testing.T) {
+	prom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if query := r.URL.Query().Get("query"); !strings.Contains(query, `env="prod"`) || !strings.Contains(query, `project_id="proj-a"`) {
+			t.Errorf("preview query was not fully resolved and scoped: %q", query)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"success","data":{"resultType":"matrix","result":[{"metric":{"instance":"api-1"},"values":[[1,"3"]]}]}}`))
+	}))
+	defer prom.Close()
+	server, projectID := newGrafanaDashboardAPIServer(t)
+	settings := server.runner.GetSystemSettings()
+	settings.Prometheus = PrometheusSettings{Enabled: true, BaseURL: prom.URL, TimeoutSeconds: 5}
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	content := `{"title":"Preview","schemaVersion":39,"templating":{"list":[{"name":"env","type":"custom"}]},"panels":[{"id":1,"type":"timeseries","title":"Up","targets":[{"expr":"up{project_id=\"$project_id\",env=\"$env\"}","refId":"A"}]}]}`
+	inspection := importGrafanaDashboard(t, server, projectID, content)
+	end := time.Now().UTC()
+	rec := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboards/import/grafana/preview", map[string]any{
+		"project_id": projectID, "import_session_id": inspection.ImportSessionID, "bindings": map[string]string{"env": "prod"},
+		"start": end.Add(-time.Minute), "end": end, "step_seconds": 15,
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response ImportedDashboardGraphsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Dashboards) != 1 || len(response.Dashboards[0].Panels) != 1 || len(response.Dashboards[0].Panels[0].Series) != 1 {
+		t.Fatalf("preview response = %#v", response)
+	}
+}
+
+func TestCommittedDashboardPanelTestReturnsPerPanelDatasourceErrors(t *testing.T) {
+	prom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	}))
+	defer prom.Close()
+	server, projectID := newGrafanaDashboardAPIServer(t)
+	settings := server.runner.GetSystemSettings()
+	settings.Prometheus = PrometheusSettings{Enabled: true, BaseURL: prom.URL, TimeoutSeconds: 5}
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	inspection := importGrafanaDashboard(t, server, projectID, importFixtureDashboard)
+	commit := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboards/import/grafana/commit", map[string]any{"project_id": projectID, "import_session_id": inspection.ImportSessionID})
+	if commit.Code != http.StatusCreated {
+		t.Fatalf("commit status=%d body=%s", commit.Code, commit.Body.String())
+	}
+	var dashboard storage.GrafanaDashboard
+	if err := json.Unmarshal(commit.Body.Bytes(), &dashboard); err != nil {
+		t.Fatal(err)
+	}
+	end := time.Now().UTC()
+	query := url.Values{"start": {end.Add(-time.Minute).Format(time.RFC3339Nano)}, "end": {end.Format(time.RFC3339Nano)}, "step_seconds": {"15"}}
+	rec := dashboardAPIRequest(t, server, http.MethodGet, "/api/v1/monitoring/dashboards/"+url.PathEscape(dashboard.ID)+"/panels?"+query.Encode(), nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("test-now status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response ImportedDashboardGraphsResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Dashboards) != 1 || len(response.Dashboards[0].Panels) == 0 || !strings.Contains(response.Dashboards[0].Panels[0].Error, "status 401") {
+		t.Fatalf("test-now response = %#v", response)
+	}
+}
+
+func TestGrafanaImportByUIDUsesConfiguredServiceAccount(t *testing.T) {
+	t.Setenv("APEXLOAD_TEST_LIVE_GRAFANA_TOKEN", "live-token")
+	grafanaServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/dashboards/uid/live-uid" || r.Header.Get("Authorization") != "Bearer live-token" {
+			t.Errorf("request path/auth = %s / %q", r.URL.Path, r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"dashboard":{"uid":"live-uid","title":"Live dashboard","schemaVersion":39,"panels":[{"id":1,"type":"timeseries","title":"Up","targets":[{"expr":"up{project_id=\"$project_id\"}","refId":"A"}]}]}}`))
+	}))
+	defer grafanaServer.Close()
+	server, projectID := newGrafanaDashboardAPIServer(t)
+	settings := server.runner.GetSystemSettings()
+	settings.Grafana = GrafanaSettings{Enabled: true, BaseURL: grafanaServer.URL, ServiceAccountTokenEnvVar: "APEXLOAD_TEST_LIVE_GRAFANA_TOKEN", TimeoutSeconds: 5}
+	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
+		t.Fatal(err)
+	}
+	rec := dashboardAPIRequest(t, server, http.MethodPost, "/api/v1/monitoring/dashboards/import/grafana/live", map[string]any{"project_id": projectID, "uid": "live-uid"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	var response grafanaDashboardImportResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.ImportSessionID == "" || response.Dashboard.SourceUID != "live-uid" || response.Dashboard.SourceTitle != "Live dashboard" {
+		t.Fatalf("live import response = %#v", response)
 	}
 }
 

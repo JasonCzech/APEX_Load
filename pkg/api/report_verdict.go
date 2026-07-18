@@ -59,6 +59,24 @@ func deriveReportVerdict(report *RunArchiveReport) ReportVerdict {
 		slaBreached = report.Manifest.SLABreached
 		slaDetails = report.Manifest.SLADetails
 	}
+	if report.DashboardPanels != nil {
+		for _, dashboard := range report.DashboardPanels.Dashboards {
+			for _, panel := range dashboard.Panels {
+				if !panel.ThresholdBreached {
+					continue
+				}
+				slaBreached = true
+				prefix := strings.Trim(strings.TrimSpace(dashboard.Title)+" / "+strings.TrimSpace(panel.Title), " / ")
+				detail := strings.TrimSpace(panel.ThresholdDetail)
+				if detail == "" {
+					detail = prefix + " breached its imported threshold"
+				} else if prefix != "" {
+					detail = prefix + ": " + detail
+				}
+				slaDetails = compactNonEmptyStrings(append(slaDetails, detail)...)
+			}
+		}
+	}
 
 	if slaBreached {
 		explanation := "One or more SLA targets were breached during the run."

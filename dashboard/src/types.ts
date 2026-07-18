@@ -3888,6 +3888,15 @@ export interface DashboardPrometheusSettings {
   enabled: boolean
   base_url: string
   timeout_seconds: number
+  bearer_token_env_var?: string
+  allow_label_values: boolean
+}
+
+export interface DashboardGrafanaSettings {
+  enabled: boolean
+  base_url: string
+  service_account_token_env_var: string
+  timeout_seconds: number
 }
 
 export interface DashboardClientAppSettings {
@@ -3912,6 +3921,7 @@ export interface DashboardSystemSettings {
   auth: DashboardAuthSettings
   github: DashboardGitHubSettings
   prometheus: DashboardPrometheusSettings
+  grafana?: DashboardGrafanaSettings
   client_app: DashboardClientAppSettings
   client_downloads: DashboardClientDownloadsSettings
   script_imports: DashboardScriptImportSettings
@@ -3948,13 +3958,14 @@ export interface PrometheusGraphsResponse {
 }
 
 // Imported Grafana dashboards.
-export type ImportedDashboardPanelKind = 'line' | 'single_value'
+export type ImportedDashboardPanelKind = 'line' | 'single_value' | 'table' | 'heatmap'
 
 export interface ImportedDashboardTarget {
   ref_id?: string
   expr: string
   legend_format?: string
   label_fields?: string[]
+  datasource_uid?: string
 }
 
 export interface ImportedDashboardPanelDef {
@@ -3966,6 +3977,13 @@ export interface ImportedDashboardPanelDef {
   targets?: ImportedDashboardTarget[]
   row_title?: string
   datasource_uid?: string
+  thresholds?: ImportedDashboardPanelThreshold[]
+}
+
+export interface ImportedDashboardPanelThreshold {
+  value?: number
+  color: string
+  severity: 'normal' | 'warning' | 'critical' | 'unknown'
 }
 
 export interface ImportedDashboardDef {
@@ -3983,6 +4001,8 @@ export interface ImportedDashboardVariableBinding {
   resolved_to?: string
   default?: string
   options?: string[]
+  query?: string
+  datasource_uid?: string
   reason?: string
   used_by?: string[]
 }
@@ -4014,6 +4034,10 @@ export interface ImportedDashboardResolvedPanel {
   series?: PrometheusSeries[]
   value?: number
   error?: string
+  thresholds?: ImportedDashboardPanelThreshold[]
+  threshold_evaluated?: boolean
+  threshold_breached?: boolean
+  threshold_detail?: string
 }
 
 export interface ImportedDashboardResult {
@@ -4051,6 +4075,8 @@ export interface ImportedDashboardImportReview {
     panels_converted: number
     line_charts: number
     single_value_tiles: number
+    tables?: number
+    heatmaps?: number
     targets: number
     rows_expanded: number
     unsupported_panel_types?: string[]

@@ -2143,6 +2143,36 @@
       "access": "Requires Authentication (Role based on specific entity)"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/monitoring/dashboards/import/grafana/label-values",
+      "operationId": "handleGrafanaImportLabelValues",
+      "summary": "Grafana Import Label Values",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/dashboards/import/grafana/live",
+      "operationId": "handleImportGrafanaDashboardByUID",
+      "summary": "Import Grafana Dashboard By U I D",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/monitoring/dashboards/import/grafana/preview",
+      "operationId": "handlePreviewGrafanaDashboardImport",
+      "summary": "Preview Grafana Dashboard Import",
+      "category": "Operations \u0026 Observability",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires Authentication (Role based on specific entity)"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/monitoring/dashboards/import/grafana/support-matrix",
       "operationId": "handleGrafanaDashboardSupportMatrix",

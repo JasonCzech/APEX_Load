@@ -10,7 +10,11 @@ import type { ImportedDashboard, ImportedDashboardImportReview, Project } from '
 
 const listImportedDashboards = vi.fn()
 const importGrafanaDashboard = vi.fn()
+const importGrafanaDashboardByUID = vi.fn()
 const commitGrafanaDashboardImport = vi.fn()
+const previewGrafanaDashboardImport = vi.fn()
+const resolveGrafanaImportLabelValues = vi.fn()
+const getImportedDashboardPanels = vi.fn()
 const deleteImportedDashboard = vi.fn()
 const patchImportedDashboard = vi.fn()
 
@@ -25,7 +29,11 @@ vi.mock('../hooks/api/useSystemApi', () => ({
   useSystemApi: () => ({
     listImportedDashboards,
     importGrafanaDashboard,
+    importGrafanaDashboardByUID,
     commitGrafanaDashboardImport,
+    previewGrafanaDashboardImport,
+    resolveGrafanaImportLabelValues,
+    getImportedDashboardPanels,
     deleteImportedDashboard,
     patchImportedDashboard,
   }),
@@ -57,7 +65,11 @@ describe('ImportedDashboardsPanel', () => {
   beforeEach(() => {
     listImportedDashboards.mockReset().mockResolvedValue({ dashboards: [], count: 0 })
     importGrafanaDashboard.mockReset()
+    importGrafanaDashboardByUID.mockReset()
     commitGrafanaDashboardImport.mockReset()
+    previewGrafanaDashboardImport.mockReset().mockResolvedValue({ enabled: true, configured: true, generated_at: new Date().toISOString(), dashboards: [] })
+    resolveGrafanaImportLabelValues.mockReset().mockResolvedValue({ variable: 'env', options: [] })
+    getImportedDashboardPanels.mockReset().mockResolvedValue({ enabled: true, configured: true, generated_at: new Date().toISOString(), dashboards: [] })
     deleteImportedDashboard.mockReset()
     patchImportedDashboard.mockReset()
 		vi.stubGlobal('confirm', vi.fn(() => true))
@@ -164,5 +176,61 @@ describe('ImportedDashboardsPanel', () => {
 			await Promise.resolve()
 		})
 		expect(container.textContent).toContain('blocking issues')
+	})
+
+	it('requires and forwards a run ID for test-scoped live previews', async () => {
+		const testScoped = review()
+		testScoped.dashboard.panels[0].targets = [{ ref_id: 'A', expr: 'cpu{test_id="$test_id"}' }]
+		importGrafanaDashboard.mockResolvedValue(testScoped)
+		await act(async () => {
+			root.render(<ImportedDashboardsPanel projects={[projectA]} prometheusConfigured />)
+			await Promise.resolve()
+		})
+		const choose = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Choose fixture')!
+		await act(async () => {
+			choose.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+			await Promise.resolve()
+		})
+		expect(previewGrafanaDashboardImport).not.toHaveBeenCalled()
+		const runID = container.querySelector('[aria-label="Preview run ID"]') as HTMLInputElement
+		await act(async () => {
+			Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set?.call(runID, 'run-123')
+			runID.dispatchEvent(new Event('input', { bubbles: true }))
+		})
+		await act(async () => { await new Promise(resolve => setTimeout(resolve, 550)) })
+		expect(previewGrafanaDashboardImport).toHaveBeenCalledWith(expect.objectContaining({ test_id: 'run-123' }))
+	})
+
+	it('prompts for and forwards a run ID when testing a committed test-scoped dashboard', async () => {
+		const saved = dashboard('dash-test-scoped', projectA.id)
+		saved.panels = [{ panel_id: 1, title: 'CPU', kind: 'line', targets: [{ expr: 'cpu{test_id="$test_id"}' }] }]
+		listImportedDashboards.mockResolvedValue({ dashboards: [saved], count: 1 })
+		vi.stubGlobal('prompt', vi.fn(() => 'run-456'))
+		await act(async () => {
+			root.render(<ImportedDashboardsPanel projects={[projectA]} prometheusConfigured />)
+			await Promise.resolve()
+		})
+		const testNow = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Test now')!
+		await act(async () => {
+			testNow.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+			await Promise.resolve()
+		})
+		expect(getImportedDashboardPanels).toHaveBeenCalledWith('dash-test-scoped', expect.objectContaining({ test_id: 'run-456' }))
+	})
+
+	it('explains when runtime credentials make an import preview unavailable', async () => {
+		importGrafanaDashboard.mockResolvedValue(review())
+		previewGrafanaDashboardImport.mockResolvedValue({ enabled: true, configured: false, generated_at: new Date().toISOString(), dashboards: [] })
+		await act(async () => {
+			root.render(<ImportedDashboardsPanel projects={[projectA]} prometheusConfigured />)
+			await Promise.resolve()
+		})
+		const choose = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Choose fixture')!
+		await act(async () => {
+			choose.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+			await Promise.resolve()
+		})
+		await act(async () => { await new Promise(resolve => setTimeout(resolve, 550)) })
+		expect(container.textContent).toContain('credential environment variable is not set')
 	})
 })

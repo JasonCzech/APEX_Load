@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -27,6 +28,10 @@ type importedDashboardSnapshotStore interface {
 // Dashboard definitions may later be edited or deleted without rewriting this run's
 // evidence.
 func (tr *TestRunner) captureImportedDashboardSnapshot(ctx context.Context, test *ManagedTest, completedAt time.Time) error {
+	return tr.captureImportedDashboardSnapshotAttempt(ctx, test, completedAt, false)
+}
+
+func (tr *TestRunner) captureImportedDashboardSnapshotAttempt(ctx context.Context, test *ManagedTest, completedAt time.Time, persistPanelErrors bool) error {
 	if tr == nil || test == nil || test.ID == "" {
 		return nil
 	}
@@ -40,8 +45,8 @@ func (tr *TestRunner) captureImportedDashboardSnapshot(ctx context.Context, test
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	settings := normalizePrometheusSettings(tr.GetSystemSettings().Prometheus)
-	ds := newPromGraphDataSource(settings)
+	settings := tr.GetSystemSettings()
+	ds := configuredGraphDataSource(settings)
 	enabled, configured := ds.Available()
 	start := test.CreatedAt
 	if test.StartedAt != nil && !test.StartedAt.IsZero() {
@@ -59,20 +64,23 @@ func (tr *TestRunner) captureImportedDashboardSnapshot(ctx context.Context, test
 		Enabled: enabled, Configured: configured, DatasourceID: ds.ID(), GeneratedAt: time.Now().UTC(),
 		Start: start, End: end, StepSeconds: stepSeconds, Dashboards: []DashboardPanelsResult{},
 	}
+	dashboards, err := store.ListGrafanaDashboards(projectID, storage.MaxGrafanaDashboardsPerProject+1, 0)
+	if err != nil {
+		return err
+	}
+	if len(dashboards) > storage.MaxGrafanaDashboardsPerProject {
+		return fmt.Errorf("%w: project exceeds the maximum of %d imported Grafana dashboards", storage.ErrGrafanaDashboardLimit, storage.MaxGrafanaDashboardsPerProject)
+	}
+	active := make([]*storage.GrafanaDashboard, 0, len(dashboards))
+	for _, dashboard := range dashboards {
+		if dashboard.Enabled && len(dashboard.Panels) > 0 {
+			active = append(active, dashboard)
+		}
+	}
+	if len(active) == 0 {
+		return nil
+	}
 	if enabled && configured {
-		dashboards, err := store.ListGrafanaDashboards(projectID, storage.MaxGrafanaDashboardsPerProject+1, 0)
-		if err != nil {
-			return err
-		}
-		if len(dashboards) > storage.MaxGrafanaDashboardsPerProject {
-			return fmt.Errorf("%w: project exceeds the maximum of %d imported Grafana dashboards", storage.ErrGrafanaDashboardLimit, storage.MaxGrafanaDashboardsPerProject)
-		}
-		active := make([]*storage.GrafanaDashboard, 0, len(dashboards))
-		for _, dashboard := range dashboards {
-			if dashboard.Enabled && len(dashboard.Panels) > 0 {
-				active = append(active, dashboard)
-			}
-		}
 		results := make([]DashboardPanelsResult, len(active))
 		var aggregatePoints atomic.Int64
 		var aggregateBytes atomic.Int64
@@ -90,7 +98,7 @@ func (tr *TestRunner) captureImportedDashboardSnapshot(ctx context.Context, test
 						dashboardID: dashboard.ID, panels: dashboard.Panels,
 						resolution: grafanaQueryResolutionForSnapshot(test.ID, dashboard),
 						start:      start, end: end, stepSeconds: stepSeconds,
-						perQueryTimeoutSeconds: settings.TimeoutSeconds,
+						perQueryTimeoutSeconds: graphDataSourceTimeoutSeconds(settings),
 						aggregatePointsUsed:    &aggregatePoints,
 						aggregatePointsMax:     maxImportedDashboardsPointsTotal,
 						aggregateBytesUsed:     &aggregateBytes,
@@ -107,12 +115,25 @@ func (tr *TestRunner) captureImportedDashboardSnapshot(ctx context.Context, test
 		close(jobs)
 		wg.Wait()
 		resp.Dashboards = results
+	} else {
+		message := "dashboard datasource is disabled or not fully configured"
+		resp.Dashboards = make([]DashboardPanelsResult, len(active))
+		for i, dashboard := range active {
+			panels := make([]DashboardPanel, len(dashboard.Panels))
+			for panelIndex, panel := range dashboard.Panels {
+				panels[panelIndex] = failedPanel(panel, message)
+			}
+			resp.Dashboards[i] = DashboardPanelsResult{DashboardID: dashboard.ID, DashboardTitle: dashboard.Name, DatasourceID: ds.ID(), Panels: panels}
+		}
 	}
 	// Don't persist a snapshot for runs with no imported dashboards to capture: it
 	// would write one empty row per run forever, and the read path already falls
 	// through correctly on a missing snapshot.
 	if len(resp.Dashboards) == 0 {
 		return nil
+	}
+	if !persistPanelErrors && importedDashboardSnapshotHasErrors(resp.Dashboards) {
+		return fmt.Errorf("one or more imported dashboard panels could not be resolved")
 	}
 	payload, err := json.Marshal(resp)
 	if err != nil {
@@ -121,6 +142,78 @@ func (tr *TestRunner) captureImportedDashboardSnapshot(ctx context.Context, test
 	return store.SaveGrafanaDashboardSnapshot(&storage.GrafanaDashboardSnapshot{
 		TestID: test.ID, ProjectID: projectID, Payload: payload, CapturedAt: resp.GeneratedAt,
 	})
+}
+
+func importedDashboardSnapshotHasErrors(results []DashboardPanelsResult) bool {
+	for _, dashboard := range results {
+		for _, panel := range dashboard.Panels {
+			if panel.Error != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func (tr *TestRunner) applyImportedDashboardThresholdVerdict(test *ManagedTest) error {
+	if tr == nil || test == nil {
+		return nil
+	}
+	store, ok := tr.testStore.(importedDashboardSnapshotStore)
+	if !ok {
+		return nil
+	}
+	snapshot, err := store.GetGrafanaDashboardSnapshot(test.ID, normalizeProjectID(test.ProjectID))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var response ImportedDashboardGraphsResponse
+	if err := json.Unmarshal(snapshot.Payload, &response); err != nil {
+		return err
+	}
+	evaluated := false
+	breached := false
+	details := append([]string(nil), test.ciSLADetails...)
+	for _, dashboard := range response.Dashboards {
+		for _, panel := range dashboard.Panels {
+			if panel.ThresholdEvaluated {
+				evaluated = true
+			}
+			if !panel.ThresholdBreached {
+				continue
+			}
+			breached = true
+			prefix := strings.Trim(strings.TrimSpace(dashboard.DashboardTitle)+" / "+strings.TrimSpace(panel.Title), " / ")
+			detail := strings.TrimSpace(panel.ThresholdDetail)
+			if detail == "" {
+				detail = prefix + " breached its imported threshold"
+			} else if prefix != "" {
+				detail = prefix + ": " + detail
+			}
+			details = compactNonEmptyStrings(append(details, detail)...)
+		}
+	}
+	tr.mu.Lock()
+	test.ciSLAEvaluated = test.ciSLAEvaluated || evaluated
+	test.ciSLABreached = test.ciSLABreached || breached
+	test.ciSLADetails = details
+	if current := tr.tests[test.ID]; current != nil && normalizeProjectID(current.ProjectID) == normalizeProjectID(test.ProjectID) {
+		current.ciSLAEvaluated = current.ciSLAEvaluated || evaluated
+		current.ciSLABreached = current.ciSLABreached || breached
+		current.ciSLADetails = compactNonEmptyStrings(append(current.ciSLADetails, details...)...)
+	}
+	tr.mu.Unlock()
+	return nil
+}
+
+func graphDataSourceTimeoutSeconds(settings SystemSettings) int {
+	if settings.Grafana.Enabled {
+		return normalizeGrafanaSettings(settings.Grafana).TimeoutSeconds
+	}
+	return normalizePrometheusSettings(settings.Prometheus).TimeoutSeconds
 }
 
 func grafanaQueryResolutionForSnapshot(testID string, dashboard *storage.GrafanaDashboard) grafana.QueryResolution {

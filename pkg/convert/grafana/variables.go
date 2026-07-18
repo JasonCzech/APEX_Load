@@ -108,6 +108,14 @@ func classifyVariables(list []rawVariable, col *diag.Collector) ([]VariableBindi
 		case "custom", "query", "textbox":
 			binding.Kind = BindingRequired
 			binding.Options = variableOptions(v, name, col)
+			if varType == "query" {
+				binding.Query = variableQueryString(v.Query)
+				binding.DatasourceUID = datasourceUIDForStorage(parseDatasource(v.Datasource))
+				if len(binding.Query) > MaxExprBytes {
+					binding.Query = ""
+					col.Add(diag.Warning, "variable", name, "label_values query exceeds the expression size limit and cannot be resolved")
+				}
+			}
 			binding.Reason = requiredBindingReason(varType)
 			policy[name] = variablePolicy{kind: BindingRequired}
 		case "adhoc":
@@ -128,9 +136,22 @@ func classifyVariables(list []rawVariable, col *diag.Collector) ([]VariableBindi
 	return bindings, policy
 }
 
+func variableQueryString(raw json.RawMessage) string {
+	if value := strings.TrimSpace(decodeStringValue(raw)); value != "" {
+		return value
+	}
+	var object struct {
+		Query string `json:"query"`
+	}
+	if err := json.Unmarshal(raw, &object); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(object.Query)
+}
+
 func requiredBindingReason(varType string) string {
 	if varType == "query" {
-		return "query variable options come from a label_values() call against the datasource; APEX will not run that second, unreviewed query, so a value must be bound explicitly"
+		return "query variable requires an explicit binding; an administrator may opt in to bounded, run-scoped label_values() option resolution"
 	}
 	return "user-input variable requires an explicit value before the dashboard can be committed"
 }
@@ -382,6 +403,15 @@ func ResolvePanelExpr(expr string, q QueryResolution) (string, error) {
 	values, err := q.values()
 	if err != nil {
 		return "", err
+	}
+	// Grafana creates one $__auto_interval_<variable> macro for interval variables
+	// whose selected value is "auto". They have the same runtime meaning as the
+	// computed $__interval; discover only macros actually present in this expression
+	// so the substitution table remains bounded by the already-bounded query length.
+	for _, ref := range scanExprVariables(expr) {
+		if strings.HasPrefix(ref.Name, "__auto_interval_") {
+			values[ref.Name] = values["__interval"]
+		}
 	}
 	// Build replacer pairs for all three reference forms of each known variable.
 	// Longer keys are matched first by strings.Replacer's longest-match rule, so

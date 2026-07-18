@@ -335,16 +335,19 @@ type RunArchiveDashboard struct {
 }
 
 type RunArchiveDashboardPanel struct {
-	Title       string   `json:"title"`
-	Kind        string   `json:"kind"`
-	Unit        string   `json:"unit,omitempty"`
-	SeriesCount int      `json:"series_count,omitempty"`
-	Min         *float64 `json:"min,omitempty"`
-	Avg         *float64 `json:"avg,omitempty"`
-	Max         *float64 `json:"max,omitempty"`
-	Last        *float64 `json:"last,omitempty"`
-	Value       *float64 `json:"value,omitempty"`
-	Error       string   `json:"error,omitempty"`
+	Title              string   `json:"title"`
+	Kind               string   `json:"kind"`
+	Unit               string   `json:"unit,omitempty"`
+	SeriesCount        int      `json:"series_count,omitempty"`
+	Min                *float64 `json:"min,omitempty"`
+	Avg                *float64 `json:"avg,omitempty"`
+	Max                *float64 `json:"max,omitempty"`
+	Last               *float64 `json:"last,omitempty"`
+	Value              *float64 `json:"value,omitempty"`
+	Error              string   `json:"error,omitempty"`
+	ThresholdEvaluated bool     `json:"threshold_evaluated,omitempty"`
+	ThresholdBreached  bool     `json:"threshold_breached,omitempty"`
+	ThresholdDetail    string   `json:"threshold_detail,omitempty"`
 }
 
 type RunArchiveReportProfile struct {

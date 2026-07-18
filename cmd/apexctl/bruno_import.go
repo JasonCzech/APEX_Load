@@ -81,8 +81,12 @@ type brunoCLICommitResponse struct {
 }
 
 func importCmd() {
+	if len(os.Args) >= 3 && strings.TrimSpace(os.Args[2]) == "grafana" {
+		grafanaImportCmd()
+		return
+	}
 	if len(os.Args) < 3 || strings.TrimSpace(os.Args[2]) != "bruno" {
-		fmt.Fprintln(os.Stderr, "error: import subcommand is required (bruno)")
+		fmt.Fprintln(os.Stderr, "error: import subcommand is required (bruno or grafana)")
 		fmt.Fprintln(os.Stderr, brunoImportUsage())
 		os.Exit(2)
 	}

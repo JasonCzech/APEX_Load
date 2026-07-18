@@ -3837,6 +3837,48 @@ paths:
       x-roles: Requires Authentication (Role based on specific entity)
       tags:
         - Monitoring
+  /api/v1/monitoring/dashboards/import/grafana/label-values:
+    post:
+      summary: Grafana Import Label Values
+      description: |-
+        **Handler:** `handleGrafanaImportLabelValues`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleGrafanaImportLabelValues
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Monitoring
+  /api/v1/monitoring/dashboards/import/grafana/live:
+    post:
+      summary: Import Grafana Dashboard By U I D
+      description: |-
+        **Handler:** `handleImportGrafanaDashboardByUID`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handleImportGrafanaDashboardByUID
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Monitoring
+  /api/v1/monitoring/dashboards/import/grafana/preview:
+    post:
+      summary: Preview Grafana Dashboard Import
+      description: |-
+        **Handler:** `handlePreviewGrafanaDashboardImport`
+
+        **Access Control:** Requires Authentication (Role based on specific entity)
+      operationId: handlePreviewGrafanaDashboardImport
+      responses:
+        "200":
+          description: Successful operation
+      x-roles: Requires Authentication (Role based on specific entity)
+      tags:
+        - Monitoring
   /api/v1/monitoring/dashboards/import/grafana/support-matrix:
     get:
       summary: Grafana Dashboard Support Matrix

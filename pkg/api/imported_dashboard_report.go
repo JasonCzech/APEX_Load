@@ -39,6 +39,7 @@ func (s *Server) attachDashboardPanels(report *RunArchiveReport) {
 		return
 	}
 	report.DashboardPanels = buildRunArchiveDashboardPanels(&resp, snapshot.CapturedAt)
+	attachReportVerdictAndSLA(report)
 }
 
 // attachDashboardPanelsForProfile attaches the digest only when the named profile
@@ -76,10 +77,13 @@ func buildRunArchiveDashboardPanels(resp *ImportedDashboardGraphsResponse, captu
 
 func summarizeDashboardPanel(panel DashboardPanel) RunArchiveDashboardPanel {
 	summary := RunArchiveDashboardPanel{
-		Title: strings.TrimSpace(panel.Title),
-		Kind:  panel.Kind,
-		Unit:  strings.TrimSpace(panel.Unit),
-		Error: strings.TrimSpace(panel.Error),
+		Title:              strings.TrimSpace(panel.Title),
+		Kind:               panel.Kind,
+		Unit:               strings.TrimSpace(panel.Unit),
+		Error:              strings.TrimSpace(panel.Error),
+		ThresholdEvaluated: panel.ThresholdEvaluated,
+		ThresholdBreached:  panel.ThresholdBreached,
+		ThresholdDetail:    strings.TrimSpace(panel.ThresholdDetail),
 	}
 	if panel.Value != nil {
 		v := *panel.Value

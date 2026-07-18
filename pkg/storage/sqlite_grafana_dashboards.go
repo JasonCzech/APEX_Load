@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -51,11 +52,27 @@ func (s *SQLiteStore) SaveGrafanaDashboard(d *GrafanaDashboard) error {
 			return fmt.Errorf("grafana dashboard panel id %d is duplicated", panel.PanelID)
 		}
 		panelIDs[panel.PanelID] = struct{}{}
-		if panel.Kind != grafana.PanelKindLine && panel.Kind != grafana.PanelKindSingleValue {
+		if panel.Kind != grafana.PanelKindLine && panel.Kind != grafana.PanelKindSingleValue && panel.Kind != grafana.PanelKindTable && panel.Kind != grafana.PanelKindHeatmap {
 			return fmt.Errorf("grafana dashboard panel %d has unsupported kind %q", panel.PanelID, panel.Kind)
 		}
 		if len(panel.Title) > grafana.MaxTitleBytes || len(panel.RowTitle) > grafana.MaxTitleBytes || len(panel.DatasourceUID) > grafana.MaxDatasourceBytes || len(panel.Unit) > grafana.MaxUnitIDBytes {
 			return fmt.Errorf("grafana dashboard panel %d metadata exceeds its size limit", panel.PanelID)
+		}
+		if panel.GridPos.X < 0 || panel.GridPos.X >= 24 || panel.GridPos.W < 1 || panel.GridPos.X+panel.GridPos.W > 24 || panel.GridPos.Y < 0 || panel.GridPos.Y > grafana.MaxGridY || panel.GridPos.H < 1 || panel.GridPos.H > grafana.MaxGridHeight {
+			return fmt.Errorf("grafana dashboard panel %d grid position is invalid", panel.PanelID)
+		}
+		if len(panel.Thresholds) > grafana.MaxThresholdSteps {
+			return fmt.Errorf("grafana dashboard panel %d has too many thresholds", panel.PanelID)
+		}
+		for _, threshold := range panel.Thresholds {
+			if len(threshold.Color) > grafana.MaxThresholdColorBytes || (threshold.Value != nil && (math.IsNaN(*threshold.Value) || math.IsInf(*threshold.Value, 0))) {
+				return fmt.Errorf("grafana dashboard panel %d has an invalid threshold", panel.PanelID)
+			}
+			switch threshold.Severity {
+			case "normal", "warning", "critical", "unknown":
+			default:
+				return fmt.Errorf("grafana dashboard panel %d has an invalid threshold severity", panel.PanelID)
+			}
 		}
 		if len(panel.Targets) == 0 || len(panel.Targets) > grafana.MaxTargetsPerPanel {
 			return fmt.Errorf("grafana dashboard panel %d must contain 1-%d targets", panel.PanelID, grafana.MaxTargetsPerPanel)
@@ -68,12 +85,15 @@ func (s *SQLiteStore) SaveGrafanaDashboard(d *GrafanaDashboard) error {
 			return fmt.Errorf("grafana dashboard exceeds the limit of %d total queries", grafana.MaxQueriesTotal)
 		}
 		for _, target := range panel.Targets {
-			if len(target.Expr) == 0 || len(target.Expr) > grafana.MaxExprBytes || len(target.RefID) > grafana.MaxRefIDBytes || len(target.LegendFormat) > grafana.MaxLegendBytes {
+			if len(target.Expr) == 0 || len(target.Expr) > grafana.MaxExprBytes || len(target.RefID) > grafana.MaxRefIDBytes || len(target.LegendFormat) > grafana.MaxLegendBytes || len(target.DatasourceUID) > grafana.MaxDatasourceBytes {
 				return fmt.Errorf("grafana dashboard panel %d target exceeds its size limit", panel.PanelID)
 			}
 		}
 	}
 	d.ProjectID = normalizeProjectID(d.ProjectID)
+	if err := validateGrafanaBindings(d.Bindings); err != nil {
+		return err
+	}
 	now := time.Now()
 	if d.CreatedAt.IsZero() {
 		d.CreatedAt = now
@@ -113,6 +133,29 @@ func (s *SQLiteStore) SaveGrafanaDashboard(d *GrafanaDashboard) error {
 		}
 		if claimToken != strings.TrimSpace(d.ImportClaimToken) || !expiresAt.After(now) {
 			return ErrGrafanaImportClaimLost
+		}
+	}
+	// A Grafana UID is stable across exports. Resolve it while the owning project is
+	// locked so concurrent re-imports update one row instead of minting duplicates.
+	// Empty UIDs intentionally retain create semantics for file exports without a
+	// stable source identity.
+	if sourceUID := strings.TrimSpace(d.SourceUID); sourceUID != "" {
+		var existingID, existingName, existingDescription, existingCreatedBy string
+		var existingEnabled any
+		var existingCreatedAt time.Time
+		err := tx.QueryRow(`SELECT id, name, COALESCE(description, ''), COALESCE(enabled, 1), COALESCE(created_by, ''), created_at
+			FROM grafana_dashboards WHERE project_id = ? AND source_uid = ? ORDER BY created_at LIMIT 1`, d.ProjectID, sourceUID).
+			Scan(&existingID, &existingName, &existingDescription, &existingEnabled, &existingCreatedBy, &existingCreatedAt)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if err == nil && existingID != d.ID {
+			d.ID = existingID
+			d.Name = existingName
+			d.Description = existingDescription
+			d.Enabled = sqlBool(existingEnabled)
+			d.CreatedBy = existingCreatedBy
+			d.CreatedAt = existingCreatedAt
 		}
 	}
 	// Cross-project takeover guard: a row that already exists under a different
@@ -184,6 +227,13 @@ func (s *SQLiteStore) UpdateGrafanaDashboardIfUnchanged(d *GrafanaDashboard, exp
 		return false, errors.New("grafana dashboard metadata exceeds its size limit")
 	}
 	projectID := normalizeProjectID(d.ProjectID)
+	if err := validateGrafanaBindings(d.Bindings); err != nil {
+		return false, err
+	}
+	bindingsJSON, err := marshalJSONColumn(d.Bindings, "")
+	if err != nil {
+		return false, fmt.Errorf("marshal bindings: %w", err)
+	}
 	tx, err := s.db.Begin()
 	if err != nil {
 		return false, err
@@ -207,9 +257,9 @@ func (s *SQLiteStore) UpdateGrafanaDashboardIfUnchanged(d *GrafanaDashboard, exp
 	if !now.After(current) {
 		now = current.Add(time.Microsecond)
 	}
-	result, err := tx.Exec(`UPDATE grafana_dashboards SET name = ?, description = ?, enabled = ?, updated_at = ?
+	result, err := tx.Exec(`UPDATE grafana_dashboards SET name = ?, description = ?, enabled = ?, bindings_json = ?, updated_at = ?
 		WHERE id = ? AND project_id = ? AND CAST(updated_at AS TEXT) = ?`,
-		name, strings.TrimSpace(d.Description), d.Enabled, now, d.ID, projectID, currentRaw)
+		name, strings.TrimSpace(d.Description), d.Enabled, bindingsJSON, now, d.ID, projectID, currentRaw)
 	if err != nil {
 		return false, err
 	}
@@ -225,6 +275,18 @@ func (s *SQLiteStore) UpdateGrafanaDashboardIfUnchanged(d *GrafanaDashboard, exp
 	d.ProjectID = projectID
 	d.UpdatedAt = now
 	return true, nil
+}
+
+func validateGrafanaBindings(bindings map[string]string) error {
+	if len(bindings) > grafana.MaxVariables {
+		return fmt.Errorf("grafana dashboard has too many bindings")
+	}
+	for name, value := range bindings {
+		if name != strings.TrimSpace(name) || !grafana.ValidateBindingName(name) || grafana.IsReservedBindingName(name) || !grafana.ValidateBindingValue(value) {
+			return fmt.Errorf("grafana dashboard binding %q is invalid", name)
+		}
+	}
+	return nil
 }
 
 const grafanaDashboardSelect = `SELECT id, COALESCE(project_id, ''), name, COALESCE(description, ''),

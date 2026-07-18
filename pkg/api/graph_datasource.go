@@ -10,10 +10,9 @@ import (
 )
 
 // graphRangeQuery is one resolved range query, expressed independently of any
-// particular datasource. The Prometheus backend turns it into /api/v1/query_range; a
-// future Grafana-proxy backend would turn it into a POST to /api/ds/query with a
-// service-account token. DatasourceUID is carried from the imported panel and ignored
-// by the Prometheus backend, but is load-bearing for that future proxy.
+// particular datasource. The Prometheus backend turns it into /api/v1/query_range;
+// the Grafana proxy turns it into a POST to /api/ds/query with a service-account
+// token. DatasourceUID is ignored by Prometheus and load-bearing for the proxy.
 type graphRangeQuery struct {
 	Expr            string
 	DatasourceUID   string
@@ -78,7 +77,7 @@ func buildPrometheusAllowMap(settings PrometheusSettings) map[string]struct{} {
 func (p *promGraphDataSource) ID() string { return "prometheus" }
 
 func (p *promGraphDataSource) Available() (bool, bool) {
-	configured := strings.TrimSpace(p.settings.BaseURL) != ""
+	configured := strings.TrimSpace(p.settings.BaseURL) != "" && (strings.TrimSpace(p.settings.BearerTokenEnvVar) == "" || p.settings.bearerToken() != "")
 	return p.settings.Enabled, configured
 }
 
@@ -119,9 +118,16 @@ func (p *promGraphDataSource) QueryRange(ctx context.Context, q graphRangeQuery)
 	return series, nil
 }
 
-// graphDataSource returns the active backend for imported-dashboard panels. Today it is
-// always Prometheus; when a Grafana-proxy backend lands this becomes a switch on a new
-// GrafanaSettings.Mode with no change to storage or rendering.
+// graphDataSource returns the configured backend for imported-dashboard panels.
+// Enabling Grafana explicitly selects its proxy; otherwise panels query Prometheus.
 func (s *Server) graphDataSource() graphDataSource {
-	return newPromGraphDataSource(normalizePrometheusSettings(s.runner.GetSystemSettings().Prometheus))
+	return configuredGraphDataSource(s.runner.GetSystemSettings())
+}
+
+func configuredGraphDataSource(settings SystemSettings) graphDataSource {
+	grafanaSettings := normalizeGrafanaSettings(settings.Grafana)
+	if grafanaSettings.Enabled {
+		return newGrafanaGraphDataSource(grafanaSettings)
+	}
+	return newPromGraphDataSource(normalizePrometheusSettings(settings.Prometheus))
 }

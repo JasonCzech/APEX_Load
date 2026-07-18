@@ -1072,6 +1072,8 @@ describe('SettingsPage', () => {
     expect(submitted.prometheus).toEqual({
       enabled: true,
       base_url: 'http://prometheus:9090',
+      bearer_token_env_var: '',
+      allow_label_values: false,
       timeout_seconds: 12,
     })
   })

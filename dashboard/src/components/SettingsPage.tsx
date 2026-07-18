@@ -1738,6 +1738,12 @@ export default function SettingsPage({
     setRequestError('')
   }
 
+  const updateGrafana = (updates: Partial<NonNullable<DashboardSystemSettings['grafana']>>) => {
+    setSettings(current => ({ ...current, grafana: { ...DEFAULT_SETTINGS.grafana!, ...current.grafana, ...updates } }))
+    setSaveMessage('')
+    setRequestError('')
+  }
+
   const deleteDataPoolRow = async (row: SharedDataPoolRow) => {
     if (!selectedDataPoolId) return
     setConfirmDeleteRow(null)
@@ -2227,6 +2233,7 @@ export default function SettingsPage({
                     </div>
                     <input
                       className="settings-input cell-mono"
+					  aria-label="Prometheus bearer token environment variable"
                       value={settings.auth.login_url || ''}
                       onChange={(e) => updateAuth('login_url', e.target.value)}
                       placeholder="https://login.example.com/apexload/start"
@@ -4549,6 +4556,36 @@ export default function SettingsPage({
                       onChange={event => updatePrometheus({ timeout_seconds: Number(event.target.value) })}
                     />
                   </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Bearer token environment variable</span>
+                      <span className="setting-desc">Name of the controller environment variable containing the Prometheus bearer token. The token itself is never stored.</span>
+                    </div>
+                    <input
+                      className="settings-input cell-mono"
+                      value={settings.prometheus.bearer_token_env_var || ''}
+                      onChange={event => updatePrometheus({ bearer_token_env_var: event.target.value })}
+                      placeholder="APEXLOAD_PROMETHEUS_TOKEN"
+                    />
+                  </div>
+                  <div className="setting-row">
+                    <div className="setting-info">
+                      <span className="setting-label">Resolve label_values() options</span>
+                      <span className="setting-desc">Opt in to bounded, run-scoped datasource queries that populate variable pick-lists during import.</span>
+                    </div>
+                    <label className="settings-checkbox-label">
+                      <input type="checkbox" checked={settings.prometheus.allow_label_values} onChange={event => updatePrometheus({ allow_label_values: event.target.checked })} />
+                      <span>Allowed</span>
+                    </label>
+                  </div>
+                  <div className="settings-manager-summary">
+                    <div><span className="setting-label">Grafana datasource proxy</span><span className="setting-desc">Route imported panels through Grafana using their datasource UIDs.</span></div>
+                    <strong>{settings.grafana?.enabled ? 'Enabled' : 'Disabled'}</strong>
+                  </div>
+                  <div className="setting-row"><div className="setting-info"><span className="setting-label">Enable Grafana proxy</span></div><label className="settings-checkbox-label"><input type="checkbox" checked={Boolean(settings.grafana?.enabled)} onChange={event => updateGrafana({ enabled: event.target.checked })} /><span>Enabled</span></label></div>
+                  <div className="setting-row"><div className="setting-info"><span className="setting-label">Grafana server URL</span></div><input className="settings-input cell-mono" aria-label="Grafana server URL" value={settings.grafana?.base_url || ''} onChange={event => updateGrafana({ base_url: event.target.value })} placeholder="https://grafana.example.com" /></div>
+                  <div className="setting-row"><div className="setting-info"><span className="setting-label">Service-account token environment variable</span></div><input className="settings-input cell-mono" aria-label="Grafana service-account token environment variable" value={settings.grafana?.service_account_token_env_var || ''} onChange={event => updateGrafana({ service_account_token_env_var: event.target.value })} placeholder="APEXLOAD_GRAFANA_TOKEN" /></div>
+                  <div className="setting-row"><div className="setting-info"><span className="setting-label">Grafana timeout (seconds)</span></div><input className="settings-input settings-input-number" aria-label="Grafana timeout seconds" type="number" min={1} max={60} step={1} value={settings.grafana?.timeout_seconds || 10} onChange={event => updateGrafana({ timeout_seconds: Number(event.target.value) })} /></div>
                 </div>
               </div>
             </section>
@@ -4563,7 +4600,7 @@ export default function SettingsPage({
               <ImportedDashboardsPanel
                 projects={projects}
                 defaultProjectId={selectedProjectId}
-                prometheusConfigured={settings.prometheus.enabled && settings.prometheus.base_url.trim() !== ''}
+                prometheusConfigured={(settings.grafana?.enabled && Boolean(settings.grafana.base_url.trim()) && Boolean(settings.grafana.service_account_token_env_var.trim())) || (settings.prometheus.enabled && settings.prometheus.base_url.trim() !== '')}
               />
             </section>
 

@@ -997,7 +997,10 @@ func (s *Server) routes(allowedOrigins []string) {
 	// Imported Grafana dashboards: two-phase import/commit, CRUD, and panel resolution.
 	s.mux.Handle("GET /api/v1/monitoring/dashboards/import/grafana/support-matrix", cors(log(auth(http.HandlerFunc(s.handleGrafanaDashboardSupportMatrix)))))
 	s.mux.Handle("POST /api/v1/monitoring/dashboards/import/grafana", cors(log(auth(http.HandlerFunc(s.handleImportGrafanaDashboard)))))
+	s.mux.Handle("POST /api/v1/monitoring/dashboards/import/grafana/live", cors(log(auth(http.HandlerFunc(s.handleImportGrafanaDashboardByUID)))))
 	s.mux.Handle("POST /api/v1/monitoring/dashboards/import/grafana/commit", cors(log(auth(http.HandlerFunc(s.handleCommitGrafanaDashboardImport)))))
+	s.mux.Handle("POST /api/v1/monitoring/dashboards/import/grafana/preview", cors(log(auth(http.HandlerFunc(s.handlePreviewGrafanaDashboardImport)))))
+	s.mux.Handle("POST /api/v1/monitoring/dashboards/import/grafana/label-values", cors(log(auth(http.HandlerFunc(s.handleGrafanaImportLabelValues)))))
 	s.mux.Handle("GET /api/v1/monitoring/dashboards", cors(log(auth(http.HandlerFunc(s.handleListGrafanaDashboards)))))
 	s.mux.Handle("GET /api/v1/monitoring/dashboards/graphs", cors(log(auth(http.HandlerFunc(s.handleImportedDashboardGraphs)))))
 	s.mux.Handle("GET /api/v1/monitoring/dashboards/{id}", cors(log(auth(http.HandlerFunc(s.handleGetGrafanaDashboard)))))
