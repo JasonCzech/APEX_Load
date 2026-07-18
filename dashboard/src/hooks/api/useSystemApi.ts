@@ -32,6 +32,9 @@ import {
   FleetCapacityResponse,
   ProvisionerInfo,
   HealthResponse,
+  ImportedDashboard,
+  ImportedDashboardGraphsResponse,
+  ImportedDashboardImportReview,
   InfrastructureMonitorPacksResponse,
   ParityStatusResponse,
   PrometheusGraphsResponse,
@@ -159,6 +162,35 @@ export function useSystemApi() {
       request<PrometheusGraphsResponse>(`/monitoring/prometheus/graphs${buildQuery(params)}`),
     [],
   )
+  const getImportedDashboardGraphs = useCallback(
+		(params: { project_id: string; test_id?: string; start: string; end: string; step_seconds: number }) =>
+      request<ImportedDashboardGraphsResponse>(`/monitoring/dashboards/graphs${buildQuery(params)}`),
+    [],
+  )
+  const listImportedDashboards = useCallback(
+    (params: { project_id?: string } = {}) =>
+      request<{ dashboards: ImportedDashboard[]; count: number }>(`/monitoring/dashboards${buildQuery(params)}`),
+    [],
+  )
+  const importGrafanaDashboard = useCallback(
+    (payload: { project_id: string; name?: string; content: string }) =>
+      request<ImportedDashboardImportReview>('/monitoring/dashboards/import/grafana', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+  const commitGrafanaDashboardImport = useCallback(
+    (payload: { project_id: string; import_session_id: string; name?: string; bindings?: Record<string, string> }) =>
+      request<ImportedDashboard>('/monitoring/dashboards/import/grafana/commit', { method: 'POST', body: JSON.stringify(payload) }),
+    [],
+  )
+  const patchImportedDashboard = useCallback(
+    (id: string, payload: { name?: string; description?: string; enabled?: boolean }) =>
+      request<ImportedDashboard>(`/monitoring/dashboards/${encodeURIComponent(id)}`, { method: 'PATCH', body: JSON.stringify(payload) }),
+    [],
+  )
+  const deleteImportedDashboard = useCallback(
+    (id: string) => request<{ deleted: string }>(`/monitoring/dashboards/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+    [],
+  )
   const getReportProfiles = useCallback(() => request<ReportProfilesResponse>('/reports/profiles'), [])
   const getReleaseSLAGovernance = useCallback((releaseId: string) => request<ReleaseSLAGovernanceResponse>(`/releases/${encodeURIComponent(releaseId)}/sla-governance`), [])
   const createReleaseSLAWaiver = useCallback(
@@ -241,6 +273,12 @@ export function useSystemApi() {
       getAPMIntegrationProfiles,
       getInfrastructureMonitorPacks,
       getPrometheusGraphs,
+      getImportedDashboardGraphs,
+      listImportedDashboards,
+      importGrafanaDashboard,
+      commitGrafanaDashboardImport,
+      patchImportedDashboard,
+      deleteImportedDashboard,
       getReportProfiles,
       getReleaseSLAGovernance,
       createReleaseSLAWaiver,
@@ -259,6 +297,6 @@ export function useSystemApi() {
       getSystemSettings,
       updateSystemSettings,
     }),
-    [getAuthEffectiveAccess, getAuthEffectiveAccessForPrincipal, getAuthAccessMatrix, getAuthPolicy, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, onboardAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, revokeAuthUserSessions, deleteAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, getAccessReview, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getConfigDefaults, getSystemInventory, getRestartCapabilities, executeRestart, getSystemReadiness, getSystemServices, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getPrometheusGraphs, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, ackFleetAlert, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
+    [getAuthEffectiveAccess, getAuthEffectiveAccessForPrincipal, getAuthAccessMatrix, getAuthPolicy, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, onboardAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, revokeAuthUserSessions, deleteAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, getAccessReview, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getConfigDefaults, getSystemInventory, getRestartCapabilities, executeRestart, getSystemReadiness, getSystemServices, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getPrometheusGraphs, getImportedDashboardGraphs, listImportedDashboards, importGrafanaDashboard, commitGrafanaDashboardImport, patchImportedDashboard, deleteImportedDashboard, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, ackFleetAlert, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
   )
 }

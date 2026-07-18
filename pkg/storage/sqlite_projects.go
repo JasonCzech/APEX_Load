@@ -1298,6 +1298,7 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		{`DELETE FROM test_history WHERE test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id}},
 		{`DELETE FROM test_notes WHERE test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id}},
 		{`DELETE FROM test_interval_summaries WHERE test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id}},
+		{`DELETE FROM grafana_dashboard_snapshots WHERE project_id = ? OR test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id, id}},
 		{`DELETE FROM run_archives WHERE test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id}},
 		{`DELETE FROM archive_finalization_jobs WHERE project_id = ? OR test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id, id}},
 		{`DELETE FROM archive_refresh_jobs WHERE project_id = ? OR test_id IN (SELECT id FROM tests WHERE project_id = ?)`, []any{id, id}},
@@ -1319,6 +1320,8 @@ func deleteProjectGraphTx(tx *storeTx, id string) error {
 		{`DELETE FROM object_repositories WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM correlation_rulesets WHERE project_id = ?`, []any{id}},
 		{`DELETE FROM monitoring_collectors WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM grafana_dashboards WHERE project_id = ?`, []any{id}},
+		{`DELETE FROM grafana_import_sessions WHERE project_id = ?`, []any{id}},
 
 		// Execution-plan schedules, approvals, occurrences, and run state.
 		{`DELETE FROM execution_plan_schedule_occurrences WHERE project_id = ? OR schedule_id IN (SELECT id FROM execution_plan_schedules WHERE project_id = ? OR plan_id IN (SELECT id FROM execution_plans WHERE project_id = ?))`, []any{id, id, id}},

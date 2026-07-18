@@ -940,6 +940,45 @@ func schemaCreateTableStatements() []string {
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		// The `enabled INTEGER DEFAULT 1` fragment is written byte-for-byte to match a
+		// rewriteSQL boolean-column entry (see sqlite.go), so Postgres gets BOOLEAN with
+		// zero new rewrite rules; TestPostgresSchemaBooleanColumnsRewriteToBoolean guards
+		// this. Any deviation silently breaks Postgres.
+		`CREATE TABLE IF NOT EXISTS grafana_dashboards (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT,
+			source_title TEXT,
+			source_uid TEXT,
+			source_sha256 TEXT NOT NULL,
+			schema_version INTEGER NOT NULL DEFAULT 0,
+			enabled INTEGER DEFAULT 1,
+			panels_json TEXT NOT NULL,
+			bindings_json TEXT,
+			diagnostics_json TEXT,
+			created_by TEXT,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS grafana_import_sessions (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			name TEXT,
+			content TEXT NOT NULL,
+			source_sha256 TEXT NOT NULL,
+			expires_at DATETIME NOT NULL,
+			claim_token TEXT,
+			claimed_at DATETIME,
+			created_at DATETIME NOT NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS grafana_dashboard_snapshots (
+			test_id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL,
+			payload_json TEXT NOT NULL,
+			captured_at DATETIME NOT NULL,
+			FOREIGN KEY(test_id) REFERENCES tests(id)
+		)`,
 	}
 }
 
@@ -1048,6 +1087,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "scenarios.ref_key", query: `ALTER TABLE scenarios ADD COLUMN ref_key TEXT`},
 		{name: "tests.ref_key", query: `ALTER TABLE tests ADD COLUMN ref_key TEXT`},
 		{name: "run_archives.ref_key", query: `ALTER TABLE run_archives ADD COLUMN ref_key TEXT`},
+		{name: "grafana_import_sessions.source_sha256", query: `ALTER TABLE grafana_import_sessions ADD COLUMN source_sha256 TEXT NOT NULL DEFAULT ''`},
 		{name: "github_script_links.remote_blob_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_blob_sha TEXT`},
 		{name: "github_script_links.remote_commit_sha", query: `ALTER TABLE github_script_links ADD COLUMN remote_commit_sha TEXT`},
 		{name: "github_check_links.pending_conclusion", query: `ALTER TABLE github_check_links ADD COLUMN pending_conclusion TEXT`},
@@ -1120,6 +1160,9 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_object_repositories_project ON object_repositories(project_id)`, "idx_object_repositories_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_correlation_rulesets_project ON correlation_rulesets(project_id)`, "idx_correlation_rulesets_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_monitoring_collectors_project ON monitoring_collectors(project_id)`, "idx_monitoring_collectors_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_grafana_dashboards_project ON grafana_dashboards(project_id)`, "idx_grafana_dashboards_project"},
+	{`CREATE INDEX IF NOT EXISTS idx_grafana_import_sessions_project_expiry ON grafana_import_sessions(project_id, expires_at)`, "idx_grafana_import_sessions_project_expiry"},
+	{`CREATE INDEX IF NOT EXISTS idx_grafana_dashboard_snapshots_project ON grafana_dashboard_snapshots(project_id)`, "idx_grafana_dashboard_snapshots_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_reusable_blocks_project ON reusable_blocks(project_id)`, "idx_reusable_blocks_project"},
 	{`CREATE INDEX IF NOT EXISTS idx_bruno_artifacts_project_hash ON bruno_source_artifacts(project_id, artifact_kind, sha256)`, "idx_bruno_artifacts_project_hash"},
 	{`CREATE INDEX IF NOT EXISTS idx_bruno_revisions_script_created ON bruno_source_revisions(script_id, created_at)`, "idx_bruno_revisions_script_created"},

@@ -21,6 +21,8 @@ const hookMocks = vi.hoisted(() => ({
   useExecutionLiveControls: vi.fn(),
   useExecutionArchiveModel: vi.fn(),
   useExecutionTestManifest: vi.fn(),
+	useImportedDashboardGraphs: vi.fn(),
+	chartProps: vi.fn(),
 }))
 
 vi.mock('./TestExecutionHeader', () => ({ default: () => <div>Execution Header</div> }))
@@ -31,7 +33,7 @@ vi.mock('./TestExecutionHeroMetrics', () => ({ default: () => <div>Hero Metrics 
 vi.mock('./TestExecutionLiveControls', () => ({ default: () => <div>Live Controls Content</div> }))
 vi.mock('./TestExecutionManifestCard', () => ({ default: () => <div>Test Manifest Content</div> }))
 vi.mock('./TestExecutionScenarioPreview', () => ({ default: () => <div>Scenario Preview Content</div> }))
-vi.mock('./TestExecutionCharts', () => ({ default: () => <div>Runtime Graphs Content</div> }))
+vi.mock('./TestExecutionCharts', () => ({ default: (props: unknown) => { hookMocks.chartProps(props); return <div>Runtime Graphs Content</div> } }))
 vi.mock('./TestExecutionStatusPanels', () => ({ default: () => <div>Status Panels Content</div> }))
 vi.mock('./TestExecutionSummary', () => ({ default: () => <div>Live Summary Content</div> }))
 vi.mock('./TestExecutionArchive', () => ({
@@ -67,6 +69,7 @@ vi.mock('./useExecutionActionBridge', () => ({ useExecutionActionBridge: hookMoc
 vi.mock('./useExecutionLiveControls', () => ({ useExecutionLiveControls: hookMocks.useExecutionLiveControls }))
 vi.mock('./useExecutionArchiveModel', () => ({ useExecutionArchiveModel: hookMocks.useExecutionArchiveModel }))
 vi.mock('./useExecutionTestManifest', () => ({ useExecutionTestManifest: hookMocks.useExecutionTestManifest }))
+vi.mock('./useImportedDashboardGraphs', () => ({ useImportedDashboardGraphs: hookMocks.useImportedDashboardGraphs }))
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -212,6 +215,22 @@ describe('TestExecution workspace layout', () => {
       archiveSummaryHistory: [archivedPoint],
     }))
   })
+
+	it('passes imported dashboard results into the execution graph surface', async () => {
+		const dashboards = [{ dashboard_id: 'dashboard-a', dashboard_title: 'Infra', panels: [] }]
+		hookMocks.useImportedDashboardGraphs.mockReturnValue({
+			importedDashboards: dashboards,
+			importedDashboardsLoading: false,
+			importedDashboardsError: '',
+		})
+		await renderExecution()
+		expect(hookMocks.useImportedDashboardGraphs).toHaveBeenCalledWith(expect.objectContaining({ id: 'test-1' }), [], undefined)
+		await clickWorkspaceTab('Graphs')
+		expect(hookMocks.chartProps).toHaveBeenCalledWith(expect.objectContaining({
+			importedDashboards: dashboards,
+			enableGraphGroupTabs: true,
+		}))
+	})
 
   it('opens the requested archive workspace tab without changing the default layout', async () => {
     await renderExecution({ initialWorkspaceTabId: 'archive' })
@@ -606,6 +625,11 @@ describe('TestExecution workspace layout', () => {
   }
 
   function configureHooks(test: TestSummary) {
+		hookMocks.useImportedDashboardGraphs.mockReturnValue({
+			importedDashboards: [],
+			importedDashboardsLoading: false,
+			importedDashboardsError: '',
+		})
     hookMocks.useExecutionTestPolling.mockReturnValue({ test, setTest: vi.fn(), error: '' })
     hookMocks.useExecutionViewState.mockReturnValue({
       expandedChart: null,

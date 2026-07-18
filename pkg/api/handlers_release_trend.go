@@ -96,9 +96,16 @@ func (s *Server) attachReleaseTrendForProfile(report *RunArchiveReport, profileI
 // the release_trend section. An empty/unknown id resolves through the same default
 // (engineer) the renderers use, which does not include the section.
 func profileIncludesReleaseTrend(profileID string) bool {
+	return profileIncludesSection(profileID, "release_trend")
+}
+
+// profileIncludesSection reports whether the resolved report profile declares the
+// given section. An empty/unknown id resolves through the same default the renderers
+// use.
+func profileIncludesSection(profileID, section string) bool {
 	profile, ok := lookupRunArchiveReportProfile(profileID)
 	if !ok {
 		return false
 	}
-	return slices.Contains(profile.IncludedSections, "release_trend")
+	return slices.Contains(profile.IncludedSections, section)
 }

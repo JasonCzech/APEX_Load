@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -87,6 +88,12 @@ var profileHTMLFuncMap = template.FuncMap{
 	},
 	"formatFloat": func(value float64) string {
 		return fmt.Sprintf("%.1f", value)
+	},
+	"optFloat": func(value *float64) string {
+		if value == nil {
+			return "—"
+		}
+		return strconv.FormatFloat(*value, 'f', -1, 64)
 	},
 	"formatPercent": func(value float64) string {
 		return fmt.Sprintf("%.2f%%", value)

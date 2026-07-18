@@ -1,0 +1,55 @@
+{
+  "title": "APEX Load Telemetry",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "timezone": "browser",
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Controller Up",
+      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
+      "targets": [{ "expr": "apexload_up", "refId": "A" }]
+    },
+    {
+      "id": 2,
+      "type": "timeseries",
+      "title": "Telemetry Sample Age",
+      "gridPos": { "x": 4, "y": 0, "w": 10, "h": 7 },
+      "targets": [{ "expr": "apexload_telemetry_sample_age_ms", "refId": "A" }]
+    },
+    {
+      "id": 3,
+      "type": "timeseries",
+      "title": "Pipeline Lag",
+      "gridPos": { "x": 14, "y": 0, "w": 10, "h": 7 },
+      "targets": [
+        { "expr": "apexload_telemetry_generator_processing_lag_ms", "refId": "A", "legendFormat": "generator {{test_id}}" },
+        { "expr": "apexload_telemetry_transport_lag_ms", "refId": "B", "legendFormat": "transport {{test_id}}" },
+        { "expr": "apexload_telemetry_controller_fanout_lag_ms", "refId": "C", "legendFormat": "fanout {{test_id}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Telemetry Drops",
+      "gridPos": { "x": 0, "y": 7, "w": 12, "h": 7 },
+      "targets": [
+        { "expr": "increase(apexload_telemetry_dropped_results_total[5m])", "refId": "A", "legendFormat": "collector {{test_id}}" },
+        { "expr": "increase(apexload_telemetry_dropped_subscriber_batches_total[5m])", "refId": "B", "legendFormat": "generator stream {{test_id}}" },
+        { "expr": "increase(apexload_websocket_dropped_messages_total[5m]) + increase(apexload_websocket_dropped_events_total[5m])", "refId": "C", "legendFormat": "websocket {{test_id}}" }
+      ]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Messaging Lag",
+      "gridPos": { "x": 12, "y": 7, "w": 12, "h": 7 },
+      "targets": [
+        { "expr": "apexload_messaging_consumer_lag_ms", "refId": "A", "legendFormat": "{{protocol}} {{target}}" },
+        { "expr": "apexload_messaging_e2e_latency_ms", "refId": "B", "legendFormat": "e2e {{protocol}} {{target}}" }
+      ]
+    }
+  ]
+}

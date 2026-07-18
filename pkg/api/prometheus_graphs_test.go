@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -260,6 +261,28 @@ func TestPrometheusGraphsDropsNonFiniteSamples(t *testing.T) {
 	}
 }
 
+func TestDecodePrometheusPointRejectsOutOfRangeTimestamp(t *testing.T) {
+	for _, raw := range []json.RawMessage{
+		json.RawMessage(`["1e300","1"]`),
+		json.RawMessage(`["-1e300","1"]`),
+	} {
+		if point, ok := decodePrometheusPoint(raw); ok {
+			t.Fatalf("decodePrometheusPoint(%s) = %#v, true; want rejection", raw, point)
+		}
+	}
+}
+
+func TestPrometheusSeriesKeyDoesNotCollideAfterReadableSanitization(t *testing.T) {
+	left := prometheusSeriesKey("graph", map[string]string{"instance": "api-a"}, 0)
+	right := prometheusSeriesKey("graph", map[string]string{"instance": "api_a"}, 1)
+	if left == right {
+		t.Fatalf("sanitized label keys collided: %q", left)
+	}
+	if left != prometheusSeriesKey("graph", map[string]string{"instance": "api-a"}, 9) {
+		t.Fatal("series key is not stable for the same label set")
+	}
+}
+
 func TestPrometheusGraphsRejectsOversizedRangeAndPointCount(t *testing.T) {
 	t.Setenv("APEXLOAD_PROMETHEUS_URL", "")
 	server := prometheusGraphAPIServerForTest(t, "http://prometheus:9090", 5)
@@ -305,6 +328,23 @@ func TestPrometheusGraphsBoundsResponseBody(t *testing.T) {
 	server.mux.ServeHTTP(resp, req)
 	if resp.Code != http.StatusBadGateway {
 		t.Fatalf("status = %d, want 502 for oversized upstream body", resp.Code)
+	}
+}
+
+func TestPrometheusRangeBoundsUpstreamErrorText(t *testing.T) {
+	prom := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "error", "error": strings.Repeat("x", maxPrometheusErrorBytes*4)})
+	}))
+	defer prom.Close()
+	settings := PrometheusSettings{Enabled: true, BaseURL: prom.URL, TimeoutSeconds: 5}
+	start := time.Now().UTC().Add(-time.Minute)
+	_, err := queryPrometheusRange(context.Background(), prom.Client(), settings, buildPrometheusAllowMap(settings), "up", start, start.Add(time.Minute), 15, maxPrometheusResponseBytes)
+	if err == nil {
+		t.Fatal("expected upstream error")
+	}
+	if len(err.Error()) > maxPrometheusErrorBytes {
+		t.Fatalf("upstream error length = %d, want <= %d", len(err.Error()), maxPrometheusErrorBytes)
 	}
 }
 

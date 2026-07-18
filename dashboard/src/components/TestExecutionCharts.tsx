@@ -14,12 +14,13 @@ import {
   YAxis,
 } from 'recharts'
 
-import { LatencyTarget, LiveMetrics, MetricsHistoryPoint, NetworkLatency, PrometheusGraph } from '../types'
+import { ImportedDashboardResult, LatencyTarget, LiveMetrics, MetricsHistoryPoint, NetworkLatency, PrometheusGraph } from '../types'
 import { copyTextToClipboard } from '../utils/clipboardUtils'
 import { downloadTextFile } from '../utils/fileUtils'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { buildGeneratorImpactView, type GeneratorImpactVerdict } from './generatorImpact'
 import LoadImpactHeatmap from './LoadImpactHeatmap'
+import StatTile from './StatTile'
 import {
   buildLoadImpactModel,
   formatLoadImpactValue,
@@ -52,9 +53,13 @@ import {
   isLoadImpactChart,
   isLoadImpactHeatmapChart,
   isLoadImpactPercentilesChart,
+  isImportedDashboardChart,
   isOverlayMetricAvailable,
   isPrometheusChart,
+  isStatTileChart,
+  buildImportedDashboardCharts,
   latestRouteLatencyValues,
+  presetExemptChartIds,
   loadImpactHeatmapChart,
   loadImpactPercentilesChart,
   loadImpactChartDataForRow,
@@ -138,6 +143,9 @@ interface Props {
   prometheusGraphs?: PrometheusGraph[]
   prometheusLoading?: boolean
   prometheusError?: string
+  importedDashboards?: ImportedDashboardResult[]
+  importedDashboardsLoading?: boolean
+  importedDashboardsError?: string
   latestLatency?: NetworkLatency
   latestMetrics?: LiveMetrics
   surface?: 'execution' | 'command-center'
@@ -155,7 +163,7 @@ interface Props {
 }
 
 type ChartDropPosition = 'before' | 'after'
-export type GraphGroupTabId = 'test_results' | 'under_load' | 'infrastructure' | 'prometheus'
+export type GraphGroupTabId = 'test_results' | 'under_load' | 'infrastructure' | 'prometheus' | 'imported'
 export type UnderLoadDisplayMode = 'graphs' | 'heatmap'
 type ChartCardSize = { width: number; height: number }
 type ChartCardElement = HTMLElement | null
@@ -169,6 +177,9 @@ type AxisInteractionEvent = {
 }
 
 const EMPTY_PROMETHEUS_GRAPHS: PrometheusGraph[] = []
+// A stable empty default is required (not a `[]` literal), or the useMemo that builds
+// the imported charts re-runs on every render.
+const EMPTY_IMPORTED_DASHBOARDS: ImportedDashboardResult[] = []
 
 export interface GraphCursorState {
   label?: string | number
@@ -193,6 +204,7 @@ const graphGroupTabs: Array<{ id: GraphGroupTabId; label: string }> = [
   { id: 'under_load', label: 'Under Load' },
   { id: 'infrastructure', label: 'Infrastructure' },
   { id: 'prometheus', label: 'Prometheus' },
+  { id: 'imported', label: 'Dashboards' },
 ]
 
 const infrastructureChartIds = new Set(['cpu', 'mem', 'io', 'tx_network_phases', 'generator_impact', 'network_latency'])
@@ -205,6 +217,9 @@ function displayWindowSliderPercent(value: number) {
 }
 
 function graphGroupForChart(chart: ChartConfig): GraphGroupTabId {
+  // Imported dashboard charts are also 'line-prometheus' (so isPrometheusChart is
+  // true for them), so this check MUST come first or they'd land in the Prometheus tab.
+  if (isImportedDashboardChart(chart)) return 'imported'
   if (isPrometheusChart(chart)) return 'prometheus'
   if (isLoadImpactChart(chart) || isLoadImpactHeatmapChart(chart) || isLoadImpactPercentilesChart(chart)) return 'under_load'
   if (infrastructureChartIds.has(chart.id)) return 'infrastructure'
@@ -420,6 +435,9 @@ export default function TestExecutionCharts({
   prometheusGraphs = EMPTY_PROMETHEUS_GRAPHS,
   prometheusLoading = false,
   prometheusError = '',
+  importedDashboards = EMPTY_IMPORTED_DASHBOARDS,
+  importedDashboardsLoading = false,
+  importedDashboardsError = '',
   latestLatency,
   latestMetrics,
   surface = 'execution',
@@ -525,9 +543,14 @@ export default function TestExecutionCharts({
   const loadImpactPercentileData = useMemo(() => loadImpactPercentileChartData(loadImpactRows), [loadImpactRows])
   const loadImpactCharts = useMemo(() => buildLoadImpactCharts(loadImpactRows), [loadImpactRows])
   const prometheusGraphCharts = useMemo(() => buildPrometheusCharts(prometheusGraphs), [prometheusGraphs])
+  const importedDashboardCharts = useMemo(() => buildImportedDashboardCharts(importedDashboards), [importedDashboards])
   const prometheusChartDataById = useMemo(
-    () => new Map(prometheusGraphCharts.map(chart => [chart.id, prometheusChartData(chart.prometheusGraph)])),
-    [prometheusGraphCharts],
+    () => new Map(
+      [...prometheusGraphCharts, ...importedDashboardCharts]
+        .filter(chart => chart.type === 'line-prometheus')
+        .map(chart => [chart.id, prometheusChartData(chart.prometheusGraph)]),
+    ),
+    [prometheusGraphCharts, importedDashboardCharts],
   )
   const loadImpactGraphCharts = useMemo(() => (
     loadImpactRows.length > 0
@@ -547,7 +570,7 @@ export default function TestExecutionCharts({
       )
     ))
     .map(chart => chart.id), [loadImpactGraphCharts])
-  const allChartConfigs = useMemo(() => [...chartConfigs, ...prometheusGraphCharts, ...loadImpactGraphCharts], [loadImpactGraphCharts, prometheusGraphCharts])
+  const allChartConfigs = useMemo(() => [...chartConfigs, ...prometheusGraphCharts, ...importedDashboardCharts, ...loadImpactGraphCharts], [loadImpactGraphCharts, prometheusGraphCharts, importedDashboardCharts])
   const allChartIds = useMemo(() => allChartConfigs.map(chart => chart.id), [allChartConfigs])
   const allChartIdSignature = allChartIds.join('|')
   const visibleLoadImpactChartIdSignature = visibleLoadImpactChartIds.join('|')
@@ -578,11 +601,15 @@ export default function TestExecutionCharts({
   useEffect(() => {
     if (!initialPresetId || initialPresetApplied || hasStoredChartState || allChartIds.length === 0) return
     const next = chartStateForMonitorPreset(initialPresetId, allChartIds)
-    const loadImpactIds = enableGraphGroupTabs ? loadImpactDefaultVisibleChartIds : []
+    // Dynamic charts (load-impact + Prometheus/imported pack) can never appear in a
+    // static preset's chartIds, so keep them visible rather than letting the preset
+    // hide them. Without the Prometheus/imported exemption the Graph Wall's Prometheus
+    // and Dashboards tabs render an empty "0" count.
+    const exemptIds = enableGraphGroupTabs ? [...loadImpactDefaultVisibleChartIds, ...presetExemptChartIds(allChartConfigs)] : []
     setChartOrder(next.chartOrder)
-    setHiddenChartIds(loadImpactIds.length > 0 ? next.hiddenChartIds.filter(id => !loadImpactIds.includes(id)) : next.hiddenChartIds)
+    setHiddenChartIds(exemptIds.length > 0 ? next.hiddenChartIds.filter(id => !exemptIds.includes(id)) : next.hiddenChartIds)
     setInitialPresetApplied(true)
-  }, [allChartIds, enableGraphGroupTabs, hasStoredChartState, initialPresetApplied, initialPresetId, loadImpactDefaultVisibleChartIds])
+  }, [allChartConfigs, allChartIds, enableGraphGroupTabs, hasStoredChartState, initialPresetApplied, initialPresetId, loadImpactDefaultVisibleChartIds])
 
   useEffect(() => {
     writeStoredJSON(chartOrderStorageKey, chartOrder)
@@ -783,9 +810,12 @@ export default function TestExecutionCharts({
 
   const latest = filteredData[filteredData.length - 1] || loadImpactSourceData[loadImpactSourceData.length - 1] || {}
   const showPrometheusTab = prometheusGraphCharts.length > 0 || prometheusLoading || Boolean(prometheusError)
-  const visibleGraphGroupTabs = showPrometheusTab
-    ? graphGroupTabs
-    : graphGroupTabs.filter(tab => tab.id !== 'prometheus')
+  const showImportedTab = importedDashboardCharts.length > 0 || importedDashboardsLoading || Boolean(importedDashboardsError)
+  const visibleGraphGroupTabs = graphGroupTabs.filter(tab => {
+    if (tab.id === 'prometheus') return showPrometheusTab
+    if (tab.id === 'imported') return showImportedTab
+    return true
+  })
   const activeGraphGroupTab = activeGraphGroupTabProp ?? localActiveGraphGroupTab
   const updateActiveGraphGroupTab = useCallback((tab: GraphGroupTabId) => {
     if (activeGraphGroupTabProp === undefined) {
@@ -861,7 +891,7 @@ export default function TestExecutionCharts({
     }
   }, [])
 
-  if (filteredData.length <= 1 && loadImpactCharts.length === 0 && prometheusGraphCharts.length === 0 && !loadImpactLoading && !loadImpactError && !prometheusLoading && !prometheusError) {
+  if (filteredData.length <= 1 && loadImpactCharts.length === 0 && prometheusGraphCharts.length === 0 && importedDashboardCharts.length === 0 && !loadImpactLoading && !loadImpactError && !prometheusLoading && !prometheusError && !importedDashboardsLoading && !importedDashboardsError) {
     return (
       <section className="charts-section">
         <div className="chart-empty-state" role="status" aria-live="polite">Awaiting metrics</div>
@@ -870,11 +900,14 @@ export default function TestExecutionCharts({
   }
 
   const contextChart = chartMenu ? displayModeCharts.find(chart => chart.id === chartMenu.chartId) : undefined
-  const graphGroupCounts: Record<GraphGroupTabId, number> = { test_results: 0, under_load: 0, infrastructure: 0, prometheus: 0 }
+  const graphGroupCounts: Record<GraphGroupTabId, number> = { test_results: 0, under_load: 0, infrastructure: 0, prometheus: 0, imported: 0 }
   visibleCharts.forEach(chart => {
     graphGroupCounts[graphGroupForChart(chart)] += 1
   })
   const chartDataFor = (chart: ChartConfig) => {
+    if (isStatTileChart(chart)) {
+      return []
+    }
     if (isLoadImpactHeatmapChart(chart)) {
       return loadImpactSourceData
     }
@@ -1411,10 +1444,11 @@ export default function TestExecutionCharts({
   const resetCharts = () => {
     const loadImpactIds = enableGraphGroupTabs ? loadImpactDefaultVisibleChartIds : []
     setVisibleLoadImpactChartIds(loadImpactIds)
+    const exemptIds = enableGraphGroupTabs ? [...loadImpactIds, ...presetExemptChartIds(allChartConfigs)] : []
     if (initialPresetId) {
       const next = chartStateForMonitorPreset(initialPresetId, allChartIds)
       setChartOrder(next.chartOrder)
-      setHiddenChartIds(loadImpactIds.length > 0 ? next.hiddenChartIds.filter(id => !loadImpactIds.includes(id)) : next.hiddenChartIds)
+      setHiddenChartIds(exemptIds.length > 0 ? next.hiddenChartIds.filter(id => !exemptIds.includes(id)) : next.hiddenChartIds)
     } else {
       setChartOrder(allChartIds)
       setHiddenChartIds(defaultHiddenChartIds(allChartConfigs, loadImpactIds))
@@ -2267,6 +2301,10 @@ export default function TestExecutionCharts({
               ? 'Loading Prometheus graphs'
               : activeGraphGroupTab === 'prometheus' && prometheusError
                 ? 'Prometheus metrics unavailable'
+								: activeGraphGroupTab === 'imported' && importedDashboardsLoading
+									? 'Loading imported dashboards'
+									: activeGraphGroupTab === 'imported' && importedDashboardsError
+										? 'Imported dashboards unavailable'
                 : visibleCharts.length === 0 ? 'All graphs are hidden' : 'No graphs visible in this group'
           }</span>
           <button className="btn btn-secondary btn-sm" type="button" onClick={resetCharts}>Reset Graphs</button>
@@ -2496,7 +2534,26 @@ export default function TestExecutionCharts({
                     </button>
                   </div>
                 </div>
-                <div className="chart-visual" role="img" aria-label={chartAriaLabel} aria-describedby={visibleRowsForA11y.length > 0 ? accessibleTableId : undefined}>
+				<div
+					className="chart-visual"
+					role={isStatTileChart(chart) || Boolean(chart.importedError) ? undefined : 'img'}
+					aria-label={isStatTileChart(chart) || chart.importedError ? undefined : chartAriaLabel}
+					aria-describedby={!isStatTileChart(chart) && !chart.importedError && visibleRowsForA11y.length > 0 ? accessibleTableId : undefined}
+				>
+                  {isStatTileChart(chart) ? (
+                    <StatTile
+                      title={chart.title}
+                      value={chart.statValue?.value}
+                      unit={chart.statValue?.unit}
+                      error={chart.statValue?.error}
+                      compact={commandCenterSurface}
+                    />
+                  ) : chart.importedError ? (
+                    // A resolved imported line panel that errored (bad PromQL, series
+                    // cap, unresolved variable) — surface the message instead of a
+                    // silently-empty chart so fail-soft does not read as no-data.
+                    <div className="chart-empty-state chart-error-state" role="status">{chart.importedError}</div>
+                  ) : (
                   <ResponsiveContainer width="100%" height={chartHeight}>
             {chart.type === 'area' ? (
               <ComposedChart
@@ -2866,6 +2923,7 @@ export default function TestExecutionCharts({
               </ComposedChart>
             )}
                   </ResponsiveContainer>
+                  )}
                 </div>
                 {renderAccessibleMetricsTable(metricRows, visibleMetricKeys, displayChartData, chartTitle, accessibleTableId)}
 

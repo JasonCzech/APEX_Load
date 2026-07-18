@@ -150,6 +150,7 @@ type Server struct {
 	brunoArtifactDir            string
 	brunoArtifactWrapper        keywrap.KeyWrapper
 	brunoSessionCleanupCancel   context.CancelFunc
+	grafanaSessionCleanupCancel context.CancelFunc
 	projectSecretStore          secretstore.Store
 	protectedSourceSessions     *secretstore.ProtectedSourceSessionStore
 	sourceSecretMu              sync.Mutex
@@ -992,6 +993,17 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/tests/{id}/github/check-run", cors(log(auth(http.HandlerFunc(s.handlePublishGitHubCheckRun)))))
 	s.mux.Handle("GET /api/v1/monitoring/packs", cors(log(auth(http.HandlerFunc(s.handleListInfrastructureMonitorPacks)))))
 	s.mux.Handle("GET /api/v1/monitoring/prometheus/graphs", cors(log(auth(http.HandlerFunc(s.handlePrometheusGraphs)))))
+
+	// Imported Grafana dashboards: two-phase import/commit, CRUD, and panel resolution.
+	s.mux.Handle("GET /api/v1/monitoring/dashboards/import/grafana/support-matrix", cors(log(auth(http.HandlerFunc(s.handleGrafanaDashboardSupportMatrix)))))
+	s.mux.Handle("POST /api/v1/monitoring/dashboards/import/grafana", cors(log(auth(http.HandlerFunc(s.handleImportGrafanaDashboard)))))
+	s.mux.Handle("POST /api/v1/monitoring/dashboards/import/grafana/commit", cors(log(auth(http.HandlerFunc(s.handleCommitGrafanaDashboardImport)))))
+	s.mux.Handle("GET /api/v1/monitoring/dashboards", cors(log(auth(http.HandlerFunc(s.handleListGrafanaDashboards)))))
+	s.mux.Handle("GET /api/v1/monitoring/dashboards/graphs", cors(log(auth(http.HandlerFunc(s.handleImportedDashboardGraphs)))))
+	s.mux.Handle("GET /api/v1/monitoring/dashboards/{id}", cors(log(auth(http.HandlerFunc(s.handleGetGrafanaDashboard)))))
+	s.mux.Handle("PATCH /api/v1/monitoring/dashboards/{id}", cors(log(auth(http.HandlerFunc(s.handlePatchGrafanaDashboard)))))
+	s.mux.Handle("DELETE /api/v1/monitoring/dashboards/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteGrafanaDashboard)))))
+	s.mux.Handle("GET /api/v1/monitoring/dashboards/{id}/panels", cors(log(auth(http.HandlerFunc(s.handleQueryGrafanaDashboardPanels)))))
 	s.mux.Handle("GET /api/v1/reports/profiles", cors(log(auth(http.HandlerFunc(s.handleListReportProfiles)))))
 	s.mux.Handle("GET /api/v1/library/capabilities", cors(log(auth(http.HandlerFunc(s.handleLibraryCapabilities)))))
 	s.mux.Handle("GET /api/v1/library/catalog", cors(log(auth(http.HandlerFunc(s.handleLibraryCatalog)))))
@@ -1219,6 +1231,7 @@ func (s *Server) Start() (startErr error) {
 	s.startReplayRetentionJanitors()
 	s.startBrowserRecordingRetentionJanitor()
 	s.startBrunoImportSessionJanitor()
+	s.startGrafanaImportSessionJanitor()
 	s.startProtectedSourceSecretSessionJanitor()
 	s.startCacheFanout()
 	s.startGeneratorDiscovery()
@@ -1461,6 +1474,10 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.brunoSessionCleanupCancel != nil {
 		s.brunoSessionCleanupCancel()
 		s.brunoSessionCleanupCancel = nil
+	}
+	if s.grafanaSessionCleanupCancel != nil {
+		s.grafanaSessionCleanupCancel()
+		s.grafanaSessionCleanupCancel = nil
 	}
 	if s.sourceSecretCleanupCancel != nil {
 		s.sourceSecretCleanupCancel()

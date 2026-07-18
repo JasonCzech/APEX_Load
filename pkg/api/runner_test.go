@@ -581,6 +581,41 @@ func (s *metricsStoreSpy) DeleteMonitoringCollector(string) error { return nil }
 func (s *metricsStoreSpy) UpdateMonitoringCollectorHealth(string, string, time.Time) error {
 	return nil
 }
+func (s *metricsStoreSpy) SaveGrafanaDashboard(*storage.GrafanaDashboard) error { return nil }
+func (s *metricsStoreSpy) UpdateGrafanaDashboardIfUnchanged(*storage.GrafanaDashboard, time.Time) (bool, error) {
+	return true, nil
+}
+func (s *metricsStoreSpy) GetGrafanaDashboard(string) (*storage.GrafanaDashboard, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) ListGrafanaDashboards(string, int, int) ([]*storage.GrafanaDashboard, error) {
+	return nil, nil
+}
+func (s *metricsStoreSpy) DeleteGrafanaDashboardIfUnchanged(string, string, time.Time) (bool, error) {
+	return false, nil
+}
+func (s *metricsStoreSpy) SaveGrafanaImportSession(*storage.GrafanaImportSession, int, int64) error {
+	return nil
+}
+func (s *metricsStoreSpy) GetGrafanaImportSession(string, string, time.Time) (*storage.GrafanaImportSession, error) {
+	return nil, sql.ErrNoRows
+}
+func (s *metricsStoreSpy) ClaimGrafanaImportSession(string, string, string, time.Time, time.Duration) (*storage.GrafanaImportSession, bool, error) {
+	return nil, false, nil
+}
+func (s *metricsStoreSpy) ReleaseGrafanaImportSession(string, string, string) error { return nil }
+func (s *metricsStoreSpy) DeleteClaimedGrafanaImportSession(string, string, string) (bool, error) {
+	return false, nil
+}
+func (s *metricsStoreSpy) DeleteExpiredGrafanaImportSessions(time.Time) (int64, error) {
+	return 0, nil
+}
+func (s *metricsStoreSpy) SaveGrafanaDashboardSnapshot(*storage.GrafanaDashboardSnapshot) error {
+	return nil
+}
+func (s *metricsStoreSpy) GetGrafanaDashboardSnapshot(string, string) (*storage.GrafanaDashboardSnapshot, error) {
+	return nil, sql.ErrNoRows
+}
 func (s *metricsStoreSpy) SaveReusableBlock(*storage.ReusableBlock) error { return nil }
 func (s *metricsStoreSpy) GetReusableBlock(string) (*storage.ReusableBlock, error) {
 	return nil, nil

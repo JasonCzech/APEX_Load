@@ -64,6 +64,7 @@ export const INTEGRATION_SETTINGS_SUBSECTIONS = [
   { id: 'library', title: 'Library Federation' },
   { id: 'github', title: 'GitHub' },
   { id: 'prometheus', title: 'Prometheus' },
+  { id: 'dashboards', title: 'Dashboards' },
   { id: 'notifications', title: 'Notifications' },
 ] as const
 

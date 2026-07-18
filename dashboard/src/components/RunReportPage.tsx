@@ -16,6 +16,7 @@ import RunReportKpiScorecard from './runReport/RunReportKpiScorecard'
 import RunReportLensSwitcher from './runReport/RunReportLensSwitcher'
 import RunReportVerdictBanner from './runReport/RunReportVerdictBanner'
 import SynchronizedTimeline from './runReport/SynchronizedTimeline'
+import ImportedDashboardPanels from './runReport/ImportedDashboardPanels'
 import TransactionSlaScoreboard from './runReport/TransactionSlaScoreboard'
 import { reportSectionLens } from './runReport/reportSectionLens'
 import {
@@ -297,6 +298,7 @@ export default function RunReportPage({
           showBaseline={Boolean(effectiveCompareId && baselineSummaryHistory.length)}
         />
       )}
+      {lensSections.sectionSet.has('imported_dashboards') && <ImportedDashboardPanels test={test} />}
       {lensSections.sectionSet.has('sla') && (
         <TransactionSlaScoreboard
           rows={slaRows}

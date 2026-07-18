@@ -83,6 +83,15 @@ func (tr *TestRunner) finalizeRunArchiveDurablyUnderFence(ctx context.Context, t
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+	snapshotCtx, cancelSnapshot := context.WithTimeout(ctx, importedDashboardSnapshotTimeout)
+	// Best-effort: the imported-dashboard snapshot is a secondary observability
+	// artifact and must never gate archive publication. A failure here (a storage
+	// hiccup, a marshal error) is logged and swallowed so the run's archive still
+	// finalizes; Prometheus outages are already handled per-panel inside the capture.
+	if err := tr.captureImportedDashboardSnapshot(snapshotCtx, test, record.CompletedAt); err != nil {
+		slog.Warn("archive finalization: imported dashboard snapshot capture failed", "test", test.ID, "err", err)
+	}
+	cancelSnapshot()
 	recordCopy := *record
 	job := &storage.ArchiveFinalizationJob{
 		TestID:           strings.TrimSpace(test.ID),

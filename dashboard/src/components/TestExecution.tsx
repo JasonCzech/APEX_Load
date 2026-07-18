@@ -40,6 +40,7 @@ import DashboardWorkspace, {
 import { buildWorkspaceContextTokens } from './dashboardWorkspaceModel'
 import { useExecutionChartModel } from './useExecutionChartModel'
 import { usePrometheusGraphs } from './usePrometheusGraphs'
+import { useImportedDashboardGraphs } from './useImportedDashboardGraphs'
 import { useExecutionScenarioPreviewModel } from './useExecutionScenarioPreviewModel'
 import { useExecutionTestManifest } from './useExecutionTestManifest'
 import './TestExecution.css'
@@ -162,6 +163,11 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
     prometheusLoading,
     prometheusError,
   } = usePrometheusGraphs(test, filteredData)
+  const {
+    importedDashboards,
+    importedDashboardsLoading,
+    importedDashboardsError,
+  } = useImportedDashboardGraphs(test, filteredData, test?.project_id)
   const {
     controlFeedback,
     showControlFeedback,
@@ -710,7 +716,10 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
           prometheusGraphs={prometheusGraphs}
           prometheusLoading={prometheusLoading}
           prometheusError={prometheusError}
-          enableGraphGroupTabs={prometheusGraphs.length > 0 || prometheusLoading || Boolean(prometheusError)}
+          importedDashboards={importedDashboards}
+          importedDashboardsLoading={importedDashboardsLoading}
+          importedDashboardsError={importedDashboardsError}
+          enableGraphGroupTabs={prometheusGraphs.length > 0 || prometheusLoading || Boolean(prometheusError) || importedDashboards.length > 0 || importedDashboardsLoading || Boolean(importedDashboardsError)}
           latestLatency={latestMetrics?.latency ?? test?.live_metrics?.latency}
           latestMetrics={latestMetrics ?? test?.live_metrics}
           terminalStatus={test?.status === 'FAILED' || test?.status === 'ABORTED' ? test.status : undefined}

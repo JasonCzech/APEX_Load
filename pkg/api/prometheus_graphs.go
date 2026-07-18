@@ -2,7 +2,9 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -13,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 )
 
 const (
@@ -31,6 +35,9 @@ const (
 	// will read, protecting the controller from a misbehaving/compromised
 	// Prometheus that streams an unbounded body.
 	maxPrometheusResponseBytes = 16 << 20 // 16 MiB
+	// Prometheus controls error/status strings. Bound anything reflected to API
+	// clients or persisted in dashboard snapshots.
+	maxPrometheusErrorBytes = 1024
 )
 
 type PrometheusGraphsResponse struct {
@@ -151,7 +158,7 @@ func (s *Server) handlePrometheusGraphs(w http.ResponseWriter, r *http.Request) 
 
 	graphs, err := queryPrometheusGraphPack(r.Context(), settings, start, end, stepSeconds)
 	if err != nil {
-		writeError(w, http.StatusBadGateway, "prometheus query failed: "+err.Error())
+		writeError(w, http.StatusBadGateway, "prometheus query failed: "+boundedtext.TruncateUTF8(err.Error(), maxPrometheusErrorBytes))
 		return
 	}
 
@@ -254,6 +261,69 @@ func queryPrometheusGraphPack(ctx context.Context, settings PrometheusSettings, 
 	return graphs, nil
 }
 
+// queryPrometheusRange is the datasource transport: it issues one range query and
+// returns the raw matrix series, applying the outbound-host allowlist, a bounded body
+// read, and the standard Prometheus response envelope checks. It is deliberately free
+// of any graph-shaping so both the curated pack and the imported-dashboard path (which
+// supplies user PromQL and its own byte budget) can share it.
+func queryPrometheusRange(
+	ctx context.Context,
+	client *http.Client,
+	settings PrometheusSettings,
+	allow map[string]struct{},
+	expr string,
+	start time.Time,
+	end time.Time,
+	stepSeconds int,
+	maxBytes int64,
+) ([]prometheusMatrixSeries, error) {
+	endpoint, err := prometheusQueryRangeURL(settings.BaseURL, expr, start, end, stepSeconds, settings.TimeoutSeconds)
+	if err != nil {
+		return nil, err
+	}
+	if err := validateOutboundURLAllowingHosts(endpoint, allow); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= http.StatusBadRequest {
+		return nil, fmt.Errorf("status %d", resp.StatusCode)
+	}
+
+	// Bound the response body: a compromised/misbehaving upstream must not be
+	// able to stream an unbounded body into the controller.
+	limited := io.LimitReader(resp.Body, maxBytes+1)
+	body, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, fmt.Errorf("read response: %w", err)
+	}
+	if int64(len(body)) > maxBytes {
+		return nil, fmt.Errorf("response exceeds %d bytes", maxBytes)
+	}
+
+	var payload prometheusQueryRangeResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return nil, fmt.Errorf("decode response: %w", err)
+	}
+	if payload.Status != "success" {
+		if payload.Error != "" {
+			return nil, errors.New(boundedtext.TruncateUTF8(payload.Error, maxPrometheusErrorBytes))
+		}
+		return nil, fmt.Errorf("status %q", boundedtext.TruncateUTF8(payload.Status, maxPrometheusErrorBytes))
+	}
+	if payload.Data.ResultType != "" && payload.Data.ResultType != "matrix" {
+		return nil, fmt.Errorf("resultType %q", boundedtext.TruncateUTF8(payload.Data.ResultType, maxPrometheusErrorBytes))
+	}
+	return payload.Data.Result, nil
+}
+
 func queryPrometheusGraph(
 	ctx context.Context,
 	client *http.Client,
@@ -264,53 +334,13 @@ func queryPrometheusGraph(
 	end time.Time,
 	stepSeconds int,
 ) (PrometheusGraph, error) {
-	endpoint, err := prometheusQueryRangeURL(settings.BaseURL, definition.Query, start, end, stepSeconds)
+	results, err := queryPrometheusRange(ctx, client, settings, allow, definition.Query, start, end, stepSeconds, maxPrometheusResponseBytes)
 	if err != nil {
 		return PrometheusGraph{}, err
-	}
-	if err := validateOutboundURLAllowingHosts(endpoint, allow); err != nil {
-		return PrometheusGraph{}, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
-	if err != nil {
-		return PrometheusGraph{}, err
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return PrometheusGraph{}, err
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= http.StatusBadRequest {
-		return PrometheusGraph{}, fmt.Errorf("status %d", resp.StatusCode)
 	}
 
-	// Bound the response body: a compromised/misbehaving upstream must not be
-	// able to stream an unbounded body into the controller.
-	limited := io.LimitReader(resp.Body, maxPrometheusResponseBytes+1)
-	body, err := io.ReadAll(limited)
-	if err != nil {
-		return PrometheusGraph{}, fmt.Errorf("read response: %w", err)
-	}
-	if int64(len(body)) > maxPrometheusResponseBytes {
-		return PrometheusGraph{}, fmt.Errorf("response exceeds %d bytes", maxPrometheusResponseBytes)
-	}
-
-	var payload prometheusQueryRangeResponse
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return PrometheusGraph{}, fmt.Errorf("decode response: %w", err)
-	}
-	if payload.Status != "success" {
-		if payload.Error != "" {
-			return PrometheusGraph{}, fmt.Errorf("%s", payload.Error)
-		}
-		return PrometheusGraph{}, fmt.Errorf("status %q", payload.Status)
-	}
-	if payload.Data.ResultType != "" && payload.Data.ResultType != "matrix" {
-		return PrometheusGraph{}, fmt.Errorf("resultType %q", payload.Data.ResultType)
-	}
-
-	series := make([]PrometheusSeries, 0, len(payload.Data.Result))
-	for index, result := range payload.Data.Result {
+	series := make([]PrometheusSeries, 0, len(results))
+	for index, result := range results {
 		values := make([]PrometheusPoint, 0, len(result.Values))
 		for _, raw := range result.Values {
 			point, ok := decodePrometheusPoint(raw)
@@ -339,7 +369,7 @@ func queryPrometheusGraph(
 	}, nil
 }
 
-func prometheusQueryRangeURL(baseURL string, query string, start time.Time, end time.Time, stepSeconds int) (string, error) {
+func prometheusQueryRangeURL(baseURL string, query string, start time.Time, end time.Time, stepSeconds int, timeoutSeconds int) (string, error) {
 	parsed, err := url.Parse(strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/api/v1/query_range")
 	if err != nil {
 		return "", err
@@ -349,6 +379,11 @@ func prometheusQueryRangeURL(baseURL string, query string, start time.Time, end 
 	values.Set("start", start.Format(time.RFC3339))
 	values.Set("end", end.Format(time.RFC3339))
 	values.Set("step", strconv.Itoa(stepSeconds))
+	// Ask Prometheus to abandon the query server-side if it outlives our budget,
+	// rather than APEX just closing the connection and leaving the query running.
+	if timeoutSeconds > 0 {
+		values.Set("timeout", strconv.Itoa(timeoutSeconds)+"s")
+	}
 	parsed.RawQuery = values.Encode()
 	return parsed.String(), nil
 }
@@ -373,7 +408,17 @@ func decodePrometheusPoint(raw json.RawMessage) (PrometheusPoint, bool) {
 	if math.IsNaN(value) || math.IsInf(value, 0) || math.IsNaN(timestampSeconds) || math.IsInf(timestampSeconds, 0) {
 		return PrometheusPoint{}, false
 	}
-	timestamp := time.UnixMilli(int64(timestampSeconds * 1000)).UTC()
+	timestampMillis := timestampSeconds * 1000
+	if timestampMillis > float64(math.MaxInt64) || timestampMillis < float64(math.MinInt64) {
+		return PrometheusPoint{}, false
+	}
+	timestamp := time.UnixMilli(int64(timestampMillis)).UTC()
+	// time.Time's JSON encoder rejects years outside [0,9999]. A compromised
+	// upstream must not be able to poison the complete graph response or terminal
+	// snapshot with one out-of-range timestamp.
+	if timestamp.Year() < 0 || timestamp.Year() > 9999 {
+		return PrometheusPoint{}, false
+	}
 	return PrometheusPoint{
 		Timestamp:   timestamp,
 		TimestampMs: timestamp.UnixMilli(),
@@ -406,7 +451,11 @@ func prometheusSeriesKey(graphID string, labels map[string]string, fallback int)
 	if len(parts) == 0 {
 		return fmt.Sprintf("%s_series_%d", graphID, fallback+1)
 	}
-	return graphID + "_" + strings.NewReplacer("=", "_", ",", "_", " ", "_", "/", "_", ".", "_", "-", "_").Replace(strings.Join(parts, "_"))
+	readable := strings.NewReplacer("=", "_", ",", "_", " ", "_", "/", "_", ".", "_", "-", "_").Replace(strings.Join(parts, "_"))
+	readable = boundedtext.TruncateUTF8(readable, 128)
+	identity, _ := json.Marshal(labels) // map keys are encoded in deterministic order
+	digest := sha256.Sum256(identity)
+	return fmt.Sprintf("%s_%s_%x", graphID, readable, digest[:6])
 }
 
 func prometheusSeriesLabel(definition prometheusGraphDefinition, labels map[string]string, fallback int) string {
@@ -422,10 +471,10 @@ func prometheusSeriesLabel(definition prometheusGraphDefinition, labels map[stri
 		parts = append(parts, value)
 	}
 	if len(parts) > 0 {
-		return strings.Join(parts, " / ")
+		return boundedtext.TruncateUTF8(strings.Join(parts, " / "), 256)
 	}
 	if name := strings.TrimSpace(labels["__name__"]); name != "" {
-		return prometheusMetricNameLabel(name)
+		return boundedtext.TruncateUTF8(prometheusMetricNameLabel(name), 256)
 	}
 	return fmt.Sprintf("Series %d", fallback+1)
 }

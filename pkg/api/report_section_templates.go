@@ -349,6 +349,31 @@ var reportSectionTemplates = template.Must(template.New("run-archive-report-sect
 {{end}}
 {{end}}
 
+{{define "dashboard_panels"}}
+<h2>Imported Dashboard Panels</h2>
+{{with .Report.DashboardPanels}}
+  {{range .Dashboards}}
+  <h3>{{if .Title}}{{.Title}}{{else}}Dashboard{{end}}</h3>
+  <table>
+    <thead><tr><th>Panel</th><th>Unit</th><th class="num">Min</th><th class="num">Avg</th><th class="num">Max</th><th class="num">Last / Value</th></tr></thead>
+    <tbody>
+      {{range .Panels}}
+      {{if .Error}}
+      <tr><td>{{.Title}}</td><td colspan="5" class="muted">error: {{.Error}}</td></tr>
+      {{else if eq .Kind "single_value"}}
+      <tr><td>{{.Title}}</td><td>{{.Unit}}</td><td class="num">—</td><td class="num">—</td><td class="num">—</td><td class="num">{{optFloat .Value}}</td></tr>
+      {{else}}
+      <tr><td>{{.Title}}</td><td>{{.Unit}}</td><td class="num">{{optFloat .Min}}</td><td class="num">{{optFloat .Avg}}</td><td class="num">{{optFloat .Max}}</td><td class="num">{{optFloat .Last}}</td></tr>
+      {{end}}
+      {{end}}
+    </tbody>
+  </table>
+  {{end}}
+{{else}}
+<p class="muted">No imported Grafana dashboards were captured for this run.</p>
+{{end}}
+{{end}}
+
 {{define "run_context"}}
 <h2>Run Context &amp; Confidence</h2>
 <div class="kpis">

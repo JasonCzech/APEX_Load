@@ -658,8 +658,8 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 			// storage-aware handler layer ((*Server).attachReleaseTrend) and the section
 			// degrades to a no-baseline/no-release note rather than a ghost. "run_context"
 			// folds completeness + change attribution into one compact confidence block.
-			IncludedSections: []string{"verdict", "executive_overview", "graphs", "sla_rollup", "release_trend", "risk_summary", "run_context", "recommendations", "signoff"},
-			SectionOrder:     []string{"verdict", "executive_overview", "graphs", "sla_rollup", "release_trend", "risk_summary", "run_context", "recommendations", "signoff"},
+			IncludedSections: []string{"verdict", "executive_overview", "graphs", "dashboard_panels", "sla_rollup", "release_trend", "risk_summary", "run_context", "recommendations", "signoff"},
+			SectionOrder:     []string{"verdict", "executive_overview", "graphs", "dashboard_panels", "sla_rollup", "release_trend", "risk_summary", "run_context", "recommendations", "signoff"},
 		},
 		{
 			ID:               "engineer",
@@ -668,8 +668,8 @@ func buildRunArchiveReportProfiles() []RunArchiveReportProfile {
 			Audience:         "Performance engineers, SREs, developers, and test analysts.",
 			BestFor:          "Bottleneck isolation, regression diagnosis, resource saturation, and remediation planning.",
 			ExportFormats:    []string{"html", "json", "csv", "pdf", "jsonl", "parquet"},
-			IncludedSections: []string{"verdict", "technical_overview", "sla_detail", "graphs", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "browser", "soap", "network_phases", "web2_migration"},
-			SectionOrder:     []string{"verdict", "technical_overview", "sla_detail", "graphs", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "browser", "soap", "network_phases", "web2_migration"},
+			IncludedSections: []string{"verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "browser", "soap", "network_phases", "web2_migration"},
+			SectionOrder:     []string{"verdict", "technical_overview", "sla_detail", "graphs", "dashboard_panels", "root_cause", "recommendations", "test_setup", "raw_exports", "generator_manifest", "completeness", "schema_compatibility", "change_attribution", "summary_timeline", "errors", "resources", "actions", "browser", "soap", "network_phases", "web2_migration"},
 		},
 		{
 			ID:               "audit",

@@ -605,7 +605,7 @@ describe('CommandCenterPrototype', () => {
   })
 
   it('applies live VUser targets immediately without a ramp duration', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
       test_id: 'live-vuser-1',
       group: 'Live Checkout',
       action: 'run',
@@ -634,7 +634,7 @@ describe('CommandCenterPrototype', () => {
   })
 
   it('applies live VUser targets gradually with the card ramp duration', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
       test_id: 'live-vuser-1',
       group: 'Live Checkout',
       action: 'run',
@@ -665,7 +665,9 @@ describe('CommandCenterPrototype', () => {
   })
 
   it('disables gradual VUser apply when the ramp duration is invalid', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    // A live run fires a Prometheus graphs fetch on mount, so scope the assertion to
+    // the vusers control endpoint rather than asserting fetch was never called.
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse({}))
 
     await act(async () => {
       root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={buildLiveVuserTest()} history={[]} />)
@@ -678,7 +680,7 @@ describe('CommandCenterPrototype', () => {
     expect(applyButton.disabled).toBe(true)
     await click(applyButton)
 
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetchMock.mock.calls.some(([input]) => requestUrl(input).includes('/vusers'))).toBe(false)
     expect(container.textContent).toContain('Enter a valid ramp duration before applying gradual load changes.')
   })
 
@@ -777,6 +779,64 @@ describe('CommandCenterPrototype', () => {
     await click(vuserToggle)
 
     expect(window.localStorage.getItem('apexload.commandCenter.grafana.hiddenCharts')).toContain('vusers')
+  })
+
+  it('surfaces Prometheus graphs in the Graph Wall with a non-zero count for a live run', async () => {
+    // Route the Prometheus graphs endpoint to a configured pack; everything else
+    // (status polls, metrics) resolves to an empty 200 so the live shell renders.
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input: RequestInfo | URL) => {
+      const url = requestUrl(input)
+      if (url.includes('/monitoring/prometheus/graphs')) {
+        return jsonResponse({
+          enabled: true,
+          configured: true,
+          generated_at: '2026-06-08T13:10:00Z',
+          graphs: [{
+            id: 'prometheus_scaling_vusers',
+            title: 'Scaling VUsers',
+            unit: 'VUsers',
+            series: [{
+              key: 'prometheus_scaling_vusers_state_active',
+              label: 'active',
+              labels: { state: 'active' },
+              values: [
+                { timestamp: '2026-06-08T13:05:00Z', timestamp_ms: Date.parse('2026-06-08T13:05:00Z'), value: 10 },
+                { timestamp: '2026-06-08T13:06:00Z', timestamp_ms: Date.parse('2026-06-08T13:06:00Z'), value: 20 },
+              ],
+            }],
+          }],
+        })
+      }
+      return jsonResponse({})
+    })
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={buildLiveVuserTest()} history={[]} />)
+    })
+    await click(buttonNamed('Graph Wall'))
+    await flush()
+
+    // The Prometheus graphs endpoint was queried for the live run window.
+    expect(fetchMock.mock.calls.some(([input]) => requestUrl(input).includes('/monitoring/prometheus/graphs'))).toBe(true)
+
+    const prometheusTab = Array.from(container.querySelectorAll('button[role="tab"]'))
+      .find(tab => tab.textContent?.includes('Prometheus')) as HTMLButtonElement | undefined
+    expect(prometheusTab, 'Expected a Prometheus graph-group tab in the Graph Wall').toBeDefined()
+    // The count must be non-zero: a naive wiring fix leaves the imported charts hidden
+    // by the monitor preset, rendering the tab with a "0" count and nothing inside.
+    expect(prometheusTab?.querySelector('small')?.textContent).not.toBe('0')
+  })
+
+  it('does not query Prometheus in prototype (non-live) mode', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({}))
+    await renderPrototype()
+    await click(buttonNamed('Graph Wall'))
+    await flush()
+
+    expect(fetchMock.mock.calls.some(([input]) => requestUrl(input).includes('/monitoring/prometheus/graphs'))).toBe(false)
+    const prometheusTab = Array.from(container.querySelectorAll('button[role="tab"]'))
+      .find(tab => tab.textContent?.includes('Prometheus'))
+    expect(prometheusTab).toBeUndefined()
   })
 
   it('activates error and evidence rows with Enter and Space', async () => {
@@ -905,7 +965,7 @@ describe('CommandCenterPrototype', () => {
         vusers: 50,
       }],
     }
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
       status: 'started',
       test_id: 'reserved-run-1',
       test: {
@@ -1070,7 +1130,7 @@ describe('CommandCenterPrototype', () => {
   })
 
   it('uses per-group TPS target edits for goal-oriented live runs', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(JSON.stringify({
       test_id: 'live-goal-1',
       group: 'Live Checkout',
       target_tps: 120,

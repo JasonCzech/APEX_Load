@@ -15,13 +15,15 @@ import StatusBadge from './StatusBadge'
 import { useTestApi } from '../hooks/api/useTestApi'
 import { isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
 import { isCompletedTestStatus, isLiveTestStatus } from '../utils/testStatusUtils'
-import type { BrowserReplaySnapshot, GroupLiveMetrics, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, TestGroup, TestStatus, TestSummary, TransactionEvent, VUserRampStatus } from '../types'
+import type { BrowserReplaySnapshot, GroupLiveMetrics, ImportedDashboardResult, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, PrometheusGraph, TestGroup, TestStatus, TestSummary, TransactionEvent, VUserRampStatus } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import TestExecutionCharts, { type GraphCursorState, type GraphGroupTabId, type UnderLoadDisplayMode } from './TestExecutionCharts'
 import type { ExecutionChartTimeRange } from './testExecutionChartZoomModel'
 import { mapArchiveSummarySamples, mapExecutionHistory, mapExecutionMetricToHistoryPoint, recentMetricAverages } from './testExecutionMetricsModel'
 import { useExecutionChartModel } from './useExecutionChartModel'
 import { useExecutionMetricsStream } from './useExecutionMetricsStream'
+import { usePrometheusGraphs } from './usePrometheusGraphs'
+import { useImportedDashboardGraphs } from './useImportedDashboardGraphs'
 import { ARCHIVE_CHART_MAX_SAMPLES } from './archiveHistorySampling'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
@@ -1216,6 +1218,18 @@ export default function CommandCenterPrototype({
     history: chartFallbackHistory,
     localMetricsHistory: liveMode ? localMetricsHistory : [],
   })
+  // Only genuine live runs query Prometheus. Passing an empty window (null test +
+  // no data) keeps usePrometheusGraphs in its reset branch, so the prototype/mock
+  // modes — whose chartData is seeded mock history — never hit the network.
+  const { prometheusGraphs, prometheusLoading, prometheusError } = usePrometheusGraphs(
+    liveMode ? displayTest : null,
+    liveMode ? chartData : [],
+  )
+  const { importedDashboards, importedDashboardsLoading, importedDashboardsError } = useImportedDashboardGraphs(
+    liveMode ? displayTest : null,
+    liveMode ? chartData : [],
+    liveMode ? (displayTest.project_id || projectId) : undefined,
+  )
   const totalCurrent = groups.reduce((sum, group) => sum + group.current, 0)
   const totalTarget = groups.reduce((sum, group) => sum + group.target, 0)
   const targetMode = groups[0]?.targetMode ?? 'vusers'
@@ -1635,6 +1649,12 @@ export default function CommandCenterPrototype({
           chartData={chartData}
           groupScopedChartData={graphScopedChartData}
           groupScopedMetrics={graphScopedMetrics}
+          prometheusGraphs={prometheusGraphs}
+          prometheusLoading={prometheusLoading}
+          prometheusError={prometheusError}
+          importedDashboards={importedDashboards}
+          importedDashboardsLoading={importedDashboardsLoading}
+          importedDashboardsError={importedDashboardsError}
           expandedChart={expandedCharts.grafana}
           onExpandedChartChange={setExpandedChartForVariant}
           onChartMouseDown={onChartMouseDown}
@@ -1944,6 +1964,12 @@ interface GrafanaWallViewProps extends CommonViewProps {
   groupScopedMetrics?: LiveMetrics
   groupVisibility: Record<string, boolean>
   onGroupVisibilityToggle: (groupKey: string) => void
+  prometheusGraphs?: PrometheusGraph[]
+  prometheusLoading?: boolean
+  prometheusError?: string
+  importedDashboards?: ImportedDashboardResult[]
+  importedDashboardsLoading?: boolean
+  importedDashboardsError?: string
 }
 
 function OpsCockpitView({
@@ -2030,6 +2056,12 @@ function GrafanaWallView({
   groupScopedMetrics,
   groupVisibility,
   onGroupVisibilityToggle,
+  prometheusGraphs,
+  prometheusLoading,
+  prometheusError,
+  importedDashboards,
+  importedDashboardsLoading,
+  importedDashboardsError,
   metrics,
   chartData,
   expandedChart,
@@ -2067,6 +2099,12 @@ function GrafanaWallView({
           chartData={chartData}
           groupScopedChartData={groupScopedChartData}
           groupScopedMetrics={groupScopedMetrics}
+          prometheusGraphs={prometheusGraphs}
+          prometheusLoading={prometheusLoading}
+          prometheusError={prometheusError}
+          importedDashboards={importedDashboards}
+          importedDashboardsLoading={importedDashboardsLoading}
+          importedDashboardsError={importedDashboardsError}
           expandedChart={expandedChart}
           onExpandedChartChange={onExpandedChartChange}
           onChartMouseDown={onChartMouseDown}
@@ -3249,6 +3287,12 @@ interface CommandRuntimeGraphsProps {
   chartData: MetricsHistoryPoint[]
   groupScopedChartData?: MetricsHistoryPoint[]
   groupScopedMetrics?: LiveMetrics
+  prometheusGraphs?: PrometheusGraph[]
+  prometheusLoading?: boolean
+  prometheusError?: string
+  importedDashboards?: ImportedDashboardResult[]
+  importedDashboardsLoading?: boolean
+  importedDashboardsError?: string
   expandedChart: string | null
   onExpandedChartChange: (value: string | null) => void
   onChartMouseDown: (activeLabel?: string | number) => void
@@ -3275,6 +3319,12 @@ function CommandRuntimeGraphs({
   chartData,
   groupScopedChartData,
   groupScopedMetrics,
+  prometheusGraphs,
+  prometheusLoading,
+  prometheusError,
+  importedDashboards,
+  importedDashboardsLoading,
+  importedDashboardsError,
   expandedChart,
   onExpandedChartChange,
   onChartMouseDown,
@@ -3330,6 +3380,12 @@ function CommandRuntimeGraphs({
         groupColors={groupColors.length > 0 ? groupColors : ['var(--chart-1)']}
         showLoadImpact={false}
         loadImpactData={loadImpactSourceData}
+        prometheusGraphs={prometheusGraphs}
+        prometheusLoading={prometheusLoading}
+        prometheusError={prometheusError}
+        importedDashboards={importedDashboards}
+        importedDashboardsLoading={importedDashboardsLoading}
+        importedDashboardsError={importedDashboardsError}
         latestLatency={activeMetrics?.latency}
         latestMetrics={activeMetrics}
         surface="command-center"
