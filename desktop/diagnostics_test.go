@@ -49,6 +49,51 @@ func TestValidateOpenURL(t *testing.T) {
 	}
 }
 
+func TestSystemSettingsURLIsNarrowlyPlatformScoped(t *testing.T) {
+	tests := []struct {
+		goos      string
+		target    string
+		osVersion string
+		want      string
+	}{
+		{goos: "darwin", target: "network", osVersion: "12.7.6", want: "x-apple.systempreferences:com.apple.preference.network"},
+		{goos: "darwin", target: "network", osVersion: "13.0", want: "x-apple.systempreferences:com.apple.Network-Settings.extension"},
+		{goos: "darwin", target: "network", osVersion: "15.5", want: "x-apple.systempreferences:com.apple.Network-Settings.extension"},
+		{goos: "darwin", target: "network", osVersion: "unknown", want: "x-apple.systempreferences:com.apple.preference.network"},
+		{goos: "windows", target: "proxy", want: "ms-settings:network-proxy"},
+	}
+	for _, tc := range tests {
+		got, err := systemSettingsURLForVersion(tc.goos, tc.target, tc.osVersion)
+		if err != nil || got != tc.want {
+			t.Errorf("systemSettingsURL(%q, %q) = %q, %v; want %q", tc.goos, tc.target, got, err, tc.want)
+		}
+	}
+	for _, tc := range []struct{ goos, target string }{
+		{goos: "darwin", target: "proxy"},
+		{goos: "windows", target: "network"},
+		{goos: "linux", target: "proxy"},
+		{goos: "windows", target: "../../control-panel"},
+	} {
+		if got, err := systemSettingsURLForVersion(tc.goos, tc.target, "15.0"); err == nil || got != "" {
+			t.Errorf("systemSettingsURL(%q, %q) = %q, %v; want rejection", tc.goos, tc.target, got, err)
+		}
+	}
+}
+
+func TestMacOSMajorVersion(t *testing.T) {
+	for raw, want := range map[string]int{
+		"15.5.1":  15,
+		" 13.0 ":  13,
+		"12":      12,
+		"":        0,
+		"unknown": 0,
+	} {
+		if got := macOSMajorVersion(raw); got != want {
+			t.Errorf("macOSMajorVersion(%q) = %d, want %d", raw, got, want)
+		}
+	}
+}
+
 func TestExportDiagnosticsIsValidJSONWithoutSecrets(t *testing.T) {
 	app := NewApp()
 	app.appDataPath = "/tmp/apex"
@@ -99,6 +144,24 @@ func TestScrubTextAndHomeRelativize(t *testing.T) {
 	// homeRelativize collapses the home prefix to ~ and leaves outside paths intact.
 	if got := homeRelativize("/var/log/apex"); got != "/var/log/apex" {
 		t.Errorf("non-home path should be unchanged, got %q", got)
+	}
+}
+
+func TestScrubTextRedactsQueryDSNAndTokenForms(t *testing.T) {
+	input := strings.Join([]string{
+		"connect postgres://apex:urlpass@db/apex?token=querytoken&sslmode=require",
+		"Password=dsnpass;Api_Key=apikey;client_secret=clientsecret",
+		`{"refresh_token":"refreshtoken","safe":"visible"}`,
+		"Authorization: Bearer eyJhbGciOiJIUzI1Ni.secret.signature",
+	}, "\n")
+	got := scrubText(input)
+	for _, secret := range []string{"urlpass", "querytoken", "dsnpass", "apikey", "clientsecret", "refreshtoken", "eyJhbGciOiJIUzI1Ni.secret.signature"} {
+		if strings.Contains(got, secret) {
+			t.Errorf("scrubText leaked %q:\n%s", secret, got)
+		}
+	}
+	if !strings.Contains(got, `"safe":"visible"`) {
+		t.Errorf("scrubText should preserve non-sensitive diagnostics: %s", got)
 	}
 }
 

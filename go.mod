@@ -32,6 +32,7 @@ require (
 	github.com/xitongsys/parquet-go-source v0.0.0-20241021075129-b732d2ac9c9b
 	github.com/zalando/go-keyring v0.2.8
 	gocloud.dev v0.46.0
+	golang.org/x/mod v0.37.0
 	golang.org/x/net v0.57.0
 	golang.org/x/oauth2 v0.36.0
 	google.golang.org/grpc v1.82.0

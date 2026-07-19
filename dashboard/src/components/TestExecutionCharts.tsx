@@ -505,6 +505,7 @@ export default function TestExecutionCharts({
   const [activeImportedDashboardId, setActiveImportedDashboardId] = useState('')
   const [selectedRouteLatencyKey, setSelectedRouteLatencyKey] = useState('')
   const [chartMenu, setChartMenu] = useState<{ chartId: string; x: number; y: number } | null>(null)
+  const [chartActionError, setChartActionError] = useState('')
   const [axisLabelPopover, setAxisLabelPopover] = useState<AxisLabelPopover>(null)
   const [chartDrawerOpen, setChartDrawerOpen] = useState(false)
   const [hoveredChartId, setHoveredChartId] = useState<string | null>(null)
@@ -1296,11 +1297,17 @@ export default function TestExecutionCharts({
     },
   })
 
-  const runChartAction = (action: () => void) => {
-    action()
+  const runChartAction = async (action: () => void | Promise<void>, failureMessage = 'Could not complete the chart action') => {
+    setChartActionError('')
     setChartMenu(null)
     const trigger = chartMenuTriggerRef.current
     if (trigger?.isConnected) window.setTimeout(() => trigger.focus(), 0)
+    try {
+      await action()
+    } catch (cause: unknown) {
+      const detail = cause instanceof Error && cause.message ? `: ${cause.message}` : ''
+      setChartActionError(`${failureMessage}${detail}`)
+    }
   }
 
   const displayTitleForChart = (chart: ChartConfig) => {
@@ -1309,23 +1316,23 @@ export default function TestExecutionCharts({
     return chartTitleWithOverlays(chart, visibleOverlayMetricKeys(chart, visibleMetricKeys))
   }
 
-  const downloadChartSvgSnapshot = (chart: ChartConfig) => {
+  const downloadChartSvgSnapshot = async (chart: ChartConfig) => {
     const card = chartCardRefs.current[chart.id]
     if (!card) {
-      downloadTextFile(latestGraphValuesText({ ...chart, title: displayTitleForChart(chart) }, latest, groupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey), `${safeFileName(displayTitleForChart(chart))}-values.txt`, 'text/plain;charset=utf-8')
+      await downloadTextFile(latestGraphValuesText({ ...chart, title: displayTitleForChart(chart) }, latest, groupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey), `${safeFileName(displayTitleForChart(chart))}-values.txt`, 'text/plain;charset=utf-8')
       return
     }
     const displayTitle = displayTitleForChart(chart)
     const snapshot = chartSnapshotSvg(card, { ...chart, title: displayTitle })
     if (!snapshot) {
-      downloadTextFile(latestGraphValuesText({ ...chart, title: displayTitle }, latest, groupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey), `${safeFileName(displayTitle)}-values.txt`, 'text/plain;charset=utf-8')
+      await downloadTextFile(latestGraphValuesText({ ...chart, title: displayTitle }, latest, groupNames, latencyKeys, latencyLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey), `${safeFileName(displayTitle)}-values.txt`, 'text/plain;charset=utf-8')
       return
     }
-    downloadTextFile(snapshot, `${safeFileName(displayTitle)}-snapshot.svg`, 'image/svg+xml;charset=utf-8')
+    await downloadTextFile(snapshot, `${safeFileName(displayTitle)}-snapshot.svg`, 'image/svg+xml;charset=utf-8')
   }
 
-  const exportChartCsv = (chart: ChartConfig) => {
-    downloadTextFile(graphCsvForChart(chart, chartDataFor(chart), groupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey), `${safeFileName(displayTitleForChart(chart))}-data.csv`, 'text/csv;charset=utf-8')
+  const exportChartCsv = async (chart: ChartConfig) => {
+    await downloadTextFile(graphCsvForChart(chart, chartDataFor(chart), groupNames, latencyKeys, false, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey), `${safeFileName(displayTitleForChart(chart))}-data.csv`, 'text/csv;charset=utf-8')
   }
 
   const copyLatestValues = async (chart: ChartConfig) => {
@@ -1337,7 +1344,7 @@ export default function TestExecutionCharts({
       : latencyLatestValues
     const text = latestGraphValuesText({ ...chart, title: displayTitleForChart(chart) }, chartLatest, groupNames, latencyKeys, routeLatestValues, overlayMetricKeysForChart(chart), routeLatencyMode, activeRouteLatencyKey)
     if (!await copyTextToClipboard(text)) {
-      downloadTextFile(text, `${safeFileName(displayTitleForChart(chart))}-latest-values.txt`, 'text/plain;charset=utf-8')
+      await downloadTextFile(text, `${safeFileName(displayTitleForChart(chart))}-latest-values.txt`, 'text/plain;charset=utf-8')
     }
   }
 
@@ -2296,6 +2303,7 @@ export default function TestExecutionCharts({
 
       {loadImpactError && <p className="scenario-script-status error">{loadImpactError}</p>}
       {prometheusError && <p className="scenario-script-status error">{prometheusError}</p>}
+      {chartActionError && <p className="scenario-script-status error" role="alert">{chartActionError}</p>}
       {terminalStatus && (
         <p className="chart-terminal-status" role="status">
           Run ended with {terminalStatus}. Charts show the final available telemetry.
@@ -3009,26 +3017,26 @@ export default function TestExecutionCharts({
           }}
         >
           <div className="chart-context-menu-title">{displayTitleForChart(contextChart)}</div>
-          <button ref={chartMenuFirstItemRef} type="button" role="menuitem" onClick={() => runChartAction(onResetZoom)}>Reset Zoom</button>
+          <button ref={chartMenuFirstItemRef} type="button" role="menuitem" onClick={() => void runChartAction(onResetZoom)}>Reset Zoom</button>
           {(['vusers', 'avgMs', 'tps'] as OverlayMetricKey[])
             .filter(key => isOverlayMetricAvailable(contextChart, key))
             .map(key => (
-              <button key={key} type="button" role="menuitem" onClick={() => runChartAction(() => toggleOverlayMetric(contextChart, key))}>
+              <button key={key} type="button" role="menuitem" onClick={() => void runChartAction(() => toggleOverlayMetric(contextChart, key))}>
                 {isOverlayMetricEnabled(contextChart, key) ? `Hide ${overlayMetricMenuLabels[key]} Overlay` : `Overlay ${overlayMetricMenuLabels[key]}`}
               </button>
             ))}
           {contextChart.id === 'latency' && (
-            <button type="button" role="menuitem" onClick={() => runChartAction(() => setResponseTimeNetworkLatencyIncluded(responseTimeNetworkMode === 'application'))}>
+            <button type="button" role="menuitem" onClick={() => void runChartAction(() => setResponseTimeNetworkLatencyIncluded(responseTimeNetworkMode === 'application'))}>
               {responseTimeNetworkMode === 'application' ? 'Include Network Latency' : 'Remove Network Latency'}
             </button>
           )}
-          <button type="button" role="menuitem" onClick={() => runChartAction(() => onExpandedChartChange(expandedChart === contextChart.id ? null : contextChart.id))}>
+          <button type="button" role="menuitem" onClick={() => void runChartAction(() => onExpandedChartChange(expandedChart === contextChart.id ? null : contextChart.id))}>
             {expandedChart === contextChart.id ? 'Collapse Graph' : 'Expand Graph'}
           </button>
-          <button type="button" role="menuitem" onClick={() => runChartAction(() => downloadChartSvgSnapshot(contextChart))}>Download Snapshot</button>
-          <button type="button" role="menuitem" onClick={() => runChartAction(() => exportChartCsv(contextChart))}>Export Graph Data</button>
-          <button type="button" role="menuitem" onClick={() => runChartAction(() => copyLatestValues(contextChart))}>Copy Latest Values</button>
-          <button type="button" role="menuitem" onClick={() => runChartAction(() => toggleChartVisibility(contextChart.id))}>Hide Graph</button>
+          <button type="button" role="menuitem" onClick={() => void runChartAction(() => downloadChartSvgSnapshot(contextChart), 'Could not save the chart file')}>Download Snapshot</button>
+          <button type="button" role="menuitem" onClick={() => void runChartAction(() => exportChartCsv(contextChart), 'Could not save the chart file')}>Export Graph Data</button>
+          <button type="button" role="menuitem" onClick={() => void runChartAction(() => copyLatestValues(contextChart), 'Could not copy or save the latest chart values')}>Copy Latest Values</button>
+          <button type="button" role="menuitem" onClick={() => void runChartAction(() => toggleChartVisibility(contextChart.id))}>Hide Graph</button>
         </div>
       )}
       {axisLabelPopover && (

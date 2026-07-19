@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { DASHBOARD_ZOOM_STORAGE_KEY, useDashboardZoomShortcuts } from './useDashboardZoomShortcuts'
+import { DESKTOP_QUEUED_MENU_ZOOM_EVENT } from '../desktop/rendererEvents'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -145,43 +146,31 @@ describe('useDashboardZoomShortcuts', () => {
     expect(document.documentElement.style.getPropertyValue('--dashboard-zoom')).toBe('1')
   })
 
-  it('responds to the desktop menu:zoom event', async () => {
-    const listeners: Record<string, (action?: unknown) => void> = {}
-    const runtimeWindow = window as typeof window & {
-      runtime?: { EventsOn?: (name: string, cb: (action?: unknown) => void) => () => void }
-    }
-    runtimeWindow.runtime = {
-      EventsOn: (name, cb) => {
-        listeners[name] = cb
-        return () => {
-          delete listeners[name]
-        }
-      },
-    }
+  it('responds once to desktop menu zoom actions from the shell dispatcher', async () => {
+    await act(async () => {
+      root.render(<ZoomHarness />)
+    })
 
-    try {
-      await act(async () => {
-        root.render(<ZoomHarness />)
-      })
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent(DESKTOP_QUEUED_MENU_ZOOM_EVENT, { detail: 'in' }),
+      )
+    })
+    expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1.1')
 
-      await act(async () => {
-        listeners['menu:zoom']?.('in')
-      })
-      expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1.1')
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent(DESKTOP_QUEUED_MENU_ZOOM_EVENT, { detail: 'reset' }),
+      )
+    })
+    expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1')
 
-      await act(async () => {
-        listeners['menu:zoom']?.('reset')
-      })
-      expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1')
-
-      // Unknown payloads are ignored.
-      await act(async () => {
-        listeners['menu:zoom']?.('sideways')
-      })
-      expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1')
-    } finally {
-      delete runtimeWindow.runtime
-    }
+    await act(async () => {
+      window.dispatchEvent(
+        new CustomEvent(DESKTOP_QUEUED_MENU_ZOOM_EVENT, { detail: 'sideways' }),
+      )
+    })
+    expect(container.querySelector('[data-testid="zoom"]')?.textContent).toBe('1')
   })
 
   it('normalizes invalid and out-of-range stored zoom values', async () => {

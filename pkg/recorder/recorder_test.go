@@ -238,6 +238,17 @@ func TestProxyAuthTokenEnforced(t *testing.T) {
 	if !rec.authorizeProxyRequest(req) {
 		t.Fatal("Bearer proxy auth token should be accepted")
 	}
+	req.Header.Set("Proxy-Authorization", "Basic YXBleGxvYWQ6c2VjcmV0LXRva2Vu")
+	if !rec.authorizeProxyRequest(req) {
+		t.Fatal("Basic proxy password should be accepted for browser compatibility")
+	}
+	resp := httptest.NewRecorder()
+	req.Header.Del("Proxy-Authorization")
+	rec.handleProxy(resp, req)
+	challenges := resp.Header().Values("Proxy-Authenticate")
+	if len(challenges) != 2 || !strings.HasPrefix(challenges[0], "Basic ") || !strings.HasPrefix(challenges[1], "Bearer ") {
+		t.Fatalf("Proxy-Authenticate = %#v, want Basic and Bearer challenges", challenges)
+	}
 }
 
 func TestProxyConcurrencyLimitFailsFast(t *testing.T) {
@@ -976,7 +987,11 @@ func TestRecordRequestKeepsRawHeadersForCorrelationOnly(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer tok-abcdef123456")
 	req.Header.Set("X-Api-Key", "raw-api-secret")
 	req.Header.Set("Proxy-Authorization", "Basic proxy-secret")
-	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{}}
+	req.Header.Set("X-APEXLoad-Recorder-Token", "recorder-control-secret")
+	req.Header.Set("x-apexload-recorder-private", "private-control-value")
+	resp := &http.Response{StatusCode: http.StatusOK, Header: http.Header{
+		"X-APEXLoad-Recorder-Response": {"response-control-secret"},
+	}}
 
 	rec := New(":0")
 	session, err := rec.StartSession("headers", "Header Correlation", SessionFilters{}, nil)
@@ -994,6 +1009,28 @@ func TestRecordRequestKeepsRawHeadersForCorrelationOnly(t *testing.T) {
 	}
 	if _, ok := recorded.RawHeaders["Proxy-Authorization"]; ok {
 		t.Fatalf("proxy authorization leaked into raw headers: %#v", recorded.RawHeaders)
+	}
+	for label, headers := range map[string]map[string]string{
+		"sanitized request":   recorded.Headers,
+		"correlation request": recorded.RawHeaders,
+		"sanitized response":  recorded.ResponseHeaders,
+	} {
+		for name := range headers {
+			if isRecorderControlHeader(name) {
+				t.Fatalf("%s retained recorder control header %q: %#v", label, name, headers)
+			}
+		}
+	}
+	for label, headers := range map[string]map[string][]string{
+		"sanitized multi-value request":   recorded.HeadersMulti,
+		"correlation multi-value request": recorded.RawHeadersMulti,
+		"sanitized multi-value response":  recorded.ResponseHeadersMulti,
+	} {
+		for name := range headers {
+			if isRecorderControlHeader(name) {
+				t.Fatalf("%s retained recorder control header %q: %#v", label, name, headers)
+			}
+		}
 	}
 }
 

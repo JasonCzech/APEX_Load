@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import { getWailsEventRuntime } from '../desktop/wailsRuntime'
+import { DESKTOP_QUEUED_MENU_ZOOM_EVENT } from '../desktop/rendererEvents'
 import { readStoredString, writeStoredString } from '../utils/browserStorage'
 
 export const DASHBOARD_ZOOM_STORAGE_KEY = 'apexload.dashboardZoom'
@@ -102,24 +102,22 @@ export function useDashboardZoomShortcuts() {
     }
   }, [])
 
-  // In the Wails desktop shell the View > Zoom menu items emit a `menu:zoom`
-  // event (the OS webview has no stable zoom API, so zoom is the in-app
-  // --dashboard-zoom variable). Bridge those native menu actions to the same
-  // zoom state. No-op in the browser, where `window.runtime` is undefined.
+  // The desktop shell dispatcher converts both live native zoom clicks and
+  // renderer-ready replays into one DOM event. Keeping a single subscription
+  // prevents a live Wails menu click from applying the zoom transition twice.
   useEffect(() => {
-    const runtime = getWailsEventRuntime()
-    if (!runtime?.EventsOn) {
+    if (typeof window === 'undefined') {
       return undefined
     }
-    const cancel = runtime.EventsOn('menu:zoom', (action?: unknown) => {
+    const handleQueuedZoom = (event: Event) => {
+      const action = (event as CustomEvent<unknown>).detail
       if (action === 'in' || action === 'out' || action === 'reset') {
         setZoom(current => nextDashboardZoom(current, action))
       }
-    })
+    }
+    window.addEventListener(DESKTOP_QUEUED_MENU_ZOOM_EVENT, handleQueuedZoom)
     return () => {
-      if (typeof cancel === 'function') {
-        cancel()
-      }
+      window.removeEventListener(DESKTOP_QUEUED_MENU_ZOOM_EVENT, handleQueuedZoom)
     }
   }, [])
 

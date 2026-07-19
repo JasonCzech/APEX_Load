@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { apiFetch } from '../hooks/apiClient'
+import { apiFetch, hasDesktopApiCapability } from '../hooks/apiClient'
 import { useSystemApi } from '../hooks/api/useSystemApi'
+import { isDesktopSurface } from '../desktop/desktopBridge'
+import { canSaveApiResourceViaBridge, saveApiResourceViaBridge, startDesktopBrowserDownload } from '../desktop/desktopFiles'
 import { downloadBlob, downloadFilenameFromDisposition } from '../utils/fileUtils'
 import type { VersionResponse } from '../types'
 import { CLIENT_DOWNLOAD_PLATFORMS, detectPlatformFromNavigator, platformLabel } from './clientDownloadPlatforms'
@@ -103,7 +105,37 @@ export default function ClientDownloadsMenu() {
     setStatus(null)
     setBusyKey(`${artifact.key}:${platform}`)
     try {
-      const res = await apiFetch(`${artifact.path}?platform=${encodeURIComponent(platform)}`)
+      const query = `platform=${encodeURIComponent(platform)}`
+      if (canSaveApiResourceViaBridge()) {
+        const metadataResponse = await apiFetch(`${artifact.path}/checksum?${query}`)
+        if (!metadataResponse.ok) {
+          let message = `${artifact.name} for ${platformLabel(platform)} is not available from this controller.`
+          try {
+            const data = await metadataResponse.json()
+            if (typeof data?.error === 'string') message = data.error
+          } catch {
+            // non-JSON error body; keep the default message
+          }
+          throw new Error(message)
+        }
+        const metadata = await metadataResponse.json() as { filename?: string }
+        const filename = metadata.filename?.trim() || artifact.fallbackFilename
+        const nativeOutcome = await saveApiResourceViaBridge(`/api/v1${artifact.path}?${query}`, filename)
+        if (nativeOutcome === 'saved') {
+          setStatus({ tone: 'success', text: `${artifact.name} saved (${platformLabel(platform)}).` })
+          return
+        }
+        if (nativeOutcome === 'cancelled') return
+      }
+
+      const resourcePath = `/api/v1${artifact.path}?${query}`
+      if (!isDesktopSurface() && hasDesktopApiCapability()) {
+        await startDesktopBrowserDownload(resourcePath, artifact.fallbackFilename)
+        setStatus({ tone: 'success', text: `${artifact.name} download request opened (${platformLabel(platform)}); any server error will appear in the browser.` })
+        return
+      }
+
+      const res = await apiFetch(`${artifact.path}?${query}`)
       if (!res.ok) {
         let message = `${artifact.name} for ${platformLabel(platform)} is not available from this controller.`
         try {
@@ -119,7 +151,8 @@ export default function ClientDownloadsMenu() {
         throw new Error(`${artifact.name} download returned the dashboard instead of an archive. Update and restart the controller.`)
       }
       const blob = await res.blob()
-      downloadBlob(blob, downloadFilenameFromDisposition(res.headers.get('content-disposition'), artifact.fallbackFilename))
+      const outcome = await downloadBlob(blob, downloadFilenameFromDisposition(res.headers.get('content-disposition'), artifact.fallbackFilename))
+      if (outcome === 'cancelled') return
       setStatus({ tone: 'success', text: `${artifact.name} download started (${platformLabel(platform)}).` })
     } catch (e: any) {
       setStatus({ tone: 'error', text: e?.message || `Failed to download ${artifact.name}.` })

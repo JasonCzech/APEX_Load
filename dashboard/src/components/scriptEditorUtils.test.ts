@@ -1,10 +1,19 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+const { downloadTextFileBlobMock } = vi.hoisted(() => ({
+  downloadTextFileBlobMock: vi.fn(),
+}))
+
+vi.mock('../utils/fileUtils', () => ({
+  downloadTextFile: downloadTextFileBlobMock,
+}))
 
 import {
   buildParameterizeSelectionRequest,
   buildReplayStartPayload,
   countUniqueColumnValues,
   detectInlineDataDelimiter,
+  downloadTextFile,
   findJsonStringOccurrences,
   inferDelimiter,
   parseInlineData,
@@ -13,6 +22,15 @@ import {
   stringifyInlineData,
 } from './scriptEditorUtils'
 import { type ScriptDefinition } from '../types/scripts'
+
+describe('downloadTextFile', () => {
+  it('returns the shared save outcome instead of dropping the promise', async () => {
+    downloadTextFileBlobMock.mockResolvedValueOnce('cancelled')
+
+    await expect(downloadTextFile('content', 'script.json')).resolves.toBe('cancelled')
+    expect(downloadTextFileBlobMock).toHaveBeenCalledWith('content', 'script.json')
+  })
+})
 
 describe('resolveJsonStringSelection', () => {
   const text = JSON.stringify(

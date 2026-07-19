@@ -29,6 +29,7 @@ const (
 	oidcLogoutCSRFPath            = "/api/v1/auth/logout"
 	oidcLogoutCSRFTTL             = 10 * time.Minute
 	oidcLoginPath                 = "/api/v1/auth/login"
+	oidcCallbackPath              = "/api/v1/auth/callback"
 	oidcLogoutPath                = "/api/v1/auth/logout"
 	defaultOIDCReturnTo           = "/"
 	defaultOIDCDiscoveryTimeout   = 10 * time.Second
@@ -128,6 +129,12 @@ func (s *Server) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "oidc login is not enabled")
 		return
 	}
+	var err error
+	settings, err = s.effectiveOIDCSettings(settings)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
 	if !s.allowOIDCLoginAttempt(w, r) {
 		return
 	}
@@ -147,27 +154,54 @@ func (s *Server) handleOIDCLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().UTC()
-	encodedState, err := encodeSignedCookieValue(oidcStateToken{
+	loginState := oidcStateToken{
 		State:     state,
 		Nonce:     nonce,
 		ReturnTo:  sanitizeReturnTo(r.URL.Query().Get("return_to")),
 		ExpiresAt: now.Add(oidcStateTTL),
 		IssuedAt:  now,
-	}, runtime.sessionSecret)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to initialize oidc state")
+	}
+	if s.desktopMode {
+		capability, ok := s.requireDesktopBrowserCapability(w, r)
+		if !ok {
+			return
+		}
+		if !s.storeDesktopOIDCState(capability, loginState) {
+			writeError(w, http.StatusServiceUnavailable, "desktop authentication state capacity is unavailable")
+			return
+		}
+	} else {
+		encodedState, err := encodeSignedCookieValue(loginState, runtime.sessionSecret)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to initialize oidc state")
+			return
+		}
+		s.setSignedAuthCookie(w, settings, &http.Cookie{
+			Name:     oidcStateCookieName,
+			Value:    encodedState,
+			Path:     "/api/v1/auth",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Expires:  now.Add(oidcStateTTL),
+			MaxAge:   int(oidcStateTTL.Seconds()),
+		})
+	}
+	writeAuthNavigation(w, r, runtime.oauth2Config.AuthCodeURL(state, oidc.Nonce(nonce)))
+}
+
+// writeAuthNavigation supports capability-bearing fetches from desktop browser
+// tabs without weakening the top-level navigation boundary. The initiating
+// request returns the provider URL as JSON after state was stored in the
+// appropriate hosted-cookie or desktop-capability channel. Ordinary hosted
+// links retain the traditional redirect response.
+func writeAuthNavigation(w http.ResponseWriter, r *http.Request, redirectURL string) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	if strings.Contains(strings.ToLower(r.Header.Get("Accept")), "application/json") {
+		writeJSON(w, http.StatusOK, map[string]string{"redirect_url": redirectURL})
 		return
 	}
-	setSignedAuthCookie(w, settings, &http.Cookie{
-		Name:     oidcStateCookieName,
-		Value:    encodedState,
-		Path:     "/api/v1/auth",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Expires:  now.Add(oidcStateTTL),
-		MaxAge:   int(oidcStateTTL.Seconds()),
-	})
-	http.Redirect(w, r, runtime.oauth2Config.AuthCodeURL(state, oidc.Nonce(nonce)), http.StatusFound)
+	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
 func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
@@ -176,23 +210,59 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, "oidc callback is not enabled")
 		return
 	}
+	if s.desktopMode {
+		if r.Method == http.MethodGet {
+			writeDesktopOAuthCallbackLanding(w, "Completing APEX Load sign-in")
+			return
+		}
+		if r.Method != http.MethodPost {
+			writeError(w, http.StatusMethodNotAllowed, "desktop oidc callback requires POST finalization")
+			return
+		}
+	} else if r.Method != http.MethodGet {
+		writeError(w, http.StatusMethodNotAllowed, "oidc callback requires GET")
+		return
+	}
+	var err error
+	settings, err = s.effectiveOIDCSettings(settings)
+	if err != nil {
+		s.recordOIDCCallbackFailure(r, "desktop_callback_unavailable", map[string]any{"error": err.Error()})
+		writeError(w, http.StatusServiceUnavailable, err.Error())
+		return
+	}
 	runtime, err := s.cachedOIDCRuntime(r.Context(), settings)
 	if err != nil {
 		s.recordOIDCCallbackFailure(r, "runtime_initialization_failed", map[string]any{"error": err.Error()})
 		writeError(w, http.StatusServiceUnavailable, err.Error())
 		return
 	}
-	stateCookie, err := r.Cookie(oidcStateCookieName)
-	if err != nil {
-		s.recordOIDCCallbackFailure(r, "missing_state_cookie", nil)
-		writeError(w, http.StatusUnauthorized, "authentication required")
-		return
-	}
 	var loginState oidcStateToken
-	if err := decodeSignedCookieValue(stateCookie.Value, runtime.sessionSecret, &loginState); err != nil || loginState.State == "" || time.Now().UTC().After(loginState.ExpiresAt) {
-		s.recordOIDCCallbackFailure(r, "invalid_or_expired_state_cookie", nil)
-		writeError(w, http.StatusUnauthorized, "authentication required")
-		return
+	var desktopCapability string
+	if s.desktopMode {
+		var ok bool
+		desktopCapability, ok = s.requireDesktopBrowserCapability(w, r)
+		if !ok {
+			s.recordOIDCCallbackFailure(r, "missing_desktop_capability", nil)
+			return
+		}
+		loginState, ok = s.takeDesktopOIDCState(desktopCapability, subtleQueryValue(r.URL.Query().Get("state")))
+		if !ok {
+			s.recordOIDCCallbackFailure(r, "invalid_or_expired_desktop_state", nil)
+			writeError(w, http.StatusUnauthorized, "authentication state is invalid, expired, or belongs to another browser tab")
+			return
+		}
+	} else {
+		stateCookie, cookieErr := r.Cookie(oidcStateCookieName)
+		if cookieErr != nil {
+			s.recordOIDCCallbackFailure(r, "missing_state_cookie", nil)
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		if err := decodeSignedCookieValue(stateCookie.Value, runtime.sessionSecret, &loginState); err != nil || loginState.State == "" || time.Now().UTC().After(loginState.ExpiresAt) {
+			s.recordOIDCCallbackFailure(r, "invalid_or_expired_state_cookie", nil)
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
 	}
 	if subtleQueryValue(r.URL.Query().Get("state")) != loginState.State {
 		s.recordOIDCCallbackFailure(r, "state_mismatch", nil)
@@ -265,17 +335,29 @@ func (s *Server) handleOIDCCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "failed to create oidc session")
 		return
 	}
-	setSignedAuthCookie(w, settings, &http.Cookie{
-		Name:     oidcSessionCookieName,
-		Value:    encodedSession,
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Expires:  session.ExpiresAt,
-		MaxAge:   maxInt(1, int(time.Until(session.ExpiresAt).Seconds())),
-	})
-	clearAuthCookie(w, settings, oidcStateCookieName, "/api/v1/auth")
+	if s.desktopMode {
+		if !s.bindDesktopOIDCSession(desktopCapability, loginState.State, encodedSession) {
+			s.recordOIDCCallbackFailure(r, "desktop_capability_expired", nil)
+			writeError(w, http.StatusUnauthorized, "desktop browser capability expired before the session could be established")
+			return
+		}
+	} else {
+		s.setSignedAuthCookie(w, settings, &http.Cookie{
+			Name:     oidcSessionCookieName,
+			Value:    encodedSession,
+			Path:     "/",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Expires:  session.ExpiresAt,
+			MaxAge:   maxInt(1, int(time.Until(session.ExpiresAt).Seconds())),
+		})
+		s.clearAuthCookie(w, settings, oidcStateCookieName, "/api/v1/auth")
+	}
 	s.recordAuditEvent(withAuthenticatedContext(r, authResolution{User: user}), "auth.oidc.login", "success", "auth_session", user.Subject, "", nil)
+	if s.desktopMode {
+		writeJSON(w, http.StatusOK, map[string]string{"redirect_url": loginState.ReturnTo})
+		return
+	}
 	http.Redirect(w, r, loginState.ReturnTo, http.StatusSeeOther)
 }
 
@@ -307,8 +389,12 @@ func (s *Server) handleOIDCLogout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.recordAuditEvent(withAuthenticatedContext(r, authResolution{User: user}), "auth.oidc.logout", "success", "auth_session", user.Subject, "", nil)
-	clearAuthCookie(w, settings, oidcSessionCookieName, "/")
-	clearAuthCookie(w, settings, oidcStateCookieName, "/api/v1/auth")
+	if s.desktopMode {
+		s.clearDesktopOIDCSession(desktopBrowserCapabilityFromRequest(r))
+	} else {
+		s.clearAuthCookie(w, settings, oidcSessionCookieName, "/")
+		s.clearAuthCookie(w, settings, oidcStateCookieName, "/api/v1/auth")
+	}
 	destination := settings.LogoutURL
 	if strings.TrimSpace(destination) == "" {
 		destination = defaultOIDCReturnTo
@@ -430,6 +516,48 @@ func oidcURLIsLoopback(parsed *url.URL) bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// desktopLoopbackCallbackURL builds an OAuth callback from the listener's
+// actual random port. Native OAuth clients register a loopback redirect and
+// the provider returns to the port selected for this launch, rather than the
+// static placeholder kept in persisted settings.
+func (s *Server) desktopLoopbackCallbackURL(callbackPath string) (string, error) {
+	if s == nil || !s.desktopMode {
+		return "", fmt.Errorf("desktop callback is unavailable")
+	}
+	if !s.BoundAddrReady() {
+		return "", fmt.Errorf("desktop API server is not ready")
+	}
+	parsed, err := url.Parse(s.BrowserURL())
+	if err != nil || parsed.Scheme != "http" || parsed.User != nil || !oidcURLIsLoopback(parsed) {
+		return "", fmt.Errorf("desktop API callback must use a loopback HTTP origin")
+	}
+	port, err := strconv.Atoi(parsed.Port())
+	if err != nil || port < 1 || port > 65535 {
+		return "", fmt.Errorf("desktop API callback port is unavailable")
+	}
+	if !strings.HasPrefix(callbackPath, "/") || strings.HasPrefix(callbackPath, "//") {
+		return "", fmt.Errorf("desktop API callback path is invalid")
+	}
+	parsed.Path = callbackPath
+	parsed.RawPath = ""
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
+	parsed.Fragment = ""
+	return parsed.String(), nil
+}
+
+func (s *Server) effectiveOIDCSettings(settings AuthSettings) (AuthSettings, error) {
+	if s == nil || !s.desktopMode {
+		return settings, nil
+	}
+	callbackURL, err := s.desktopLoopbackCallbackURL(oidcCallbackPath)
+	if err != nil {
+		return settings, err
+	}
+	settings.RedirectURL = callbackURL
+	return settings, nil
 }
 
 func (s *Server) cachedOIDCRuntime(ctx context.Context, settings AuthSettings) (*oidcRuntime, error) {
@@ -642,22 +770,26 @@ func validateOIDCLogoutCSRFToken(r *http.Request, user *AuthenticatedUser, setti
 	return nil
 }
 
-func setSignedAuthCookie(w http.ResponseWriter, settings AuthSettings, cookie *http.Cookie) {
-	cookie.Secure = authCookieSecure(settings)
+func (s *Server) setSignedAuthCookie(w http.ResponseWriter, settings AuthSettings, cookie *http.Cookie) {
+	cookie.Secure = s.authCookieSecure(settings)
 	http.SetCookie(w, cookie)
 }
 
-func clearAuthCookie(w http.ResponseWriter, settings AuthSettings, name string, path string) {
+func (s *Server) clearAuthCookie(w http.ResponseWriter, settings AuthSettings, name string, path string) {
 	http.SetCookie(w, &http.Cookie{
 		Name:     name,
 		Value:    "",
 		Path:     path,
 		HttpOnly: true,
 		SameSite: http.SameSiteLaxMode,
-		Secure:   authCookieSecure(settings),
+		Secure:   s.authCookieSecure(settings),
 		MaxAge:   -1,
 		Expires:  time.Unix(0, 0).UTC(),
 	})
+}
+
+func (s *Server) authCookieSecure(settings AuthSettings) bool {
+	return authCookieSecure(settings)
 }
 
 func authCookieSecure(settings AuthSettings) bool {

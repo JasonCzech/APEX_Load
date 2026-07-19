@@ -2,16 +2,38 @@ package api
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+func writeStagedDownloadChecksums(t *testing.T, distDir string, filenames ...string) map[string]string {
+	t.Helper()
+	sums := make(map[string]string, len(filenames))
+	var manifest strings.Builder
+	for _, filename := range filenames {
+		contents, err := os.ReadFile(filepath.Join(distDir, filename))
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum := fmt.Sprintf("%x", sha256.Sum256(contents))
+		sums[filename] = sum
+		fmt.Fprintf(&manifest, "%s  %s\n", sum, filename)
+	}
+	if err := os.WriteFile(filepath.Join(distDir, downloadChecksumFile), []byte(manifest.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return sums
+}
 
 func TestDefaultSystemSettingsEnablesClientDownloads(t *testing.T) {
 	if !defaultSystemSettings(10).ClientDownloads.Enabled {
@@ -24,13 +46,17 @@ func TestDefaultSystemSettingsEnablesClientDownloads(t *testing.T) {
 // when packages are staged — the gate, not a missing file, is what blocks it.
 func TestClientDownloadsDisabledFailsClosed(t *testing.T) {
 	raDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(raDir, "apexload-recording-agent-0.1.0-linux-amd64.tar.gz"), []byte("agent"), 0o600); err != nil {
+	raName := "apexload-recording-agent-0.1.0-linux-amd64.tar.gz"
+	if err := os.WriteFile(filepath.Join(raDir, raName), []byte("agent"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	writeStagedDownloadChecksums(t, raDir, raName)
 	dtDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dtDir, "apexload-desktop-0.1.0-linux-amd64.tar.gz"), []byte("desktop"), 0o600); err != nil {
+	dtName := "apexload-desktop-0.1.0-linux-amd64.tar.gz"
+	if err := os.WriteFile(filepath.Join(dtDir, dtName), []byte("desktop"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	writeStagedDownloadChecksums(t, dtDir, dtName)
 	t.Setenv(recordingAgentDistDirEnv, raDir)
 	t.Setenv(desktopDistDirEnv, dtDir)
 
@@ -200,8 +226,13 @@ func TestDownloadPlatformFromUserAgent(t *testing.T) {
 		want string
 	}{
 		{
-			name: "intel mac",
+			name: "mac compatibility UA is ambiguous",
 			ua:   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
+			want: "",
+		},
+		{
+			name: "intel mac explicit",
+			ua:   "APEXLoad/1.0 (Macintosh; Mac OS X 14.0; x86_64)",
 			want: "darwin-amd64",
 		},
 		{
@@ -220,8 +251,38 @@ func TestDownloadPlatformFromUserAgent(t *testing.T) {
 			want: "linux-arm64",
 		},
 		{
+			name: "android is not desktop linux",
+			ua:   "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36",
+			want: "",
+		},
+		{
 			name: "unknown",
 			ua:   "UnknownClient/1.0",
+			want: "",
+		},
+		{
+			name: "ambiguous linux",
+			ua:   "Mozilla/5.0 (X11; Linux) AppleWebKit/537.36",
+			want: "",
+		},
+		{
+			name: "unsupported linux",
+			ua:   "Mozilla/5.0 (X11; Linux riscv64) AppleWebKit/537.36",
+			want: "",
+		},
+		{
+			name: "linux x64",
+			ua:   "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+			want: "linux-amd64",
+		},
+		{
+			name: "windows x64",
+			ua:   "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+			want: "windows-amd64",
+		},
+		{
+			name: "windows 32 bit",
+			ua:   "Mozilla/5.0 (Windows NT 10.0; WOW32; x86)",
 			want: "",
 		},
 	}
@@ -231,6 +292,20 @@ func TestDownloadPlatformFromUserAgent(t *testing.T) {
 		if got := downloadPlatform(req); got != tc.want {
 			t.Fatalf("%s: downloadPlatform() = %q, want %q", tc.name, got, tc.want)
 		}
+	}
+}
+
+func TestClientDownloadsRejectInvalidExplicitPlatformWithoutUserAgentFallback(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 10})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/downloads/desktop/latest?platform=linux-arm46", nil)
+	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400 body=%s", resp.Code, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "platform query parameter is invalid") {
+		t.Fatalf("body = %q, want invalid-platform guidance", resp.Body.String())
 	}
 }
 
@@ -311,6 +386,129 @@ func TestFindDownloadPackageRejectsSymlinkEscape(t *testing.T) {
 	}
 	if filepath.Base(got) != filepath.Base(real) {
 		t.Fatalf("selected %q, want the real package %q (symlink must be excluded)", got, real)
+	}
+}
+
+func TestFindDownloadPackageUsesSemanticVersionOrdering(t *testing.T) {
+	distDir := t.TempDir()
+	for _, version := range []string{"1.9.0", "1.10.0", "invalid"} {
+		name := recordingAgentPackagePrefix + version + "-linux-amd64.tar.gz"
+		if err := os.WriteFile(filepath.Join(distDir, name), []byte(version), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := findDownloadPackage(distDir, recordingAgentPackagePrefix, "linux-amd64", "Agent", "stage", recordingAgentDistDirEnv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := recordingAgentPackagePrefix + "1.10.0-linux-amd64.tar.gz"; filepath.Base(got) != want {
+		t.Fatalf("selected %q, want %q", filepath.Base(got), want)
+	}
+}
+
+func TestFindDownloadPackageRejectsEqualPrecedenceBuildVariants(t *testing.T) {
+	distDir := t.TempDir()
+	for _, version := range []string{"1.10.0+build.1", "1.10.0+build.2"} {
+		name := recordingAgentPackagePrefix + version + "-linux-amd64.tar.gz"
+		if err := os.WriteFile(filepath.Join(distDir, name), []byte(version), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := findDownloadPackage(distDir, recordingAgentPackagePrefix, "linux-amd64", "Agent", "stage", recordingAgentDistDirEnv); err == nil || !strings.Contains(err.Error(), "ambiguous build variants") {
+		t.Fatalf("equal-precedence variants were not rejected: %v", err)
+	}
+}
+
+func TestPackageChecksumRequiresExactlyOneCanonicalBasenameRow(t *testing.T) {
+	distDir := t.TempDir()
+	name := recordingAgentPackagePrefix + "2.0.0-linux-amd64.tar.gz"
+	if err := os.WriteFile(filepath.Join(distDir, name), []byte("package"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := writeStagedDownloadChecksums(t, distDir, name)[name]
+	manifestPath := filepath.Join(distDir, downloadChecksumFile)
+	tests := []struct {
+		name     string
+		manifest string
+		wantOK   bool
+	}{
+		{name: "canonical", manifest: sum + "  " + name + "\n", wantOK: true},
+		{name: "dot slash filename", manifest: sum + "  ./" + name + "\n"},
+		{name: "uppercase digest", manifest: strings.ToUpper(sum) + "  " + name + "\n"},
+		{name: "duplicate row", manifest: sum + "  " + name + "\n" + sum + "  " + name + "\n"},
+		{name: "extra field", manifest: sum + "  unexpected  " + name + "\n"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := os.WriteFile(manifestPath, []byte(test.manifest), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			got, ok := packageChecksumSHA256(distDir, name)
+			if ok != test.wantOK {
+				t.Fatalf("packageChecksumSHA256() = %q, %v, want ok=%v", got, ok, test.wantOK)
+			}
+		})
+	}
+}
+
+func TestDownloadPackageHandoffFailsClosedUntilChecksumMatches(t *testing.T) {
+	distDir := t.TempDir()
+	name := recordingAgentPackagePrefix + "2.0.0-linux-amd64.tar.gz"
+	packagePath := filepath.Join(distDir, name)
+	if err := os.WriteFile(packagePath, []byte("old bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeStagedDownloadChecksums(t, distDir, name)
+	if err := os.WriteFile(packagePath, []byte("new bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/download", nil)
+	checksumResp := httptest.NewRecorder()
+	writeDownloadChecksumJSON(checksumResp, packagePath)
+	if checksumResp.Code != http.StatusOK {
+		t.Fatalf("staged checksum metadata status = %d, want 200 body=%s", checksumResp.Code, checksumResp.Body.String())
+	}
+	// The metadata route returns the manifest's expected digest without hashing
+	// a potentially large archive. The actual download below remains fail-closed
+	// until those expected bytes are published.
+
+	resp := httptest.NewRecorder()
+	serveDownloadPackage(resp, req, packagePath)
+	if resp.Code != http.StatusServiceUnavailable {
+		t.Fatalf("mismatched handoff status = %d, want 503 body=%s", resp.Code, resp.Body.String())
+	}
+	if strings.Contains(resp.Body.String(), "new bytes") || resp.Header().Get("Digest") != "" {
+		t.Fatal("mismatched package bytes or trusted digest escaped the fail-closed handoff")
+	}
+
+	sums := writeStagedDownloadChecksums(t, distDir, name)
+	resp = httptest.NewRecorder()
+	serveDownloadPackage(resp, req, packagePath)
+	if resp.Code != http.StatusOK || resp.Body.String() != "new bytes" {
+		t.Fatalf("completed handoff status/body = %d/%q", resp.Code, resp.Body.String())
+	}
+	if resp.Header().Get("X-Content-SHA256") != sums[name] {
+		t.Fatal("completed handoff did not surface the checksum for the served snapshot")
+	}
+}
+
+func TestDownloadPackageExtendsArtifactWriteDeadline(t *testing.T) {
+	distDir := t.TempDir()
+	name := recordingAgentPackagePrefix + "2.0.0-linux-amd64.tar.gz"
+	packagePath := filepath.Join(distDir, name)
+	if err := os.WriteFile(packagePath, []byte("package bytes"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeStagedDownloadChecksums(t, distDir, name)
+	recorder := &archiveDeadlineRecorder{}
+	started := time.Now()
+
+	serveDownloadPackage(recorder, httptest.NewRequest(http.MethodGet, "/download", nil), packagePath)
+
+	minimum := started.Add(configuredArchiveMaterializationTimeout() + 4*time.Second)
+	if recorder.deadline.Before(minimum) {
+		t.Fatalf("package write deadline = %v, want at least %v", recorder.deadline, minimum)
 	}
 }
 

@@ -3,7 +3,8 @@
 APEX Load releases and deployments are owned by the active workflows under
 `.github/workflows`. Deployment workflows never compile application code. They
 accept an exact semantic release tag, verify its portable signature, read the
-schema-v1 release manifest, and deploy only the assets and image digests named
+current schema-v2 release manifest (with schema-v1 verification retained for
+legacy releases), and deploy only the assets and image digests named
 by that manifest.
 
 ## Protected environments
@@ -119,6 +120,7 @@ must be environment secrets or KMS/HSM key references.
 | Repository variable | `APEXLOAD_RELEASE_TAG_PUBLIC_KEYS` | Armored GPG public keys trusted to sign semantic release tags. |
 | Repository variables/secrets | `APEXLOAD_RELEASE_REGISTRY`, `APEXLOAD_RELEASE_REGISTRY_NAMESPACE`, `APEXLOAD_RELEASE_REGISTRY_USERNAME`, `APEXLOAD_RELEASE_REGISTRY_PASSWORD` | Release registry host, namespace, and optional explicit credentials. GitHub.com may omit credentials only for `ghcr.io`, where the workflow uses its scoped token. Custom and GHES registries must configure the username and protected password explicitly. |
 | Repository variable | `BUILDX_RELEASE_BASE_URL` | Optional HTTPS mirror for the reviewed Buildx 0.34.1 binaries. Release jobs verify the official architecture-specific SHA-256 value before installing the Docker CLI plugin; air-gapped runners may instead use the exact preinstalled version. |
+| Repository variables | `NSIS_RELEASE_BASE_URL`, `NSIS_ARCHIVE_PATH` | Optional HTTPS mirror for the reviewed NSIS 3.10 zip, or the sealed local archive path used on air-gapped Windows runners. Both paths are verified against the repository-pinned SHA-256 before extraction. |
 | Repository variable | `APEXLOAD_BUILDKIT_IMAGE` | Optional internal mirror of the reviewed BuildKit 0.31.1 image. It must remain an immutable digest reference ending in `sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a`; tag-only or changed-digest values fail before a privileged builder starts. |
 | Repository variable | `SKOPEO_RELEASE_BASE_URL` | Optional HTTPS mirror for the pinned Skopeo 1.20.0 deployment binary. The installer verifies architecture-specific SHA-256 checksums before execution. Air-gapped runners may instead use the reviewed preinstalled-tool path. |
 | `registry-release` variable/secret | `APEXLOAD_ENABLE_HOSTED_ATTESTATIONS`, `APEXLOAD_GITHUB_ATTESTATIONS_TOKEN` | Optional GitHub.com provenance. Enable only where the repository plan supports attestations and give the protected fine-grained/GitHub App token attestation write access. The workflow passes this token explicitly and does not declare the GHES-incompatible `attestations` permission key. Portable signatures remain mandatory and authoritative. |
@@ -162,7 +164,7 @@ then:
    exact multi-platform digests, and verifies portable SBOM attestations.
    GitHub.com hosted provenance is also emitted when the explicit capability
    flag and protected attestation token are configured.
-4. Creates `release-manifest.json` schema version 1, a single `SHA256SUMS`, and
+4. Creates `release-manifest.json` schema version 2, a single `SHA256SUMS`, and
    the raw detached OpenSSL SHA-256 signature `SHA256SUMS.sig`.
 5. Verifies every promised asset and signature before uploading to the draft.
    A retry may reuse only the marker-bound draft and exact already-promoted

@@ -1,4 +1,7 @@
-import { canSaveBlobViaBridge, saveBlobViaBridge } from '../desktop/desktopFiles'
+import { canSaveBlobViaBridge, MAX_NATIVE_SAVE_BYTES, saveBlobViaBridge } from '../desktop/desktopFiles'
+import { isDesktopSurface } from '../desktop/desktopBridge'
+
+export type DownloadOutcome = 'saved' | 'cancelled' | 'browser_started'
 
 function browserDownloadBlob(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
@@ -11,23 +14,36 @@ function browserDownloadBlob(blob: Blob, filename: string): void {
   URL.revokeObjectURL(url);
 }
 
-// downloadBlob saves a blob to disk. In the Wails desktop shell it uses the
-// native Save dialog (where <a download> is unreliable anyway); in the browser
-// it triggers the standard synchronous download. The bridge check is synchronous
-// so the browser path stays inside the originating user gesture.
-export function downloadBlob(blob: Blob, filename: string): void {
+// downloadBlob saves a blob to disk. In the Wails desktop shell it awaits the
+// native Save dialog and write so callers can distinguish a completed save from
+// cancellation. Native failures reject and must not fall back to <a download>,
+// which is unreliable in the WebView and would hide the real disk error.
+// Hosted browsers retain the synchronous click before this async function first
+// yields, keeping the fallback inside the originating user gesture.
+export async function downloadBlob(blob: Blob, filename: string): Promise<DownloadOutcome> {
   if (canSaveBlobViaBridge(blob)) {
-    void saveBlobViaBridge(blob, filename)
-      .then(handled => { if (!handled) browserDownloadBlob(blob, filename) })
-      .catch(() => browserDownloadBlob(blob, filename));
-    return;
+    const outcome = await saveBlobViaBridge(blob, filename)
+    if (outcome === 'saved' || outcome === 'cancelled') return outcome
+    throw new Error('The native save bridge became unavailable before the file could be saved.')
   }
-  browserDownloadBlob(blob, filename);
+  // WebView anchor downloads are not a reliable fallback. An oversized
+  // generated Blob cannot use the bounded base64 bridge, so fail explicitly
+  // and let the owning UI report the error instead of claiming a save began.
+  if (isDesktopSurface()) {
+    if (blob.size > MAX_NATIVE_SAVE_BYTES) {
+      throw new Error(
+        `This generated file is too large for the desktop save bridge (maximum ${MAX_NATIVE_SAVE_BYTES / (1024 * 1024)} MiB).`,
+      )
+    }
+    throw new Error('The native save bridge is unavailable in the desktop application.')
+  }
+  browserDownloadBlob(blob, filename)
+  return 'browser_started'
 }
 
 // downloadTextFile triggers a download of in-memory text content as a file.
-export function downloadTextFile(content: string, filename: string, type = 'text/plain;charset=utf-8'): void {
-  downloadBlob(new Blob([content], { type }), filename);
+export function downloadTextFile(content: string, filename: string, type = 'text/plain;charset=utf-8'): Promise<DownloadOutcome> {
+  return downloadBlob(new Blob([content], { type }), filename)
 }
 
 // downloadFilenameFromDisposition extracts the filename from a Content-Disposition

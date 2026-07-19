@@ -1086,6 +1086,7 @@ func (s *Server) handleGetBrowserRecorderInstall(w http.ResponseWriter, r *http.
 }
 
 func (s *Server) handleExportBrowserRecording(w http.ResponseWriter, r *http.Request) {
+	extendArtifactWriteDeadline(w)
 	artifact, info, ok := s.browserRecording.Artifact(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "browser recording session not found")

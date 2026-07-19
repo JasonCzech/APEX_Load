@@ -178,6 +178,43 @@ func TestStartBindFailureDoesNotRaceMetricsServeShutdown(t *testing.T) {
 	}
 }
 
+func TestShutdownBeforeStartPermanentlyPreventsBinding(t *testing.T) {
+	server := NewServer(ServerConfig{Addr: "127.0.0.1:0"})
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		t.Fatalf("Shutdown before Start: %v", err)
+	}
+	if err := server.Start(); !errors.Is(err, http.ErrServerClosed) {
+		t.Fatalf("Start after Shutdown = %v, want http.ErrServerClosed", err)
+	}
+	if server.BoundAddrReady() {
+		t.Fatalf("server bound after shutdown: %s", server.BoundAddr())
+	}
+}
+
+func TestConcurrentStartShutdownCannotResurrectListener(t *testing.T) {
+	server := NewServer(ServerConfig{Addr: "127.0.0.1:0"})
+	startResult := make(chan error, 1)
+	go func() { startResult <- server.Start() }()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		t.Fatalf("concurrent Shutdown: %v", err)
+	}
+	select {
+	case err := <-startResult:
+		if err != nil && !errors.Is(err, http.ErrServerClosed) {
+			t.Fatalf("concurrent Start = %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("Start did not return after concurrent shutdown")
+	}
+	if server.BoundAddrReady() {
+		t.Fatalf("listener remained bound after concurrent shutdown: %s", server.BoundAddr())
+	}
+}
+
 func retentionJanitorsRunning(server *Server) (bool, bool, bool) {
 	browserRunning := false
 	if server != nil && server.browserReplay != nil {

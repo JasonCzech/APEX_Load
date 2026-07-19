@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"testing"
 
 	"github.com/wailsapp/wails/v2/pkg/menu"
@@ -13,6 +14,26 @@ func hasRole(m *menu.Menu, role menu.Role) bool {
 		}
 	}
 	return false
+}
+
+func TestReloadDoesNotRetireRendererBeforeCancelableNavigationCommits(t *testing.T) {
+	app := NewApp()
+	app.setRuntimeContext(context.Background())
+	app.rendererReady = true
+	app.rendererSession = "renderer-stays-active"
+	originalReload := windowReloadApp
+	reloads := 0
+	windowReloadApp = func(context.Context) { reloads++ }
+	t.Cleanup(func() { windowReloadApp = originalReload })
+
+	app.reload(nil)
+
+	if reloads != 1 {
+		t.Fatalf("native reload calls = %d, want 1", reloads)
+	}
+	if !app.rendererReady || app.rendererSession != "renderer-stays-active" {
+		t.Fatal("reload retired the renderer before navigation committed")
+	}
 }
 
 func submenu(m *menu.Menu, label string) *menu.Menu {
@@ -144,6 +165,31 @@ func TestBuildAppMenuOpenRecent(t *testing.T) {
 	}
 }
 
+func TestPlatformMenusLoadRecentsBeforeRemainingStatic(t *testing.T) {
+	app := NewApp()
+	appDataPath := t.TempDir()
+	t.Setenv("APEXLOAD_DESKTOP_APP_DATA", appDataPath)
+	if err := saveRecents(appDataPath, []recentItem{
+		{Kind: "script", ID: "s1", Name: "Order flow", Route: "#/scripts/s1"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, goos := range []string{"darwin", "linux", "windows"} {
+		app.prepareInitialMenuForOS(goos)
+		file := submenu(buildAppMenuForOS(app, goos), "File")
+		if file == nil {
+			t.Fatalf("%s menu missing File menu", goos)
+		}
+		recent := submenu(file, "Open Recent")
+		if recent == nil || labeledItem(recent, "Order flow") == nil {
+			t.Fatalf("%s initial static menu did not preload persisted recents", goos)
+		}
+		if supportsDynamicApplicationMenuForOS(goos) {
+			t.Errorf("%s must reject dynamic application-menu replacement", goos)
+		}
+	}
+}
+
 // TestBuildAppMenuHelpHasAbout verifies the Help menu can open the in-app About
 // dialog on all platforms.
 func TestBuildAppMenuHelpHasAbout(t *testing.T) {
@@ -156,6 +202,10 @@ func TestBuildAppMenuHelpHasAbout(t *testing.T) {
 		}
 		if labeledItem(help, "About APEX Load") == nil {
 			t.Errorf("%s: Help missing About entry", goos)
+		}
+		openBrowser := labeledItem(help, "Open in System Browser")
+		if openBrowser == nil || openBrowser.Click == nil {
+			t.Errorf("%s: Help browser entry must emit a renderer-owned context action", goos)
 		}
 	}
 }

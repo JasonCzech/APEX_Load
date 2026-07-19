@@ -8,9 +8,12 @@ import BrowserRecorderControlPanel from './BrowserRecorderControlPanel'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
-const { apiFetchMock, downloadBlobMock } = vi.hoisted(() => ({
+const { apiFetchMock, downloadBlobMock, hasDesktopApiCapabilityMock, saveApiResourceViaBridgeMock, startDesktopBrowserDownloadMock } = vi.hoisted(() => ({
   apiFetchMock: vi.fn(),
   downloadBlobMock: vi.fn(),
+  hasDesktopApiCapabilityMock: vi.fn(),
+  saveApiResourceViaBridgeMock: vi.fn(),
+  startDesktopBrowserDownloadMock: vi.fn(),
 }))
 
 const apiMock = {
@@ -55,10 +58,16 @@ vi.mock('../hooks/useWebSocket', () => ({
 
 vi.mock('../hooks/apiClient', () => ({
   apiFetch: apiFetchMock,
+  hasDesktopApiCapability: () => hasDesktopApiCapabilityMock(),
 }))
 
 vi.mock('../utils/fileUtils', () => ({
   downloadBlob: downloadBlobMock,
+}))
+
+vi.mock('../desktop/desktopFiles', () => ({
+  saveApiResourceViaBridge: (...args: unknown[]) => saveApiResourceViaBridgeMock(...args),
+  startDesktopBrowserDownload: (...args: unknown[]) => startDesktopBrowserDownloadMock(...args),
 }))
 
 vi.mock('./BrowserReplayProgress', () => ({
@@ -246,6 +255,9 @@ describe('BrowserRecorderControlPanel', () => {
     apiMock.createProjectSecrets.mockResolvedValue({ secrets: [], count: 0 })
     apiMock.migrateImportSecrets.mockResolvedValue({ secrets: [], count: 0 })
     apiMock.browserRecorderBridge = null
+    saveApiResourceViaBridgeMock.mockResolvedValue('unavailable')
+    startDesktopBrowserDownloadMock.mockResolvedValue(undefined)
+    hasDesktopApiCapabilityMock.mockReturnValue(false)
   })
 
   afterEach(async () => {
@@ -916,6 +928,77 @@ describe('BrowserRecorderControlPanel', () => {
     await clickButton('Download HAR')
     await flushPromises()
 
+    expect(saveApiResourceViaBridgeMock).toHaveBeenCalledWith(
+      '/api/v1/browser-recorder/sessions/brec-1/export?format=har',
+      'checkout-flow.har',
+    )
+    expect(apiMock.exportBrowserRecording).toHaveBeenCalledWith('brec-1', 'har')
+    expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), 'checkout-flow.har')
+  })
+
+  it('does not report a cancelled Blob save as a downloaded HAR', async () => {
+    downloadBlobMock.mockResolvedValue('cancelled')
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    await renderPanel()
+    await clickButton('Download HAR')
+    await flushPromises()
+
+    expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), 'checkout-flow.har')
+    expect(container.textContent).not.toContain('Side-car HAR downloaded')
+  })
+
+  it('streams embedded browser-recorder HAR exports through the native desktop bridge', async () => {
+    saveApiResourceViaBridgeMock.mockResolvedValue('saved')
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    await renderPanel()
+    await clickButton('Download HAR')
+    await flushPromises()
+
+    expect(saveApiResourceViaBridgeMock).toHaveBeenCalledWith(
+      '/api/v1/browser-recorder/sessions/brec-1/export?format=har',
+      'checkout-flow.har',
+    )
+    expect(apiMock.exportBrowserRecording).not.toHaveBeenCalled()
+    expect(downloadBlobMock).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Side-car HAR downloaded')
+  })
+
+  it('streams embedded HAR exports without Blob buffering in the desktop bootstrap browser', async () => {
+    hasDesktopApiCapabilityMock.mockReturnValue(true)
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    await renderPanel()
+    await clickButton('Download HAR')
+    await flushPromises()
+
+    expect(startDesktopBrowserDownloadMock).toHaveBeenCalledWith(
+      '/api/v1/browser-recorder/sessions/brec-1/export?format=har',
+      'checkout-flow.har',
+    )
+    expect(apiMock.exportBrowserRecording).not.toHaveBeenCalled()
+    expect(downloadBlobMock).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Side-car HAR download request opened')
+  })
+
+  it('treats a cancelled native HAR save as cancellation, not success', async () => {
+    saveApiResourceViaBridgeMock.mockResolvedValue('cancelled')
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    await renderPanel()
+    await clickButton('Download HAR')
+    await flushPromises()
+
+    expect(apiMock.exportBrowserRecording).not.toHaveBeenCalled()
+    expect(downloadBlobMock).not.toHaveBeenCalled()
+    expect(container.textContent).not.toContain('Side-car HAR downloaded')
+  })
+
+  it('keeps remote recording-agent HAR exports on their authenticated bridge', async () => {
+    apiMock.browserRecorderBridge = { origin: 'http://127.0.0.1:49152', token: 'tok', session_id: 'ws-1' }
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    await renderPanel()
+    await clickButton('Download HAR')
+    await flushPromises()
+
+    expect(saveApiResourceViaBridgeMock).not.toHaveBeenCalled()
     expect(apiMock.exportBrowserRecording).toHaveBeenCalledWith('brec-1', 'har')
     expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), 'checkout-flow.har')
   })

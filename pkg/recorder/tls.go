@@ -2,6 +2,7 @@ package recorder
 
 import (
 	"bufio"
+	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -23,7 +24,21 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 )
 
-const maxRecorderCAFileBytes int64 = 1 << 20
+const (
+	maxRecorderCAFileBytes   int64 = 1 << 20
+	persistentCABundleSuffix       = ".pair.pem"
+)
+
+// persistentCAMaterial is the validated, normalized representation of the
+// recorder interception CA. The canonical on-disk form stores both PEM blocks
+// in one private file so one atomic rename commits the complete generation.
+// The historical separate certificate/key paths remain compatibility mirrors.
+type persistentCAMaterial struct {
+	cert    *x509.Certificate
+	key     *rsa.PrivateKey
+	certPEM []byte
+	keyPEM  []byte
+}
 
 // initCA generates a self-signed root CA certificate and key pair.
 // It is called lazily on the first CONNECT request or explicit initialization.
@@ -35,10 +50,15 @@ func (r *Recorder) initCA() error {
 }
 
 func (r *Recorder) generateCA() error {
-	if err := r.loadPersistentCA(); err == nil {
+	loadErr := r.loadPersistentCA()
+	if loadErr == nil {
 		return nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return err
+	}
+	if loadErr != os.ErrNotExist {
+		// Never use malformed, expired, or mismatched persisted material. A new
+		// generation is safe (the user may need to trust the newly served CA), and
+		// the canonical bundle is committed before compatibility mirrors change.
+		slog.Warn("persisted recording proxy CA is unusable; rotating it", "error", loadErr)
 	}
 
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -76,12 +96,19 @@ func (r *Recorder) generateCA() error {
 		return fmt.Errorf("parsing CA certificate: %w", err)
 	}
 
-	r.caCert = caCert
-	r.caKey = key
-	r.caCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	material := &persistentCAMaterial{
+		cert:    caCert,
+		key:     key,
+		certPEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}),
+		keyPEM:  pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}),
+	}
+	if err := validatePersistentCAPair(material.cert, material.key, time.Now()); err != nil {
+		return fmt.Errorf("validating generated CA: %w", err)
+	}
 	if err := r.savePersistentCA(certDER, key); err != nil {
 		return err
 	}
+	r.installPersistentCA(material)
 
 	slog.Info("generated recording proxy CA certificate")
 	return nil
@@ -92,33 +119,108 @@ func (r *Recorder) loadPersistentCA() error {
 		return os.ErrNotExist
 	}
 
-	certPEM, err := readRecorderCAFile(r.caCertPath)
-	if err != nil {
-		return err
-	}
-	keyPEM, err := readRecorderCAFile(r.caKeyPath)
-	if err != nil {
-		return err
+	bundlePath := persistentCABundlePath(r.caKeyPath)
+	bundleMaterial, bundleErr := loadPersistentCABundle(bundlePath, time.Now())
+	if bundleErr == nil {
+		r.installPersistentCA(bundleMaterial)
+		// A crash can happen after the canonical bundle commit but between the two
+		// historical mirror updates. Repair those mirrors best-effort; they are not
+		// the source of truth anymore, so a read-only legacy path must not prevent
+		// the valid committed CA from loading.
+		if err := r.repairLegacyCAMirrors(bundleMaterial); err != nil {
+			slog.Warn("failed to repair recorder CA compatibility files", "error", err)
+		}
+		slog.Info("loaded recording proxy CA certificate", "path", bundlePath)
+		return nil
 	}
 
+	legacyMaterial, legacyErr := loadPersistentCAPairFiles(r.caCertPath, r.caKeyPath, time.Now())
+	if legacyErr == nil {
+		r.installPersistentCA(legacyMaterial)
+		// Transparently migrate compatible installs. Failure to create the new
+		// private bundle does not invalidate a pair that was already verified.
+		if err := writePersistentCABundle(bundlePath, legacyMaterial); err != nil {
+			slog.Warn("failed to migrate recorder CA to atomic storage", "error", err)
+		}
+		slog.Info("loaded legacy recording proxy CA certificate", "path", r.caCertPath)
+		return nil
+	}
+
+	if persistencePathsAbsent(bundlePath, r.caCertPath, r.caKeyPath) {
+		return os.ErrNotExist
+	}
+	return errors.Join(
+		fmt.Errorf("load atomic recorder CA bundle %q: %w", bundlePath, bundleErr),
+		fmt.Errorf("load legacy recorder CA pair: %w", legacyErr),
+	)
+}
+
+func persistentCABundlePath(keyPath string) string {
+	keyPath = strings.TrimSpace(keyPath)
+	if keyPath == "" {
+		return ""
+	}
+	return filepath.Clean(keyPath) + persistentCABundleSuffix
+}
+
+func persistencePathsAbsent(paths ...string) bool {
+	for _, path := range paths {
+		if strings.TrimSpace(path) == "" {
+			continue
+		}
+		if _, err := os.Lstat(path); err == nil || !errors.Is(err, os.ErrNotExist) {
+			return false
+		}
+	}
+	return true
+}
+
+func loadPersistentCAPairFiles(certPath, keyPath string, now time.Time) (*persistentCAMaterial, error) {
+	certPEM, err := readRecorderCAFile(certPath)
+	if err != nil {
+		return nil, fmt.Errorf("read persisted CA certificate %q: %w", certPath, err)
+	}
+	keyPEM, err := readRecorderCAFile(keyPath)
+	if err != nil {
+		return nil, fmt.Errorf("read persisted CA key %q: %w", keyPath, err)
+	}
+	return parsePersistentCAPair(certPEM, keyPEM, certPath, keyPath, now)
+}
+
+func parsePersistentCAPair(certPEM, keyPEM []byte, certSource, keySource string, now time.Time) (*persistentCAMaterial, error) {
 	certBlock, _ := pem.Decode(certPEM)
 	if certBlock == nil || certBlock.Type != "CERTIFICATE" {
-		return fmt.Errorf("parse persisted CA certificate %q: invalid PEM", r.caCertPath)
+		return nil, fmt.Errorf("parse persisted CA certificate %q: invalid PEM", certSource)
 	}
 	cert, err := x509.ParseCertificate(certBlock.Bytes)
 	if err != nil {
-		return fmt.Errorf("parse persisted CA certificate %q: %w", r.caCertPath, err)
-	}
-	if !cert.IsCA {
-		return fmt.Errorf("persisted CA certificate %q is not a certificate authority", r.caCertPath)
+		return nil, fmt.Errorf("parse persisted CA certificate %q: %w", certSource, err)
 	}
 
 	keyBlock, _ := pem.Decode(keyPEM)
 	if keyBlock == nil {
-		return fmt.Errorf("parse persisted CA key %q: invalid PEM", r.caKeyPath)
+		return nil, fmt.Errorf("parse persisted CA key %q: invalid PEM", keySource)
 	}
+	key, err := parsePersistentCAKey(keyBlock, keySource)
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePersistentCAPair(cert, key, now); err != nil {
+		return nil, fmt.Errorf("validate persisted CA pair: %w", err)
+	}
+	return &persistentCAMaterial{
+		cert:    cert,
+		key:     key,
+		certPEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw}),
+		keyPEM:  pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}),
+	}, nil
+}
 
-	var key *rsa.PrivateKey
+func parsePersistentCAKey(keyBlock *pem.Block, source string) (*rsa.PrivateKey, error) {
+	var (
+		key *rsa.PrivateKey
+		err error
+	)
 	switch keyBlock.Type {
 	case "RSA PRIVATE KEY":
 		key, err = x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
@@ -129,21 +231,70 @@ func (r *Recorder) loadPersistentCA() error {
 			var ok bool
 			key, ok = parsed.(*rsa.PrivateKey)
 			if !ok {
-				return fmt.Errorf("persisted CA key %q is not an RSA private key", r.caKeyPath)
+				return nil, fmt.Errorf("persisted CA key %q is not an RSA private key", source)
 			}
 		}
 	default:
-		return fmt.Errorf("parse persisted CA key %q: unsupported PEM type %q", r.caKeyPath, keyBlock.Type)
+		return nil, fmt.Errorf("parse persisted CA key %q: unsupported PEM type %q", source, keyBlock.Type)
 	}
 	if err != nil {
-		return fmt.Errorf("parse persisted CA key %q: %w", r.caKeyPath, err)
+		return nil, fmt.Errorf("parse persisted CA key %q: %w", source, err)
 	}
+	return key, nil
+}
 
-	r.caCert = cert
-	r.caKey = key
-	r.caCertPEM = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: cert.Raw})
-	slog.Info("loaded recording proxy CA certificate", "path", r.caCertPath)
+func validatePersistentCAPair(cert *x509.Certificate, key *rsa.PrivateKey, now time.Time) error {
+	if cert == nil || key == nil {
+		return fmt.Errorf("certificate and private key are required")
+	}
+	if !cert.BasicConstraintsValid || !cert.IsCA {
+		return fmt.Errorf("certificate is not a valid certificate authority")
+	}
+	if cert.KeyUsage&x509.KeyUsageCertSign == 0 {
+		return fmt.Errorf("certificate does not permit certificate signing")
+	}
+	if now.Before(cert.NotBefore) {
+		return fmt.Errorf("certificate is not valid before %s", cert.NotBefore.UTC().Format(time.RFC3339))
+	}
+	if !now.Before(cert.NotAfter) {
+		return fmt.Errorf("certificate expired at %s", cert.NotAfter.UTC().Format(time.RFC3339))
+	}
+	if key.N == nil {
+		return fmt.Errorf("private key is invalid: missing modulus")
+	}
+	if err := key.Validate(); err != nil {
+		return fmt.Errorf("private key is invalid: %w", err)
+	}
+	publicKey, ok := cert.PublicKey.(*rsa.PublicKey)
+	if !ok || publicKey.N == nil || publicKey.N.Cmp(key.N) != 0 || publicKey.E != key.E {
+		return fmt.Errorf("certificate public key does not match the private key")
+	}
 	return nil
+}
+
+func loadPersistentCABundle(path string, now time.Time) (*persistentCAMaterial, error) {
+	content, err := readRecorderCAFile(path)
+	if err != nil {
+		return nil, err
+	}
+	remaining := bytes.TrimSpace(content)
+	certBlock, remaining := pem.Decode(remaining)
+	if certBlock == nil || certBlock.Type != "CERTIFICATE" {
+		return nil, fmt.Errorf("atomic CA bundle has an invalid certificate PEM block")
+	}
+	keyBlock, trailing := pem.Decode(remaining)
+	if keyBlock == nil || len(bytes.TrimSpace(trailing)) != 0 {
+		return nil, fmt.Errorf("atomic CA bundle must contain exactly one certificate and one private key")
+	}
+	certPEM := pem.EncodeToMemory(certBlock)
+	keyPEM := pem.EncodeToMemory(keyBlock)
+	return parsePersistentCAPair(certPEM, keyPEM, path, path, now)
+}
+
+func (r *Recorder) installPersistentCA(material *persistentCAMaterial) {
+	r.caCert = material.cert
+	r.caKey = material.key
+	r.caCertPEM = append([]byte(nil), material.certPEM...)
 }
 
 func readRecorderCAFile(path string) ([]byte, error) {
@@ -177,25 +328,73 @@ func (r *Recorder) savePersistentCA(certDER []byte, key *rsa.PrivateKey) error {
 		return nil
 	}
 
-	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		return fmt.Errorf("parse recorder CA before persistence: %w", err)
+	}
+	material := &persistentCAMaterial{
+		cert:    cert,
+		key:     key,
+		certPEM: pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER}),
+		keyPEM:  pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)}),
+	}
+	if err := validatePersistentCAPair(material.cert, material.key, time.Now()); err != nil {
+		return fmt.Errorf("validate recorder CA before persistence: %w", err)
+	}
 
 	for _, path := range []string{r.caCertPath, r.caKeyPath} {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 			return fmt.Errorf("create recorder CA directory: %w", err)
 		}
 	}
-	if err := writeFileAtomic(r.caKeyPath, keyPEM, 0o600); err != nil {
-		return fmt.Errorf("persist recorder CA key: %w", err)
+	// This is the transaction's commit point: the complete pair is one private
+	// file, so a crash sees either the prior valid generation or this valid one.
+	if err := writePersistentCABundle(persistentCABundlePath(r.caKeyPath), material); err != nil {
+		return fmt.Errorf("persist atomic recorder CA bundle: %w", err)
 	}
-	if err := writeFileAtomic(r.caCertPath, certPEM, 0o644); err != nil {
-		return fmt.Errorf("persist recorder CA certificate: %w", err)
+	if err := r.repairLegacyCAMirrors(material); err != nil {
+		// The committed bundle remains authoritative and usable. Keep the legacy
+		// path failure visible without turning a successfully committed CA into an
+		// unavailable one; the next load retries the repair.
+		slog.Warn("failed to update recorder CA compatibility files", "error", err)
+	}
+	return nil
+}
+
+func writePersistentCABundle(path string, material *persistentCAMaterial) error {
+	if strings.TrimSpace(path) == "" || material == nil {
+		return fmt.Errorf("atomic CA bundle path and material are required")
+	}
+	bundle := make([]byte, 0, len(material.certPEM)+len(material.keyPEM)+1)
+	bundle = append(bundle, material.certPEM...)
+	if len(bundle) > 0 && bundle[len(bundle)-1] != '\n' {
+		bundle = append(bundle, '\n')
+	}
+	bundle = append(bundle, material.keyPEM...)
+	return writeFileAtomic(path, bundle, 0o600)
+}
+
+func (r *Recorder) repairLegacyCAMirrors(material *persistentCAMaterial) error {
+	if material == nil {
+		return fmt.Errorf("recorder CA material is required")
+	}
+	if existing, err := loadPersistentCAPairFiles(r.caCertPath, r.caKeyPath, time.Now()); err == nil && bytes.Equal(existing.cert.Raw, material.cert.Raw) {
+		return nil
+	}
+	if err := writeFileAtomic(r.caKeyPath, material.keyPEM, 0o600); err != nil {
+		return fmt.Errorf("persist recorder CA key compatibility file: %w", err)
+	}
+	if err := writeFileAtomic(r.caCertPath, material.certPEM, 0o644); err != nil {
+		return fmt.Errorf("persist recorder CA certificate compatibility file: %w", err)
 	}
 	return nil
 }
 
 func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
 	file, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
 	if err != nil {
 		return err
@@ -211,10 +410,14 @@ func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 		file.Close()
 		return err
 	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return err
+	}
 	if err := file.Close(); err != nil {
 		return err
 	}
-	return os.Rename(tmpPath, path)
+	return replacePersistentCAFile(tmpPath, path)
 }
 
 // GetCACertPEM returns the PEM-encoded CA certificate for client installation.
@@ -344,6 +547,14 @@ func (r *Recorder) handleConnectMITM(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	defer clientConn.Close()
+	tunnel := &recorderTunnel{clientConn: clientConn}
+	r.mu.RLock()
+	if r.active != nil {
+		tunnel.sessionID = r.active.ID
+	}
+	r.mu.RUnlock()
+	unregisterTunnel := r.registerTunnel(tunnel)
+	defer unregisterTunnel()
 
 	clientReader := clientRW.Reader
 	if clientReader == nil {

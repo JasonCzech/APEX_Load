@@ -38,6 +38,7 @@ describe('useDesktopNotifications', () => {
   let container: HTMLDivElement
   let root: Root
   let notifySpy: Mock<(title: string, body: string) => Promise<void>>
+  const originalNotification = window.Notification
 
   beforeEach(async () => {
     container = document.createElement('div')
@@ -55,6 +56,7 @@ describe('useDesktopNotifications', () => {
     await act(async () => { root.unmount() })
     container.remove()
     delete (window as BridgeWindow).go
+    Object.defineProperty(window, 'Notification', { configurable: true, value: originalNotification })
     vi.restoreAllMocks()
   })
 
@@ -100,5 +102,33 @@ describe('useDesktopNotifications', () => {
 
     act(() => { notify('test_complete', 'order-flow', 'storage-blocked') })
     expect(notifySpy).toHaveBeenCalledWith('Test complete', 'order-flow finished.')
+  })
+
+  it('checks native availability and falls back to an already-authorized web notification', async () => {
+    const webNotify = vi.fn()
+    class MockNotification {
+      static permission: NotificationPermission = 'granted'
+      constructor(title: string, options?: NotificationOptions) {
+        webNotify(title, options)
+      }
+    }
+    Object.defineProperty(window, 'Notification', { configurable: true, value: MockNotification })
+    const available = vi.fn().mockResolvedValue(false)
+    ;(window as BridgeWindow).go = { main: { App: { Notify: notifySpy, NotificationsAvailable: available } } }
+
+    await act(async () => { notify('test_failed', 'checkout', 'fallback-1') })
+
+    expect(available).toHaveBeenCalledTimes(1)
+    expect(notifySpy).not.toHaveBeenCalled()
+    expect(webNotify).toHaveBeenCalledWith('Test failed', { body: 'checkout failed.' })
+  })
+
+  it('does not dedup a failed delivery so a later status replay can retry', async () => {
+    notifySpy.mockRejectedValueOnce(new Error('notification service unavailable')).mockResolvedValueOnce(undefined)
+
+    await act(async () => { notify('test_complete', 'order-flow', 'retry-1') })
+    await act(async () => { notify('test_complete', 'order-flow', 'retry-1') })
+
+    expect(notifySpy).toHaveBeenCalledTimes(2)
   })
 })

@@ -206,6 +206,70 @@ if node "$action_dir/verify-manifest.js" "$manifest_file" v1.2.4 linux amd64 \
   echo "manifest with the wrong release tag unexpectedly passed" >&2
   exit 1
 fi
+
+# Current schema v2 remains consumable while its new desktop-installer contract
+# is validated rather than ignored.
+node - "$manifest_file" "$manifest_checksum" <<'NODE'
+const fs = require('fs')
+const [path, checksum] = process.argv.slice(2)
+const manifest = JSON.parse(fs.readFileSync(path, 'utf8'))
+manifest.schema_version = 2
+manifest.desktop_installers = ['amd64', 'arm64'].map(architecture => ({
+  name: 'apexload-desktop',
+  os: 'linux',
+  architecture,
+  format: 'deb',
+  asset: `apexload-desktop-1.2.3-linux-${architecture}.deb`,
+  sha256: checksum,
+}))
+for (const row of manifest.desktop_installers) {
+  manifest.assets.push({ asset: row.asset, sha256: checksum, size: 42 })
+}
+fs.writeFileSync(path, JSON.stringify(manifest))
+NODE
+node "$action_dir/verify-manifest.js" "$manifest_file" v1.2.3 linux amd64 \
+  apexctl_1.2.3_linux_amd64 "$manifest_checksum"
+node - "$manifest_file" <<'NODE'
+const fs = require('fs')
+const path = process.argv[2]
+const manifest = JSON.parse(fs.readFileSync(path, 'utf8'))
+manifest.desktop_installers.pop()
+fs.writeFileSync(path, JSON.stringify(manifest))
+NODE
+if node "$action_dir/verify-manifest.js" "$manifest_file" v1.2.3 linux amd64 \
+  apexctl_1.2.3_linux_amd64 "$manifest_checksum"; then
+  echo "incomplete schema-v2 desktop installer set unexpectedly passed" >&2
+  exit 1
+fi
+node - "$manifest_file" "$manifest_checksum" <<'NODE'
+const fs = require('fs')
+const [path, checksum] = process.argv.slice(2)
+const manifest = JSON.parse(fs.readFileSync(path, 'utf8'))
+manifest.desktop_installers.push({
+  name: 'apexload-desktop', os: 'linux', architecture: 'arm64', format: 'deb',
+  asset: 'apexload-desktop-1.2.3-linux-arm64.deb', sha256: checksum,
+})
+fs.writeFileSync(path, JSON.stringify(manifest))
+NODE
+node - "$manifest_file" <<'NODE'
+const fs = require('fs')
+const path = process.argv[2]
+const manifest = JSON.parse(fs.readFileSync(path, 'utf8'))
+manifest.desktop_installers[1].asset = manifest.desktop_installers[0].asset
+fs.writeFileSync(path, JSON.stringify(manifest))
+NODE
+if node "$action_dir/verify-manifest.js" "$manifest_file" v1.2.3 linux amd64 \
+  apexctl_1.2.3_linux_amd64 "$manifest_checksum"; then
+  echo "schema-v2 installer with a mismatched/shared platform asset unexpectedly passed" >&2
+  exit 1
+fi
+node - "$manifest_file" <<'NODE'
+const fs = require('fs')
+const path = process.argv[2]
+const manifest = JSON.parse(fs.readFileSync(path, 'utf8'))
+manifest.desktop_installers[1].asset = 'apexload-desktop-1.2.3-linux-arm64.deb'
+fs.writeFileSync(path, JSON.stringify(manifest))
+NODE
 node -e '
   const fs=require("fs"); const p=process.argv[1]; const m=JSON.parse(fs.readFileSync(p));
   m.binaries.push({...m.binaries[0]}); fs.writeFileSync(p, JSON.stringify(m));

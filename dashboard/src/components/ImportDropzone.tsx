@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState, type CSSProperties, type DragEvent } from 'react'
 
 import { isDesktopSurface } from '../desktop/desktopBridge'
-import { canUseNativeDialogs, filesFromDroppedPaths, pickFilesViaBridge } from '../desktop/desktopFiles'
+import { canUseNativeDialogs, filesFromDroppedPaths, nativeFileReadErrorMessage, pickFilesViaBridge, shouldUseBrowserFileFallback } from '../desktop/desktopFiles'
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
 import './ImportDropzone.css'
 
@@ -27,9 +27,10 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
   const inputRef = useRef<HTMLInputElement>(null)
   const zoneRef = useRef<HTMLDivElement>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [browserFallback, setBrowserFallback] = useState(false)
 
   const desktop = isDesktopSurface()
-  const nativeDialogs = desktop && canUseNativeDialogs()
+  const nativeDialogs = desktop && canUseNativeDialogs() && !browserFallback
 
   const acceptFile = useCallback((next?: File | null) => {
     if (!next) return
@@ -48,8 +49,12 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
     void filesFromDroppedPaths(paths).then(files => {
       setDragOver(false)
       acceptFile(files[0])
+    }).catch(error => {
+      setDragOver(false)
+      onError?.(nativeFileReadErrorMessage(error))
+      if (shouldUseBrowserFileFallback(error)) setBrowserFallback(true)
     })
-  }, [acceptFile])
+  }, [acceptFile, onError])
   useDesktopFileDrop(zoneRef, handleNativePaths, desktop)
 
   const handleBrowse = useCallback(() => {
@@ -58,11 +63,17 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
         if (files.length > 0) {
           acceptFile(files[0])
         }
+      }).catch(error => {
+        onError?.(nativeFileReadErrorMessage(error))
+        if (shouldUseBrowserFileFallback(error)) {
+          setBrowserFallback(true)
+          inputRef.current?.click()
+        }
       })
       return
     }
     inputRef.current?.click()
-  }, [nativeDialogs, accept, acceptFile])
+  }, [nativeDialogs, accept, acceptFile, onError])
 
   const handleDrop = (event: DragEvent) => {
     event.preventDefault()
@@ -93,6 +104,7 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
         ref={inputRef}
         type="file"
         accept={accept}
+        onClick={event => event.stopPropagation()}
         onChange={event => acceptFile(event.target.files?.[0])}
         hidden
       />

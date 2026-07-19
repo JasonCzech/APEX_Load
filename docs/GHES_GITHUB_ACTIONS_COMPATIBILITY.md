@@ -151,10 +151,13 @@ choose an uploader for consumer repositories.
   `SHELLCHECK_RELEASE_BASE_URL`, `ZIZMOR_WHEEL_URL`,
   `TERRAFORM_RELEASE_BASE_URL`, `KUBECTL_RELEASE_BASE_URL`,
   `BUILDX_RELEASE_BASE_URL`,
-  `HELM_RELEASE_BASE_URL`, `KUBECONFORM_RELEASE_BASE_URL`, and
-  `SKOPEO_RELEASE_BASE_URL` redirect the
+  `HELM_RELEASE_BASE_URL`, `KUBECONFORM_RELEASE_BASE_URL`,
+  `SKOPEO_RELEASE_BASE_URL`, and `NSIS_RELEASE_BASE_URL` redirect the
   explicitly downloaded ecosystems/tools. Set `RELEASE_PREBAKED_NATIVE_DEPS=true`
   when Wails native dependencies are already sealed into the release runner.
+  Windows preinstalled-tool lanes must also set `NSIS_ARCHIVE_PATH` to the
+  sealed official NSIS 3.10 zip; the workflow verifies its reviewed SHA-256 and
+  extracts a job-local toolchain before use.
 
 ## GHES qualification gate
 

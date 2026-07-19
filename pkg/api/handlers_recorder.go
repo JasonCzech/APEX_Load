@@ -72,6 +72,13 @@ func (s *Server) handleStartRecording(w http.ResponseWriter, r *http.Request) {
 		"proxy_addr":   s.recorder.ProxyAddr(),
 		"ca_cert_path": s.recorder.CACertPath(),
 	}
+	if s.desktopMode {
+		// Desktop proxy credentials are a separate per-launch capability. This
+		// response is itself behind the desktop API capability middleware; hosted
+		// deployments must never expose environment-backed proxy credentials.
+		resp["proxy_auth_token"] = s.recorder.ProxyAuthToken()
+		w.Header().Set("Cache-Control", "no-store")
+	}
 	writeJSON(w, http.StatusCreated, resp)
 }
 
@@ -359,6 +366,7 @@ func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http
 }
 
 func (s *Server) handleExportRecording(w http.ResponseWriter, r *http.Request) {
+	extendArtifactWriteDeadline(w)
 	id := r.PathValue("id")
 	session, ok := s.recorder.GetSession(id)
 	if !ok {
@@ -472,6 +480,10 @@ func (s *Server) handleRecorderStatus(w http.ResponseWriter, r *http.Request) {
 			"active":       s.browserRecording.Active(),
 			"install":      s.browserInstall.snapshot(),
 		},
+	}
+	if s.desktopMode {
+		resp["proxy_auth_token"] = s.recorder.ProxyAuthToken()
+		w.Header().Set("Cache-Control", "no-store")
 	}
 	writeJSON(w, http.StatusOK, resp)
 }

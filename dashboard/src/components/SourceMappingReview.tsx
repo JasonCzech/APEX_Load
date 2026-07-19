@@ -3,6 +3,7 @@ import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 
 import { type ScriptDefinition, type SourceReview, type SourceReviewFile, type SourceReviewMapping } from '../types/scripts'
 import { canCopyTextToClipboard, copyTextToClipboard } from '../utils/clipboardUtils'
+import { downloadTextFile } from '../utils/fileUtils'
 import { scrollMappingRowIntoTableView } from './sourceMappingScroll'
 import { buildDslDocument, lineRangeForTargetPath } from './dslJsonPointers'
 import {
@@ -155,6 +156,7 @@ export default function SourceMappingReview({
   const [sortField, setSortField] = useState<SortField>('source')
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc')
   const [copied, setCopied] = useState<'source' | 'dsl' | ''>('')
+  const [exportError, setExportError] = useState('')
   const [isTableCollapsed, setIsTableCollapsed] = useState(false)
   const [maximizedPane, setMaximizedPane] = useState<'source' | 'dsl' | null>(null)
   const [approvedMappingIds, setApprovedMappingIds] = useState<Set<string>>(new Set())
@@ -321,7 +323,8 @@ export default function SourceMappingReview({
     return `"${s.replace(/"/g, '""')}"`
   }
 
-  const exportCsv = () => {
+  const exportCsv = async () => {
+    setExportError('')
     const header = ['Source File', 'Start Line', 'Function', 'Target Path', 'Status', 'Approved', 'Support Mode', 'Notes'].join(',')
     const rows = filteredMappings.map(m => {
       const isApproved = approvedMappingIds.has(m.id)
@@ -337,14 +340,15 @@ export default function SourceMappingReview({
       ].join(',')
     })
     const csvContent = [header, ...rows].join('\n')
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' })
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.setAttribute('href', url)
-    link.setAttribute('download', `source_mapping_review_${script?.id || 'export'}.csv`)
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
+    try {
+      await downloadTextFile(
+        csvContent,
+        `source_mapping_review_${script?.id || 'export'}.csv`,
+        'text/csv;charset=utf-8;',
+      )
+    } catch (cause: unknown) {
+      setExportError(cause instanceof Error ? cause.message : 'Unable to export the source mapping CSV.')
+    }
   }
 
   useEffect(() => {
@@ -510,7 +514,7 @@ export default function SourceMappingReview({
             type="button"
             className="btn btn-sm btn-ghost"
             style={{ border: '1px solid var(--border)' }}
-            onClick={exportCsv}
+            onClick={() => { void exportCsv() }}
           >
             Export CSV
           </button>
@@ -524,6 +528,7 @@ export default function SourceMappingReview({
           </button>
         </div>
       </div>
+      {exportError && <div className="scenario-script-status error" role="alert">{exportError}</div>}
 
       <div ref={tableWrapRef} className="source-map-table-wrap" role="region" aria-label="Source mapping table keyboard navigation" tabIndex={0} onKeyDownCapture={handleTableKeyDown} style={{ display: isTableCollapsed ? 'none' : 'block' }}>
         <table className="source-map-table" aria-label="Source conversion mappings">

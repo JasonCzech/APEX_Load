@@ -63,7 +63,8 @@ cmp "$checksum_names_sorted" "$actual_names" >/dev/null \
 )
 
 manifest="$release_dir/release-manifest.json"
-[[ "$(jq -r '.schema_version' "$manifest")" == 1 ]] || die "unsupported manifest schema"
+manifest_schema="$(jq -r '.schema_version' "$manifest")"
+[[ "$manifest_schema" == 1 || "$manifest_schema" == 2 ]] || die "unsupported manifest schema"
 [[ "$(jq -r '.tag' "$manifest")" == "$expected_tag" ]] || die "manifest tag mismatch"
 if [[ -z "$expected_commit" && -f "$release_dir/.release-tag-commit" ]]; then
   expected_commit="$(tr -d '[:space:]' < "$release_dir/.release-tag-commit")"
@@ -98,6 +99,20 @@ jq -e '
   ([.binaries[] | [.os, .architecture]] | unique | length == 5) and
   (.desktop_clients | length == 5) and
   ([.desktop_clients[] | [.os, .architecture]] | unique | length == 5) and
+  ((.schema_version == 1) or (
+    (.schema_version == 2) and
+    (.desktop_installers | length == 2) and
+    ([.desktop_installers[] | [.os, .architecture, .format]] | sort == [["linux", "amd64", "deb"], ["linux", "arm64", "deb"]]) and
+    ([.desktop_installers[].asset] | unique | length == 2) and
+    (all(.desktop_installers[];
+      (.name == "apexload-desktop") and
+      (.asset == ("apexload-desktop-" + $root.version + "-linux-" + .architecture + ".deb")) and
+      (.sha256 | test("^[0-9a-f]{64}$")) and
+      (. as $installer | ([ $root.assets[] | select(
+        .asset == $installer.asset and .sha256 == $installer.sha256
+      )] | length) == 1)
+    ))
+  )) and
   (.server_bundles | length == 2) and
   ([.server_bundles[] | [.os, .architecture]] | unique | length == 2) and
   (all(.assets[]; (.sha256 | test("^[0-9a-f]{64}$")) and (.size > 0)))

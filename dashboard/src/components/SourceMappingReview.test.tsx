@@ -7,6 +7,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import SourceMappingReview from './SourceMappingReview'
 import { scrollMappingRowIntoTableView } from './sourceMappingScroll'
 
+const { downloadTextFileMock } = vi.hoisted(() => ({
+  downloadTextFileMock: vi.fn(),
+}))
+
+vi.mock('../utils/fileUtils', () => ({
+  downloadTextFile: downloadTextFileMock,
+}))
+
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 async function readSourceMappingStylesheet(): Promise<string> {
@@ -143,6 +151,8 @@ describe('SourceMappingReview', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    downloadTextFileMock.mockReset()
+    downloadTextFileMock.mockResolvedValue('saved')
   })
 
   afterEach(() => {
@@ -322,6 +332,30 @@ describe('SourceMappingReview', () => {
     expect(firstRow?.querySelector('.source-map-source-cell')?.textContent).toContain('Action.c')
     expect(firstRow?.querySelector('.source-map-target-cell')?.textContent).toContain('actions[0]')
     expect(firstRow?.querySelector('.source-map-status-cell')).not.toBeNull()
+  })
+
+  it('uses the bounded download helper and surfaces a desktop export failure', async () => {
+    downloadTextFileMock.mockRejectedValueOnce(new Error('generated export exceeds the desktop limit'))
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={sourceReview} script={script} />)
+    })
+    await flushPromises()
+
+    const exportButton = Array.from(container.querySelectorAll('button')).find(
+      button => button.textContent?.trim() === 'Export CSV',
+    )
+    await act(async () => {
+      exportButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(downloadTextFileMock).toHaveBeenCalledOnce()
+    expect(downloadTextFileMock).toHaveBeenCalledWith(
+      expect.stringContaining('Source File,Start Line,Function'),
+      'source_mapping_review_export.csv',
+      'text/csv;charset=utf-8;',
+    )
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('exceeds the desktop limit')
   })
 
   it('uses a workspace maximize toggle in the source mapping title row', async () => {

@@ -10,12 +10,13 @@ import { writeStoredDevViewMode } from './apiClient'
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const listTests = vi.fn()
-function Consumer({ interval, folderId, summary, activeOnly, limit }: {
+function Consumer({ interval, folderId, summary, activeOnly, limit, pollWhenHidden }: {
   interval: number
   folderId?: string | null
   summary?: boolean
   activeOnly?: boolean
   limit?: number
+  pollWhenHidden?: boolean
 }) {
   const result = useSharedTestList(
     {
@@ -26,7 +27,7 @@ function Consumer({ interval, folderId, summary, activeOnly, limit }: {
       active_only: activeOnly,
       limit,
     },
-    { loader: listTests, pollIntervalMs: interval },
+    { loader: listTests, pollIntervalMs: interval, pollWhenHidden },
   )
   return <span>{result.tests.length}:{result.loading ? 'loading' : 'ready'}</span>
 }
@@ -91,6 +92,26 @@ describe('useSharedTestList', () => {
       await vi.advanceTimersByTimeAsync(3000)
     })
     expect(listTests).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps a safety-critical consumer polling while the document is hidden', async () => {
+    const originalVisibility = Object.getOwnPropertyDescriptor(document, 'visibilityState')
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' })
+    try {
+      await act(async () => {
+        root.render(<Consumer interval={3000} pollWhenHidden />)
+        await Promise.resolve()
+      })
+      expect(listTests).toHaveBeenCalledTimes(1)
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(3000)
+      })
+      expect(listTests).toHaveBeenCalledTimes(2)
+    } finally {
+      if (originalVisibility) Object.defineProperty(document, 'visibilityState', originalVisibility)
+      else Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'visible' })
+    }
   })
 
   it('preserves the last successful data when a refresh fails', async () => {

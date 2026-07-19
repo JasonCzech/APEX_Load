@@ -140,7 +140,7 @@ export function verifyBrowserRecorderBridgeAgent(origin: string): Promise<Browse
 
 export function bridgeWsUrl(connection: BrowserRecorderBridgeConnection, path: string): string {
   const separator = path.includes('?') ? '&' : '?'
-  return wsUrl(`${path}${separator}bridge_session_id=${encodeURIComponent(connection.session_id)}`, connection.origin)
+  return wsUrl(`${path}${separator}bridge_session_id=${encodeURIComponent(connection.session_id)}`, connection.origin, false)
 }
 
 export function subscribeBrowserRecorderBridgeChanges(callback: () => void): () => void {

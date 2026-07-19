@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create the schema-v1 release manifest from verified release artifacts."""
+"""Create the schema-v2 release manifest from verified release artifacts."""
 
 from __future__ import annotations
 
@@ -22,6 +22,9 @@ APEXCTL = re.compile(
 )
 DESKTOP = re.compile(
     r"^apexload-desktop-(?P<version>.+)-(?P<os>linux|darwin|windows)-(?P<arch>amd64|arm64)\.tar\.gz$"
+)
+DESKTOP_INSTALLER = re.compile(
+    r"^apexload-desktop-(?P<version>.+)-(?P<os>linux)-(?P<arch>amd64|arm64)\.(?P<format>deb)$"
 )
 SERVER = re.compile(r"^apexload-server_(?P<version>[^_]+)_linux_(?P<arch>amd64|arm64)\.tar\.gz$")
 DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
@@ -62,6 +65,7 @@ def main() -> int:
     asset_rows: list[dict[str, object]] = []
     binaries: list[dict[str, str]] = []
     desktop_clients: list[dict[str, str]] = []
+    desktop_installers: list[dict[str, str]] = []
     server_bundles: list[dict[str, str]] = []
     for path in sorted(item for item in args.assets.iterdir() if item.is_file()):
         if path.name in {"SHA256SUMS", "SHA256SUMS.sig", "release-manifest.json"}:
@@ -92,6 +96,20 @@ def main() -> int:
                     "name": "apexload-desktop",
                     "os": desktop_match.group("os"),
                     "architecture": desktop_match.group("arch"),
+                    "asset": path.name,
+                    "sha256": digest,
+                }
+            )
+        desktop_installer_match = DESKTOP_INSTALLER.fullmatch(path.name)
+        if desktop_installer_match:
+            if desktop_installer_match.group("version") != version:
+                fail(f"{path.name} has the wrong embedded asset version")
+            desktop_installers.append(
+                {
+                    "name": "apexload-desktop",
+                    "os": desktop_installer_match.group("os"),
+                    "architecture": desktop_installer_match.group("arch"),
+                    "format": desktop_installer_match.group("format"),
                     "asset": path.name,
                     "sha256": digest,
                 }
@@ -131,6 +149,20 @@ def main() -> int:
     actual_desktop_platforms = {(row["os"], row["architecture"]) for row in desktop_clients}
     if actual_desktop_platforms != desktop_platforms or len(desktop_clients) != len(desktop_platforms):
         fail(f"desktop client platform set is incomplete or duplicated: {sorted(actual_desktop_platforms)}")
+
+    expected_desktop_installers = {
+        ("linux", "amd64", "deb"),
+        ("linux", "arm64", "deb"),
+    }
+    actual_desktop_installers = {
+        (row["os"], row["architecture"], row["format"])
+        for row in desktop_installers
+    }
+    if (
+        actual_desktop_installers != expected_desktop_installers
+        or len(desktop_installers) != len(expected_desktop_installers)
+    ):
+        fail(f"desktop installer set is incomplete or duplicated: {sorted(actual_desktop_installers)}")
 
     server_platforms = {(row["os"], row["architecture"]) for row in server_bundles}
     expected_server_platforms = {("linux", "amd64"), ("linux", "arm64")}
@@ -190,7 +222,7 @@ def main() -> int:
         fail(f"missing App Service package {appservice_name}")
 
     manifest = {
-        "schema_version": 1,
+        "schema_version": 2,
         "version": version,
         "tag": args.tag,
         "commit": args.commit,
@@ -206,6 +238,10 @@ def main() -> int:
         "app_service": {"asset": appservice_name, "sha256": appservice["sha256"]},
         "binaries": sorted(binaries, key=lambda row: (row["os"], row["architecture"])),
         "desktop_clients": sorted(desktop_clients, key=lambda row: (row["os"], row["architecture"])),
+        "desktop_installers": sorted(
+            desktop_installers,
+            key=lambda row: (row["os"], row["architecture"], row["format"]),
+        ),
         "server_bundles": sorted(server_bundles, key=lambda row: (row["os"], row["architecture"])),
         "assets": asset_rows,
     }

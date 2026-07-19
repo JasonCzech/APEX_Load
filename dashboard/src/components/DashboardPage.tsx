@@ -618,6 +618,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const [activeDashboardTab, setActiveDashboardTab] = useState<DashboardTabKey>('activity')
   const [performanceSort, setPerformanceSort] = useState<{ field: PerformanceSortField; direction: SortDirection }>({ field: 'completed', direction: 'desc' })
   const [activitySort, setActivitySort] = useState<{ field: ActivitySortField; direction: SortDirection }>({ field: 'date', direction: 'desc' })
+  const [trendDownloadError, setTrendDownloadError] = useState('')
   const hasTopbarContributionProvider = useHasTopbarContributionProvider()
   const [selectedPerformanceTestIds, setSelectedPerformanceTestIds] = useState<Set<string>>(new Set())
   const performanceSelectAllRef = useRef<HTMLInputElement | null>(null)
@@ -1103,9 +1104,15 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
   const navigateToResults = () => onNavigate('results')
   const downloadTrendCsv = async () => {
     if (!activeRelease?.id) return
-    const blob = await api.downloadReleaseTrend(activeRelease.id)
-    const filename = `${(activeRelease.name || 'release').replace(/\s+/g, '-').toLowerCase()}-${activeRelease.id}-trend.csv`
-    downloadBlob(blob, filename)
+    setTrendDownloadError('')
+    try {
+      const blob = await api.downloadReleaseTrend(activeRelease.id)
+      const filename = `${(activeRelease.name || 'release').replace(/\s+/g, '-').toLowerCase()}-${activeRelease.id}-trend.csv`
+      await downloadBlob(blob, filename)
+    } catch (cause: unknown) {
+      const detail = cause instanceof Error && cause.message ? `: ${cause.message}` : ''
+      setTrendDownloadError(`Could not export the release trend${detail}`)
+    }
   }
   const navigateToLatestResult = () => {
     if (latestReleaseRun) {
@@ -1225,7 +1232,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
               <h3 className="dash-section-title">Performance Trend</h3>
               <div className="dash-section-heading-actions">
                 {activeRelease?.id && performanceTrend.length > 0 && (
-                  <button type="button" className="btn btn-secondary btn-sm" onClick={downloadTrendCsv}>
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => void downloadTrendCsv()}>
                     Export CSV
                   </button>
                 )}
@@ -1241,6 +1248,11 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
               <div className="dash-empty small" role="alert">
                 <span>{archiveReportsError}</span>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={retryArchiveReports}>Retry reports</button>
+              </div>
+            )}
+            {trendDownloadError && (
+              <div className="dash-empty small" role="alert">
+                <span>{trendDownloadError}</span>
               </div>
             )}
             {performanceTrend.length === 0 ? (

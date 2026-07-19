@@ -9,6 +9,7 @@ import { getDesktopBridge } from './desktopBridge'
 // 0). Only calls the bridge on transitions.
 export function useDockBadge(activeRunCount: number) {
   const lastLabel = useRef<string | null>(null)
+  const bridgeQueue = useRef<Promise<void>>(Promise.resolve())
 
   useEffect(() => {
     const bridge = getDesktopBridge()
@@ -20,6 +21,10 @@ export function useDockBadge(activeRunCount: number) {
       return
     }
     lastLabel.current = label
-    void bridge.SetDockBadge(label)
+    // Bound Wails calls run independently on Go goroutines. Preserve renderer
+    // transition order so an older badge update cannot finish last and regress
+    // the visible count.
+    const operation = bridgeQueue.current.then(() => bridge.SetDockBadge!(label))
+    bridgeQueue.current = operation.catch(() => undefined)
   }, [activeRunCount])
 }

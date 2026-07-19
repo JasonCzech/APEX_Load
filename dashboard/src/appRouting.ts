@@ -186,6 +186,62 @@ export function parseAppViewFromHash(hash: string): AppView {
   return isNavPage(page) ? { page } : { page: 'dashboard' }
 }
 
+const DESKTOP_DEEP_LINK_PAGES = new Set<string>([
+  ...NAV_PAGES,
+  'report',
+  'test',
+  'swagger',
+  'repository-guide',
+  'recorder-panel',
+])
+const DESKTOP_DEEP_LINK_COMMAND_HOSTS = new Set(['app', 'navigate', 'open'])
+
+function normalizedDesktopRoute(candidate: string): string | null {
+  const trimmed = candidate.trim()
+  if (!trimmed || /^\w+:\/\//.test(trimmed)) return null
+  const hash = trimmed.startsWith('#')
+    ? trimmed
+    : trimmed.startsWith('/')
+      ? `#${trimmed}`
+      : `#/${trimmed}`
+  const route = hash.replace(/^#/, '').replace(/^\/+/, '')
+  const first = cleanSegment(route.split(/[/?]/, 1)[0]).toLowerCase()
+  return DESKTOP_DEEP_LINK_PAGES.has(first) ? hash.replace(/^#(?!\/)/, '#/') : null
+}
+
+// parseDesktopDeepLink accepts only the registered apexload: scheme and a
+// small, explicit navigation grammar:
+//   apexload://scripts?mode=create       (host/path form)
+//   apexload:///test/run-1?tab=archive  (path form)
+//   apexload://open#/results            (hash form)
+//   apexload://open?route=%23%2Fresults (query form)
+// Unknown commands/pages are rejected rather than silently navigating home.
+export function parseDesktopDeepLink(raw: string): AppView | null {
+  let url: URL
+  try {
+    url = new URL(raw.trim())
+  } catch {
+    return null
+  }
+  if (url.protocol.toLowerCase() !== 'apexload:' || url.username || url.password || url.port) return null
+
+  const host = url.hostname.toLowerCase()
+  let candidate = ''
+  if (url.hash) {
+    candidate = url.hash
+  } else if (url.searchParams.has('route')) {
+    if (host && !DESKTOP_DEEP_LINK_COMMAND_HOSTS.has(host)) return null
+    candidate = url.searchParams.get('route') || ''
+  } else if (DESKTOP_DEEP_LINK_COMMAND_HOSTS.has(host)) {
+    candidate = `${url.pathname}${url.search}`
+  } else {
+    candidate = `/${host}${url.pathname}${url.search}`
+  }
+
+  const route = normalizedDesktopRoute(candidate)
+  return route ? parseAppViewFromHash(route) : null
+}
+
 export function viewToLocationHash(view: AppView): string {
   if (view.page === 'test') {
     const params = new URLSearchParams()

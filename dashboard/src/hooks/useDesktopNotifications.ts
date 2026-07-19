@@ -61,14 +61,15 @@ function windowIsFocused(): boolean {
   return typeof document !== 'undefined' && typeof document.hasFocus === 'function' && document.hasFocus()
 }
 
-function sendWebNotification(notification: DesktopNotification) {
-  if (typeof window === 'undefined' || typeof window.Notification !== 'function') return
+function sendWebNotification(notification: DesktopNotification): boolean {
+  if (typeof window === 'undefined' || typeof window.Notification !== 'function') return false
   // Only use the web fallback when permission was already granted; never prompt.
-  if (window.Notification.permission !== 'granted') return
+  if (window.Notification.permission !== 'granted') return false
   try {
     new window.Notification(notification.title, { body: notification.body })
+    return true
   } catch {
-    // best-effort
+    return false
   }
 }
 
@@ -78,6 +79,8 @@ function sendWebNotification(notification: DesktopNotification) {
 // and stays quiet while the window is focused.
 export function useDesktopNotifications() {
   const seen = useRef<Set<string>>(new Set())
+  const inFlight = useRef<Set<string>>(new Set())
+  const nativeAvailability = useRef<Promise<boolean> | null>(null)
 
   const notifyTestStatus = useCallback((status?: string, testName?: string, testId?: string) => {
     if (!status) return
@@ -87,21 +90,44 @@ export function useDesktopNotifications() {
     if (windowIsFocused()) return
 
     const key = `${testId || ''}:${status}`
-    if (seen.current.has(key)) return
-    // Bound the dedup set over a long-running session: evict the oldest key
-    // (Set preserves insertion order) once we exceed the cap.
-    if (seen.current.size >= MAX_SEEN_NOTIFICATIONS) {
-      const oldest = seen.current.values().next().value
-      if (oldest !== undefined) seen.current.delete(oldest)
-    }
-    seen.current.add(key)
+    if (seen.current.has(key) || inFlight.current.has(key)) return
+    inFlight.current.add(key)
 
     const bridge = getDesktopBridge()
-    if (typeof bridge?.Notify === 'function') {
-      void bridge.Notify(notification.title, notification.body)
-      return
-    }
-    sendWebNotification(notification)
+    void (async () => {
+      let delivered = false
+      if (typeof bridge?.Notify === 'function') {
+        let available = true
+        if (typeof bridge.NotificationsAvailable === 'function') {
+          nativeAvailability.current ??= Promise.resolve().then(() => bridge.NotificationsAvailable?.() ?? false).catch(() => false)
+          available = await nativeAvailability.current
+        }
+        if (available) {
+          try {
+            await bridge.Notify(notification.title, notification.body)
+            delivered = true
+          } catch {
+            delivered = false
+          }
+        }
+      }
+      if (!delivered) delivered = sendWebNotification(notification)
+
+      if (delivered) {
+        // Bound the dedup set over a long-running session: evict the oldest key
+        // (Set preserves insertion order) once we exceed the cap.
+        if (seen.current.size >= MAX_SEEN_NOTIFICATIONS) {
+          const oldest = seen.current.values().next().value
+          if (oldest !== undefined) seen.current.delete(oldest)
+        }
+        seen.current.add(key)
+      }
+      inFlight.current.delete(key)
+    })().catch(() => {
+      // An unexpected bridge/browser failure remains retryable on the next
+      // status replay and never becomes an unhandled promise rejection.
+      inFlight.current.delete(key)
+    })
   }, [])
 
   return { notifyTestStatus }

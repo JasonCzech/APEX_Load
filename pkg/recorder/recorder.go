@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -157,15 +158,20 @@ type RequestUpdate struct {
 }
 
 type Recorder struct {
-	mu             sync.RWMutex
-	sessions       map[string]*Session
-	active         *Session
-	proxy          *http.Server
-	proxyClient    *http.Client
-	addr           string
-	proxyAuthToken string
-	caCertPath     string
-	caKeyPath      string
+	mu               sync.RWMutex
+	sessions         map[string]*Session
+	active           *Session
+	proxy            *http.Server
+	proxyListener    net.Listener
+	proxyDone        chan struct{}
+	proxyStopped     bool
+	proxyClient      *http.Client
+	addr             string
+	proxyAuthToken   string
+	requireProxyAuth bool
+	requireLoopback  bool
+	caCertPath       string
+	caKeyPath        string
 
 	// TLS interception fields
 	caOnce     sync.Once
@@ -179,15 +185,46 @@ type Recorder struct {
 	proxySlots chan struct{}
 }
 
+// Options configures the recording proxy and its persistent interception CA.
+// RequireProxyAuth disables the legacy environment-token fallback and prevents
+// the proxy from binding unless ProxyAuthToken is explicitly supplied. Desktop
+// shells should enable it and use a high-entropy token distinct from the API
+// capability. RequireLoopback prevents strict embedded proxies from being
+// redirected to a network-visible listener by configuration drift.
+type Options struct {
+	ProxyAddr        string
+	ProxyAuthToken   string
+	CACertPath       string
+	CAKeyPath        string
+	RequireProxyAuth bool
+	RequireLoopback  bool
+}
+
 func New(proxyAddr string) *Recorder {
-	certPath, keyPath := defaultCAFiles()
-	return NewWithCAFiles(proxyAddr, certPath, keyPath)
+	return NewWithOptions(Options{ProxyAddr: proxyAddr})
 }
 
 func NewWithCAFiles(proxyAddr, caCertPath, caKeyPath string) *Recorder {
+	return NewWithOptions(Options{
+		ProxyAddr:  proxyAddr,
+		CACertPath: caCertPath,
+		CAKeyPath:  caKeyPath,
+	})
+}
+
+// NewWithOptions constructs a recorder without starting its proxy listener.
+// Hosted callers retain the historical environment-backed proxy token when
+// RequireProxyAuth is false; strict embedders must pass the token explicitly.
+func NewWithOptions(options Options) *Recorder {
+	proxyAddr := strings.TrimSpace(options.ProxyAddr)
 	if proxyAddr == "" {
 		proxyAddr = defaultProxyAddr
 	}
+	proxyAuthToken := strings.TrimSpace(options.ProxyAuthToken)
+	if proxyAuthToken == "" && !options.RequireProxyAuth {
+		proxyAuthToken = strings.TrimSpace(os.Getenv(envProxyAuthToken))
+	}
+	caCertPath, caKeyPath := resolveCAFiles(options.CACertPath, options.CAKeyPath)
 	transport := &http.Transport{
 		DialContext:            proxySafeDialer(30 * time.Second).DialContext,
 		TLSClientConfig:        recorderUpstreamTLSConfig(""),
@@ -197,15 +234,31 @@ func NewWithCAFiles(proxyAddr, caCertPath, caKeyPath string) *Recorder {
 		MaxResponseHeaderBytes: maxRecorderHeaderBytes,
 	}
 	return &Recorder{
-		sessions:       make(map[string]*Session),
-		certCache:      boundedcache.NewStringCache[*tls.Certificate](maxRecorderLeafCertificates, maxRecorderCertificateHostBytes, maxRecorderCertificateCacheKeyBytes),
-		proxySlots:     make(chan struct{}, maxConcurrentRecorderProxyRequests),
-		proxyClient:    &http.Client{Timeout: 30 * time.Second, Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }},
-		addr:           proxyAddr,
-		proxyAuthToken: os.Getenv(envProxyAuthToken),
-		caCertPath:     caCertPath,
-		caKeyPath:      caKeyPath,
+		sessions:         make(map[string]*Session),
+		certCache:        boundedcache.NewStringCache[*tls.Certificate](maxRecorderLeafCertificates, maxRecorderCertificateHostBytes, maxRecorderCertificateCacheKeyBytes),
+		proxySlots:       make(chan struct{}, maxConcurrentRecorderProxyRequests),
+		proxyClient:      &http.Client{Timeout: 30 * time.Second, Transport: transport, CheckRedirect: func(req *http.Request, via []*http.Request) error { return http.ErrUseLastResponse }},
+		addr:             proxyAddr,
+		proxyAuthToken:   proxyAuthToken,
+		requireProxyAuth: options.RequireProxyAuth,
+		requireLoopback:  options.RequireLoopback,
+		caCertPath:       caCertPath,
+		caKeyPath:        caKeyPath,
 	}
+}
+
+func resolveCAFiles(caCertPath, caKeyPath string) (string, string) {
+	caCertPath = strings.TrimSpace(caCertPath)
+	caKeyPath = strings.TrimSpace(caKeyPath)
+	switch {
+	case caCertPath == "" && caKeyPath == "":
+		return defaultCAFiles()
+	case caCertPath == "":
+		caCertPath = filepath.Join(filepath.Dir(caKeyPath), defaultRecorderCACert)
+	case caKeyPath == "":
+		caKeyPath = filepath.Join(filepath.Dir(caCertPath), defaultRecorderCAKey)
+	}
+	return filepath.Clean(caCertPath), filepath.Clean(caKeyPath)
 }
 
 func defaultCAFiles() (string, string) {
@@ -218,6 +271,10 @@ func defaultCAFiles() (string, string) {
 
 func (r *Recorder) CACertPath() string {
 	return r.caCertPath
+}
+
+func (r *Recorder) CAKeyPath() string {
+	return r.caKeyPath
 }
 
 func (r *Recorder) StartSession(id, name string, filters SessionFilters, notify func(SessionEvent)) (*Session, error) {
@@ -664,6 +721,14 @@ func (r *Recorder) activeSessionWithRequests(includeRequests bool) *Session {
 }
 
 func (r *Recorder) StartProxy() error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.proxyStopped {
+		return http.ErrServerClosed
+	}
+	if r.proxy != nil {
+		return fmt.Errorf("recording proxy is already running")
+	}
 	if err := r.validateProxyStartup(); err != nil {
 		return err
 	}
@@ -678,40 +743,73 @@ func (r *Recorder) StartProxy() error {
 		WriteTimeout:   60 * time.Second,
 		MaxHeaderBytes: maxRecorderHeaderBytes,
 	}
-	r.mu.Lock()
-	if r.proxy != nil {
-		r.mu.Unlock()
-		_ = listener.Close()
-		return fmt.Errorf("recording proxy is already running")
-	}
+	done := make(chan struct{})
 	r.proxy = server
+	r.proxyListener = listener
+	r.proxyDone = done
 	r.addr = listener.Addr().String()
-	r.mu.Unlock()
 
 	slog.Info("recording proxy starting", "addr", r.addr)
 	go func() {
-		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+		defer close(done)
+		if err := server.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
 			slog.Error("recording proxy error", "err", err)
 		}
 	}()
 	return nil
 }
 
+// StopProxy permanently closes the listener for this Recorder. Recorders are
+// process-lifecycle components; making stop terminal prevents an in-flight
+// startup or late hijack from resurrecting a listener during server shutdown.
 func (r *Recorder) StopProxy() error {
 	r.mu.Lock()
 	server := r.proxy
+	listener := r.proxyListener
+	done := r.proxyDone
+	r.proxyStopped = true
 	r.proxy = nil
+	r.proxyListener = nil
+	r.proxyDone = nil
 	r.mu.Unlock()
-	if server == nil {
+	r.closeAllTunnels()
+	if server == nil && listener == nil {
 		return nil
 	}
-	return server.Close()
+	var stopErr error
+	if server != nil {
+		if err := server.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			stopErr = errors.Join(stopErr, err)
+		}
+	}
+	// Close the concrete listener as well: StopProxy may race the Serve goroutine
+	// before net/http has registered the listener with Server.Close. When a server
+	// exists, its Close result is authoritative and a redundant listener-close
+	// error only means the same socket was already closed.
+	if listener != nil {
+		if err := listener.Close(); server == nil && err != nil && !errors.Is(err, net.ErrClosed) {
+			stopErr = errors.Join(stopErr, err)
+		}
+	}
+	if done != nil {
+		<-done
+	}
+	if transport, ok := r.proxyClient.Transport.(*http.Transport); ok {
+		transport.CloseIdleConnections()
+	}
+	return stopErr
 }
 
 func (r *Recorder) ProxyAddr() string {
-	r.mu.Lock()
-	defer r.mu.Unlock()
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return r.addr
+}
+
+func (r *Recorder) ProxyRunning() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.proxy != nil
 }
 
 func (r *Recorder) ProxyAuthToken() string {
@@ -720,7 +818,11 @@ func (r *Recorder) ProxyAuthToken() string {
 
 func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 	if !r.authorizeProxyRequest(req) {
-		w.Header().Set("Proxy-Authenticate", `Bearer realm="apexload-recorder"`)
+		// Browsers implement Basic proxy challenges and will prompt for these
+		// per-launch credentials. Keep Bearer as a second challenge for scripted
+		// clients that already use the recorder token directly.
+		w.Header().Add("Proxy-Authenticate", `Basic realm="apexload-recorder", charset="UTF-8"`)
+		w.Header().Add("Proxy-Authenticate", `Bearer realm="apexload-recorder"`)
 		http.Error(w, "proxy authentication required", http.StatusProxyAuthRequired)
 		return
 	}
@@ -757,7 +859,7 @@ func (r *Recorder) handleProxy(w http.ResponseWriter, req *http.Request) {
 	reqBodyCapture := newBodyCapture(requestCaptureLimit(session))
 	upstreamBody := requestBodyReader(req.Body, reqBodyCapture)
 
-	proxyReq, err := http.NewRequest(req.Method, targetURL, upstreamBody)
+	proxyReq, err := http.NewRequestWithContext(req.Context(), req.Method, targetURL, upstreamBody)
 	if err != nil {
 		http.Error(w, "proxy error: "+err.Error(), http.StatusBadGateway)
 		return
@@ -1380,6 +1482,9 @@ func correlationHeaders(headers http.Header, extraRedact []string, skipProxy boo
 	result := make(map[string][]string)
 	for k, vv := range headers {
 		lk := strings.ToLower(k)
+		if isRecorderControlHeader(k) {
+			continue
+		}
 		if skipProxy && (lk == "proxy-connection" || lk == "proxy-authorization") {
 			continue
 		}
@@ -1415,6 +1520,9 @@ func sanitizeHeaders(headers http.Header, extraRedact []string, skipProxy bool, 
 	result := make(map[string][]string)
 	for k, vv := range headers {
 		lk := strings.ToLower(k)
+		if isRecorderControlHeader(k) {
+			continue
+		}
 		if skipProxy && (lk == "proxy-connection" || lk == "proxy-authorization") {
 			continue
 		}

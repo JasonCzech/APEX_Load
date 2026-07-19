@@ -215,8 +215,11 @@ func convertibleCorrelationRequests(requests []RecordedRequest) []RecordedReques
 			continue
 		}
 		if len(req.RawHeaders) > 0 {
-			req.Headers = req.RawHeaders
+			req.Headers = withoutRecorderControlHeaders(req.RawHeaders)
+		} else {
+			req.Headers = withoutRecorderControlHeaders(req.Headers)
 		}
+		req.ResponseHeaders = withoutRecorderControlHeaders(req.ResponseHeaders)
 		filtered = append(filtered, req)
 	}
 	return filtered
@@ -303,7 +306,7 @@ func SessionBaseline(session *Session) []correlate.Observation {
 			RequestBody:     req.Body,
 			RequestHeaders:  requestHeadersForBaseline(req),
 			ResponseBody:    req.ResponseBody,
-			ResponseHeaders: req.ResponseHeaders,
+			ResponseHeaders: withoutRecorderControlHeaders(req.ResponseHeaders),
 		})
 		actionIdx++
 	}
@@ -312,9 +315,9 @@ func SessionBaseline(session *Session) []correlate.Observation {
 
 func requestHeadersForBaseline(req RecordedRequest) map[string]string {
 	if len(req.RawHeaders) > 0 {
-		return req.RawHeaders
+		return withoutRecorderControlHeaders(req.RawHeaders)
 	}
-	return req.Headers
+	return withoutRecorderControlHeaders(req.Headers)
 }
 
 func includedWebSocketRequests(requests []RecordedRequest) []RecordedRequest {
@@ -612,9 +615,9 @@ func detectCorrelations(requests []RecordedRequest) []Correlation {
 			ID:              req.Seq,
 			RequestURL:      req.URL,
 			RequestBody:     req.Body,
-			RequestHeaders:  req.Headers,
+			RequestHeaders:  withoutRecorderControlHeaders(req.Headers),
 			ResponseBody:    req.ResponseBody,
-			ResponseHeaders: req.ResponseHeaders,
+			ResponseHeaders: withoutRecorderControlHeaders(req.ResponseHeaders),
 		})
 	}
 	shared := correlate.Detect(observations)
@@ -838,8 +841,21 @@ func filterRecordedHeaders(headers map[string]string, captureCookies bool) map[s
 
 	filtered := make(map[string]string)
 	for k, v := range headers {
-		if !skip[strings.ToLower(k)] {
+		if !isRecorderControlHeader(k) && !skip[strings.ToLower(k)] {
 			filtered[k] = v
+		}
+	}
+	return filtered
+}
+
+func withoutRecorderControlHeaders(headers map[string]string) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	filtered := make(map[string]string, len(headers))
+	for name, value := range headers {
+		if !isRecorderControlHeader(name) {
+			filtered[name] = value
 		}
 	}
 	return filtered

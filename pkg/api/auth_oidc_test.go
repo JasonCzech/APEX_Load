@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -194,6 +195,340 @@ func TestOIDCLoginCachesProviderDiscoveryAndRateLimitsAnonymousRequests(t *testi
 	server.mux.ServeHTTP(limitedResp, limitedReq)
 	if limitedResp.Code != http.StatusTooManyRequests {
 		t.Fatalf("limited login status = %d, want %d body=%s", limitedResp.Code, http.StatusTooManyRequests, limitedResp.Body.String())
+	}
+}
+
+func TestOIDCLoginReturnsProviderURLForManagedBrowserNavigation(t *testing.T) {
+	provider := newFakeOIDCProvider(t)
+	defer provider.Close()
+	t.Setenv("APEXLOAD_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("APEXLOAD_AUTH_SESSION_SECRET", "test-session-secret")
+
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	enableOIDCAuth(t, server, provider.Issuer)
+	req := httptest.NewRequest(http.MethodGet, oidcLoginPath+"?return_to=/settings", nil)
+	req.Header.Set("Accept", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("managed login status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	if resp.Header().Get("Location") != "" {
+		t.Fatalf("managed login unexpectedly redirected to %q", resp.Header().Get("Location"))
+	}
+	if resp.Header().Get("Cache-Control") != "no-store" || resp.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Fatalf("managed login security headers = %#v", resp.Header())
+	}
+	var payload struct {
+		RedirectURL string `json:"redirect_url"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(payload.RedirectURL)
+	if err != nil || !strings.HasPrefix(payload.RedirectURL, provider.Issuer+"/authorize") || parsed.Query().Get("state") == "" || parsed.Query().Get("nonce") == "" {
+		t.Fatalf("managed login redirect URL = %q, parse error %v", payload.RedirectURL, err)
+	}
+	if findResponseCookie(t, resp.Result().Cookies(), oidcStateCookieName).Value == "" {
+		t.Fatal("managed login did not set the signed state cookie")
+	}
+}
+
+func TestDesktopBrowserBootstrapCapabilityStartsOIDCNavigation(t *testing.T) {
+	provider := newFakeOIDCProvider(t)
+	defer provider.Close()
+	t.Setenv("APEXLOAD_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("APEXLOAD_AUTH_SESSION_SECRET", "test-session-secret")
+
+	server := NewServer(ServerConfig{DesktopMode: true, DesktopCapability: "native-renderer-secret", MaxConcurrent: 2, Addr: "127.0.0.1:0"})
+	enableOIDCAuth(t, server, provider.Issuer)
+	server.setBoundAddr("127.0.0.1:54321")
+	bootstrapURL, err := server.NewDesktopBrowserURL("admin", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bootstrapReq := httptest.NewRequest(http.MethodGet, bootstrapURL, nil)
+	bootstrapResp := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(bootstrapResp, bootstrapReq)
+	if bootstrapResp.Code != http.StatusOK {
+		t.Fatalf("bootstrap status = %d body=%s", bootstrapResp.Code, bootstrapResp.Body.String())
+	}
+
+	server.desktopBootstrapMu.Lock()
+	var browserCapability string
+	for capability := range server.desktopBrowserCapabilities {
+		browserCapability = capability
+	}
+	server.desktopBootstrapMu.Unlock()
+	if browserCapability == "" || !strings.Contains(bootstrapResp.Body.String(), browserCapability) {
+		t.Fatal("bootstrap did not seed the browser-only capability")
+	}
+
+	loginReq := httptest.NewRequest(http.MethodGet, oidcLoginPath, nil)
+	loginReq.Header.Set(DesktopCapabilityHeader, browserCapability)
+	loginReq.Header.Set("Accept", "application/json")
+	loginResp := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(loginResp, loginReq)
+	if loginResp.Code != http.StatusOK {
+		t.Fatalf("capability-bearing login status = %d body=%s", loginResp.Code, loginResp.Body.String())
+	}
+	var payload struct {
+		RedirectURL string `json:"redirect_url"`
+	}
+	if err := json.Unmarshal(loginResp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	parsedRedirect, err := url.Parse(payload.RedirectURL)
+	if err != nil || !strings.HasPrefix(payload.RedirectURL, provider.Issuer+"/authorize") {
+		t.Fatalf("login redirect = %q, parse error %v", payload.RedirectURL, err)
+	}
+	if got, want := parsedRedirect.Query().Get("redirect_uri"), "http://127.0.0.1:54321"+oidcCallbackPath; got != want {
+		t.Fatalf("desktop OIDC redirect_uri = %q, want %q", got, want)
+	}
+	if cookies := loginResp.Result().Cookies(); len(cookies) != 0 {
+		t.Fatalf("desktop OIDC login emitted host-scoped cookies: %#v", cookies)
+	}
+	state := parsedRedirect.Query().Get("state")
+	nonce := parsedRedirect.Query().Get("nonce")
+	callbackURL := oidcCallbackURL(nonce, state)
+
+	// The provider's top-level GET only renders a no-mutation landing page. The
+	// tab must then finalize with its sessionStorage capability.
+	landingReq := httptest.NewRequest(http.MethodGet, callbackURL, nil)
+	landingResp := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(landingResp, landingReq)
+	if landingResp.Code != http.StatusOK || !strings.Contains(landingResp.Body.String(), `method:"POST"`) {
+		t.Fatalf("desktop callback landing = %d %s", landingResp.Code, landingResp.Body.String())
+	}
+	server.desktopBootstrapMu.Lock()
+	boundBeforeFinalize := server.desktopBrowserCapabilities[browserCapability].oidcSessionCookie
+	server.desktopBootstrapMu.Unlock()
+	if boundBeforeFinalize != "" {
+		t.Fatal("GET callback mutated the desktop authentication session")
+	}
+
+	missingCapabilityReq := httptest.NewRequest(http.MethodPost, callbackURL, nil)
+	missingCapabilityResp := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(missingCapabilityResp, missingCapabilityReq)
+	if missingCapabilityResp.Code != http.StatusUnauthorized {
+		t.Fatalf("callback without capability = %d, want 401", missingCapabilityResp.Code)
+	}
+	const otherBrowserCapability = "other-browser-tab-secret"
+	server.desktopBootstrapMu.Lock()
+	server.desktopBrowserCapabilities[otherBrowserCapability] = desktopBrowserCapability{issuedAt: time.Now().UTC()}
+	server.desktopBootstrapMu.Unlock()
+	otherTabReq := httptest.NewRequest(http.MethodPost, callbackURL, nil)
+	otherTabReq.Header.Set(DesktopCapabilityHeader, otherBrowserCapability)
+	otherTabResp := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(otherTabResp, otherTabReq)
+	if otherTabResp.Code != http.StatusUnauthorized {
+		t.Fatalf("callback from another authorized tab = %d, want 401", otherTabResp.Code)
+	}
+
+	callbackReq := httptest.NewRequest(http.MethodPost, callbackURL, nil)
+	callbackReq.Header.Set(DesktopCapabilityHeader, browserCapability)
+	callbackReq.Header.Set("Accept", "application/json")
+	callbackResp := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(callbackResp, callbackReq)
+	if callbackResp.Code != http.StatusOK {
+		t.Fatalf("capability callback status = %d body=%s", callbackResp.Code, callbackResp.Body.String())
+	}
+	if cookies := callbackResp.Result().Cookies(); len(cookies) != 0 {
+		t.Fatalf("desktop OIDC callback emitted host-scoped cookies: %#v", cookies)
+	}
+
+	statusReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	statusReq.Header.Set(DesktopCapabilityHeader, browserCapability)
+	statusResp := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(statusResp, statusReq)
+	var status AuthStatusResponse
+	if err := json.Unmarshal(statusResp.Body.Bytes(), &status); err != nil {
+		t.Fatal(err)
+	}
+	if !status.Authenticated || status.User == nil || status.User.Subject != "alice" {
+		t.Fatalf("desktop capability did not resolve the established session: %#v", status)
+	}
+	replayReq := httptest.NewRequest(http.MethodPost, callbackURL, nil)
+	replayReq.Header.Set(DesktopCapabilityHeader, browserCapability)
+	replayResp := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(replayResp, replayReq)
+	if replayResp.Code != http.StatusUnauthorized {
+		t.Fatalf("replayed desktop callback = %d, want 401", replayResp.Code)
+	}
+	pendingAtLogout := oidcStateToken{
+		State: "pending-at-logout", Nonce: "pending-nonce", IssuedAt: time.Now().UTC(), ExpiresAt: time.Now().UTC().Add(oidcStateTTL),
+	}
+	if !server.storeDesktopOIDCState(browserCapability, pendingAtLogout) {
+		t.Fatal("failed to install pending desktop OIDC state before logout")
+	}
+	logoutReq := httptest.NewRequest(http.MethodPost, oidcLogoutPath, nil)
+	logoutReq.Header.Set(DesktopCapabilityHeader, browserCapability)
+	logoutReq.Header.Set("X-APEXLoad-CSRF-Token", status.LogoutCSRF)
+	logoutResp := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(logoutResp, logoutReq)
+	if logoutResp.Code != http.StatusOK {
+		t.Fatalf("desktop logout = %d body=%s", logoutResp.Code, logoutResp.Body.String())
+	}
+	if cookies := logoutResp.Result().Cookies(); len(cookies) != 0 {
+		t.Fatalf("desktop logout emitted host-scoped cookies: %#v", cookies)
+	}
+	if server.bindDesktopOIDCSession(browserCapability, pendingAtLogout.State, "stale-session") {
+		t.Fatal("an OIDC callback already in flight re-authenticated the capability after logout")
+	}
+	server.desktopBootstrapMu.Lock()
+	remainingFlow := server.desktopBrowserCapabilities[browserCapability].oidcFlowState
+	remainingPending := len(server.desktopOIDCStates)
+	server.desktopBootstrapMu.Unlock()
+	if remainingFlow != "" || remainingPending != 0 {
+		t.Fatalf("logout left desktop OIDC flow state=%q pending=%d", remainingFlow, remainingPending)
+	}
+	loggedOutStatusReq := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me", nil)
+	loggedOutStatusReq.Header.Set(DesktopCapabilityHeader, browserCapability)
+	loggedOutStatusResp := httptest.NewRecorder()
+	server.httpServer.Handler.ServeHTTP(loggedOutStatusResp, loggedOutStatusReq)
+	var loggedOutStatus AuthStatusResponse
+	if err := json.Unmarshal(loggedOutStatusResp.Body.Bytes(), &loggedOutStatus); err != nil {
+		t.Fatal(err)
+	}
+	if loggedOutStatus.Authenticated {
+		t.Fatalf("desktop capability remained authenticated after logout: %#v", loggedOutStatus)
+	}
+}
+
+func TestDesktopOIDCNewerFlowFencesInFlightOlderCallback(t *testing.T) {
+	server := NewServer(ServerConfig{DesktopMode: true, DesktopCapability: "native-renderer-secret"})
+	const capability = "duplicated-oidc-tab"
+	server.desktopBootstrapMu.Lock()
+	server.desktopBrowserCapabilities[capability] = desktopBrowserCapability{issuedAt: time.Now().UTC()}
+	server.desktopBootstrapMu.Unlock()
+	now := time.Now().UTC()
+	oldState := oidcStateToken{State: "old-state", Nonce: "old-nonce", IssuedAt: now, ExpiresAt: now.Add(oidcStateTTL)}
+	newState := oidcStateToken{State: "new-state", Nonce: "new-nonce", IssuedAt: now.Add(time.Second), ExpiresAt: now.Add(oidcStateTTL)}
+	if !server.storeDesktopOIDCState(capability, oldState) {
+		t.Fatal("failed to start old desktop OIDC flow")
+	}
+	if taken, ok := server.takeDesktopOIDCState(capability, oldState.State); !ok || taken.State != oldState.State {
+		t.Fatalf("take old desktop OIDC state = (%+v, %v)", taken, ok)
+	}
+	// Simulate the old callback performing its provider exchange while a newer
+	// login begins through a duplicated tab carrying the same capability.
+	if !server.storeDesktopOIDCState(capability, newState) {
+		t.Fatal("failed to start newer desktop OIDC flow")
+	}
+	if server.bindDesktopOIDCSession(capability, oldState.State, "old-session") {
+		t.Fatal("older in-flight OIDC callback overwrote the newer active flow")
+	}
+	if taken, ok := server.takeDesktopOIDCState(capability, newState.State); !ok || taken.State != newState.State {
+		t.Fatalf("take newer desktop OIDC state = (%+v, %v)", taken, ok)
+	}
+	if !server.bindDesktopOIDCSession(capability, newState.State, "new-session") {
+		t.Fatal("newest desktop OIDC callback could not bind its session")
+	}
+	if session, ok := server.desktopOIDCSessionForCapability(capability); !ok || session != "new-session" {
+		t.Fatalf("desktop OIDC session = (%q, %v), want newest session", session, ok)
+	}
+}
+
+func TestProductionAuthCookiesAlwaysRequireSecureTransport(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "production")
+	server := NewServer(ServerConfig{DesktopMode: true, DesktopCapability: "native-renderer-secret", Addr: "127.0.0.1:0"})
+	server.setBoundAddr("127.0.0.1:54321")
+	settings := AuthSettings{RedirectURL: "https://hosted.example.test/api/v1/auth/callback"}
+
+	resp := httptest.NewRecorder()
+	server.setSignedAuthCookie(resp, settings, &http.Cookie{
+		Name:     oidcStateCookieName,
+		Value:    "signed-state",
+		Path:     "/api/v1/auth",
+		HttpOnly: true,
+	})
+	cookie := findResponseCookie(t, resp.Result().Cookies(), oidcStateCookieName)
+	if !cookie.Secure {
+		t.Fatal("production auth cookie was permitted on cleartext loopback")
+	}
+
+	hosted := NewServer(ServerConfig{})
+	hostedResp := httptest.NewRecorder()
+	hosted.setSignedAuthCookie(hostedResp, settings, &http.Cookie{Name: oidcStateCookieName, Value: "signed-state", Path: "/"})
+	if cookie := findResponseCookie(t, hostedResp.Result().Cookies(), oidcStateCookieName); !cookie.Secure {
+		t.Fatal("hosted production auth cookie must remain Secure")
+	}
+}
+
+func TestDesktopOAuthEmitsNoAuthMaterialToAnotherLoopbackPort(t *testing.T) {
+	provider := newFakeOIDCProvider(t)
+	defer provider.Close()
+	t.Setenv("APEXLOAD_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("APEXLOAD_AUTH_SESSION_SECRET", "test-session-secret")
+
+	server := NewServer(ServerConfig{DesktopMode: true, DesktopCapability: "native-renderer-secret", MaxConcurrent: 2, Addr: "127.0.0.1:0"})
+	enableOIDCAuth(t, server, provider.Issuer)
+	appHTTP := httptest.NewServer(server.httpServer.Handler)
+	defer appHTTP.Close()
+	appURL, err := url.Parse(appHTTP.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.setBoundAddr(appURL.Host)
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simulate cookies left by an older desktop version; the bootstrap removes
+	// them before starting a new browser-capability flow.
+	jar.SetCookies(appURL, []*http.Cookie{
+		{Name: oidcSessionCookieName, Value: "legacy-session", Path: "/"},
+		{Name: oidcStateCookieName, Value: "legacy-state", Path: "/api/v1/auth"},
+		{Name: githubStateCookieName, Value: "legacy-github", Path: "/api/v1/integrations/github"},
+	})
+	client := &http.Client{Jar: jar}
+	bootstrapURL, err := server.NewDesktopBrowserURL("admin", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bootstrapResp, err := client.Get(bootstrapURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = bootstrapResp.Body.Close()
+
+	server.desktopBootstrapMu.Lock()
+	var browserCapability string
+	for capability := range server.desktopBrowserCapabilities {
+		browserCapability = capability
+	}
+	server.desktopBootstrapMu.Unlock()
+	loginReq, err := http.NewRequest(http.MethodGet, appHTTP.URL+oidcLoginPath, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	loginReq.Header.Set(DesktopCapabilityHeader, browserCapability)
+	loginReq.Header.Set("Accept", "application/json")
+	loginResp, err := client.Do(loginReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = loginResp.Body.Close()
+	if cookies := loginResp.Cookies(); len(cookies) != 0 {
+		t.Fatalf("desktop login emitted host-scoped authentication cookies: %#v", cookies)
+	}
+
+	seenCookies := make(chan string, 3)
+	unrelated := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenCookies <- r.Header.Get("Cookie")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer unrelated.Close()
+	for _, path := range []string{"/", "/api/v1/auth/callback", "/api/v1/integrations/github/callback"} {
+		resp, requestErr := client.Get(unrelated.URL + path)
+		if requestErr != nil {
+			t.Fatal(requestErr)
+		}
+		_ = resp.Body.Close()
+		if got := <-seenCookies; got != "" {
+			t.Fatalf("unrelated loopback service received desktop auth material on %s: %q", path, got)
+		}
 	}
 }
 

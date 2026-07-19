@@ -1,8 +1,12 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"os"
+	"strings"
+
+	"golang.org/x/mod/semver"
 )
 
 const (
@@ -54,5 +58,33 @@ func desktopDistDir() string {
 }
 
 func findDesktopPackage(distDir, platform string) (string, error) {
+	if strings.HasPrefix(platform, "linux-") {
+		deb, debErr := findDownloadPackageWithSuffix(distDir, desktopPackagePrefix, platform, ".deb", "APEX Load Desktop", desktopStageCommand, desktopDistDirEnv)
+		tarball, tarErr := findDownloadPackage(distDir, desktopPackagePrefix, platform, "APEX Load Desktop", desktopStageCommand, desktopDistDirEnv)
+		switch {
+		case debErr != nil && tarErr != nil:
+			return "", tarErr
+		case debErr != nil:
+			return tarball, nil
+		case tarErr != nil:
+			return deb, nil
+		}
+		debVersion, debOK := downloadPackageVersion(deb, desktopPackagePrefix, platform, ".deb")
+		tarVersion, tarOK := downloadPackageVersion(tarball, desktopPackagePrefix, platform, ".tar.gz")
+		if !debOK || !tarOK {
+			return "", fmt.Errorf("APEX Load Desktop package inventory contains an invalid versioned filename")
+		}
+		comparison := semver.Compare("v"+debVersion, "v"+tarVersion)
+		if comparison > 0 {
+			return deb, nil
+		}
+		if comparison < 0 {
+			return tarball, nil
+		}
+		if debVersion != tarVersion {
+			return "", fmt.Errorf("APEX Load Desktop package inventory contains inconsistent build variants for the latest Linux version")
+		}
+		return deb, nil
+	}
 	return findDownloadPackage(distDir, desktopPackagePrefix, platform, "APEX Load Desktop", desktopStageCommand, desktopDistDirEnv)
 }

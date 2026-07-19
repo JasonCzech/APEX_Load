@@ -47,8 +47,42 @@ describe('registerDropZone', () => {
     expect(handler).not.toHaveBeenCalled()
 
     unregister()
-    expect(offSpy).toHaveBeenCalled()
+    expect(offSpy).not.toHaveBeenCalled()
     zone.remove()
+  })
+
+  it('keeps the shared Wails listener across unmount and remount', () => {
+    let captured: DropCb | undefined
+    const onSpy = vi.fn((cb: DropCb) => { captured = cb })
+    const offSpy = vi.fn()
+    ;(window as RuntimeWindow).runtime = {
+      OnFileDrop: onSpy,
+      OnFileDropOff: offSpy,
+    }
+
+    const first = document.createElement('div')
+    const second = document.createElement('div')
+    document.body.append(first, second)
+    const elementFromPoint = vi.fn<(x: number, y: number) => Element | null>().mockReturnValue(first)
+    ;(document as unknown as { elementFromPoint: typeof elementFromPoint }).elementFromPoint = elementFromPoint
+
+    const firstHandler = vi.fn()
+    const unregisterFirst = registerDropZone(first, firstHandler)
+    unregisterFirst()
+
+    const secondHandler = vi.fn()
+    const unregisterSecond = registerDropZone(second, secondHandler)
+    elementFromPoint.mockReturnValue(second)
+    captured?.(5, 5, ['/tmp/remounted.har'])
+
+    expect(onSpy).toHaveBeenCalledTimes(1)
+    expect(offSpy).not.toHaveBeenCalled()
+    expect(firstHandler).not.toHaveBeenCalled()
+    expect(secondHandler).toHaveBeenCalledWith(['/tmp/remounted.har'])
+
+    unregisterSecond()
+    first.remove()
+    second.remove()
   })
 
   it('routes to the innermost zone when zones are nested and ignores empty paths', () => {

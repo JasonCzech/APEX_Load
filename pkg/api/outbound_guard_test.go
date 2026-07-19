@@ -14,19 +14,26 @@ func TestIsBlockedOutboundIP(t *testing.T) {
 		ip      string
 		blocked bool
 	}{
-		{"127.0.0.1", true},             // loopback
-		{"::1", true},                   // loopback v6
-		{"10.0.0.1", true},              // RFC1918
-		{"172.16.5.4", true},            // RFC1918
-		{"192.168.1.1", true},           // RFC1918
-		{"169.254.169.254", true},       // link-local / cloud metadata
-		{"fe80::1", true},               // link-local v6
-		{"fc00::1", true},               // unique-local v6
-		{"0.0.0.0", true},               // unspecified
-		{"224.0.0.1", true},             // multicast
-		{"8.8.8.8", false},              // public
-		{"1.1.1.1", false},              // public
-		{"2606:4700:4700::1111", false}, // public v6
+		{"127.0.0.1", true},              // loopback
+		{"::1", true},                    // loopback v6
+		{"10.0.0.1", true},               // RFC1918
+		{"172.16.5.4", true},             // RFC1918
+		{"192.168.1.1", true},            // RFC1918
+		{"169.254.169.254", true},        // link-local / cloud metadata
+		{"fe80::1", true},                // link-local v6
+		{"fc00::1", true},                // unique-local v6
+		{"0.0.0.0", true},                // unspecified
+		{"224.0.0.1", true},              // multicast
+		{"0.0.0.1", true},                // IANA this-network space
+		{"100.100.100.200", true},        // RFC6598 shared space
+		{"198.18.0.1", true},             // benchmarking space
+		{"240.0.0.1", true},              // reserved space
+		{"::ffff:100.100.100.200", true}, // mapped shared IPv4
+		{"2001:db8::1", true},            // documentation IPv6
+		{"2002:0a00:0001::1", true},      // 6to4 transition space
+		{"8.8.8.8", false},               // public
+		{"1.1.1.1", false},               // public
+		{"2606:4700:4700::1111", false},  // public v6
 	}
 	for _, c := range cases {
 		ip := net.ParseIP(c.ip)

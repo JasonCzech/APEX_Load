@@ -12,10 +12,14 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/netpolicy"
 )
 
 const (
-	defaultProxyAddr = "127.0.0.1:8081"
+	defaultProxyAddr             = "127.0.0.1:8081"
+	minStrictProxyAuthTokenBytes = 32
+	recorderControlHeaderPrefix  = "x-apexload-recorder-"
 
 	envProxyAllowProduction      = "APEXLOAD_RECORDER_PROXY_ALLOW_PRODUCTION"
 	envProxyAllowUnauthenticated = "APEXLOAD_RECORDER_PROXY_ALLOW_UNAUTHENTICATED"
@@ -58,7 +62,17 @@ func proxyBindIsLoopback(addr string) bool {
 }
 
 func (r *Recorder) validateProxyStartup() error {
-	if proxyProductionMode() && !proxyEnvBool(envProxyAllowProduction) {
+	if r.requireProxyAuth && strings.TrimSpace(r.proxyAuthToken) == "" {
+		return fmt.Errorf("recording proxy authentication token is required")
+	}
+	if r.requireProxyAuth && len(r.proxyAuthToken) < minStrictProxyAuthTokenBytes {
+		return fmt.Errorf("recording proxy authentication token must be at least %d bytes", minStrictProxyAuthTokenBytes)
+	}
+	if r.requireLoopback && !proxyBindIsLoopback(r.addr) {
+		return fmt.Errorf("recording proxy strict mode requires a loopback bind, got %q", r.addr)
+	}
+	strictProtectedProxy := r.requireProxyAuth && r.requireLoopback
+	if proxyProductionMode() && !strictProtectedProxy && !proxyEnvBool(envProxyAllowProduction) {
 		return fmt.Errorf("recording proxy is disabled in production mode; set %s=true to opt in explicitly", envProxyAllowProduction)
 	}
 	if !proxyBindIsLoopback(r.addr) && strings.TrimSpace(r.proxyAuthToken) == "" && !proxyEnvBool(envProxyAllowUnauthenticated) {
@@ -76,6 +90,13 @@ func recorderUpstreamTLSConfig(serverName string) *tls.Config {
 		ServerName:         serverName,
 		InsecureSkipVerify: !proxyProductionMode() && proxyEnvBool(envRecorderTLSInsecure), //nolint:gosec // explicit development-only operator override
 	}
+}
+
+// isRecorderControlHeader identifies private browser-to-proxy control headers.
+// These headers may contain the proxy authentication token and must never reach
+// an origin, a recording, or any artifact derived from a recording.
+func isRecorderControlHeader(name string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(name)), recorderControlHeaderPrefix)
 }
 
 // stripProxyRequestHeaders removes proxy credentials, recorder-control
@@ -105,7 +126,7 @@ func stripProxyRequestHeaders(header http.Header, websocket bool) {
 		header.Set("Connection", "Upgrade")
 	}
 	for name := range header {
-		if strings.HasPrefix(strings.ToLower(name), "x-apexload-recorder-") {
+		if isRecorderControlHeader(name) {
 			header.Del(name)
 		}
 	}
@@ -114,7 +135,7 @@ func stripProxyRequestHeaders(header http.Header, websocket bool) {
 func (r *Recorder) authorizeProxyRequest(req *http.Request) bool {
 	token := strings.TrimSpace(r.proxyAuthToken)
 	if token == "" {
-		return true
+		return !r.requireProxyAuth
 	}
 	for _, candidate := range proxyAuthCandidates(req) {
 		if subtle.ConstantTimeCompare([]byte(candidate), []byte(token)) == 1 {
@@ -182,13 +203,7 @@ func validateProxyTargetHost(host string) error {
 }
 
 func disallowedProxyTargetIP(ip net.IP) bool {
-	return ip.IsLoopback() ||
-		ip.IsUnspecified() ||
-		ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() ||
-		ip.IsInterfaceLocalMulticast() ||
-		ip.IsMulticast() ||
-		ip.IsPrivate()
+	return !netpolicy.IsPublicIP(ip)
 }
 
 func proxyDialControl(network, address string, _ syscall.RawConn) error {

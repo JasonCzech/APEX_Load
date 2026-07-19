@@ -7,6 +7,8 @@ export function ClearRecentItems():Promise<void>;
 
 export function ExportDiagnostics():Promise<string>;
 
+export function GetAPICapability():Promise<string>;
+
 export function GetAPIOrigin():Promise<string>;
 
 export function GetLastRoute():Promise<string>;
@@ -25,15 +27,27 @@ export function OpenFileDialogNative(arg1:string,arg2:string):Promise<string>;
 
 export function OpenFilesDialogNative(arg1:string,arg2:string):Promise<Array<string>>;
 
-export function OpenInBrowser():Promise<void>;
+export function OpenInBrowser(arg1:string,arg2:string):Promise<void>;
 
 export function OpenLogsFolder():Promise<void>;
 
+export function OpenSystemSettings(arg1:string):Promise<void>;
+
 export function OpenURL(arg1:string):Promise<void>;
+
+export function ReadDroppedFileBase64(arg1:string):Promise<string>;
 
 export function ReadFileBase64(arg1:string):Promise<string>;
 
+export function RendererReady(arg1:string):Promise<string>;
+
+export function RendererReadyAck(arg1:string,arg2:string):Promise<string>;
+
+export function RendererUnready(arg1:string):Promise<void>;
+
 export function RevealInFolder(arg1:string):Promise<void>;
+
+export function SaveAPIResourceNative(arg1:string,arg2:string,arg3:string,arg4:string,arg5:string):Promise<string>;
 
 export function SaveFileDialogNative(arg1:string,arg2:string,arg3:string):Promise<string>;
 

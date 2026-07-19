@@ -17,7 +17,7 @@ import { type StoredScript } from '../types'
 import { type ReplayPreflight, type ScriptDataSource, type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { isDesktopSurface } from '../desktop/desktopBridge'
-import { canUseNativeDialogs, filesFromDroppedPaths, pickFilesViaBridge } from '../desktop/desktopFiles'
+import { canUseNativeDialogs, filesFromDroppedPaths, nativeFileReadErrorMessage, pickFilesViaBridge, shouldUseBrowserFileFallback } from '../desktop/desktopFiles'
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
 import { createJavaHttpDraft } from './scriptDraftFactories'
 import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
@@ -433,7 +433,8 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
   const [assetUploads, setAssetUploads] = useState<AssetUploadState>({})
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const desktop = isDesktopSurface()
-  const nativeDialogs = desktop && canUseNativeDialogs()
+  const [browserPickerFallback, setBrowserPickerFallback] = useState(false)
+  const nativeDialogs = desktop && canUseNativeDialogs() && !browserPickerFallback
 
   const result = convertTask.value
   const latestResultRef = useRef<SampleImportResult | null>(result)
@@ -592,6 +593,10 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
       if (files.length === 0) return
       const allowMultiple = target === 'primary' ? supportsMultiPrimary(format) : supportsMultiSecondary(format)
       void handleFilesLoad(allowMultiple ? files : [files[0]], target)
+    }).catch(error => {
+      setDragTarget(null)
+      setMessageError(nativeFileReadErrorMessage(error))
+      if (shouldUseBrowserFileFallback(error)) setBrowserPickerFallback(true)
     })
   }, [format, handleFilesLoad])
   const handleNativePrimaryPaths = useCallback((paths: string[]) => handleNativeSamplePaths(paths, 'primary'), [handleNativeSamplePaths])
@@ -606,6 +611,13 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
       void pickFilesViaBridge(accept, multiple).then(files => {
         if (files.length > 0) {
           void handleFilesLoad(multiple ? files : [files[0]], target)
+        }
+      }).catch(error => {
+        setMessageError(nativeFileReadErrorMessage(error))
+        if (shouldUseBrowserFileFallback(error)) {
+          setBrowserPickerFallback(true)
+          if (target === 'primary') primaryFileRef.current?.click()
+          else secondaryFileRef.current?.click()
         }
       })
       return

@@ -53,6 +53,13 @@ func githubUserKey(r *http.Request) string {
 }
 
 func (s *Server) githubCallbackURL(r *http.Request) string {
+	if s != nil && s.desktopMode {
+		callbackURL, err := s.desktopLoopbackCallbackURL("/api/v1/integrations/github/callback")
+		if err != nil {
+			return ""
+		}
+		return callbackURL
+	}
 	scheme := "https"
 	if forwarded := githubForwardedProto(r.Header.Get("X-Forwarded-Proto")); forwarded == "https" || (forwarded == "http" && !productionMode()) {
 		scheme = forwarded
@@ -132,39 +139,71 @@ func (s *Server) handleGitHubLogin(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "github oauth app is not configured")
 		return
 	}
+	callbackURL := s.githubCallbackURL(r)
+	if callbackURL == "" {
+		writeError(w, http.StatusServiceUnavailable, "desktop API callback is unavailable")
+		return
+	}
 	state, err := randomToken(32)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to initialize github state")
 		return
 	}
 	now := time.Now().UTC()
-	encoded, err := encodeSignedCookieValue(githubStateToken{
+	loginState := githubStateToken{
 		State:     state,
 		UserID:    githubUserKey(r),
 		ReturnTo:  sanitizeReturnTo(r.URL.Query().Get("return_to")),
 		ExpiresAt: now.Add(githubStateTTL),
 		IssuedAt:  now,
-	}, githubCookieSecret())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to initialize github state")
-		return
 	}
-	setSignedAuthCookie(w, normalizeAuthSettings(s.runner.GetSystemSettings().Auth), &http.Cookie{
-		Name:     githubStateCookieName,
-		Value:    encoded,
-		Path:     "/api/v1/integrations/github",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Expires:  now.Add(githubStateTTL),
-		MaxAge:   int(githubStateTTL.Seconds()),
-	})
+	if s.desktopMode {
+		capability, ok := s.requireDesktopBrowserCapability(w, r)
+		if !ok {
+			return
+		}
+		stored, storeErr := s.storeDesktopGitHubLoginState(capability, r, loginState)
+		if storeErr != nil {
+			writeError(w, http.StatusBadRequest, storeErr.Error())
+			return
+		}
+		if !stored {
+			writeError(w, http.StatusServiceUnavailable, "desktop github authentication state capacity is unavailable")
+			return
+		}
+	} else {
+		encoded, err := encodeSignedCookieValue(loginState, githubCookieSecret())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to initialize github state")
+			return
+		}
+		s.setSignedAuthCookie(w, normalizeAuthSettings(s.runner.GetSystemSettings().Auth), &http.Cookie{
+			Name:     githubStateCookieName,
+			Value:    encoded,
+			Path:     "/api/v1/integrations/github",
+			HttpOnly: true,
+			SameSite: http.SameSiteLaxMode,
+			Expires:  now.Add(githubStateTTL),
+			MaxAge:   int(githubStateTTL.Seconds()),
+		})
+	}
 
 	authorize := url.Values{}
 	authorize.Set("client_id", settings.ClientID)
-	authorize.Set("redirect_uri", s.githubCallbackURL(r))
+	authorize.Set("redirect_uri", callbackURL)
 	authorize.Set("scope", strings.Join(settings.Scopes, " "))
 	authorize.Set("state", state)
-	http.Redirect(w, r, settings.WebBaseURL+"/login/oauth/authorize?"+authorize.Encode(), http.StatusFound)
+	writeAuthNavigation(w, r, settings.WebBaseURL+"/login/oauth/authorize?"+authorize.Encode())
+}
+
+func (s *Server) desktopGitHubCallbackLanding(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.desktopMode {
+			writeDesktopOAuthCallbackLanding(w, "Completing GitHub connection")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
@@ -176,16 +215,28 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusServiceUnavailable, "github oauth app is not configured")
 		return
 	}
-	stateCookie, err := r.Cookie(githubStateCookieName)
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "github authentication state is missing")
-		return
-	}
 	var state githubStateToken
-	if err := decodeSignedCookieValue(stateCookie.Value, githubCookieSecret(), &state); err != nil ||
-		state.State == "" || state.IssuedAt.IsZero() || time.Now().UTC().After(state.ExpiresAt) {
-		writeError(w, http.StatusUnauthorized, "github authentication state is invalid or expired")
-		return
+	if s.desktopMode {
+		capability, ok := s.requireDesktopBrowserCapability(w, r)
+		if !ok {
+			return
+		}
+		state, ok = s.takeDesktopGitHubState(capability, subtleQueryValue(r.URL.Query().Get("state")))
+		if !ok {
+			writeError(w, http.StatusUnauthorized, "github authentication state is invalid, expired, or belongs to another browser tab")
+			return
+		}
+	} else {
+		stateCookie, err := r.Cookie(githubStateCookieName)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "github authentication state is missing")
+			return
+		}
+		if err := decodeSignedCookieValue(stateCookie.Value, githubCookieSecret(), &state); err != nil ||
+			state.State == "" || state.IssuedAt.IsZero() || time.Now().UTC().After(state.ExpiresAt) {
+			writeError(w, http.StatusUnauthorized, "github authentication state is invalid or expired")
+			return
+		}
 	}
 	if subtleQueryValue(r.URL.Query().Get("state")) != state.State {
 		writeError(w, http.StatusUnauthorized, "github authentication state mismatch")
@@ -259,14 +310,20 @@ func (s *Server) handleGitHubCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !saved {
-		clearAuthCookie(w, normalizeAuthSettings(s.runner.GetSystemSettings().Auth), githubStateCookieName, "/api/v1/integrations/github")
+		if !s.desktopMode {
+			s.clearAuthCookie(w, normalizeAuthSettings(s.runner.GetSystemSettings().Auth), githubStateCookieName, "/api/v1/integrations/github")
+		}
 		writeError(w, http.StatusConflict, "github connection flow was canceled by a newer disconnect")
 		return
 	}
 	s.recordAuditEvent(r, "github.connection.create", "success", "github_connection", state.UserID, "", map[string]any{"login": identity.Login})
 
-	// Clear the state cookie and return to the dashboard.
-	http.SetCookie(w, &http.Cookie{Name: githubStateCookieName, Value: "", Path: "/api/v1/integrations/github", MaxAge: -1})
+	if s.desktopMode {
+		writeJSON(w, http.StatusOK, map[string]string{"redirect_url": sanitizeReturnTo(state.ReturnTo)})
+		return
+	}
+	// Clear the hosted state cookie and return to the dashboard.
+	s.clearAuthCookie(w, normalizeAuthSettings(s.runner.GetSystemSettings().Auth), githubStateCookieName, "/api/v1/integrations/github")
 	http.Redirect(w, r, sanitizeReturnTo(state.ReturnTo), http.StatusFound)
 }
 
@@ -311,7 +368,11 @@ func (s *Server) handleGitHubDisconnect(w http.ResponseWriter, r *http.Request) 
 	}
 	// Cancel any not-yet-completed OAuth linking flow in this browser as part of
 	// the disconnect/revocation intent.
-	clearAuthCookie(w, normalizeAuthSettings(s.runner.GetSystemSettings().Auth), githubStateCookieName, "/api/v1/integrations/github")
+	if s.desktopMode {
+		s.clearDesktopGitHubState(desktopBrowserCapabilityFromRequest(r))
+	} else {
+		s.clearAuthCookie(w, normalizeAuthSettings(s.runner.GetSystemSettings().Auth), githubStateCookieName, "/api/v1/integrations/github")
+	}
 	s.recordAuditEvent(r, "github.connection.delete", "success", "github_connection", userKey, "", nil)
 	writeJSON(w, http.StatusOK, map[string]any{"disconnected": true})
 }

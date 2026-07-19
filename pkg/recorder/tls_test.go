@@ -2,6 +2,7 @@ package recorder
 
 import (
 	"bufio"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
@@ -13,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -425,6 +427,13 @@ func TestInitCAPersistsAcrossRecorderInstances(t *testing.T) {
 		t.Fatalf("first initCA failed: %v", err)
 	}
 	firstPEM := string(first.GetCACertPEM())
+	bundleInfo, err := os.Stat(persistentCABundlePath(keyPath))
+	if err != nil {
+		t.Fatalf("stat atomic CA bundle: %v", err)
+	}
+	if got := bundleInfo.Mode().Perm(); runtime.GOOS != "windows" && got != 0o600 {
+		t.Fatalf("atomic CA bundle mode = %o, want 600", got)
+	}
 
 	second := NewWithCAFiles(":0", certPath, keyPath)
 	if err := second.initCA(); err != nil {
@@ -433,6 +442,284 @@ func TestInitCAPersistsAcrossRecorderInstances(t *testing.T) {
 
 	if got := string(second.GetCACertPEM()); got != firstPEM {
 		t.Fatal("expected recorder CA to persist across recorder instances")
+	}
+}
+
+func TestInitCAMigratesLegacyPKCS8Pair(t *testing.T) {
+	source := newTLSRecorder(t)
+	if err := source.initCA(); err != nil {
+		t.Fatalf("initialize source CA: %v", err)
+	}
+
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "ca-cert.pem")
+	keyPath := filepath.Join(dir, "ca-key.pem")
+	if err := os.WriteFile(certPath, source.caCertPEM, 0o644); err != nil {
+		t.Fatalf("write legacy CA certificate: %v", err)
+	}
+	keyDER, err := x509.MarshalPKCS8PrivateKey(source.caKey)
+	if err != nil {
+		t.Fatalf("marshal legacy PKCS#8 key: %v", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: keyDER})
+	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
+		t.Fatalf("write legacy PKCS#8 key: %v", err)
+	}
+
+	migrated := NewWithCAFiles(":0", certPath, keyPath)
+	if err := migrated.initCA(); err != nil {
+		t.Fatalf("initialize recorder from legacy PKCS#8 pair: %v", err)
+	}
+	if got := string(migrated.GetCACertPEM()); got != string(source.GetCACertPEM()) {
+		t.Fatal("legacy PKCS#8 CA was replaced during migration")
+	}
+	if _, err := loadPersistentCABundle(persistentCABundlePath(keyPath), time.Now()); err != nil {
+		t.Fatalf("load migrated atomic CA bundle: %v", err)
+	}
+}
+
+func TestValidatePersistentCAPair(t *testing.T) {
+	first := newTLSRecorder(t)
+	if err := first.initCA(); err != nil {
+		t.Fatalf("initialize first CA: %v", err)
+	}
+	second := newTLSRecorder(t)
+	if err := second.initCA(); err != nil {
+		t.Fatalf("initialize second CA: %v", err)
+	}
+
+	withoutCertSign := *first.caCert
+	withoutCertSign.KeyUsage &^= x509.KeyUsageCertSign
+	notCA := *first.caCert
+	notCA.IsCA = false
+
+	tests := []struct {
+		name string
+		cert *x509.Certificate
+		key  *rsa.PrivateKey
+		now  time.Time
+		want string
+	}{
+		{
+			name: "valid",
+			cert: first.caCert,
+			key:  first.caKey,
+			now:  time.Now(),
+		},
+		{
+			name: "mismatched key",
+			cert: first.caCert,
+			key:  second.caKey,
+			now:  time.Now(),
+			want: "does not match",
+		},
+		{
+			name: "invalid key",
+			cert: first.caCert,
+			key:  &rsa.PrivateKey{},
+			now:  time.Now(),
+			want: "missing modulus",
+		},
+		{
+			name: "not yet valid",
+			cert: first.caCert,
+			key:  first.caKey,
+			now:  first.caCert.NotBefore.Add(-time.Second),
+			want: "not valid before",
+		},
+		{
+			name: "expired",
+			cert: first.caCert,
+			key:  first.caKey,
+			now:  first.caCert.NotAfter,
+			want: "expired",
+		},
+		{
+			name: "missing certificate signing usage",
+			cert: &withoutCertSign,
+			key:  first.caKey,
+			now:  time.Now(),
+			want: "certificate signing",
+		},
+		{
+			name: "not a CA",
+			cert: &notCA,
+			key:  first.caKey,
+			now:  time.Now(),
+			want: "not a valid certificate authority",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validatePersistentCAPair(test.cert, test.key, test.now)
+			if test.want == "" {
+				if err != nil {
+					t.Fatalf("validatePersistentCAPair() error = %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("validatePersistentCAPair() error = %v, want substring %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestInitCARotatesMismatchedLegacyPair(t *testing.T) {
+	first := newTLSRecorder(t)
+	if err := first.initCA(); err != nil {
+		t.Fatalf("initialize first CA: %v", err)
+	}
+	second := newTLSRecorder(t)
+	if err := second.initCA(); err != nil {
+		t.Fatalf("initialize second CA: %v", err)
+	}
+
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "ca-cert.pem")
+	keyPath := filepath.Join(dir, "ca-key.pem")
+	if err := os.WriteFile(certPath, first.caCertPEM, 0o644); err != nil {
+		t.Fatalf("write legacy CA certificate: %v", err)
+	}
+	secondKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(second.caKey),
+	})
+	if err := os.WriteFile(keyPath, secondKeyPEM, 0o600); err != nil {
+		t.Fatalf("write mismatched legacy CA key: %v", err)
+	}
+
+	recovered := NewWithCAFiles(":0", certPath, keyPath)
+	if err := recovered.initCA(); err != nil {
+		t.Fatalf("initialize recorder with mismatched legacy pair: %v", err)
+	}
+	if got := string(recovered.GetCACertPEM()); got == string(first.caCertPEM) {
+		t.Fatal("recorder loaded a certificate whose persisted private key did not match")
+	}
+
+	legacy, err := loadPersistentCAPairFiles(certPath, keyPath, time.Now())
+	if err != nil {
+		t.Fatalf("load repaired legacy pair: %v", err)
+	}
+	if string(legacy.cert.Raw) != string(recovered.caCert.Raw) {
+		t.Fatal("legacy pair was not repaired to the newly generated CA")
+	}
+	bundle, err := loadPersistentCABundle(persistentCABundlePath(keyPath), time.Now())
+	if err != nil {
+		t.Fatalf("load recovered atomic bundle: %v", err)
+	}
+	if string(bundle.cert.Raw) != string(recovered.caCert.Raw) {
+		t.Fatal("atomic bundle does not contain the recovered CA")
+	}
+}
+
+func TestInitCARotatesIncompleteLegacyPair(t *testing.T) {
+	source := newTLSRecorder(t)
+	if err := source.initCA(); err != nil {
+		t.Fatalf("initialize source CA: %v", err)
+	}
+
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "ca-cert.pem")
+	keyPath := filepath.Join(dir, "ca-key.pem")
+	if err := os.WriteFile(certPath, source.caCertPEM, 0o644); err != nil {
+		t.Fatalf("write incomplete legacy CA certificate: %v", err)
+	}
+
+	recovered := NewWithCAFiles(":0", certPath, keyPath)
+	if err := recovered.initCA(); err != nil {
+		t.Fatalf("initialize recorder with incomplete legacy pair: %v", err)
+	}
+	if got := string(recovered.GetCACertPEM()); got == string(source.GetCACertPEM()) {
+		t.Fatal("recorder reused an incomplete persisted CA generation")
+	}
+	if _, err := loadPersistentCAPairFiles(certPath, keyPath, time.Now()); err != nil {
+		t.Fatalf("load repaired legacy pair: %v", err)
+	}
+	if _, err := loadPersistentCABundle(persistentCABundlePath(keyPath), time.Now()); err != nil {
+		t.Fatalf("load recovered atomic bundle: %v", err)
+	}
+}
+
+func TestInitCARecoversAfterInterruptedLegacyMirrorCommit(t *testing.T) {
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "ca-cert.pem")
+	keyPath := filepath.Join(dir, "ca-key.pem")
+
+	original := NewWithCAFiles(":0", certPath, keyPath)
+	if err := original.initCA(); err != nil {
+		t.Fatalf("initialize original CA: %v", err)
+	}
+	originalPEM := string(original.GetCACertPEM())
+
+	replacement := newTLSRecorder(t)
+	if err := replacement.initCA(); err != nil {
+		t.Fatalf("initialize replacement CA: %v", err)
+	}
+	replacementKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(replacement.caKey),
+	})
+	// Simulate a crash after the committed bundle was published but after only
+	// one of the two historical compatibility files was updated.
+	if err := os.WriteFile(keyPath, replacementKeyPEM, 0o600); err != nil {
+		t.Fatalf("write partially committed legacy key: %v", err)
+	}
+	if err := os.WriteFile(persistentCABundlePath(keyPath)+".tmp-interrupted", []byte("partial"), 0o600); err != nil {
+		t.Fatalf("write abandoned temporary bundle: %v", err)
+	}
+
+	restarted := NewWithCAFiles(":0", certPath, keyPath)
+	if err := restarted.initCA(); err != nil {
+		t.Fatalf("initialize recorder after interrupted mirror commit: %v", err)
+	}
+	if got := string(restarted.GetCACertPEM()); got != originalPEM {
+		t.Fatal("recorder did not load the last atomically committed CA generation")
+	}
+
+	repaired, err := loadPersistentCAPairFiles(certPath, keyPath, time.Now())
+	if err != nil {
+		t.Fatalf("load repaired compatibility pair: %v", err)
+	}
+	if string(repaired.cert.Raw) != string(original.caCert.Raw) {
+		t.Fatal("compatibility pair was not repaired from the committed bundle")
+	}
+}
+
+func TestInitCALoadsLegacyPairAfterInterruptedBundleWrite(t *testing.T) {
+	source := newTLSRecorder(t)
+	if err := source.initCA(); err != nil {
+		t.Fatalf("initialize source CA: %v", err)
+	}
+
+	dir := t.TempDir()
+	certPath := filepath.Join(dir, "ca-cert.pem")
+	keyPath := filepath.Join(dir, "ca-key.pem")
+	if err := os.WriteFile(certPath, source.caCertPEM, 0o644); err != nil {
+		t.Fatalf("write legacy CA certificate: %v", err)
+	}
+	keyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(source.caKey),
+	})
+	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
+		t.Fatalf("write legacy CA key: %v", err)
+	}
+	bundlePath := persistentCABundlePath(keyPath)
+	if err := os.WriteFile(bundlePath+".tmp-interrupted", []byte("partial"), 0o600); err != nil {
+		t.Fatalf("write abandoned temporary bundle: %v", err)
+	}
+
+	restarted := NewWithCAFiles(":0", certPath, keyPath)
+	if err := restarted.initCA(); err != nil {
+		t.Fatalf("initialize recorder after interrupted bundle write: %v", err)
+	}
+	if got := string(restarted.GetCACertPEM()); got != string(source.GetCACertPEM()) {
+		t.Fatal("recorder did not preserve the valid legacy CA after an interrupted bundle write")
+	}
+	if _, err := loadPersistentCABundle(bundlePath, time.Now()); err != nil {
+		t.Fatalf("legacy CA was not migrated to a valid atomic bundle: %v", err)
 	}
 }
 

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-apexload-har">
+    <comment>HTTP Archive</comment>
+    <glob pattern="*.har" weight="80"/>
+  </mime-type>
+</mime-info>

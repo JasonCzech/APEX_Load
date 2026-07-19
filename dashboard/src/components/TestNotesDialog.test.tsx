@@ -48,7 +48,7 @@ describe('TestNotesDialog', () => {
       notes: [{
         id: 'note-1',
         test_id: 'test-1',
-        body: '# Ramp Notes\n\n<script>alert(1)</script>\n\n[bad](javascript:alert(1)) and **bold** text.',
+        body: '# Ramp Notes\n\n<script>alert(1)</script>\n\n[bad](javascript:alert(1)), [authority](//attacker.example/replace), [mixed](/\\attacker.example/replace), and **bold** text.',
         created_at: '2026-06-24T12:00:00Z',
         updated_at: '2026-06-24T12:05:00Z',
         created_by: 'Ava',
@@ -62,9 +62,27 @@ describe('TestNotesDialog', () => {
     expect(container.textContent).toContain('<script>alert(1)</script>')
     expect(container.querySelector('script')).toBeNull()
     expect(container.querySelector('a[href^="javascript"]')).toBeNull()
+    expect(container.querySelector('a[href^="//"]')).toBeNull()
+    expect(container.querySelector('a[href*="attacker.example"]')).toBeNull()
     expect(container.querySelector('.test-notes-preview strong')?.textContent).toBe('bold')
     expect(container.textContent).toContain('Created')
     expect(container.textContent).toContain('Updated')
+  })
+
+  it('rejects root-relative links that would replace the macOS Wails webview', async () => {
+    apiMock.listTestNotes.mockResolvedValue({
+      test_id: 'test-1',
+      notes: [note('note-1', '[root](/reports), [hash](#/reports), [absolute](https://docs.example.test/report), [mail](mailto:ops@example.test), [credentials](https://user:pass@docs.example.test/report), and [malformed](https:).')],
+    })
+
+    await renderDialog()
+
+    expect(container.querySelector('a[href="/reports"]')).toBeNull()
+    expect(container.querySelector('a[href="#/reports"]')?.textContent).toBe('hash')
+    expect(container.querySelector('a[href="https://docs.example.test/report"]')?.textContent).toBe('absolute')
+    expect(container.querySelector('a[href="mailto:ops@example.test"]')?.textContent).toBe('mail')
+    expect(container.querySelector('a[href*="user:pass"]')).toBeNull()
+    expect(Array.from(container.querySelectorAll('a')).some(anchor => anchor.textContent === 'malformed')).toBe(false)
   })
 
   it('exposes a labelled modal and gives it a deterministic initial focus target', async () => {

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { APP_HISTORY_INDEX_KEY, handleGuardedRouteChange, normalizeReportViewForFeatureFlag, parseAppViewFromHash, readAppHistoryIndex, viewToLocationHash, withAppHistoryIndex, type AppView } from './appRouting'
+import { APP_HISTORY_INDEX_KEY, handleGuardedRouteChange, normalizeReportViewForFeatureFlag, parseAppViewFromHash, parseDesktopDeepLink, readAppHistoryIndex, viewToLocationHash, withAppHistoryIndex, type AppView } from './appRouting'
 
 describe('appRouting', () => {
   it('defaults empty and invalid hashes to the dashboard', () => {
@@ -82,6 +82,20 @@ describe('appRouting', () => {
       sessionId: 'brec/1',
     })
     expect(parseAppViewFromHash('#/recorder-panel')).toEqual({ page: 'scripts' })
+  })
+
+  it('parses allowlisted desktop path, hash, and route-query deep links', () => {
+    expect(parseDesktopDeepLink('apexload://scripts?mode=create')).toEqual({ page: 'scripts', mode: 'create' })
+    expect(parseDesktopDeepLink('apexload:///test/run-1?tab=archive')).toEqual({ page: 'test', testId: 'run-1', tab: 'archive' })
+    expect(parseDesktopDeepLink('apexload://open#/results')).toEqual({ page: 'results' })
+    expect(parseDesktopDeepLink('apexload://open?route=%23%2Fcommand-center%2Frun-2')).toEqual({ page: 'command-center', testId: 'run-2' })
+  })
+
+  it('rejects unsupported desktop schemes, commands, and route-query hosts', () => {
+    expect(parseDesktopDeepLink('https://example.test/#/results')).toBeNull()
+    expect(parseDesktopDeepLink('apexload://unknown-command')).toBeNull()
+    expect(parseDesktopDeepLink('apexload://evil.example?route=%23%2Fresults')).toBeNull()
+    expect(parseDesktopDeepLink('apexload://open?route=https%3A%2F%2Fevil.example')).toBeNull()
   })
 
   it('stores a bounded internal index without discarding other history state', () => {

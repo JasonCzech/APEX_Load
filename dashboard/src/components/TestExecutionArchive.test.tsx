@@ -547,7 +547,7 @@ describe('TestExecutionArchive', () => {
     expect(container.textContent).toContain('Run identity')
     expect(container.textContent).toContain('Artifact integrity')
     expect(container.querySelector('a[href="/api/v1/tests/test-1/report?profile=executive"]')).toBeTruthy()
-    expect(container.querySelector('a[href="/api/v1/tests/test-1/archive/report"]')).toBeTruthy()
+    expect(container.querySelector('a[href="/api/v1/tests/test-1/archive/report?download=true"]')).toBeTruthy()
     const profileCsvLink = Array.from(container.querySelectorAll('a')).find(anchor => anchor.getAttribute('href') === '/api/v1/tests/test-1/archive/report?format=csv&profile=executive')
     expect(profileCsvLink).toBeTruthy()
     const profilePdfLinks = Array.from(container.querySelectorAll('a')).map(anchor => anchor.getAttribute('href'))

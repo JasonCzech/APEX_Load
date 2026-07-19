@@ -9,6 +9,7 @@ import { getDesktopBridge } from './desktopBridge'
 // and releases it when it returns to 0. It only calls the bridge on transitions.
 export function useKeepAwakeDuringRuns(activeRunCount: number) {
   const lastWantAwake = useRef<boolean | null>(null)
+  const bridgeQueue = useRef<Promise<void>>(Promise.resolve())
 
   useEffect(() => {
     const bridge = getDesktopBridge()
@@ -20,6 +21,10 @@ export function useKeepAwakeDuringRuns(activeRunCount: number) {
       return
     }
     lastWantAwake.current = wantAwake
-    void bridge.SetKeepAwake(wantAwake)
+    // Wails dispatches each bound call on its own goroutine. Invoke transitions
+    // serially so a rapid 0 → 1 → 0 cannot reach Go in reverse order and
+    // leave the machine inhibited after the final run has ended.
+    const operation = bridgeQueue.current.then(() => bridge.SetKeepAwake!(wantAwake))
+    bridgeQueue.current = operation.catch(() => undefined)
   }, [activeRunCount])
 }

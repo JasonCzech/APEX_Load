@@ -13,7 +13,93 @@ const (
 	reviewedBuildxVersion  = "v0.34.1"
 	reviewedBuildkitDigest = "sha256:6b59b7df63a8cb9902736f9ddf7fcff8261613d3e7449b8ea8b7537fc399c03a"
 	reviewedBuildkitImage  = "docker.io/moby/buildkit@" + reviewedBuildkitDigest
+	reviewedNSISVersion    = "3.10"
+	reviewedNSISSHA256     = "fcdce3229717a2a148e7cda0ab5bdb667f39d8fb33ede1da8dabc336bd5ad110"
 )
+
+func TestReleaseWindowsBuilderUsesChecksumPinnedNSIS(t *testing.T) {
+	workflowBytes, err := os.ReadFile("../.github/workflows/release.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	installerBytes, err := os.ReadFile("ci/install-nsis.ps1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workflow := string(workflowBytes)
+	installer := string(installerBytes)
+	if err := validateReleaseNSISPin(workflow, installer); err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name      string
+		workflow  string
+		installer string
+	}{
+		{
+			name:     "mutated archive checksum",
+			workflow: workflow,
+			installer: strings.Replace(installer,
+				reviewedNSISSHA256,
+				strings.Repeat("0", 64), 1),
+		},
+		{
+			name:      "missing archive checksum verification",
+			workflow:  workflow,
+			installer: strings.Replace(installer, "Get-FileHash -LiteralPath $archivePath -Algorithm SHA256", "Write-Output $archivePath", 1),
+		},
+		{
+			name:      "mutable NSIS version",
+			workflow:  workflow,
+			installer: strings.Replace(installer, `$nsisVersion = "3.10"`, `$nsisVersion = "latest"`, 1),
+		},
+		{
+			name:      "unverified package manager restored",
+			workflow:  strings.Replace(workflow, "& ./scripts/ci/install-nsis.ps1", "choco install nsis --version=3.10", 1),
+			installer: installer,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := validateReleaseNSISPin(test.workflow, test.installer); err == nil {
+				t.Fatal("mutated NSIS trust policy was accepted")
+			}
+		})
+	}
+}
+
+func validateReleaseNSISPin(workflow, installer string) error {
+	for _, required := range []string{
+		"- name: Install checksum-pinned NSIS",
+		"APEXLOAD_USE_PREINSTALLED_TOOLS: ${{ vars.APEXLOAD_USE_PREINSTALLED_TOOLS }}",
+		"NSIS_RELEASE_BASE_URL: ${{ vars.NSIS_RELEASE_BASE_URL }}",
+		"NSIS_ARCHIVE_PATH: ${{ vars.NSIS_ARCHIVE_PATH }}",
+		"& ./scripts/ci/install-nsis.ps1",
+	} {
+		if !strings.Contains(workflow, required) {
+			return fmt.Errorf("release workflow is missing NSIS trust contract %q", required)
+		}
+	}
+	if strings.Contains(workflow, "choco install nsis") {
+		return fmt.Errorf("protected release installs NSIS through an unauthenticated package-manager path")
+	}
+	for _, required := range []string{
+		`$nsisVersion = "` + reviewedNSISVersion + `"`,
+		`$nsisArchiveSha256 = "` + reviewedNSISSHA256 + `"`,
+		"Get-FileHash -LiteralPath $archivePath -Algorithm SHA256",
+		"if ($actualSha256 -ne $nsisArchiveSha256)",
+		"https://downloads.sourceforge.net/project/nsis/NSIS%203/$nsisVersion",
+		"NSIS_ARCHIVE_PATH must point to the reviewed NSIS archive",
+		"Expand-Archive -LiteralPath $archivePath",
+		`if ($reportedVersion -ne "v$nsisVersion")`,
+	} {
+		if !strings.Contains(installer, required) {
+			return fmt.Errorf("NSIS installer is missing %q", required)
+		}
+	}
+	return nil
+}
 
 func TestReleaseBuildersPinAndVerifyBuildxAndBuildKit(t *testing.T) {
 	workflowBytes, err := os.ReadFile("../.github/workflows/release.yml")

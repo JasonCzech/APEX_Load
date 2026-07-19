@@ -5,7 +5,7 @@ import { type JMeterImportResult as ImportResult, type JMeterSupportMatrixEntry,
 import { type ScriptDefinition, type SourceReview } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { isDesktopSurface } from '../desktop/desktopBridge'
-import { canUseNativeDialogs, filesFromDroppedPaths, pickFilesViaBridge } from '../desktop/desktopFiles'
+import { canUseNativeDialogs, filesFromDroppedPaths, nativeFileReadErrorMessage, pickFilesViaBridge, shouldUseBrowserFileFallback } from '../desktop/desktopFiles'
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
 import ParameterizationReview from './ParameterizationReview'
 import ScriptImportReview from './ScriptImportReview'
@@ -111,7 +111,8 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
   const sourceReview = sourceReviewForJMeter(result, primaryScript)
   const parameterization = result?.parameterization
   const desktop = isDesktopSurface()
-  const nativeDialogs = desktop && canUseNativeDialogs()
+  const [browserPickerFallback, setBrowserPickerFallback] = useState(false)
+  const nativeDialogs = desktop && canUseNativeDialogs() && !browserPickerFallback
 
   useEffect(() => {
     let cancelled = false
@@ -159,6 +160,10 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
     void filesFromDroppedPaths(paths).then(files => {
       setDragOver(false)
       acceptFile(files.find(next => next.name.toLowerCase().endsWith('.jmx')) || files[0])
+    }).catch(error => {
+      setDragOver(false)
+      setError(nativeFileReadErrorMessage(error))
+      if (shouldUseBrowserFileFallback(error)) setBrowserPickerFallback(true)
     })
   }, [acceptFile])
   useDesktopFileDrop(dropzoneRef, handleNativeJMeterPaths, desktop)
@@ -167,6 +172,12 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
     if (nativeDialogs) {
       void pickFilesViaBridge('.jmx,.xml').then(files => {
         acceptFile(files.find(next => next.name.toLowerCase().endsWith('.jmx')) || files[0])
+      }).catch(error => {
+        setError(nativeFileReadErrorMessage(error))
+        if (shouldUseBrowserFileFallback(error)) {
+          setBrowserPickerFallback(true)
+          fileRef.current?.click()
+        }
       })
       return
     }

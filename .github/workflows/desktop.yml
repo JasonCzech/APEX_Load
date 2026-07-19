@@ -17,7 +17,12 @@ on:
       - 'scripts/package_desktop_test.go'
       - 'scripts/package_recording_agent_test.go'
       - 'scripts/build-desktop-local.sh'
+      - 'scripts/sign-windows-binary.sh'
+      - 'scripts/stamp-desktop-version.mjs'
+      - 'scripts/semver-to-debian-version.sh'
+      - 'scripts/ci/install-nsis.ps1'
       - 'scripts/resolve-version.sh'
+      - 'Makefile'
       - 'docs/recording-agent.md'
       - 'go.mod'
       - 'go.sum'
@@ -35,7 +40,6 @@ permissions:
 jobs:
   desktop:
     name: Desktop package (${{ matrix.name }})
-    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.id == github.event.repository.id && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     strategy:
@@ -82,16 +86,27 @@ jobs:
           node-version: 22.22.0
 
       - name: Install Wails CLI
-        # Pinned for reproducibility; keep in sync with scripts/build-desktop-local.sh.
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          WAILS_VERSION="$(tr -d '[:space:]' < desktop/.wails-version)"
+          [[ "$WAILS_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          go install "github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}"
+
+      - name: Install checksum-pinned NSIS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          NSIS_RELEASE_BASE_URL: ${{ vars.NSIS_RELEASE_BASE_URL }}
+        run: |
+          & ./scripts/ci/install-nsis.ps1
 
       - name: Install Linux Dependencies
         if: startsWith(matrix.os, 'ubuntu-')
-        # Newer Ubuntu images ship webkit2gtk-4.1; fall back to 4.0 on older ones.
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev \
-            || sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+          sudo apt-get install -y dpkg-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
+            desktop-file-utils shared-mime-info xdg-utils
 
       - name: Resolve friendly build version
         id: version
@@ -112,13 +127,7 @@ jobs:
           BUILD_TIME: ${{ steps.version.outputs.build_time }}
         run: |
           set -euo pipefail
-          BI=github.com/jasonczech/apexload/pkg/buildinfo
-          cd desktop
-          build_args=(build -clean -platform "${WAILS_PLATFORM}" -ldflags "-s -w -X ${BI}.Version=${BUILD_VERSION} -X ${BI}.Commit=${GITHUB_SHA} -X ${BI}.BuildTime=${BUILD_TIME}")
-          if [[ -n "${WAILS_BUILD_TAGS}" ]]; then
-            build_args+=(-tags "${WAILS_BUILD_TAGS}")
-          fi
-          wails "${build_args[@]}"
+          VERSION="${BUILD_VERSION}" COMMIT="${GITHUB_SHA}" ./scripts/build-desktop-local.sh
 
       - name: Smoke-test Windows backend
         if: runner.os == 'Windows'
@@ -173,6 +182,290 @@ jobs:
             }
           }
 
+      - name: Smoke-test Windows installer registration
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $installers = @(Get-ChildItem "desktop/build/bin" -Filter "*-installer.exe")
+          if ($installers.Count -ne 1) { throw "expected one NSIS installer, found $($installers.Count)" }
+          $defaultInstallDir = Join-Path $env:LOCALAPPDATA "Programs\APEX Load"
+          $installDir = Join-Path $env:RUNNER_TEMP "apexload-shared-install"
+          New-Item -Path $installDir -ItemType Directory -Force | Out-Null
+          $sentinel = Join-Path $installDir "unrelated-sentinel.txt"
+          Set-Content -Path $sentinel -Value "must survive APEX Load uninstall"
+          $installArgs = @("/S", "/D=$installDir")
+          $harKey = "HKCU:\Software\Classes\.har"
+          $protocolKey = "HKCU:\Software\Classes\apexload"
+          New-Item -Path $harKey -Force | Out-Null
+          Set-Item -Path $harKey -Value "Previous.HAR.Handler"
+          # A non-empty scheme key without shell\open\command is still owned by
+          # another application. Its arbitrary values/verbs must survive install,
+          # repair, and uninstall without lossy backup/reconstruction.
+          New-Item -Path $protocolKey -Force | Out-Null
+          Set-Item -Path $protocolKey -Value "Previous.Protocol.Owner"
+          New-ItemProperty -Path $protocolKey -Name "DelegateExecute" -Value "{11111111-1111-1111-1111-111111111111}" -Force | Out-Null
+          $customVerb = Join-Path $protocolKey "shell\custom\command"
+          New-Item -Path $customVerb -Force | Out-Null
+          Set-Item -Path $customVerb -Value '"C:\Previous Protocol\handler.exe" "%1"'
+          try {
+            $process = Start-Process -FilePath $installers[0].FullName -ArgumentList $installArgs -Wait -PassThru
+            if ($process.ExitCode -ne 0) { throw "installer exited with $($process.ExitCode)" }
+            # A repair/reinstall must not replace the original-handler backup
+            # with APEX Load's own ProgID.
+            $process = Start-Process -FilePath $installers[0].FullName -ArgumentList $installArgs -Wait -PassThru
+            if ($process.ExitCode -ne 0) { throw "second installer run exited with $($process.ExitCode)" }
+            $appPath = Join-Path $installDir "apexload.exe"
+            if (-not (Test-Path $appPath)) { throw "installed executable is missing" }
+            $expectedCommand = ('"' + $appPath + '" "%1"')
+            if (Test-Path (Join-Path $protocolKey "shell\open\command")) { throw "installer reclaimed a no-command protocol owner" }
+            $protocolOwner = (Get-Item $protocolKey -ErrorAction Stop).GetValue("")
+            if ($protocolOwner -ne "Previous.Protocol.Owner") { throw "installer replaced prior protocol owner: $protocolOwner" }
+            $delegate = (Get-Item $protocolKey -ErrorAction Stop).GetValue("DelegateExecute")
+            if ($delegate -ne "{11111111-1111-1111-1111-111111111111}") { throw "installer lost prior protocol metadata" }
+            $customCommand = (Get-Item $customVerb -ErrorAction Stop).GetValue("")
+            if ($customCommand -ne '"C:\Previous Protocol\handler.exe" "%1"') { throw "installer lost prior protocol verb" }
+            $harClass = (Get-Item "HKCU:\Software\Classes\.har" -ErrorAction Stop).GetValue("")
+            if ($harClass -ne "APEXLoad.HTTPArchive") { throw "unexpected HAR ProgID: $harClass" }
+            $harCommand = (Get-Item "HKCU:\Software\Classes\APEXLoad.HTTPArchive\shell\open\command" -ErrorAction Stop).GetValue("")
+            if ($harCommand -ne $expectedCommand) { throw "unsafe HAR command: $harCommand" }
+            $harBackup = (Get-Item "HKCU:\Software\Classes\APEXLoad.HTTPArchive" -ErrorAction Stop).GetValue("APEXLoadBackupProgID")
+            if ($harBackup -ne "Previous.HAR.Handler") { throw "reinstall corrupted HAR backup: $harBackup" }
+            $activation = Start-Process -FilePath $appPath -ArgumentList "apexload://run/installer-smoke" -PassThru
+            Start-Sleep -Seconds 5
+            if ($activation.HasExited) { throw "installed desktop app exited before the uninstall-lock smoke (code $($activation.ExitCode))" }
+
+            # Wails creates a per-user toast COM activator at first launch. Seed
+            # the optional category/icon artifacts and verify owned cleanup below.
+            $toastKey = "HKCU:\Software\Classes\AppUserModelId\apexload.exe"
+            $notificationGuid = (Get-Item $toastKey -ErrorAction Stop).GetValue("CustomActivator")
+            $notificationCLSIDKey = "HKCU:\Software\Classes\CLSID\$notificationGuid"
+            $notificationCommand = (Get-Item (Join-Path $notificationCLSIDKey "LocalServer32") -ErrorAction Stop).GetValue("")
+            if ($notificationCommand -ne ('"' + $appPath + '" %1')) { throw "unexpected toast activator owner: $notificationCommand" }
+            $notificationCategoryKey = "HKCU:\SOFTWARE\apexload.exe\NotificationCategories"
+            New-Item -Path $notificationCategoryKey -Force | Out-Null
+            New-ItemProperty -Path $notificationCategoryKey -Name "Categories" -Value "{}" -Force | Out-Null
+            $notificationIcon = Join-Path $env:TEMP ("apexload.exe" + $notificationGuid + ".png")
+            Set-Content -Path $notificationIcon -Value "test icon"
+
+            # A running executable is locked on Windows. Uninstall must fail
+            # before removing registration or the uninstaller itself. Launch a
+            # copied uninstaller with _?= so NSIS does not self-copy again; only
+            # the direct child exposes the uninstaller section's exit code.
+            $uninstaller = Join-Path $installDir "uninstall.exe"
+            $uninstallProbe = Join-Path $env:RUNNER_TEMP ("apexload-uninstall-probe-" + [guid]::NewGuid().ToString("N") + ".exe")
+            Copy-Item -Path $uninstaller -Destination $uninstallProbe
+            try {
+              $probeInfo = [System.Diagnostics.ProcessStartInfo]::new()
+              $probeInfo.FileName = $uninstallProbe
+              $probeInfo.UseShellExecute = $false
+              $probeInfo.ArgumentList.Add("/S")
+              $probeInfo.ArgumentList.Add("_?=$installDir")
+              $blocked = [System.Diagnostics.Process]::Start($probeInfo)
+              $blocked.WaitForExit()
+              if ($blocked.ExitCode -ne 67) { throw "running-app uninstall exited with $($blocked.ExitCode), want 67" }
+            } finally {
+              Remove-Item -Path $uninstallProbe -Force -ErrorAction SilentlyContinue
+            }
+            if (-not (Test-Path $appPath) -or -not (Test-Path $uninstaller)) { throw "running-app uninstall partially removed the installation" }
+            Stop-Process -Id $activation.Id -Force
+            Wait-Process -Id $activation.Id -ErrorAction SilentlyContinue
+          } finally {
+            if ($null -ne $activation -and -not $activation.HasExited) {
+              Stop-Process -Id $activation.Id -Force -ErrorAction SilentlyContinue
+              Wait-Process -Id $activation.Id -ErrorAction SilentlyContinue
+            }
+            $uninstaller = Join-Path $installDir "uninstall.exe"
+            if (Test-Path $uninstaller) {
+              Start-Process -FilePath $uninstaller -ArgumentList "/S" -Wait
+            }
+          }
+          $harClass = (Get-Item $harKey -ErrorAction Stop).GetValue("")
+          if ($harClass -ne "Previous.HAR.Handler") { throw "uninstall did not restore prior HAR handler: $harClass" }
+          $protocolOwner = (Get-Item $protocolKey -ErrorAction Stop).GetValue("")
+          if ($protocolOwner -ne "Previous.Protocol.Owner") { throw "uninstall replaced prior protocol owner: $protocolOwner" }
+          if (-not (Test-Path $customVerb)) { throw "uninstall deleted prior protocol verbs" }
+          if (-not (Test-Path $sentinel)) { throw "uninstall recursively deleted unrelated files from the selected directory" }
+          if (Test-Path $toastKey) { throw "uninstall left the owned AppUserModelId toast registration" }
+          if (Test-Path $notificationCLSIDKey) { throw "uninstall left the owned toast CLSID" }
+          if (Test-Path $notificationCategoryKey) { throw "uninstall left notification category state" }
+          if (Test-Path $notificationIcon) { throw "uninstall left the derived toast icon" }
+          Remove-Item -Path $sentinel -Force
+          Remove-Item -Path $installDir -Force
+          Remove-Item -Path $protocolKey -Recurse -Force
+
+          # APEX Load has one shared controller, profile, and instance identity.
+          # The installer therefore permits same-path repair but must reject a
+          # second live location before changing any shared state.
+          $harProgIDKey = "HKCU:\Software\Classes\APEXLoad.HTTPArchive"
+          Remove-Item -Path $harKey -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path $harProgIDKey -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path $protocolKey -Recurse -Force -ErrorAction SilentlyContinue
+          $singleInstallRoot = Join-Path $env:RUNNER_TEMP "apexload-single-install-policy"
+          $primaryDir = Join-Path $singleInstallRoot "primary"
+          $blockedDir = Join-Path $singleInstallRoot "blocked"
+
+          # A same-path record in a foreign machine scope is not a repair of
+          # this per-user installer. Accepting it would overwrite the files but
+          # leave two ownership/ARP records whose uninstallers delete each
+          # other's state.
+          $foreignSameDir = Join-Path $singleInstallRoot "foreign-scope-same-path"
+          $foreignSameApp = Join-Path $foreignSameDir "apexload.exe"
+          $machineUninstallKey = "HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Project StormrunnerAPEX Load"
+          $machineMetadataKey = "HKLM:\Software\APEXLoad\DesktopInstaller"
+          $userUninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Project StormrunnerAPEX Load"
+          $userMetadataKey = "HKCU:\Software\APEXLoad\DesktopInstaller"
+          New-Item -Path $foreignSameDir -ItemType Directory -Force | Out-Null
+          New-Item -Path $machineUninstallKey -Force | Out-Null
+          New-ItemProperty -Path $machineUninstallKey -Name "InstallLocation" -Value $foreignSameDir -Force | Out-Null
+          New-ItemProperty -Path $machineUninstallKey -Name "DisplayIcon" -Value $foreignSameApp -Force | Out-Null
+          New-ItemProperty -Path $machineUninstallKey -Name "DisplayName" -Value "APEX Load" -Force | Out-Null
+          New-Item -Path $machineMetadataKey -Force | Out-Null
+          New-ItemProperty -Path $machineMetadataKey -Name "CurrentExecutable" -Value $foreignSameApp -Force | Out-Null
+
+          # Missing machine-owned files do not grant an unelevated per-user
+          # installer permission to adopt that path. It cannot verify cleanup
+          # of HKLM, and copying the app would make the foreign record live.
+          $foreignStaleBlocked = Start-Process -FilePath $installers[0].FullName -ArgumentList @("/S", "/D=$foreignSameDir") -Wait -PassThru
+          if ($foreignStaleBlocked.ExitCode -ne 68) { throw "foreign-scope stale same-path installer exited with $($foreignStaleBlocked.ExitCode), want 68" }
+          if (Test-Path $foreignSameApp) { throw "foreign-scope stale same-path rejection copied the application" }
+          if ((Get-Item $machineMetadataKey -ErrorAction Stop).GetValue("CurrentExecutable") -ne $foreignSameApp) { throw "foreign-scope stale same-path rejection changed machine ownership" }
+          if ((Test-Path $userUninstallKey) -or (Test-Path $userMetadataKey)) { throw "foreign-scope stale same-path rejection wrote per-user ownership" }
+
+          Set-Content -Path $foreignSameApp -Value "foreign machine-scope executable"
+          $foreignSameHash = (Get-FileHash -Path $foreignSameApp -Algorithm SHA256).Hash
+          $foreignBlocked = Start-Process -FilePath $installers[0].FullName -ArgumentList @("/S", "/D=$foreignSameDir") -Wait -PassThru
+          if ($foreignBlocked.ExitCode -ne 68) { throw "foreign-scope same-path installer exited with $($foreignBlocked.ExitCode), want 68" }
+          if ((Get-FileHash -Path $foreignSameApp -Algorithm SHA256).Hash -ne $foreignSameHash) { throw "foreign-scope same-path rejection changed the executable" }
+          if ((Test-Path $userUninstallKey) -or (Test-Path $userMetadataKey)) { throw "foreign-scope same-path rejection wrote per-user ownership" }
+          if ((Get-Item $machineMetadataKey -ErrorAction Stop).GetValue("CurrentExecutable") -ne $foreignSameApp) { throw "foreign-scope same-path rejection changed machine ownership" }
+          Remove-Item -Path $machineUninstallKey -Recurse -Force
+          Remove-Item -Path $machineMetadataKey -Recurse -Force
+
+          # Legacy association markers can be the only remaining ownership
+          # evidence. A missing executable there is still foreign scope and
+          # must block before the selected path makes it live again.
+          Remove-Item -Path $foreignSameApp -Force
+          $machineHarProgIDKey = "HKLM:\Software\Classes\APEXLoad.HTTPArchive"
+          New-Item -Path $machineHarProgIDKey -Force | Out-Null
+          New-ItemProperty -Path $machineHarProgIDKey -Name "APEXLoadOwnedExecutable" -Value $foreignSameApp -Force | Out-Null
+          $foreignAssociationBlocked = Start-Process -FilePath $installers[0].FullName -ArgumentList @("/S", "/D=$foreignSameDir") -Wait -PassThru
+          if ($foreignAssociationBlocked.ExitCode -ne 68) { throw "foreign association-only stale installer exited with $($foreignAssociationBlocked.ExitCode), want 68" }
+          if (Test-Path $foreignSameApp) { throw "foreign association-only rejection copied the application" }
+          if ((Get-Item $machineHarProgIDKey -ErrorAction Stop).GetValue("APEXLoadOwnedExecutable") -ne $foreignSameApp) { throw "foreign association-only rejection changed machine ownership" }
+          Remove-Item -Path $machineHarProgIDKey -Recurse -Force
+          Remove-Item -Path $foreignSameDir -Recurse -Force
+
+          # Migration safety: the old out-of-order uninstaller could erase its
+          # ARP key while a live install remained identifiable only through the
+          # product-owned association markers. That legacy state must still
+          # block a different path before any mutation.
+          $legacyDir = Join-Path $singleInstallRoot "legacy-marker-only"
+          New-Item -Path $legacyDir -ItemType Directory -Force | Out-Null
+          $legacyApp = Join-Path $legacyDir "apexload.exe"
+          Set-Content -Path $legacyApp -Value "legacy live executable marker"
+          $legacyCommand = ('"' + $legacyApp + '" "%1"')
+          $legacyHarCommandKey = Join-Path $harProgIDKey "shell\open\command"
+          New-Item -Path $legacyHarCommandKey -Force | Out-Null
+          Set-Item -Path $legacyHarCommandKey -Value $legacyCommand
+          New-ItemProperty -Path $harProgIDKey -Name "APEXLoadOwnedCommand" -Value $legacyCommand -Force | Out-Null
+          New-ItemProperty -Path $harProgIDKey -Name "APEXLoadOwnedExecutable" -Value $legacyApp -Force | Out-Null
+          $legacyProtocolCommandKey = Join-Path $protocolKey "shell\open\command"
+          New-Item -Path $legacyProtocolCommandKey -Force | Out-Null
+          Set-Item -Path $legacyProtocolCommandKey -Value $legacyCommand
+          New-ItemProperty -Path $protocolKey -Name "APEXLoadOwner" -Value "1" -Force | Out-Null
+          New-ItemProperty -Path $protocolKey -Name "APEXLoadOwnedCommand" -Value $legacyCommand -Force | Out-Null
+          New-ItemProperty -Path $protocolKey -Name "APEXLoadOwnedExecutable" -Value $legacyApp -Force | Out-Null
+          $legacyBlocked = Start-Process -FilePath $installers[0].FullName -ArgumentList @("/S", "/D=$primaryDir") -Wait -PassThru
+          if ($legacyBlocked.ExitCode -ne 68) { throw "legacy-marker second-location installer exited with $($legacyBlocked.ExitCode), want 68" }
+          if (Test-Path (Join-Path $primaryDir "apexload.exe")) { throw "legacy-marker rejection copied the application" }
+          if ((Get-Item $legacyHarCommandKey -ErrorAction Stop).GetValue("") -ne $legacyCommand) { throw "legacy-marker rejection changed HAR ownership" }
+          if ((Get-Item $legacyProtocolCommandKey -ErrorAction Stop).GetValue("") -ne $legacyCommand) { throw "legacy-marker rejection changed protocol ownership" }
+          Remove-Item -Path $harProgIDKey -Recurse -Force
+          Remove-Item -Path $protocolKey -Recurse -Force
+          Remove-Item -Path $legacyDir -Recurse -Force
+
+          $process = Start-Process -FilePath $installers[0].FullName -ArgumentList @("/S", "/D=$primaryDir") -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "primary single-location installer exited with $($process.ExitCode)" }
+          $primaryApp = Join-Path $primaryDir "apexload.exe"
+          $expectedPrimary = ('"' + $primaryApp + '" "%1"')
+          $harCommandKey = Join-Path $harProgIDKey "shell\open\command"
+          $protocolCommandKey = Join-Path $protocolKey "shell\open\command"
+          if ((Get-Item $harCommandKey -ErrorAction Stop).GetValue("") -ne $expectedPrimary) { throw "primary install did not own HAR association" }
+          if ((Get-Item $protocolCommandKey -ErrorAction Stop).GetValue("") -ne $expectedPrimary) { throw "primary install did not own protocol" }
+
+          $uninstallKey = $userUninstallKey
+          $metadataKey = $userMetadataKey
+          $startShortcut = Join-Path ([Environment]::GetFolderPath("Programs")) "APEX Load.lnk"
+          $desktopShortcut = Join-Path ([Environment]::GetFolderPath("Desktop")) "APEX Load.lnk"
+          $shell = New-Object -ComObject WScript.Shell
+          if ($shell.CreateShortcut($startShortcut).TargetPath -ne $primaryApp) { throw "Start shortcut does not target the primary install" }
+          if ($shell.CreateShortcut($desktopShortcut).TargetPath -ne $primaryApp) { throw "Desktop shortcut does not target the primary install" }
+          if ((Get-Item $uninstallKey -ErrorAction Stop).GetValue("InstallLocation") -ne $primaryDir) { throw "Add/Remove Programs does not identify the primary install" }
+          if ((Get-Item $metadataKey -ErrorAction Stop).GetValue("CurrentExecutable") -ne $primaryApp) { throw "installer ownership marker does not identify the primary install" }
+          $sharedWebView = Join-Path $env:APPDATA "apexload.exe"
+          New-Item -Path $sharedWebView -ItemType Directory -Force | Out-Null
+          $profileSentinel = Join-Path $sharedWebView "single-install-smoke.txt"
+          Set-Content -Path $profileSentinel -Value "must survive rejected second install"
+
+          $blocked = Start-Process -FilePath $installers[0].FullName -ArgumentList @("/S", "/D=$blockedDir") -Wait -PassThru
+          if ($blocked.ExitCode -ne 68) { throw "second-location installer exited with $($blocked.ExitCode), want 68" }
+          if (Test-Path (Join-Path $blockedDir "apexload.exe")) { throw "rejected second location copied the application" }
+          if (-not (Test-Path $profileSentinel)) { throw "rejected second location changed shared WebView state" }
+          if ((Get-Item $harCommandKey -ErrorAction Stop).GetValue("") -ne $expectedPrimary) { throw "rejected second location changed HAR ownership" }
+          if ((Get-Item $protocolCommandKey -ErrorAction Stop).GetValue("") -ne $expectedPrimary) { throw "rejected second location changed protocol ownership" }
+          if ($shell.CreateShortcut($startShortcut).TargetPath -ne $primaryApp) { throw "rejected second location changed the Start shortcut" }
+          if ($shell.CreateShortcut($desktopShortcut).TargetPath -ne $primaryApp) { throw "rejected second location changed the Desktop shortcut" }
+          if ((Get-Item $uninstallKey -ErrorAction Stop).GetValue("InstallLocation") -ne $primaryDir) { throw "rejected second location changed Add/Remove Programs" }
+
+          # Exact same-path repair remains supported and must preserve profile state.
+          $repair = Start-Process -FilePath $installers[0].FullName -ArgumentList @("/S", "/D=$primaryDir") -Wait -PassThru
+          if ($repair.ExitCode -ne 0) { throw "same-location repair exited with $($repair.ExitCode)" }
+          if (-not (Test-Path $profileSentinel)) { throw "same-location repair erased shared WebView state" }
+
+          $process = Start-Process -FilePath (Join-Path $primaryDir "uninstall.exe") -ArgumentList "/S" -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "primary single-location uninstall exited with $($process.ExitCode)" }
+          if (Test-Path $startShortcut) { throw "owned Start shortcut survived uninstall" }
+          if (Test-Path $desktopShortcut) { throw "owned Desktop shortcut survived uninstall" }
+          if (Test-Path $uninstallKey) { throw "owned Add/Remove Programs registration survived uninstall" }
+          if (Test-Path $metadataKey) { throw "owned installer metadata survived uninstall" }
+          if (Test-Path $sharedWebView) { throw "owned shared WebView state survived final uninstall" }
+          Remove-Item -Path $harKey -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path $harProgIDKey -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path $protocolKey -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item -Path $singleInstallRoot -Recurse -Force -ErrorAction SilentlyContinue
+
+          $installDir = $defaultInstallDir
+          $installArgs = @("/S")
+          try {
+            $process = Start-Process -FilePath $installers[0].FullName -ArgumentList $installArgs -Wait -PassThru
+            if ($process.ExitCode -ne 0) { throw "handler-preservation installer exited with $($process.ExitCode)" }
+            $appPath = Join-Path $installDir "apexload.exe"
+            $expectedCommand = ('"' + $appPath + '" "%1"')
+            $protocolCommandKey = Join-Path $protocolKey "shell\open\command"
+            $protocolCommand = (Get-Item $protocolCommandKey -ErrorAction Stop).GetValue("")
+            if ($protocolCommand -ne $expectedCommand) { throw "unsafe protocol command: $protocolCommand" }
+            Set-Item -Path $harKey -Value "User.Selected.Handler"
+            Set-Item -Path $protocolCommandKey -Value '"C:\User Selected\handler.exe" "%1"'
+            $process = Start-Process -FilePath $installers[0].FullName -ArgumentList $installArgs -Wait -PassThru
+            if ($process.ExitCode -ne 0) { throw "handler-preservation reinstall exited with $($process.ExitCode)" }
+            $harClass = (Get-Item $harKey -ErrorAction Stop).GetValue("")
+            if ($harClass -ne "User.Selected.Handler") { throw "reinstall reclaimed the user's HAR handler: $harClass" }
+            $protocolCommand = (Get-Item $protocolCommandKey -ErrorAction Stop).GetValue("")
+            if ($protocolCommand -ne '"C:\User Selected\handler.exe" "%1"') { throw "reinstall reclaimed the user's protocol handler: $protocolCommand" }
+          } finally {
+            $uninstaller = Join-Path $installDir "uninstall.exe"
+            if (Test-Path $uninstaller) {
+              Start-Process -FilePath $uninstaller -ArgumentList "/S" -Wait
+            }
+          }
+          $harClass = (Get-Item $harKey -ErrorAction Stop).GetValue("")
+          if ($harClass -ne "User.Selected.Handler") { throw "uninstall replaced the user's HAR handler: $harClass" }
+          $protocolCommand = (Get-Item $protocolCommandKey -ErrorAction Stop).GetValue("")
+          if ($protocolCommand -ne '"C:\User Selected\handler.exe" "%1"') { throw "uninstall replaced the user's protocol handler: $protocolCommand" }
+          Remove-Item -Path $harKey -Recurse -Force
+          Remove-Item -Path $protocolKey -Recurse -Force
+
       - name: Package Desktop App
         shell: bash
         env:
@@ -186,6 +479,24 @@ jobs:
           APEXLOAD_REQUIRE_TRUSTED_PACKAGES: "0"
         run: ./scripts/package-desktop.sh
 
+      - name: Smoke-test Linux package registration
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          debs=(dist/desktop/apexload-desktop-*.deb)
+          [[ ${#debs[@]} -eq 1 ]]
+          sudo dpkg -i "${debs[0]}"
+          trap 'sudo dpkg -r apexload-desktop >/dev/null 2>&1 || true' EXIT
+          desktop-file-validate /usr/share/applications/apexload.desktop
+          printf '{}\n' > "$RUNNER_TEMP/apexload-smoke.har"
+          [[ "$(xdg-mime query filetype "$RUNNER_TEMP/apexload-smoke.har")" == "application/x-apexload-har" ]]
+          xdg-mime default apexload.desktop application/x-apexload-har
+          xdg-mime default apexload.desktop x-scheme-handler/apexload
+          [[ "$(xdg-mime query default application/x-apexload-har)" == "apexload.desktop" ]]
+          [[ "$(xdg-mime query default x-scheme-handler/apexload)" == "apexload.desktop" ]]
+
       - name: Upload Desktop Package
         uses: ./.github/actions/upload-artifact
         with:
@@ -194,7 +505,6 @@ jobs:
 
   recording-agent:
     name: Recording Agent packages
-    if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.id == github.event.repository.id && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: macos-latest
     timeout-minutes: 60
 

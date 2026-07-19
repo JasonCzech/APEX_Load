@@ -50,6 +50,32 @@ func TestArchiveWriteDeadlineLeavesErrorResponseGrace(t *testing.T) {
 	}
 }
 
+func TestDesktopHandoffArtifactHandlersExtendWriteDeadline(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 1})
+	handlers := []struct {
+		name    string
+		handler http.HandlerFunc
+		path    string
+	}{
+		{name: "controller recorder HAR", handler: server.handleExportRecording, path: "/api/v1/recorder/missing/export"},
+		{name: "side-car recorder HAR", handler: server.handleExportBrowserRecording, path: "/api/v1/browser-recorder/sessions/missing/export"},
+		{name: "Bruno source", handler: server.handleGetBrunoImportSource, path: "/api/v1/scripts/missing/bruno-imports/source"},
+		{name: "archive report", handler: server.handleGetRunArchiveReport, path: "/api/v1/tests/missing/archive/report"},
+		{name: "HTML report", handler: server.handleGetTestHTMLReport, path: "/api/v1/tests/missing/report"},
+	}
+	for _, test := range handlers {
+		t.Run(test.name, func(t *testing.T) {
+			recorder := &archiveDeadlineRecorder{}
+			started := time.Now()
+			test.handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, test.path, nil))
+			minimum := started.Add(configuredArchiveMaterializationTimeout() + 4*time.Second)
+			if recorder.deadline.Before(minimum) {
+				t.Fatalf("artifact write deadline = %v, want at least %v", recorder.deadline, minimum)
+			}
+		})
+	}
+}
+
 func (p *archiveQueryStubProtocol) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	// Keep this archive API fixture below the production query byte budget on
 	// fast hosts; the test exercises archive/report behavior, not engine throughput.
@@ -483,6 +509,28 @@ func TestArchiveQueryEndpoints(t *testing.T) {
 		}
 		if len(payload.SummaryTimeline) == 0 {
 			t.Fatal("expected report to include summary timeline")
+		}
+	})
+
+	t.Run("report json download passes desktop attachment gate", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/tests/"+testRun.ID+"/archive/report?download=true", nil)
+		destination := httptest.NewRecorder()
+		gate := newDesktopBrowserDownloadResponseWriter(destination, true)
+		server.mux.ServeHTTP(gate, req)
+		gate.finish()
+
+		if destination.Code != http.StatusOK {
+			t.Fatalf("gated report download status = %d, want %d; body=%s", destination.Code, http.StatusOK, destination.Body.String())
+		}
+		if disposition := destination.Header().Get("Content-Disposition"); !strings.Contains(disposition, "attachment") || !strings.Contains(disposition, testRun.ID+".json") {
+			t.Fatalf("gated report download Content-Disposition = %q", disposition)
+		}
+		var payload RunArchiveReport
+		if err := json.Unmarshal(destination.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("unmarshal gated JSON report: %v", err)
+		}
+		if payload.Manifest == nil || payload.Manifest.TestID != testRun.ID {
+			t.Fatalf("gated JSON report manifest = %#v", payload.Manifest)
 		}
 	})
 

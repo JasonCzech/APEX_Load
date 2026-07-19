@@ -842,6 +842,7 @@ describe('AccessPage', () => {
       project_id: 'project-1',
     }))
 
+    vi.mocked(downloadBlob).mockResolvedValueOnce('cancelled')
     await clickButton(container, 'Export CSV')
     await flushPromises()
     expect(apiMock.downloadAuthUserActivity).toHaveBeenCalledWith(expect.objectContaining({
@@ -849,6 +850,12 @@ describe('AccessPage', () => {
       action: 'auth.user.create',
     }))
     expect(downloadBlob).toHaveBeenCalledWith(expect.any(Blob), expect.stringMatching(/^apexload-user-activity-\d{4}-\d{2}-\d{2}\.csv$/))
+    expect(container.textContent).not.toContain('Activity export downloaded.')
+
+    vi.mocked(downloadBlob).mockResolvedValueOnce('saved')
+    await clickButton(container, 'Export CSV')
+    await flushPromises()
+    expect(container.textContent).toContain('Activity export downloaded.')
 
     const tableSearch = inputByPlaceholder(container, 'actor, action, resource, details')
     expect(tableSearch).toBeDefined()

@@ -3,9 +3,49 @@ package recorder
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
+
+func TestExportHARDropsRecorderControlHeadersFromLegacySessions(t *testing.T) {
+	session := &Session{
+		ID:        "legacy-control-headers",
+		Name:      "Legacy Control Headers",
+		StartedAt: time.Now(),
+		Requests: []RecordedRequest{{
+			Seq:          1,
+			Timestamp:    time.Now(),
+			Method:       http.MethodGet,
+			URL:          "https://example.com/",
+			Path:         "/",
+			StatusCode:   http.StatusOK,
+			HeadersMulti: map[string][]string{"X-Safe": {"safe"}, "X-APEXLoad-Recorder-Token": {"request-control-secret"}},
+			ResponseHeadersMulti: map[string][]string{
+				"Content-Type":                {"text/plain"},
+				"x-apexload-recorder-private": {"response-control-secret"},
+			},
+		}},
+	}
+
+	data, err := ExportHAR(session, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serialized := strings.ToLower(string(data))
+	for _, forbidden := range []string{
+		"x-apexload-recorder-",
+		"request-control-secret",
+		"response-control-secret",
+	} {
+		if strings.Contains(serialized, forbidden) {
+			t.Fatalf("HAR export retained recorder control material %q: %s", forbidden, data)
+		}
+	}
+	if !strings.Contains(serialized, `"name": "x-safe"`) {
+		t.Fatalf("HAR export dropped safe header: %s", data)
+	}
+}
 
 func TestExportHARSkipsExcludedRequestsByDefault(t *testing.T) {
 	session := &Session{

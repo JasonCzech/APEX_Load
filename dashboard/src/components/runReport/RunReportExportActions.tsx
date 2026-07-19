@@ -26,7 +26,7 @@ export default function RunReportExportActions({ testId, lens, testName, downloa
       const blob = format === 'html'
         ? await downloadHTML(testId, lens)
         : await downloadFormat(testId, lens, format)
-      downloadBlob(blob, `${safeName(testName, testId)}-${lens}.${format}`)
+      await downloadBlob(blob, `${safeName(testName, testId)}-${lens}.${format}`)
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Unable to export report')
     } finally {

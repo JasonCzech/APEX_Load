@@ -6,6 +6,14 @@ RAW_VERSION="${VERSION:-}"
 COMMIT="${COMMIT:-$(git -C "$ROOT_DIR" rev-parse HEAD 2>/dev/null || echo unknown)}"
 BUILD_TIME="${BUILD_TIME:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 VERSION="$(VERSION="$RAW_VERSION" COMMIT="$COMMIT" BUILD_TIME="$BUILD_TIME" "$ROOT_DIR/scripts/resolve-version.sh")"
+SEMVER_NUMBER='(0|[1-9][0-9]*)'
+SEMVER_IDENTIFIER='(0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)'
+SEMVER_BUILD_IDENTIFIER='[0-9A-Za-z-]+'
+SEMVER_RE="^${SEMVER_NUMBER}\\.${SEMVER_NUMBER}\\.${SEMVER_NUMBER}(-${SEMVER_IDENTIFIER}(\\.${SEMVER_IDENTIFIER})*)?(\\+${SEMVER_BUILD_IDENTIFIER}(\\.${SEMVER_BUILD_IDENTIFIER})*)?$"
+if [[ ! "$VERSION" =~ $SEMVER_RE ]]; then
+  echo "Resolved recording-agent VERSION must be canonical SemVer, got '$VERSION'." >&2
+  exit 1
+fi
 BI="github.com/jasonczech/apexload/pkg/buildinfo"
 DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist/recording-agent}"
 PLATFORMS="${PLATFORMS:-darwin/arm64 darwin/amd64 windows/amd64 linux/amd64 linux/arm64}"
@@ -15,6 +23,7 @@ MACOS_NOTARY_PROFILE="${APEXLOAD_MACOS_NOTARY_PROFILE:-${MACOS_NOTARY_PROFILE:-}
 WINDOWS_CODESIGN="${APEXLOAD_WINDOWS_CODESIGN:-${WINDOWS_CODESIGN:-0}}"
 WINDOWS_CODESIGN_TOOL="${APEXLOAD_WINDOWS_CODESIGN_TOOL:-${WINDOWS_CODESIGN_TOOL:-auto}}"
 WINDOWS_SIGNTOOL="${APEXLOAD_WINDOWS_SIGNTOOL:-${WINDOWS_SIGNTOOL:-signtool}}"
+WINDOWS_CODESIGN_STORE="${APEXLOAD_WINDOWS_CODESIGN_STORE:-${WINDOWS_CODESIGN_STORE:-My}}"
 WINDOWS_CODESIGN_CERT_PATH="${APEXLOAD_WINDOWS_CODESIGN_CERT_PATH:-${WINDOWS_CODESIGN_CERT_PATH:-}}"
 WINDOWS_CODESIGN_CERT_PEM="${APEXLOAD_WINDOWS_CODESIGN_CERT_PEM:-${WINDOWS_CODESIGN_CERT_PEM:-}}"
 WINDOWS_CODESIGN_KEY_PATH="${APEXLOAD_WINDOWS_CODESIGN_KEY_PATH:-${WINDOWS_CODESIGN_KEY_PATH:-}}"
@@ -85,7 +94,7 @@ sign_macos_binary() {
 
 notarize_macos_package() {
   local package="$1"
-  local zip_path="$DIST_DIR/${package}.notary.zip"
+  local zip_path="$PACKAGE_BUILD_DIR/${package}.notary.zip"
   if ! macos_notarization_requested; then
     if trusted_packages_required; then
       echo "APEXLOAD_REQUIRE_TRUSTED_PACKAGES requires APEXLOAD_MACOS_NOTARIZE=1 for macOS Recording Agent packages." >&2
@@ -98,7 +107,7 @@ notarize_macos_package() {
     exit 1
   fi
   (
-    cd "$DIST_DIR"
+    cd "$PACKAGE_BUILD_DIR"
     rm -f "$(basename "$zip_path")"
     if command -v ditto >/dev/null 2>&1; then
       ditto -c -k --keepParent "$package" "$(basename "$zip_path")"
@@ -137,16 +146,23 @@ sign_windows_with_signtool() {
     echo "signtool PFX/P12 signing is disabled because its password would be exposed in process arguments. Import the certificate into the CurrentUser certificate store and set APEXLOAD_WINDOWS_CODESIGN_SHA1." >&2
     exit 1
   elif [[ -n "$WINDOWS_CODESIGN_SHA1" ]]; then
-    sign_args+=(/s My /sha1 "$WINDOWS_CODESIGN_SHA1")
+    sign_args+=(/s "$WINDOWS_CODESIGN_STORE" /sha1 "$WINDOWS_CODESIGN_SHA1")
   elif [[ -n "$WINDOWS_CODESIGN_SUBJECT" ]]; then
-    sign_args+=(/n "$WINDOWS_CODESIGN_SUBJECT")
+    sign_args+=(/s "$WINDOWS_CODESIGN_STORE" /n "$WINDOWS_CODESIGN_SUBJECT")
   else
     echo "signtool signing requires APEXLOAD_WINDOWS_CODESIGN_SHA1 or APEXLOAD_WINDOWS_CODESIGN_SUBJECT; automatic certificate selection is not permitted." >&2
     exit 1
   fi
 
-  "$sign_tool" "${sign_args[@]}" "$binary_path"
-  "$sign_tool" verify /pa /all "$binary_path"
+  # Git Bash/MSYS rewrites slash-prefixed native arguments (for example /fd)
+  # into POSIX paths. Convert the one real path explicitly, then disable argv
+  # conversion for signtool's Windows switches.
+  local native_binary_path="$binary_path"
+  if command -v cygpath >/dev/null 2>&1; then
+    native_binary_path="$(cygpath -w "$binary_path")"
+  fi
+  MSYS2_ARG_CONV_EXCL='*' "$sign_tool" "${sign_args[@]}" "$native_binary_path"
+  MSYS2_ARG_CONV_EXCL='*' "$sign_tool" verify /pa /all "$native_binary_path"
 }
 
 sign_windows_with_osslsigncode() {
@@ -236,18 +252,27 @@ sign_checksum_manifest() {
   gpg "${gpg_args[@]}" "$manifest_path"
 }
 
-# Clear the dist dir's *contents* rather than the directory itself. A bind mount
-# (e.g. docker compose's ./dist/recording-agent:/packages/recording-agent) pins to
-# the directory inode at container-start; rm -rf + mkdir would orphan that mount and
-# leave the container seeing an empty dir until it is recreated.
+# Build every platform and the checksum manifest under the live directory's
+# filesystem, but do not alter published downloads until every fallible build,
+# signing, and notarization step has succeeded.
 mkdir -p "$DIST_DIR"
-find "$DIST_DIR" -mindepth 1 -delete
+STAGING_DIR="$(mktemp -d "$DIST_DIR/.apexload-recording-agent-stage.XXXXXX")"
+trap 'rm -rf "$STAGING_DIR"' EXIT
+PACKAGE_BUILD_DIR="$STAGING_DIR/output"
+mkdir -p "$PACKAGE_BUILD_DIR"
 
 for platform in $PLATFORMS; do
   GOOS="${platform%/*}"
   GOARCH="${platform#*/}"
+  case "$GOOS/$GOARCH" in
+    darwin/arm64|darwin/amd64|windows/amd64|linux/amd64|linux/arm64) ;;
+    *)
+      echo "Unsupported recording-agent package platform '$GOOS/$GOARCH'." >&2
+      exit 1
+      ;;
+  esac
   package="apexload-recording-agent-${VERSION}-${GOOS}-${GOARCH}"
-  workdir="$DIST_DIR/$package"
+  workdir="$PACKAGE_BUILD_DIR/$package"
   binary="apexload-record-agent"
   if [[ "$GOOS" == "windows" ]]; then
     binary="${binary}.exe"
@@ -315,16 +340,47 @@ EOF
   fi
 
   (
-    cd "$DIST_DIR"
+    cd "$PACKAGE_BUILD_DIR"
     tar -czf "${package}.tar.gz" "$package"
     rm -rf "$package"
   )
 done
 
 (
-  cd "$DIST_DIR"
-  write_sha256_manifest ./*.tar.gz > SHA256SUMS.txt
-  sign_checksum_manifest "$DIST_DIR/SHA256SUMS.txt"
+  cd "$PACKAGE_BUILD_DIR"
+  recording_agent_packages=(*.tar.gz)
+  write_sha256_manifest "${recording_agent_packages[@]}" > SHA256SUMS.txt
+  sign_checksum_manifest "$PACKAGE_BUILD_DIR/SHA256SUMS.txt"
 )
+
+shopt -s nullglob
+staged_packages=("$PACKAGE_BUILD_DIR"/apexload-recording-agent-*.tar.gz)
+shopt -u nullglob
+if [[ ${#staged_packages[@]} -eq 0 ]]; then
+  echo "Recording-agent packaging produced no distributable artifacts." >&2
+  exit 1
+fi
+for staged_package in "${staged_packages[@]}"; do
+  mv -f "$staged_package" "$DIST_DIR/"
+done
+mv -f "$PACKAGE_BUILD_DIR/SHA256SUMS.txt" "$DIST_DIR/SHA256SUMS.txt"
+if [[ -f "$PACKAGE_BUILD_DIR/SHA256SUMS.txt.asc" ]]; then
+  mv -f "$PACKAGE_BUILD_DIR/SHA256SUMS.txt.asc" "$DIST_DIR/SHA256SUMS.txt.asc"
+else
+  rm -f -- "$DIST_DIR/SHA256SUMS.txt.asc"
+fi
+# Remove every package omitted from the newly published generation, including
+# same-version platforms excluded by an explicit PLATFORMS subset. Leaving one
+# beside a manifest with no row would create a permanently unavailable latest
+# endpoint for that platform.
+while IFS= read -r -d '' live_package; do
+  live_name="$(basename "$live_package")"
+  if ! awk -v artifact="$live_name" '$2 == artifact { found = 1 } END { exit(found ? 0 : 1) }' \
+    "$DIST_DIR/SHA256SUMS.txt"; then
+    rm -f -- "$live_package"
+  fi
+done < <(find "$DIST_DIR" -mindepth 1 -maxdepth 1 -type f -name 'apexload-recording-agent-*.tar.gz' -print0)
+rm -rf "$STAGING_DIR"
+trap - EXIT
 
 echo "Recording agent packages written to $DIST_DIR"

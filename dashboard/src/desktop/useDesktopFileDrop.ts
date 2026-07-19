@@ -19,21 +19,17 @@ interface DropZone {
 
 interface FileDropRuntime {
   OnFileDrop?: (callback: (x: number, y: number, paths: string[]) => void, useDropTarget: boolean) => void
-  OnFileDropOff?: () => void
 }
 
 const zones = new Set<DropZone>()
-let registered = false
+let registeredRuntime: FileDropRuntime | undefined
 
 function ensureGlobalListener() {
-  if (registered) {
-    return
-  }
   const runtime = getWailsEventRuntime() as (FileDropRuntime | undefined)
-  if (!runtime?.OnFileDrop) {
+  if (!runtime?.OnFileDrop || registeredRuntime === runtime) {
     return
   }
-  registered = true
+  registeredRuntime = runtime
   runtime.OnFileDrop((x, y, paths) => {
     if (!paths || paths.length === 0) {
       return
@@ -58,15 +54,6 @@ function ensureGlobalListener() {
   }, true)
 }
 
-function teardownGlobalListener() {
-  if (!registered || zones.size > 0) {
-    return
-  }
-  const runtime = getWailsEventRuntime() as (FileDropRuntime | undefined)
-  runtime?.OnFileDropOff?.()
-  registered = false
-}
-
 // registerDropZone wires an element to receive native dropped paths. Returns an
 // unregister function. Exported for tests.
 export function registerDropZone(element: HTMLElement, handler: DropHandler): () => void {
@@ -75,7 +62,10 @@ export function registerDropZone(element: HTMLElement, handler: DropHandler): ()
   ensureGlobalListener()
   return () => {
     zones.delete(zone)
-    teardownGlobalListener()
+    // Keep the Wails listener for the renderer lifetime. OnFileDropOff maps to
+    // EventsOff("wails:file-drop"), which removes every listener for the shared
+    // event — including the Go listener that grants dropped paths to the secure
+    // file bridge. The global callback is harmless while `zones` is empty.
   }
 }
 

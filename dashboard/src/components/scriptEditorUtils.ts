@@ -598,7 +598,7 @@ export function dedupeHeaders(columns: string[]): string[] {
 }
 
 export function downloadTextFile(content: string, filename: string) {
-  downloadTextFileBlob(content, filename)
+  return downloadTextFileBlob(content, filename)
 }
 
 export function cloneDataSource(source: DataSourceConfig): DataSourceConfig {

@@ -5,8 +5,10 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import ImportDropzone from './ImportDropzone'
+import type { WailsDesktopBridge } from '../desktop/desktopBridge'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+type BridgeWindow = typeof window & { go?: { main?: { App?: WailsDesktopBridge } } }
 
 describe('ImportDropzone', () => {
   let container: HTMLDivElement
@@ -21,6 +23,7 @@ describe('ImportDropzone', () => {
   afterEach(() => {
     act(() => root.unmount())
     container.remove()
+    delete (window as BridgeWindow).go
   })
 
   function render(props: Partial<Parameters<typeof ImportDropzone>[0]> = {}) {
@@ -94,5 +97,21 @@ describe('ImportDropzone', () => {
     })
     expect(onFile).not.toHaveBeenCalled()
     expect(onError).toHaveBeenCalledWith('JSON only')
+  })
+
+  it('surfaces native bridge limits and switches subsequent clicks to the browser picker', async () => {
+    const open = vi.fn().mockResolvedValue('/tmp/large.json')
+    const read = vi.fn().mockRejectedValue(new Error('file is too large for the bridge; use the upload flow'))
+    ;(window as BridgeWindow).go = { main: { App: { OpenFileDialogNative: open, ReadFileBase64: read } } }
+    const onError = vi.fn()
+    render({ onError })
+    const zone = container.querySelector('.import-dropzone') as HTMLElement
+
+    await act(async () => { zone.click() })
+    expect(onError).toHaveBeenCalledWith(expect.stringContaining('Use the browser file chooser'))
+    expect(open).toHaveBeenCalledTimes(1)
+
+    await act(async () => { zone.click() })
+    expect(open).toHaveBeenCalledTimes(1)
   })
 })

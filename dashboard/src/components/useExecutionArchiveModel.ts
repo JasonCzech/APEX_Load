@@ -10,6 +10,9 @@ import {
 } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import { downloadBlob } from '../utils/fileUtils'
+import { isDesktopSurface } from '../desktop/desktopBridge'
+import { saveApiResourceViaBridge, startDesktopBrowserDownload } from '../desktop/desktopFiles'
+import { hasDesktopApiCapability } from '../hooks/apiClient'
 
 export const ARCHIVE_PAGE_SIZE_DEFAULT = 10
 export const ARCHIVE_PAGE_SIZE_OPTIONS = [10, 25, 50] as const
@@ -392,8 +395,16 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
   const onDownloadArchive = useCallback(async () => {
     if (!test) return
     try {
+      const filename = `${buildArchiveDownloadName(test)}.zip`
+      const resourcePath = `/api/v1/tests/${encodeURIComponent(test.id)}/archive`
+      const nativeOutcome = await saveApiResourceViaBridge(resourcePath, filename)
+      if (nativeOutcome !== 'unavailable') return
+      if (!isDesktopSurface() && hasDesktopApiCapability()) {
+        await startDesktopBrowserDownload(resourcePath, filename)
+        return
+      }
       const blob = await api.downloadTestArchive(test.id)
-      downloadBlob(blob, `${buildArchiveDownloadName(test)}.zip`)
+      await downloadBlob(blob, filename)
     } catch (error: unknown) {
       setArchiveError(getErrorMessage(error, 'Unable to download archive bundle'))
     }
@@ -402,8 +413,16 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
   const onDownloadBrowserDiagnostics = useCallback(async () => {
     if (!test) return
     try {
+      const filename = `${buildArchiveDownloadName(test)}-browser-diagnostics.zip`
+      const resourcePath = `/api/v1/tests/${encodeURIComponent(test.id)}/archive/browser-diagnostics`
+      const nativeOutcome = await saveApiResourceViaBridge(resourcePath, filename)
+      if (nativeOutcome !== 'unavailable') return
+      if (!isDesktopSurface() && hasDesktopApiCapability()) {
+        await startDesktopBrowserDownload(resourcePath, filename)
+        return
+      }
       const blob = await api.downloadTestArchiveBrowserDiagnostics(test.id)
-      downloadBlob(blob, `${buildArchiveDownloadName(test)}-browser-diagnostics.zip`)
+      await downloadBlob(blob, filename)
     } catch (error: unknown) {
       setArchiveError(getErrorMessage(error, 'Unable to download browser diagnostics bundle'))
     }
@@ -412,8 +431,16 @@ export function useExecutionArchiveModel(test: TestSummary | null): ExecutionArc
   const onDownloadArchiveArtifact = useCallback(async (artifactName: string) => {
     if (!test) return
     try {
+      const filename = `${buildArchiveDownloadName(test)}-${artifactName}`
+      const resourcePath = `/api/v1/tests/${encodeURIComponent(test.id)}/archive/files/${encodeURIComponent(artifactName)}`
+      const nativeOutcome = await saveApiResourceViaBridge(resourcePath, filename)
+      if (nativeOutcome !== 'unavailable') return
+      if (!isDesktopSurface() && hasDesktopApiCapability()) {
+        await startDesktopBrowserDownload(resourcePath, filename)
+        return
+      }
       const blob = await api.downloadTestArchiveArtifact(test.id, artifactName)
-      downloadBlob(blob, `${buildArchiveDownloadName(test)}-${artifactName}`)
+      await downloadBlob(blob, filename)
     } catch (error: unknown) {
       setArchiveError(getErrorMessage(error, `Unable to download ${artifactName}`))
     }

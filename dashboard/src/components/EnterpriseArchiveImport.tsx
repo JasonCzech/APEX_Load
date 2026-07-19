@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
 import { isDesktopSurface } from '../desktop/desktopBridge'
-import { canUseNativeDialogs, filesFromDroppedPaths, pickFilesViaBridge } from '../desktop/desktopFiles'
+import { canUseNativeDialogs, filesFromDroppedPaths, nativeFileReadErrorMessage, pickFilesViaBridge, shouldUseBrowserFileFallback } from '../desktop/desktopFiles'
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
 import { type DetectedSourceProtocol, type ImportRepairSuggestion, type EnterpriseArchiveImportResult, type EnterpriseArchiveImportSummary, type EnterpriseArchiveJavaSupportEntry, type EnterpriseArchiveMigrationReadiness, type EnterpriseArchiveProtocolSupportEntry, type EnterpriseArchiveReviewArtifact, type EnterpriseArchiveSupportMatrixEntry, type EnterpriseArchiveSupportMatrixExample, type EnterpriseArchiveSupportMatrixResponse, type SalesforceReview, type SecretBindingSelection, type TrueClient2CompatReport } from '../types/scriptImports'
 import { type BrowserReplayEvent, type BrowserReplaySession, type StoredScript } from '../types'
@@ -588,7 +588,8 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   const dropzoneRef = useRef<HTMLDivElement>(null)
   const itemCounterRef = useRef(0)
   const desktop = isDesktopSurface()
-  const nativeDialogs = desktop && canUseNativeDialogs()
+  const [browserPickerFallback, setBrowserPickerFallback] = useState(false)
+  const nativeDialogs = desktop && canUseNativeDialogs() && !browserPickerFallback
   const [importItems, setImportItems] = useState<EnterpriseArchiveImportQueueItem[]>([])
   const [selectedItemId, setSelectedItemId] = useState('')
   const [dragOver, setDragOver] = useState(false)
@@ -1295,6 +1296,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     void filesFromDroppedPaths(paths).then(files => {
       setDragOver(false)
       addFilesToQueue(files)
+    }).catch(error => {
+      setDragOver(false)
+      setError(nativeFileReadErrorMessage(error))
+      if (shouldUseBrowserFileFallback(error)) setBrowserPickerFallback(true)
     })
   }, [addFilesToQueue])
   useDesktopFileDrop(dropzoneRef, handleNativeArchivePaths, desktop)
@@ -1304,6 +1309,12 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       void pickFilesViaBridge('.zip', true).then(files => {
         if (files.length > 0) {
           addFilesToQueue(files)
+        }
+      }).catch(error => {
+        setError(nativeFileReadErrorMessage(error))
+        if (shouldUseBrowserFileFallback(error)) {
+          setBrowserPickerFallback(true)
+          fileRef.current?.click()
         }
       })
       return

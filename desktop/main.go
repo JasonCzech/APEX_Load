@@ -25,21 +25,25 @@ func main() {
 
 	// Build the native application menu. On macOS this restores the role-based
 	// Edit menu (copy/paste/undo/select-all) that a custom menu would otherwise
-	// strip from WKWebView. See desktop/menu.go.
+	// strip from WKWebView. Linux must load recents before Wails packs its static
+	// GtkMenuBar; see desktop/menu.go.
+	app.prepareInitialMenu()
 	AppMenu := buildAppMenu(app)
 
 	// Create application with options
 	err = wails.Run(&options.App{
 		Title:     "APEX Load",
-		Width:     1280,
-		Height:    800,
+		Width:     defaultWindowWidth,
+		Height:    defaultWindowHeight,
 		MinWidth:  minWindowWidth,
 		MinHeight: minWindowHeight,
 		AssetServer: &assetserver.Options{
-			Assets: staticSub,
+			Assets:     staticSub,
+			Middleware: desktopAssetSecurityHeaders,
 		},
 		BackgroundColour: &options.RGBA{R: 15, G: 17, B: 23, A: 255}, // Match --bg-primary
 		OnStartup:        app.startup,
+		OnBeforeClose:    app.beforeClose,
 		OnShutdown:       app.shutdown,
 		Menu:             AppMenu,
 		// Only one instance may run: the first owns the local SQLite handle, and a

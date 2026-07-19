@@ -75,6 +75,11 @@ yarn-error.log*
 dashboard/.vite/
 dashboard/vite.log
 
+# Wails/NSIS generated inputs. Keep the reviewed project.nsi template tracked.
+desktop/build/windows/installer/wails_tools.nsh
+desktop/build/windows/installer/tmp/
+desktop/build/windows/appicon.ico
+
 # Go
 coverage.out
 coverage.html

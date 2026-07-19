@@ -904,6 +904,7 @@ func brunoCommitErrorReason(err error) string {
 }
 
 func (s *Server) handleGetBrunoImportSource(w http.ResponseWriter, r *http.Request) {
+	extendArtifactWriteDeadline(w)
 	brunoStore, ok := s.store.(storage.BrunoImportStore)
 	if !ok || brunoStore == nil {
 		writeError(w, http.StatusServiceUnavailable, "Bruno revision storage is not configured")

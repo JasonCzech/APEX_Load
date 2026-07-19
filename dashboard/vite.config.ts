@@ -68,6 +68,10 @@ export default defineConfig({
   },
   server: {
     port: Number(process.env.PORT) || 3000,
+    // The desktop controller's CORS/WebSocket allow-list is intentionally
+    // limited to the configured Wails dev origin. Do not let Vite silently
+    // move to another port when that origin is occupied.
+    strictPort: true,
     fs: {
       // The dashboard intentionally embeds reviewed repository documentation.
       // Keep Vite's file-serving boundary to the package and that directory.

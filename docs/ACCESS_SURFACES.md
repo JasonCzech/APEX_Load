@@ -71,12 +71,13 @@ make desktop-release
 Raw local debug archives are acceptable for developer machines only, not for
 broad user distribution.
 
-The GitHub Actions client-package workflow (`.github/workflows/desktop.yml`)
-uses the same package scripts for desktop and Recording Agent release artifacts.
-Tag-triggered runs fail closed with `APEXLOAD_REQUIRE_TRUSTED_PACKAGES=1`, so
-missing signing or checksum material blocks the release instead of publishing
-unsigned downloads. Manual workflow runs can opt into the same behavior with the
-repository variable `APEXLOAD_REQUIRE_TRUSTED_PACKAGES=1`.
+The GitHub Actions desktop workflow (`.github/workflows/desktop.yml`) is an
+unsigned validation lane for pull requests, `main`, and manual diagnostics. It
+builds and smoke-tests every native package without receiving release signing
+credentials. The protected release workflow (`.github/workflows/release.yml`)
+is the only publication lane: it fails closed unless macOS signing and
+notarization, Windows Authenticode signing (including the installed
+uninstaller), and signed checksums all succeed.
 
 Configure these repository secrets/variables to produce trusted downloads:
 
@@ -86,13 +87,13 @@ Configure these repository secrets/variables to produce trusted downloads:
 | `APEXLOAD_MACOS_CERTIFICATE_PASSWORD` | Password for the `.p12` certificate. |
 | `APEXLOAD_MACOS_CODESIGN_IDENTITY` | Developer ID identity name passed to `codesign`. |
 | `APEXLOAD_MACOS_NOTARIZE` | Repository variable; set to `1` to require notarization. |
-| `APEXLOAD_MACOS_NOTARY_PROFILE` | Optional notarytool keychain profile name. |
+| `APEXLOAD_MACOS_NOTARY_PROFILE` | Optional local-development notarytool keychain profile name; protected CI uses the file-backed API key below. |
 | `APEXLOAD_MACOS_NOTARY_KEY_P8_BASE64` | Protected release secret containing a base64-encoded App Store Connect API private key. |
 | `APEXLOAD_MACOS_NOTARY_KEY_PATH`, `APEXLOAD_MACOS_NOTARY_KEY_ID`, `APEXLOAD_MACOS_NOTARY_ISSUER_ID` | File-backed App Store Connect API-key authentication when not using a stored profile. The release workflow materializes the private key with mode `0600`; it never passes the private key or an Apple password in process arguments. |
 | `APEXLOAD_WINDOWS_CODESIGN_PFX_BASE64` | Base64-encoded Authenticode `.pfx`/`.p12` certificate. |
 | `APEXLOAD_WINDOWS_CODESIGN_PASSWORD` | Password for the Windows signing certificate. |
-| `APEXLOAD_GPG_PRIVATE_KEY` | Optional ASCII-armored private key for detached checksum signatures. |
-| `APEXLOAD_GPG_SIGNING_KEY` | Optional GPG key ID or fingerprint used as the signing key selector. |
+| `APEXLOAD_RELEASE_SIGNER_PATH` or `APEXLOAD_RELEASE_SIGNING_KEY_PEM` | Protected KMS/HSM signer executable (preferred) or PEM fallback used by the release workflow to sign `SHA256SUMS`. |
+| `APEXLOAD_RELEASE_SIGNING_PUBLIC_KEY_PEM` | Public verification key bundled with published release assets. |
 
 ## 3. CLI
 

@@ -1,38 +1,61 @@
-import { useState, useEffect, useCallback, useLayoutEffect, useRef, type MouseEvent } from 'react'
-import { downloadBlob, downloadFilenameFromDisposition } from '../utils/fileUtils'
-import { useAsyncTask } from '../hooks/useAsyncTask'
-import { useApi } from '../hooks/useApi'
-import { API_ORIGIN, apiFetch, trimTrailingSlash } from '../hooks/apiClient'
-import { type BrowserRecorderAvailability, type BrowserRecorderSession } from '../hooks/api/useBrowserRecorderApi'
-import { isWailsLocation } from '../desktop/desktopBridge'
-import { Project, type StoredScript } from '../types'
+import {
+  useState,
+  useEffect,
+  useCallback,
+  useLayoutEffect,
+  useRef,
+  type MouseEvent,
+} from "react";
+import {
+  downloadBlob,
+  downloadFilenameFromDisposition,
+} from "../utils/fileUtils";
+import { useAsyncTask } from "../hooks/useAsyncTask";
+import { useApi } from "../hooks/useApi";
+import {
+  API_ORIGIN,
+  apiFetch,
+  DESKTOP_CAPABILITY_SESSION_KEY,
+  hasDesktopApiCapability,
+  trimTrailingSlash,
+} from "../hooks/apiClient";
+import {
+  type BrowserRecorderAvailability,
+  type BrowserRecorderSession,
+} from "../hooks/api/useBrowserRecorderApi";
+import { getDesktopBridge, isDesktopSurface } from "../desktop/desktopBridge";
+import {
+  saveApiResourceViaBridge,
+  startDesktopBrowserDownload,
+} from "../desktop/desktopFiles";
+import { Project, type StoredScript } from "../types";
 import {
   type RecorderImportResult,
   type SalesforceImportResult,
   type SecretBindingSelection,
-} from '../types/scriptImports'
-import { type ScriptDefinition } from '../types/scripts'
+} from "../types/scriptImports";
+import { type ScriptDefinition } from "../types/scripts";
 import {
   composeHttpURL,
   DEFAULT_HTTP_URL_SCHEME,
   normalizeHttpURLInput,
   type HttpURLScheme,
-} from '../utils/httpUrlInput'
-import { withFallbackPersistedScript } from './importSaveUtils'
-import BrowserRecorderControlPanel from './BrowserRecorderControlPanel'
+} from "../utils/httpUrlInput";
+import { withFallbackPersistedScript } from "./importSaveUtils";
+import BrowserRecorderControlPanel from "./BrowserRecorderControlPanel";
 import {
   CLIENT_DOWNLOAD_PLATFORMS,
   detectPlatformFromNavigator,
   platformLabel,
-} from './clientDownloadPlatforms'
-import PageViewToggle from './PageViewToggle'
-import ParameterizationReview from './ParameterizationReview'
+} from "./clientDownloadPlatforms";
+import PageViewToggle from "./PageViewToggle";
+import ParameterizationReview from "./ParameterizationReview";
 import SecretBindingReview, {
   type PreparedSecretBindings,
   type SecretBindingReviewHandle,
-} from './SecretBindingReview'
-import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
-import { type ImportedSaveResult } from './useScriptsAuthoringState'
+} from "./SecretBindingReview";
+import { attachImportCorrelationSuggestions } from "./scriptEditorUtils";
+import { type ImportedSaveResult } from "./useScriptsAuthoringState";
 import {
   DEFAULT_MACOS_NETWORK_SERVICE,
   buildMacOSRestoreProxyCommand,
@@ -42,878 +65,1245 @@ import {
   recorderProxyHost,
   recorderProxyHostIsLocal,
   recorderProxyPort,
-} from './recordingProxyCommands'
-import './RecordingStudio.css'
+} from "./recordingProxyCommands";
+import "./RecordingStudio.css";
 
 interface RecordedRequest {
-  seq: number
-  timestamp: string
-  method: string
-  url: string
-  scheme?: string
-  path: string
-  query_string?: string
-  host: string
-  status_code: number
-  response_time_ms: number
-  content_type: string
-  body: string
-  body_encoding?: string
-  body_size_bytes?: number
-  body_truncated?: boolean
-  response_body_encoding?: string
-  response_body_size_bytes?: number
-  response_body_truncated?: boolean
-  think_time_ms: number
-  is_static: boolean
-  resource_type?: string
-  step_name?: string
-  transaction_name?: string
-  note?: string
-  excluded?: boolean
+  seq: number;
+  timestamp: string;
+  method: string;
+  url: string;
+  scheme?: string;
+  path: string;
+  query_string?: string;
+  host: string;
+  status_code: number;
+  response_time_ms: number;
+  content_type: string;
+  body: string;
+  body_encoding?: string;
+  body_size_bytes?: number;
+  body_truncated?: boolean;
+  response_body_encoding?: string;
+  response_body_size_bytes?: number;
+  response_body_truncated?: boolean;
+  think_time_ms: number;
+  is_static: boolean;
+  resource_type?: string;
+  step_name?: string;
+  transaction_name?: string;
+  note?: string;
+  excluded?: boolean;
 }
 
 interface RecordingSession {
-  id: string
-  name: string
-  status: string
-  started_at: string
-  stopped_at?: string
-  base_url?: string
-  requests?: RecordedRequest[]
-  request_count?: number
-  last_seq?: number
+  id: string;
+  name: string;
+  status: string;
+  started_at: string;
+  stopped_at?: string;
+  base_url?: string;
+  requests?: RecordedRequest[];
+  request_count?: number;
+  last_seq?: number;
   filters: {
-    exclude_static: boolean
-    exclude_hosts?: string[]
-    include_hosts?: string[]
-    capture_cookies?: boolean
-  }
+    exclude_static: boolean;
+    exclude_hosts?: string[];
+    include_hosts?: string[];
+    capture_cookies?: boolean;
+  };
 }
 
 // confidenceTone buckets a 0..1 correlation confidence for badge styling.
 // >=0.8 is auto-applicable in the engine; the UI mirrors that threshold.
-function confidenceTone(confidence?: number): 'high' | 'medium' | 'low' | null {
-  if (typeof confidence !== 'number') return null
-  if (confidence >= 0.8) return 'high'
-  if (confidence >= 0.6) return 'medium'
-  return 'low'
+function confidenceTone(confidence?: number): "high" | "medium" | "low" | null {
+  if (typeof confidence !== "number") return null;
+  if (confidence >= 0.8) return "high";
+  if (confidence >= 0.6) return "medium";
+  return "low";
 }
 
 function safeRecordingFileName(name?: string): string {
-  return (name || 'recording').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'recording'
+  return (
+    (name || "recording")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || "recording"
+  );
 }
 
 function recordingLooksSalesforce(session: RecordingSession): boolean {
   const text = [
     session.base_url,
-    ...((session.requests || []).flatMap(req => [req.host, req.url, req.path, req.content_type])),
-  ].join(' ').toLowerCase()
+    ...(session.requests || []).flatMap((req) => [
+      req.host,
+      req.url,
+      req.path,
+      req.content_type,
+    ]),
+  ]
+    .join(" ")
+    .toLowerCase();
   return [
-    'salesforce.com',
-    '.force.com',
-    'lightning.force',
-    '/aura',
-    'agentforce',
-    'mulesoft',
-    'anypoint',
-  ].some(signal => text.includes(signal))
+    "salesforce.com",
+    ".force.com",
+    "lightning.force",
+    "/aura",
+    "agentforce",
+    "mulesoft",
+    "anypoint",
+  ].some((signal) => text.includes(signal));
 }
 
-function mergeRecordingSession(previous: RecordingSession | null, next: RecordingSession): RecordingSession {
-  const incoming = next.requests || []
+function mergeRecordingSession(
+  previous: RecordingSession | null,
+  next: RecordingSession,
+): RecordingSession {
+  const incoming = next.requests || [];
   if (!previous || previous.id !== next.id) {
-    return { ...next, requests: incoming }
+    return { ...next, requests: incoming };
   }
   if (incoming.length === 0) {
-    return { ...previous, ...next, requests: previous.requests || [] }
+    return { ...previous, ...next, requests: previous.requests || [] };
   }
-  const bySeq = new Map<number, RecordedRequest>()
-  ;(previous.requests || []).forEach(req => bySeq.set(req.seq, req))
-  incoming.forEach(req => bySeq.set(req.seq, req))
+  const bySeq = new Map<number, RecordedRequest>();
+  (previous.requests || []).forEach((req) => bySeq.set(req.seq, req));
+  incoming.forEach((req) => bySeq.set(req.seq, req));
   return {
     ...previous,
     ...next,
     requests: Array.from(bySeq.values()).sort((a, b) => a.seq - b.seq),
-  }
+  };
 }
 
 function isStoredScriptLike(value: unknown): value is StoredScript {
-  const candidate = value as Partial<StoredScript> | null | undefined
-  return !!candidate && typeof candidate === 'object' && typeof candidate.id === 'string' && candidate.id.trim() !== '' && typeof candidate.name === 'string' && typeof candidate.protocol === 'string'
+  const candidate = value as Partial<StoredScript> | null | undefined;
+  return (
+    !!candidate &&
+    typeof candidate === "object" &&
+    typeof candidate.id === "string" &&
+    candidate.id.trim() !== "" &&
+    typeof candidate.name === "string" &&
+    typeof candidate.protocol === "string"
+  );
 }
 
 function isScriptDefinitionLike(value: unknown): value is ScriptDefinition {
-  const candidate = value as Partial<ScriptDefinition> | null | undefined
-  return !!candidate && typeof candidate === 'object' && typeof candidate.name === 'string' && typeof candidate.protocol === 'string' && (Array.isArray(candidate.actions) || Array.isArray(candidate.init) || Array.isArray(candidate.teardown))
+  const candidate = value as Partial<ScriptDefinition> | null | undefined;
+  return (
+    !!candidate &&
+    typeof candidate === "object" &&
+    typeof candidate.name === "string" &&
+    typeof candidate.protocol === "string" &&
+    (Array.isArray(candidate.actions) ||
+      Array.isArray(candidate.init) ||
+      Array.isArray(candidate.teardown))
+  );
 }
 
-function recorderImportStoredScript(result?: RecorderImportResult | null): StoredScript | null {
-  const script = result?.script as unknown
-  return isStoredScriptLike(script) ? script : null
+function recorderImportStoredScript(
+  result?: RecorderImportResult | null,
+): StoredScript | null {
+  const script = result?.script as unknown;
+  return isStoredScriptLike(script) ? script : null;
 }
 
-function recorderImportReviewScript(result?: RecorderImportResult | null): ScriptDefinition | null {
-  const script = result?.script as unknown
+function recorderImportReviewScript(
+  result?: RecorderImportResult | null,
+): ScriptDefinition | null {
+  const script = result?.script as unknown;
   if (isStoredScriptLike(script)) {
-    return script.script || null
+    return script.script || null;
   }
-  return isScriptDefinitionLike(script) ? script : null
+  return isScriptDefinitionLike(script) ? script : null;
 }
 
 interface RecorderStatus {
-  proxy_addr?: string
-  ca_cert_path?: string
+  proxy_addr?: string;
+  proxy_auth_token?: string;
+  ca_cert_path?: string;
   active?: {
-    id: string
-    name: string
-    status: string
-    request_count: number
-    started_at: string
-  } | null
+    id: string;
+    name: string;
+    status: string;
+    request_count: number;
+    started_at: string;
+  } | null;
   browser?: {
-    availability: BrowserRecorderAvailability
-    active?: { id: string; name: string; status: string } | null
-    install?: { status: string; error?: string }
-  }
+    availability: BrowserRecorderAvailability;
+    active?: { id: string; name: string; status: string } | null;
+    install?: { status: string; error?: string };
+  };
 }
 
 interface RecordingAgentChecksum {
-  algorithm?: string
-  filename?: string
-  sha256?: string
+  algorithm?: string;
+  filename?: string;
+  sha256?: string;
 }
 
 const MISSING_BROWSER_RECORDER_CAPABILITY: BrowserRecorderAvailability = {
   available: false,
-  code: 'not_supported',
-  reason: 'controller does not expose browser recording endpoints',
-}
-const DEFAULT_BRIDGE_ORIGIN = 'http://127.0.0.1:27777'
-const DEFAULT_RECORDING_AGENT_DOWNLOAD_PATH = '/api/v1/downloads/recording-agent/latest'
-const BRIDGE_PAIRING_TOKEN_BYTES = 24
-const RECORDING_AGENT_COMMAND = 'apexload-record-agent'
+  code: "not_supported",
+  reason: "controller does not expose browser recording endpoints",
+};
+const DEFAULT_BRIDGE_ORIGIN = "http://127.0.0.1:27777";
+const DEFAULT_RECORDING_AGENT_DOWNLOAD_PATH =
+  "/api/v1/downloads/recording-agent/latest";
+const BRIDGE_PAIRING_TOKEN_BYTES = 24;
+const RECORDING_AGENT_COMMAND = "apexload-record-agent";
 
 function generateBridgePairingToken(): string {
-  const cryptoObj = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined
+  const cryptoObj =
+    typeof globalThis !== "undefined" ? globalThis.crypto : undefined;
   if (cryptoObj?.getRandomValues) {
-    const bytes = new Uint8Array(BRIDGE_PAIRING_TOKEN_BYTES)
-    cryptoObj.getRandomValues(bytes)
-    return Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+    const bytes = new Uint8Array(BRIDGE_PAIRING_TOKEN_BYTES);
+    cryptoObj.getRandomValues(bytes);
+    return Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join(
+      "",
+    );
   }
   if (cryptoObj?.randomUUID) {
-    return cryptoObj.randomUUID().replace(/-/g, '')
+    return cryptoObj.randomUUID().replace(/-/g, "");
   }
-  throw new Error('Secure browser crypto is required to generate a bridge pairing token')
+  throw new Error(
+    "Secure browser crypto is required to generate a bridge pairing token",
+  );
 }
 
 function initialBridgePairingToken(): string {
   try {
-    return generateBridgePairingToken()
+    return generateBridgePairingToken();
   } catch {
-    return ''
+    return "";
   }
 }
 
-function browserRecorderInstallRetryable(availability: BrowserRecorderAvailability | null, installState: { status: string; error?: string } | null): boolean {
-  if (!installState || installState.status === 'installed') {
-    return false
+function browserRecorderInstallRetryable(
+  availability: BrowserRecorderAvailability | null,
+  installState: { status: string; error?: string } | null,
+): boolean {
+  if (!installState || installState.status === "installed") {
+    return false;
   }
-  const code = availability?.code?.trim()
-  if (code === 'browsers_not_installed') {
-    return true
+  const code = availability?.code?.trim();
+  if (code === "browsers_not_installed") {
+    return true;
   }
-  if (code && ['display_missing', 'production_disabled', 'disabled', 'not_supported'].includes(code)) {
-    return false
+  if (
+    code &&
+    [
+      "display_missing",
+      "production_disabled",
+      "disabled",
+      "not_supported",
+    ].includes(code)
+  ) {
+    return false;
   }
-  const reason = availability?.reason || ''
-  const normalizedReason = reason.toLowerCase()
+  const reason = availability?.reason || "";
+  const normalizedReason = reason.toLowerCase();
   return ![
-    'no display detected',
-    'production mode',
-    'disabled via',
-    'does not expose browser recording endpoints',
-  ].some(blockingReason => normalizedReason.includes(blockingReason))
+    "no display detected",
+    "production mode",
+    "disabled via",
+    "does not expose browser recording endpoints",
+  ].some((blockingReason) => normalizedReason.includes(blockingReason));
 }
 
-function browserRecorderInstallTone(status: string): 'info' | 'success' | 'error' {
-  if (status === 'failed') return 'error'
-  if (status === 'installed') return 'success'
-  return 'info'
+function browserRecorderInstallTone(
+  status: string,
+): "info" | "success" | "error" {
+  if (status === "failed") return "error";
+  if (status === "installed") return "success";
+  return "info";
 }
 
 function browserRecorderInstallLabel(status: string): string {
   switch (status) {
-    case 'failed':
-      return 'Recording browser install failed'
-    case 'installed':
-      return 'Recording browser install completed'
-    case 'installing':
-      return 'Recording browser install is running'
+    case "failed":
+      return "Recording browser install failed";
+    case "installed":
+      return "Recording browser install completed";
+    case "installing":
+      return "Recording browser install is running";
     default:
-      return `Recording browser install: ${status}`
+      return `Recording browser install: ${status}`;
   }
 }
 
 function currentDashboardOrigin(): string {
-  if (typeof window === 'undefined' || !window.location.origin || window.location.origin === 'null') {
-    return 'https://your-apexload-controller.example'
+  if (
+    typeof window === "undefined" ||
+    !window.location.origin ||
+    window.location.origin === "null"
+  ) {
+    return "https://your-apexload-controller.example";
   }
-  return window.location.origin
+  return window.location.origin;
 }
 
 function bridgeAllowedDashboardOrigins(): string[] {
-  const origin = currentDashboardOrigin()
-  const origins = new Set([origin])
+  const origin = currentDashboardOrigin();
+  const origins = new Set([origin]);
   try {
-    const url = new URL(origin)
-    if (url.hostname === '127.0.0.1') {
-      origins.add(`${url.protocol}//localhost${url.port ? `:${url.port}` : ''}`)
-    } else if (url.hostname === 'localhost') {
-      origins.add(`${url.protocol}//127.0.0.1${url.port ? `:${url.port}` : ''}`)
+    const url = new URL(origin);
+    if (url.hostname === "127.0.0.1") {
+      origins.add(
+        `${url.protocol}//localhost${url.port ? `:${url.port}` : ""}`,
+      );
+    } else if (url.hostname === "localhost") {
+      origins.add(
+        `${url.protocol}//127.0.0.1${url.port ? `:${url.port}` : ""}`,
+      );
     }
   } catch {
     // Keep the primary origin if parsing fails.
   }
-  return Array.from(origins)
+  return Array.from(origins);
 }
 
 function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`
+  return `'${value.replace(/'/g, `'\\''`)}'`;
 }
 
 function bridgeListenAddress(bridgeOrigin: string): string {
   try {
-    const url = new URL(bridgeOrigin)
-    return url.host || DEFAULT_BRIDGE_ORIGIN.replace(/^https?:\/\//i, '')
+    const url = new URL(bridgeOrigin);
+    return url.host || DEFAULT_BRIDGE_ORIGIN.replace(/^https?:\/\//i, "");
   } catch {
-    return bridgeOrigin.replace(/^https?:\/\//i, '').replace(/\/+$/, '').trim() || DEFAULT_BRIDGE_ORIGIN.replace(/^https?:\/\//i, '')
+    return (
+      bridgeOrigin
+        .replace(/^https?:\/\//i, "")
+        .replace(/\/+$/, "")
+        .trim() || DEFAULT_BRIDGE_ORIGIN.replace(/^https?:\/\//i, "")
+    );
   }
 }
 
 function bridgeRecordAgentCommand(bridgeOrigin: string): string {
   const parts = [
     RECORDING_AGENT_COMMAND,
-    '--addr',
+    "--addr",
     bridgeListenAddress(bridgeOrigin),
-    '--token-stdin',
-  ]
+    "--token-stdin",
+  ];
   for (const origin of bridgeAllowedDashboardOrigins()) {
-    parts.push('--allow-origin', shellQuote(origin))
+    parts.push("--allow-origin", shellQuote(origin));
   }
-  return parts.join(' ')
+  return parts.join(" ");
 }
 
 function recordingAgentDownloadConfig(): { url: string; managed: boolean } {
-  const env = import.meta.env?.VITE_APEXLOAD_RECORDING_AGENT_DOWNLOAD_URL
-  if (typeof env === 'string' && env.trim()) {
-    return { url: env.trim(), managed: false }
+  const env = import.meta.env?.VITE_APEXLOAD_RECORDING_AGENT_DOWNLOAD_URL;
+  if (typeof env === "string" && env.trim()) {
+    return { url: env.trim(), managed: false };
   }
   return {
     url: `${trimTrailingSlash(API_ORIGIN)}${DEFAULT_RECORDING_AGENT_DOWNLOAD_PATH}`,
     managed: true,
-  }
+  };
 }
-
 
 function bridgePairingErrorMessage(error: any, bridgeOrigin: string): string {
-  const message = error?.message || ''
-  if (error instanceof TypeError || /failed to fetch|networkerror/i.test(message)) {
-    return `Could not reach ${bridgeOrigin}. Confirm ${RECORDING_AGENT_COMMAND} is running; if this dashboard is served over HTTPS, the browser may also be blocking localhost private-network access.`
+  const message = error?.message || "";
+  if (
+    error instanceof TypeError ||
+    /failed to fetch|networkerror/i.test(message)
+  ) {
+    return `Could not reach ${bridgeOrigin}. Confirm ${RECORDING_AGENT_COMMAND} is running; if this dashboard is served over HTTPS, the browser may also be blocking localhost private-network access.`;
   }
-  return message || 'Failed to pair with the local recording bridge'
+  return message || "Failed to pair with the local recording bridge";
 }
 
-function bridgeVerificationErrorMessage(error: any, bridgeOrigin: string): string {
-  const message = error?.message || ''
-  if (error instanceof TypeError || /failed to fetch|networkerror/i.test(message)) {
-    return `APEX Load Recording Agent is not reachable at ${bridgeOrigin}. Download and run the agent command, then verify again. If this dashboard is served over HTTPS, the browser may also be blocking localhost private-network access.`
+function bridgeVerificationErrorMessage(
+  error: any,
+  bridgeOrigin: string,
+): string {
+  const message = error?.message || "";
+  if (
+    error instanceof TypeError ||
+    /failed to fetch|networkerror/i.test(message)
+  ) {
+    return `APEX Load Recording Agent is not reachable at ${bridgeOrigin}. Download and run the agent command, then verify again. If this dashboard is served over HTTPS, the browser may also be blocking localhost private-network access.`;
   }
-  return message || `APEX Load Recording Agent is not reachable at ${bridgeOrigin}`
+  return (
+    message || `APEX Load Recording Agent is not reachable at ${bridgeOrigin}`
+  );
 }
 
 function copyTextWithSelectionFallback(text: string): boolean {
-  if (typeof document === 'undefined' || !document.body) return false
-  const textarea = document.createElement('textarea')
-  textarea.value = text
-  textarea.setAttribute('readonly', '')
-  textarea.style.position = 'fixed'
-  textarea.style.left = '-9999px'
-  textarea.style.top = '0'
-  document.body.appendChild(textarea)
-  textarea.focus()
-  textarea.select()
+  if (typeof document === "undefined" || !document.body) return false;
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
   try {
-    return document.execCommand?.('copy') === true
+    return document.execCommand?.("copy") === true;
   } catch {
-    return false
+    return false;
   } finally {
-    document.body.removeChild(textarea)
+    document.body.removeChild(textarea);
   }
 }
 
 async function writeClipboardText(text: string): Promise<void> {
-  let clipboardError: unknown
+  let clipboardError: unknown;
   try {
-    const clipboard = typeof navigator !== 'undefined' ? navigator.clipboard : undefined
+    const clipboard =
+      typeof navigator !== "undefined" ? navigator.clipboard : undefined;
     if (clipboard?.writeText) {
-      await clipboard.writeText(text)
-      return
+      await clipboard.writeText(text);
+      return;
     }
   } catch (error) {
-    clipboardError = error
+    clipboardError = error;
   }
-  if (copyTextWithSelectionFallback(text)) return
+  if (copyTextWithSelectionFallback(text)) return;
   if (clipboardError instanceof Error) {
-    throw new Error('Clipboard is blocked in this browser. Select the terminal command and press Cmd+C or Ctrl+C.')
+    throw new Error(
+      "Clipboard is blocked in this browser. Select the terminal command and press Cmd+C or Ctrl+C.",
+    );
   }
-  throw new Error('Clipboard access is not available in this browser')
+  throw new Error("Clipboard access is not available in this browser");
 }
 
 // The desktop shell embeds the dashboard in a Wails WebView where window.open
-// escapes to the system browser, so the popup panel is web-only there. This is
-// deliberately origin-based (not bridge-based): it gates webview popup
-// behavior, not the presence of bound methods.
+// escapes to the system browser, so the popup panel is web-only there. Wails
+// production has a custom origin while `wails dev` uses Vite's HTTP origin;
+// isDesktopSurface covers both by also feature-detecting the native bridge.
 function isWailsShell(): boolean {
-  return typeof window !== 'undefined' && isWailsLocation(window.location)
+  return isDesktopSurface();
 }
 
 function browserRecorderPanelURL(sessionId: string): string {
-  const fragment = `/recorder-panel?session=${encodeURIComponent(sessionId)}`
-  if (typeof window === 'undefined') return `#${fragment}`
-  const url = new URL(window.location.href)
-  url.hash = fragment
-  return url.toString()
+  const fragment = `/recorder-panel?session=${encodeURIComponent(sessionId)}`;
+  if (typeof window === "undefined") return `#${fragment}`;
+  const url = new URL(window.location.href);
+  url.hash = fragment;
+  return url.toString();
+}
+
+function openBrowserRecorderPanelPopup(panelURL: string): void {
+  if (typeof window === "undefined") {
+    throw new Error("The browser recorder control panel is unavailable");
+  }
+  const target = new URL(panelURL, window.location.href);
+  if (
+    target.origin !== window.location.origin ||
+    target.username !== "" ||
+    target.password !== "" ||
+    !target.hash.startsWith("#/recorder-panel?session=")
+  ) {
+    throw new Error("The browser recorder returned an unsafe control panel URL");
+  }
+
+  const features = "width=440,height=760";
+  if (!hasDesktopApiCapability()) {
+    const popup = window.open(
+      target.toString(),
+      "apexload-browser-recorder",
+      `${features},noopener,noreferrer`,
+    );
+    if (!popup) {
+      throw new Error("Allow pop-ups to open the browser recorder control panel");
+    }
+    return;
+  }
+
+  // A noopener child does not inherit sessionStorage, which is where a
+  // system-browser desktop tab keeps its controller capability. Create a fresh
+  // same-origin blank child, reduce its copied storage to that one capability,
+  // sever the opener synchronously, and only then navigate to the panel SPA.
+  const capability = window.sessionStorage
+    .getItem(DESKTOP_CAPABILITY_SESSION_KEY)
+    ?.trim();
+  if (!capability) {
+    throw new Error(
+      "Reopen APEX Load from the desktop app before opening the recorder control panel",
+    );
+  }
+  const popup = window.open("", "_blank", features);
+  if (!popup) {
+    throw new Error("Allow pop-ups to open the browser recorder control panel");
+  }
+  try {
+    popup.opener = null;
+    popup.sessionStorage.clear();
+    popup.sessionStorage.setItem(
+      DESKTOP_CAPABILITY_SESSION_KEY,
+      capability,
+    );
+    popup.location.replace(target.toString());
+  } catch {
+    popup.close();
+    throw new Error(
+      "Unable to authorize the browser recorder control panel safely",
+    );
+  }
 }
 
 interface RecordingStudioProps {
-  activeProject?: Project | null
-  onImported?: (result: ImportedSaveResult) => void
-  onEdit?: (script: ScriptDefinition) => void
-  onClose?: () => void
+  activeProject?: Project | null;
+  onImported?: (result: ImportedSaveResult) => void;
+  onEdit?: (script: ScriptDefinition) => void;
+  onClose?: () => void;
 }
 
-export default function RecordingStudio({ activeProject, onImported, onEdit, onClose }: RecordingStudioProps) {
-  const api = useApi()
-  const [sessions, setSessions] = useState<RecordingSession[]>([])
-  const [activeSession, setActiveSession] = useState<RecordingSession | null>(null)
-  const [certificateFormatView, setCertificateFormatView] = useState<'crt' | 'pem'>('crt')
-  const [proxyPlatformView, setProxyPlatformView] = useState<'macos' | 'windows'>('macos')
-  const [proxyAddr, setProxyAddr] = useState('')
-  const [caCertPath, setCaCertPath] = useState('')
-  const [macOSNetworkService, setMacOSNetworkService] = useState(DEFAULT_MACOS_NETWORK_SERVICE)
-  const [sessionName, setSessionName] = useState('')
-  const [includeHosts, setIncludeHosts] = useState('')
-  const [excludeHosts, setExcludeHosts] = useState('')
-  const [captureCookies, setCaptureCookies] = useState(false)
-  const [feedback, setFeedback] = useState('')
-  const [feedbackType, setFeedbackType] = useState<'success' | 'error'>('success')
-  const [selectedSession, setSelectedSession] = useState<RecordingSession | null>(null)
-  const [selectedRequest, setSelectedRequest] = useState<RecordedRequest | null>(null)
+export default function RecordingStudio({
+  activeProject,
+  onImported,
+  onEdit,
+  onClose,
+}: RecordingStudioProps) {
+  const api = useApi();
+  const [sessions, setSessions] = useState<RecordingSession[]>([]);
+  const [activeSession, setActiveSession] = useState<RecordingSession | null>(
+    null,
+  );
+  const [certificateFormatView, setCertificateFormatView] = useState<
+    "crt" | "pem"
+  >("crt");
+  const [proxyPlatformView, setProxyPlatformView] = useState<
+    "macos" | "windows"
+  >("macos");
+  const [proxyAddr, setProxyAddr] = useState("");
+  const [proxyAuthToken, setProxyAuthToken] = useState("");
+  const [caCertPath, setCaCertPath] = useState("");
+  const [macOSNetworkService, setMacOSNetworkService] = useState(
+    DEFAULT_MACOS_NETWORK_SERVICE,
+  );
+  const [sessionName, setSessionName] = useState("");
+  const [includeHosts, setIncludeHosts] = useState("");
+  const [excludeHosts, setExcludeHosts] = useState("");
+  const [captureCookies, setCaptureCookies] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const [feedbackType, setFeedbackType] = useState<"success" | "error">(
+    "success",
+  );
+  const [selectedSession, setSelectedSession] =
+    useState<RecordingSession | null>(null);
+  const [selectedRequest, setSelectedRequest] =
+    useState<RecordedRequest | null>(null);
   const [requestDraft, setRequestDraft] = useState({
-    step_name: '',
-    transaction_name: '',
-    note: '',
+    step_name: "",
+    transaction_name: "",
+    note: "",
     think_time_ms: 0,
     excluded: false,
-  })
-  const [showSetup, setShowSetup] = useState(false)
-  const [parameterizeInputs, setParameterizeInputs] = useState(false)
-  const [browserAvailability, setBrowserAvailability] = useState<BrowserRecorderAvailability | null>(null)
-  const [browserSessions, setBrowserSessions] = useState<BrowserRecorderSession[]>([])
-  const [browserPanelSessionId, setBrowserPanelSessionId] = useState<string | null>(null)
-  const [browserName, setBrowserName] = useState('')
-  const [browserStartScheme, setBrowserStartScheme] = useState<HttpURLScheme>(DEFAULT_HTTP_URL_SCHEME)
-  const [browserStartAddress, setBrowserStartAddress] = useState('')
-  const [browserCaptureHAR, setBrowserCaptureHAR] = useState(true)
-  const [browserDevice, setBrowserDevice] = useState('')
-  const [browserDevices, setBrowserDevices] = useState<{ name: string; platform: string }[]>([])
-  const [browserScreenshots, setBrowserScreenshots] = useState(false)
-  const [browserWSPayloads, setBrowserWSPayloads] = useState(false)
-  const [browserStorageState, setBrowserStorageState] = useState('')
-  const [browserExcludeHosts, setBrowserExcludeHosts] = useState('')
-  const [browserSidebar, setBrowserSidebar] = useState(true)
-  const [browserOptionsOpen, setBrowserOptionsOpen] = useState(false)
-  const [installState, setInstallState] = useState<{ status: string; error?: string } | null>(null)
-  const [bridgeOrigin, setBridgeOrigin] = useState(DEFAULT_BRIDGE_ORIGIN)
-  const [bridgeToken, setBridgeToken] = useState(initialBridgePairingToken)
-  const [bridgePairing, setBridgePairing] = useState(false)
-  const [bridgeVerifying, setBridgeVerifying] = useState(false)
-  const [bridgeStatus, setBridgeStatus] = useState('')
-  const [bridgeStatusTone, setBridgeStatusTone] = useState<'info' | 'success' | 'error'>('info')
-  const [recordingAgentPlatform, setRecordingAgentPlatform] = useState('')
-  const [recordingAgentPlatformDetecting, setRecordingAgentPlatformDetecting] = useState(true)
-  const [recordingAgentChecksum, setRecordingAgentChecksum] = useState<RecordingAgentChecksum | null>(null)
-  const [recordingAgentChecksumStatus, setRecordingAgentChecksumStatus] = useState('')
-  const convertTask = useAsyncTask<RecorderImportResult>()
-  const salesforceTask = useAsyncTask<SalesforceImportResult>()
-  const convertedCredentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
-  const salesforceCredentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
-  const convertedReviewGenerationRef = useRef(0)
-  const salesforceReviewGenerationRef = useRef(0)
-  const [convertedReviewGeneration, setConvertedReviewGeneration] = useState(0)
-  const [salesforceReviewGeneration, setSalesforceReviewGeneration] = useState(0)
+  });
+  const [showSetup, setShowSetup] = useState(false);
+  const [parameterizeInputs, setParameterizeInputs] = useState(false);
+  const [browserAvailability, setBrowserAvailability] =
+    useState<BrowserRecorderAvailability | null>(null);
+  const [browserSessions, setBrowserSessions] = useState<
+    BrowserRecorderSession[]
+  >([]);
+  const [browserPanelSessionId, setBrowserPanelSessionId] = useState<
+    string | null
+  >(null);
+  const [browserName, setBrowserName] = useState("");
+  const [browserStartScheme, setBrowserStartScheme] = useState<HttpURLScheme>(
+    DEFAULT_HTTP_URL_SCHEME,
+  );
+  const [browserStartAddress, setBrowserStartAddress] = useState("");
+  const [browserCaptureHAR, setBrowserCaptureHAR] = useState(true);
+  const [browserDevice, setBrowserDevice] = useState("");
+  const [browserDevices, setBrowserDevices] = useState<
+    { name: string; platform: string }[]
+  >([]);
+  const [browserScreenshots, setBrowserScreenshots] = useState(false);
+  const [browserWSPayloads, setBrowserWSPayloads] = useState(false);
+  const [browserStorageState, setBrowserStorageState] = useState("");
+  const [browserExcludeHosts, setBrowserExcludeHosts] = useState("");
+  const [browserSidebar, setBrowserSidebar] = useState(true);
+  const [browserOptionsOpen, setBrowserOptionsOpen] = useState(false);
+  const [installState, setInstallState] = useState<{
+    status: string;
+    error?: string;
+  } | null>(null);
+  const [bridgeOrigin, setBridgeOrigin] = useState(DEFAULT_BRIDGE_ORIGIN);
+  const [bridgeToken, setBridgeToken] = useState(initialBridgePairingToken);
+  const [bridgePairing, setBridgePairing] = useState(false);
+  const [bridgeVerifying, setBridgeVerifying] = useState(false);
+  const [bridgeStatus, setBridgeStatus] = useState("");
+  const [bridgeStatusTone, setBridgeStatusTone] = useState<
+    "info" | "success" | "error"
+  >("info");
+  const [recordingAgentPlatform, setRecordingAgentPlatform] = useState("");
+  const [recordingAgentPlatformDetecting, setRecordingAgentPlatformDetecting] =
+    useState(true);
+  const [recordingAgentChecksum, setRecordingAgentChecksum] =
+    useState<RecordingAgentChecksum | null>(null);
+  const [recordingAgentChecksumStatus, setRecordingAgentChecksumStatus] =
+    useState("");
+  const convertTask = useAsyncTask<RecorderImportResult>();
+  const salesforceTask = useAsyncTask<SalesforceImportResult>();
+  const convertedCredentialReviewRef = useRef<SecretBindingReviewHandle | null>(
+    null,
+  );
+  const salesforceCredentialReviewRef =
+    useRef<SecretBindingReviewHandle | null>(null);
+  const convertedReviewGenerationRef = useRef(0);
+  const salesforceReviewGenerationRef = useRef(0);
+  const [convertedReviewGeneration, setConvertedReviewGeneration] = useState(0);
+  const [salesforceReviewGeneration, setSalesforceReviewGeneration] =
+    useState(0);
   const advanceConvertedReviewGeneration = useCallback(() => {
-    const next = convertedReviewGenerationRef.current + 1
-    convertedReviewGenerationRef.current = next
-    setConvertedReviewGeneration(next)
-    return next
-  }, [])
+    const next = convertedReviewGenerationRef.current + 1;
+    convertedReviewGenerationRef.current = next;
+    setConvertedReviewGeneration(next);
+    return next;
+  }, []);
   const advanceSalesforceReviewGeneration = useCallback(() => {
-    const next = salesforceReviewGenerationRef.current + 1
-    salesforceReviewGenerationRef.current = next
-    setSalesforceReviewGeneration(next)
-    return next
-  }, [])
-  const convertedPreparedScriptRef = useRef<ScriptDefinition | null>(null)
-  const salesforcePreparedScriptRef = useRef<ScriptDefinition | null>(null)
+    const next = salesforceReviewGenerationRef.current + 1;
+    salesforceReviewGenerationRef.current = next;
+    setSalesforceReviewGeneration(next);
+    return next;
+  }, []);
+  const convertedPreparedScriptRef = useRef<ScriptDefinition | null>(null);
+  const salesforcePreparedScriptRef = useRef<ScriptDefinition | null>(null);
   // A conversion can be launched directly from any session card without
   // selecting that session in the request-detail panel. Keep provenance with
   // the review result instead of deriving it later from selectedSession.
-  const convertedSourceRecordingSessionIDRef = useRef<string | null>(null)
-  const salesforceSourceRecordingSessionIDRef = useRef<string | null>(null)
-  const [convertedPreparedSecrets, setConvertedPreparedSecrets] = useState<PreparedSecretBindings | null>(null)
-  const [salesforcePreparedSecrets, setSalesforcePreparedSecrets] = useState<PreparedSecretBindings | null>(null)
-  const [convertedParameterizationApplying, setConvertedParameterizationApplying] = useState(false)
-  const [salesforceParameterizationApplying, setSalesforceParameterizationApplying] = useState(false)
-  const [convertedCredentialActionInProgress, setConvertedCredentialActionInProgress] = useState(false)
-  const [salesforceCredentialActionInProgress, setSalesforceCredentialActionInProgress] = useState(false)
-  const convertedSaveInFlightRef = useRef(false)
-  const salesforceSaveInFlightRef = useRef(false)
-  const [convertedSaveInProgress, setConvertedSaveInProgress] = useState(false)
-  const [salesforceSaveInProgress, setSalesforceSaveInProgress] = useState(false)
-  const resetConvertTask = convertTask.reset
-  const resetSalesforceTask = salesforceTask.reset
-  const refreshInFlightRef = useRef<{ projectId?: string; request: Promise<void> } | null>(null)
-  const refreshScopeRef = useRef({ projectId: activeProject?.id, generation: 0 })
-  const feedbackTimerRef = useRef<number | null>(null)
+  const convertedSourceRecordingSessionIDRef = useRef<string | null>(null);
+  const salesforceSourceRecordingSessionIDRef = useRef<string | null>(null);
+  const [convertedPreparedSecrets, setConvertedPreparedSecrets] =
+    useState<PreparedSecretBindings | null>(null);
+  const [salesforcePreparedSecrets, setSalesforcePreparedSecrets] =
+    useState<PreparedSecretBindings | null>(null);
+  const [
+    convertedParameterizationApplying,
+    setConvertedParameterizationApplying,
+  ] = useState(false);
+  const [
+    salesforceParameterizationApplying,
+    setSalesforceParameterizationApplying,
+  ] = useState(false);
+  const [
+    convertedCredentialActionInProgress,
+    setConvertedCredentialActionInProgress,
+  ] = useState(false);
+  const [
+    salesforceCredentialActionInProgress,
+    setSalesforceCredentialActionInProgress,
+  ] = useState(false);
+  const convertedSaveInFlightRef = useRef(false);
+  const salesforceSaveInFlightRef = useRef(false);
+  const [convertedSaveInProgress, setConvertedSaveInProgress] = useState(false);
+  const [salesforceSaveInProgress, setSalesforceSaveInProgress] =
+    useState(false);
+  const resetConvertTask = convertTask.reset;
+  const resetSalesforceTask = salesforceTask.reset;
+  const refreshInFlightRef = useRef<{
+    projectId?: string;
+    request: Promise<void>;
+  } | null>(null);
+  const refreshScopeRef = useRef({
+    projectId: activeProject?.id,
+    generation: 0,
+  });
+  const feedbackTimerRef = useRef<number | null>(null);
 
   if (refreshScopeRef.current.projectId !== activeProject?.id) {
     refreshScopeRef.current = {
       projectId: activeProject?.id,
       generation: refreshScopeRef.current.generation + 1,
-    }
+    };
   }
-  const renderedProjectScope = refreshScopeRef.current
-  const isCurrentProject = () => refreshScopeRef.current === renderedProjectScope
-  const activeSessionRef = useRef<RecordingSession | null>(null)
+  const renderedProjectScope = refreshScopeRef.current;
+  const isCurrentProject = () =>
+    refreshScopeRef.current === renderedProjectScope;
+  const activeSessionRef = useRef<RecordingSession | null>(null);
 
-  const proxyPort = recorderProxyPort(proxyAddr)
-  const proxyHost = recorderProxyHost(proxyAddr, currentDashboardOrigin())
-  const proxyHostIsLocal = recorderProxyHostIsLocal(proxyHost)
-
-  useEffect(() => {
-    activeSessionRef.current = activeSession
-  }, [activeSession])
+  const proxyPort = recorderProxyPort(proxyAddr);
+  const proxyHost = recorderProxyHost(proxyAddr, currentDashboardOrigin());
+  const proxyHostIsLocal = recorderProxyHostIsLocal(proxyHost);
 
   useEffect(() => {
-    let cancelled = false
-    setRecordingAgentPlatformDetecting(true)
-    detectPlatformFromNavigator().then(platform => {
-      if (cancelled) return
-      setRecordingAgentPlatform(platform || '')
-      setRecordingAgentPlatformDetecting(false)
-    }).catch(() => {
-      if (cancelled) return
-      setRecordingAgentPlatform('')
-      setRecordingAgentPlatformDetecting(false)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
+    activeSessionRef.current = activeSession;
+  }, [activeSession]);
 
   useEffect(() => {
-    const agentDownload = recordingAgentDownloadConfig()
-    const shouldShowBridgeDownload = browserAvailability?.available === false || !!api.browserRecorderBridge
-    if (!agentDownload.managed || !shouldShowBridgeDownload || !recordingAgentPlatform) {
-      setRecordingAgentChecksum(null)
-      setRecordingAgentChecksumStatus('')
-      return
-    }
-
-    let cancelled = false
-    setRecordingAgentChecksum(null)
-    setRecordingAgentChecksumStatus('Checking SHA-256...')
-    apiFetch(`/downloads/recording-agent/latest/checksum?platform=${encodeURIComponent(recordingAgentPlatform)}`)
-      .then(async response => {
-        if (cancelled) return
-        if (!response.ok) {
-          setRecordingAgentChecksumStatus('SHA-256 unavailable until this platform package is staged.')
-          return
-        }
-        const payload = await response.json() as RecordingAgentChecksum
-        if (cancelled) return
-        setRecordingAgentChecksum(payload)
-        setRecordingAgentChecksumStatus('')
+    let cancelled = false;
+    setRecordingAgentPlatformDetecting(true);
+    detectPlatformFromNavigator()
+      .then((platform) => {
+        if (cancelled) return;
+        setRecordingAgentPlatform(platform || "");
+        setRecordingAgentPlatformDetecting(false);
       })
       .catch(() => {
-        if (!cancelled) setRecordingAgentChecksumStatus('SHA-256 unavailable until this platform package is staged.')
-      })
+        if (cancelled) return;
+        setRecordingAgentPlatform("");
+        setRecordingAgentPlatformDetecting(false);
+      });
     return () => {
-      cancelled = true
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const agentDownload = recordingAgentDownloadConfig();
+    const shouldShowBridgeDownload =
+      browserAvailability?.available === false || !!api.browserRecorderBridge;
+    if (
+      !agentDownload.managed ||
+      !shouldShowBridgeDownload ||
+      !recordingAgentPlatform
+    ) {
+      setRecordingAgentChecksum(null);
+      setRecordingAgentChecksumStatus("");
+      return;
     }
-  }, [api.browserRecorderBridge, browserAvailability?.available, recordingAgentPlatform])
+
+    let cancelled = false;
+    setRecordingAgentChecksum(null);
+    setRecordingAgentChecksumStatus("Checking SHA-256...");
+    apiFetch(
+      `/downloads/recording-agent/latest/checksum?platform=${encodeURIComponent(recordingAgentPlatform)}`,
+    )
+      .then(async (response) => {
+        if (cancelled) return;
+        if (!response.ok) {
+          setRecordingAgentChecksumStatus(
+            "SHA-256 unavailable until this platform package is staged.",
+          );
+          return;
+        }
+        const payload = (await response.json()) as RecordingAgentChecksum;
+        if (cancelled) return;
+        setRecordingAgentChecksum(payload);
+        setRecordingAgentChecksumStatus("");
+      })
+      .catch(() => {
+        if (!cancelled)
+          setRecordingAgentChecksumStatus(
+            "SHA-256 unavailable until this platform package is staged.",
+          );
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    api.browserRecorderBridge,
+    browserAvailability?.available,
+    recordingAgentPlatform,
+  ]);
 
   const handleCopyCAPath = async () => {
-    if (!caCertPath) return
+    if (!caCertPath) return;
     try {
       if (!navigator.clipboard?.writeText) {
-        throw new Error('Clipboard access is not available in this browser')
+        throw new Error("Clipboard access is not available in this browser");
       }
-      await navigator.clipboard.writeText(caCertPath)
-      showFeedback('CA certificate path copied')
+      await navigator.clipboard.writeText(caCertPath);
+      showFeedback("CA certificate path copied");
     } catch (e: any) {
-      showFeedback(e.message || 'Failed to copy CA certificate path', 'error')
+      showFeedback(e.message || "Failed to copy CA certificate path", "error");
     }
-  }
+  };
 
-  const handleDownloadCA = async (format: 'crt' | 'pem' = 'crt') => {
+  const handleDownloadCA = async (format: "crt" | "pem" = "crt") => {
     try {
-      const url = format === 'pem' ? '/recorder/ca.pem?format=pem' : '/recorder/ca.pem'
-      const res = await apiFetch(url)
-      if (!res.ok) throw new Error('Failed to download CA certificate')
-      const blob = await res.blob()
-      const filename = format === 'pem' ? 'apexload-ca.pem' : 'apexload-ca.crt'
-      downloadBlob(blob, filename)
+      const url =
+        format === "pem" ? "/recorder/ca.pem?format=pem" : "/recorder/ca.pem";
+      const res = await apiFetch(url);
+      if (!res.ok) throw new Error("Failed to download CA certificate");
+      const blob = await res.blob();
+      const filename = format === "pem" ? "apexload-ca.pem" : "apexload-ca.crt";
+      await downloadBlob(blob, filename);
     } catch (e: any) {
-      showFeedback(e.message || 'Failed to download CA certificate', 'error')
+      showFeedback(e.message || "Failed to download CA certificate", "error");
     }
-  }
+  };
 
-  const handleDownloadRecordingAgent = async (event: MouseEvent<HTMLAnchorElement>, managedDownload: boolean) => {
-    if (!managedDownload) return
-    event.preventDefault()
+  const handleDownloadRecordingAgent = async (
+    event: MouseEvent<HTMLAnchorElement>,
+    managedDownload: boolean,
+  ) => {
+    if (!managedDownload) return;
+    event.preventDefault();
     if (!recordingAgentPlatform) {
-      showFeedback('Choose a Recording Agent platform before downloading.', 'error')
-      return
+      showFeedback(
+        "Choose a Recording Agent platform before downloading.",
+        "error",
+      );
+      return;
     }
+    setFeedback("");
     try {
-      const res = await apiFetch(`/downloads/recording-agent/latest?platform=${encodeURIComponent(recordingAgentPlatform)}`)
-      const contentType = (res.headers.get('content-type') || '').toLowerCase()
-      if (!res.ok) throw new Error('Recording Agent package is not available from this controller')
-      if (contentType.includes('text/html')) {
-        throw new Error('Recording Agent download endpoint returned the dashboard instead of an agent archive. Restart the controller with the latest build and stage the agent packages.')
+      const resourcePath = `${DEFAULT_RECORDING_AGENT_DOWNLOAD_PATH}?platform=${encodeURIComponent(recordingAgentPlatform)}`;
+      const filename =
+        recordingAgentChecksum?.filename?.trim() ||
+        "apexload-recording-agent.tar.gz";
+      const nativeOutcome = await saveApiResourceViaBridge(
+        resourcePath,
+        filename,
+      );
+      if (nativeOutcome === "saved") {
+        const sum = recordingAgentChecksum?.sha256;
+        showFeedback(
+          sum
+            ? `APEX Load Recording Agent saved (${platformLabel(recordingAgentPlatform)}). SHA-256: ${sum}`
+            : `APEX Load Recording Agent saved (${platformLabel(recordingAgentPlatform)})`,
+        );
+        return;
       }
-      const blob = await res.blob()
-      downloadBlob(blob, downloadFilenameFromDisposition(res.headers.get('content-disposition'), 'apexload-recording-agent.tar.gz'))
-      const sum = res.headers.get('x-content-sha256') || recordingAgentChecksum?.sha256
-      showFeedback(sum
-        ? `APEX Load Recording Agent download started (${platformLabel(recordingAgentPlatform)}). SHA-256: ${sum}`
-        : `APEX Load Recording Agent download started (${platformLabel(recordingAgentPlatform)})`)
+      if (nativeOutcome === "cancelled") return;
+      if (!isDesktopSurface() && hasDesktopApiCapability()) {
+        await startDesktopBrowserDownload(resourcePath, filename);
+        const sum = recordingAgentChecksum?.sha256;
+        showFeedback(
+          sum
+            ? `APEX Load Recording Agent download request opened (${platformLabel(recordingAgentPlatform)}). SHA-256: ${sum}`
+            : `APEX Load Recording Agent download request opened (${platformLabel(recordingAgentPlatform)}); any server error will appear in the browser.`,
+        );
+        return;
+      }
+      const res = await apiFetch(
+        `/downloads/recording-agent/latest?platform=${encodeURIComponent(recordingAgentPlatform)}`,
+      );
+      const contentType = (res.headers.get("content-type") || "").toLowerCase();
+      if (!res.ok)
+        throw new Error(
+          "Recording Agent package is not available from this controller",
+        );
+      if (contentType.includes("text/html")) {
+        throw new Error(
+          "Recording Agent download endpoint returned the dashboard instead of an agent archive. Restart the controller with the latest build and stage the agent packages.",
+        );
+      }
+      const blob = await res.blob();
+      const outcome = await downloadBlob(
+        blob,
+        downloadFilenameFromDisposition(
+          res.headers.get("content-disposition"),
+          filename,
+        ),
+      );
+      if (outcome === "cancelled") return;
+      const sum =
+        res.headers.get("x-content-sha256") || recordingAgentChecksum?.sha256;
+      showFeedback(
+        sum
+          ? `APEX Load Recording Agent download started (${platformLabel(recordingAgentPlatform)}). SHA-256: ${sum}`
+          : `APEX Load Recording Agent download started (${platformLabel(recordingAgentPlatform)})`,
+      );
     } catch (e: any) {
-      showFeedback(e.message || 'Failed to download the APEX Load Recording Agent', 'error')
+      showFeedback(
+        e.message || "Failed to download the APEX Load Recording Agent",
+        "error",
+      );
     }
-  }
+  };
 
-  const copyProxyCommand = async (command: string, successMessage: string, failureMessage: string) => {
+  const copyProxyCommand = async (
+    command: string,
+    successMessage: string,
+    failureMessage: string,
+  ) => {
     try {
-      await writeClipboardText(command)
-      showFeedback(successMessage)
+      await writeClipboardText(command);
+      showFeedback(successMessage);
     } catch (e: any) {
-      showFeedback(e.message || failureMessage, 'error')
+      showFeedback(e.message || failureMessage, "error");
     }
-  }
+  };
 
   const ensureBridgeToken = (): string => {
-    if (bridgeToken) return bridgeToken
+    if (bridgeToken) return bridgeToken;
     try {
-      const token = generateBridgePairingToken()
-      setBridgeToken(token)
-      return token
+      const token = generateBridgePairingToken();
+      setBridgeToken(token);
+      return token;
     } catch (e: any) {
-      showFeedback(e.message || 'Failed to generate bridge pairing token', 'error')
-      return ''
+      showFeedback(
+        e.message || "Failed to generate bridge pairing token",
+        "error",
+      );
+      return "";
     }
-  }
+  };
 
   const handleCopyBridgeCommand = async () => {
-    ensureBridgeToken()
+    ensureBridgeToken();
     await copyProxyCommand(
       bridgeRecordAgentCommand(bridgeOrigin),
-      'Terminal command copied. Paste it into a local terminal, then paste the pairing token at the prompt.',
-      'Failed to copy local bridge command',
-    )
-  }
+      "Terminal command copied. Paste it into a local terminal, then paste the pairing token at the prompt.",
+      "Failed to copy local bridge command",
+    );
+  };
 
   const handleCopyBridgeToken = async () => {
-    const token = ensureBridgeToken()
-    if (!token) return
+    const token = ensureBridgeToken();
+    if (!token) return;
     await copyProxyCommand(
       token,
-      'Pairing token copied. Paste it into the local agent prompt.',
-      'Failed to copy pairing token',
-    )
-  }
+      "Pairing token copied. Paste it into the local agent prompt.",
+      "Failed to copy pairing token",
+    );
+  };
 
   const handleRegenerateBridgeToken = () => {
     try {
-      setBridgeToken(generateBridgePairingToken())
-      setBridgeStatus('')
-      setBridgeStatusTone('info')
-      showFeedback('New local bridge pairing token generated')
+      setBridgeToken(generateBridgePairingToken());
+      setBridgeStatus("");
+      setBridgeStatusTone("info");
+      showFeedback("New local bridge pairing token generated");
     } catch (e: any) {
-      showFeedback(e.message || 'Failed to generate bridge pairing token', 'error')
+      showFeedback(
+        e.message || "Failed to generate bridge pairing token",
+        "error",
+      );
     }
-  }
+  };
 
-  const handleCopyMacOSProxyCommand = async (mode: 'start' | 'restore') => {
-    const command = mode === 'start'
-      ? buildMacOSStartProxyCommand(proxyPort, macOSNetworkService, proxyHost)
-      : buildMacOSRestoreProxyCommand(macOSNetworkService)
+  const handleCopyMacOSProxyCommand = async (mode: "start" | "restore") => {
+    const command =
+      mode === "start"
+        ? buildMacOSStartProxyCommand(
+            proxyPort,
+            macOSNetworkService,
+            proxyHost,
+            proxyAuthToken,
+          )
+        : buildMacOSRestoreProxyCommand(
+            macOSNetworkService,
+            proxyHost,
+            proxyPort,
+            proxyAuthToken,
+          );
     await copyProxyCommand(
       command,
-      mode === 'start' ? 'macOS start proxy command copied' : 'macOS restore proxy command copied',
-      'Failed to copy macOS proxy command',
-    )
-  }
+      mode === "start"
+        ? "macOS start proxy command copied"
+        : "macOS restore proxy command copied",
+      "Failed to copy macOS proxy command",
+    );
+  };
 
-  const handleCopyWindowsProxyCommand = async (mode: 'start' | 'restore') => {
-    const command = mode === 'start'
-      ? buildWindowsStartProxyCommand(proxyPort, proxyHost)
-      : buildWindowsRestoreProxyCommand()
+  const handleCopyWindowsProxyCommand = async (mode: "start" | "restore") => {
+    const command =
+      mode === "start"
+        ? buildWindowsStartProxyCommand(proxyPort, proxyHost)
+        : buildWindowsRestoreProxyCommand(proxyPort, proxyHost);
     await copyProxyCommand(
       command,
-      mode === 'start' ? 'Windows start proxy command copied' : 'Windows restore proxy command copied',
-      'Failed to copy Windows proxy command',
-    )
-  }
+      mode === "start"
+        ? "Windows start proxy command copied"
+        : "Windows restore proxy command copied",
+      "Failed to copy Windows proxy command",
+    );
+  };
 
-  const handleOpenMacOSNetworkSettings = () => {
-    window.location.href = 'x-apple.systempreferences:com.apple.Network-Settings.extension'
-  }
+  const handleOpenMacOSNetworkSettings = async () => {
+    const openSystemSettings = getDesktopBridge()?.OpenSystemSettings;
+    if (!openSystemSettings) {
+      showFeedback(
+        "Open System Settings > Network manually on this device.",
+        "error",
+      );
+      return;
+    }
+    try {
+      await openSystemSettings("network");
+    } catch (e: any) {
+      showFeedback(
+        e.message || "Failed to open macOS Network settings.",
+        "error",
+      );
+    }
+  };
 
-  const handleOpenWindowsProxySettings = () => {
-    window.location.href = 'ms-settings:network-proxy'
-  }
+  const handleOpenWindowsProxySettings = async () => {
+    const openSystemSettings = getDesktopBridge()?.OpenSystemSettings;
+    if (!openSystemSettings) {
+      showFeedback(
+        "Open Windows Settings > Network & internet > Proxy manually on this device.",
+        "error",
+      );
+      return;
+    }
+    try {
+      await openSystemSettings("proxy");
+    } catch (e: any) {
+      showFeedback(
+        e.message || "Failed to open Windows Proxy settings.",
+        "error",
+      );
+    }
+  };
 
-  const showFeedback = (msg: string, type: 'success' | 'error' = 'success') => {
-    setFeedback(msg)
-    setFeedbackType(type)
-    if (feedbackTimerRef.current !== null) window.clearTimeout(feedbackTimerRef.current)
+  const showFeedback = (msg: string, type: "success" | "error" = "success") => {
+    setFeedback(msg);
+    setFeedbackType(type);
+    if (feedbackTimerRef.current !== null)
+      window.clearTimeout(feedbackTimerRef.current);
     feedbackTimerRef.current = window.setTimeout(() => {
-      feedbackTimerRef.current = null
-      setFeedback('')
-    }, 4000)
-  }
+      feedbackTimerRef.current = null;
+      setFeedback("");
+    }, 4000);
+  };
 
   const refresh = useCallback(async () => {
-    const projectId = activeProject?.id
-    const inFlight = refreshInFlightRef.current
-    if (inFlight && inFlight.projectId === projectId) return inFlight.request
-    if (typeof document !== 'undefined' && document.hidden) return
-    const scope = { ...refreshScopeRef.current }
-    const isCurrentScope = () => refreshScopeRef.current.projectId === scope.projectId
-      && refreshScopeRef.current.generation === scope.generation
+    const projectId = activeProject?.id;
+    const inFlight = refreshInFlightRef.current;
+    if (inFlight && inFlight.projectId === projectId) return inFlight.request;
+    if (typeof document !== "undefined" && document.hidden) return;
+    const scope = { ...refreshScopeRef.current };
+    const isCurrentScope = () =>
+      refreshScopeRef.current.projectId === scope.projectId &&
+      refreshScopeRef.current.generation === scope.generation;
     const request = (async () => {
       try {
         const [listRes, statusRes, browserListRes] = await Promise.all([
           api.listRecordings(projectId),
           api.getRecorderStatus(),
-          api.listBrowserRecordings(projectId).catch(() => ({ sessions: [], count: 0 })),
-        ])
-        if (!isCurrentScope()) return
-        const recorderStatus = statusRes as RecorderStatus
-      setSessions(listRes.sessions || [])
-      setBrowserSessions(browserListRes.sessions || [])
-      setProxyAddr(recorderStatus.proxy_addr || '')
-      setCaCertPath(recorderStatus.ca_cert_path || '')
-      let liveBrowser = recorderStatus.browser?.active
-      if (api.browserRecorderBridge) {
-        try {
-          const bridgeRes = await api.getBrowserRecorderBridgeStatus()
-          if (!isCurrentScope()) return
-          if (bridgeRes?.bridge) {
-            setBrowserAvailability(bridgeRes.bridge.availability)
-            setInstallState(null)
-            liveBrowser = bridgeRes.bridge.active || null
-            setBridgeStatus(`Connected to ${api.browserRecorderBridge.origin}`)
+          api
+            .listBrowserRecordings(projectId)
+            .catch(() => ({ sessions: [], count: 0 })),
+        ]);
+        if (!isCurrentScope()) return;
+        const recorderStatus = statusRes as RecorderStatus;
+        setSessions(listRes.sessions || []);
+        setBrowserSessions(browserListRes.sessions || []);
+        setProxyAddr(recorderStatus.proxy_addr || "");
+        setProxyAuthToken(recorderStatus.proxy_auth_token || "");
+        setCaCertPath(recorderStatus.ca_cert_path || "");
+        let liveBrowser = recorderStatus.browser?.active;
+        if (api.browserRecorderBridge) {
+          try {
+            const bridgeRes = await api.getBrowserRecorderBridgeStatus();
+            if (!isCurrentScope()) return;
+            if (bridgeRes?.bridge) {
+              setBrowserAvailability(bridgeRes.bridge.availability);
+              setInstallState(null);
+              liveBrowser = bridgeRes.bridge.active || null;
+              setBridgeStatus(
+                `Connected to ${api.browserRecorderBridge.origin}`,
+              );
+            }
+          } catch (e: any) {
+            if (!isCurrentScope()) return;
+            setBrowserAvailability({
+              available: false,
+              reason: bridgePairingErrorMessage(
+                e,
+                api.browserRecorderBridge.origin,
+              ),
+            });
+            setBridgeStatus("Local recording bridge is not responding");
           }
-        } catch (e: any) {
-          if (!isCurrentScope()) return
-          setBrowserAvailability({ available: false, reason: bridgePairingErrorMessage(e, api.browserRecorderBridge.origin) })
-          setBridgeStatus('Local recording bridge is not responding')
+        } else if (recorderStatus.browser) {
+          setBrowserAvailability(recorderStatus.browser.availability);
+          setInstallState(recorderStatus.browser.install ?? null);
+        } else {
+          setBrowserAvailability(MISSING_BROWSER_RECORDER_CAPABILITY);
+          setInstallState(null);
         }
-      } else if (recorderStatus.browser) {
-        setBrowserAvailability(recorderStatus.browser.availability)
-        setInstallState(recorderStatus.browser.install ?? null)
-      } else {
-        setBrowserAvailability(MISSING_BROWSER_RECORDER_CAPABILITY)
-        setInstallState(null)
+        if (liveBrowser?.id) {
+          // Adopt a recording started elsewhere (popup, another tab, reload).
+          setBrowserPanelSessionId((current) => current ?? liveBrowser.id);
+        }
+        if (recorderStatus.active) {
+          // Always fetch the FULL active session, not an incremental since=last_seq
+          // window: its already-captured requests mutate in place — WebSocket frames
+          // are appended to an existing request (its Seq is unchanged) and
+          // exclusion/think-time edits change existing seqs — and snapshotSince
+          // filters those out, so an incremental fetch would leave the UI copy
+          // permanently stale until the session is re-selected.
+          const full = await api.getRecording(recorderStatus.active.id, {
+            includeRequests: true,
+          });
+          if (!isCurrentScope()) return;
+          setActiveSession((prev) => mergeRecordingSession(prev, full));
+        } else {
+          setActiveSession(null);
+        }
+      } catch {
+        /* API not ready */
       }
-      if (liveBrowser?.id) {
-        // Adopt a recording started elsewhere (popup, another tab, reload).
-        setBrowserPanelSessionId(current => current ?? liveBrowser.id)
-      }
-      if (recorderStatus.active) {
-        // Always fetch the FULL active session, not an incremental since=last_seq
-        // window: its already-captured requests mutate in place — WebSocket frames
-        // are appended to an existing request (its Seq is unchanged) and
-        // exclusion/think-time edits change existing seqs — and snapshotSince
-        // filters those out, so an incremental fetch would leave the UI copy
-        // permanently stale until the session is re-selected.
-        const full = await api.getRecording(recorderStatus.active.id, { includeRequests: true })
-        if (!isCurrentScope()) return
-        setActiveSession(prev => mergeRecordingSession(prev, full))
-      } else {
-        setActiveSession(null)
-      }
-      } catch { /* API not ready */ }
-    })()
-    refreshInFlightRef.current = { projectId, request }
+    })();
+    refreshInFlightRef.current = { projectId, request };
     try {
-      await request
+      await request;
     } finally {
-      if (refreshInFlightRef.current?.request === request) refreshInFlightRef.current = null
+      if (refreshInFlightRef.current?.request === request)
+        refreshInFlightRef.current = null;
     }
-  }, [api, activeProject?.id])
+  }, [api, activeProject?.id]);
 
   useLayoutEffect(() => {
-    void convertedCredentialReviewRef.current?.discardSourceSession()
-    void salesforceCredentialReviewRef.current?.discardSourceSession()
+    void convertedCredentialReviewRef.current?.discardSourceSession();
+    void salesforceCredentialReviewRef.current?.discardSourceSession();
     if (feedbackTimerRef.current !== null) {
-      window.clearTimeout(feedbackTimerRef.current)
-      feedbackTimerRef.current = null
+      window.clearTimeout(feedbackTimerRef.current);
+      feedbackTimerRef.current = null;
     }
-    setSessions([])
-    setActiveSession(null)
-    setSelectedSession(null)
-    setSelectedRequest(null)
-    setBrowserSessions([])
-    setBrowserPanelSessionId(null)
-    setFeedback('')
-    setConvertedParameterizationApplying(false)
-    setSalesforceParameterizationApplying(false)
-    setConvertedCredentialActionInProgress(false)
-    setSalesforceCredentialActionInProgress(false)
-    advanceConvertedReviewGeneration()
-    advanceSalesforceReviewGeneration()
-    resetConvertTask()
-    resetSalesforceTask()
-    convertedSourceRecordingSessionIDRef.current = null
-    salesforceSourceRecordingSessionIDRef.current = null
-  }, [activeProject?.id, advanceConvertedReviewGeneration, advanceSalesforceReviewGeneration, resetConvertTask, resetSalesforceTask])
+    setSessions([]);
+    setActiveSession(null);
+    setSelectedSession(null);
+    setSelectedRequest(null);
+    setBrowserSessions([]);
+    setBrowserPanelSessionId(null);
+    setFeedback("");
+    setConvertedParameterizationApplying(false);
+    setSalesforceParameterizationApplying(false);
+    setConvertedCredentialActionInProgress(false);
+    setSalesforceCredentialActionInProgress(false);
+    advanceConvertedReviewGeneration();
+    advanceSalesforceReviewGeneration();
+    resetConvertTask();
+    resetSalesforceTask();
+    convertedSourceRecordingSessionIDRef.current = null;
+    salesforceSourceRecordingSessionIDRef.current = null;
+  }, [
+    activeProject?.id,
+    advanceConvertedReviewGeneration,
+    advanceSalesforceReviewGeneration,
+    resetConvertTask,
+    resetSalesforceTask,
+  ]);
 
   useEffect(() => {
-    void refresh()
-    const interval = setInterval(refresh, 2000)
-    return () => clearInterval(interval)
-  }, [refresh])
+    void refresh();
+    const interval = setInterval(refresh, 2000);
+    return () => clearInterval(interval);
+  }, [refresh]);
 
-  useEffect(() => () => {
-    if (feedbackTimerRef.current !== null) window.clearTimeout(feedbackTimerRef.current)
-    void convertedCredentialReviewRef.current?.discardSourceSession()
-    void salesforceCredentialReviewRef.current?.discardSourceSession()
-  }, [])
+  useEffect(
+    () => () => {
+      if (feedbackTimerRef.current !== null)
+        window.clearTimeout(feedbackTimerRef.current);
+      void convertedCredentialReviewRef.current?.discardSourceSession();
+      void salesforceCredentialReviewRef.current?.discardSourceSession();
+    },
+    [],
+  );
 
   useEffect(() => {
-    if (!selectedRequest) return
+    if (!selectedRequest) return;
     setRequestDraft({
-      step_name: selectedRequest.step_name || '',
-      transaction_name: selectedRequest.transaction_name || '',
-      note: selectedRequest.note || '',
+      step_name: selectedRequest.step_name || "",
+      transaction_name: selectedRequest.transaction_name || "",
+      note: selectedRequest.note || "",
       think_time_ms: selectedRequest.think_time_ms || 0,
       excluded: !!selectedRequest.excluded,
-    })
-  }, [selectedRequest])
+    });
+  }, [selectedRequest]);
 
   // Load device presets once for the launcher.
   useEffect(() => {
-    api.listBrowserRecorderDevices()
-      .then(res => setBrowserDevices(res.devices || []))
-      .catch(() => { /* devices are optional */ })
-  }, [api])
+    api
+      .listBrowserRecorderDevices()
+      .then((res) => setBrowserDevices(res.devices || []))
+      .catch(() => {
+        /* devices are optional */
+      });
+  }, [api]);
 
   const handleInstallBrowsers = async () => {
     try {
-      const res = await api.installBrowserRecorder()
-      setInstallState(res.install)
-      showFeedback('Installing the recording browser — this can take a few minutes')
+      const res = await api.installBrowserRecorder();
+      setInstallState(res.install);
+      showFeedback(
+        "Installing the recording browser — this can take a few minutes",
+      );
     } catch (e: any) {
-      showFeedback(e.message, 'error')
+      showFeedback(e.message, "error");
     }
-  }
+  };
 
   const handlePairBridge = async () => {
-    const origin = bridgeOrigin.trim().replace(/\/+$/, '')
+    const origin = bridgeOrigin.trim().replace(/\/+$/, "");
     if (!/^https?:\/\/.+/i.test(origin)) {
-      const message = `Enter the local bridge URL used by ${RECORDING_AGENT_COMMAND}`
-      setBridgeStatusTone('error')
-      setBridgeStatus(message)
-      showFeedback(message, 'error')
-      return
+      const message = `Enter the local bridge URL used by ${RECORDING_AGENT_COMMAND}`;
+      setBridgeStatusTone("error");
+      setBridgeStatus(message);
+      showFeedback(message, "error");
+      return;
     }
-    const token = ensureBridgeToken()
-    if (!token) return
-    setBridgePairing(true)
-    setBridgeStatusTone('info')
-    setBridgeStatus('')
+    const token = ensureBridgeToken();
+    if (!token) return;
+    setBridgePairing(true);
+    setBridgeStatusTone("info");
+    setBridgeStatus("");
     try {
-      const paired = await api.pairBrowserRecorderBridge(origin, token)
-      setBridgeStatusTone('success')
-      setBridgeStatus(`Connected to ${origin}`)
-      setBrowserAvailability(paired.status.availability)
-      setInstallState(null)
-      showFeedback('Local browser recording bridge paired')
+      const paired = await api.pairBrowserRecorderBridge(origin, token);
+      setBridgeStatusTone("success");
+      setBridgeStatus(`Connected to ${origin}`);
+      setBrowserAvailability(paired.status.availability);
+      setInstallState(null);
+      showFeedback("Local browser recording bridge paired");
     } catch (e: any) {
-      const message = bridgePairingErrorMessage(e, origin)
-      setBridgeStatusTone('error')
-      setBridgeStatus(message)
-      showFeedback(message, 'error')
+      const message = bridgePairingErrorMessage(e, origin);
+      setBridgeStatusTone("error");
+      setBridgeStatus(message);
+      showFeedback(message, "error");
     } finally {
-      setBridgePairing(false)
+      setBridgePairing(false);
     }
-  }
+  };
 
   const handleVerifyBridgeAgent = async () => {
-    const origin = bridgeOrigin.trim().replace(/\/+$/, '')
+    const origin = bridgeOrigin.trim().replace(/\/+$/, "");
     if (!/^https?:\/\/.+/i.test(origin)) {
-      setBridgeStatusTone('error')
-      setBridgeStatus(`Enter the local bridge URL used by ${RECORDING_AGENT_COMMAND}`)
-      return
+      setBridgeStatusTone("error");
+      setBridgeStatus(
+        `Enter the local bridge URL used by ${RECORDING_AGENT_COMMAND}`,
+      );
+      return;
     }
-    setBridgeVerifying(true)
-    setBridgeStatusTone('info')
-    setBridgeStatus(`Checking APEX Load Recording Agent at ${origin}...`)
+    setBridgeVerifying(true);
+    setBridgeStatusTone("info");
+    setBridgeStatus(`Checking APEX Load Recording Agent at ${origin}...`);
     try {
-      await api.verifyBrowserRecorderBridgeAgent(origin)
-      setBridgeOrigin(origin)
-      setBridgeStatusTone('success')
-      setBridgeStatus(`APEX Load Recording Agent is running at ${origin}. Click Pair Local Bridge to connect.`)
-      showFeedback('APEX Load Recording Agent verified')
+      await api.verifyBrowserRecorderBridgeAgent(origin);
+      setBridgeOrigin(origin);
+      setBridgeStatusTone("success");
+      setBridgeStatus(
+        `APEX Load Recording Agent is running at ${origin}. Click Pair Local Bridge to connect.`,
+      );
+      showFeedback("APEX Load Recording Agent verified");
     } catch (e: any) {
-      const message = bridgeVerificationErrorMessage(e, origin)
-      setBridgeStatusTone('error')
-      setBridgeStatus(message)
-      showFeedback(message, 'error')
+      const message = bridgeVerificationErrorMessage(e, origin);
+      setBridgeStatusTone("error");
+      setBridgeStatus(message);
+      showFeedback(message, "error");
     } finally {
-      setBridgeVerifying(false)
+      setBridgeVerifying(false);
     }
-  }
+  };
 
   const handleDisconnectBridge = () => {
-    api.clearBrowserRecorderBridge()
-    setBridgeStatusTone('info')
-    setBridgeStatus('')
-    showFeedback('Local recording bridge disconnected')
-    refresh()
-  }
+    api.clearBrowserRecorderBridge();
+    setBridgeStatusTone("info");
+    setBridgeStatus("");
+    showFeedback("Local recording bridge disconnected");
+    refresh();
+  };
 
   const handleBrowserStartAddressChange = (value: string) => {
-    const normalized = normalizeHttpURLInput(value, browserStartScheme)
-    setBrowserStartScheme(normalized.scheme)
-    setBrowserStartAddress(normalized.address)
-  }
+    const normalized = normalizeHttpURLInput(value, browserStartScheme);
+    setBrowserStartScheme(normalized.scheme);
+    setBrowserStartAddress(normalized.address);
+  };
 
   const handleStartBrowserRecording = async () => {
-    const startURL = composeHttpURL(browserStartScheme, browserStartAddress)
+    const startURL = composeHttpURL(browserStartScheme, browserStartAddress);
     if (!startURL) {
-      showFeedback('Enter an http(s) URL to record', 'error')
-      return
+      showFeedback("Enter an http(s) URL to record", "error");
+      return;
     }
     try {
       const res = await api.startBrowserRecording({
-        name: browserName.trim() || 'Browser Recording',
+        name: browserName.trim() || "Browser Recording",
         start_url: startURL,
         project_id: activeProject?.id,
         capture_har: browserCaptureHAR,
@@ -923,523 +1313,741 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
         storage_state_path: browserStorageState.trim() || undefined,
         sidebar: browserSidebar,
         exclude_hosts: browserExcludeHosts.trim()
-          ? browserExcludeHosts.split(',').map(h => h.trim()).filter(Boolean)
+          ? browserExcludeHosts
+              .split(",")
+              .map((h) => h.trim())
+              .filter(Boolean)
           : undefined,
-      })
-      if (!isCurrentProject()) return
-      const sessionId = res.session.id
-      setBrowserPanelSessionId(sessionId)
-      const panelURL = browserRecorderPanelURL(sessionId)
+      });
+      if (!isCurrentProject()) return;
+      const sessionId = res.session.id;
+      setBrowserPanelSessionId(sessionId);
+      const panelURL = browserRecorderPanelURL(sessionId);
       if (!isWailsShell()) {
         try {
-          await api.openBrowserRecordingControlPanel(sessionId, panelURL)
-          if (!isCurrentProject()) return
-          showFeedback('Recording browser launched — control panel opened beside it')
+          await api.openBrowserRecordingControlPanel(sessionId, panelURL);
+          if (!isCurrentProject()) return;
+          showFeedback(
+            "Recording browser launched — control panel opened beside it",
+          );
         } catch {
-          if (!isCurrentProject()) return
+          if (!isCurrentProject()) return;
           // Older agents/controllers do not expose the same-browser companion
           // tab endpoint. Keep the separate popup as a fallback.
-          window.open(
-            panelURL,
-            'apexload-browser-recorder',
-            'width=440,height=760,noopener,noreferrer',
-          )
-          showFeedback('Recording browser launched — interact with the page, then stop from the control panel')
+          try {
+            openBrowserRecorderPanelPopup(panelURL);
+            showFeedback(
+              "Recording browser launched — interact with the page, then stop from the control panel",
+            );
+          } catch (popupError) {
+            showFeedback(
+              popupError instanceof Error
+                ? `Recording started, but the control panel could not open: ${popupError.message}`
+                : "Recording started, but the control panel could not open",
+              "error",
+            );
+          }
         }
       } else {
-        showFeedback('Recording browser launched — interact with the page, then stop from the control panel')
+        showFeedback(
+          "Recording browser launched — interact with the page, then stop from the control panel",
+        );
       }
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, "error");
     }
-  }
+  };
 
-  const handleOpenBrowserRecordingSession = (session: BrowserRecorderSession) => {
-    setBrowserPanelSessionId(session.id)
-    showFeedback(`Opened browser recording "${session.name}"`)
-  }
+  const handleOpenBrowserRecordingSession = (
+    session: BrowserRecorderSession,
+  ) => {
+    setBrowserPanelSessionId(session.id);
+    showFeedback(`Opened browser recording "${session.name}"`);
+  };
 
-  const handleDeleteBrowserRecordingSession = async (session: BrowserRecorderSession, event?: MouseEvent) => {
-    event?.stopPropagation()
-    if (typeof window !== 'undefined' && window.confirm && !window.confirm('Delete this stopped browser recording? This cannot be undone.')) {
-      return
+  const handleDeleteBrowserRecordingSession = async (
+    session: BrowserRecorderSession,
+    event?: MouseEvent,
+  ) => {
+    event?.stopPropagation();
+    if (
+      typeof window !== "undefined" &&
+      window.confirm &&
+      !window.confirm(
+        "Delete this stopped browser recording? This cannot be undone.",
+      )
+    ) {
+      return;
     }
     try {
-      await api.deleteBrowserRecording(session.id)
-      if (!isCurrentProject()) return
+      await api.deleteBrowserRecording(session.id);
+      if (!isCurrentProject()) return;
       if (browserPanelSessionId === session.id) {
-        setBrowserPanelSessionId(null)
+        setBrowserPanelSessionId(null);
       }
-      setBrowserSessions(prev => prev.filter(item => item.id !== session.id))
-      showFeedback(`Deleted browser recording "${session.name}"`)
-      void refresh()
+      setBrowserSessions((prev) =>
+        prev.filter((item) => item.id !== session.id),
+      );
+      showFeedback(`Deleted browser recording "${session.name}"`);
+      void refresh();
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, "error");
     }
-  }
+  };
 
   const handleStart = async () => {
     try {
       const data: any = {
-        name: sessionName || 'Recording Session',
+        name: sessionName || "Recording Session",
         project_id: activeProject?.id,
         exclude_static: true,
         capture_cookies: captureCookies,
-      }
+      };
       if (includeHosts.trim()) {
-        data.include_hosts = includeHosts.split(',').map((h: string) => h.trim()).filter(Boolean)
+        data.include_hosts = includeHosts
+          .split(",")
+          .map((h: string) => h.trim())
+          .filter(Boolean);
       }
       if (excludeHosts.trim()) {
-        data.exclude_hosts = excludeHosts.split(',').map((h: string) => h.trim()).filter(Boolean)
+        data.exclude_hosts = excludeHosts
+          .split(",")
+          .map((h: string) => h.trim())
+          .filter(Boolean);
       }
-      const res = await api.startRecording(data)
-      if (!isCurrentProject()) return
-      setActiveSession(res.session)
-      showFeedback('Recording started — configure your browser proxy and navigate the target site')
+      const res = await api.startRecording(data);
+      if (!isCurrentProject()) return;
+      setActiveSession(res.session);
+      showFeedback(
+        "Recording started — configure your browser proxy and navigate the target site",
+      );
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, "error");
     }
-  }
+  };
 
   const handleStop = async () => {
-    if (!activeSession) return
+    if (!activeSession) return;
     try {
-      await api.stopRecording(activeSession.id)
-      if (!isCurrentProject()) return
-      showFeedback(`Recording stopped — ${activeSession.request_count ?? activeSession.requests?.length ?? 0} requests captured`)
-      setActiveSession(null)
-      void refresh()
+      await api.stopRecording(activeSession.id);
+      if (!isCurrentProject()) return;
+      showFeedback(
+        `Recording stopped — ${activeSession.request_count ?? activeSession.requests?.length ?? 0} requests captured`,
+      );
+      setActiveSession(null);
+      void refresh();
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, "error");
     }
-  }
+  };
 
   const handlePauseResume = async () => {
-    if (!activeSession) return
+    if (!activeSession) return;
     try {
-      const next = activeSession.status === 'paused'
-        ? await api.resumeRecording(activeSession.id)
-        : await api.pauseRecording(activeSession.id)
-      if (!isCurrentProject()) return
-      setActiveSession(next)
-      showFeedback(next.status === 'paused' ? 'Recording paused' : 'Recording resumed')
+      const next =
+        activeSession.status === "paused"
+          ? await api.resumeRecording(activeSession.id)
+          : await api.pauseRecording(activeSession.id);
+      if (!isCurrentProject()) return;
+      setActiveSession(next);
+      showFeedback(
+        next.status === "paused" ? "Recording paused" : "Recording resumed",
+      );
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, "error");
     }
-  }
+  };
 
-	  const replaceRequest = (sessionId: string, updated: RecordedRequest) => {
-	    const apply = (session: RecordingSession | null) => {
-	      if (!session || session.id !== sessionId) return session
-	      if (!session.requests) return session
-	      return {
-	        ...session,
-	        requests: session.requests.map(req => req.seq === updated.seq ? updated : req),
-	      }
-    }
-    setSelectedSession(apply)
-    setActiveSession(apply)
-    setSessions(prev => prev.map(session => apply(session) || session))
-    setSelectedRequest(current => current?.seq === updated.seq ? updated : current)
-  }
+  const replaceRequest = (sessionId: string, updated: RecordedRequest) => {
+    const apply = (session: RecordingSession | null) => {
+      if (!session || session.id !== sessionId) return session;
+      if (!session.requests) return session;
+      return {
+        ...session,
+        requests: session.requests.map((req) =>
+          req.seq === updated.seq ? updated : req,
+        ),
+      };
+    };
+    setSelectedSession(apply);
+    setActiveSession(apply);
+    setSessions((prev) => prev.map((session) => apply(session) || session));
+    setSelectedRequest((current) =>
+      current?.seq === updated.seq ? updated : current,
+    );
+  };
 
   const handleSelectSession = async (session: RecordingSession) => {
     if (selectedSession?.id === session.id) {
-      setSelectedSession(null)
-      setSelectedRequest(null)
-      return
+      setSelectedSession(null);
+      setSelectedRequest(null);
+      return;
     }
-    setSelectedRequest(null)
+    setSelectedRequest(null);
     if (session.requests && session.requests.length > 0) {
-      setSelectedSession(session)
-      return
+      setSelectedSession(session);
+      return;
     }
     try {
-      const full = await api.getRecording(session.id, { includeRequests: true })
-      if (!isCurrentProject()) return
-      setSelectedSession({ ...full, requests: full.requests || [] })
+      const full = await api.getRecording(session.id, {
+        includeRequests: true,
+      });
+      if (!isCurrentProject()) return;
+      setSelectedSession({ ...full, requests: full.requests || [] });
     } catch {
-      if (isCurrentProject()) setSelectedSession(session)
+      if (isCurrentProject()) setSelectedSession(session);
     }
-  }
+  };
 
-  const handleToggleRequestExcluded = async (session: RecordingSession, req: RecordedRequest) => {
+  const handleToggleRequestExcluded = async (
+    session: RecordingSession,
+    req: RecordedRequest,
+  ) => {
     try {
-      const updated = await api.updateRecordedRequest(session.id, req.seq, { excluded: !req.excluded })
-      if (!isCurrentProject()) return
-      replaceRequest(session.id, updated)
+      const updated = await api.updateRecordedRequest(session.id, req.seq, {
+        excluded: !req.excluded,
+      });
+      if (!isCurrentProject()) return;
+      replaceRequest(session.id, updated);
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, "error");
     }
-  }
+  };
 
   const handleSaveRequestDetails = async () => {
-    if (!selectedSession || !selectedRequest) return
+    if (!selectedSession || !selectedRequest) return;
     try {
-      const updated = await api.updateRecordedRequest(selectedSession.id, selectedRequest.seq, requestDraft)
-      if (!isCurrentProject()) return
-      replaceRequest(selectedSession.id, updated)
-      showFeedback(`Request #${updated.seq} updated`)
+      const updated = await api.updateRecordedRequest(
+        selectedSession.id,
+        selectedRequest.seq,
+        requestDraft,
+      );
+      if (!isCurrentProject()) return;
+      replaceRequest(selectedSession.id, updated);
+      showFeedback(`Request #${updated.seq} updated`);
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, "error");
     }
-  }
+  };
 
   const handlePreviewConversion = async (session: RecordingSession) => {
     try {
-      setConvertedParameterizationApplying(false)
-      setConvertedCredentialActionInProgress(false)
-      advanceConvertedReviewGeneration()
-      convertedPreparedScriptRef.current = null
-      convertedSourceRecordingSessionIDRef.current = session.id
-      setConvertedPreparedSecrets(null)
+      setConvertedParameterizationApplying(false);
+      setConvertedCredentialActionInProgress(false);
+      advanceConvertedReviewGeneration();
+      convertedPreparedScriptRef.current = null;
+      convertedSourceRecordingSessionIDRef.current = session.id;
+      setConvertedPreparedSecrets(null);
       const result = await convertTask.run(
-        () => api.previewRecordingConversion(session.id, session.name, parameterizeInputs),
+        () =>
+          api.previewRecordingConversion(
+            session.id,
+            session.name,
+            parameterizeInputs,
+          ),
         { clearValue: true },
-      )
-      if (!isCurrentProject()) return
-      showFeedback(`Preview generated with ${result.script?.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`)
+      );
+      if (!isCurrentProject()) return;
+      showFeedback(
+        `Preview generated with ${result.script?.actions?.length || 0} actions and ${result.correlations?.length || 0} correlations`,
+      );
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, "error");
     }
-  }
+  };
 
   const handleExportHAR = async (session: RecordingSession) => {
+    setFeedback("");
     try {
-      const res = await apiFetch(`/recorder/${session.id}/export?format=har`)
-      if (!isCurrentProject()) return
-      if (!res.ok) {
-        const payload = await res.json().catch(() => ({ error: 'Failed to export HAR' }))
-        throw new Error(payload.error || 'Failed to export HAR')
+      const safeName = safeRecordingFileName(session.name);
+      const filename = `${safeName}.har`;
+      const nativeResourcePath = `/api/v1/recorder/${encodeURIComponent(session.id)}/export?format=har`;
+      const nativeOutcome = await saveApiResourceViaBridge(
+        nativeResourcePath,
+        filename,
+      );
+      if (nativeOutcome === "saved") {
+        if (isCurrentProject()) {
+          showFeedback(`Exported "${session.name}" as HAR`);
+        }
+        return;
       }
-      const blob = await res.blob()
-      if (!isCurrentProject()) return
-      const safeName = safeRecordingFileName(session.name)
-      downloadBlob(blob, `${safeName}.har`)
-      showFeedback(`Exported "${session.name}" as HAR`)
+      if (nativeOutcome === "cancelled") return;
+      if (!isDesktopSurface() && hasDesktopApiCapability()) {
+        await startDesktopBrowserDownload(nativeResourcePath, filename);
+        if (isCurrentProject()) {
+          showFeedback(
+            `HAR download request opened for "${session.name}"; any server error will appear in the browser.`,
+          );
+        }
+        return;
+      }
+      const res = await apiFetch(`/recorder/${session.id}/export?format=har`);
+      if (!isCurrentProject()) return;
+      if (!res.ok) {
+        const payload = await res
+          .json()
+          .catch(() => ({ error: "Failed to export HAR" }));
+        throw new Error(payload.error || "Failed to export HAR");
+      }
+      const blob = await res.blob();
+      if (!isCurrentProject()) return;
+      const outcome = await downloadBlob(blob, filename);
+      if (outcome === "cancelled") return;
+      showFeedback(`Exported "${session.name}" as HAR`);
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, "error");
     }
-  }
+  };
 
   const handleReviewSalesforceSession = async (session: RecordingSession) => {
     try {
-      setSalesforceParameterizationApplying(false)
-      setSalesforceCredentialActionInProgress(false)
-      advanceSalesforceReviewGeneration()
-      salesforcePreparedScriptRef.current = null
-      salesforceSourceRecordingSessionIDRef.current = session.id
-      setSalesforcePreparedSecrets(null)
-      const result = await salesforceTask.run(async () => {
-        const res = await apiFetch(`/recorder/${session.id}/export?format=har`)
-        if (!res.ok) {
-          const payload = await res.json().catch(() => ({ error: 'Failed to export HAR' }))
-          throw new Error(payload.error || 'Failed to export HAR')
-        }
-        const blob = await res.blob()
-        const file = new File([blob], `${safeRecordingFileName(session.name)}.har`, { type: blob.type || 'application/json' })
-        return api.importSalesforce(file, {
-          name: `${session.name} Salesforce HTTP`,
-          base_url: session.base_url,
-          project_id: activeProject?.id,
-        })
-      }, { clearValue: true })
-      if (!isCurrentProject()) return
-      showFeedback(`Salesforce HTTP draft generated with ${result.script?.actions?.length || 0} actions`)
+      setSalesforceParameterizationApplying(false);
+      setSalesforceCredentialActionInProgress(false);
+      advanceSalesforceReviewGeneration();
+      salesforcePreparedScriptRef.current = null;
+      salesforceSourceRecordingSessionIDRef.current = session.id;
+      setSalesforcePreparedSecrets(null);
+      const result = await salesforceTask.run(
+        async () => {
+          const res = await apiFetch(
+            `/recorder/${session.id}/export?format=har`,
+          );
+          if (!res.ok) {
+            const payload = await res
+              .json()
+              .catch(() => ({ error: "Failed to export HAR" }));
+            throw new Error(payload.error || "Failed to export HAR");
+          }
+          const blob = await res.blob();
+          const file = new File(
+            [blob],
+            `${safeRecordingFileName(session.name)}.har`,
+            { type: blob.type || "application/json" },
+          );
+          return api.importSalesforce(file, {
+            name: `${session.name} Salesforce HTTP`,
+            base_url: session.base_url,
+            project_id: activeProject?.id,
+          });
+        },
+        { clearValue: true },
+      );
+      if (!isCurrentProject()) return;
+      showFeedback(
+        `Salesforce HTTP draft generated with ${result.script?.actions?.length || 0} actions`,
+      );
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, "error");
     }
-  }
+  };
 
   const handleConvert = async (session: RecordingSession) => {
     try {
-      setConvertedParameterizationApplying(false)
-      setConvertedCredentialActionInProgress(false)
-      advanceConvertedReviewGeneration()
-      convertedPreparedScriptRef.current = null
-      convertedSourceRecordingSessionIDRef.current = session.id
-      setConvertedPreparedSecrets(null)
+      setConvertedParameterizationApplying(false);
+      setConvertedCredentialActionInProgress(false);
+      advanceConvertedReviewGeneration();
+      convertedPreparedScriptRef.current = null;
+      convertedSourceRecordingSessionIDRef.current = session.id;
+      setConvertedPreparedSecrets(null);
       const result = await convertTask.run(
-        () => api.previewRecordingConversion(session.id, session.name, parameterizeInputs),
+        () =>
+          api.previewRecordingConversion(
+            session.id,
+            session.name,
+            parameterizeInputs,
+          ),
         { clearValue: true },
-      )
-      if (!isCurrentProject()) return
-      showFeedback(`Script draft "${result.script?.name || session.name}" is ready with ${result.correlations?.length || 0} correlations detected`)
+      );
+      if (!isCurrentProject()) return;
+      showFeedback(
+        `Script draft "${result.script?.name || session.name}" is ready with ${result.correlations?.length || 0} correlations detected`,
+      );
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, "error");
     }
-  }
+  };
 
   const buildReviewedScript = (): ScriptDefinition | null => {
-    const script = recorderImportReviewScript(convertTask.value)
+    const script = recorderImportReviewScript(convertTask.value);
     if (!script) {
-      return null
+      return null;
     }
-    return attachImportCorrelationSuggestions(script, 'recorder', convertTask.value?.correlations)
-  }
+    return attachImportCorrelationSuggestions(
+      script,
+      "recorder",
+      convertTask.value?.correlations,
+    );
+  };
 
-  const handleApplyConvertedSecretBindings = async (bindings: SecretBindingSelection[]) => {
-    const result = convertTask.value
-    const script = buildReviewedScript()
-    if (!result || !script) return
-    const sourceGeneration = convertedReviewGenerationRef.current
-    const sourceProjectId = refreshScopeRef.current.projectId
-    const resolved = await api.applySecretBindings({ script, bindings })
-    if (convertedReviewGenerationRef.current !== sourceGeneration || refreshScopeRef.current.projectId !== sourceProjectId) {
-      throw new Error('The recording conversion changed while credentials were being prepared. Review the current draft and try again.')
+  const handleApplyConvertedSecretBindings = async (
+    bindings: SecretBindingSelection[],
+  ) => {
+    const result = convertTask.value;
+    const script = buildReviewedScript();
+    if (!result || !script) return;
+    const sourceGeneration = convertedReviewGenerationRef.current;
+    const sourceProjectId = refreshScopeRef.current.projectId;
+    const resolved = await api.applySecretBindings({ script, bindings });
+    if (
+      convertedReviewGenerationRef.current !== sourceGeneration ||
+      refreshScopeRef.current.projectId !== sourceProjectId
+    ) {
+      throw new Error(
+        "The recording conversion changed while credentials were being prepared. Review the current draft and try again.",
+      );
     }
-    const preparedScript = attachImportCorrelationSuggestions(resolved.script, 'recorder', result.correlations)
-    convertedPreparedScriptRef.current = preparedScript
+    const preparedScript = attachImportCorrelationSuggestions(
+      resolved.script,
+      "recorder",
+      result.correlations,
+    );
+    convertedPreparedScriptRef.current = preparedScript;
     convertTask.setValue({
       ...result,
       script: preparedScript,
       scripts: result.scripts?.length
-        ? result.scripts.map((entry, index) => index === 0 ? preparedScript : entry)
+        ? result.scripts.map((entry, index) =>
+            index === 0 ? preparedScript : entry,
+          )
         : [preparedScript],
       secret_binding_requirements: resolved.secret_binding_requirements,
-    })
-  }
+    });
+  };
 
-  const handleApplyConvertedParameterization = (parameterizedScript: ScriptDefinition) => {
-    const result = convertTask.value
-    if (!result) return
-    convertedCredentialReviewRef.current?.preserveEditsForNextReviewGeneration()
-    advanceConvertedReviewGeneration()
-    const preparedScript = attachImportCorrelationSuggestions(parameterizedScript, 'recorder', result.correlations)
-    convertedPreparedScriptRef.current = null
+  const handleApplyConvertedParameterization = (
+    parameterizedScript: ScriptDefinition,
+  ) => {
+    const result = convertTask.value;
+    if (!result) return;
+    convertedCredentialReviewRef.current?.preserveEditsForNextReviewGeneration();
+    advanceConvertedReviewGeneration();
+    const preparedScript = attachImportCorrelationSuggestions(
+      parameterizedScript,
+      "recorder",
+      result.correlations,
+    );
+    convertedPreparedScriptRef.current = null;
     convertTask.setValue({
       ...result,
       script: preparedScript,
       scripts: result.scripts?.length
-        ? result.scripts.map((entry, index) => index === 0 ? preparedScript : entry)
+        ? result.scripts.map((entry, index) =>
+            index === 0 ? preparedScript : entry,
+          )
         : [preparedScript],
-    })
-  }
+    });
+  };
 
   const prepareConvertedScript = async (): Promise<ScriptDefinition | null> => {
-    const requirements = convertTask.value?.secret_binding_requirements || []
-    if (requirements.length === 0) return buildReviewedScript()
-    const sourceGeneration = convertedReviewGenerationRef.current
-    const sourceProjectId = refreshScopeRef.current.projectId
-    convertedPreparedScriptRef.current = null
-    const committed = await convertedCredentialReviewRef.current?.commit()
-    return committed
-      && convertedReviewGenerationRef.current === sourceGeneration
-      && refreshScopeRef.current.projectId === sourceProjectId
+    const requirements = convertTask.value?.secret_binding_requirements || [];
+    if (requirements.length === 0) return buildReviewedScript();
+    const sourceGeneration = convertedReviewGenerationRef.current;
+    const sourceProjectId = refreshScopeRef.current.projectId;
+    convertedPreparedScriptRef.current = null;
+    const committed = await convertedCredentialReviewRef.current?.commit();
+    return committed &&
+      convertedReviewGenerationRef.current === sourceGeneration &&
+      refreshScopeRef.current.projectId === sourceProjectId
       ? convertedPreparedScriptRef.current
-      : null
-  }
+      : null;
+  };
 
   const handleEditConvertedScript = async () => {
-    if (convertedCredentialActionInProgress) return
-    setConvertedCredentialActionInProgress(true)
+    if (convertedCredentialActionInProgress) return;
+    setConvertedCredentialActionInProgress(true);
     try {
-      const script = await prepareConvertedScript()
-      if (script) onEdit?.(script)
+      const script = await prepareConvertedScript();
+      if (script) onEdit?.(script);
     } finally {
-      setConvertedCredentialActionInProgress(false)
+      setConvertedCredentialActionInProgress(false);
     }
-  }
+  };
 
   const handleSaveConvertedScript = async () => {
-    if (convertedSaveInFlightRef.current) return
-    convertedSaveInFlightRef.current = true
-    setConvertedSaveInProgress(true)
-    const sourceGeneration = convertedReviewGenerationRef.current
-    const sourceProjectId = refreshScopeRef.current.projectId
-    const sourceRecordingSessionId = convertedSourceRecordingSessionIDRef.current || undefined
-    const requestIsCurrent = () => (
-      convertedReviewGenerationRef.current === sourceGeneration
-      && refreshScopeRef.current.projectId === sourceProjectId
-    )
+    if (convertedSaveInFlightRef.current) return;
+    convertedSaveInFlightRef.current = true;
+    setConvertedSaveInProgress(true);
+    const sourceGeneration = convertedReviewGenerationRef.current;
+    const sourceProjectId = refreshScopeRef.current.projectId;
+    const sourceRecordingSessionId =
+      convertedSourceRecordingSessionIDRef.current || undefined;
+    const requestIsCurrent = () =>
+      convertedReviewGenerationRef.current === sourceGeneration &&
+      refreshScopeRef.current.projectId === sourceProjectId;
     try {
-      const hasSecretRequirements = (convertTask.value?.secret_binding_requirements?.length || 0) > 0
-      const script = await prepareConvertedScript()
-      if (!requestIsCurrent()) return
+      const hasSecretRequirements =
+        (convertTask.value?.secret_binding_requirements?.length || 0) > 0;
+      const script = await prepareConvertedScript();
+      if (!requestIsCurrent()) return;
       if (!script) {
-        if (hasSecretRequirements) return
-        const stored = recorderImportStoredScript(convertTask.value)
+        if (hasSecretRequirements) return;
+        const stored = recorderImportStoredScript(convertTask.value);
         if (stored) {
-          onImported?.({ scripts: [stored] })
-          showFeedback(`Script "${stored.name}" is already in the script library`)
+          onImported?.({ scripts: [stored] });
+          showFeedback(
+            `Script "${stored.name}" is already in the script library`,
+          );
         }
-        return
+        return;
       }
-      const stored = recorderImportStoredScript(convertTask.value)
+      const stored = recorderImportStoredScript(convertTask.value);
       if (stored) {
-        onImported?.({ scripts: [withFallbackPersistedScript(stored, script)] })
-        showFeedback(`Script "${stored.name}" is already in the script library`)
-        return
+        onImported?.({
+          scripts: [withFallbackPersistedScript(stored, script)],
+        });
+        showFeedback(
+          `Script "${stored.name}" is already in the script library`,
+        );
+        return;
       }
-      const savedScript = await api.createScript(script, sourceProjectId, undefined, sourceRecordingSessionId)
-      if (!requestIsCurrent()) return
-      showFeedback(`Script "${script.name}" created with ${convertTask.value?.correlations?.length || 0} correlations detected`)
-      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, script)] })
+      const savedScript = await api.createScript(
+        script,
+        sourceProjectId,
+        undefined,
+        sourceRecordingSessionId,
+      );
+      if (!requestIsCurrent()) return;
+      showFeedback(
+        `Script "${script.name}" created with ${convertTask.value?.correlations?.length || 0} correlations detected`,
+      );
+      onImported?.({
+        scripts: [withFallbackPersistedScript(savedScript, script)],
+      });
     } catch (e: any) {
-      if (requestIsCurrent()) showFeedback(e.message, 'error')
+      if (requestIsCurrent()) showFeedback(e.message, "error");
     } finally {
-      convertedSaveInFlightRef.current = false
-      setConvertedSaveInProgress(false)
+      convertedSaveInFlightRef.current = false;
+      setConvertedSaveInProgress(false);
     }
-  }
+  };
 
-  const handleApplySalesforceSecretBindings = async (bindings: SecretBindingSelection[]) => {
-    const result = salesforceTask.value
-    const script = result?.script || result?.scripts?.[0]
-    if (!result || !script) return
-    const sourceGeneration = salesforceReviewGenerationRef.current
-    const sourceProjectId = refreshScopeRef.current.projectId
-    const resolved = await api.applySecretBindings({ script, bindings })
-    if (salesforceReviewGenerationRef.current !== sourceGeneration || refreshScopeRef.current.projectId !== sourceProjectId) {
-      throw new Error('The Salesforce draft changed while credentials were being prepared. Review the current draft and try again.')
+  const handleApplySalesforceSecretBindings = async (
+    bindings: SecretBindingSelection[],
+  ) => {
+    const result = salesforceTask.value;
+    const script = result?.script || result?.scripts?.[0];
+    if (!result || !script) return;
+    const sourceGeneration = salesforceReviewGenerationRef.current;
+    const sourceProjectId = refreshScopeRef.current.projectId;
+    const resolved = await api.applySecretBindings({ script, bindings });
+    if (
+      salesforceReviewGenerationRef.current !== sourceGeneration ||
+      refreshScopeRef.current.projectId !== sourceProjectId
+    ) {
+      throw new Error(
+        "The Salesforce draft changed while credentials were being prepared. Review the current draft and try again.",
+      );
     }
-    salesforcePreparedScriptRef.current = resolved.script
+    salesforcePreparedScriptRef.current = resolved.script;
     salesforceTask.setValue({
       ...result,
       script: resolved.script,
       scripts: result.scripts?.length
-        ? result.scripts.map((entry, index) => index === 0 ? resolved.script : entry)
+        ? result.scripts.map((entry, index) =>
+            index === 0 ? resolved.script : entry,
+          )
         : [resolved.script],
       secret_binding_requirements: resolved.secret_binding_requirements,
-    })
-  }
+    });
+  };
 
-  const handleApplySalesforceParameterization = (parameterizedScript: ScriptDefinition) => {
-    const result = salesforceTask.value
-    if (!result) return
-    salesforceCredentialReviewRef.current?.preserveEditsForNextReviewGeneration()
-    advanceSalesforceReviewGeneration()
-    salesforcePreparedScriptRef.current = null
+  const handleApplySalesforceParameterization = (
+    parameterizedScript: ScriptDefinition,
+  ) => {
+    const result = salesforceTask.value;
+    if (!result) return;
+    salesforceCredentialReviewRef.current?.preserveEditsForNextReviewGeneration();
+    advanceSalesforceReviewGeneration();
+    salesforcePreparedScriptRef.current = null;
     salesforceTask.setValue({
       ...result,
       script: parameterizedScript,
       scripts: result.scripts?.length
-        ? result.scripts.map((entry, index) => index === 0 ? parameterizedScript : entry)
+        ? result.scripts.map((entry, index) =>
+            index === 0 ? parameterizedScript : entry,
+          )
         : [parameterizedScript],
-    })
-  }
+    });
+  };
 
-  const prepareSalesforceScript = async (): Promise<ScriptDefinition | null> => {
-    const result = salesforceTask.value
-    const script = result?.script || result?.scripts?.[0]
-    if (!script) return null
-    if ((result?.secret_binding_requirements?.length || 0) === 0) return script
-    const sourceGeneration = salesforceReviewGenerationRef.current
-    const sourceProjectId = refreshScopeRef.current.projectId
-    salesforcePreparedScriptRef.current = null
-    const committed = await salesforceCredentialReviewRef.current?.commit()
-    return committed
-      && salesforceReviewGenerationRef.current === sourceGeneration
-      && refreshScopeRef.current.projectId === sourceProjectId
-      ? salesforcePreparedScriptRef.current
-      : null
-  }
+  const prepareSalesforceScript =
+    async (): Promise<ScriptDefinition | null> => {
+      const result = salesforceTask.value;
+      const script = result?.script || result?.scripts?.[0];
+      if (!script) return null;
+      if ((result?.secret_binding_requirements?.length || 0) === 0)
+        return script;
+      const sourceGeneration = salesforceReviewGenerationRef.current;
+      const sourceProjectId = refreshScopeRef.current.projectId;
+      salesforcePreparedScriptRef.current = null;
+      const committed = await salesforceCredentialReviewRef.current?.commit();
+      return committed &&
+        salesforceReviewGenerationRef.current === sourceGeneration &&
+        refreshScopeRef.current.projectId === sourceProjectId
+        ? salesforcePreparedScriptRef.current
+        : null;
+    };
 
   const handleEditSalesforceScript = async () => {
-    if (salesforceCredentialActionInProgress) return
-    setSalesforceCredentialActionInProgress(true)
+    if (salesforceCredentialActionInProgress) return;
+    setSalesforceCredentialActionInProgress(true);
     try {
-      const script = await prepareSalesforceScript()
-      if (script) onEdit?.(script)
+      const script = await prepareSalesforceScript();
+      if (script) onEdit?.(script);
     } finally {
-      setSalesforceCredentialActionInProgress(false)
+      setSalesforceCredentialActionInProgress(false);
     }
-  }
+  };
 
   const handleSaveSalesforceScript = async () => {
-    if (salesforceSaveInFlightRef.current) return
-    salesforceSaveInFlightRef.current = true
-    setSalesforceSaveInProgress(true)
-    const sourceGeneration = salesforceReviewGenerationRef.current
-    const sourceProjectId = refreshScopeRef.current.projectId
-    const sourceRecordingSessionId = salesforceSourceRecordingSessionIDRef.current || undefined
-    const requestIsCurrent = () => (
-      salesforceReviewGenerationRef.current === sourceGeneration
-      && refreshScopeRef.current.projectId === sourceProjectId
-    )
+    if (salesforceSaveInFlightRef.current) return;
+    salesforceSaveInFlightRef.current = true;
+    setSalesforceSaveInProgress(true);
+    const sourceGeneration = salesforceReviewGenerationRef.current;
+    const sourceProjectId = refreshScopeRef.current.projectId;
+    const sourceRecordingSessionId =
+      salesforceSourceRecordingSessionIDRef.current || undefined;
+    const requestIsCurrent = () =>
+      salesforceReviewGenerationRef.current === sourceGeneration &&
+      refreshScopeRef.current.projectId === sourceProjectId;
     try {
-      const script = await prepareSalesforceScript()
-      if (!script || !requestIsCurrent()) return
-      const savedScript = await api.createScript(script, sourceProjectId, undefined, sourceRecordingSessionId)
-      if (!requestIsCurrent()) return
-      showFeedback(`Salesforce HTTP script "${script.name}" saved to the script library`)
-      onImported?.({ scripts: [withFallbackPersistedScript(savedScript, script)] })
+      const script = await prepareSalesforceScript();
+      if (!script || !requestIsCurrent()) return;
+      const savedScript = await api.createScript(
+        script,
+        sourceProjectId,
+        undefined,
+        sourceRecordingSessionId,
+      );
+      if (!requestIsCurrent()) return;
+      showFeedback(
+        `Salesforce HTTP script "${script.name}" saved to the script library`,
+      );
+      onImported?.({
+        scripts: [withFallbackPersistedScript(savedScript, script)],
+      });
     } catch (e: any) {
-      if (requestIsCurrent()) showFeedback(e.message, 'error')
+      if (requestIsCurrent()) showFeedback(e.message, "error");
     } finally {
-      salesforceSaveInFlightRef.current = false
-      setSalesforceSaveInProgress(false)
+      salesforceSaveInFlightRef.current = false;
+      setSalesforceSaveInProgress(false);
     }
-  }
+  };
 
   const handleDelete = async (id: string) => {
-    if (typeof window !== 'undefined' && window.confirm && !window.confirm('Delete this stopped recording session? This cannot be undone.')) {
-      return
+    if (
+      typeof window !== "undefined" &&
+      window.confirm &&
+      !window.confirm(
+        "Delete this stopped recording session? This cannot be undone.",
+      )
+    ) {
+      return;
     }
     try {
-      await api.deleteRecording(id)
-      if (!isCurrentProject()) return
-      if (selectedSession?.id === id) setSelectedSession(null)
-      void refresh()
+      await api.deleteRecording(id);
+      if (!isCurrentProject()) return;
+      if (selectedSession?.id === id) setSelectedSession(null);
+      void refresh();
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, 'error')
+      if (isCurrentProject()) showFeedback(e.message, "error");
     }
-  }
+  };
 
-  const stoppedSessions = sessions.filter(s => s.status === 'stopped')
+  const stoppedSessions = sessions.filter((s) => s.status === "stopped");
   const recentBrowserSessions = browserSessions
-    .filter(s => s.status === 'stopped' || s.status === 'failed')
-    .sort((a, b) => new Date(b.stopped_at || b.started_at).getTime() - new Date(a.stopped_at || a.started_at).getTime())
-  const convertResult = convertTask.value
-  const convertedStoredScript = recorderImportStoredScript(convertResult)
-  const convertedReviewScript = recorderImportReviewScript(convertResult)
-  const convertedScript = convertedReviewScript || convertedStoredScript
-  const convertedSecretRequirements = convertResult?.secret_binding_requirements || []
-  const convertedCredentialsValid = convertedSecretRequirements.length === 0 || convertedPreparedSecrets?.valid === true
-  const convertedDeferredSecretCount = convertedPreparedSecrets?.configureLaterCount ??
-    new Set(convertedSecretRequirements.map(requirement => requirement.suggested_name)).size
+    .filter((s) => s.status === "stopped" || s.status === "failed")
+    .sort(
+      (a, b) =>
+        new Date(b.stopped_at || b.started_at).getTime() -
+        new Date(a.stopped_at || a.started_at).getTime(),
+    );
+  const convertResult = convertTask.value;
+  const convertedStoredScript = recorderImportStoredScript(convertResult);
+  const convertedReviewScript = recorderImportReviewScript(convertResult);
+  const convertedScript = convertedReviewScript || convertedStoredScript;
+  const convertedSecretRequirements =
+    convertResult?.secret_binding_requirements || [];
+  const convertedCredentialsValid =
+    convertedSecretRequirements.length === 0 ||
+    convertedPreparedSecrets?.valid === true;
+  const convertedDeferredSecretCount =
+    convertedPreparedSecrets?.configureLaterCount ??
+    new Set(
+      convertedSecretRequirements.map(
+        (requirement) => requirement.suggested_name,
+      ),
+    ).size;
   const convertedSaveLabel = convertedSaveInProgress
-    ? 'Saving...'
+    ? "Saving..."
     : convertedDeferredSecretCount > 0
-      ? `Save with ${convertedDeferredSecretCount} ${convertedDeferredSecretCount === 1 ? 'secret' : 'secrets'} to configure`
-      : 'Save To Script Library'
-  const converting = convertTask.pending
-  const salesforceResult = salesforceTask.value
-  const salesforceScript = salesforceResult?.script || salesforceResult?.scripts?.[0]
-  const salesforceSecretRequirements = salesforceResult?.secret_binding_requirements || []
-  const salesforceCredentialsValid = salesforceSecretRequirements.length === 0 || salesforcePreparedSecrets?.valid === true
-  const salesforceDeferredSecretCount = salesforcePreparedSecrets?.configureLaterCount ??
-    new Set(salesforceSecretRequirements.map(requirement => requirement.suggested_name)).size
+      ? `Save with ${convertedDeferredSecretCount} ${convertedDeferredSecretCount === 1 ? "secret" : "secrets"} to configure`
+      : "Save To Script Library";
+  const converting = convertTask.pending;
+  const salesforceResult = salesforceTask.value;
+  const salesforceScript =
+    salesforceResult?.script || salesforceResult?.scripts?.[0];
+  const salesforceSecretRequirements =
+    salesforceResult?.secret_binding_requirements || [];
+  const salesforceCredentialsValid =
+    salesforceSecretRequirements.length === 0 ||
+    salesforcePreparedSecrets?.valid === true;
+  const salesforceDeferredSecretCount =
+    salesforcePreparedSecrets?.configureLaterCount ??
+    new Set(
+      salesforceSecretRequirements.map(
+        (requirement) => requirement.suggested_name,
+      ),
+    ).size;
   const salesforceSaveLabel = salesforceSaveInProgress
-    ? 'Saving...'
+    ? "Saving..."
     : salesforceDeferredSecretCount > 0
-      ? `Save with ${salesforceDeferredSecretCount} ${salesforceDeferredSecretCount === 1 ? 'secret' : 'secrets'} to configure`
-      : 'Save To Script Library'
-  const reviewingSalesforce = salesforceTask.pending
-  const browserUnavailableReason = browserAvailability?.reason?.trim() || ''
-  const browserUnavailableCode = browserAvailability?.code?.trim() || ''
-  const browserUnavailableDueToDisplay = browserUnavailableCode === 'display_missing' || browserUnavailableReason.toLowerCase().includes('no display detected')
-  const canRetryBrowserInstall = browserRecorderInstallRetryable(browserAvailability, installState)
-  const installStatusTone = installState ? browserRecorderInstallTone(installState.status) : 'info'
-  const installStatusVisible = !!installState && installState.status !== 'idle'
-  const bridgeCommand = bridgeRecordAgentCommand(bridgeOrigin)
-  const agentDownload = recordingAgentDownloadConfig()
-  const agentDownloadHref = agentDownload.managed && recordingAgentPlatform
-    ? `${agentDownload.url}?platform=${encodeURIComponent(recordingAgentPlatform)}`
-    : agentDownload.url
+      ? `Save with ${salesforceDeferredSecretCount} ${salesforceDeferredSecretCount === 1 ? "secret" : "secrets"} to configure`
+      : "Save To Script Library";
+  const reviewingSalesforce = salesforceTask.pending;
+  const browserUnavailableReason = browserAvailability?.reason?.trim() || "";
+  const browserUnavailableCode = browserAvailability?.code?.trim() || "";
+  const browserUnavailableDueToDisplay =
+    browserUnavailableCode === "display_missing" ||
+    browserUnavailableReason.toLowerCase().includes("no display detected");
+  const canRetryBrowserInstall = browserRecorderInstallRetryable(
+    browserAvailability,
+    installState,
+  );
+  const installStatusTone = installState
+    ? browserRecorderInstallTone(installState.status)
+    : "info";
+  const installStatusVisible = !!installState && installState.status !== "idle";
+  const bridgeCommand = bridgeRecordAgentCommand(bridgeOrigin);
+  const agentDownload = recordingAgentDownloadConfig();
+  const agentDownloadHref =
+    agentDownload.managed && recordingAgentPlatform
+      ? `${agentDownload.url}?platform=${encodeURIComponent(recordingAgentPlatform)}`
+      : agentDownload.url;
 
   return (
     <div className="page recording-studio">
       <div className="page-header">
         <div>
           <h2>Recording Studio</h2>
-          <p className="page-subtitle">Record a browser session and convert it to a test script</p>
+          <p className="page-subtitle">
+            Record a browser session and convert it to a test script
+          </p>
         </div>
-        {onClose && <button type="button" className="btn btn-secondary" onClick={() => {
-          void convertedCredentialReviewRef.current?.discardSourceSession()
-          void salesforceCredentialReviewRef.current?.discardSourceSession()
-          onClose()
-        }}>Back</button>}
+        {onClose && (
+          <button
+            type="button"
+            className="btn btn-secondary"
+            onClick={() => {
+              void convertedCredentialReviewRef.current?.discardSourceSession();
+              void salesforceCredentialReviewRef.current?.discardSourceSession();
+              onClose();
+            }}
+          >
+            Back
+          </button>
+        )}
       </div>
 
       {feedback && (
@@ -1450,47 +2058,86 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
         <div className="rec-controls-card rec-browser-launcher">
           <div className="rec-option-heading">
             <h3 className="rec-section-title">Record Browser Session</h3>
-            <p>Launch a controlled Chromium session from this controller and capture user actions directly.</p>
+            <p>
+              Launch a controlled Chromium session from this controller and
+              capture user actions directly.
+            </p>
           </div>
           {!browserAvailability?.available ? (
-            <div className="rec-browser-unavailable" data-testid="browser-recorder-unavailable">
-              <div className="rec-browser-unavailable-title">Browser recording is not available on this controller</div>
-              <div>{browserUnavailableReason || 'Checking controller capability.'}</div>
+            <div
+              className="rec-browser-unavailable"
+              data-testid="browser-recorder-unavailable"
+            >
+              <div className="rec-browser-unavailable-title">
+                Browser recording is not available on this controller
+              </div>
+              <div>
+                {browserUnavailableReason || "Checking controller capability."}
+              </div>
               <div>
                 {browserUnavailableDueToDisplay
-                  ? 'Install cannot add a display to this controller. Run the controller on a desktop host with DISPLAY or WAYLAND_DISPLAY, or use the proxy recorder option instead.'
-                  : 'Use the proxy recorder option instead.'}
+                  ? "Install cannot add a display to this controller. Run the controller on a desktop host with DISPLAY or WAYLAND_DISPLAY, or use the proxy recorder option instead."
+                  : "Use the proxy recorder option instead."}
               </div>
               {installStatusVisible && (
-                <div className={`rec-install-status ${installStatusTone}`} role={installState.status === 'failed' ? 'alert' : 'status'}>
-                  <strong>{browserRecorderInstallLabel(installState.status)}</strong>
+                <div
+                  className={`rec-install-status ${installStatusTone}`}
+                  role={installState.status === "failed" ? "alert" : "status"}
+                >
+                  <strong>
+                    {browserRecorderInstallLabel(installState.status)}
+                  </strong>
                   {installState.error && <span>{installState.error}</span>}
                 </div>
               )}
               {installState && canRetryBrowserInstall && (
-                <button className="btn btn-secondary btn-sm" onClick={handleInstallBrowsers} disabled={installState.status === 'installing'}>
-                  {installState.status === 'installing' ? 'Installing...' : 'Install Recording Browser'}
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={handleInstallBrowsers}
+                  disabled={installState.status === "installing"}
+                >
+                  {installState.status === "installing"
+                    ? "Installing..."
+                    : "Install Recording Browser"}
                 </button>
               )}
-              <div className="rec-bridge-panel" data-testid="browser-recorder-bridge-panel">
-                <div className="rec-browser-unavailable-title">Use a local recording bridge</div>
+              <div
+                className="rec-bridge-panel"
+                data-testid="browser-recorder-bridge-panel"
+              >
+                <div className="rec-browser-unavailable-title">
+                  Use a local recording bridge
+                </div>
                 <div className="rec-bridge-steps">
                   <div className="rec-bridge-step">
                     <div className="rec-bridge-step-number">1</div>
                     <div className="rec-bridge-step-content">
-                      <div className="rec-bridge-step-title">Download the Recording Agent</div>
+                      <div className="rec-bridge-step-title">
+                        Download the Recording Agent
+                      </div>
                       {agentDownload.managed && (
                         <div className="rec-form-row rec-agent-platform-row">
                           <div className="rec-label">Platform</div>
                           <select
                             className="rec-input"
                             value={recordingAgentPlatform}
-                            onChange={event => setRecordingAgentPlatform(event.target.value)}
+                            onChange={(event) =>
+                              setRecordingAgentPlatform(event.target.value)
+                            }
                             aria-label="Recording Agent platform"
                           >
-                            <option value="">{recordingAgentPlatformDetecting ? 'Detecting platform...' : 'Choose platform'}</option>
-                            {CLIENT_DOWNLOAD_PLATFORMS.map(platform => (
-                              <option key={platform.value} value={platform.value}>{platform.label}</option>
+                            <option value="">
+                              {recordingAgentPlatformDetecting
+                                ? "Detecting platform..."
+                                : "Choose platform"}
+                            </option>
+                            {CLIENT_DOWNLOAD_PLATFORMS.map((platform) => (
+                              <option
+                                key={platform.value}
+                                value={platform.value}
+                              >
+                                {platform.label}
+                              </option>
                             ))}
                           </select>
                         </div>
@@ -1500,16 +2147,42 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                           href={agentDownloadHref}
                           target="_blank"
                           rel="noreferrer"
-                          onClick={event => handleDownloadRecordingAgent(event, agentDownload.managed)}
+                          data-desktop-managed-resource={
+                            agentDownload.managed ? "true" : undefined
+                          }
+                          onClick={(event) =>
+                            handleDownloadRecordingAgent(
+                              event,
+                              agentDownload.managed,
+                            )
+                          }
                         >
-                          Download the APEX Load Recording Agent{agentDownload.managed && recordingAgentPlatform ? ` for ${platformLabel(recordingAgentPlatform)}` : ''}
+                          Download the APEX Load Recording Agent
+                          {agentDownload.managed && recordingAgentPlatform
+                            ? ` for ${platformLabel(recordingAgentPlatform)}`
+                            : ""}
                         </a>
                       </div>
                       {agentDownload.managed && (
                         <div className="rec-bridge-help">
-                          {recordingAgentChecksum?.sha256
-                            ? <>SHA-256 <code>{recordingAgentChecksum.sha256}</code>{recordingAgentChecksum.filename ? <> for <code>{recordingAgentChecksum.filename}</code></> : null}</>
-                            : recordingAgentChecksumStatus || (recordingAgentPlatform ? 'SHA-256 will appear when the package manifest is staged.' : 'Choose a platform to show the package SHA-256.')}
+                          {recordingAgentChecksum?.sha256 ? (
+                            <>
+                              SHA-256{" "}
+                              <code>{recordingAgentChecksum.sha256}</code>
+                              {recordingAgentChecksum.filename ? (
+                                <>
+                                  {" "}
+                                  for{" "}
+                                  <code>{recordingAgentChecksum.filename}</code>
+                                </>
+                              ) : null}
+                            </>
+                          ) : (
+                            recordingAgentChecksumStatus ||
+                            (recordingAgentPlatform
+                              ? "SHA-256 will appear when the package manifest is staged."
+                              : "Choose a platform to show the package SHA-256.")
+                          )}
                         </div>
                       )}
                     </div>
@@ -1517,35 +2190,66 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                   <div className="rec-bridge-step">
                     <div className="rec-bridge-step-number">2</div>
                     <div className="rec-bridge-step-content">
-                      <div className="rec-bridge-step-title">Run the local command</div>
-                      <div className="rec-bridge-step-desc">Paste this command into Terminal or PowerShell on your workstation.</div>
-                        <div className="rec-bridge-terminal" data-testid="browser-recorder-bridge-terminal">
-                          <div className="rec-bridge-terminal-header">
-                            <span>Local terminal command</span>
-                            <span>Token entered at prompt</span>
-                          </div>
-                          <div className="rec-bridge-command-row">
-                            <span className="rec-terminal-prompt">$</span>
-                            <code className="rec-command" data-testid="browser-recorder-bridge-command">{bridgeCommand}</code>
-                          </div>
+                      <div className="rec-bridge-step-title">
+                        Run the local command
+                      </div>
+                      <div className="rec-bridge-step-desc">
+                        Paste this command into Terminal or PowerShell on your
+                        workstation.
+                      </div>
+                      <div
+                        className="rec-bridge-terminal"
+                        data-testid="browser-recorder-bridge-terminal"
+                      >
+                        <div className="rec-bridge-terminal-header">
+                          <span>Local terminal command</span>
+                          <span>Token entered at prompt</span>
+                        </div>
+                        <div className="rec-bridge-command-row">
+                          <span className="rec-terminal-prompt">$</span>
+                          <code
+                            className="rec-command"
+                            data-testid="browser-recorder-bridge-command"
+                          >
+                            {bridgeCommand}
+                          </code>
+                        </div>
                         <div className="rec-bridge-command-actions">
-                          <button type="button" className="btn btn-secondary btn-sm" onClick={handleCopyBridgeCommand}>
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={handleCopyBridgeCommand}
+                          >
                             Copy Terminal Command
                           </button>
-                          <button type="button" className="rec-inline-action" onClick={handleRegenerateBridgeToken}>
+                          <button
+                            type="button"
+                            className="rec-inline-action"
+                            onClick={handleRegenerateBridgeToken}
+                          >
                             Regenerate Token
                           </button>
                         </div>
                       </div>
                       <div className="rec-bridge-help">
-                        When the agent asks, paste this pairing token. It is not included in the command or process arguments.
+                        When the agent asks, paste this pairing token. It is not
+                        included in the command or process arguments.
                       </div>
                       <div className="rec-bridge-command-row">
                         <span className="rec-terminal-prompt">#</span>
-                        <code className="rec-command" data-testid="browser-recorder-bridge-token">{bridgeToken}</code>
+                        <code
+                          className="rec-command"
+                          data-testid="browser-recorder-bridge-token"
+                        >
+                          {bridgeToken}
+                        </code>
                       </div>
                       <div className="rec-bridge-command-actions">
-                        <button type="button" className="btn btn-secondary btn-sm" onClick={handleCopyBridgeToken}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={handleCopyBridgeToken}
+                        >
                           Copy Pairing Token
                         </button>
                       </div>
@@ -1554,40 +2258,65 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                   <div className="rec-bridge-step">
                     <div className="rec-bridge-step-number">3</div>
                     <div className="rec-bridge-step-content">
-                      <div className="rec-bridge-step-title">Verify the agent</div>
+                      <div className="rec-bridge-step-title">
+                        Verify the agent
+                      </div>
                       <div className="rec-form-row">
                         <div className="rec-label">Bridge URL</div>
                         <input
                           className="rec-input"
                           value={bridgeOrigin}
-                          onChange={e => setBridgeOrigin(e.target.value)}
+                          onChange={(e) => setBridgeOrigin(e.target.value)}
                           placeholder="http://127.0.0.1:49152"
                         />
                       </div>
-                      <button className="btn btn-secondary btn-sm" onClick={handleVerifyBridgeAgent} disabled={bridgeVerifying}>
-                        {bridgeVerifying ? 'Verifying...' : 'Verify Agent'}
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={handleVerifyBridgeAgent}
+                        disabled={bridgeVerifying}
+                      >
+                        {bridgeVerifying ? "Verifying..." : "Verify Agent"}
                       </button>
                     </div>
                   </div>
                   <div className="rec-bridge-step">
                     <div className="rec-bridge-step-number">4</div>
                     <div className="rec-bridge-step-content">
-                      <div className="rec-bridge-step-title">Pair the local bridge</div>
-                      <button className="btn btn-secondary btn-sm" onClick={handlePairBridge} disabled={bridgePairing}>
-                        {bridgePairing ? 'Pairing...' : 'Pair Local Bridge'}
+                      <div className="rec-bridge-step-title">
+                        Pair the local bridge
+                      </div>
+                      <button
+                        className="btn btn-secondary btn-sm"
+                        onClick={handlePairBridge}
+                        disabled={bridgePairing}
+                      >
+                        {bridgePairing ? "Pairing..." : "Pair Local Bridge"}
                       </button>
                     </div>
                   </div>
                 </div>
-                {bridgeStatus && <div className={`rec-bridge-status ${bridgeStatusTone}`}>{bridgeStatus}</div>}
+                {bridgeStatus && (
+                  <div className={`rec-bridge-status ${bridgeStatusTone}`}>
+                    {bridgeStatus}
+                  </div>
+                )}
               </div>
             </div>
           ) : (
             <div className="rec-start-form">
               {api.browserRecorderBridge && (
-                <div className="rec-bridge-connected" data-testid="browser-recorder-bridge-connected">
+                <div
+                  className="rec-bridge-connected"
+                  data-testid="browser-recorder-bridge-connected"
+                >
                   <span>Local bridge: {api.browserRecorderBridge.origin}</span>
-                  <button type="button" className="rec-inline-action" onClick={handleDisconnectBridge}>Disconnect</button>
+                  <button
+                    type="button"
+                    className="rec-inline-action"
+                    onClick={handleDisconnectBridge}
+                  >
+                    Disconnect
+                  </button>
                 </div>
               )}
               <div className="rec-form-row">
@@ -1596,7 +2325,9 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                   <select
                     className="rec-input rec-url-scheme-select"
                     value={browserStartScheme}
-                    onChange={e => setBrowserStartScheme(e.target.value as HttpURLScheme)}
+                    onChange={(e) =>
+                      setBrowserStartScheme(e.target.value as HttpURLScheme)
+                    }
                     aria-label="Start URL scheme"
                   >
                     <option value="https://">https://</option>
@@ -1605,7 +2336,9 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                   <input
                     className="rec-input"
                     value={browserStartAddress}
-                    onChange={e => handleBrowserStartAddressChange(e.target.value)}
+                    onChange={(e) =>
+                      handleBrowserStartAddressChange(e.target.value)
+                    }
                     placeholder="app.example.com/login"
                     aria-label="Start URL address"
                   />
@@ -1616,52 +2349,110 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                 <input
                   className="rec-input"
                   value={browserName}
-                  onChange={e => setBrowserName(e.target.value)}
+                  onChange={(e) => setBrowserName(e.target.value)}
                   placeholder="e.g. Login & Checkout Flow"
                 />
               </div>
               <div className="rec-form-row">
                 <div className="rec-label">Device</div>
-                <select className="rec-input" value={browserDevice} onChange={e => setBrowserDevice(e.target.value)} aria-label="Device preset">
+                <select
+                  className="rec-input"
+                  value={browserDevice}
+                  onChange={(e) => setBrowserDevice(e.target.value)}
+                  aria-label="Device preset"
+                >
                   <option value="">Desktop (default)</option>
-                  {browserDevices.filter(d => d.name !== 'desktop_1080p').map(d => (
-                    <option key={d.name} value={d.name}>{d.name.replace(/_/g, ' ')} ({d.platform})</option>
-                  ))}
+                  {browserDevices
+                    .filter((d) => d.name !== "desktop_1080p")
+                    .map((d) => (
+                      <option key={d.name} value={d.name}>
+                        {d.name.replace(/_/g, " ")} ({d.platform})
+                      </option>
+                    ))}
                 </select>
               </div>
               <label className="rec-checkbox-row">
                 <input
                   type="checkbox"
                   checked={browserCaptureHAR}
-                  onChange={e => setBrowserCaptureHAR(e.target.checked)}
+                  onChange={(e) => setBrowserCaptureHAR(e.target.checked)}
                 />
-                <span>Capture side-car HAR (network traffic for protocol-level scripting)</span>
+                <span>
+                  Capture side-car HAR (network traffic for protocol-level
+                  scripting)
+                </span>
               </label>
 
-              <button type="button" className="rec-inline-action" onClick={() => setBrowserOptionsOpen(v => !v)}>
-                {browserOptionsOpen ? 'Hide advanced options' : 'Advanced options'}
+              <button
+                type="button"
+                className="rec-inline-action"
+                onClick={() => setBrowserOptionsOpen((v) => !v)}
+              >
+                {browserOptionsOpen
+                  ? "Hide advanced options"
+                  : "Advanced options"}
               </button>
               {browserOptionsOpen && (
                 <div className="rec-browser-options">
                   <label className="rec-checkbox-row">
-                    <input type="checkbox" checked={browserSidebar} onChange={e => setBrowserSidebar(e.target.checked)} />
-                    <span>Show in-page advanced sidebar <span className="rec-hint">(section, transactions, notes, recent steps — uncheck for the minimal pause/assert toolbar)</span></span>
+                    <input
+                      type="checkbox"
+                      checked={browserSidebar}
+                      onChange={(e) => setBrowserSidebar(e.target.checked)}
+                    />
+                    <span>
+                      Show in-page advanced sidebar{" "}
+                      <span className="rec-hint">
+                        (section, transactions, notes, recent steps — uncheck
+                        for the minimal pause/assert toolbar)
+                      </span>
+                    </span>
                   </label>
                   <label className="rec-checkbox-row">
-                    <input type="checkbox" checked={browserScreenshots} onChange={e => setBrowserScreenshots(e.target.checked)} />
+                    <input
+                      type="checkbox"
+                      checked={browserScreenshots}
+                      onChange={(e) => setBrowserScreenshots(e.target.checked)}
+                    />
                     <span>Capture per-step screenshot thumbnails</span>
                   </label>
                   <label className="rec-checkbox-row">
-                    <input type="checkbox" checked={browserWSPayloads} onChange={e => setBrowserWSPayloads(e.target.checked)} />
+                    <input
+                      type="checkbox"
+                      checked={browserWSPayloads}
+                      onChange={(e) => setBrowserWSPayloads(e.target.checked)}
+                    />
                     <span>Capture WebSocket frame payloads (scrubbed)</span>
                   </label>
                   <div className="rec-form-row">
-                    <div className="rec-label">Exclude hosts <span className="rec-hint">(comma-separated, HAR noise filter)</span></div>
-                    <input className="rec-input" aria-label="Exclude hosts" value={browserExcludeHosts} onChange={e => setBrowserExcludeHosts(e.target.value)} placeholder="analytics.google.com, cdn.example.com" />
+                    <div className="rec-label">
+                      Exclude hosts{" "}
+                      <span className="rec-hint">
+                        (comma-separated, HAR noise filter)
+                      </span>
+                    </div>
+                    <input
+                      className="rec-input"
+                      aria-label="Exclude hosts"
+                      value={browserExcludeHosts}
+                      onChange={(e) => setBrowserExcludeHosts(e.target.value)}
+                      placeholder="analytics.google.com, cdn.example.com"
+                    />
                   </div>
                   <div className="rec-form-row">
-                    <div className="rec-label">Reuse session state <span className="rec-hint">(saved storage-state path, skip login)</span></div>
-                    <input className="rec-input" aria-label="Reuse session state path" value={browserStorageState} onChange={e => setBrowserStorageState(e.target.value)} placeholder="/path/to/state.json" />
+                    <div className="rec-label">
+                      Reuse session state{" "}
+                      <span className="rec-hint">
+                        (saved storage-state path, skip login)
+                      </span>
+                    </div>
+                    <input
+                      className="rec-input"
+                      aria-label="Reuse session state path"
+                      value={browserStorageState}
+                      onChange={(e) => setBrowserStorageState(e.target.value)}
+                      placeholder="/path/to/state.json"
+                    />
                   </div>
                 </div>
               )}
@@ -1672,13 +2463,22 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                 onClick={handleStartBrowserRecording}
                 disabled={!!browserPanelSessionId}
               >
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" /></svg>
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                </svg>
                 Record Browser
               </button>
               <div className="rec-browser-unavailable">
-                A Chromium window opens on this machine with an in-page recording sidebar (sections, transactions, notes,
-                recent steps, pause and verification picker) you can drag to any corner. Manage the session from there or
-                the control panel docked below — which also opens as a compact popup window.
+                A Chromium window opens on this machine with an in-page
+                recording sidebar (sections, transactions, notes, recent steps,
+                pause and verification picker) you can drag to any corner.
+                Manage the session from there or the control panel docked below
+                — which also opens as a compact popup window.
               </div>
             </div>
           )}
@@ -1689,36 +2489,65 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
               onImported={onImported}
               onEdit={onEdit}
               onDismiss={() => {
-                setBrowserPanelSessionId(null)
-                refresh()
+                setBrowserPanelSessionId(null);
+                refresh();
               }}
             />
           )}
 
           {recentBrowserSessions.length > 0 && (
-            <div className="rec-browser-session-section" data-testid="browser-recording-recovery-list">
+            <div
+              className="rec-browser-session-section"
+              data-testid="browser-recording-recovery-list"
+            >
               <div className="rec-feed-header">
                 <span>Recent Browser Recordings</span>
-                <span className="rec-feed-count">{recentBrowserSessions.length}</span>
+                <span className="rec-feed-count">
+                  {recentBrowserSessions.length}
+                </span>
               </div>
               <div className="rec-browser-session-list">
-                {recentBrowserSessions.map(session => (
+                {recentBrowserSessions.map((session) => (
                   <div key={session.id} className="rec-browser-session-row">
                     <button
                       type="button"
                       className="rec-browser-session-main"
                       onClick={() => handleOpenBrowserRecordingSession(session)}
                     >
-                      <span className="rec-session-name">{session.name || 'Browser Recording'}</span>
+                      <span className="rec-session-name">
+                        {session.name || "Browser Recording"}
+                      </span>
                       <span className="rec-session-meta">
                         <span>{session.step_count || 0} steps</span>
-                        <span>{session.network_request_count || 0} requests</span>
-                        <span>{new Date(session.stopped_at || session.started_at).toLocaleString()}</span>
+                        <span>
+                          {session.network_request_count || 0} requests
+                        </span>
+                        <span>
+                          {new Date(
+                            session.stopped_at || session.started_at,
+                          ).toLocaleString()}
+                        </span>
                       </span>
                     </button>
                     <div className="rec-browser-session-actions">
-                      <button type="button" className="btn btn-sm btn-secondary" onClick={() => handleOpenBrowserRecordingSession(session)}>Open</button>
-                      <button type="button" className="btn btn-sm btn-danger" onClick={event => handleDeleteBrowserRecordingSession(session, event)}>Delete</button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-secondary"
+                        onClick={() =>
+                          handleOpenBrowserRecordingSession(session)
+                        }
+                      >
+                        Open
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-danger"
+                        onClick={(event) =>
+                          handleDeleteBrowserRecordingSession(session, event)
+                        }
+                      >
+                        Delete
+                      </button>
                     </div>
                   </div>
                 ))}
@@ -1727,300 +2556,548 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
           )}
         </div>
 
-        <div className="rec-controls-card rec-proxy-recorder-option" data-testid="rec-proxy-recorder-option">
+        <div
+          className="rec-controls-card rec-proxy-recorder-option"
+          data-testid="rec-proxy-recorder-option"
+        >
           <div className="rec-option-heading">
             <h3 className="rec-section-title">Advanced Proxy Recorder</h3>
-            <p>Capture HTTP(S) traffic through the controller recording proxy when headed browser recording is unavailable.</p>
+            <p>
+              Capture HTTP(S) traffic through the controller recording proxy
+              when headed browser recording is unavailable.
+            </p>
           </div>
 
-      {/* Proxy Setup */}
-      <div className="rec-setup-section">
-        <button
-          aria-label="Toggle proxy recorder setup"
-          type="button"
-          className="rec-setup-toggle"
-          aria-expanded={showSetup}
-          aria-controls="recording-proxy-setup-steps"
-          onClick={() => setShowSetup(!showSetup)}
-        >
-          <div className="rec-proxy-header">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <line x1="12" y1="16" x2="12" y2="12" />
-              <line x1="12" y1="8" x2="12.01" y2="8" />
-            </svg>
-            <span>Proxy Setup</span>
-          </div>
-          <svg
-            className={`rec-chevron ${showSetup ? 'open' : ''}`}
-            width="16" height="16" viewBox="0 0 24 24" fill="none"
-            stroke="var(--text-muted)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-          >
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
-        </button>
-
-        {showSetup && (
-          <div className="rec-setup-steps" id="recording-proxy-setup-steps">
-            <div className="rec-step">
-              <div className="rec-step-number">1</div>
-              <div className="rec-step-content">
-                <div className="rec-step-title">Download &amp; Install CA Certificate</div>
-                <div className="rec-step-desc">
-                  Install and trust the APEX Load CA certificate for SSL/TLS so the proxy can intercept HTTPS traffic.
-                </div>
-                <div className="rec-step-note">
-                  Only trust this private recording CA on a workstation you control. The recorder reuses the same CA across controller restarts, so install it again only if you delete the CA files or change the recorder CA directory.
-                  {caCertPath && (
-                    <div className="rec-step-note-path">
-                      <span>Current certificate path:</span>
-                      <code>{caCertPath}</code>
-                      <button type="button" className="rec-inline-action" onClick={handleCopyCAPath}>Copy path</button>
-                    </div>
-                  )}
-                  <div className="rec-step-note-troubleshoot">
-                    If the browser still reports <code>ERR_CERT_AUTHORITY_INVALID</code>, the CA is imported but not trusted for SSL/TLS, the browser is using a separate trust store, or an older APEX Load CA is still selected.
-                  </div>
-                </div>
-                <div className="rec-download-row">
-                  <PageViewToggle
-                    value={certificateFormatView}
-                    ariaLabel="Certificate format"
-                    className="rec-certificate-format-toggle script-page-toggle"
-                    onChange={value => setCertificateFormatView(value)}
-                    options={[
-                      { value: 'crt', label: 'CRT' },
-                      { value: 'pem', label: 'PEM' },
-                    ]}
-                  />
-                  <button className="rec-download-btn" onClick={() => handleDownloadCA(certificateFormatView)}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                      <polyline points="7 10 12 15 17 10" />
-                      <line x1="12" y1="15" x2="12" y2="3" />
-                    </svg>
-                    {certificateFormatView === 'crt' ? 'Download CA Certificate (.crt)' : 'Download CA Certificate (.pem)'}
-                  </button>
-                </div>
-                <div className="rec-os-instructions">
-                  {certificateFormatView === 'crt' ? (
-                    <>
-                      <div><span className="rec-os-label">macOS Chrome, Edge, Safari:</span> Download .crt &rarr; open Keychain Access &rarr; import into the System keychain &rarr; open &ldquo;APEX Load Recording Proxy CA&rdquo; &rarr; expand Trust &rarr; set &ldquo;When using this certificate&rdquo; or &ldquo;Secure Sockets Layer (SSL)&rdquo; to Always Trust &rarr; close the window, enter your password, and restart the browser.</div>
-                      <div><span className="rec-os-label">Windows Chrome, Edge:</span> Download .crt &rarr; Install Certificate &rarr; Local Machine &rarr; place it in &ldquo;Trusted Root Certification Authorities&rdquo; &rarr; finish the wizard and restart the browser.</div>
-                    </>
-                  ) : (
-                    <>
-                      <div><span className="rec-os-label">Firefox:</span> Download PEM format &rarr; Settings &rarr; Privacy &amp; Security &rarr; Certificates &rarr; View Certificates &rarr; Authorities &rarr; Import &rarr; enable &ldquo;Trust this CA to identify websites&rdquo; &rarr; restart Firefox. If Firefox is configured to use system roots, restart after trusting the OS root instead.</div>
-                      <div><span className="rec-os-label">Linux:</span> Download PEM format and add it to the browser or distro trust store used by your browser, then restart the browser.</div>
-                    </>
-                  )}
-                  <div><span className="rec-os-label">Cleanup:</span> Remove older &ldquo;APEX Load Recording Proxy CA&rdquo; entries if more than one exists, then trust the current CA shown above.</div>
-                </div>
+          {/* Proxy Setup */}
+          <div className="rec-setup-section">
+            <button
+              aria-label="Toggle proxy recorder setup"
+              type="button"
+              className="rec-setup-toggle"
+              aria-expanded={showSetup}
+              aria-controls="recording-proxy-setup-steps"
+              onClick={() => setShowSetup(!showSetup)}
+            >
+              <div className="rec-proxy-header">
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="var(--accent)"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="16" x2="12" y2="12" />
+                  <line x1="12" y1="8" x2="12.01" y2="8" />
+                </svg>
+                <span>Proxy Setup</span>
               </div>
-            </div>
-
-            <div className="rec-step">
-              <div className="rec-step-number">2</div>
-              <div className="rec-step-content">
-                <div className="rec-step-title">Configure Browser Proxy</div>
-                <div className="rec-step-desc">
-                  Route browser traffic through <code>{proxyHost}:{proxyPort}</code>
-                </div>
-                {!proxyHostIsLocal && (
-                  <div className="rec-step-note rec-step-note-troubleshoot">
-                    This controller is remote. Use the Recording Agent bridge for workstation-local browser capture unless an operator has explicitly exposed the proxy on <code>{proxyHost}</code>.
-                  </div>
-                )}
-                <div className="rec-os-instructions">
-                  <div>Use a browser extension like SwitchyOmega (Chrome) or FoxyProxy (Firefox) to route traffic through the proxy.</div>
-                  <div><span className="rec-os-label">System proxy:</span> macOS System Settings &rarr; Network &rarr; Wi-Fi &rarr; Details &rarr; Proxies &rarr; Web Proxy (HTTP) &amp; Secure Web Proxy (HTTPS) &rarr; <code>{proxyHost}</code> port <code>{proxyPort}</code></div>
-                  <div><span className="rec-os-label">Windows 11:</span> Settings &rarr; Network &amp; internet &rarr; Proxy &rarr; Manual proxy setup &rarr; <code>{proxyHost}</code> port <code>{proxyPort}</code></div>
-                </div>
-                <div className="rec-proxy-shortcut">
-                  <PageViewToggle
-                    value={proxyPlatformView}
-                    ariaLabel="Proxy command platform"
-                    className="rec-proxy-platform-toggle script-page-toggle"
-                    onChange={value => setProxyPlatformView(value)}
-                    options={[
-                      { value: 'macos', label: 'macOS' },
-                      { value: 'windows', label: 'Windows 11' },
-                    ]}
-                  />
-                  {proxyPlatformView === 'macos' ? (
-                    <div className="rec-proxy-platform">
-                      <div className="rec-proxy-platform-title">macOS</div>
-                      <label className="rec-proxy-service">
-                        <span>Network service</span>
-                        <input
-                          className="rec-input"
-                          aria-label="macOS network service"
-                          value={macOSNetworkService}
-                          onChange={e => setMacOSNetworkService(e.target.value)}
-                        />
-                      </label>
-                      <div className="rec-shortcut-actions">
-                        <button className="rec-download-alt" type="button" onClick={() => handleCopyMacOSProxyCommand('start')}>
-                          Copy Start Proxy Command
-                        </button>
-                        <button className="rec-download-alt" type="button" onClick={() => handleCopyMacOSProxyCommand('restore')}>
-                          Copy Restore Proxy Command
-                        </button>
-                        <button className="rec-download-alt" type="button" onClick={handleOpenMacOSNetworkSettings}>
-                          Open Network Settings
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="rec-proxy-platform">
-                      <div className="rec-proxy-platform-title">Windows 11</div>
-                      <div className="rec-shortcut-actions">
-                        <button className="rec-download-alt" type="button" onClick={() => handleCopyWindowsProxyCommand('start')}>
-                          Copy Windows Start Command
-                        </button>
-                        <button className="rec-download-alt" type="button" onClick={() => handleCopyWindowsProxyCommand('restore')}>
-                          Copy Windows Restore Command
-                        </button>
-                        <button className="rec-download-alt" type="button" onClick={handleOpenWindowsProxySettings}>
-                          Open Windows Proxy Settings
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            <div className="rec-step">
-              <div className="rec-step-number">3</div>
-              <div className="rec-step-content">
-                <div className="rec-step-title">Start Recording</div>
-                <div className="rec-step-desc">
-                  Click &ldquo;Start Recording&rdquo; below, then browse the target website. All HTTP and HTTPS traffic will be captured.
-                </div>
-              </div>
-            </div>
-
-            <div className="rec-step">
-              <div className="rec-step-number">4</div>
-              <div className="rec-step-content">
-                <div className="rec-step-title">Stop &amp; Convert</div>
-                <div className="rec-step-desc">
-                  When done, stop the recording and convert to a test script. Remember to disable the proxy.
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="rec-proxy-run-panel">
-        <h3 className="rec-section-title">
-          {activeSession ? (
-            <>
-              <span className="rec-live-dot" />
-              {activeSession.status === 'paused' ? 'Paused' : 'Recording'}: {activeSession.name}
-            </>
-          ) : (
-            'New Recording'
-          )}
-        </h3>
-
-        {!activeSession ? (
-          <div className="rec-start-form">
-            <div className="rec-form-row">
-                <div className="rec-label">Session Name</div>
-              <input
-                className="rec-input"
-                value={sessionName}
-                onChange={e => setSessionName(e.target.value)}
-                placeholder="e.g. Login & Checkout Flow"
-              />
-            </div>
-            <div className="rec-form-row">
-                <div className="rec-label">Include Hosts <span className="rec-hint">(comma-separated, optional)</span></div>
-              <input
-                className="rec-input"
-                value={includeHosts}
-                onChange={e => setIncludeHosts(e.target.value)}
-                placeholder="e.g. api.example.com, app.example.com"
-              />
-            </div>
-            <div className="rec-form-row">
-                <div className="rec-label">Exclude Hosts <span className="rec-hint">(comma-separated, optional)</span></div>
-              <input
-                className="rec-input"
-                value={excludeHosts}
-                onChange={e => setExcludeHosts(e.target.value)}
-                placeholder="e.g. analytics.google.com, cdn.example.com"
-              />
-            </div>
-            <label className="rec-checkbox-row">
-              <input
-                type="checkbox"
-                checked={captureCookies}
-                onChange={e => setCaptureCookies(e.target.checked)}
-              />
-              <span>Capture cookies (may include secrets)</span>
-            </label>
-            <button className="btn btn-primary rec-start-btn" onClick={handleStart}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10" /></svg>
-              Start Recording
+              <svg
+                className={`rec-chevron ${showSetup ? "open" : ""}`}
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="var(--text-muted)"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
             </button>
-          </div>
-        ) : (
-          <div className="rec-active-panel">
-            <div className="rec-active-stats">
-              <div className="rec-stat">
-                <span className="rec-stat-value">{activeSession.request_count ?? activeSession.requests?.length ?? 0}</span>
-                <span className="rec-stat-label">Requests</span>
-              </div>
-              <div className="rec-stat">
-                <span className="rec-stat-value">{activeSession.base_url || '—'}</span>
-                <span className="rec-stat-label">Base URL</span>
-              </div>
-              <div className="rec-stat">
-                <span className="rec-stat-value">{new Date(activeSession.started_at).toLocaleTimeString()}</span>
-                <span className="rec-stat-label">Started</span>
-              </div>
-            </div>
 
-            {/* Live request feed */}
-            {activeSession.requests && activeSession.requests.length > 0 && (
-              <div className="rec-live-feed">
-                <div className="rec-feed-header">
-                  <span>Live Requests</span>
-                  <span className="rec-feed-count">{activeSession.request_count ?? activeSession.requests.length}</span>
-                </div>
-                <div className="rec-feed-list">
-                  {[...activeSession.requests].reverse().slice(0, 20).map(req => (
-                    <div key={req.seq} className="rec-feed-item">
-                      <span className={`rec-method ${req.method.toLowerCase()}`}>{req.method}</span>
-                      <span className="rec-path" title={req.url}>{req.path}</span>
-                      <span className={`rec-status ${req.status_code >= 400 ? 'error' : ''}`}>{req.status_code}</span>
-                      <span className="rec-timing">{req.response_time_ms.toFixed(0)}ms</span>
+            {showSetup && (
+              <div className="rec-setup-steps" id="recording-proxy-setup-steps">
+                <div className="rec-step">
+                  <div className="rec-step-number">1</div>
+                  <div className="rec-step-content">
+                    <div className="rec-step-title">
+                      Download &amp; Install CA Certificate
                     </div>
-                  ))}
+                    <div className="rec-step-desc">
+                      Install and trust the APEX Load CA certificate for SSL/TLS
+                      so the proxy can intercept HTTPS traffic.
+                    </div>
+                    <div className="rec-step-note">
+                      Only trust this private recording CA on a workstation you
+                      control. The recorder reuses the same CA across controller
+                      restarts, so install it again only if you delete the CA
+                      files or change the recorder CA directory.
+                      {caCertPath && (
+                        <div className="rec-step-note-path">
+                          <span>Current certificate path:</span>
+                          <code>{caCertPath}</code>
+                          <button
+                            type="button"
+                            className="rec-inline-action"
+                            onClick={handleCopyCAPath}
+                          >
+                            Copy path
+                          </button>
+                        </div>
+                      )}
+                      <div className="rec-step-note-troubleshoot">
+                        If the browser still reports{" "}
+                        <code>ERR_CERT_AUTHORITY_INVALID</code>, the CA is
+                        imported but not trusted for SSL/TLS, the browser is
+                        using a separate trust store, or an older APEX Load CA
+                        is still selected.
+                      </div>
+                    </div>
+                    <div className="rec-download-row">
+                      <PageViewToggle
+                        value={certificateFormatView}
+                        ariaLabel="Certificate format"
+                        className="rec-certificate-format-toggle script-page-toggle"
+                        onChange={(value) => setCertificateFormatView(value)}
+                        options={[
+                          { value: "crt", label: "CRT" },
+                          { value: "pem", label: "PEM" },
+                        ]}
+                      />
+                      <button
+                        className="rec-download-btn"
+                        onClick={() => handleDownloadCA(certificateFormatView)}
+                      >
+                        <svg
+                          width="14"
+                          height="14"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                        >
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="7 10 12 15 17 10" />
+                          <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                        {certificateFormatView === "crt"
+                          ? "Download CA Certificate (.crt)"
+                          : "Download CA Certificate (.pem)"}
+                      </button>
+                    </div>
+                    <div className="rec-os-instructions">
+                      {certificateFormatView === "crt" ? (
+                        <>
+                          <div>
+                            <span className="rec-os-label">
+                              macOS Chrome, Edge, Safari:
+                            </span>{" "}
+                            Download .crt &rarr; open Keychain Access &rarr;
+                            import into your login keychain &rarr; open
+                            &ldquo;APEX Load Recording Proxy CA&rdquo; &rarr;
+                            expand Trust &rarr; set &ldquo;When using this
+                            certificate&rdquo; or &ldquo;Secure Sockets Layer
+                            (SSL)&rdquo; to Always Trust &rarr; close the
+                            window, enter your password, and restart the
+                            browser.
+                          </div>
+                          <div>
+                            <span className="rec-os-label">
+                              Windows Chrome, Edge:
+                            </span>{" "}
+                            Download .crt &rarr; Install Certificate &rarr;
+                            Current User &rarr; place it in &ldquo;Trusted Root
+                            Certification Authorities&rdquo; &rarr; finish the
+                            wizard and restart the browser.
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div>
+                            <span className="rec-os-label">Firefox:</span>{" "}
+                            Download PEM format &rarr; Settings &rarr; Privacy
+                            &amp; Security &rarr; Certificates &rarr; View
+                            Certificates &rarr; Authorities &rarr; Import &rarr;
+                            enable &ldquo;Trust this CA to identify
+                            websites&rdquo; &rarr; restart Firefox. If Firefox
+                            is configured to use system roots, restart after
+                            trusting the OS root instead.
+                          </div>
+                          <div>
+                            <span className="rec-os-label">Linux:</span>{" "}
+                            Download PEM format and prefer the current
+                            browser/profile trust store. Use a distro-wide trust
+                            store only on a dedicated test host where an
+                            administrator explicitly requires it.
+                          </div>
+                        </>
+                      )}
+                      <div>
+                        <span className="rec-os-label">Cleanup:</span> Remove
+                        the &ldquo;APEX Load Recording Proxy CA&rdquo; from the
+                        same per-user trust store when recording is finished;
+                        remove older entries before trusting the current CA.
+                        Machine-wide System keychain or Local Machine trust is
+                        an explicit administrator-only exception for dedicated
+                        test hosts, not the default.
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rec-step">
+                  <div className="rec-step-number">2</div>
+                  <div className="rec-step-content">
+                    <div className="rec-step-title">
+                      Configure Browser Proxy
+                    </div>
+                    <div className="rec-step-desc">
+                      Route browser traffic through{" "}
+                      <code>
+                        {proxyHost}:{proxyPort}
+                      </code>
+                    </div>
+                    {proxyAuthToken && (
+                      <div className="rec-step-note">
+                        When the browser requests proxy credentials, use
+                        username <code>apexload</code> and password{" "}
+                        <code>{proxyAuthToken}</code>. This per-launch password
+                        changes whenever APEX Load restarts.{" "}
+                        <button
+                          className="rec-inline-action"
+                          type="button"
+                          onClick={() => {
+                            void copyProxyCommand(
+                              proxyAuthToken,
+                              "Proxy password copied",
+                              "Failed to copy proxy password",
+                            );
+                          }}
+                        >
+                          Copy password
+                        </button>
+                      </div>
+                    )}
+                    {!proxyHostIsLocal && (
+                      <div className="rec-step-note rec-step-note-troubleshoot">
+                        This controller is remote. Use the Recording Agent
+                        bridge for workstation-local browser capture unless an
+                        operator has explicitly exposed the proxy on{" "}
+                        <code>{proxyHost}</code>.
+                      </div>
+                    )}
+                    <div className="rec-os-instructions">
+                      <div>
+                        Use a browser extension like SwitchyOmega (Chrome) or
+                        FoxyProxy (Firefox) to route traffic through the proxy.
+                      </div>
+                      <div>
+                        <span className="rec-os-label">System proxy:</span>{" "}
+                        macOS System Settings &rarr; Network &rarr; Wi-Fi &rarr;
+                        Details &rarr; Proxies &rarr; Web Proxy (HTTP) &amp;
+                        Secure Web Proxy (HTTPS) &rarr; <code>{proxyHost}</code>{" "}
+                        port <code>{proxyPort}</code>
+                      </div>
+                      <div>
+                        <span className="rec-os-label">Windows 11:</span>{" "}
+                        Settings &rarr; Network &amp; internet &rarr; Proxy
+                        &rarr; Manual proxy setup &rarr;{" "}
+                        <code>{proxyHost}</code> port <code>{proxyPort}</code>
+                      </div>
+                    </div>
+                    <div className="rec-proxy-shortcut">
+                      <PageViewToggle
+                        value={proxyPlatformView}
+                        ariaLabel="Proxy command platform"
+                        className="rec-proxy-platform-toggle script-page-toggle"
+                        onChange={(value) => setProxyPlatformView(value)}
+                        options={[
+                          { value: "macos", label: "macOS" },
+                          { value: "windows", label: "Windows 11" },
+                        ]}
+                      />
+                      {proxyPlatformView === "macos" ? (
+                        <div className="rec-proxy-platform">
+                          <div className="rec-proxy-platform-title">macOS</div>
+                          <label className="rec-proxy-service">
+                            <span>Network service</span>
+                            <input
+                              className="rec-input"
+                              aria-label="macOS network service"
+                              value={macOSNetworkService}
+                              onChange={(e) =>
+                                setMacOSNetworkService(e.target.value)
+                              }
+                            />
+                          </label>
+                          <div className="rec-shortcut-actions">
+                            <button
+                              className="rec-download-alt"
+                              type="button"
+                              onClick={() =>
+                                handleCopyMacOSProxyCommand("start")
+                              }
+                            >
+                              Copy Start Proxy Command
+                            </button>
+                            <button
+                              className="rec-download-alt"
+                              type="button"
+                              onClick={() =>
+                                handleCopyMacOSProxyCommand("restore")
+                              }
+                            >
+                              Copy Restore Proxy Command
+                            </button>
+                            <button
+                              className="rec-download-alt"
+                              type="button"
+                              onClick={handleOpenMacOSNetworkSettings}
+                            >
+                              Open Network Settings
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="rec-proxy-platform">
+                          <div className="rec-proxy-platform-title">
+                            Windows 11
+                          </div>
+                          <div className="rec-shortcut-actions">
+                            <button
+                              className="rec-download-alt"
+                              type="button"
+                              onClick={() =>
+                                handleCopyWindowsProxyCommand("start")
+                              }
+                            >
+                              Copy Windows Start Command
+                            </button>
+                            <button
+                              className="rec-download-alt"
+                              type="button"
+                              onClick={() =>
+                                handleCopyWindowsProxyCommand("restore")
+                              }
+                            >
+                              Copy Windows Restore Command
+                            </button>
+                            <button
+                              className="rec-download-alt"
+                              type="button"
+                              onClick={handleOpenWindowsProxySettings}
+                            >
+                              Open Windows Proxy Settings
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rec-step">
+                  <div className="rec-step-number">3</div>
+                  <div className="rec-step-content">
+                    <div className="rec-step-title">Start Recording</div>
+                    <div className="rec-step-desc">
+                      Click &ldquo;Start Recording&rdquo; below, then browse the
+                      target website. All HTTP and HTTPS traffic will be
+                      captured.
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rec-step">
+                  <div className="rec-step-number">4</div>
+                  <div className="rec-step-content">
+                    <div className="rec-step-title">Stop &amp; Convert</div>
+                    <div className="rec-step-desc">
+                      When done, stop the recording and convert to a test
+                      script. Remember to disable the proxy.
+                    </div>
+                  </div>
                 </div>
               </div>
             )}
-
-            <button className="btn btn-danger rec-stop-btn" onClick={handleStop}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2" /></svg>
-              Stop Recording
-            </button>
-            <button className="btn btn-secondary rec-stop-btn" onClick={handlePauseResume}>
-              {activeSession.status === 'paused' ? 'Resume Recording' : 'Pause Recording'}
-            </button>
-            <button className="btn btn-secondary rec-stop-btn" type="button" onClick={() => handleCopyMacOSProxyCommand('restore')}>
-              Copy Restore Proxy Command
-            </button>
-            <button className="btn btn-secondary rec-stop-btn" type="button" onClick={() => handleCopyWindowsProxyCommand('restore')}>
-              Copy Windows Restore Command
-            </button>
           </div>
-        )}
-      </div>
+
+          <div className="rec-proxy-run-panel">
+            <h3 className="rec-section-title">
+              {activeSession ? (
+                <>
+                  <span className="rec-live-dot" />
+                  {activeSession.status === "paused"
+                    ? "Paused"
+                    : "Recording"}: {activeSession.name}
+                </>
+              ) : (
+                "New Recording"
+              )}
+            </h3>
+
+            {!activeSession ? (
+              <div className="rec-start-form">
+                <div className="rec-form-row">
+                  <div className="rec-label">Session Name</div>
+                  <input
+                    className="rec-input"
+                    value={sessionName}
+                    onChange={(e) => setSessionName(e.target.value)}
+                    placeholder="e.g. Login & Checkout Flow"
+                  />
+                </div>
+                <div className="rec-form-row">
+                  <div className="rec-label">
+                    Include Hosts{" "}
+                    <span className="rec-hint">
+                      (comma-separated, optional)
+                    </span>
+                  </div>
+                  <input
+                    className="rec-input"
+                    value={includeHosts}
+                    onChange={(e) => setIncludeHosts(e.target.value)}
+                    placeholder="e.g. api.example.com, app.example.com"
+                  />
+                </div>
+                <div className="rec-form-row">
+                  <div className="rec-label">
+                    Exclude Hosts{" "}
+                    <span className="rec-hint">
+                      (comma-separated, optional)
+                    </span>
+                  </div>
+                  <input
+                    className="rec-input"
+                    value={excludeHosts}
+                    onChange={(e) => setExcludeHosts(e.target.value)}
+                    placeholder="e.g. analytics.google.com, cdn.example.com"
+                  />
+                </div>
+                <label className="rec-checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={captureCookies}
+                    onChange={(e) => setCaptureCookies(e.target.checked)}
+                  />
+                  <span>Capture cookies (may include secrets)</span>
+                </label>
+                <button
+                  className="btn btn-primary rec-start-btn"
+                  onClick={handleStart}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <circle cx="12" cy="12" r="10" />
+                  </svg>
+                  Start Recording
+                </button>
+              </div>
+            ) : (
+              <div className="rec-active-panel">
+                <div className="rec-active-stats">
+                  <div className="rec-stat">
+                    <span className="rec-stat-value">
+                      {activeSession.request_count ??
+                        activeSession.requests?.length ??
+                        0}
+                    </span>
+                    <span className="rec-stat-label">Requests</span>
+                  </div>
+                  <div className="rec-stat">
+                    <span className="rec-stat-value">
+                      {activeSession.base_url || "—"}
+                    </span>
+                    <span className="rec-stat-label">Base URL</span>
+                  </div>
+                  <div className="rec-stat">
+                    <span className="rec-stat-value">
+                      {new Date(activeSession.started_at).toLocaleTimeString()}
+                    </span>
+                    <span className="rec-stat-label">Started</span>
+                  </div>
+                </div>
+
+                {/* Live request feed */}
+                {activeSession.requests &&
+                  activeSession.requests.length > 0 && (
+                    <div className="rec-live-feed">
+                      <div className="rec-feed-header">
+                        <span>Live Requests</span>
+                        <span className="rec-feed-count">
+                          {activeSession.request_count ??
+                            activeSession.requests.length}
+                        </span>
+                      </div>
+                      <div className="rec-feed-list">
+                        {[...activeSession.requests]
+                          .reverse()
+                          .slice(0, 20)
+                          .map((req) => (
+                            <div key={req.seq} className="rec-feed-item">
+                              <span
+                                className={`rec-method ${req.method.toLowerCase()}`}
+                              >
+                                {req.method}
+                              </span>
+                              <span className="rec-path" title={req.url}>
+                                {req.path}
+                              </span>
+                              <span
+                                className={`rec-status ${req.status_code >= 400 ? "error" : ""}`}
+                              >
+                                {req.status_code}
+                              </span>
+                              <span className="rec-timing">
+                                {req.response_time_ms.toFixed(0)}ms
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    </div>
+                  )}
+
+                <button
+                  className="btn btn-danger rec-stop-btn"
+                  onClick={handleStop}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                  >
+                    <rect x="4" y="4" width="16" height="16" rx="2" />
+                  </svg>
+                  Stop Recording
+                </button>
+                <button
+                  className="btn btn-secondary rec-stop-btn"
+                  onClick={handlePauseResume}
+                >
+                  {activeSession.status === "paused"
+                    ? "Resume Recording"
+                    : "Pause Recording"}
+                </button>
+                <button
+                  className="btn btn-secondary rec-stop-btn"
+                  type="button"
+                  onClick={() => handleCopyMacOSProxyCommand("restore")}
+                >
+                  Copy Restore Proxy Command
+                </button>
+                <button
+                  className="btn btn-secondary rec-stop-btn"
+                  type="button"
+                  onClick={() => handleCopyWindowsProxyCommand("restore")}
+                >
+                  Copy Windows Restore Command
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -2032,23 +3109,24 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
             <input
               type="checkbox"
               checked={parameterizeInputs}
-              onChange={e => {
-                void convertedCredentialReviewRef.current?.discardSourceSession()
-                advanceConvertedReviewGeneration()
-                resetConvertTask()
-                convertedPreparedScriptRef.current = null
-                convertedSourceRecordingSessionIDRef.current = null
-                setConvertedPreparedSecrets(null)
-                setParameterizeInputs(e.target.checked)
+              onChange={(e) => {
+                void convertedCredentialReviewRef.current?.discardSourceSession();
+                advanceConvertedReviewGeneration();
+                resetConvertTask();
+                convertedPreparedScriptRef.current = null;
+                convertedSourceRecordingSessionIDRef.current = null;
+                setConvertedPreparedSecrets(null);
+                setParameterizeInputs(e.target.checked);
               }}
             />
-            Parameterize input values (promote recorded form/query inputs into a data source)
+            Parameterize input values (promote recorded form/query inputs into a
+            data source)
           </label>
           <div className="rec-sessions-list">
-            {stoppedSessions.map(session => (
+            {stoppedSessions.map((session) => (
               <div
                 key={session.id}
-                className={`rec-session-card ${selectedSession?.id === session.id ? 'selected' : ''}`}
+                className={`rec-session-card ${selectedSession?.id === session.id ? "selected" : ""}`}
               >
                 <button
                   aria-label={`Select recording session ${session.name}`}
@@ -2059,10 +3137,13 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                 >
                   <span className="rec-session-header">
                     <span className="rec-session-name">{session.name}</span>
-                    <span className="rec-session-count">{session.request_count ?? session.requests?.length ?? 0} requests</span>
+                    <span className="rec-session-count">
+                      {session.request_count ?? session.requests?.length ?? 0}{" "}
+                      requests
+                    </span>
                   </span>
                   <span className="rec-session-meta">
-                    <span>{session.base_url || 'No base URL'}</span>
+                    <span>{session.base_url || "No base URL"}</span>
                     <span>{new Date(session.started_at).toLocaleString()}</span>
                   </span>
                 </button>
@@ -2070,15 +3151,21 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                   <button
                     type="button"
                     className="btn btn-sm btn-primary"
-                    onClick={(e) => { e.stopPropagation(); handleConvert(session) }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleConvert(session);
+                    }}
                     disabled={converting}
                   >
-                    {converting ? 'Converting...' : 'Convert to Script'}
+                    {converting ? "Converting..." : "Convert to Script"}
                   </button>
                   <button
                     type="button"
                     className="btn btn-sm btn-secondary"
-                    onClick={(e) => { e.stopPropagation(); handlePreviewConversion(session) }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handlePreviewConversion(session);
+                    }}
                     disabled={converting}
                   >
                     Review Script
@@ -2087,24 +3174,35 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                     <button
                       type="button"
                       className="btn btn-sm btn-secondary"
-                      onClick={(e) => { e.stopPropagation(); handleReviewSalesforceSession(session) }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleReviewSalesforceSession(session);
+                      }}
                       disabled={reviewingSalesforce}
                     >
-                      {reviewingSalesforce ? 'Reviewing...' : 'Review Salesforce HTTP'}
+                      {reviewingSalesforce
+                        ? "Reviewing..."
+                        : "Review Salesforce HTTP"}
                     </button>
                   )}
                   <button
                     type="button"
                     className="btn btn-sm btn-secondary"
-                    onClick={(e) => { e.stopPropagation(); handleExportHAR(session) }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleExportHAR(session);
+                    }}
                   >
                     Export HAR
                   </button>
                   <button
                     type="button"
                     className="btn btn-sm btn-secondary"
-                    style={{ color: 'var(--danger)' }}
-                    onClick={(e) => { e.stopPropagation(); handleDelete(session.id) }}
+                    style={{ color: "var(--danger)" }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(session.id);
+                    }}
                   >
                     Delete
                   </button>
@@ -2120,7 +3218,12 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
         <div className="rec-detail-section">
           <h3 className="rec-section-title">
             Request Detail: {selectedSession.name}
-            <span className="rec-detail-count">{selectedSession.request_count ?? selectedSession.requests?.length ?? 0} requests</span>
+            <span className="rec-detail-count">
+              {selectedSession.request_count ??
+                selectedSession.requests?.length ??
+                0}{" "}
+              requests
+            </span>
           </h3>
           <div className="rec-detail-table-wrap">
             <table className="rec-detail-table">
@@ -2138,13 +3241,19 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                 </tr>
               </thead>
               <tbody>
-                {selectedSession.requests?.map(req => (
+                {selectedSession.requests?.map((req) => (
                   <tr
                     key={req.seq}
-                    className={`${req.is_static ? 'static' : ''} ${req.excluded ? 'static' : ''} ${selectedRequest?.seq === req.seq ? 'selected' : ''}`}
+                    className={`${req.is_static ? "static" : ""} ${req.excluded ? "static" : ""} ${selectedRequest?.seq === req.seq ? "selected" : ""}`}
                   >
                     <td className="cell-mono">{req.seq}</td>
-                    <td><span className={`rec-method ${req.method.toLowerCase()}`}>{req.method}</span></td>
+                    <td>
+                      <span
+                        className={`rec-method ${req.method.toLowerCase()}`}
+                      >
+                        {req.method}
+                      </span>
+                    </td>
                     <td className="cell-path" title={req.url}>
                       <button
                         aria-label={`Select request ${req.seq}`}
@@ -2153,24 +3262,43 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                         aria-pressed={selectedRequest?.seq === req.seq}
                         onClick={() => setSelectedRequest(req)}
                       >
-                        {req.step_name || req.path}{req.query_string ? `?${req.query_string}` : ''}
+                        {req.step_name || req.path}
+                        {req.query_string ? `?${req.query_string}` : ""}
                       </button>
                     </td>
-                    <td className={req.status_code >= 400 ? 'text-danger' : ''}>{req.status_code}</td>
-                    <td className="cell-mono">{req.response_time_ms.toFixed(0)}ms</td>
-                    <td className="cell-mono">{req.think_time_ms > 0 ? `${req.think_time_ms}ms` : '—'}</td>
-                    <td className="cell-muted">{req.resource_type || (req.content_type ? req.content_type.split(';')[0] : '—')}</td>
+                    <td className={req.status_code >= 400 ? "text-danger" : ""}>
+                      {req.status_code}
+                    </td>
                     <td className="cell-mono">
-                      {(req.body_size_bytes || 0) + (req.response_body_size_bytes || 0)}B
-                      {(req.body_truncated || req.response_body_truncated) ? '*' : ''}
+                      {req.response_time_ms.toFixed(0)}ms
+                    </td>
+                    <td className="cell-mono">
+                      {req.think_time_ms > 0 ? `${req.think_time_ms}ms` : "—"}
+                    </td>
+                    <td className="cell-muted">
+                      {req.resource_type ||
+                        (req.content_type
+                          ? req.content_type.split(";")[0]
+                          : "—")}
+                    </td>
+                    <td className="cell-mono">
+                      {(req.body_size_bytes || 0) +
+                        (req.response_body_size_bytes || 0)}
+                      B
+                      {req.body_truncated || req.response_body_truncated
+                        ? "*"
+                        : ""}
                     </td>
                     <td>
                       <button
                         type="button"
                         className="btn btn-sm btn-secondary"
-                        onClick={(e) => { e.stopPropagation(); handleToggleRequestExcluded(selectedSession, req) }}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleToggleRequestExcluded(selectedSession, req);
+                        }}
                       >
-                        {req.excluded ? 'Include' : 'Exclude'}
+                        {req.excluded ? "Include" : "Exclude"}
                       </button>
                     </td>
                   </tr>
@@ -2182,8 +3310,17 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
             <div className="rec-request-editor">
               <div className="rec-editor-header">
                 <div>
-                  <span className={`rec-method ${selectedRequest.method.toLowerCase()}`}>{selectedRequest.method}</span>
-                  <code>{selectedRequest.path}{selectedRequest.query_string ? `?${selectedRequest.query_string}` : ''}</code>
+                  <span
+                    className={`rec-method ${selectedRequest.method.toLowerCase()}`}
+                  >
+                    {selectedRequest.method}
+                  </span>
+                  <code>
+                    {selectedRequest.path}
+                    {selectedRequest.query_string
+                      ? `?${selectedRequest.query_string}`
+                      : ""}
+                  </code>
                 </div>
                 <span className="cell-mono">#{selectedRequest.seq}</span>
               </div>
@@ -2193,7 +3330,12 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                   <input
                     className="rec-input"
                     value={requestDraft.step_name}
-                    onChange={e => setRequestDraft(prev => ({ ...prev, step_name: e.target.value }))}
+                    onChange={(e) =>
+                      setRequestDraft((prev) => ({
+                        ...prev,
+                        step_name: e.target.value,
+                      }))
+                    }
                     placeholder={`${selectedRequest.method} ${selectedRequest.path}`}
                   />
                 </label>
@@ -2202,7 +3344,12 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                   <input
                     className="rec-input"
                     value={requestDraft.transaction_name}
-                    onChange={e => setRequestDraft(prev => ({ ...prev, transaction_name: e.target.value }))}
+                    onChange={(e) =>
+                      setRequestDraft((prev) => ({
+                        ...prev,
+                        transaction_name: e.target.value,
+                      }))
+                    }
                     placeholder="e.g. Login, Browse Catalog, Checkout"
                   />
                 </label>
@@ -2213,14 +3360,24 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                     type="number"
                     min="0"
                     value={requestDraft.think_time_ms}
-                    onChange={e => setRequestDraft(prev => ({ ...prev, think_time_ms: Math.max(0, Number(e.target.value) || 0) }))}
+                    onChange={(e) =>
+                      setRequestDraft((prev) => ({
+                        ...prev,
+                        think_time_ms: Math.max(0, Number(e.target.value) || 0),
+                      }))
+                    }
                   />
                 </label>
                 <label className="rec-editor-check">
                   <input
                     type="checkbox"
                     checked={!requestDraft.excluded}
-                    onChange={e => setRequestDraft(prev => ({ ...prev, excluded: !e.target.checked }))}
+                    onChange={(e) =>
+                      setRequestDraft((prev) => ({
+                        ...prev,
+                        excluded: !e.target.checked,
+                      }))
+                    }
                   />
                   Use in generated script
                 </label>
@@ -2230,13 +3387,28 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
                 <textarea
                   className="rec-input rec-textarea"
                   value={requestDraft.note}
-                  onChange={e => setRequestDraft(prev => ({ ...prev, note: e.target.value }))}
+                  onChange={(e) =>
+                    setRequestDraft((prev) => ({
+                      ...prev,
+                      note: e.target.value,
+                    }))
+                  }
                   placeholder="Capture intent, manual correlation notes, or cleanup reminders"
                 />
               </label>
               <div className="rec-editor-actions">
-                <button className="btn btn-primary btn-sm" onClick={handleSaveRequestDetails}>Save Request</button>
-                <button className="btn btn-secondary btn-sm" onClick={() => setSelectedRequest(null)}>Close</button>
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={handleSaveRequestDetails}
+                >
+                  Save Request
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => setSelectedRequest(null)}
+                >
+                  Close
+                </button>
               </div>
             </div>
           )}
@@ -2251,26 +3423,38 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
             <SecretBindingReview
               ref={convertedCredentialReviewRef}
               requirements={convertedSecretRequirements}
-              reviewGeneration={`${convertedReviewGeneration}:${activeProject?.id || ''}`}
+              reviewGeneration={`${convertedReviewGeneration}:${activeProject?.id || ""}`}
               projectId={activeProject?.id}
               sourceSecretSessionId={convertResult.source_secret_session_id}
-              sourceSecretSessionExpiresAt={convertResult.source_secret_session_expires_at}
-              sourceMigrationAllowed={convertResult.source_secret_migration_allowed}
-              disabled={convertedSaveInProgress || convertedCredentialActionInProgress || convertedParameterizationApplying}
+              sourceSecretSessionExpiresAt={
+                convertResult.source_secret_session_expires_at
+              }
+              sourceMigrationAllowed={
+                convertResult.source_secret_migration_allowed
+              }
+              disabled={
+                convertedSaveInProgress ||
+                convertedCredentialActionInProgress ||
+                convertedParameterizationApplying
+              }
               onApply={handleApplyConvertedSecretBindings}
               onPreparedChange={setConvertedPreparedSecrets}
             />
           )}
-          {convertResult.parameterization && (convertResult.parameterization.suggestions?.length || 0) > 0 && convertedReviewScript && (
-            <ParameterizationReview
-              parameterization={convertResult.parameterization}
-              script={convertedReviewScript}
-              reviewGeneration={`${convertedReviewGeneration}:${activeProject?.id || ''}`}
-              disabled={convertedSaveInProgress || convertedCredentialActionInProgress}
-              onApplyingChange={setConvertedParameterizationApplying}
-              onApplied={handleApplyConvertedParameterization}
-            />
-          )}
+          {convertResult.parameterization &&
+            (convertResult.parameterization.suggestions?.length || 0) > 0 &&
+            convertedReviewScript && (
+              <ParameterizationReview
+                parameterization={convertResult.parameterization}
+                script={convertedReviewScript}
+                reviewGeneration={`${convertedReviewGeneration}:${activeProject?.id || ""}`}
+                disabled={
+                  convertedSaveInProgress || convertedCredentialActionInProgress
+                }
+                onApplyingChange={setConvertedParameterizationApplying}
+                onApplied={handleApplyConvertedParameterization}
+              />
+            )}
           <div className="rec-result-summary">
             <div className="rec-result-item">
               <span className="rec-result-label">Script</span>
@@ -2278,56 +3462,104 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
             </div>
             <div className="rec-result-item">
               <span className="rec-result-label">Protocol</span>
-              <span className="rec-result-value">{convertedScript.protocol}</span>
+              <span className="rec-result-value">
+                {convertedScript.protocol}
+              </span>
             </div>
             <div className="rec-result-item">
               <span className="rec-result-label">Script ID</span>
-              <code className="rec-result-value">{convertedStoredScript?.id || 'preview'}</code>
+              <code className="rec-result-value">
+                {convertedStoredScript?.id || "preview"}
+              </code>
             </div>
           </div>
           <div className="rec-result-actions">
-            <button className="btn btn-primary" type="button" onClick={() => { void handleSaveConvertedScript() }} disabled={!convertedCredentialsValid || convertedSaveInProgress || convertedCredentialActionInProgress || convertedParameterizationApplying}>{convertedSaveLabel}</button>
-            {onEdit && <button className="btn btn-secondary" type="button" onClick={() => { void handleEditConvertedScript() }} disabled={!convertedReviewScript || !convertedCredentialsValid || convertedSaveInProgress || convertedCredentialActionInProgress || convertedParameterizationApplying}>{convertedCredentialActionInProgress ? 'Preparing editor...' : 'Open In Visual Editor'}</button>}
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={() => {
+                void handleSaveConvertedScript();
+              }}
+              disabled={
+                !convertedCredentialsValid ||
+                convertedSaveInProgress ||
+                convertedCredentialActionInProgress ||
+                convertedParameterizationApplying
+              }
+            >
+              {convertedSaveLabel}
+            </button>
+            {onEdit && (
+              <button
+                className="btn btn-secondary"
+                type="button"
+                onClick={() => {
+                  void handleEditConvertedScript();
+                }}
+                disabled={
+                  !convertedReviewScript ||
+                  !convertedCredentialsValid ||
+                  convertedSaveInProgress ||
+                  convertedCredentialActionInProgress ||
+                  convertedParameterizationApplying
+                }
+              >
+                {convertedCredentialActionInProgress
+                  ? "Preparing editor..."
+                  : "Open In Visual Editor"}
+              </button>
+            )}
           </div>
 
-          {convertResult.correlations && convertResult.correlations.length > 0 && (
-            <div className="rec-correlations">
-              <h4 className="rec-subsection-title">Auto-Detected Correlations ({convertResult.correlations.length})</h4>
-              <div className="rec-corr-list">
-                {convertResult.correlations.map((c, i) => (
-                  <div key={i} className="rec-corr-item">
-                    <div className="rec-corr-header">
-                      <code className="rec-corr-name">{`{{var.${c.name}}}`}</code>
-                      {confidenceTone(c.confidence) && (
-                        <span
-                          className={`rec-corr-confidence tone-${confidenceTone(c.confidence)}`}
-                          title={c.rule_id ? `rule: ${c.rule_id}` : undefined}
-                        >
-                          {Math.round((c.confidence as number) * 100)}% confidence
+          {convertResult.correlations &&
+            convertResult.correlations.length > 0 && (
+              <div className="rec-correlations">
+                <h4 className="rec-subsection-title">
+                  Auto-Detected Correlations (
+                  {convertResult.correlations.length})
+                </h4>
+                <div className="rec-corr-list">
+                  {convertResult.correlations.map((c, i) => (
+                    <div key={i} className="rec-corr-item">
+                      <div className="rec-corr-header">
+                        <code className="rec-corr-name">{`{{var.${c.name}}}`}</code>
+                        {confidenceTone(c.confidence) && (
+                          <span
+                            className={`rec-corr-confidence tone-${confidenceTone(c.confidence)}`}
+                            title={c.rule_id ? `rule: ${c.rule_id}` : undefined}
+                          >
+                            {Math.round((c.confidence as number) * 100)}%
+                            confidence
+                          </span>
+                        )}
+                        <span className="rec-corr-type">
+                          {c.extract_type} / {c.source}
                         </span>
+                      </div>
+                      <div className="rec-corr-detail">
+                        <span>Extracted from request #{c.found_in_seq}</span>
+                        <span>Used in #{c.used_in_seqs.join(", #")}</span>
+                      </div>
+                      {c.reasons && c.reasons.length > 0 && (
+                        <div className="rec-corr-reasons">
+                          Why: {c.reasons.join("; ")}
+                        </div>
                       )}
-                      <span className="rec-corr-type">{c.extract_type} / {c.source}</span>
+                      <div className="rec-corr-sample">
+                        Sample: <code>{c.sample_value}</code>
+                      </div>
                     </div>
-                    <div className="rec-corr-detail">
-                      <span>Extracted from request #{c.found_in_seq}</span>
-                      <span>Used in #{c.used_in_seqs.join(', #')}</span>
-                    </div>
-                    {c.reasons && c.reasons.length > 0 && (
-                      <div className="rec-corr-reasons">Why: {c.reasons.join('; ')}</div>
-                    )}
-                    <div className="rec-corr-sample">
-                      Sample: <code>{c.sample_value}</code>
-                    </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
           {convertResult.warnings && convertResult.warnings.length > 0 && (
             <div className="rec-warnings">
               {convertResult.warnings.map((w, i) => (
-                <div key={i} className="rec-warning-item">{w}</div>
+                <div key={i} className="rec-warning-item">
+                  {w}
+                </div>
               ))}
             </div>
           )}
@@ -2341,26 +3573,39 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
             <SecretBindingReview
               ref={salesforceCredentialReviewRef}
               requirements={salesforceSecretRequirements}
-              reviewGeneration={`${salesforceReviewGeneration}:${activeProject?.id || ''}`}
+              reviewGeneration={`${salesforceReviewGeneration}:${activeProject?.id || ""}`}
               projectId={activeProject?.id}
               sourceSecretSessionId={salesforceResult.source_secret_session_id}
-              sourceSecretSessionExpiresAt={salesforceResult.source_secret_session_expires_at}
-              sourceMigrationAllowed={salesforceResult.source_secret_migration_allowed}
-              disabled={salesforceSaveInProgress || salesforceCredentialActionInProgress || salesforceParameterizationApplying}
+              sourceSecretSessionExpiresAt={
+                salesforceResult.source_secret_session_expires_at
+              }
+              sourceMigrationAllowed={
+                salesforceResult.source_secret_migration_allowed
+              }
+              disabled={
+                salesforceSaveInProgress ||
+                salesforceCredentialActionInProgress ||
+                salesforceParameterizationApplying
+              }
               onApply={handleApplySalesforceSecretBindings}
               onPreparedChange={setSalesforcePreparedSecrets}
             />
           )}
-          {salesforceResult.parameterization && (salesforceResult.parameterization.suggestions?.length || 0) > 0 && (
-            <ParameterizationReview
-              parameterization={salesforceResult.parameterization}
-              script={salesforceScript}
-              reviewGeneration={`${salesforceReviewGeneration}:${activeProject?.id || ''}`}
-              disabled={salesforceSaveInProgress || salesforceCredentialActionInProgress}
-              onApplyingChange={setSalesforceParameterizationApplying}
-              onApplied={handleApplySalesforceParameterization}
-            />
-          )}
+          {salesforceResult.parameterization &&
+            (salesforceResult.parameterization.suggestions?.length || 0) >
+              0 && (
+              <ParameterizationReview
+                parameterization={salesforceResult.parameterization}
+                script={salesforceScript}
+                reviewGeneration={`${salesforceReviewGeneration}:${activeProject?.id || ""}`}
+                disabled={
+                  salesforceSaveInProgress ||
+                  salesforceCredentialActionInProgress
+                }
+                onApplyingChange={setSalesforceParameterizationApplying}
+                onApplied={handleApplySalesforceParameterization}
+              />
+            )}
           <div className="rec-result-summary">
             <div className="rec-result-item">
               <span className="rec-result-label">Script</span>
@@ -2368,26 +3613,68 @@ export default function RecordingStudio({ activeProject, onImported, onEdit, onC
             </div>
             <div className="rec-result-item">
               <span className="rec-result-label">Protocol</span>
-              <span className="rec-result-value">{salesforceScript.protocol}</span>
+              <span className="rec-result-value">
+                {salesforceScript.protocol}
+              </span>
             </div>
             <div className="rec-result-item">
               <span className="rec-result-label">HAR Coverage</span>
-              <span className="rec-result-value">{Math.round(salesforceResult.summary?.salesforce_review?.har_match_coverage?.coverage_pct || 0)}%</span>
+              <span className="rec-result-value">
+                {Math.round(
+                  salesforceResult.summary?.salesforce_review
+                    ?.har_match_coverage?.coverage_pct || 0,
+                )}
+                %
+              </span>
             </div>
           </div>
           <div className="rec-result-actions">
-            <button className="btn btn-primary" type="button" onClick={() => { void handleSaveSalesforceScript() }} disabled={!salesforceCredentialsValid || salesforceSaveInProgress || salesforceCredentialActionInProgress || salesforceParameterizationApplying}>{salesforceSaveLabel}</button>
-            {onEdit && <button className="btn btn-secondary" type="button" onClick={() => { void handleEditSalesforceScript() }} disabled={!salesforceCredentialsValid || salesforceSaveInProgress || salesforceCredentialActionInProgress || salesforceParameterizationApplying}>{salesforceCredentialActionInProgress ? 'Preparing editor...' : 'Open In Visual Editor'}</button>}
+            <button
+              className="btn btn-primary"
+              type="button"
+              onClick={() => {
+                void handleSaveSalesforceScript();
+              }}
+              disabled={
+                !salesforceCredentialsValid ||
+                salesforceSaveInProgress ||
+                salesforceCredentialActionInProgress ||
+                salesforceParameterizationApplying
+              }
+            >
+              {salesforceSaveLabel}
+            </button>
+            {onEdit && (
+              <button
+                className="btn btn-secondary"
+                type="button"
+                onClick={() => {
+                  void handleEditSalesforceScript();
+                }}
+                disabled={
+                  !salesforceCredentialsValid ||
+                  salesforceSaveInProgress ||
+                  salesforceCredentialActionInProgress ||
+                  salesforceParameterizationApplying
+                }
+              >
+                {salesforceCredentialActionInProgress
+                  ? "Preparing editor..."
+                  : "Open In Visual Editor"}
+              </button>
+            )}
           </div>
           {(salesforceResult.warnings?.length || 0) > 0 && (
             <div className="rec-warnings">
               {salesforceResult.warnings.slice(0, 4).map((warning, idx) => (
-                <div key={idx} className="rec-warning-item">{warning}</div>
+                <div key={idx} className="rec-warning-item">
+                  {warning}
+                </div>
               ))}
             </div>
           )}
         </div>
       )}
     </div>
-  )
+  );
 }

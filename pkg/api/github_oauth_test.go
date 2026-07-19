@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -140,6 +141,335 @@ func TestGitHubOAuthConnectFlow(t *testing.T) {
 	}
 }
 
+func TestDesktopGitHubOAuthUsesCapabilityStateWithoutCookies(t *testing.T) {
+	stub := newGitHubStub(t)
+	defer stub.Close()
+	server := newGitHubTestServer(t, stub.URL)
+	server.desktopMode = true
+	server.desktopCapability = "native-renderer-secret"
+	server.setBoundAddr("127.0.0.1:54321")
+	const browserCapability = "browser-tab-secret"
+	server.desktopBootstrapMu.Lock()
+	server.desktopBrowserCapabilities[browserCapability] = desktopBrowserCapability{issuedAt: time.Now().UTC()}
+	server.desktopBootstrapMu.Unlock()
+
+	loginReq := httptest.NewRequest(http.MethodGet, "/api/v1/integrations/github/login?return_to=/#/settings", nil)
+	loginReq.Header.Set(DesktopCapabilityHeader, browserCapability)
+	loginReq.Header.Set("Accept", "application/json")
+	loginResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(loginResp, loginReq)
+	if loginResp.Code != http.StatusOK {
+		t.Fatalf("desktop github login = %d body=%s", loginResp.Code, loginResp.Body.String())
+	}
+	if cookies := loginResp.Result().Cookies(); len(cookies) != 0 {
+		t.Fatalf("desktop github login emitted host-scoped cookies: %#v", cookies)
+	}
+	var navigation struct {
+		RedirectURL string `json:"redirect_url"`
+	}
+	if err := json.Unmarshal(loginResp.Body.Bytes(), &navigation); err != nil {
+		t.Fatal(err)
+	}
+	authorizeURL, err := url.Parse(navigation.RedirectURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := authorizeURL.Query().Get("state")
+	callbackURL := "/api/v1/integrations/github/callback?code=abc123&state=" + url.QueryEscape(state)
+
+	landingReq := httptest.NewRequest(http.MethodGet, callbackURL, nil)
+	landingResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(landingResp, landingReq)
+	if landingResp.Code != http.StatusOK || !strings.Contains(landingResp.Body.String(), `method:"POST"`) {
+		t.Fatalf("desktop github landing = %d body=%s", landingResp.Code, landingResp.Body.String())
+	}
+	if connection, err := server.store.(storage.GitHubConnectionStore).GetGitHubConnection("local"); err != nil || connection != nil {
+		t.Fatalf("GET callback mutated github connection: %#v, %v", connection, err)
+	}
+
+	missingReq := httptest.NewRequest(http.MethodPost, callbackURL, nil)
+	missingResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(missingResp, missingReq)
+	if missingResp.Code != http.StatusUnauthorized {
+		t.Fatalf("github callback without capability = %d, want 401", missingResp.Code)
+	}
+
+	callbackReq := httptest.NewRequest(http.MethodPost, callbackURL, nil)
+	callbackReq.Header.Set(DesktopCapabilityHeader, browserCapability)
+	callbackResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(callbackResp, callbackReq)
+	if callbackResp.Code != http.StatusOK {
+		t.Fatalf("desktop github callback = %d body=%s", callbackResp.Code, callbackResp.Body.String())
+	}
+	if cookies := callbackResp.Result().Cookies(); len(cookies) != 0 {
+		t.Fatalf("desktop github callback emitted host-scoped cookies: %#v", cookies)
+	}
+	connection, err := server.store.(storage.GitHubConnectionStore).GetGitHubConnection("local")
+	if err != nil || connection == nil || connection.GitHubLogin != "octocat" {
+		t.Fatalf("desktop github connection = %#v, %v", connection, err)
+	}
+}
+
+func TestDesktopGitHubOAuthCallbackRestoresLoginPreviewAfterBootstrapSwitch(t *testing.T) {
+	stub := newGitHubStub(t)
+	defer stub.Close()
+	server := newGitHubTestServer(t, stub.URL)
+	server.desktopMode = true
+	server.desktopCapability = "native-renderer-secret"
+	server.setBoundAddr("127.0.0.1:54321")
+	const browserCapability = "dev-user-browser-tab"
+	server.desktopBootstrapMu.Lock()
+	server.desktopBrowserCapabilities[browserCapability] = desktopBrowserCapability{
+		issuedAt: time.Now().UTC(), devViewMode: devViewModeAdmin,
+	}
+	server.desktopBootstrapMu.Unlock()
+
+	// Recreate the two desktop wrappers because this test server was initially
+	// built in hosted mode by the shared GitHub fixture.
+	handler := desktopAuthMaterialMiddleware(server.desktopOIDCSessionForCapability, server.desktopDevPreviewForCapability)(server.mux)
+	handler = desktopCapabilityMiddleware(server.desktopCapability, nil, server.validDesktopBrowserCapability)(handler)
+
+	loginReq := httptest.NewRequest(http.MethodGet, "/api/v1/integrations/github/login?return_to=/#/settings", nil)
+	loginReq.Header.Set(DesktopCapabilityHeader, browserCapability)
+	loginReq.Header.Set("Accept", "application/json")
+	// The tab switched from its bootstrap Admin preview to a project-scoped User
+	// preview before starting OAuth. The initiating request, not stale bootstrap
+	// state, defines the local identity to which the GitHub token is attached.
+	loginReq.Header.Set(devViewHeader, devViewModeUser)
+	loginReq.Header.Set(devProjectIDHeader, "team-a")
+	loginResp := httptest.NewRecorder()
+	handler.ServeHTTP(loginResp, loginReq)
+	if loginResp.Code != http.StatusOK {
+		t.Fatalf("dev-user desktop github login = %d body=%s", loginResp.Code, loginResp.Body.String())
+	}
+	var navigation struct {
+		RedirectURL string `json:"redirect_url"`
+	}
+	if err := json.Unmarshal(loginResp.Body.Bytes(), &navigation); err != nil {
+		t.Fatal(err)
+	}
+	authorizeURL, err := url.Parse(navigation.RedirectURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := authorizeURL.Query().Get("state")
+	server.desktopBootstrapMu.Lock()
+	storedState := server.desktopGitHubStates[state].state
+	boundPreview := server.desktopBrowserCapabilities[browserCapability]
+	server.desktopBootstrapMu.Unlock()
+	if storedState.UserID != "dev-user" {
+		t.Fatalf("desktop GitHub state user = %q, want dev-user", storedState.UserID)
+	}
+	if boundPreview.devViewMode != devViewModeUser || boundPreview.projectID != "team-a" {
+		t.Fatalf("desktop browser preview after login = (%q, %q), want (%q, %q)", boundPreview.devViewMode, boundPreview.projectID, devViewModeUser, "team-a")
+	}
+
+	// The real callback landing POST contains only this capability. It does not
+	// resend localStorage preview headers, so the middleware must restore the
+	// context captured when this OAuth flow started before comparing identities.
+	callbackReq := httptest.NewRequest(http.MethodPost, "/api/v1/integrations/github/callback?code=abc123&state="+url.QueryEscape(state), nil)
+	callbackReq.Header.Set(DesktopCapabilityHeader, browserCapability)
+	callbackResp := httptest.NewRecorder()
+	handler.ServeHTTP(callbackResp, callbackReq)
+	if callbackResp.Code != http.StatusOK {
+		t.Fatalf("dev-user desktop github callback = %d body=%s", callbackResp.Code, callbackResp.Body.String())
+	}
+	connection, err := server.store.(storage.GitHubConnectionStore).GetGitHubConnection("dev-user")
+	if err != nil || connection == nil || connection.GitHubLogin != "octocat" {
+		t.Fatalf("dev-user desktop github connection = %#v, %v", connection, err)
+	}
+	if local, err := server.store.(storage.GitHubConnectionStore).GetGitHubConnection("local"); err != nil || local != nil {
+		t.Fatalf("desktop callback fell back to admin/local identity: %#v, %v", local, err)
+	}
+}
+
+func TestDesktopGitHubOAuthNewerFlowSupersedesCapabilityState(t *testing.T) {
+	server := NewServer(ServerConfig{DesktopMode: true, DesktopCapability: "native-renderer-secret"})
+	const capability = "shared-browser-tab"
+	server.desktopBootstrapMu.Lock()
+	server.desktopBrowserCapabilities[capability] = desktopBrowserCapability{issuedAt: time.Now().UTC()}
+	server.desktopBootstrapMu.Unlock()
+	now := time.Now().UTC()
+	first := githubStateToken{State: "first-state", UserID: "local", IssuedAt: now, ExpiresAt: now.Add(githubStateTTL)}
+	second := githubStateToken{State: "second-state", UserID: "dev-user", IssuedAt: now.Add(time.Second), ExpiresAt: now.Add(githubStateTTL)}
+	adminRequest := httptest.NewRequest(http.MethodGet, "/api/v1/integrations/github/login", nil)
+	adminRequest.Header.Set(devViewHeader, devViewModeAdmin)
+	userRequest := httptest.NewRequest(http.MethodGet, "/api/v1/integrations/github/login", nil)
+	userRequest.Header.Set(devViewHeader, devViewModeUser)
+	userRequest.Header.Set(devProjectIDHeader, "team-a")
+	if stored, err := server.storeDesktopGitHubLoginState(capability, adminRequest, first); err != nil || !stored {
+		t.Fatalf("store first desktop GitHub state = (%v, %v)", stored, err)
+	}
+	if stored, err := server.storeDesktopGitHubLoginState(capability, userRequest, second); err != nil || !stored {
+		t.Fatalf("store second desktop GitHub state = (%v, %v)", stored, err)
+	}
+	if _, ok := server.takeDesktopGitHubState(capability, first.State); ok {
+		t.Fatal("older GitHub OAuth state remained valid after a newer flow started for the same capability")
+	}
+	if got, ok := server.takeDesktopGitHubState(capability, second.State); !ok || got.UserID != second.UserID {
+		t.Fatalf("newest GitHub OAuth state = (%+v, %v), want dev-user state", got, ok)
+	}
+}
+
+func TestDesktopGitHubOAuthConcurrentStartsKeepPreviewAndStateAtomic(t *testing.T) {
+	server := NewServer(ServerConfig{DesktopMode: true, DesktopCapability: "native-renderer-secret"})
+	const capability = "duplicated-browser-tab"
+	now := time.Now().UTC()
+
+	for iteration := 0; iteration < 100; iteration++ {
+		server.desktopBootstrapMu.Lock()
+		server.desktopBrowserCapabilities[capability] = desktopBrowserCapability{issuedAt: now}
+		server.desktopGitHubStates = make(map[string]desktopGitHubStateGrant)
+		server.desktopBootstrapMu.Unlock()
+
+		adminRequest := httptest.NewRequest(http.MethodGet, "/api/v1/integrations/github/login", nil)
+		adminRequest.Header.Set(devViewHeader, devViewModeAdmin)
+		userRequest := httptest.NewRequest(http.MethodGet, "/api/v1/integrations/github/login", nil)
+		userRequest.Header.Set(devViewHeader, devViewModeUser)
+		userRequest.Header.Set(devProjectIDHeader, "team-a")
+		adminState := githubStateToken{State: fmt.Sprintf("admin-%d", iteration), UserID: "local", IssuedAt: now, ExpiresAt: now.Add(githubStateTTL)}
+		userState := githubStateToken{State: fmt.Sprintf("user-%d", iteration), UserID: "dev-user", IssuedAt: now, ExpiresAt: now.Add(githubStateTTL)}
+
+		start := make(chan struct{})
+		results := make(chan error, 2)
+		var wait sync.WaitGroup
+		for _, flow := range []struct {
+			request *http.Request
+			state   githubStateToken
+		}{{adminRequest, adminState}, {userRequest, userState}} {
+			wait.Add(1)
+			go func(request *http.Request, state githubStateToken) {
+				defer wait.Done()
+				<-start
+				stored, err := server.storeDesktopGitHubLoginState(capability, request, state)
+				if err != nil {
+					results <- err
+				} else if !stored {
+					results <- fmt.Errorf("state %q was not stored", state.State)
+				}
+			}(flow.request, flow.state)
+		}
+		close(start)
+		wait.Wait()
+		close(results)
+		for err := range results {
+			t.Fatal(err)
+		}
+
+		server.desktopBootstrapMu.Lock()
+		grant := server.desktopBrowserCapabilities[capability]
+		if len(server.desktopGitHubStates) != 1 {
+			server.desktopBootstrapMu.Unlock()
+			t.Fatalf("iteration %d retained %d states, want 1", iteration, len(server.desktopGitHubStates))
+		}
+		var retained githubStateToken
+		for _, stateGrant := range server.desktopGitHubStates {
+			retained = stateGrant.state
+		}
+		server.desktopBootstrapMu.Unlock()
+		if grant.devViewMode == devViewModeUser {
+			if retained.UserID != "dev-user" || grant.projectID != "team-a" {
+				t.Fatalf("iteration %d user preview/state mismatch: grant=%+v state=%+v", iteration, grant, retained)
+			}
+		} else if grant.devViewMode != devViewModeAdmin || retained.UserID != "local" || grant.projectID != "" {
+			t.Fatalf("iteration %d admin preview/state mismatch: grant=%+v state=%+v", iteration, grant, retained)
+		}
+	}
+}
+
+func TestGitHubOAuthCallbackRetainsInitiatingOIDCIdentity(t *testing.T) {
+	stub := newGitHubStub(t)
+	defer stub.Close()
+	server := newGitHubTestServer(t, stub.URL)
+	t.Setenv("APEXLOAD_OIDC_CLIENT_SECRET", "test-client-secret")
+	t.Setenv("APEXLOAD_AUTH_SESSION_SECRET", "test-session-secret")
+	enableOIDCAuth(t, server, stub.URL)
+
+	now := time.Now().UTC()
+	if err := server.store.SaveUser(&storage.User{
+		ID:        "user-alice",
+		Subject:   "alice",
+		Active:    true,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatalf("save local OIDC user: %v", err)
+	}
+	sessionCookie := issueOIDCTestSessionCookie(t, server, "alice")
+
+	loginReq := httptest.NewRequest(http.MethodGet, "/api/v1/integrations/github/login?return_to=/%23/settings", nil)
+	loginReq.AddCookie(sessionCookie)
+	loginResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(loginResp, loginReq)
+	if loginResp.Code != http.StatusFound {
+		t.Fatalf("OIDC-authenticated login status = %d, want 302; body=%s", loginResp.Code, loginResp.Body.String())
+	}
+	authorizeURL, err := url.Parse(loginResp.Header().Get("Location"))
+	if err != nil {
+		t.Fatalf("parse authorize URL: %v", err)
+	}
+	state := authorizeURL.Query().Get("state")
+	stateCookie := findResponseCookie(t, loginResp.Result().Cookies(), githubStateCookieName)
+
+	callbackReq := httptest.NewRequest(http.MethodGet, "/api/v1/integrations/github/callback?code=abc123&state="+url.QueryEscape(state), nil)
+	callbackReq.AddCookie(sessionCookie)
+	callbackReq.AddCookie(stateCookie)
+	callbackResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(callbackResp, callbackReq)
+	if callbackResp.Code != http.StatusFound {
+		t.Fatalf("OIDC-authenticated callback status = %d, want 302; body=%s", callbackResp.Code, callbackResp.Body.String())
+	}
+	if got := callbackResp.Header().Get("Location"); got != "/#/settings" {
+		t.Fatalf("callback return location = %q, want /#/settings", got)
+	}
+	connection, err := server.store.(storage.GitHubConnectionStore).GetGitHubConnection("alice")
+	if err != nil || connection == nil || connection.GitHubLogin != "octocat" {
+		t.Fatalf("OIDC user's GitHub connection = %#v, %v", connection, err)
+	}
+	if local, err := server.store.(storage.GitHubConnectionStore).GetGitHubConnection("local"); err != nil || local != nil {
+		t.Fatalf("callback must not fall back to the synthetic local identity: %#v, %v", local, err)
+	}
+}
+
+func TestGitHubOAuthLoginReturnsProviderURLForManagedBrowserNavigation(t *testing.T) {
+	stub := newGitHubStub(t)
+	defer stub.Close()
+	server := newGitHubTestServer(t, stub.URL)
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/integrations/github/login?return_to=/settings", nil)
+	req.Header.Set("Accept", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("managed github login status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	if resp.Header().Get("Location") != "" {
+		t.Fatalf("managed github login unexpectedly redirected to %q", resp.Header().Get("Location"))
+	}
+	var payload struct {
+		RedirectURL string `json:"redirect_url"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(payload.RedirectURL)
+	if err != nil || !strings.HasPrefix(payload.RedirectURL, stub.URL+"/login/oauth/authorize") || parsed.Query().Get("state") == "" {
+		t.Fatalf("managed github redirect URL = %q, parse error %v", payload.RedirectURL, err)
+	}
+	if resp.Header().Get("Cache-Control") != "no-store" || resp.Header().Get("Referrer-Policy") != "no-referrer" {
+		t.Fatalf("managed github login security headers = %#v", resp.Header())
+	}
+	var stateCookie *http.Cookie
+	for _, cookie := range resp.Result().Cookies() {
+		if cookie.Name == githubStateCookieName {
+			stateCookie = cookie
+			break
+		}
+	}
+	if stateCookie == nil || stateCookie.Value == "" {
+		t.Fatal("managed github login did not set the signed state cookie")
+	}
+}
+
 func TestGitHubOAuthCallbackCannotUndoNewerDisconnect(t *testing.T) {
 	stub := newGitHubStub(t)
 	defer stub.Close()
@@ -203,6 +533,17 @@ func TestGitHubCallbackURLUsesOnlyHTTPSForwardedProtoInProduction(t *testing.T) 
 	req.Header.Set("X-Forwarded-Proto", "https, http")
 	if got, want := server.githubCallbackURL(req), "https://apexload.example.test/api/v1/integrations/github/callback"; got != want {
 		t.Fatalf("callback URL with forwarded chain = %q, want %q", got, want)
+	}
+}
+
+func TestGitHubCallbackURLUsesBoundDesktopLoopbackPortInProduction(t *testing.T) {
+	t.Setenv("APEXLOAD_ENV", "production")
+	server := NewServer(ServerConfig{DesktopMode: true, DesktopCapability: "native-renderer-secret", Addr: "127.0.0.1:0"})
+	server.setBoundAddr("127.0.0.1:54321")
+	req := httptest.NewRequest(http.MethodGet, "http://untrusted.invalid/api/v1/integrations/github/login", nil)
+
+	if got, want := server.githubCallbackURL(req), "http://127.0.0.1:54321/api/v1/integrations/github/callback"; got != want {
+		t.Fatalf("desktop callback URL = %q, want %q", got, want)
 	}
 }
 

@@ -10,8 +10,24 @@ interface MarkdownRendererProps {
 
 function safeMarkdownHref(href: string) {
   const trimmed = href.trim()
-  if (/^(https?:|mailto:)/i.test(trimmed)) return trimmed
-  if (trimmed.startsWith('/') || trimmed.startsWith('#')) return trimmed
+  if (trimmed.startsWith('#')) return trimmed
+  // Relative URLs are deliberately rejected. Authority-relative URLs inherit
+  // the active scheme, while root-relative URLs resolve under the macOS
+  // `wails://wails` origin and replace the embedded SPA.
+  try {
+    const parsed = new URL(trimmed)
+    if (
+      (parsed.protocol === 'http:' || parsed.protocol === 'https:')
+      && parsed.hostname
+      && !parsed.username
+      && !parsed.password
+    ) {
+      return parsed.toString()
+    }
+    if (parsed.protocol === 'mailto:' && parsed.pathname) return parsed.toString()
+  } catch {
+    // Malformed and relative destinations render as inert Markdown text.
+  }
   return ''
 }
 

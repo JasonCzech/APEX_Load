@@ -5,9 +5,14 @@ import type { ReactNode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { downloadTextFile } from '../utils/fileUtils'
 import TestExecutionCharts from './TestExecutionCharts'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+vi.mock('../utils/fileUtils', () => ({
+  downloadTextFile: vi.fn(),
+}))
 
 vi.mock('recharts', () => {
   const Mock = ({ children }: { children?: ReactNode }) => <g>{children}</g>
@@ -152,6 +157,7 @@ describe('TestExecutionCharts context menu', () => {
     container = document.createElement('div')
     document.body.appendChild(container)
     root = createRoot(container)
+    vi.mocked(downloadTextFile).mockResolvedValue('saved')
   })
 
   afterEach(async () => {
@@ -253,6 +259,24 @@ describe('TestExecutionCharts context menu', () => {
 
     expect(container.querySelector('.chart-context-menu')).toBeNull()
     expect(document.activeElement).toBe(actionsButton)
+  })
+
+  it('surfaces a native chart export failure from the graph action caller', async () => {
+    vi.mocked(downloadTextFile).mockRejectedValueOnce(new Error('native save failed'))
+    await renderCharts()
+
+    const firstChart = container.querySelector('.chart-card')
+    await act(async () => {
+      firstChart?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: 100, clientY: 120 }))
+    })
+    await act(async () => {
+      menuButton('Export Graph Data')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+
+    expect(downloadTextFile).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Could not save the chart file: native save failed')
   })
 
   it('toggles a VUsers overlay line from the graph context menu', async () => {

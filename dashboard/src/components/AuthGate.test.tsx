@@ -1,170 +1,469 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
-import { createRoot, Root } from 'react-dom/client'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { act } from "react";
+import { createRoot, Root } from "react-dom/client";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import AuthGate from './AuthGate'
-import { API_ORIGIN, resolveApiResourceUrl } from '../hooks/apiClient'
-import { AuthStatusState } from '../hooks/useAuthStatus'
-import { diagnoseError } from '../utils/errorUtils'
+import AuthGate from "./AuthGate";
+import { API_ORIGIN, resolveApiResourceUrl } from "../hooks/apiClient";
+import { AuthStatusState } from "../hooks/useAuthStatus";
+import { diagnoseError } from "../utils/errorUtils";
+import type { WailsDesktopBridge } from "../desktop/desktopBridge";
+import type { DesktopShellEventHandlers } from "../desktop/useDesktopShellEvents";
 
-type ReadyAuthState = Extract<AuthStatusState, { status: 'ready' }>['auth']
+type ReadyAuthState = Extract<AuthStatusState, { status: "ready" }>["auth"];
+type BridgeWindow = typeof window & {
+  go?: { main?: { App?: WailsDesktopBridge } };
+};
+(
+  globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }
+).IS_REACT_ACT_ENVIRONMENT = true;
 
-;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
-
-describe('AuthGate', () => {
-  let container: HTMLDivElement
-  let root: Root
+describe("AuthGate", () => {
+  let container: HTMLDivElement;
+  let root: Root;
 
   beforeEach(() => {
-    container = document.createElement('div')
-    document.body.appendChild(container)
-    root = createRoot(container)
-  })
+    window.history.replaceState({}, "", "/");
+    window.localStorage.clear();
+    container = document.createElement("div");
+    document.body.appendChild(container);
+    root = createRoot(container);
+  });
 
   afterEach(async () => {
     await act(async () => {
-      root.unmount()
-    })
-    container.remove()
-    vi.restoreAllMocks()
-  })
+      root.unmount();
+    });
+    container.remove();
+    delete (window as BridgeWindow).go;
+    window.localStorage.clear();
+    vi.restoreAllMocks();
+  });
 
-  it('renders children when authentication is disabled', async () => {
+  it("renders children when authentication is disabled", async () => {
     await act(async () => {
       root.render(
-        <AuthGate state={readyState({ enabled: false, mode: 'disabled', authenticated: false })}>
+        <AuthGate
+          state={readyState({
+            enabled: false,
+            mode: "disabled",
+            authenticated: false,
+          })}
+        >
           <div data-testid="protected">Protected content</div>
         </AuthGate>,
-      )
-    })
+      );
+    });
 
-    expect(container.textContent).toContain('Protected content')
-    expect(container.textContent).not.toContain('Sign-in required')
-  })
+    expect(container.textContent).toContain("Protected content");
+    expect(container.textContent).not.toContain("Sign-in required");
+  });
 
-  it('blocks the dashboard when trusted-header auth is enabled without a user', async () => {
+  it("blocks the dashboard when trusted-header auth is enabled without a user", async () => {
     await act(async () => {
       root.render(
-        <AuthGate state={readyState({ enabled: true, mode: 'trusted_headers', provider_name: 'Microsoft Entra ID', login_url: 'https://login.example.test/start', authenticated: false })}>
+        <AuthGate
+          state={readyState({
+            enabled: true,
+            mode: "trusted_headers",
+            provider_name: "Microsoft Entra ID",
+            login_url: "https://login.example.test/start",
+            authenticated: false,
+          })}
+        >
           <div data-testid="protected">Protected content</div>
         </AuthGate>,
-      )
-    })
+      );
+    });
 
-    expect(container.textContent).toContain('Sign-in required')
-    expect(container.textContent).toContain('Continue to Microsoft Entra ID')
-    const link = container.querySelector('a') as HTMLAnchorElement | null
-    expect(link?.href).toBe('https://login.example.test/start')
-    expect(container.textContent).not.toContain('Protected content')
-  })
+    expect(container.textContent).toContain("Sign-in required");
+    expect(container.textContent).toContain("Continue to Microsoft Entra ID");
+    const link = container.querySelector("a") as HTMLAnchorElement | null;
+    expect(link?.href).toBe("https://login.example.test/start");
+    expect(container.textContent).not.toContain("Protected content");
+  });
 
-  it('renders children when a trusted-header identity is present', async () => {
+  it("renders children when a trusted-header identity is present", async () => {
     await act(async () => {
       root.render(
-        <AuthGate state={readyState({
-          enabled: true,
-          mode: 'trusted_headers',
-          authenticated: true,
-          user: {
-            subject: 'alice',
-            display_name: 'Alice Admin',
-            global_roles: ['system_admin'],
-          },
-        })}>
+        <AuthGate
+          state={readyState({
+            enabled: true,
+            mode: "trusted_headers",
+            authenticated: true,
+            user: {
+              subject: "alice",
+              display_name: "Alice Admin",
+              global_roles: ["system_admin"],
+            },
+          })}
+        >
           <div data-testid="protected">Protected content</div>
         </AuthGate>,
-      )
-    })
+      );
+    });
 
-    expect(container.textContent).toContain('Protected content')
-    expect(container.textContent).not.toContain('Checking access')
-  })
+    expect(container.textContent).toContain("Protected content");
+    expect(container.textContent).not.toContain("Checking access");
+  });
 
-  it('blocks the dashboard with OIDC-specific copy when native OIDC is enabled without a session', async () => {
+  it("blocks the dashboard with OIDC-specific copy when native OIDC is enabled without a session", async () => {
     await act(async () => {
       root.render(
-        <AuthGate state={readyState({ enabled: true, mode: 'oidc', provider_name: 'Microsoft Entra ID', login_url: '/api/v1/auth/login', authenticated: false })}>
+        <AuthGate
+          state={readyState({
+            enabled: true,
+            mode: "oidc",
+            provider_name: "Microsoft Entra ID",
+            login_url: "/api/v1/auth/login",
+            authenticated: false,
+          })}
+        >
           <div data-testid="protected">Protected content</div>
         </AuthGate>,
-      )
-    })
+      );
+    });
 
-    expect(container.textContent).toContain('native OIDC authentication')
-    expect(container.textContent).toContain('Continue to Microsoft Entra ID')
-    const link = container.querySelector('a') as HTMLAnchorElement | null
-    expect(link?.getAttribute('href')).toBe(resolveApiResourceUrl('/api/v1/auth/login', API_ORIGIN))
-    expect(container.textContent).not.toContain('Protected content')
-  })
+    expect(container.textContent).toContain("native OIDC authentication");
+    expect(container.textContent).toContain("Continue to Microsoft Entra ID");
+    expect(container.querySelector("a")).toBeNull();
+    expect(
+      Array.from(container.querySelectorAll("button")).some(
+        (button) => button.textContent === "Continue to Microsoft Entra ID",
+      ),
+    ).toBe(true);
+    expect(container.textContent).not.toContain("Protected content");
+  });
 
-  it('explains when the native oidc session expired', async () => {
+  it("keeps unsupported desktop OIDC out of the embedded webview and opens the system browser", async () => {
+    const openInBrowser = vi.fn().mockResolvedValue(undefined);
+    const openURL = vi.fn().mockResolvedValue(undefined);
+    (window as BridgeWindow).go = {
+      main: { App: { OpenInBrowser: openInBrowser, OpenURL: openURL } },
+    };
     await act(async () => {
       root.render(
-        <AuthGate state={readyState({ enabled: true, mode: 'oidc', provider_name: 'Microsoft Entra ID', login_url: '/api/v1/auth/login', authenticated: false, session_status: 'expired' })}>
+        <AuthGate
+          state={readyState({
+            enabled: true,
+            mode: "oidc",
+            provider_name: "Microsoft Entra ID",
+            login_url: "/api/v1/auth/login",
+            authenticated: false,
+          })}
+        >
           <div data-testid="protected">Protected content</div>
         </AuthGate>,
-      )
-    })
+      );
+    });
 
-    expect(container.textContent).toContain('session has expired')
-    expect(container.textContent).toContain('Continue to Microsoft Entra ID')
-    expect(container.textContent).not.toContain('Protected content')
-  })
+    expect(container.textContent).toContain("Continue in your browser");
+    expect(container.textContent).toContain(
+      "not shared with the embedded desktop webview",
+    );
+    expect(container.querySelector("a")).toBeNull();
 
-  it('posts logout to the configured API origin with credentials', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockReturnValue(new Promise(() => {}))
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent === "Open authenticated dashboard",
+    );
+    await act(async () =>
+      button?.dispatchEvent(new MouseEvent("click", { bubbles: true })),
+    );
+    expect(openInBrowser).toHaveBeenCalledWith("admin", "");
+    expect(openURL).not.toHaveBeenCalled();
+  });
+
+  it("honors a native Help menu browser request while desktop auth blocks AppShell", async () => {
+    const openInBrowser = vi.fn().mockResolvedValue(undefined);
+    let desktopHandlers: DesktopShellEventHandlers | null = null;
+    (window as BridgeWindow).go = {
+      main: { App: { OpenInBrowser: openInBrowser } },
+    };
     await act(async () => {
       root.render(
-        <AuthGate state={readyState({
-          enabled: true,
-          mode: 'oidc',
-          authenticated: false,
-          login_url: '/api/v1/auth/login',
-          logout_url: '/api/v1/auth/logout',
-          logout_csrf_token: 'csrf-token',
-        })}>
+        <AuthGate
+          state={readyState({
+            enabled: true,
+            mode: "oidc",
+            login_url: "/api/v1/auth/login",
+            authenticated: false,
+          })}
+          onDesktopHandlersChange={(handlers) => {
+            desktopHandlers = handlers;
+          }}
+        >
           <div>Protected content</div>
         </AuthGate>,
-      )
-    })
+      );
+    });
 
-    const logout = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Sign out local session')
+    const registeredHandlers = desktopHandlers as DesktopShellEventHandlers | null;
+    expect(registeredHandlers?.onMenuOpenBrowser).toBeTypeOf("function");
     await act(async () => {
-      logout?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
-    })
+      await registeredHandlers?.onMenuOpenBrowser?.();
+    });
+    expect(openInBrowser).toHaveBeenCalledWith("admin", "");
+  });
 
-    expect(fetchMock).toHaveBeenCalledWith(
-      resolveApiResourceUrl('/api/v1/auth/logout', API_ORIGIN),
-      {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'X-APEXLoad-CSRF-Token': 'csrf-token' },
-      },
-    )
-    expect(logout?.hasAttribute('disabled')).toBe(true)
-  })
-
-  it('shows diagnostic guidance when authentication status cannot be checked', async () => {
+  it("visibly consumes workspace-only native actions while desktop auth is blocked", async () => {
+    let desktopHandlers: DesktopShellEventHandlers | null = null;
+    (window as BridgeWindow).go = { main: { App: {} } };
     await act(async () => {
       root.render(
-        <AuthGate state={{
-          status: 'error',
-          message: 'API controller is unreachable',
-          diagnostic: diagnoseError(new TypeError('Failed to fetch'), 'Unable to determine authentication status.'),
-        }}>
+        <AuthGate
+          state={readyState({
+            enabled: true,
+            mode: "oidc",
+            authenticated: false,
+          })}
+          onDesktopHandlersChange={(handlers) => {
+            desktopHandlers = handlers;
+          }}
+        >
+          <div>Protected content</div>
+        </AuthGate>,
+      );
+    });
+
+    const registeredHandlers = desktopHandlers as DesktopShellEventHandlers | null;
+    expect(registeredHandlers?.onMenuAction).toBeTypeOf("function");
+    await act(async () => {
+      await registeredHandlers?.onMenuAction?.("new-test");
+    });
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "needs the embedded workspace",
+    );
+  });
+
+  it("opens the validated upstream login URL for desktop trusted-header auth", async () => {
+    const openURL = vi.fn().mockResolvedValue(undefined);
+    const openInBrowser = vi.fn().mockResolvedValue(undefined);
+    (window as BridgeWindow).go = {
+      main: { App: { OpenURL: openURL, OpenInBrowser: openInBrowser } },
+    };
+    await act(async () => {
+      root.render(
+        <AuthGate
+          state={readyState({
+            enabled: true,
+            mode: "trusted_headers",
+            provider_name: "Microsoft Entra ID",
+            login_url: "https://login.example.test/start",
+            authenticated: false,
+          })}
+        >
+          <div>Protected content</div>
+        </AuthGate>,
+      );
+    });
+
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent === "Open authenticated dashboard",
+    );
+    await act(async () => button?.click());
+
+    expect(openURL).toHaveBeenCalledWith("https://login.example.test/start");
+    expect(openInBrowser).not.toHaveBeenCalled();
+  });
+
+  it("rejects an invalid desktop trusted-header login URL", async () => {
+    const openURL = vi.fn().mockResolvedValue(undefined);
+    (window as BridgeWindow).go = { main: { App: { OpenURL: openURL } } };
+    await act(async () => {
+      root.render(
+        <AuthGate
+          state={readyState({
+            enabled: true,
+            mode: "trusted_headers",
+            login_url: "javascript:alert(1)",
+            authenticated: false,
+          })}
+        >
+          <div>Protected content</div>
+        </AuthGate>,
+      );
+    });
+
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent === "Open authenticated dashboard",
+    );
+    await act(async () => button?.click());
+
+    expect(openURL).not.toHaveBeenCalled();
+    expect(container.textContent).toContain(
+      "Could not open the authenticated dashboard",
+    );
+  });
+
+  it("does not resolve a relative desktop trusted-header login URL against the loopback controller", async () => {
+    const openURL = vi.fn().mockResolvedValue(undefined);
+    (window as BridgeWindow).go = { main: { App: { OpenURL: openURL } } };
+    await act(async () => {
+      root.render(
+        <AuthGate
+          state={readyState({
+            enabled: true,
+            mode: "trusted_headers",
+            login_url: "/api/v1/auth/login",
+            authenticated: false,
+          })}
+        >
+          <div>Protected content</div>
+        </AuthGate>,
+      );
+    });
+
+    const button = Array.from(container.querySelectorAll("button")).find(
+      (candidate) => candidate.textContent === "Open authenticated dashboard",
+    );
+    await act(async () => button?.click());
+
+    expect(openURL).not.toHaveBeenCalled();
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain(
+      "a relative path would reopen the unauthenticated desktop loopback",
+    );
+    expect(container.textContent).toContain(
+      "Configure the public gateway URL in the authentication settings",
+    );
+  });
+
+  it("starts OIDC through a capability-bearing managed fetch", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockReturnValue(new Promise(() => {}));
+    await act(async () => {
+      root.render(
+        <AuthGate
+          state={readyState({
+            enabled: true,
+            mode: "oidc",
+            provider_name: "Microsoft Entra ID",
+            login_url: "/api/v1/auth/login",
+            authenticated: false,
+          })}
+        >
+          <div>Protected content</div>
+        </AuthGate>,
+      );
+    });
+    const login = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Continue to Microsoft Entra ID",
+    );
+    await act(async () => login?.click());
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const loginURL = new URL(String(fetchMock.mock.calls[0][0]));
+    expect(`${loginURL.origin}${loginURL.pathname}`).toBe(
+      resolveApiResourceUrl("/api/v1/auth/login", API_ORIGIN),
+    );
+    expect(loginURL.searchParams.get("return_to")).toBe("/");
+    expect(fetchMock.mock.calls[0][1]).toEqual(
+      expect.objectContaining({
+        credentials: "include",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect((fetchMock.mock.calls[0][1]?.headers as Headers).get("Accept")).toBe(
+      "application/json",
+    );
+    expect(login?.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("explains when the native oidc session expired", async () => {
+    await act(async () => {
+      root.render(
+        <AuthGate
+          state={readyState({
+            enabled: true,
+            mode: "oidc",
+            provider_name: "Microsoft Entra ID",
+            login_url: "/api/v1/auth/login",
+            authenticated: false,
+            session_status: "expired",
+          })}
+        >
           <div data-testid="protected">Protected content</div>
         </AuthGate>,
-      )
-    })
+      );
+    });
 
-    expect(container.textContent).toContain('Authentication check failed')
-    expect(container.textContent).toContain('API controller is unreachable')
-    expect(container.textContent).toContain('Docker Compose stack or controller process')
-    expect(container.textContent).not.toContain('Protected content')
-  })
-})
+    expect(container.textContent).toContain("session has expired");
+    expect(container.textContent).toContain("Continue to Microsoft Entra ID");
+    expect(container.textContent).not.toContain("Protected content");
+  });
+
+  it("posts logout to the configured API origin with credentials", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockReturnValue(new Promise(() => {}));
+    await act(async () => {
+      root.render(
+        <AuthGate
+          state={readyState({
+            enabled: true,
+            mode: "oidc",
+            authenticated: false,
+            login_url: "/api/v1/auth/login",
+            logout_url: "/api/v1/auth/logout",
+            logout_csrf_token: "csrf-token",
+          })}
+        >
+          <div>Protected content</div>
+        </AuthGate>,
+      );
+    });
+
+    const logout = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent === "Sign out local session",
+    );
+    await act(async () => {
+      logout?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      resolveApiResourceUrl("/api/v1/auth/logout", API_ORIGIN),
+      expect.objectContaining({
+        method: "POST",
+        credentials: "include",
+        headers: expect.any(Headers),
+      }),
+    );
+    expect(
+      (fetchMock.mock.calls[0][1]?.headers as Headers).get(
+        "X-APEXLoad-CSRF-Token",
+      ),
+    ).toBe("csrf-token");
+    expect(logout?.hasAttribute("disabled")).toBe(true);
+  });
+
+  it("shows diagnostic guidance when authentication status cannot be checked", async () => {
+    await act(async () => {
+      root.render(
+        <AuthGate
+          state={{
+            status: "error",
+            message: "API controller is unreachable",
+            diagnostic: diagnoseError(
+              new TypeError("Failed to fetch"),
+              "Unable to determine authentication status.",
+            ),
+          }}
+        >
+          <div data-testid="protected">Protected content</div>
+        </AuthGate>,
+      );
+    });
+
+    expect(container.textContent).toContain("Authentication check failed");
+    expect(container.textContent).toContain("API controller is unreachable");
+    expect(container.textContent).toContain(
+      "Docker Compose stack or controller process",
+    );
+    expect(container.textContent).not.toContain("Protected content");
+  });
+});
 
 function readyState(auth: ReadyAuthState): AuthStatusState {
-  return { status: 'ready', auth }
+  return { status: "ready", auth };
 }

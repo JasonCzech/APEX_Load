@@ -207,6 +207,7 @@ export default function SettingsPage({
   onDomainChange,
   onDomainsRefresh,
 }: SettingsPageProps) {
+  const desktopSurface = isDesktopSurface()
   const api = useApi()
   const applicationApi = useApplicationApi()
   const projectApi = useProjectApi()
@@ -1163,10 +1164,13 @@ export default function SettingsPage({
   }
 
   const exportUsageAccounting = async () => {
+    setUsageActionMessage('')
+    setUsageActionError('')
     try {
       const blob = await api.downloadUsageAccounting(activeProject?.id)
       const date = new Date().toISOString().slice(0, 10)
-      downloadBlob(blob, `apexload-usage-accounting-${date}.csv`)
+      const outcome = await downloadBlob(blob, `apexload-usage-accounting-${date}.csv`)
+      if (outcome === 'cancelled') return
       setUsageActionMessage('Usage accounting export downloaded.')
       setUsageActionError('')
     } catch (error: unknown) {
@@ -1205,6 +1209,8 @@ export default function SettingsPage({
       setAuditActionMessage('')
       return
     }
+    setAuditActionMessage('')
+    setAuditActionError('')
     try {
       const blob = await api.downloadAuthAuditEvents({
         limit: 1000,
@@ -1213,7 +1219,8 @@ export default function SettingsPage({
         status: auditStatusFilter.trim() || undefined,
       })
       const date = new Date().toISOString().slice(0, 10)
-      downloadBlob(blob, `apexload-audit-events-${date}.csv`)
+      const outcome = await downloadBlob(blob, `apexload-audit-events-${date}.csv`)
+      if (outcome === 'cancelled') return
       setAuditActionMessage('Audit export downloaded.')
       setAuditActionError('')
     } catch (error: unknown) {
@@ -2007,7 +2014,7 @@ export default function SettingsPage({
                 <option value="monokai-dimmed">Monokai Dimmed</option>
               </select>
             </div>
-            {isDesktopSurface() && <DesktopNotificationsToggle />}
+            {desktopSurface && <DesktopNotificationsToggle />}
             <div className="setting-row">
               <div className="setting-info">
                 <span className="setting-label">Desktop Client Promotion</span>
@@ -2190,10 +2197,15 @@ export default function SettingsPage({
                   onChange={(e) => updateAuth('mode', e.target.value)}
                 >
                   <option value="dev">Dev Bypass</option>
-                  <option value="oidc">Native OIDC</option>
-                  <option value="trusted_headers">Trusted Headers</option>
+                  <option value="oidc" disabled={desktopSurface}>Native OIDC</option>
+                  <option value="trusted_headers" disabled={desktopSurface}>Trusted Headers</option>
                 </select>
               </div>
+              {desktopSurface && (
+                <div className="settings-inline-note" role="note">
+                  Native OIDC and Trusted Headers are configured and used from the hosted browser dashboard. The embedded desktop workspace requires Dev Bypass because browser sessions and proxy-injected headers are not available on its loopback connection.
+                </div>
+              )}
               {settings.auth.mode === 'dev' && (
                 <div className="settings-subsection">
                   <div className="settings-manager-summary">

@@ -898,10 +898,13 @@ export default function AccessPage({
   const exportActivity = async () => {
     if (!canViewUserActivity) return
     setActivityExporting(true)
+    setActivityMessage('')
+    setActivityError('')
     try {
       const blob = await api.downloadAuthUserActivity(buildActivityFilter(activityFilter))
       const date = new Date().toISOString().slice(0, 10)
-      downloadBlob(blob, `apexload-user-activity-${date}.csv`)
+      const outcome = await downloadBlob(blob, `apexload-user-activity-${date}.csv`)
+      if (outcome === 'cancelled') return
       setActivityMessage('Activity export downloaded.')
       setActivityError('')
     } catch (error: unknown) {

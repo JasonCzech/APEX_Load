@@ -406,6 +406,74 @@ func TestConvertSession_UsesRawHeadersForCorrelationWithoutLeakingUnmatchedSecre
 	}
 }
 
+func TestConvertSession_DropsRecorderControlHeadersFromLegacyInputs(t *testing.T) {
+	const controlSecret = "recorder-control-secret-abcdef123456"
+	s := &Session{
+		ID:      "test",
+		Name:    "Recorder Control Header Flow",
+		BaseURL: "http://example.com",
+		Requests: []RecordedRequest{
+			{
+				Seq:             1,
+				Method:          "POST",
+				URL:             "http://example.com/login",
+				Path:            "/login",
+				Host:            "example.com",
+				StatusCode:      http.StatusOK,
+				ResponseHeaders: map[string]string{"X-APEXLoad-Recorder-Seed": controlSecret},
+			},
+			{
+				Seq:        2,
+				Method:     "GET",
+				URL:        "http://example.com/account",
+				Path:       "/account",
+				Host:       "example.com",
+				StatusCode: http.StatusOK,
+				Headers: map[string]string{
+					"X-Trace":                   "safe-trace",
+					"X-APEXLoad-Recorder-Token": "[redacted]",
+				},
+				RawHeaders: map[string]string{
+					"X-Trace":                   "safe-trace",
+					"x-apexload-recorder-token": controlSecret,
+				},
+			},
+		},
+	}
+
+	correlationInputs := convertibleCorrelationRequests(s.Requests)
+	for _, req := range correlationInputs {
+		for name := range req.Headers {
+			if isRecorderControlHeader(name) {
+				t.Fatalf("correlation input retained recorder control request header %q", name)
+			}
+		}
+		for name := range req.ResponseHeaders {
+			if isRecorderControlHeader(name) {
+				t.Fatalf("correlation input retained recorder control response header %q", name)
+			}
+		}
+	}
+
+	result := ConvertSession(s, "")
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("action count = %d, want 2", len(result.Script.Actions))
+	}
+	if got := result.Script.Actions[1].Headers["X-Trace"]; got != "safe-trace" {
+		t.Fatalf("safe header = %q, want preserved", got)
+	}
+	for _, action := range result.Script.Actions {
+		for name, value := range action.Headers {
+			if isRecorderControlHeader(name) || strings.Contains(value, controlSecret) {
+				t.Fatalf("generated action leaked recorder control header: %#v", action.Headers)
+			}
+		}
+	}
+	if len(result.Correlations) != 0 {
+		t.Fatalf("recorder control headers produced correlations: %#v", result.Correlations)
+	}
+}
+
 // TestConvertSession_PartialHeaderCorrelationKeepsRedacted locks in that when a
 // correlation matches only a substring of a redacted secret header, leaving
 // live credential material around the {{var}}, the header stays redacted rather
@@ -770,14 +838,15 @@ func TestApplyCorrelationVars_LongestFirst(t *testing.T) {
 
 func TestFilterRecordedHeaders(t *testing.T) {
 	headers := map[string]string{
-		"Content-Type":    "application/json",
-		"Accept":          "text/html",
-		"Host":            "example.com",
-		"Content-Length":  "42",
-		"X-Custom-Header": "custom-value",
-		"Authorization":   "Bearer xyz",
-		"Cookie":          "session=abc",
-		"User-Agent":      "Mozilla/5.0",
+		"Content-Type":              "application/json",
+		"Accept":                    "text/html",
+		"Host":                      "example.com",
+		"Content-Length":            "42",
+		"X-Custom-Header":           "custom-value",
+		"Authorization":             "Bearer xyz",
+		"Cookie":                    "session=abc",
+		"User-Agent":                "Mozilla/5.0",
+		"X-APEXLoad-Recorder-Token": "recorder-control-secret",
 	}
 
 	filtered := filterRecordedHeaders(headers, false)
@@ -797,6 +866,9 @@ func TestFilterRecordedHeaders(t *testing.T) {
 	if _, ok := filtered["Accept"]; ok {
 		t.Fatal("Accept should be filtered")
 	}
+	if _, ok := filtered["X-APEXLoad-Recorder-Token"]; ok {
+		t.Fatal("recorder control headers should be filtered")
+	}
 	if v, ok := filtered["Content-Type"]; !ok || v != "application/json" {
 		t.Fatal("Content-Type should be kept")
 	}
@@ -810,6 +882,9 @@ func TestFilterRecordedHeaders(t *testing.T) {
 	withCookies := filterRecordedHeaders(headers, true)
 	if v, ok := withCookies["Cookie"]; !ok || v != "session=abc" {
 		t.Fatalf("Cookie should be kept when cookie capture is enabled, got %q", v)
+	}
+	if _, ok := withCookies["X-APEXLoad-Recorder-Token"]; ok {
+		t.Fatal("recorder control headers should be filtered when cookie capture is enabled")
 	}
 }
 

@@ -48,7 +48,10 @@ def destination_kind(relative: pathlib.PurePath) -> str | None:
             return "assets"
         if (
             artifact_path.parent == pathlib.PurePath("dist/desktop")
-            and artifact_path.suffixes[-2:] == [".tar", ".gz"]
+            and (
+                artifact_path.suffixes[-2:] == [".tar", ".gz"]
+                or artifact_path.suffix == ".deb"
+            )
         ):
             return "assets"
 

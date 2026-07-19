@@ -18,6 +18,7 @@ import {
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotFullDialog from './SnapshotFullDialog'
 import SnapshotTextPreview from './SnapshotTextPreview'
+import DesktopApiResourceLink from './DesktopApiResourceLink'
 import { extractSOAPFaultSummaryFromBody, formatSOAPFaultSummary } from './soapFaultUtils'
 import {
   formatSnapshotRequestLineAndHeaders,
@@ -516,10 +517,11 @@ function buildReportHref(testId: string, profile?: string) {
   return profile ? `${base}?profile=${encodeURIComponent(profile)}` : base
 }
 
-function buildArchiveReportHref(testId: string, format?: string, profile?: string) {
+function buildArchiveReportHref(testId: string, format?: string, profile?: string, download = false) {
   const params = new URLSearchParams()
   if (format) params.set('format', format)
   if (profile) params.set('profile', profile)
+  if (download) params.set('download', 'true')
   const query = params.toString()
   return `/api/v1/tests/${encodeURIComponent(testId)}/archive/report${query ? `?${query}` : ''}`
 }
@@ -928,13 +930,13 @@ export default function TestExecutionArchive({
                     </div>
                     <div className="inline-create-row">
                       {profile.export_formats.includes('html') && (
-                        <a className="btn btn-secondary btn-sm" href={buildReportHref(test.id, profile.id)} target="_blank" rel="noreferrer">{profile.label} HTML</a>
+                        <DesktopApiResourceLink className="btn btn-secondary btn-sm" href={buildReportHref(test.id, profile.id)} target="_blank" rel="noreferrer" mode="open" filename={`${test.id}-${profile.id}-report.html`}>{profile.label} HTML</DesktopApiResourceLink>
                       )}
                       {profile.export_formats.includes('csv') && (
-                        <a className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, 'csv', profile.id)} target="_blank" rel="noreferrer">{profile.label} CSV</a>
+                        <DesktopApiResourceLink className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, 'csv', profile.id)} target="_blank" rel="noreferrer" filename={`${test.id}-${profile.id}-report.csv`}>{profile.label} CSV</DesktopApiResourceLink>
                       )}
                       {profile.export_formats.includes('pdf') && (
-                        <a className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, 'pdf', profile.id)} target="_blank" rel="noreferrer">{profile.label} PDF</a>
+                        <DesktopApiResourceLink className="btn btn-secondary btn-sm" href={buildArchiveReportHref(test.id, 'pdf', profile.id)} target="_blank" rel="noreferrer" filename={`${test.id}-${profile.id}-report.pdf`}>{profile.label} PDF</DesktopApiResourceLink>
                       )}
                       {profile.export_formats.includes('jsonl') && (
                         <button className="btn btn-secondary btn-sm" onClick={() => onDownloadArchiveArtifact(archiveReport.manifest.transactions_file || 'transactions.jsonl')}>{profile.label} JSONL</button>
@@ -1185,32 +1187,37 @@ export default function TestExecutionArchive({
               )}
               <div className="archive-artifact-group">
                 <span className="archive-artifact-label">Report</span>
-                <a
+                <DesktopApiResourceLink
                   className="btn btn-secondary btn-sm"
                   href={buildReportHref(test.id)}
                   target="_blank"
-                  rel="noreferrer">
+                  rel="noreferrer"
+                  mode="open"
+                  filename={`${test.id}-report.html`}>
                   Download Report
-                </a>
-                <a
+                </DesktopApiResourceLink>
+                <DesktopApiResourceLink
                   className="btn btn-secondary btn-sm"
-                  href={buildArchiveReportHref(test.id)}
+                  href={buildArchiveReportHref(test.id, undefined, undefined, true)}
                   target="_blank"
                   rel="noreferrer"
+                  filename={`${test.id}-report.json`}
                 >
                   Download Report JSON
-                </a>
+                </DesktopApiResourceLink>
                 {archiveReport.report_profiles?.map(profile => (
-                  <a
+                  <DesktopApiResourceLink
                     key={profile.id}
                     className="btn btn-secondary btn-sm"
                     href={buildReportHref(test.id, profile.id)}
                     target="_blank"
                     rel="noreferrer"
                     title={profile.description}
+                    mode="open"
+                    filename={`${test.id}-${profile.id}-report.html`}
                   >
                     {profile.label}
-                  </a>
+                  </DesktopApiResourceLink>
                 ))}
               </div>
               <div className="archive-artifact-group">

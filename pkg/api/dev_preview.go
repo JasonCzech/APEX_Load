@@ -1,11 +1,66 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/storage"
 )
+
+const maxDesktopDevProjectIDLength = 256
+
+var desktopDevProjectIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$`)
+
+// DesktopDevPreviewContext is the non-secret development preview state that a
+// Wails renderer may hand to a native controller request or one-time browser
+// bootstrap. Fields stay private so callers cannot bypass the same validation
+// used at both native trust boundaries.
+type DesktopDevPreviewContext struct {
+	mode      string
+	projectID string
+}
+
+// ParseDesktopDevPreviewContext validates renderer-supplied preview state.
+// Empty mode preserves the dashboard's documented admin default, while an
+// empty project deliberately remains empty (a user preview then has only its
+// global viewer role). Project IDs created by APEX Load are UUIDs; the slightly
+// wider allow-list also covers stable imported/default IDs without accepting
+// whitespace, URL syntax, control characters, or unbounded input.
+func ParseDesktopDevPreviewContext(rawMode, rawProjectID string) (DesktopDevPreviewContext, error) {
+	mode := strings.ToLower(strings.TrimSpace(rawMode))
+	if mode == "" {
+		mode = devViewModeAdmin
+	}
+	if mode != devViewModeAdmin && mode != devViewModeUser {
+		return DesktopDevPreviewContext{}, fmt.Errorf("desktop development preview mode must be admin or user")
+	}
+	projectID := strings.TrimSpace(rawProjectID)
+	if len(projectID) > maxDesktopDevProjectIDLength || (projectID != "" && !desktopDevProjectIDPattern.MatchString(projectID)) {
+		return DesktopDevPreviewContext{}, fmt.Errorf("desktop development preview project ID is invalid")
+	}
+	return DesktopDevPreviewContext{mode: mode, projectID: projectID}, nil
+}
+
+// Mode returns the normalized admin/user mode.
+func (c DesktopDevPreviewContext) Mode() string { return c.mode }
+
+// ProjectID returns the validated active project, or an empty string when no
+// project is selected.
+func (c DesktopDevPreviewContext) ProjectID() string { return c.projectID }
+
+// Apply adds the preview state to an in-process/native request. These headers
+// are still honored only by the existing non-production dev-auth gate.
+func (c DesktopDevPreviewContext) Apply(header http.Header) {
+	if header == nil || (c.mode != devViewModeAdmin && c.mode != devViewModeUser) {
+		return
+	}
+	header.Set(devViewHeader, c.mode)
+	if c.projectID != "" {
+		header.Set(devProjectIDHeader, c.projectID)
+	}
+}
 
 const (
 	devViewHeader      = "X-APEXLoad-Dev-View"

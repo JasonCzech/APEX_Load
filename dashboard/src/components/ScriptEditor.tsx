@@ -2525,6 +2525,24 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     warnings,
     closeReplayScreenshot,
   } = useScriptEditorState(initialScript)
+  const exportGeneratedTextFile = useCallback(async (
+    content: string,
+    filename: string,
+    savedMessage = `Exported ${filename}.`,
+  ): Promise<void> => {
+    setError('')
+    setSuccess('')
+    try {
+      const outcome = await downloadTextFile(content, filename)
+      if (outcome === 'cancelled') {
+        setSuccess('Export cancelled.')
+        return
+      }
+      setSuccess(savedMessage)
+    } catch (cause: unknown) {
+      setError(getErrorMessage(cause, `Failed to export ${filename}`))
+    }
+  }, [setError, setSuccess])
   const [replayStartPending, setReplayStartPending] = useState(false)
   const [initialSaveRequired, setInitialSaveRequired] = useState(initiallyDirty)
   const initialSaveSourceRef = useRef({ script: initialScript, initiallyDirty })
@@ -4919,7 +4937,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     await pushDebugBreakpoints([...withoutChildren, ...children])
   }, [debugBreakpoints, pushDebugBreakpoints])
 
-  const handleDownloadBrowserReplayExport = () => {
+  const handleDownloadBrowserReplayExport = async () => {
     if (!replayReport) return
 
     const replaySessionId = activeReplaySessionId || browserReplaySession?.id
@@ -4952,9 +4970,11 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
 
     const scriptBase = sanitizeDownloadName(script.name, 'script')
     const replayBase = sanitizeDownloadName(replaySessionId || replayReport.group || 'script-debug', 'script-debug')
-    downloadTextFile(JSON.stringify(payload, null, 2), `${scriptBase}-${replayBase}-debug.json`)
-    setError('')
-    setSuccess('Exported debugger session JSON.')
+    await exportGeneratedTextFile(
+      JSON.stringify(payload, null, 2),
+      `${scriptBase}-${replayBase}-debug.json`,
+      'Exported debugger session JSON.',
+    )
   }
 
   const methodColor = (m: string) => {
@@ -6065,7 +6085,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     }
   }
 
-  const exportDataSourceFile = (source: DataSourceConfig, idx: number) => {
+  const exportDataSourceFile = async (source: DataSourceConfig, idx: number) => {
     const content = source.inline_data || ''
     if (!content.trim()) {
       setError('No inline parameter data to export for this source')
@@ -6073,9 +6093,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     }
     const base = (source.name || `source_${idx + 1}`).replace(/[^a-zA-Z0-9_-]+/g, '_')
     const ext = (source.type || 'csv').toLowerCase() === 'dat' ? 'dat' : 'csv'
-    downloadTextFile(content, `${base}.${ext}`)
-    setError('')
-    setSuccess(`Exported ${base}.${ext}`)
+    await exportGeneratedTextFile(content, `${base}.${ext}`, `Exported ${base}.${ext}`)
   }
 
   const mergeParameterSourceFiles = () => {
@@ -6966,7 +6984,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
             onApply={() => undefined}
             onChange={() => undefined}
             onCopy={() => void navigator.clipboard?.writeText(selectedAuthorJsonText)}
-            onDownload={() => downloadTextFile(selectedAuthorJsonText, `${sanitizeDownloadName(selectedAuthorJsonScope.label, 'selected-action')}.json`)}
+            onDownload={() => { void exportGeneratedTextFile(selectedAuthorJsonText, `${sanitizeDownloadName(selectedAuthorJsonScope.label, 'selected-action')}.json`) }}
             onFormat={() => undefined}
             onReset={() => undefined}
           />
@@ -6995,7 +7013,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
           onApply={handleApplyJsonDraft}
           onChange={handleCodePaneChange}
           onCopy={() => void navigator.clipboard?.writeText(jsonText)}
-          onDownload={() => downloadTextFile(jsonText || formatScriptJson(script), `${sanitizeDownloadName(currentDraftScript.name, 'script')}.json`)}
+          onDownload={() => { void exportGeneratedTextFile(jsonText || formatScriptJson(script), `${sanitizeDownloadName(currentDraftScript.name, 'script')}.json`) }}
           onFormat={handleFormatJsonDraft}
           onReset={handleResetJsonDraft}
           onRequestParameterize={openJsonParameterSelectionMenu}
@@ -8687,7 +8705,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                           <span>Auto-scroll</span>
                         </label>
                         <button type="button" className="btn btn-sm btn-ghost" onClick={() => void navigator.clipboard?.writeText(debugRawOutputText)}>Copy</button>
-                        <button type="button" className="btn btn-sm btn-ghost" onClick={() => downloadTextFile(debugRawOutputText || 'No raw output captured', `${sanitizeDownloadName(script.name, 'script')}-debug.log`)}>Download</button>
+                        <button type="button" className="btn btn-sm btn-ghost" onClick={() => { void exportGeneratedTextFile(debugRawOutputText || 'No raw output captured', `${sanitizeDownloadName(script.name, 'script')}-debug.log`) }}>Download</button>
                         <button type="button" className="btn btn-sm btn-ghost" onClick={() => setDebugRawClearedAt(browserReplaySession?.logs?.length || 0)}>Clear View</button>
                       </div>
                       <div ref={debugRawOutputRef} className="debug-raw-output">
@@ -8805,7 +8823,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                     <div className="debug-output-panel" role="tabpanel" aria-label="Debug Output">
                       <div className="debug-output-toolbar">
                         <button type="button" className="btn btn-sm btn-ghost" onClick={() => void navigator.clipboard?.writeText(debugRawOutputText)}>Copy</button>
-                        <button type="button" className="btn btn-sm btn-ghost" onClick={() => downloadTextFile(debugRawOutputText || 'No debug output captured', `${sanitizeDownloadName(script.name, 'script')}-debug-output.log`)}>Download</button>
+                        <button type="button" className="btn btn-sm btn-ghost" onClick={() => { void exportGeneratedTextFile(debugRawOutputText || 'No debug output captured', `${sanitizeDownloadName(script.name, 'script')}-debug-output.log`) }}>Download</button>
                       </div>
                       <pre>{debugRawOutputText || 'No debug output captured yet.'}</pre>
                     </div>

@@ -1,4 +1,4 @@
-.PHONY: all build test test-jms-solace-real clean generator controller apexctl recording-agent collector-agent package-recording-agent desktop desktop-release clients desktop-preflight clients-release java-vuser-runner proto generate lint docker-generator docker-controller docker-local-up docker-local-down docker-local-logs docker-local-prometheus-check docker-push docker-push-acr k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-aks-render k8s-aks-apply k8s-aks-status k8s-aks-delete k8s-onprem-apply k8s-onprem-autoscaling-apply k8s-onprem-status k8s-onprem-delete k8s-smoke-test
+.PHONY: all build test test-jms-solace-real clean generator controller apexctl recording-agent collector-agent package-recording-agent desktop desktop-release desktop-api-binaries clients desktop-preflight clients-release java-vuser-runner proto generate lint docker-generator docker-controller docker-local-up docker-local-down docker-local-logs docker-local-prometheus-check docker-push docker-push-acr k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-aks-render k8s-aks-apply k8s-aks-status k8s-aks-delete k8s-onprem-apply k8s-onprem-autoscaling-apply k8s-onprem-status k8s-onprem-delete k8s-smoke-test
 
 VERSION    ?= $(shell ./scripts/resolve-version.sh 2>/dev/null || echo 0.1.0)
 COMMIT     ?= $(shell git rev-parse HEAD 2>/dev/null)
@@ -6,18 +6,20 @@ BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 BI := github.com/jasonczech/apexload/pkg/buildinfo
 LDFLAGS := -ldflags "-s -w -X $(BI).Version=$(VERSION) -X $(BI).Commit=$(COMMIT) -X $(BI).BuildTime=$(BUILD_TIME)"
 GOFLAGS := -trimpath
-WAILS ?= $(shell command -v wails 2>/dev/null || echo $(HOME)/go/bin/wails)
+# Leave discovery to build-desktop-local.sh when Wails is not on PATH; the
+# helper also honors custom go env GOBIN/GOPATH installations.
+WAILS ?= $(shell command -v wails 2>/dev/null)
 WAILS_PLATFORM ?=
-WAILS_PLATFORM_FLAG := $(if $(strip $(WAILS_PLATFORM)),-platform $(WAILS_PLATFORM),)
 AKS_RENDERED_MANIFEST ?= /tmp/apexload-aks.yaml
 
 all: build
 
-build: generator controller apexctl recording-agent collector-agent
 # Opt-in: `make build WITH_DESKTOP=1` also builds the host-platform desktop app.
 # The default build stays pure-Go and zero-dependency.
 ifeq ($(WITH_DESKTOP),1)
-build: clients
+build: generator collector-agent desktop-api-binaries
+else
+build: generator controller apexctl recording-agent collector-agent
 endif
 
 generator:
@@ -38,11 +40,18 @@ collector-agent:
 package-recording-agent:
 	./scripts/package-recording-agent.sh
 
-desktop: desktop-preflight
-	cd desktop && COPYFILE_DISABLE=1 $(WAILS) build -clean $(WAILS_PLATFORM_FLAG) -ldflags "-s -w -X $(BI).Version=$(VERSION) -X $(BI).Commit=$(COMMIT) -X $(BI).BuildTime=$(BUILD_TIME)"
+desktop:
+	VERSION="$(VERSION)" COMMIT="$(COMMIT)" BUILD_TIME="$(BUILD_TIME)" WAILS="$(WAILS)" WAILS_PLATFORM="$(WAILS_PLATFORM)" ./scripts/build-desktop-local.sh
 
 desktop-release: desktop
-	APEXLOAD_DESKTOP_PACKAGE_PLATFORM="$(WAILS_PLATFORM)" ./scripts/package-desktop.sh
+	VERSION="$(VERSION)" COMMIT="$(COMMIT)" BUILD_TIME="$(BUILD_TIME)" APEXLOAD_DESKTOP_PACKAGE_PLATFORM="$(WAILS_PLATFORM)" ./scripts/package-desktop.sh
+
+# Every binary in this group imports pkg/api, whose embedded static assets are
+# replaced by the desktop/Vite build. Keep those Go compilations behind desktop
+# as a single recursive make edge so `make -j build WITH_DESKTOP=1` cannot read
+# pkg/api/static while Vite is writing it.
+desktop-api-binaries: desktop
+	$(MAKE) --no-print-directory controller apexctl recording-agent VERSION="$(VERSION)" COMMIT="$(COMMIT)" BUILD_TIME="$(BUILD_TIME)"
 
 # clients builds the controller plus the HOST-platform Wails desktop app in one
 # step, sharing VERSION/COMMIT/BUILD_TIME so both binaries carry identical
@@ -50,18 +59,20 @@ desktop-release: desktop
 # machine (Wails links native webview libraries), so this builds only the
 # current host's desktop app. For all-platform signed packages use the CI matrix
 # in .github/workflows/desktop.yml.
-clients: controller desktop-preflight desktop
+clients: desktop
+	$(MAKE) --no-print-directory controller VERSION="$(VERSION)" COMMIT="$(COMMIT)" BUILD_TIME="$(BUILD_TIME)"
 	@echo "Built bin/controller and the host-platform desktop app (desktop/build/bin/)."
 
 # desktop-preflight fails early with actionable guidance when the desktop
 # toolchain (wails CLI, node/npm, and on Linux the gtk/webkit2gtk dev headers)
 # is missing, instead of surfacing a cryptic wails/npm error.
 desktop-preflight:
-	./scripts/build-desktop-local.sh --check
+	WAILS="$(WAILS)" WAILS_PLATFORM="$(WAILS_PLATFORM)" ./scripts/build-desktop-local.sh --check
 
 # clients-release builds the controller plus a packaged host-platform desktop
 # app (host platform only; signing/notarization still require the CI secrets).
-clients-release: controller desktop-release
+clients-release: desktop-release
+	$(MAKE) --no-print-directory controller VERSION="$(VERSION)" COMMIT="$(COMMIT)" BUILD_TIME="$(BUILD_TIME)"
 	@echo "Built bin/controller and a packaged host-platform desktop app (dist/desktop/)."
 
 java-vuser-runner:

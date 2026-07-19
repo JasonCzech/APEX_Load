@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 
 import { useApi } from '../hooks/useApi'
+import { hasDesktopApiCapability } from '../hooks/apiClient'
 import { downloadBlob } from '../utils/fileUtils'
+import { isDesktopSurface } from '../desktop/desktopBridge'
+import { saveApiResourceViaBridge, startDesktopBrowserDownload } from '../desktop/desktopFiles'
 import {
   type BrowserRecorderSession,
   type BrowserRecorderStep,
@@ -821,7 +824,24 @@ export default function BrowserRecorderControlPanel({
   }
 
   const handleDownloadHAR = async () => {
+    setFeedback('')
     try {
+      const safeName = safeRecordingFileName(session?.name)
+      const filename = `${safeName || 'browser-recording'}.har`
+      if (!api.browserRecorderBridge) {
+        const nativeResourcePath = `/api/v1/browser-recorder/sessions/${encodeURIComponent(sessionId)}/export?format=har`
+        const nativeOutcome = await saveApiResourceViaBridge(nativeResourcePath, filename)
+        if (nativeOutcome === 'saved') {
+          if (isCurrentSession()) showFeedback('Side-car HAR downloaded')
+          return
+        }
+        if (nativeOutcome === 'cancelled') return
+        if (!isDesktopSurface() && hasDesktopApiCapability()) {
+          await startDesktopBrowserDownload(nativeResourcePath, filename)
+          if (isCurrentSession()) showFeedback('Side-car HAR download request opened; any server error will appear in the browser.')
+          return
+        }
+      }
       const res = await api.exportBrowserRecording(sessionId, 'har')
       if (!isCurrentSession()) return
       if (!res.ok) {
@@ -830,8 +850,8 @@ export default function BrowserRecorderControlPanel({
       }
       const blob = await res.blob()
       if (!isCurrentSession()) return
-      const safeName = safeRecordingFileName(session?.name)
-      downloadBlob(blob, `${safeName || 'browser-recording'}.har`)
+      const outcome = await downloadBlob(blob, filename)
+      if (outcome === 'cancelled' || !isCurrentSession()) return
       showFeedback('Side-car HAR downloaded')
     } catch (e: any) {
       if (isCurrentSession()) showFeedback(e.message, 'error')

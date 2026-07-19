@@ -715,13 +715,13 @@ function ResultsPage({ testStatuses, onSelectTest, onOpenCommandCenter, onOpenTe
         const blob = action
           ? await api.downloadTestArchiveComparison(current.test.id, baseline.test.id, comparisonBreakdown, action)
           : await api.downloadTestArchiveComparison(current.test.id, baseline.test.id, comparisonBreakdown)
-        downloadBlob(blob, `archive-comparison-${current.test.id}-${baseline.test.id}-${comparisonBreakdown}${actionFilename}.csv`)
+        await downloadBlob(blob, `archive-comparison-${current.test.id}-${baseline.test.id}-${comparisonBreakdown}${actionFilename}.csv`)
       } else {
         const comparisonIds = comparisonRuns.map(item => item.test.id)
         const blob = action
           ? await api.downloadTestArchiveMultiComparison(baseline.test.id, comparisonIds, comparisonBreakdown, action)
           : await api.downloadTestArchiveMultiComparison(baseline.test.id, comparisonIds, comparisonBreakdown)
-        downloadBlob(blob, `archive-comparison-${baseline.test.id}-${comparisonCards.length}-runs-${comparisonBreakdown}${actionFilename}.csv`)
+        await downloadBlob(blob, `archive-comparison-${baseline.test.id}-${comparisonCards.length}-runs-${comparisonBreakdown}${actionFilename}.csv`)
       }
       setComparisonError('')
     } catch (error: unknown) {

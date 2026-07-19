@@ -121,6 +121,7 @@ function shardSummary(shards?: GeneratorShardSummary[]): string {
 
 export default function TestExecutionManifestCard({ manifest, error, loading, onReload }: Props) {
   const [copyStatus, setCopyStatus] = useState('')
+  const [downloadError, setDownloadError] = useState('')
 
   const jsonText = useMemo(() => (manifest ? stringifyJSON(manifest) : ''), [manifest])
   const fileBaseName = manifest ? safeFilename(manifest.ref_key || manifest.test_id || manifest.test_name) : 'test-run'
@@ -131,9 +132,15 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
     setCopyStatus(copied ? 'Copied' : 'Copy unavailable')
   }
 
-  const downloadManifest = () => {
+  const downloadManifest = async () => {
     if (!manifest) return
-    downloadBlob(new Blob([jsonText], { type: 'application/json' }), `apexload-test-manifest-${fileBaseName}.json`)
+    setDownloadError('')
+    try {
+      await downloadBlob(new Blob([jsonText], { type: 'application/json' }), `apexload-test-manifest-${fileBaseName}.json`)
+    } catch (cause: unknown) {
+      const detail = cause instanceof Error && cause.message ? `: ${cause.message}` : ''
+      setDownloadError(`Could not save the test manifest${detail}`)
+    }
   }
 
   if (loading && !manifest) {
@@ -175,8 +182,9 @@ export default function TestExecutionManifestCard({ manifest, error, loading, on
         </div>
         <div className="manifest-actions">
           {copyStatus && <span className="manifest-action-status">{copyStatus}</span>}
+          {downloadError && <span className="manifest-warning" role="alert">{downloadError}</span>}
           <button type="button" className="btn btn-secondary btn-sm" onClick={() => void copyManifest()}>Copy JSON</button>
-          <button type="button" className="btn btn-secondary btn-sm" onClick={downloadManifest}>Download JSON</button>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={() => void downloadManifest()}>Download JSON</button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => void onReload()}>Refresh</button>
         </div>
       </div>

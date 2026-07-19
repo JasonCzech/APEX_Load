@@ -483,14 +483,175 @@ jobs:
           node-version: 22.22.0
 
       - name: Install Wails
-        run: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          WAILS_VERSION="$(tr -d '[:space:]' < desktop/.wails-version)"
+          [[ "$WAILS_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          go install "github.com/wailsapp/wails/v2/cmd/wails@${WAILS_VERSION}"
+
+      - name: Install checksum-pinned NSIS
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          APEXLOAD_USE_PREINSTALLED_TOOLS: ${{ vars.APEXLOAD_USE_PREINSTALLED_TOOLS }}
+          NSIS_RELEASE_BASE_URL: ${{ vars.NSIS_RELEASE_BASE_URL }}
+          NSIS_ARCHIVE_PATH: ${{ vars.NSIS_ARCHIVE_PATH }}
+        run: |
+          & ./scripts/ci/install-nsis.ps1
 
       - name: Install Linux native dependencies
         if: runner.os == 'Linux' && vars.RELEASE_PREBAKED_NATIVE_DEPS != 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev
+          sudo apt-get install -y dpkg-dev libgtk-3-dev libwebkit2gtk-4.1-dev desktop-file-utils shared-mime-info xdg-utils
 
+      - name: Prepare Windows Authenticode certificate
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_PFX: ${{ secrets.APEXLOAD_WINDOWS_CODESIGN_PFX_BASE64 }}
+          WINDOWS_PFX_PASSWORD: ${{ secrets.APEXLOAD_WINDOWS_CODESIGN_PASSWORD }}
+          WINDOWS_CERT_STORE: APEXLoadRelease-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.name }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $certPath = Join-Path $env:RUNNER_TEMP "apexload-release.pfx"
+          $storeMarker = Join-Path $env:RUNNER_TEMP "apexload-windows-cert-store.txt"
+          if ($env:WINDOWS_CERT_STORE -notmatch '^APEXLoadRelease-[A-Za-z0-9-]+$') {
+            throw "invalid isolated certificate store name"
+          }
+          [IO.File]::WriteAllText($storeMarker, $env:WINDOWS_CERT_STORE)
+          $storePath = "Cert:\CurrentUser\$env:WINDOWS_CERT_STORE"
+          $isolatedStore = [Security.Cryptography.X509Certificates.X509Store]::new(
+            $env:WINDOWS_CERT_STORE,
+            [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+          )
+          $isolatedStore.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+          $isolatedStore.Close()
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_PFX))
+          $securePassword = ConvertTo-SecureString $env:WINDOWS_PFX_PASSWORD -AsPlainText -Force
+          $importedCertificates = Import-PfxCertificate `
+            -FilePath $certPath `
+            -CertStoreLocation $storePath `
+            -Password $securePassword `
+            -ErrorAction Stop
+          $privateCertificates = @($importedCertificates | Where-Object { $_.HasPrivateKey })
+          if ($privateCertificates.Count -ne 1) {
+            throw "the PFX must contain exactly one Authenticode certificate with a private key"
+          }
+          $certificate = $privateCertificates[0]
+          "APEXLOAD_WINDOWS_CODESIGN_SHA1=$($certificate.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "APEXLOAD_WINDOWS_CODESIGN_STORE=$env:WINDOWS_CERT_STORE" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "APEXLOAD_WINDOWS_CODESIGN=1" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "APEXLOAD_WINDOWS_CODESIGN_TOOL=signtool" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $kitRoot = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
+          $signTool = Get-ChildItem $kitRoot -Filter signtool.exe -Recurse -ErrorAction Stop |
+            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+          if (-not $signTool) { throw "signtool.exe was not found" }
+          $drive = $signTool.FullName.Substring(0, 1).ToLowerInvariant()
+          $rest = $signTool.FullName.Substring(2).Replace('\', '/')
+          "APEXLOAD_WINDOWS_SIGNTOOL=/$drive$rest" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Remove-Item -Force $certPath
+
+      - name: Build native desktop client
+        shell: bash
+        env:
+          WAILS_PLATFORM: ${{ matrix.platform }}
+          WAILS_BUILD_TAGS: ${{ runner.os == 'Linux' && 'webkit2_41' || '' }}
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+          RELEASE_BUILD_TIME: ${{ needs.metadata.outputs.build-time }}
+        run: |
+          set -euo pipefail
+          VERSION="${RELEASE_VERSION}" COMMIT="${RELEASE_COMMIT}" BUILD_TIME="${RELEASE_BUILD_TIME}" \
+            ./scripts/build-desktop-local.sh
+          grep -R -F -- "${RELEASE_VERSION}" pkg/api/static/assets/*.js >/dev/null
+
+      - name: Verify macOS desktop metadata
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          set -euo pipefail
+          expected="${RELEASE_VERSION%%[-+]*}"
+          plist="desktop/build/bin/apexload.app/Contents/Info.plist"
+          [[ "$(plutil -extract CFBundleShortVersionString raw "$plist")" == "$expected" ]]
+          [[ "$(plutil -extract NSHighResolutionCapable raw "$plist")" == "true" ]]
+          declared_floor="$(plutil -extract LSMinimumSystemVersion raw "$plist")"
+          binary_floor="$(otool -l desktop/build/bin/apexload.app/Contents/MacOS/apexload | awk '/minos/{print $2; exit}')"
+          [[ "$declared_floor" == "$binary_floor" ]]
+
+      - name: Verify Windows desktop metadata and installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $expected = ($env:RELEASE_VERSION -split '[-+]')[0]
+          function ConvertTo-FourPartVersion([string] $value) {
+            try { $parsed = [version]$value.Trim() } catch { throw "invalid Windows product version '$value'" }
+            if ($parsed.Build -lt 0) { throw "Windows product version '$value' does not contain major.minor.patch" }
+            $revision = if ($parsed.Revision -lt 0) { 0 } else { $parsed.Revision }
+            return "$($parsed.Major).$($parsed.Minor).$($parsed.Build).$revision"
+          }
+          $expectedWindowsVersion = ConvertTo-FourPartVersion "$expected.0"
+          $app = Get-Item "desktop/build/bin/apexload.exe"
+          $actualAppVersion = ConvertTo-FourPartVersion $app.VersionInfo.ProductVersion
+          if ($actualAppVersion -ne $expectedWindowsVersion) {
+            throw "desktop ProductVersion '$actualAppVersion' does not equal '$expectedWindowsVersion'"
+          }
+          $installers = @(Get-ChildItem "desktop/build/bin" -Filter "*-installer.exe")
+          if ($installers.Count -ne 1) {
+            throw "expected exactly one NSIS installer, found $($installers.Count)"
+          }
+          $actualInstallerVersion = ConvertTo-FourPartVersion $installers[0].VersionInfo.ProductVersion
+          if ($actualInstallerVersion -ne $expectedWindowsVersion) {
+            throw "installer ProductVersion '$actualInstallerVersion' does not equal '$expectedWindowsVersion'"
+          }
+          $installDir = Join-Path $env:LOCALAPPDATA "Programs\APEX Load"
+          try {
+            $process = Start-Process -FilePath $installers[0].FullName -ArgumentList "/S" -Wait -PassThru
+            if ($process.ExitCode -ne 0) { throw "installer exited with $($process.ExitCode)" }
+            foreach ($installedBinary in @((Join-Path $installDir "apexload.exe"), (Join-Path $installDir "uninstall.exe"))) {
+              if (-not (Test-Path $installedBinary)) { throw "installed signed binary is missing: $installedBinary" }
+              $signature = Get-AuthenticodeSignature $installedBinary
+              if ($signature.Status -ne "Valid") { throw "invalid Authenticode signature on $installedBinary`: $($signature.Status)" }
+              if ($signature.SignerCertificate.Thumbprint -ne $env:APEXLOAD_WINDOWS_CODESIGN_SHA1) {
+                throw "unexpected signer on $installedBinary"
+              }
+            }
+          } finally {
+            $uninstaller = Join-Path $installDir "uninstall.exe"
+            if (Test-Path $uninstaller) { Start-Process -FilePath $uninstaller -ArgumentList "/S" -Wait }
+          }
+
+      - name: Build platform apexctl
+        shell: bash
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
+          RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
+          RELEASE_BUILD_TIME: ${{ needs.metadata.outputs.build-time }}
+        run: |
+          set -euo pipefail
+          goos="${TARGET_PLATFORM%/*}"
+          goarch="${TARGET_PLATFORM#*/}"
+          suffix=""
+          [[ "$goos" == windows ]] && suffix=.exe
+          mkdir -p release/assets
+          bi=github.com/jasonczech/apexload/pkg/buildinfo
+          CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath \
+            -ldflags "-s -w -X ${bi}.Version=${RELEASE_VERSION} -X ${bi}.Commit=${RELEASE_COMMIT} -X ${bi}.BuildTime=${RELEASE_BUILD_TIME}" \
+            -o "release/assets/apexctl_${RELEASE_VERSION}_${goos}_${goarch}${suffix}" \
+            ./cmd/apexctl
+
+      # Import release credentials only after all npm/Vite/Wails/Go build steps
+      # have produced and verified the unsigned macOS payloads. This keeps
+      # private signing and notarization keys out of dependency build code.
       - name: Import macOS signing certificate
         if: runner.os == 'macOS'
         shell: bash
@@ -538,78 +699,6 @@ jobs:
           printf 'APEXLOAD_MACOS_NOTARY_KEY_PATH=%s\n' "$notary_key" >> "$GITHUB_ENV"
           rm -f "$certificate" "$certificate_pem"
 
-      - name: Prepare Windows Authenticode certificate
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          WINDOWS_PFX: ${{ secrets.APEXLOAD_WINDOWS_CODESIGN_PFX_BASE64 }}
-          WINDOWS_PFX_PASSWORD: ${{ secrets.APEXLOAD_WINDOWS_CODESIGN_PASSWORD }}
-        run: |
-          $certPath = Join-Path $env:RUNNER_TEMP "apexload-release.pfx"
-          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:WINDOWS_PFX))
-          $securePassword = ConvertTo-SecureString $env:WINDOWS_PFX_PASSWORD -AsPlainText -Force
-          $importedCertificates = Import-PfxCertificate `
-            -FilePath $certPath `
-            -CertStoreLocation Cert:\CurrentUser\My `
-            -Password $securePassword `
-            -ErrorAction Stop
-          $privateCertificates = @($importedCertificates | Where-Object { $_.HasPrivateKey })
-          if ($privateCertificates.Count -ne 1) {
-            throw "the PFX must contain exactly one Authenticode certificate with a private key"
-          }
-          $certificate = $privateCertificates[0]
-          "APEXLOAD_WINDOWS_CODESIGN_SHA1=$($certificate.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "APEXLOAD_WINDOWS_CODESIGN=1" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "APEXLOAD_WINDOWS_CODESIGN_TOOL=signtool" | Out-File -FilePath $env:GITHUB_ENV -Append
-          $kitRoot = Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\bin"
-          $signTool = Get-ChildItem $kitRoot -Filter signtool.exe -Recurse -ErrorAction Stop |
-            Where-Object { $_.FullName -match '\\x64\\signtool\.exe$' } |
-            Sort-Object FullName -Descending |
-            Select-Object -First 1
-          if (-not $signTool) { throw "signtool.exe was not found" }
-          $drive = $signTool.FullName.Substring(0, 1).ToLowerInvariant()
-          $rest = $signTool.FullName.Substring(2).Replace('\', '/')
-          "APEXLOAD_WINDOWS_SIGNTOOL=/$drive$rest" | Out-File -FilePath $env:GITHUB_ENV -Append
-          Remove-Item -Force $certPath
-
-      - name: Build native desktop client
-        shell: bash
-        env:
-          WAILS_PLATFORM: ${{ matrix.platform }}
-          WAILS_BUILD_TAGS: ${{ runner.os == 'Linux' && 'webkit2_41' || '' }}
-          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
-          RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
-          RELEASE_BUILD_TIME: ${{ needs.metadata.outputs.build-time }}
-        run: |
-          set -euo pipefail
-          bi=github.com/jasonczech/apexload/pkg/buildinfo
-          cd desktop
-          build_args=(build -clean -platform "$WAILS_PLATFORM" -ldflags "-s -w -X ${bi}.Version=${RELEASE_VERSION} -X ${bi}.Commit=${RELEASE_COMMIT} -X ${bi}.BuildTime=${RELEASE_BUILD_TIME}")
-          if [[ -n "${WAILS_BUILD_TAGS}" ]]; then
-            build_args+=(-tags "${WAILS_BUILD_TAGS}")
-          fi
-          wails "${build_args[@]}"
-
-      - name: Build platform apexctl
-        shell: bash
-        env:
-          TARGET_PLATFORM: ${{ matrix.platform }}
-          RELEASE_VERSION: ${{ needs.metadata.outputs.version }}
-          RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}
-          RELEASE_BUILD_TIME: ${{ needs.metadata.outputs.build-time }}
-        run: |
-          set -euo pipefail
-          goos="${TARGET_PLATFORM%/*}"
-          goarch="${TARGET_PLATFORM#*/}"
-          suffix=""
-          [[ "$goos" == windows ]] && suffix=.exe
-          mkdir -p release/assets
-          bi=github.com/jasonczech/apexload/pkg/buildinfo
-          CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath \
-            -ldflags "-s -w -X ${bi}.Version=${RELEASE_VERSION} -X ${bi}.Commit=${RELEASE_COMMIT} -X ${bi}.BuildTime=${RELEASE_BUILD_TIME}" \
-            -o "release/assets/apexctl_${RELEASE_VERSION}_${goos}_${goarch}${suffix}" \
-            ./cmd/apexctl
-
       - name: Sign and notarize macOS apexctl
         if: runner.os == 'macOS'
         shell: bash
@@ -647,7 +736,7 @@ jobs:
             Select-Object -First 1
           if (-not $signTool) { throw "signtool.exe was not found" }
           & $signTool.FullName sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com `
-            /s My /sha1 $env:APEXLOAD_WINDOWS_CODESIGN_SHA1 $binary
+            /s $env:APEXLOAD_WINDOWS_CODESIGN_STORE /sha1 $env:APEXLOAD_WINDOWS_CODESIGN_SHA1 $binary
           if ($LASTEXITCODE -ne 0) { throw "Authenticode signing failed" }
           & $signTool.FullName verify /pa /all $binary
           if ($LASTEXITCODE -ne 0) { throw "Authenticode verification failed" }
@@ -721,8 +810,21 @@ jobs:
         shell: pwsh
         run: |
           Remove-Item -Force -ErrorAction SilentlyContinue "$env:RUNNER_TEMP\apexload-release.pfx"
-          if ($env:APEXLOAD_WINDOWS_CODESIGN_SHA1) {
-            Remove-Item -Force -ErrorAction SilentlyContinue "Cert:\CurrentUser\My\$env:APEXLOAD_WINDOWS_CODESIGN_SHA1"
+          Remove-Item -Recurse -Force -ErrorAction SilentlyContinue "$env:RUNNER_TEMP\apexload-nsis-3.10"
+          Remove-Item -Force -ErrorAction SilentlyContinue "$env:RUNNER_TEMP\apexload-nsis-3.10.zip"
+          $storeMarker = Join-Path $env:RUNNER_TEMP "apexload-windows-cert-store.txt"
+          if (Test-Path -LiteralPath $storeMarker) {
+            $storeName = (Get-Content -LiteralPath $storeMarker -Raw).Trim()
+            if ($storeName -match '^APEXLoadRelease-[A-Za-z0-9-]+$') {
+              $storePath = "Cert:\CurrentUser\$storeName"
+              if (Test-Path -LiteralPath $storePath) {
+                Get-ChildItem -LiteralPath $storePath | ForEach-Object {
+                  Remove-Item -LiteralPath $_.PSPath -DeleteKey -Force -ErrorAction Stop
+                }
+                Remove-Item -LiteralPath $storePath -Force -ErrorAction Stop
+              }
+            }
+            Remove-Item -Force -ErrorAction SilentlyContinue $storeMarker
           }
 
       - name: Upload signed desktop client
@@ -731,6 +833,7 @@ jobs:
           name: release-client-${{ matrix.name }}
           path: |
             dist/desktop/apexload-desktop-*.tar.gz
+            dist/desktop/apexload-desktop-*.deb
             release/assets/apexctl_*
           if-no-files-found: error
           retention-days: 7
@@ -1089,7 +1192,7 @@ jobs:
       - name: Normalize artifact layout
         run: python3 scripts/release/normalize-release-inputs.py staging
 
-      - name: Generate schema-v1 release manifest
+      - name: Generate schema-v2 release manifest
         env:
           RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
           RELEASE_COMMIT: ${{ needs.metadata.outputs.commit }}

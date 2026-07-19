@@ -16,11 +16,12 @@ import (
 // About panel is an in-app dialog so it can show live build info on every
 // platform, and File actions translate to dashboard navigation.
 const (
-	menuEventZoom       = "menu:zoom"           // payload: "in" | "out" | "reset"
-	menuEventAbout      = "menu:about"          // open the in-app About dialog
-	menuEventAction     = "menu:action"         // payload: action id ("new-test" | "open-script" | "import")
-	eventOpenRecent     = "desktop:open-recent" // payload: the recent item's dashboard route
-	eventRecentsChanged = "desktop:recents-changed"
+	menuEventZoom        = "menu:zoom"           // payload: "in" | "out" | "reset"
+	menuEventAbout       = "menu:about"          // open the in-app About dialog
+	menuEventAction      = "menu:action"         // payload: action id ("new-test" | "open-script" | "import")
+	menuEventOpenBrowser = "menu:open-browser"   // renderer transfers its current dev preview/project context
+	eventOpenRecent      = "desktop:open-recent" // payload: the recent item's dashboard route
+	eventRecentsChanged  = "desktop:recents-changed"
 )
 
 // buildAppMenu constructs the native application menu for the host OS.
@@ -84,44 +85,77 @@ func buildAppMenuForOS(app *App, goos string) *menu.Menu {
 
 	helpMenu := appMenu.AddSubmenu("Help")
 	helpMenu.AddText("About APEX Load", nil, app.menuEmit(menuEventAbout))
-	helpMenu.AddText("Open in System Browser", nil, func(_ *menu.CallbackData) { _ = app.OpenInBrowser() })
+	// The renderer owns the live development preview/project selection. Route
+	// this menu action through it so the native call cannot silently fall back to
+	// an elevated admin context.
+	helpMenu.AddText("Open in System Browser", nil, app.menuEmit(menuEventOpenBrowser))
 
 	return appMenu
+}
+
+// supportsDynamicApplicationMenuForOS reports whether Wails can safely replace
+// an already-visible native menu on the platform. In Wails v2.13's Linux
+// backend, SetApplicationMenu allocates a new GtkMenuBar after the original has
+// already been packed into the window. The replacement remains unparented and,
+// worse, resets the callback maps used by the still-visible original menu.
+// Keep every platform's initial menu static. Wails v2.13 cannot safely replace
+// Linux's already-parented GtkMenuBar. Windows replacements leak old HMENU trees
+// and stale callback maps. macOS replacements construct AppKit objects off the
+// main thread and retain old items in package-global maps. prepareInitialMenu
+// resolves app data before Wails packs the one safe menu so it can still contain
+// persisted recents; changes made during the launch remain available in the
+// dashboard and appear in the native menu on the next launch.
+func supportsDynamicApplicationMenuForOS(goos string) bool {
+	return false
+}
+
+// prepareInitialMenu resolves app-data without mutating or migrating it before
+// Wails constructs the platform menu. Windows' legacy-directory migration stays
+// in OnStartup behind single-instance coordination.
+func (a *App) prepareInitialMenu() {
+	a.prepareInitialMenuForOS(runtime.GOOS)
+}
+
+func (a *App) prepareInitialMenuForOS(goos string) {
+	if goos != "darwin" && goos != "windows" && goos != "linux" {
+		return
+	}
+	appDataPath, err := desktopAppDataPathForInitialMenu()
+	if err != nil {
+		return
+	}
+	a.publishAppDataPath(appDataPath)
 }
 
 // menuEmit returns a menu callback that emits a no-payload dashboard event.
 func (a *App) menuEmit(event string) menu.Callback {
 	return func(_ *menu.CallbackData) {
-		if a.ctx != nil {
-			wailsruntime.EventsEmit(a.ctx, event)
-		}
+		a.emitOrQueueRendererEvent(event, "")
 	}
 }
 
 // menuAction emits a menu:action event carrying the action id.
 func (a *App) menuAction(action string) menu.Callback {
 	return func(_ *menu.CallbackData) {
-		if a.ctx != nil {
-			wailsruntime.EventsEmit(a.ctx, menuEventAction, action)
-		}
+		a.emitOrQueueRendererEvent(menuEventAction, action)
 	}
 }
 
 // menuZoom emits a menu:zoom event with the requested zoom action.
 func (a *App) menuZoom(action string) menu.Callback {
 	return func(_ *menu.CallbackData) {
-		if a.ctx != nil {
-			wailsruntime.EventsEmit(a.ctx, menuEventZoom, action)
-		}
+		a.emitOrQueueRendererEvent(menuEventZoom, action)
 	}
 }
 
 // appendOpenRecentSubmenu adds a native "Open Recent" submenu populated from the
-// persisted recents. The menu is static once applied, so rebuildMenu re-applies
-// the whole menu whenever recents change (see AddRecentItem/ClearRecentItems).
+// persisted recents. On supported platforms, rebuildMenu re-applies the whole
+// menu whenever recents change (see AddRecentItem/ClearRecentItems). Linux
+// captures this submenu once before startup because Wails v2.13 cannot safely
+// replace platform menus repeatedly.
 func (a *App) appendOpenRecentSubmenu(parent *menu.Menu) {
 	recent := parent.AddSubmenu("Open Recent")
-	items := loadRecents(a.appDataPath)
+	items := loadRecents(a.appDataDirectory())
 	if len(items) == 0 {
 		recent.AddText("No Recent Items", nil, nil).Disable()
 		return
@@ -133,8 +167,8 @@ func (a *App) appendOpenRecentSubmenu(parent *menu.Menu) {
 			label = item.ID
 		}
 		recent.AddText(label, nil, func(_ *menu.CallbackData) {
-			if a.ctx != nil && route != "" {
-				wailsruntime.EventsEmit(a.ctx, eventOpenRecent, route)
+			if route != "" {
+				a.emitOrQueueRendererEvent(eventOpenRecent, route)
 			}
 		})
 	}
@@ -144,32 +178,32 @@ func (a *App) appendOpenRecentSubmenu(parent *menu.Menu) {
 	})
 }
 
-// rebuildMenu re-applies the application menu so a changed "Open Recent" submenu
-// is reflected. No-op before the runtime context is available.
+// rebuildMenu re-applies the application menu so a changed "Open Recent"
+// submenu is reflected. It is deliberately a no-op on every platform; see
+// supportsDynamicApplicationMenuForOS.
 func (a *App) rebuildMenu() {
-	if a.ctx == nil {
-		return
-	}
-	wailsruntime.MenuSetApplicationMenu(a.ctx, buildAppMenu(a))
-	wailsruntime.MenuUpdateApplicationMenu(a.ctx)
+	// Intentionally static for this Wails generation. Recents continue updating
+	// in the dashboard and are reflected in the native menu on the next launch.
 }
 
 func (a *App) reload(_ *menu.CallbackData) {
-	if a.ctx != nil {
-		wailsruntime.WindowReloadApp(a.ctx)
+	if ctx := a.runtimeContext(); ctx != nil {
+		windowReloadApp(ctx)
 	}
 }
+
+var windowReloadApp = wailsruntime.WindowReloadApp
 
 // printWindow opens the native print dialog for the current view (run reports,
 // dashboards). Wails exposes WindowPrint directly.
 func (a *App) printWindow(_ *menu.CallbackData) {
-	if a.ctx != nil {
-		wailsruntime.WindowPrint(a.ctx)
+	if ctx := a.runtimeContext(); ctx != nil {
+		wailsruntime.WindowPrint(ctx)
 	}
 }
 
 func (a *App) quit(_ *menu.CallbackData) {
-	if a.ctx != nil {
-		wailsruntime.Quit(a.ctx)
+	if ctx := a.runtimeContext(); ctx != nil {
+		wailsruntime.Quit(ctx)
 	}
 }

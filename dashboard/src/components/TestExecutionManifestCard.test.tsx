@@ -28,6 +28,7 @@ describe('TestExecutionManifestCard', () => {
       configurable: true,
       value: { writeText },
     })
+    vi.mocked(downloadBlob).mockResolvedValue('saved')
   })
 
   afterEach(async () => {
@@ -83,6 +84,15 @@ describe('TestExecutionManifestCard', () => {
     await click(buttonNamed('Download JSON'))
 
     expect(vi.mocked(downloadBlob).mock.calls[0][1]).toBe('apexload-test-manifest-test-run.json')
+  })
+
+  it('surfaces a native manifest save failure', async () => {
+    vi.mocked(downloadBlob).mockRejectedValueOnce(new Error('disk is full'))
+
+    await renderCard(makeManifest())
+    await click(buttonNamed('Download JSON'))
+
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Could not save the test manifest: disk is full')
   })
 
   it('shows unavailable feedback when clipboard copy does not settle', async () => {

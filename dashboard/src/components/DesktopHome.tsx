@@ -4,7 +4,7 @@ import type { DesktopStatusResponse } from '../types/library'
 import type { RecentItem } from '../desktop/desktopRecents'
 import type { TopbarRunSummary } from '../appTopbar'
 import { isDesktopSurface } from '../desktop/desktopBridge'
-import { filesFromDroppedPaths } from '../desktop/desktopFiles'
+import { filesFromDroppedPaths, nativeFileReadErrorMessage } from '../desktop/desktopFiles'
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
 import { formatRelativeTime } from '../utils/relativeTime'
 import './DesktopHome.css'
@@ -24,6 +24,7 @@ interface DesktopHomeProps {
   onReveal?: (which: 'logs' | 'appdata') => void
   // Called when script/import files are dropped onto the home hub.
   onDropFiles?: (files: File[]) => void
+  onDropError?: (message: string) => void
 }
 
 function storageLabel(status: DesktopStatusResponse | null): string {
@@ -61,6 +62,7 @@ export default function DesktopHome({
   onClearRecents,
   onReveal,
   onDropFiles,
+  onDropError,
 }: DesktopHomeProps) {
   // Pinned items first, preserving recency within each group.
   const orderedRecents = [...recents].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)))
@@ -72,7 +74,7 @@ export default function DesktopHome({
     if (!onDropFiles) return
     void filesFromDroppedPaths(paths).then(files => {
       if (files.length > 0) onDropFiles(files)
-    })
+    }).catch(error => onDropError?.(nativeFileReadErrorMessage(error)))
   }, desktop && typeof onDropFiles === 'function')
 
   return (

@@ -72,6 +72,19 @@
   filter: brightness(1.05);
 }
 
+.auth-gate-action:disabled {
+  cursor: wait;
+  filter: saturate(0.5);
+  opacity: 0.75;
+}
+
+.auth-gate-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 20px;
+}
+
 .auth-gate-card--error {
   border-color: rgba(222, 107, 78, 0.5);
 }

@@ -6,6 +6,9 @@
   "frontend:build": "npm run build",
   "frontend:dev:watcher": "npm run dev",
   "frontend:dev:serverUrl": "auto",
+  "postBuildHooks": {
+    "windows/*": "bash ../../../scripts/sign-windows-binary.sh ${bin}"
+  },
   "author": {
     "name": "Project Stormrunner",
     "email": ""
@@ -13,17 +16,10 @@
   "info": {
     "companyName": "Project Stormrunner",
     "productName": "APEX Load",
-    "productVersion": "1.0.0",
+    "productVersion": "0.1.0",
     "copyright": "Copyright 2026",
     "comments": "APEX Load Desktop Application",
     "fileAssociations": [
-      {
-        "ext": "json",
-        "name": "APEX Load Script",
-        "description": "APEX Load JSON DSL script",
-        "iconName": "appicon",
-        "role": "Editor"
-      },
       {
         "ext": "har",
         "name": "HTTP Archive",

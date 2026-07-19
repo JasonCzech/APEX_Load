@@ -255,14 +255,18 @@ func (s *Server) handleDownloadRunArchiveBrowserDiagnostics(w http.ResponseWrite
 	http.ServeContent(w, r, filename, record.CompletedAt.UTC(), staged.File)
 }
 
-// clearArchiveWriteDeadline allows archive transfers to outlive the server's
-// short default WriteTimeout while retaining a finite archive-specific bound.
-// The grace interval is intentional: preparation uses the materialization
-// timeout itself, so its timeout response must still have a writable socket.
-func clearArchiveWriteDeadline(w http.ResponseWriter) {
+// extendArtifactWriteDeadline allows generated and staged artifact transfers to
+// outlive the server's short default WriteTimeout while retaining a finite
+// bound. The grace interval is intentional: preparation can use the complete
+// materialization timeout, so its timeout response must still be writable.
+func extendArtifactWriteDeadline(w http.ResponseWriter) {
 	const archiveErrorWriteGrace = 5 * time.Second
 	deadline := time.Now().Add(configuredArchiveMaterializationTimeout() + archiveErrorWriteGrace)
 	_ = http.NewResponseController(w).SetWriteDeadline(deadline)
+}
+
+func clearArchiveWriteDeadline(w http.ResponseWriter) {
+	extendArtifactWriteDeadline(w)
 }
 
 func (s *Server) handleGetRunArchiveTransactions(w http.ResponseWriter, r *http.Request) {
@@ -440,6 +444,7 @@ func (s *Server) handleGetRunArchiveSummaries(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Request) {
+	extendArtifactWriteDeadline(w)
 	record, lease, ok := s.requireRunArchive(w, r)
 	if !ok {
 		return
@@ -520,6 +525,10 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 	s.attachDashboardPanels(report)
 	if r.URL.Query().Get("profile") == "audit" {
 		report.Integrity = verifyRunArchiveIntegrity(record, report.Manifest)
+	}
+	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("download")), "true") {
+		testID := sanitizeFilename(r.PathValue("id"))
+		w.Header().Set("Content-Disposition", "attachment; filename=\"apexload-archive-report-"+testID+".json\"")
 	}
 	writeJSON(w, http.StatusOK, report)
 }
@@ -922,6 +931,7 @@ func archiveComparisonRunStartedAt(run archiveComparisonRunWithStart) time.Time 
 }
 
 func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request) {
+	extendArtifactWriteDeadline(w)
 	record, lease, ok := s.requireRunArchive(w, r)
 	if !ok {
 		return

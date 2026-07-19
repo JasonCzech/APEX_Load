@@ -4,8 +4,10 @@ import (
 	"encoding/base64"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseFileFilters(t *testing.T) {
@@ -73,6 +75,106 @@ func TestReadFileBase64Errors(t *testing.T) {
 	}
 	if _, err := app.ReadFileBase64(t.TempDir()); err == nil {
 		t.Error("expected error reading a directory")
+	}
+}
+
+func TestReadFileBase64RejectsReplacedGrantedFile(t *testing.T) {
+	app := NewApp()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "script.json")
+	if err := os.WriteFile(path, []byte(`{"selected":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	app.rememberReadPath(path)
+	if err := os.Rename(path, path+".old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"replacement":true}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := app.ReadFileBase64(path); err == nil || !strings.Contains(err.Error(), "replaced") {
+		t.Fatalf("replacement should be rejected, got %v", err)
+	}
+}
+
+func TestReadFileBase64UsesGrantedCanonicalTarget(t *testing.T) {
+	app := NewApp()
+	dir := t.TempDir()
+	first := filepath.Join(dir, "first.json")
+	second := filepath.Join(dir, "second.json")
+	link := filepath.Join(dir, "selected.json")
+	if err := os.WriteFile(first, []byte("first"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(second, []byte("second"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(first, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	app.rememberReadPath(link)
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(second, link); err != nil {
+		t.Fatal(err)
+	}
+	b64, err := app.ReadFileBase64(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, _ := base64.StdEncoding.DecodeString(b64)
+	if string(decoded) != "first" {
+		t.Fatalf("read retargeted symlink content %q, want original target", decoded)
+	}
+}
+
+func TestReadFileBase64RejectsOversizedDescriptor(t *testing.T) {
+	app := NewApp()
+	path := filepath.Join(t.TempDir(), "large.zip")
+	f, err := os.Create(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Truncate(maxBridgeFileBytes + 1); err != nil {
+		_ = f.Close()
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	app.rememberReadPath(path)
+	if _, err := app.ReadFileBase64(path); err == nil || !strings.Contains(err.Error(), "too large") {
+		t.Fatalf("oversized file should be rejected, got %v", err)
+	}
+}
+
+func TestReadDroppedFileWaitsForBackendGrant(t *testing.T) {
+	app := NewApp()
+	app.dropGrantWait = time.Second
+	path := filepath.Join(t.TempDir(), "drop.har")
+	content := []byte("drop content")
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	go func() {
+		time.Sleep(10 * time.Millisecond)
+		app.rememberReadPath(path)
+	}()
+	b64, err := app.ReadDroppedFileBase64(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := base64.StdEncoding.DecodeString(b64)
+	if !reflect.DeepEqual(got, content) {
+		t.Fatalf("content = %q, want %q", got, content)
+	}
+}
+
+func TestReadDroppedFileTimesOutWithoutExactGrant(t *testing.T) {
+	app := NewApp()
+	app.dropGrantWait = 20 * time.Millisecond
+	path := filepath.Join(t.TempDir(), "drop.har")
+	if _, err := app.ReadDroppedFileBase64(path); err == nil || !strings.Contains(err.Error(), "not granted") {
+		t.Fatalf("missing grant should time out, got %v", err)
 	}
 }
 
@@ -148,6 +250,175 @@ func TestWriteFileBase64RejectsOversizedEncoded(t *testing.T) {
 	}
 }
 
+func TestSecureWriteGrantedFileFromEnforcesLimitBeforePublish(t *testing.T) {
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "streamed.json")
+	_, grant, err := newWritePathGrant(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := secureWriteGrantedFileFrom(grant, strings.NewReader("too large"), 3); err == nil || !strings.Contains(err.Error(), "3-byte limit") {
+		t.Fatalf("oversized stream should be rejected, got %v", err)
+	}
+	if _, err := os.Stat(dst); !os.IsNotExist(err) {
+		t.Fatalf("oversized stream was published: %v", err)
+	}
+	matches, err := filepath.Glob(filepath.Join(dir, ".apexload-save-*.tmp"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 {
+		t.Fatalf("oversized stream recovery staging files = %v, want one scrubbed file", matches)
+	}
+	if info, statErr := os.Stat(matches[0]); statErr != nil || info.Size() != 0 {
+		t.Fatalf("oversized stream staging file was not descriptor-scrubbed: info=%v err=%v", info, statErr)
+	}
+}
+
+func TestWriteFileBase64RejectsSaveTargetReplacement(t *testing.T) {
+	app := NewApp()
+	dir := t.TempDir()
+	dst := filepath.Join(dir, "out.json")
+	if err := os.WriteFile(dst, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	app.rememberWritePath(dst)
+	if err := os.Rename(dst, dst+".old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(dst, []byte("replacement"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.WriteFileBase64(dst, base64.StdEncoding.EncodeToString([]byte("renderer"))); err == nil || !strings.Contains(err.Error(), "replaced") {
+		t.Fatalf("replacement should be rejected, got %v", err)
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "replacement" {
+		t.Fatalf("replacement was clobbered: %q", got)
+	}
+}
+
+func TestWriteFileBase64DoesNotClobberTargetCreatedAfterGrant(t *testing.T) {
+	app := NewApp()
+	dst := filepath.Join(t.TempDir(), "new.json")
+	app.rememberWritePath(dst)
+	if err := os.WriteFile(dst, []byte("created elsewhere"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.WriteFileBase64(dst, base64.StdEncoding.EncodeToString([]byte("renderer"))); err == nil {
+		t.Fatal("write should reject a target created after the save grant")
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "created elsewhere" {
+		t.Fatalf("new target was clobbered: %q", got)
+	}
+}
+
+func TestWriteFileBase64UsesGrantedCanonicalParent(t *testing.T) {
+	app := NewApp()
+	root := t.TempDir()
+	first := filepath.Join(root, "first")
+	second := filepath.Join(root, "second")
+	if err := os.Mkdir(first, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(second, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "selected")
+	if err := os.Symlink(first, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	dst := filepath.Join(link, "export.json")
+	app.rememberWritePath(dst)
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(second, link); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.WriteFileBase64(dst, base64.StdEncoding.EncodeToString([]byte("safe"))); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(first, "export.json"))
+	if err != nil || string(got) != "safe" {
+		t.Fatalf("canonical destination content = %q, %v", got, err)
+	}
+	if _, err := os.Stat(filepath.Join(second, "export.json")); !os.IsNotExist(err) {
+		t.Fatalf("retargeted directory received output: %v", err)
+	}
+}
+
+func TestWriteFileBase64RejectsReplacedCanonicalParent(t *testing.T) {
+	app := NewApp()
+	root := t.TempDir()
+	parent := filepath.Join(root, "selected")
+	if err := os.Mkdir(parent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(parent, "export.json")
+	app.rememberWritePath(dst)
+	if err := os.Rename(parent, parent+".old"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(parent, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.WriteFileBase64(dst, base64.StdEncoding.EncodeToString([]byte("blocked"))); err == nil || !strings.Contains(err.Error(), "directory was replaced") {
+		t.Fatalf("replaced parent should be rejected, got %v", err)
+	}
+	if _, err := os.Stat(dst); !os.IsNotExist(err) {
+		t.Fatalf("replacement parent received output: %v", err)
+	}
+}
+
+func TestSaveGrantRejectsSymbolicLinkTarget(t *testing.T) {
+	app := NewApp()
+	dir := t.TempDir()
+	real := filepath.Join(dir, "real.json")
+	link := filepath.Join(dir, "link.json")
+	if err := os.WriteFile(real, []byte("secret"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, link); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	app.rememberWritePath(link)
+	if err := app.WriteFileBase64(link, base64.StdEncoding.EncodeToString([]byte("blocked"))); err == nil {
+		t.Fatal("symbolic-link save target should not receive a grant")
+	}
+	got, _ := os.ReadFile(real)
+	if string(got) != "secret" {
+		t.Fatalf("symlink target was modified: %q", got)
+	}
+}
+
+func TestAuthorizedRevealPathRequiresNativeGrant(t *testing.T) {
+	app := NewApp()
+	dir := t.TempDir()
+	arbitrary := filepath.Join(dir, "probe.json")
+	if err := os.WriteFile(arbitrary, []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := app.authorizedRevealPath(arbitrary); ok || got != "" {
+		t.Fatalf("arbitrary importable path was reveal-authorized: %q", got)
+	}
+	app.rememberReadPath(arbitrary)
+	want, err := filepath.EvalSymlinks(arbitrary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := app.authorizedRevealPath(arbitrary); !ok || got != want {
+		t.Fatalf("picker-granted reveal = %q, %v", got, ok)
+	}
+}
+
 func TestRevealCommand(t *testing.T) {
 	tests := []struct {
 		goos     string
@@ -175,5 +446,25 @@ func TestRevealCommand(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestFolderOpenCommand(t *testing.T) {
+	path := "/tmp/APEX Load/logs"
+	tests := []struct {
+		goos string
+		name string
+		args []string
+	}{
+		{goos: "darwin", name: "open", args: []string{path}},
+		{goos: "linux", name: "xdg-open", args: []string{path}},
+		{goos: "windows", name: "explorer", args: []string{path}},
+		{goos: "plan9", name: "", args: nil},
+	}
+	for _, tc := range tests {
+		name, args := folderOpenCommandForOS(tc.goos, path)
+		if name != tc.name || !reflect.DeepEqual(args, tc.args) {
+			t.Errorf("%s command = %q %v, want %q %v", tc.goos, name, args, tc.name, tc.args)
+		}
 	}
 }

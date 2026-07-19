@@ -22,7 +22,7 @@ describe('saveBlobViaBridge', () => {
   it('reports unavailable without the bridge', async () => {
     const blob = new Blob(['hello'], { type: 'text/plain' })
     expect(canSaveBlobViaBridge(blob)).toBe(false)
-    expect(await saveBlobViaBridge(blob, 'out.txt')).toBe(false)
+    expect(await saveBlobViaBridge(blob, 'out.txt')).toBe('unavailable')
   })
 
   it('writes the chosen path via the bridge with an extension filter', async () => {
@@ -32,7 +32,7 @@ describe('saveBlobViaBridge', () => {
 
     const blob = new Blob(['a,b,c\n1,2,3\n'], { type: 'text/csv' })
     expect(canSaveBlobViaBridge(blob)).toBe(true)
-    expect(await saveBlobViaBridge(blob, 'report.csv')).toBe(true)
+    expect(await saveBlobViaBridge(blob, 'report.csv')).toBe('saved')
 
     expect(save).toHaveBeenCalledWith('Save', 'report.csv', JSON.stringify([{ displayName: 'CSV file', pattern: '*.csv' }]))
     expect(write).toHaveBeenCalledTimes(1)
@@ -41,12 +41,22 @@ describe('saveBlobViaBridge', () => {
     expect(atob(base64)).toBe('a,b,c\n1,2,3\n')
   })
 
-  it('treats a cancelled dialog as handled (no browser fallback)', async () => {
+  it('reports a cancelled dialog separately from a completed save', async () => {
     const save = vi.fn().mockResolvedValue('')
     const write = vi.fn()
     setBridge({ SaveFileDialogNative: save, WriteFileBase64: write })
-    expect(await saveBlobViaBridge(new Blob(['x']), 'a.json')).toBe(true)
+    expect(await saveBlobViaBridge(new Blob(['x']), 'a.json')).toBe('cancelled')
     expect(write).not.toHaveBeenCalled()
+  })
+
+  it('propagates native write errors', async () => {
+    const error = new Error('disk is full')
+    setBridge({
+      SaveFileDialogNative: vi.fn().mockResolvedValue('/Users/x/report.csv'),
+      WriteFileBase64: vi.fn().mockRejectedValue(error),
+    })
+
+    await expect(saveBlobViaBridge(new Blob(['x']), 'report.csv')).rejects.toBe(error)
   })
 
   it('declines oversized blobs so the browser can stream them', () => {

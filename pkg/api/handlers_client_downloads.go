@@ -1,14 +1,19 @@
 package api
 
 import (
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"golang.org/x/mod/semver"
 )
 
 // clientDownloadsDisabledMessage is returned by every client-software download
@@ -32,19 +37,27 @@ func (s *Server) clientDownloadsAvailable() bool {
 // downloadPlatform resolves the target platform for a download from an explicit
 // ?platform= query (allow-listed) or, failing that, the request User-Agent.
 func downloadPlatform(r *http.Request) string {
-	platform := sanitizeDownloadPlatform(r.URL.Query().Get("platform"))
-	if platform != "" {
-		return platform
+	if _, present := r.URL.Query()["platform"]; present {
+		return sanitizeDownloadPlatform(r.URL.Query().Get("platform"))
 	}
 	ua := strings.ToLower(r.UserAgent())
 	switch {
+	case strings.Contains(ua, "android"):
+		// Android reports "Linux" for compatibility but cannot run a Linux
+		// desktop package. Require an explicit supported platform instead.
+		return ""
 	case strings.Contains(ua, "windows"):
-		return "windows-amd64"
+		if strings.Contains(ua, "win64") || strings.Contains(ua, "x64") || strings.Contains(ua, "x86_64") || strings.Contains(ua, "amd64") {
+			return "windows-amd64"
+		}
+		return ""
 	case strings.Contains(ua, "macintosh"), strings.Contains(ua, "mac os x"):
 		if strings.Contains(ua, "arm64") || strings.Contains(ua, "aarch64") || strings.Contains(ua, "apple silicon") {
 			return "darwin-arm64"
 		}
-		if strings.Contains(ua, "intel mac os x") || strings.Contains(ua, "x86_64") {
+		// Apple Silicon browsers intentionally retain "Intel Mac OS X" in their
+		// compatibility UA. Only an explicit architecture token is trustworthy.
+		if strings.Contains(ua, "x86_64") || strings.Contains(ua, "amd64") {
 			return "darwin-amd64"
 		}
 		return ""
@@ -52,13 +65,20 @@ func downloadPlatform(r *http.Request) string {
 		if strings.Contains(ua, "aarch64") || strings.Contains(ua, "arm64") {
 			return "linux-arm64"
 		}
-		return "linux-amd64"
+		if strings.Contains(ua, "x86_64") || strings.Contains(ua, "amd64") {
+			return "linux-amd64"
+		}
+		return ""
 	default:
 		return ""
 	}
 }
 
 func requireDownloadPlatform(w http.ResponseWriter, r *http.Request, humanName string) (string, bool) {
+	if values, present := r.URL.Query()["platform"]; present && (len(values) != 1 || sanitizeDownloadPlatform(values[0]) == "") {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("platform query parameter is invalid for %s downloads", humanName))
+		return "", false
+	}
 	platform := downloadPlatform(r)
 	if platform == "" {
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("platform query parameter is required for %s downloads", humanName))
@@ -170,22 +190,38 @@ func pathWithinDir(file, dir string) bool {
 // distDir. humanName/stageCmd/distDirEnv are woven into the not-found errors so
 // each artifact surfaces an actionable staging hint.
 func findDownloadPackage(distDir, prefix, platform, humanName, stageCmd, distDirEnv string) (string, error) {
+	return findDownloadPackageWithSuffix(distDir, prefix, platform, ".tar.gz", humanName, stageCmd, distDirEnv)
+}
+
+func findDownloadPackageWithSuffix(distDir, prefix, platform, suffix, humanName, stageCmd, distDirEnv string) (string, error) {
 	distDir = strings.TrimSpace(distDir)
 	entries, err := os.ReadDir(distDir)
 	if err != nil {
 		return "", fmt.Errorf("%s package directory is not available. Run %s or set %s to the release package directory", humanName, stageCmd, distDirEnv)
 	}
 
-	var matches []string
+	type versionedPackage struct {
+		path    string
+		version string
+	}
+	var matches []versionedPackage
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
 		name := entry.Name()
-		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, ".tar.gz") {
+		if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, suffix) {
 			continue
 		}
-		if platform != "" && !strings.Contains(name, "-"+platform+".tar.gz") {
+		platformSuffix := suffix
+		if platform != "" {
+			platformSuffix = "-" + platform + suffix
+		}
+		if !strings.HasSuffix(name, platformSuffix) {
+			continue
+		}
+		version := strings.TrimSuffix(strings.TrimPrefix(name, prefix), platformSuffix)
+		if version == "" || !semver.IsValid("v"+version) {
 			continue
 		}
 		candidate := filepath.Join(distDir, name)
@@ -195,16 +231,39 @@ func findDownloadPackage(distDir, prefix, platform, humanName, stageCmd, distDir
 		if !pathWithinDir(candidate, distDir) {
 			continue
 		}
-		matches = append(matches, candidate)
+		matches = append(matches, versionedPackage{path: candidate, version: version})
 	}
-	sort.Strings(matches)
+	sort.Slice(matches, func(i, j int) bool {
+		comparison := semver.Compare("v"+matches[i].version, "v"+matches[j].version)
+		if comparison == 0 {
+			return matches[i].path < matches[j].path
+		}
+		return comparison < 0
+	})
 	if len(matches) == 0 && platform != "" {
-		return "", fmt.Errorf("%s package for %s is not staged. Run %s or set %s to a directory containing %s*-%s.tar.gz", humanName, platform, stageCmd, distDirEnv, prefix, platform)
+		return "", fmt.Errorf("%s package for %s is not staged. Run %s or set %s to a directory containing %s*-%s%s", humanName, platform, stageCmd, distDirEnv, prefix, platform, suffix)
 	}
 	if len(matches) == 0 {
 		return "", fmt.Errorf("%s package is not staged. Run %s or set %s to the release package directory", humanName, stageCmd, distDirEnv)
 	}
-	return matches[len(matches)-1], nil
+	if len(matches) > 1 {
+		latest := matches[len(matches)-1]
+		previous := matches[len(matches)-2]
+		if latest.version != previous.version && semver.Compare("v"+latest.version, "v"+previous.version) == 0 {
+			return "", fmt.Errorf("%s package inventory contains ambiguous build variants for the latest version", humanName)
+		}
+	}
+	return matches[len(matches)-1].path, nil
+}
+
+func downloadPackageVersion(packagePath, prefix, platform, suffix string) (string, bool) {
+	name := filepath.Base(packagePath)
+	platformSuffix := "-" + platform + suffix
+	if !strings.HasPrefix(name, prefix) || !strings.HasSuffix(name, platformSuffix) {
+		return "", false
+	}
+	version := strings.TrimSuffix(strings.TrimPrefix(name, prefix), platformSuffix)
+	return version, version != "" && semver.IsValid("v"+version)
 }
 
 // packageChecksumSHA256 returns the hex SHA-256 for filename from the
@@ -214,44 +273,123 @@ func packageChecksumSHA256(distDir, filename string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
+	matchedRows := 0
+	matchedSum := ""
 	for _, line := range strings.Split(string(data), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) != 2 {
+		if len(fields) < 2 || strings.TrimPrefix(fields[len(fields)-1], "*") != filename {
 			continue
 		}
-		// sha256sum binary-mode prefixes the name with '*'.
-		if strings.TrimPrefix(fields[1], "*") == filename {
-			return strings.ToLower(fields[0]), true
+		matchedRows++
+		if len(fields) != 2 || len(fields[0]) != sha256.Size*2 || fields[0] != strings.ToLower(fields[0]) {
+			return "", false
 		}
+		raw, decodeErr := hex.DecodeString(fields[0])
+		if decodeErr != nil || len(raw) != sha256.Size {
+			return "", false
+		}
+		matchedSum = fields[0]
 	}
-	return "", false
+	return matchedSum, matchedRows == 1
+}
+
+var errDownloadChecksumNotStaged = errors.New("download checksum is not staged")
+
+func openVerifiedDownloadPackage(packagePath string) (*os.File, os.FileInfo, string, error) {
+	file, info, expected, err := openStagedDownloadPackage(packagePath)
+	if err != nil {
+		return nil, nil, "", err
+	}
+	closeOnError := true
+	defer func() {
+		if closeOnError {
+			_ = file.Close()
+		}
+	}()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return nil, nil, "", fmt.Errorf("hash package: %w", err)
+	}
+	actual := hex.EncodeToString(hash.Sum(nil))
+	if actual != expected {
+		return nil, nil, "", errors.New("download package does not match its staged checksum")
+	}
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return nil, nil, "", fmt.Errorf("rewind package: %w", err)
+	}
+	closeOnError = false
+	return file, info, expected, nil
+}
+
+func openStagedDownloadPackage(packagePath string) (*os.File, os.FileInfo, string, error) {
+	distDir := filepath.Dir(packagePath)
+	filename := filepath.Base(packagePath)
+	expected, ok := packageChecksumSHA256(distDir, filename)
+	if !ok {
+		return nil, nil, "", errDownloadChecksumNotStaged
+	}
+
+	root, err := os.OpenRoot(distDir)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("open package directory: %w", err)
+	}
+	defer root.Close()
+	file, err := root.Open(filename)
+	if err != nil {
+		return nil, nil, "", fmt.Errorf("open package: %w", err)
+	}
+	info, err := file.Stat()
+	if err != nil {
+		_ = file.Close()
+		return nil, nil, "", fmt.Errorf("stat package: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		_ = file.Close()
+		return nil, nil, "", errors.New("download package is not a regular file")
+	}
+	return file, info, expected, nil
 }
 
 // serveDownloadPackage streams a staged package with integrity headers
 // (X-Content-SHA256 + RFC 3230 Digest) so clients can verify the binary before
 // running it.
 func serveDownloadPackage(w http.ResponseWriter, r *http.Request, packagePath string) {
+	extendArtifactWriteDeadline(w)
 	filename := filepath.Base(packagePath)
-	if sum, ok := packageChecksumSHA256(filepath.Dir(packagePath), filename); ok {
-		w.Header().Set("X-Content-SHA256", sum)
-		if raw, decErr := hex.DecodeString(sum); decErr == nil {
-			w.Header().Set("Digest", "sha-256="+base64.StdEncoding.EncodeToString(raw))
-		}
+	file, info, sum, err := openVerifiedDownloadPackage(packagePath)
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "download package integrity verification failed")
+		return
 	}
-	w.Header().Set("Content-Type", "application/gzip")
+	defer file.Close()
+	w.Header().Set("X-Content-SHA256", sum)
+	raw, _ := hex.DecodeString(sum)
+	w.Header().Set("Digest", "sha-256="+base64.StdEncoding.EncodeToString(raw))
+	contentType := "application/gzip"
+	if strings.HasSuffix(strings.ToLower(filename), ".deb") {
+		contentType = "application/vnd.debian.binary-package"
+	}
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, sanitizeFilename(filename)))
-	http.ServeFile(w, r, packagePath)
+	http.ServeContent(w, r, filename, info.ModTime(), file)
 }
 
-// writeDownloadChecksumJSON returns the package's SHA-256 as JSON, or 404 when no
-// checksum is staged.
+// writeDownloadChecksumJSON returns the unique canonical digest from the staged
+// release manifest after confirming the package exists as a confined regular
+// file. The download path hashes the exact open file it serves; avoiding that
+// full archive read here keeps this metadata endpoint inexpensive.
 func writeDownloadChecksumJSON(w http.ResponseWriter, packagePath string) {
 	filename := filepath.Base(packagePath)
-	sum, ok := packageChecksumSHA256(filepath.Dir(packagePath), filename)
-	if !ok {
+	file, _, sum, err := openStagedDownloadPackage(packagePath)
+	if errors.Is(err, errDownloadChecksumNotStaged) {
 		writeError(w, http.StatusNotFound, "checksum for the requested package is not staged")
 		return
 	}
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, "download package integrity verification failed")
+		return
+	}
+	_ = file.Close()
 	writeJSON(w, http.StatusOK, map[string]string{
 		"algorithm": "sha-256",
 		"filename":  filename,

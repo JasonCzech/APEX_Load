@@ -481,6 +481,34 @@ func TestRecorderResponsesDoNotExposeProxyAuthToken(t *testing.T) {
 	}
 }
 
+func TestDesktopRecorderStatusExposesOnlyRecorderProxyToken(t *testing.T) {
+	stubBrowserRecordingDependencyProbe(t, nil)
+	server := NewServer(ServerConfig{
+		DesktopMode:       true,
+		DesktopCapability: "desktop-api-capability",
+		ProxyAuthToken:    "recorder-only-capability",
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/recorder/status", nil)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if got := payload["proxy_auth_token"]; got != "recorder-only-capability" {
+		t.Fatalf("proxy_auth_token = %v, want recorder-only capability", got)
+	}
+	if strings.Contains(resp.Body.String(), "desktop-api-capability") {
+		t.Fatal("recorder response leaked the desktop API capability")
+	}
+	if got := resp.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+}
+
 func TestHandleExportRecordingHARScrubOption(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	session, err := server.recorder.StartSession("rec-scrub", "Login HAR", recorder.SessionFilters{}, nil)

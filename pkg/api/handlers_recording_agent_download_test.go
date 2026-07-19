@@ -16,6 +16,7 @@ func TestHandleDownloadRecordingAgentServesStagedPackage(t *testing.T) {
 	if err := os.WriteFile(packagePath, []byte("agent package"), 0o600); err != nil {
 		t.Fatal(err)
 	}
+	writeStagedDownloadChecksums(t, distDir, packageName)
 	t.Setenv(recordingAgentDistDirEnv, distDir)
 	server := NewServer(ServerConfig{})
 
@@ -82,10 +83,8 @@ func TestRecordingAgentDownloadSurfacesChecksum(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(distDir, packageName), []byte("agent package"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	const sum = "d8df2adeb0f3718d0beeebb225572273e1677b6208cef613c2378f3b3f41f3b2"
-	if err := os.WriteFile(filepath.Join(distDir, recordingAgentChecksumFile), []byte(sum+"  "+packageName+"\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
+	sums := writeStagedDownloadChecksums(t, distDir, packageName)
+	sum := sums[packageName]
 	t.Setenv(recordingAgentDistDirEnv, distDir)
 	server := NewServer(ServerConfig{})
 

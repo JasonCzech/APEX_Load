@@ -9,6 +9,7 @@ Terminal=false
 Categories=Development;Network;
 StartupNotify=true
 StartupWMClass=apexload
-# Register the apexload:// deep-link scheme. We intentionally do NOT claim
-# application/json here — that would hijack every JSON file on the system.
-MimeType=x-scheme-handler/apexload;
+# Register the apexload:// deep-link scheme and the vendor-specific HAR type.
+# We intentionally do NOT claim application/json, which would hijack every JSON
+# document on the system.
+MimeType=x-scheme-handler/apexload;application/x-apexload-har;

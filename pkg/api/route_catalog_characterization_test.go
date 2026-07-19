@@ -169,6 +169,7 @@ func TestAccessRequirementSnapshotStable(t *testing.T) {
 // accessRequirementGolden is the captured pre-refactor authz fingerprint for
 // each characterization case. See TestAccessRequirementSnapshotStable.
 var accessRequirementGolden = map[string]string{
+	"POST /api/v1/desktop/browser-downloads": "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=4096",
 	// Deployment maintenance lease. Human callers require system_admin; the
 	// deployment service-account path is independently pinned by the exact-scope
 	// characterization tests.
@@ -320,6 +321,7 @@ var accessRequirementGolden = map[string]string{
 	"GET /api/v1/integrations/apm/profiles":                                                              "auth=false global=viewer,editor,project_admin,system_admin project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/integrations/github/branches":                                                           "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/integrations/github/callback":                                                           "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
+	"POST /api/v1/integrations/github/callback":                                                          "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/integrations/github/check-links":                                                        "auth=false global=viewer,editor,project_admin,system_admin project=viewer,editor,project_admin domain= repo= projectLookup=true domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/integrations/github/config":                                                             "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",
 	"GET /api/v1/integrations/github/connection":                                                         "auth=true global= project= domain= repo= projectLookup=false domainLookup=false repoLookup=false maxBody=0",

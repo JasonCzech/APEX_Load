@@ -49,7 +49,7 @@ interface StoreEntry {
   loader: TestListLoader
   snapshot: SharedTestListSnapshot
   listeners: Set<() => void>
-  consumers: Map<symbol, number>
+  consumers: Map<symbol, { interval: number; pollWhenHidden: boolean }>
   timer: number | null
   inFlight: Promise<void> | null
   forcedRefreshPending: boolean
@@ -106,6 +106,10 @@ function canPollDocument() {
   return typeof document === 'undefined' || document.visibilityState === 'visible'
 }
 
+function canPollEntry(entry: StoreEntry) {
+  return canPollDocument() || Array.from(entry.consumers.values()).some(consumer => consumer.pollWhenHidden)
+}
+
 async function loadEntry(entry: StoreEntry, force = false): Promise<void> {
   const activeRequest = entry.inFlight
   if (activeRequest) {
@@ -120,7 +124,7 @@ async function loadEntry(entry: StoreEntry, force = false): Promise<void> {
       return entry.inFlight || undefined
     })
   }
-  if (!force && !canPollDocument()) return
+  if (!force && !canPollEntry(entry)) return
 
   replaceSnapshot(entry, {
     loading: entry.snapshot.updatedAt === null,
@@ -166,7 +170,9 @@ function restartPolling(entry: StoreEntry) {
   }
   entry.timer = null
 
-  const intervals = Array.from(entry.consumers.values()).filter(interval => interval > 0)
+  const intervals = Array.from(entry.consumers.values())
+    .map(consumer => consumer.interval)
+    .filter(interval => interval > 0)
   if (intervals.length === 0 || typeof window === 'undefined') return
   const interval = Math.min(...intervals)
   entry.timer = window.setInterval(() => {
@@ -212,7 +218,7 @@ function trimCache() {
 
 export function useSharedTestList(
   params: SharedTestListParams | null,
-  options: { loader: TestListLoader; pollIntervalMs?: number; enabled?: boolean },
+  options: { loader: TestListLoader; pollIntervalMs?: number; enabled?: boolean; pollWhenHidden?: boolean },
 ): SharedTestListSnapshot & { refresh: () => Promise<void> } {
   const [contextGeneration, setContextGeneration] = useState(0)
   const enabled = options.enabled !== false && Boolean(params)
@@ -251,7 +257,10 @@ export function useSharedTestList(
     if (!entry) return undefined
     const alreadyActive = entry.consumers.size > 0
     const consumer = Symbol(entry.key)
-    entry.consumers.set(consumer, Math.max(0, options.pollIntervalMs || 0))
+    entry.consumers.set(consumer, {
+      interval: Math.max(0, options.pollIntervalMs || 0),
+      pollWhenHidden: options.pollWhenHidden === true,
+    })
     restartPolling(entry)
     if (!alreadyActive || entry.snapshot.updatedAt === null) {
       void loadEntry(entry)
@@ -272,7 +281,7 @@ export function useSharedTestList(
       }
       trimCache()
     }
-  }, [entry, options.pollIntervalMs])
+  }, [entry, options.pollIntervalMs, options.pollWhenHidden])
 
   const refresh = useCallback(() => entry ? loadEntry(entry, true) : Promise.resolve(), [entry])
   return { ...snapshot, refresh }

@@ -2,8 +2,10 @@ package api
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/subtle"
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,6 +31,15 @@ import (
 var StaticFS embed.FS
 
 var dashboardAssetRefPattern = regexp.MustCompile(`(?:href|src)="/(assets/[^"]+\.(?:css|js))"`)
+
+type desktopBrowserBootstrap struct {
+	expiresAt   time.Time
+	capability  string
+	devViewMode string
+	projectID   string
+}
+
+const maxDesktopBrowserCapabilities = 32
 
 type Server struct {
 	httpServer       *http.Server
@@ -138,6 +149,13 @@ type Server struct {
 	metricsServerStopped        bool
 	metricsBoundAddr            string
 	desktopMode                 bool
+	desktopCapability           string
+	desktopBootstrapMu          sync.Mutex
+	desktopBootstrapNonces      map[string]desktopBrowserBootstrap
+	desktopBrowserCapabilities  map[string]desktopBrowserCapability
+	desktopBrowserDownloads     map[string]desktopBrowserDownloadGrant
+	desktopOIDCStates           map[string]desktopOIDCStateGrant
+	desktopGitHubStates         map[string]desktopGitHubStateGrant
 	bridgeMode                  bool
 	recordingBridge             *BrowserRecordingBridge
 	desktopAppData              string
@@ -164,6 +182,13 @@ type Server struct {
 	bindScope                   string
 	boundAddr                   string
 	boundAddrMu                 sync.RWMutex
+	lifecycleMu                 sync.Mutex
+	startupStarted              bool
+	startupDone                 chan struct{}
+	startupDoneOnce             sync.Once
+	shutdownStarted             bool
+	shutdownDone                chan struct{}
+	shutdownErr                 error
 	// staticFS is the dashboard asset filesystem probed by readiness checks.
 	// It defaults to the compile-time embedded StaticFS; tests override it so
 	// the readiness suite does not depend on a prior `npm run build`.
@@ -178,9 +203,22 @@ type ServerConfig struct {
 	BindScope string
 	// MetricsAddr, when set (e.g. ":9091"), serves GET /metrics on its own
 	// listener instead of the API port.
-	MetricsAddr        string
-	MetricsToken       string
-	ProxyAddr          string
+	MetricsAddr  string
+	MetricsToken string
+	// ProxyAddr configures the HTTP(S) recording proxy listener. Desktop mode
+	// defaults an omitted value to an ephemeral loopback port; hosted mode keeps
+	// the recorder package's documented default.
+	ProxyAddr string
+	// ProxyAuthToken is a recorder-only bearer capability. It must not reuse the
+	// desktop API capability. Desktop mode requires an explicit high-entropy value
+	// of at least 32 bytes; hosted mode retains the
+	// APEXLOAD_RECORDER_PROXY_TOKEN fallback.
+	ProxyAuthToken string
+	// RecorderCACertPath and RecorderCAKeyPath locate the persistent interception
+	// CA. Desktop shells should place both below their private application-data
+	// directory so launch working directories cannot redirect CA persistence.
+	RecorderCACertPath string
+	RecorderCAKeyPath  string
 	MaxConcurrent      int
 	AllowedOrigins     []string
 	Store              storage.Store
@@ -191,6 +229,12 @@ type ServerConfig struct {
 	K8sRestart         K8sRestartSettings
 	KubeRestarter      KubeRestarter
 	DesktopMode        bool
+	// DesktopCapability is a high-entropy, per-launch bearer capability required
+	// by every /api/v1 request when DesktopMode is enabled. When omitted, NewServer
+	// generates one so desktop mode can never accidentally expose an unauthenticated
+	// loopback API. Native shells should pass an explicit value and expose it only
+	// through their privileged renderer bridge.
+	DesktopCapability  string
 	BridgeMode         bool
 	DesktopAppDataPath string
 	DesktopLogPath     string
@@ -230,6 +274,14 @@ func NewServer(cfg ServerConfig) *Server {
 	}
 	if cfg.LibraryCredentials == nil {
 		cfg.LibraryCredentials = NewEnvLibraryCredentialStore()
+	}
+	desktopCapability := strings.TrimSpace(cfg.DesktopCapability)
+	if cfg.DesktopMode && desktopCapability == "" {
+		generated, err := generateDesktopSecret()
+		if err != nil {
+			panic(fmt.Sprintf("generate desktop API capability: %v", err))
+		}
+		desktopCapability = generated
 	}
 
 	hub := NewHub()
@@ -294,7 +346,18 @@ func NewServer(cfg ServerConfig) *Server {
 	if distributedBackend != nil && len(discoverySpecs) > 0 {
 		discovery = newGeneratorDiscovery(staticTargets, discoverySpecs, distributedBackend)
 	}
-	rec := recorder.New(cfg.ProxyAddr)
+	proxyAddr := strings.TrimSpace(cfg.ProxyAddr)
+	if cfg.DesktopMode && proxyAddr == "" {
+		proxyAddr = "127.0.0.1:0"
+	}
+	rec := recorder.NewWithOptions(recorder.Options{
+		ProxyAddr:        proxyAddr,
+		ProxyAuthToken:   cfg.ProxyAuthToken,
+		CACertPath:       cfg.RecorderCACertPath,
+		CAKeyPath:        cfg.RecorderCAKeyPath,
+		RequireProxyAuth: cfg.DesktopMode,
+		RequireLoopback:  cfg.DesktopMode,
+	})
 	browserRecording := NewBrowserRecordingManager(hub)
 	browserRecording.SetHARArtifactDir(runner.GetSystemSettings().ArchiveRetention.HARArtifactDir)
 
@@ -326,6 +389,12 @@ func NewServer(cfg ServerConfig) *Server {
 		activeEndpointPublisher:     cfg.ActiveEndpointPublisher,
 		mux:                         http.NewServeMux(),
 		desktopMode:                 cfg.DesktopMode,
+		desktopCapability:           desktopCapability,
+		desktopBootstrapNonces:      make(map[string]desktopBrowserBootstrap),
+		desktopBrowserCapabilities:  make(map[string]desktopBrowserCapability),
+		desktopBrowserDownloads:     make(map[string]desktopBrowserDownloadGrant),
+		desktopOIDCStates:           make(map[string]desktopOIDCStateGrant),
+		desktopGitHubStates:         make(map[string]desktopGitHubStateGrant),
 		bridgeMode:                  cfg.BridgeMode,
 		desktopAppData:              cfg.DesktopAppDataPath,
 		desktopLogPath:              cfg.DesktopLogPath,
@@ -347,6 +416,8 @@ func NewServer(cfg ServerConfig) *Server {
 		metricsAddr:             strings.TrimSpace(cfg.MetricsAddr),
 		metricsToken:            strings.TrimSpace(cfg.MetricsToken),
 		archiveFinalizationWake: make(chan struct{}, 1),
+		startupDone:             make(chan struct{}),
+		shutdownDone:            make(chan struct{}),
 		staticFS:                StaticFS,
 	}
 	if leadership != nil {
@@ -420,9 +491,14 @@ func NewServer(cfg ServerConfig) *Server {
 	s.loadLibraryState()
 	s.routes(cfg.AllowedOrigins)
 
+	handler := bodyLimitMiddleware(s.projectMutationAdmission(s.mux))
+	if s.desktopCapability != "" {
+		handler = desktopAuthMaterialMiddleware(s.desktopOIDCSessionForCapability, s.desktopDevPreviewForCapability)(handler)
+		handler = desktopCapabilityMiddleware(s.desktopCapability, cfg.AllowedOrigins, s.validDesktopBrowserCapability)(handler)
+	}
 	s.httpServer = &http.Server{
 		Addr:           cfg.Addr,
-		Handler:        securityHeadersMiddleware(bodyLimitMiddleware(s.projectMutationAdmission(s.mux))),
+		Handler:        securityHeadersMiddleware(handler),
 		ReadTimeout:    15 * time.Second,
 		WriteTimeout:   60 * time.Second,
 		IdleTimeout:    120 * time.Second,
@@ -908,6 +984,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	// System endpoints for health and global settings.
 	s.mux.Handle("GET /api/v1/auth/login", cors(log(http.HandlerFunc(s.handleOIDCLogin))))
 	s.mux.Handle("GET /api/v1/auth/callback", cors(log(http.HandlerFunc(s.handleOIDCCallback))))
+	s.mux.Handle("POST /api/v1/auth/callback", cors(log(http.HandlerFunc(s.handleOIDCCallback))))
 	s.mux.Handle("POST /api/v1/auth/logout", cors(log(http.HandlerFunc(s.handleOIDCLogout))))
 	s.mux.Handle("GET /api/v1/auth/me", cors(log(http.HandlerFunc(s.handleGetAuthStatus))))
 	s.mux.Handle("GET /api/v1/auth/diagnostics", cors(log(http.HandlerFunc(s.handleGetAuthDiagnostics))))
@@ -981,7 +1058,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/integrations/github/webhooks", cors(log(auth(http.HandlerFunc(s.handleListGitHubWebhookDeliveries)))))
 	s.mux.Handle("GET /api/v1/integrations/github/check-links", cors(log(auth(http.HandlerFunc(s.handleListGitHubCheckLinks)))))
 	s.mux.Handle("GET /api/v1/integrations/github/login", cors(log(auth(http.HandlerFunc(s.handleGitHubLogin)))))
-	s.mux.Handle("GET /api/v1/integrations/github/callback", cors(log(auth(http.HandlerFunc(s.handleGitHubCallback)))))
+	s.mux.Handle("GET /api/v1/integrations/github/callback", cors(log(s.desktopGitHubCallbackLanding(auth(http.HandlerFunc(s.handleGitHubCallback))))))
+	s.mux.Handle("POST /api/v1/integrations/github/callback", cors(log(auth(http.HandlerFunc(s.handleGitHubCallback)))))
 	s.mux.Handle("GET /api/v1/integrations/github/connection", cors(log(auth(http.HandlerFunc(s.handleGitHubConnection)))))
 	s.mux.Handle("DELETE /api/v1/integrations/github/connection", cors(log(auth(http.HandlerFunc(s.handleGitHubDisconnect)))))
 	s.mux.Handle("GET /api/v1/integrations/github/repos", cors(log(auth(http.HandlerFunc(s.handleGitHubRepos)))))
@@ -1068,6 +1146,11 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("OPTIONS /api/", cors(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})))
+	if s.desktopCapability != "" {
+		s.mux.Handle("GET /desktop/bootstrap", http.HandlerFunc(s.handleDesktopBrowserBootstrap))
+		s.mux.Handle("POST /api/v1/desktop/browser-downloads", cors(log(auth(http.HandlerFunc(s.handleCreateDesktopBrowserDownload)))))
+		s.mux.Handle("GET /desktop/download", http.HandlerFunc(s.handleDesktopBrowserDownload))
+	}
 
 	// Dashboard static files — serve from embedded FS, fallback to index.html for SPA routing
 	staticSub, err := fs.Sub(StaticFS, "static")
@@ -1200,6 +1283,9 @@ func (s *Server) enforceAuthPosture() error {
 }
 
 func (s *Server) Start() (startErr error) {
+	if err := s.beginServerStartup(); err != nil {
+		return err
+	}
 	// Start owns every component it launches. If any later bind or Serve step
 	// fails, tear the already-started listeners and background workers down
 	// before returning so an embedding process cannot retain a hidden metrics
@@ -1214,6 +1300,9 @@ func (s *Server) Start() (startErr error) {
 			startErr = errors.Join(startErr, fmt.Errorf("rollback failed server startup: %w", err))
 		}
 	}()
+	// Registered after the rollback defer so it runs first on an error; rollback
+	// Shutdown can then observe that startup has stopped publishing components.
+	defer s.finishServerStartup()
 	if s.bridgeMode {
 		return s.startBridge()
 	}
@@ -1228,6 +1317,9 @@ func (s *Server) Start() (startErr error) {
 	if err := s.recoverExpiredLibraryImportClaims(); err != nil {
 		slog.Warn("failed to recover expired library import claims", "error", err)
 	}
+	if s.shutdownRequested() {
+		return http.ErrServerClosed
+	}
 	s.startPendingRemoteRunCleanupRetry()
 	// Start websocket broadcast loop before serving HTTP requests.
 	s.launchBackground(s.hub.Run)
@@ -1239,7 +1331,9 @@ func (s *Server) Start() (startErr error) {
 	s.startCacheFanout()
 	s.startGeneratorDiscovery()
 
-	s.startRecorderProxy()
+	if err := s.startRecorderProxy(); err != nil {
+		return err
+	}
 	s.startUsageAccountingSnapshotCadence()
 	s.startGeneratorInventoryRefreshCadence()
 	s.startAuditRetentionCadence()
@@ -1257,7 +1351,12 @@ func (s *Server) Start() (startErr error) {
 	if err != nil {
 		return err
 	}
+	if s.shutdownRequested() {
+		_ = listener.Close()
+		return http.ErrServerClosed
+	}
 	s.setBoundAddr(listener.Addr().String())
+	s.finishServerStartup()
 	slog.Info("apexload API server starting", "addr", s.httpServer.Addr, "bound_addr", s.BoundAddr())
 	if err := s.httpServer.Serve(listener); err != http.ErrServerClosed {
 		return err
@@ -1266,6 +1365,9 @@ func (s *Server) Start() (startErr error) {
 }
 
 func (s *Server) startBridge() error {
+	if s.shutdownRequested() {
+		return http.ErrServerClosed
+	}
 	s.launchBackground(s.hub.Run)
 	s.startReplayRetentionJanitors()
 	s.startArchiveCleanupRetry()
@@ -1273,7 +1375,12 @@ func (s *Server) startBridge() error {
 	if err != nil {
 		return err
 	}
+	if s.shutdownRequested() {
+		_ = listener.Close()
+		return http.ErrServerClosed
+	}
 	s.setBoundAddr(listener.Addr().String())
+	s.finishServerStartup()
 	slog.Info("apexload browser recording bridge starting", "addr", s.httpServer.Addr, "bound_addr", s.BoundAddr())
 	if err := s.httpServer.Serve(listener); err != http.ErrServerClosed {
 		return err
@@ -1300,13 +1407,25 @@ func (s *Server) startBrowserRecordingRetentionJanitor() {
 	s.browserRecording.StartJanitor(context.Background())
 }
 
-func (s *Server) startRecorderProxy() {
+func (s *Server) startRecorderProxy() error {
 	if s == nil || s.recorder == nil {
-		return
+		return nil
+	}
+	if s.shutdownRequested() {
+		return http.ErrServerClosed
 	}
 	if err := s.recorder.StartProxy(); err != nil {
+		if s.desktopMode {
+			return fmt.Errorf("start protected desktop recording proxy: %w", err)
+		}
 		slog.Warn("recording proxy disabled", "error", err)
+		return nil
 	}
+	if s.shutdownRequested() {
+		_ = s.recorder.StopProxy()
+		return http.ErrServerClosed
+	}
+	return nil
 }
 
 // startMetricsListener serves GET /metrics on its own listener when
@@ -1413,6 +1532,129 @@ func (s *Server) BoundAddrReady() bool {
 	return s.boundAddr != ""
 }
 
+// DesktopCapability returns the in-memory per-launch capability required by
+// desktop REST and WebSocket clients. It is empty for ordinary hosted servers.
+// Callers must never persist or log this value.
+func (s *Server) DesktopCapability() string {
+	if s == nil {
+		return ""
+	}
+	return s.desktopCapability
+}
+
+func generateDesktopSecret() (string, error) {
+	var tokenBytes [32]byte
+	if _, err := rand.Read(tokenBytes[:]); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(tokenBytes[:]), nil
+}
+
+// NewDesktopBrowserURL returns a short-lived, single-use URL that seeds a
+// separate browser capability into port-scoped sessionStorage. The bootstrap
+// page replaces its history entry, and neither the native renderer capability
+// nor a host-wide loopback cookie is exposed.
+func (s *Server) NewDesktopBrowserURL(devViewMode, projectID string) (string, error) {
+	if s == nil || s.desktopCapability == "" {
+		return "", fmt.Errorf("desktop browser bootstrap is unavailable")
+	}
+	if !s.BoundAddrReady() {
+		return "", fmt.Errorf("desktop API server is not ready")
+	}
+	preview, err := ParseDesktopDevPreviewContext(devViewMode, projectID)
+	if err != nil {
+		return "", err
+	}
+	nonce, err := generateDesktopSecret()
+	if err != nil {
+		return "", fmt.Errorf("generate desktop browser bootstrap: %w", err)
+	}
+	browserCapability, err := generateDesktopSecret()
+	if err != nil {
+		return "", fmt.Errorf("generate desktop browser capability: %w", err)
+	}
+	now := time.Now()
+	s.desktopBootstrapMu.Lock()
+	for existing, grant := range s.desktopBootstrapNonces {
+		if !grant.expiresAt.After(now) {
+			delete(s.desktopBootstrapNonces, existing)
+		}
+	}
+	s.desktopBootstrapNonces[nonce] = desktopBrowserBootstrap{
+		expiresAt:   now.Add(time.Minute),
+		capability:  browserCapability,
+		devViewMode: preview.Mode(),
+		projectID:   preview.ProjectID(),
+	}
+	s.desktopBootstrapMu.Unlock()
+	return s.BrowserURL() + "/desktop/bootstrap?nonce=" + nonce, nil
+}
+
+func (s *Server) handleDesktopBrowserBootstrap(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Referrer-Policy", "no-referrer")
+	nonce := strings.TrimSpace(r.URL.Query().Get("nonce"))
+	now := time.Now()
+	s.desktopBootstrapMu.Lock()
+	grant, ok := s.desktopBootstrapNonces[nonce]
+	if ok {
+		delete(s.desktopBootstrapNonces, nonce)
+	}
+	if nonce == "" || !ok || !grant.expiresAt.After(now) {
+		s.desktopBootstrapMu.Unlock()
+		http.Error(w, "desktop browser bootstrap is invalid or expired", http.StatusForbidden)
+		return
+	}
+	s.desktopBootstrapMu.Unlock()
+
+	// Cookies are scoped by host but not by port. A capability cookie for
+	// 127.0.0.1 would therefore be sent to unrelated loopback services. Seed a
+	// per-tab sessionStorage value instead: browser storage origins include the
+	// random API port, and the dashboard attaches the value explicitly as the
+	// desktop capability header/WebSocket query parameter.
+	scriptNonce, err := generateDesktopSecret()
+	if err != nil {
+		http.Error(w, "desktop browser bootstrap failed", http.StatusInternalServerError)
+		return
+	}
+	s.desktopBootstrapMu.Lock()
+	if len(s.desktopBrowserCapabilities) >= maxDesktopBrowserCapabilities {
+		var oldestCapability string
+		var oldestIssuedAt time.Time
+		for existing, browserGrant := range s.desktopBrowserCapabilities {
+			if oldestCapability == "" || browserGrant.issuedAt.Before(oldestIssuedAt) {
+				oldestCapability = existing
+				oldestIssuedAt = browserGrant.issuedAt
+			}
+		}
+		delete(s.desktopBrowserCapabilities, oldestCapability)
+	}
+	s.desktopBrowserCapabilities[grant.capability] = desktopBrowserCapability{
+		issuedAt:    now,
+		devViewMode: grant.devViewMode,
+		projectID:   grant.projectID,
+	}
+	s.desktopBootstrapMu.Unlock()
+	expireLegacyDesktopOAuthCookies(w)
+	capabilityJSON, _ := json.Marshal(grant.capability)
+	devViewModeJSON, _ := json.Marshal(grant.devViewMode)
+	projectIDJSON, _ := json.Marshal(grant.projectID)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'nonce-"+scriptNonce+"'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'")
+	w.WriteHeader(http.StatusOK)
+	_, _ = fmt.Fprintf(w, `<!doctype html><html><head><meta charset="utf-8"><title>Opening APEX Load</title></head><body><script nonce="%s">sessionStorage.setItem("apexload.desktopCapability",%s);localStorage.setItem("apexload.devViewMode",%s);const project=%s;if(project){localStorage.setItem("apexload.activeProjectId",project)}else{localStorage.removeItem("apexload.activeProjectId")}const route=location.hash.startsWith("#/")&&!location.hash.startsWith("#//")?location.hash:"";location.replace("/"+route);</script><noscript>JavaScript is required to open APEX Load.</noscript></body></html>`, scriptNonce, capabilityJSON, devViewModeJSON, projectIDJSON)
+}
+
+func (s *Server) validDesktopBrowserCapability(capability string) bool {
+	if s == nil || capability == "" {
+		return false
+	}
+	s.desktopBootstrapMu.Lock()
+	_, ok := s.desktopBrowserCapabilities[capability]
+	s.desktopBootstrapMu.Unlock()
+	return ok
+}
+
 func (s *Server) BrowserURL() string {
 	addr := s.BoundAddr()
 	if strings.HasPrefix(addr, ":") {
@@ -1428,6 +1670,106 @@ func (s *Server) BrowserURL() string {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s.lifecycleMu.Lock()
+	if s.shutdownDone == nil {
+		s.shutdownDone = make(chan struct{})
+	}
+	if s.startupDone == nil {
+		s.startupDone = make(chan struct{})
+	}
+	if s.shutdownStarted {
+		done := s.shutdownDone
+		s.lifecycleMu.Unlock()
+		select {
+		case <-done:
+			s.lifecycleMu.Lock()
+			err := s.shutdownErr
+			s.lifecycleMu.Unlock()
+			return err
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	s.shutdownStarted = true
+	startupStarted := s.startupStarted
+	startupDone := s.startupDone
+	s.lifecycleMu.Unlock()
+	if startupStarted && startupDone != nil {
+		select {
+		case <-startupDone:
+		case <-ctx.Done():
+			// Preserve the no-resurrection invariant even when the caller's
+			// bounded wait expires: once startup reaches its publication boundary,
+			// finish teardown in the background and wake any later Shutdown caller.
+			go func() {
+				<-startupDone
+				cleanupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				s.finishShutdown(s.shutdown(cleanupCtx))
+			}()
+			return ctx.Err()
+		}
+	}
+
+	err := s.shutdown(ctx)
+	s.finishShutdown(err)
+	return err
+}
+
+func (s *Server) finishShutdown(err error) {
+	s.lifecycleMu.Lock()
+	s.shutdownErr = err
+	close(s.shutdownDone)
+	s.lifecycleMu.Unlock()
+}
+
+func (s *Server) beginServerStartup() error {
+	if s == nil {
+		return http.ErrServerClosed
+	}
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	if s.startupDone == nil {
+		s.startupDone = make(chan struct{})
+	}
+	if s.shutdownDone == nil {
+		s.shutdownDone = make(chan struct{})
+	}
+	if s.shutdownStarted {
+		return http.ErrServerClosed
+	}
+	if s.startupStarted {
+		return fmt.Errorf("API server startup already began")
+	}
+	s.startupStarted = true
+	return nil
+}
+
+func (s *Server) finishServerStartup() {
+	if s == nil {
+		return
+	}
+	s.startupDoneOnce.Do(func() {
+		close(s.startupDone)
+	})
+}
+
+func (s *Server) shutdownRequested() bool {
+	if s == nil {
+		return true
+	}
+	s.lifecycleMu.Lock()
+	defer s.lifecycleMu.Unlock()
+	return s.shutdownStarted
+}
+
+func (s *Server) shutdown(ctx context.Context) error {
 	if s.runner != nil {
 		s.runner.beginShutdown()
 	}
@@ -1549,7 +1891,9 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		s.browserRecording.Close()
 	}
 	if s.recorder != nil {
-		s.recorder.StopProxy()
+		if err := s.recorder.StopProxy(); err != nil && shutdownErr == nil {
+			shutdownErr = err
+		}
 	}
 	if s.cache != nil {
 		_ = s.cache.Close()

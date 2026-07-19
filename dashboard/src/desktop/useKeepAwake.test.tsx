@@ -58,4 +58,21 @@ describe('useKeepAwakeDuringRuns', () => {
     await act(async () => { root.render(<Harness count={3} />) })
     expect(setKeepAwake).not.toHaveBeenCalled()
   })
+
+  it('does not invoke a newer transition until the older bridge call settles', async () => {
+    let releaseFirst!: () => void
+    setKeepAwake
+      .mockImplementationOnce(() => new Promise<void>(resolve => { releaseFirst = resolve }))
+      .mockResolvedValue(undefined)
+
+    await act(async () => { root.render(<Harness count={0} />) })
+    await act(async () => { root.render(<Harness count={1} />) })
+    expect(setKeepAwake.mock.calls).toEqual([[false]])
+
+    await act(async () => {
+      releaseFirst()
+      await Promise.resolve()
+    })
+    expect(setKeepAwake.mock.calls).toEqual([[false], [true]])
+  })
 })

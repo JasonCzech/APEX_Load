@@ -56,4 +56,21 @@ describe('useDockBadge', () => {
     await act(async () => { root.render(<Harness count={5} />) })
     expect(setDockBadge).not.toHaveBeenCalled()
   })
+
+  it('does not invoke a newer label until the older bridge call settles', async () => {
+    let releaseFirst!: () => void
+    setDockBadge
+      .mockImplementationOnce(() => new Promise<void>(resolve => { releaseFirst = resolve }))
+      .mockResolvedValue(undefined)
+
+    await act(async () => { root.render(<Harness count={1} />) })
+    await act(async () => { root.render(<Harness count={4} />) })
+    expect(setDockBadge.mock.calls).toEqual([['1']])
+
+    await act(async () => {
+      releaseFirst()
+      await Promise.resolve()
+    })
+    expect(setDockBadge.mock.calls).toEqual([['1'], ['4']])
+  })
 })

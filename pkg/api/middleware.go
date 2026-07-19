@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,6 +26,13 @@ const (
 	RoleEditor       = "editor"
 	RoleViewer       = "viewer"
 	RoleCIRunner     = "ci_runner"
+
+	// DesktopCapabilityHeader is the per-launch capability header accepted by
+	// desktop-mode loopback controllers. The native Wails downloader uses this
+	// exported contract so the security boundary cannot drift between packages.
+	DesktopCapabilityHeader = "X-APEXLoad-Desktop-Token"
+	desktopCapabilityHeader = DesktopCapabilityHeader
+	desktopCapabilityQuery  = "desktop_token"
 )
 
 var apiKeyRateLimitUnsetWarningLogged atomic.Bool
@@ -153,7 +161,8 @@ func authMiddleware(settings func() AuthSettings, store storage.Store, coordinat
 	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.Method == http.MethodOptions || !strings.HasPrefix(r.URL.Path, "/api/v1/") {
+			protected := strings.HasPrefix(r.URL.Path, "/api/v1/") || r.URL.Path == "/metrics"
+			if r.Method == http.MethodOptions || !protected {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -449,24 +458,25 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := strings.TrimSpace(r.Header.Get("Origin"))
-			originIsAllowed := originAllowed(allowedOrigins, r)
+			originPolicy := applyCORSOriginHeaders(w, r, allowedOrigins)
+			originIsAllowed := originPolicy.allowed
 
 			// Only ever reflect an Origin we have explicitly validated. When no
 			// allow-list is configured this permits same-origin requests only —
 			// never an arbitrary reflected origin.
-			if origin != "" {
-				w.Header().Add("Vary", "Origin")
-				if originIsAllowed {
-					w.Header().Set("Access-Control-Allow-Origin", origin)
-				}
-			}
-
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-APEXLoad-API-Key, X-APEXLoad-CSRF-Token, X-APEXLoad-Dev-View, X-APEXLoad-Dev-Project-ID, X-APEXLoad-Deployment-Lease-Token")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID, X-APEXLoad-API-Key, X-APEXLoad-CSRF-Token, X-APEXLoad-Dev-View, X-APEXLoad-Dev-Project-ID, X-APEXLoad-Deployment-Lease-Token, "+desktopCapabilityHeader)
 			w.Header().Set("Access-Control-Max-Age", "86400")
 
 			if r.Method == http.MethodOptions {
 				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			// A wildcard CORS grant is deliberately non-credentialed. Browsers can
+			// still send ambient cookies before rejecting a wildcard response in
+			// credentials mode, so reject those actual requests server-side too.
+			if origin != "" && originPolicy.wildcard && strings.TrimSpace(r.Header.Get("Cookie")) != "" {
+				writeError(w, http.StatusForbidden, "credentialed requests require an explicit allowed origin")
 				return
 			}
 			// CORS response headers only prevent a browser from exposing a
@@ -480,6 +490,75 @@ func corsMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 				return
 			}
 
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func applyCORSOriginHeaders(w http.ResponseWriter, r *http.Request, allowedOrigins []string) originPolicyDecision {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	decision := evaluateOriginPolicy(allowedOrigins, r)
+	if origin == "" {
+		return decision
+	}
+	w.Header().Add("Vary", "Origin")
+	if !decision.allowed {
+		return decision
+	}
+	if decision.wildcard {
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Del("Access-Control-Allow-Credentials")
+		return decision
+	}
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
+	return decision
+}
+
+// desktopCapabilityMiddleware protects the full desktop REST/WebSocket surface
+// from other local processes. CORS is not an authentication boundary: native
+// clients can omit or forge Origin, so desktop mode requires a per-launch secret
+// in a request header or (for WebSocket handshakes, whose browser API cannot
+// set headers) a query parameter. Additional in-memory validators support the
+// system-browser handoff's port-scoped session capability.
+func desktopCapabilityMiddleware(capability string, allowedOrigins []string, additionalValidators ...func(string) bool) func(http.Handler) http.Handler {
+	capability = strings.TrimSpace(capability)
+	return func(next http.Handler) http.Handler {
+		if capability == "" {
+			return next
+		}
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			protected := strings.HasPrefix(r.URL.Path, "/api/v1/") || r.URL.Path == "/metrics"
+			// OAuth provider GET callbacks are top-level browser navigations and
+			// cannot attach the sessionStorage-backed desktop header. They render
+			// only a no-mutation landing page; its POST finalization is protected by
+			// the originating tab capability and capability-bound server-side state.
+			callback := r.Method == http.MethodGet && (r.URL.Path == "/api/v1/auth/callback" || r.URL.Path == "/api/v1/integrations/github/callback")
+			if r.Method == http.MethodOptions || !protected || callback {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			provided := strings.TrimSpace(r.Header.Get(desktopCapabilityHeader))
+			if provided == "" && strings.EqualFold(strings.TrimSpace(r.Header.Get("Upgrade")), "websocket") {
+				provided = strings.TrimSpace(r.URL.Query().Get(desktopCapabilityQuery))
+			}
+			valid := subtle.ConstantTimeCompare([]byte(provided), []byte(capability)) == 1
+			if !valid && provided != "" {
+				for _, validate := range additionalValidators {
+					if validate != nil && validate(provided) {
+						valid = true
+						break
+					}
+				}
+			}
+			if !valid {
+				// Unauthorized desktop responses still need CORS headers so the trusted
+				// renderer can surface a useful error instead of an opaque fetch failure.
+				applyCORSOriginHeaders(w, r, allowedOrigins)
+				writeError(w, http.StatusUnauthorized, "desktop API capability is missing or invalid")
+				return
+			}
 			next.ServeHTTP(w, r)
 		})
 	}

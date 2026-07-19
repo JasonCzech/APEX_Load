@@ -222,6 +222,9 @@ func harHeaders(headers map[string][]string) []harNameVal {
 	}
 	items := make([]harNameVal, 0)
 	for name, values := range headers {
+		if isRecorderControlHeader(name) {
+			continue
+		}
 		for _, value := range values {
 			items = append(items, harNameVal{Name: name, Value: value})
 		}

@@ -14,8 +14,9 @@ func TestSessionBaseline(t *testing.T) {
 				Headers:      map[string]string{"Content-Type": "application/json"}},
 			{Seq: 3, Method: "GET", URL: "http://example.com/api/drop", Path: "/api/drop", StatusCode: 200, Excluded: true},
 			{Seq: 4, Method: "GET", URL: "http://example.com/orders?token=abc123", Path: "/orders", StatusCode: 200,
-				Headers:    map[string]string{"X-Token": "[redacted]"},
-				RawHeaders: map[string]string{"X-Token": "abc123"}},
+				Headers:         map[string]string{"X-Token": "[redacted]", "X-APEXLoad-Recorder-Token": "[redacted]"},
+				RawHeaders:      map[string]string{"X-Token": "abc123", "x-apexload-recorder-token": "recorder-control-secret"},
+				ResponseHeaders: map[string]string{"X-APEXLoad-Recorder-Private": "response-control-secret"}},
 		},
 	}
 
@@ -37,6 +38,16 @@ func TestSessionBaseline(t *testing.T) {
 	}
 	if baseline[1].RequestHeaders["X-Token"] != "abc123" {
 		t.Errorf("baseline request headers should use raw in-memory values, got %v", baseline[1].RequestHeaders)
+	}
+	for name := range baseline[1].RequestHeaders {
+		if isRecorderControlHeader(name) {
+			t.Fatalf("baseline retained recorder control request header %q", name)
+		}
+	}
+	for name := range baseline[1].ResponseHeaders {
+		if isRecorderControlHeader(name) {
+			t.Fatalf("baseline retained recorder control response header %q", name)
+		}
 	}
 }
 

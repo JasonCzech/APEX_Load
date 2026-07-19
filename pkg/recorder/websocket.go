@@ -378,7 +378,14 @@ func (r *Recorder) registerTunnel(t *recorderTunnel) func() {
 	if t == nil {
 		return func() {}
 	}
+	r.mu.RLock()
+	if r.proxyStopped {
+		r.mu.RUnlock()
+		t.close()
+		return func() {}
+	}
 	r.tunnels.Store(t, struct{}{})
+	r.mu.RUnlock()
 	return func() {
 		r.tunnels.Delete(t)
 	}
@@ -388,6 +395,15 @@ func (r *Recorder) closeTunnelsForSession(sessionID string) {
 	r.tunnels.Range(func(key, _ any) bool {
 		tunnel, ok := key.(*recorderTunnel)
 		if ok && tunnel.sessionID == sessionID {
+			tunnel.close()
+		}
+		return true
+	})
+}
+
+func (r *Recorder) closeAllTunnels() {
+	r.tunnels.Range(func(key, _ any) bool {
+		if tunnel, ok := key.(*recorderTunnel); ok {
 			tunnel.close()
 		}
 		return true

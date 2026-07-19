@@ -442,6 +442,7 @@ describe('ScriptEditor', () => {
     })
     writeText.mockReset()
     downloadTextFileMock.mockReset()
+    downloadTextFileMock.mockResolvedValue('saved')
     codeMirrorDispatchMock.mockReset()
     codeMirrorScrollDoms.length = 0
     apiMock.getScript.mockResolvedValue({ script: initialScript })
@@ -6367,6 +6368,33 @@ describe('ScriptEditor', () => {
       protocol: 'browser',
     })
     expect(container.textContent).toContain('Exported debugger session JSON.')
+
+    downloadTextFileMock.mockResolvedValueOnce('cancelled')
+    await act(async () => {
+      exportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushReact()
+    expect(container.textContent).toContain('Export cancelled.')
+    expect(container.textContent).not.toContain('Exported debugger session JSON.')
+
+    downloadTextFileMock.mockRejectedValueOnce(new Error('disk is full'))
+    await act(async () => {
+      exportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushReact()
+    expect(container.textContent).toContain('disk is full')
+    expect(container.textContent).not.toContain('Exported debugger session JSON.')
+
+    downloadTextFileMock.mockRejectedValueOnce(new Error('This generated file is too large for the desktop save bridge (maximum 16 MiB).'))
+    await act(async () => {
+      exportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushReact()
+    expect(container.textContent).toContain('too large for the desktop save bridge')
+    expect(container.textContent).not.toContain('Exported debugger session JSON.')
   })
 
   it('renders replay validation warnings returned on failed browser replay start', async () => {

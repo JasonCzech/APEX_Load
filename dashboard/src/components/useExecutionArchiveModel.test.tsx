@@ -5,6 +5,8 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TestSummary } from '../types'
+import { saveApiResourceViaBridge, startDesktopBrowserDownload } from '../desktop/desktopFiles'
+import { setDesktopApiCapability } from '../hooks/apiClient'
 import { downloadBlob } from '../utils/fileUtils'
 import { useExecutionArchiveModel } from './useExecutionArchiveModel'
 
@@ -25,6 +27,11 @@ vi.mock('../hooks/useApi', () => ({
 
 vi.mock('../utils/fileUtils', () => ({
   downloadBlob: vi.fn(),
+}))
+
+vi.mock('../desktop/desktopFiles', () => ({
+  saveApiResourceViaBridge: vi.fn(),
+  startDesktopBrowserDownload: vi.fn(),
 }))
 
 function ArchiveHarness({ test }: { test: TestSummary | null }) {
@@ -66,6 +73,9 @@ describe('useExecutionArchiveModel', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     apiMock.getTestArchiveAnalysis.mockResolvedValue(buildArchiveAnalysisResponse())
+    apiMock.getTestArchiveReport.mockResolvedValue(buildEmptyArchiveReport())
+    vi.mocked(saveApiResourceViaBridge).mockResolvedValue('unavailable')
+    vi.mocked(startDesktopBrowserDownload).mockResolvedValue(undefined)
   })
 
   afterEach(async () => {
@@ -73,6 +83,7 @@ describe('useExecutionArchiveModel', () => {
       root.unmount()
     })
     container.remove()
+    setDesktopApiCapability('')
     vi.clearAllMocks()
   })
 
@@ -660,6 +671,133 @@ describe('useExecutionArchiveModel', () => {
     expect(downloadBlob).toHaveBeenCalledWith(blob, 'checkout-journey-test-1-browser-diagnostics.zip')
   })
 
+  it('streams archive downloads through the native bridge without creating browser blobs', async () => {
+    vi.mocked(saveApiResourceViaBridge).mockResolvedValue('saved')
+    let model: ReturnType<typeof useExecutionArchiveModel> | null = null
+
+    function DownloadHarness({ test }: { test: TestSummary | null }) {
+      model = useExecutionArchiveModel(test)
+      return null
+    }
+
+    await act(async () => {
+      root.render(<DownloadHarness test={buildArchivedTest()} />)
+    })
+    await flushPromises()
+
+    await act(async () => {
+      await model?.onDownloadArchive()
+      await model?.onDownloadBrowserDiagnostics()
+      await model?.onDownloadArchiveArtifact('transactions.jsonl')
+    })
+
+    expect(saveApiResourceViaBridge).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/tests/test-1/archive',
+      'checkout-journey-test-1.zip',
+    )
+    expect(saveApiResourceViaBridge).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/tests/test-1/archive/browser-diagnostics',
+      'checkout-journey-test-1-browser-diagnostics.zip',
+    )
+    expect(saveApiResourceViaBridge).toHaveBeenNthCalledWith(
+      3,
+      '/api/v1/tests/test-1/archive/files/transactions.jsonl',
+      'checkout-journey-test-1-transactions.jsonl',
+    )
+    expect(apiMock.downloadTestArchive).not.toHaveBeenCalled()
+    expect(apiMock.downloadTestArchiveBrowserDiagnostics).not.toHaveBeenCalled()
+    expect(apiMock.downloadTestArchiveArtifact).not.toHaveBeenCalled()
+    expect(downloadBlob).not.toHaveBeenCalled()
+  })
+
+  it('streams archive downloads through navigation URLs in the desktop bootstrap browser', async () => {
+    setDesktopApiCapability('browser-session-secret')
+    let model: ReturnType<typeof useExecutionArchiveModel> | null = null
+
+    function DownloadHarness({ test }: { test: TestSummary | null }) {
+      model = useExecutionArchiveModel(test)
+      return null
+    }
+
+    await act(async () => {
+      root.render(<DownloadHarness test={buildArchivedTest()} />)
+    })
+    await flushPromises()
+
+    await act(async () => {
+      await model?.onDownloadArchive()
+      await model?.onDownloadBrowserDiagnostics()
+      await model?.onDownloadArchiveArtifact('transactions.jsonl')
+    })
+
+    expect(startDesktopBrowserDownload).toHaveBeenNthCalledWith(
+      1,
+      '/api/v1/tests/test-1/archive',
+      'checkout-journey-test-1.zip',
+    )
+    expect(startDesktopBrowserDownload).toHaveBeenNthCalledWith(
+      2,
+      '/api/v1/tests/test-1/archive/browser-diagnostics',
+      'checkout-journey-test-1-browser-diagnostics.zip',
+    )
+    expect(startDesktopBrowserDownload).toHaveBeenNthCalledWith(
+      3,
+      '/api/v1/tests/test-1/archive/files/transactions.jsonl',
+      'checkout-journey-test-1-transactions.jsonl',
+    )
+    expect(apiMock.downloadTestArchive).not.toHaveBeenCalled()
+    expect(apiMock.downloadTestArchiveBrowserDiagnostics).not.toHaveBeenCalled()
+    expect(apiMock.downloadTestArchiveArtifact).not.toHaveBeenCalled()
+    expect(downloadBlob).not.toHaveBeenCalled()
+  })
+
+  it('stops a cancelled native archive save without fetching a browser blob', async () => {
+    vi.mocked(saveApiResourceViaBridge).mockResolvedValue('cancelled')
+    let model: ReturnType<typeof useExecutionArchiveModel> | null = null
+
+    function DownloadHarness({ test }: { test: TestSummary | null }) {
+      model = useExecutionArchiveModel(test)
+      return null
+    }
+
+    await act(async () => {
+      root.render(<DownloadHarness test={buildArchivedTest()} />)
+    })
+    await flushPromises()
+
+    await act(async () => {
+      await model?.onDownloadArchive()
+    })
+
+    expect(apiMock.downloadTestArchive).not.toHaveBeenCalled()
+    expect(downloadBlob).not.toHaveBeenCalled()
+  })
+
+  it('surfaces native archive save failures without silently using a browser download', async () => {
+    vi.mocked(saveApiResourceViaBridge).mockRejectedValue(new Error('disk is full'))
+    let model: ReturnType<typeof useExecutionArchiveModel> | null = null
+
+    function DownloadHarness({ test }: { test: TestSummary | null }) {
+      model = useExecutionArchiveModel(test)
+      return <span data-testid="native-download-error">{model.archiveError}</span>
+    }
+
+    await act(async () => {
+      root.render(<DownloadHarness test={buildArchivedTest()} />)
+    })
+    await flushPromises()
+
+    await act(async () => {
+      await model?.onDownloadArchive()
+    })
+
+    expect(readTestId('native-download-error')).toBe('disk is full')
+    expect(apiMock.downloadTestArchive).not.toHaveBeenCalled()
+    expect(downloadBlob).not.toHaveBeenCalled()
+  })
+
   function readTestId(testId: string) {
     return container.querySelector(`[data-testid="${testId}"]`)?.textContent
   }
@@ -714,6 +852,45 @@ function buildArchivedTest(): TestSummary {
       interval_summary_count: 1,
       created_at: '2026-05-12T20:00:00Z',
       completed_at: '2026-05-12T20:05:00Z',
+    },
+  }
+}
+
+function buildEmptyArchiveReport() {
+  return {
+    manifest: {
+      schema_version: 'v1',
+      test_id: 'test-1',
+      test_name: 'Checkout Journey',
+      created_at: '2026-05-12T20:00:00Z',
+      transactions_file: 'transactions.jsonl',
+      resource_samples_file: 'resources.jsonl',
+      interval_summaries_file: 'interval_summaries.jsonl',
+      transaction_count: 0,
+      resource_sample_count: 0,
+      interval_summary_count: 0,
+    },
+    overview: {
+      transactions: 0,
+      errors: 0,
+      error_pct: 0,
+      avg_response_ms: 0,
+      min_response_ms: 0,
+      max_response_ms: 0,
+      resource_samples: 0,
+      interval_summaries: 0,
+      peak_tps: 0,
+      peak_active_vusers: 0,
+    },
+    by_action: {},
+    by_soap_operation: {},
+    resource_peaks: {
+      cpu_process_pct: 0,
+      mem_process_mb: 0,
+      net_sent_kbps: 0,
+      net_recv_kbps: 0,
+      disk_read_kbps: 0,
+      disk_write_kbps: 0,
     },
   }
 }

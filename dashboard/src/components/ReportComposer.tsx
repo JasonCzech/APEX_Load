@@ -198,7 +198,7 @@ export default function ReportComposer({ testId, testName, profile, onClose }: P
     try {
       const blob = await api.downloadTestReport(testId, profile)
       const slug = (testName || testId).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')
-      downloadBlob(blob, `${slug || 'apexload'}-${profile}-report.html`)
+      await downloadBlob(blob, `${slug || 'apexload'}-${profile}-report.html`)
     } catch (err: unknown) {
       setStatus(getErrorMessage(err, 'Download failed'))
     }

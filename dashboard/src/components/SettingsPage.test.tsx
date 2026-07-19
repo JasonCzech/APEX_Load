@@ -5,6 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import SettingsPage from './SettingsPage'
+import type { WailsDesktopBridge } from '../desktop/desktopBridge'
 import type { DashboardAuthEffectiveAccessResource, Domain, ProjectSettings } from '../types'
 import { useActiveTopbarContribution } from '../hooks/TopbarContributionProvider'
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
@@ -215,6 +216,7 @@ function renderWithSettingsTopbar(testRoot: Root, page: ReactElement) {
 describe('SettingsPage', () => {
   let container: HTMLDivElement
   let root: Root
+  type BridgeWindow = typeof window & { go?: { main?: { App?: WailsDesktopBridge } } }
 
   beforeEach(() => {
     container = document.createElement('div')
@@ -226,6 +228,7 @@ describe('SettingsPage', () => {
     window.localStorage.removeItem('apexload.settings.projectSubsection')
     window.localStorage.removeItem('apexload.settings.projectId')
     window.localStorage.removeItem('apexload.settings.integrationSubsection')
+    delete (window as BridgeWindow).go
 
     apiMock.getSystemSettings.mockResolvedValue({
       general: {
@@ -717,6 +720,7 @@ describe('SettingsPage', () => {
     window.localStorage.removeItem('apexload.settings.projectSubsection')
     window.localStorage.removeItem('apexload.settings.projectId')
     window.localStorage.removeItem('apexload.settings.integrationSubsection')
+    delete (window as BridgeWindow).go
   })
 
   it('defaults General to the Platform panel and switches panels accessibly', async () => {
@@ -1459,6 +1463,7 @@ describe('SettingsPage', () => {
     expect(exportButton).toBeDefined()
     if (!exportButton) return
 
+    downloadBlobMock.mockResolvedValueOnce('cancelled')
     await act(async () => {
       exportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -1466,6 +1471,14 @@ describe('SettingsPage', () => {
 
     expect(apiMock.downloadUsageAccounting).toHaveBeenCalledWith('project-1')
     expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), expect.stringMatching(/^apexload-usage-accounting-\d{4}-\d{2}-\d{2}\.csv$/))
+    expect(generalSection.textContent).not.toContain('Usage accounting export downloaded.')
+
+    downloadBlobMock.mockResolvedValueOnce('saved')
+    await act(async () => {
+      exportButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    expect(generalSection.textContent).toContain('Usage accounting export downloaded.')
   })
 
   it('surfaces production readiness checks and refreshes the backend payload', async () => {
@@ -2081,6 +2094,23 @@ describe('SettingsPage', () => {
     expect(container.textContent).toContain('Settings saved.')
   })
 
+  it('prevents selecting browser-only auth modes from the embedded desktop settings', async () => {
+    ;(window as BridgeWindow).go = { main: { App: {} } }
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+
+    const generalSection = container.querySelector('#settings-section-general')
+    expect(generalSection).toBeTruthy()
+    if (!generalSection) return
+    await selectGeneralSubnav(generalSection, 'Authentication')
+    const authModeSelect = findSettingSelect(generalSection, 'Access Control Mode')
+    expect(authModeSelect?.querySelector<HTMLOptionElement>('option[value="oidc"]')?.disabled).toBe(true)
+    expect(authModeSelect?.querySelector<HTMLOptionElement>('option[value="trusted_headers"]')?.disabled).toBe(true)
+    expect(generalSection.textContent).toContain('embedded desktop workspace requires Dev Bypass')
+  })
+
   it('disables settings, access handoff, and audit actions when effective RBAC denies them', async () => {
     apiMock.getAuthEffectiveAccess.mockResolvedValue({
       enabled: true,
@@ -2400,6 +2430,7 @@ describe('SettingsPage', () => {
     const exportAuditButton = Array.from(auditPanel?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === 'Export CSV') as HTMLButtonElement | undefined
     expect(exportAuditButton).toBeDefined()
     if (!exportAuditButton) return
+    downloadBlobMock.mockResolvedValueOnce('cancelled')
     await act(async () => {
       exportAuditButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
@@ -2411,6 +2442,13 @@ describe('SettingsPage', () => {
       status: 'success',
     }))
     expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), expect.stringMatching(/^apexload-audit-events-\d{4}-\d{2}-\d{2}\.csv$/))
+    expect(generalSection.textContent).not.toContain('Audit export downloaded.')
+
+    downloadBlobMock.mockResolvedValueOnce('saved')
+    await act(async () => {
+      exportAuditButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
     expect(generalSection.textContent).toContain('Audit export downloaded.')
   })
 

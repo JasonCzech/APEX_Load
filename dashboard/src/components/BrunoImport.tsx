@@ -13,8 +13,8 @@ import {
   type SecretBindingSelection,
 } from '../types/scriptImports'
 import { useApi } from '../hooks/useApi'
-import { resolveApiResourceUrl } from '../hooks/apiClient'
 import { getErrorMessage } from '../utils/errorUtils'
+import DesktopApiResourceLink from './DesktopApiResourceLink'
 import SecretBindingReview, {
   type PreparedSecretBindings,
   type SecretBindingReviewHandle,
@@ -736,8 +736,8 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
             </div>
           </div>
           <div className="bruno-source-links">
-            <a className="btn btn-secondary" href={resolveApiResourceUrl(`/api/v1/scripts/${committed.script.id}/bruno-imports/source`)}>Download sanitized source</a>
-            <a className="btn btn-secondary" href={resolveApiResourceUrl(`/api/v1/scripts/${committed.script.id}/bruno-imports/source?raw=true`)}>Download restricted raw source</a>
+            <DesktopApiResourceLink className="btn btn-secondary" href={`/api/v1/scripts/${committed.script.id}/bruno-imports/source`} filename={`${committed.script.name || committed.script.id}-sanitized-source.zip`} onError={setError}>Download sanitized source</DesktopApiResourceLink>
+            <DesktopApiResourceLink className="btn btn-secondary" href={`/api/v1/scripts/${committed.script.id}/bruno-imports/source?raw=true`} filename={`${committed.script.name || committed.script.id}-raw-source.zip`} onError={setError}>Download restricted raw source</DesktopApiResourceLink>
           </div>
           {revisions.length > 0 && (
             <div className="bruno-revisions">

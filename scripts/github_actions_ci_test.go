@@ -478,14 +478,14 @@ func runGit(t *testing.T, directory string, args ...string) string {
 	return string(output)
 }
 
-func TestClientPackagingSkipsForkPullRequests(t *testing.T) {
+func TestCredentialFreeClientPackagingValidatesForkPullRequests(t *testing.T) {
 	content, err := os.ReadFile("../.github/workflows/desktop.yml")
 	if err != nil {
 		t.Fatalf("read client packaging workflow: %v", err)
 	}
 	guard := "if: github.event_name != 'pull_request' || (github.event.pull_request.head.repo.id == github.event.repository.id && github.event.pull_request.head.repo.full_name == github.repository)"
-	if got := strings.Count(string(content), guard); got != 2 {
-		t.Fatalf("fork guard count = %d, want one guard on each of the two client packaging jobs", got)
+	if got := strings.Count(string(content), guard); got != 0 {
+		t.Fatalf("credential-free client jobs still contain %d fork-only guards", got)
 	}
 }
 

@@ -14,6 +14,10 @@ export function ExportDiagnostics() {
   return window['go']['main']['App']['ExportDiagnostics']();
 }
 
+export function GetAPICapability() {
+  return window['go']['main']['App']['GetAPICapability']();
+}
+
 export function GetAPIOrigin() {
   return window['go']['main']['App']['GetAPIOrigin']();
 }
@@ -50,24 +54,48 @@ export function OpenFilesDialogNative(arg1, arg2) {
   return window['go']['main']['App']['OpenFilesDialogNative'](arg1, arg2);
 }
 
-export function OpenInBrowser() {
-  return window['go']['main']['App']['OpenInBrowser']();
+export function OpenInBrowser(arg1, arg2) {
+  return window['go']['main']['App']['OpenInBrowser'](arg1, arg2);
 }
 
 export function OpenLogsFolder() {
   return window['go']['main']['App']['OpenLogsFolder']();
 }
 
+export function OpenSystemSettings(arg1) {
+  return window['go']['main']['App']['OpenSystemSettings'](arg1);
+}
+
 export function OpenURL(arg1) {
   return window['go']['main']['App']['OpenURL'](arg1);
+}
+
+export function ReadDroppedFileBase64(arg1) {
+  return window['go']['main']['App']['ReadDroppedFileBase64'](arg1);
 }
 
 export function ReadFileBase64(arg1) {
   return window['go']['main']['App']['ReadFileBase64'](arg1);
 }
 
+export function RendererReady(arg1) {
+  return window['go']['main']['App']['RendererReady'](arg1);
+}
+
+export function RendererReadyAck(arg1, arg2) {
+  return window['go']['main']['App']['RendererReadyAck'](arg1, arg2);
+}
+
+export function RendererUnready(arg1) {
+  return window['go']['main']['App']['RendererUnready'](arg1);
+}
+
 export function RevealInFolder(arg1) {
   return window['go']['main']['App']['RevealInFolder'](arg1);
+}
+
+export function SaveAPIResourceNative(arg1, arg2, arg3, arg4, arg5) {
+  return window['go']['main']['App']['SaveAPIResourceNative'](arg1, arg2, arg3, arg4, arg5);
 }
 
 export function SaveFileDialogNative(arg1, arg2, arg3) {

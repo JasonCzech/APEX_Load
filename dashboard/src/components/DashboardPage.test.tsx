@@ -437,6 +437,29 @@ describe('DashboardPage', () => {
     expect(getButtonByText('Collapse').getAttribute('aria-expanded')).toBe('true')
   })
 
+  it('surfaces a native release trend export failure', async () => {
+    vi.mocked(downloadBlob).mockRejectedValueOnce(new Error('native save failed'))
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+
+    await flushDashboard()
+    clickButtonByText('Performance Trend')
+    clickButtonByText('Export CSV')
+    await flushDashboard()
+
+    expect(apiMock.downloadReleaseTrend).toHaveBeenCalledWith('rel-1')
+    expect(container.querySelector('[role="alert"]')?.textContent).toContain('Could not export the release trend: native save failed')
+  })
+
   it('shows operations-focused snapshot details for admin audiences', async () => {
     await act(async () => {
       root.render(

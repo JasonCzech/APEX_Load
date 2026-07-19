@@ -12,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/netpolicy"
 )
 
 // productionMode reports whether the server is configured for a hardened
@@ -45,27 +47,58 @@ func envValue(name string) string {
 //     matches the request Host) are permitted — never an arbitrary reflected
 //     origin.
 func originAllowed(allowedOrigins []string, r *http.Request) bool {
+	return evaluateOriginPolicy(allowedOrigins, r).allowed
+}
+
+type originPolicyDecision struct {
+	allowed  bool
+	wildcard bool
+}
+
+// evaluateOriginPolicy distinguishes an explicit/same-origin match (which may
+// safely opt into credentialed CORS) from a wildcard match (which must never be
+// combined with Access-Control-Allow-Credentials).
+func evaluateOriginPolicy(allowedOrigins []string, r *http.Request) originPolicyDecision {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
 	if origin == "" {
-		return true
+		return originPolicyDecision{allowed: true}
 	}
+	// Same-origin requests are always valid, even when an additional CORS
+	// allow-list is configured. This matters for the desktop browser handoff:
+	// its dashboard and random-port loopback API share one origin, while the
+	// allow-list also contains the separate Wails webview origins.
+	parsed, parseErr := url.Parse(origin)
+	requestScheme := "http"
+	if r.TLS != nil {
+		requestScheme = "https"
+	}
+	if r.URL != nil && (r.URL.Scheme == "http" || r.URL.Scheme == "https") {
+		requestScheme = r.URL.Scheme
+	}
+	if parseErr == nil && parsed.Host != "" && strings.EqualFold(parsed.Scheme, requestScheme) && strings.EqualFold(parsed.Host, r.Host) {
+		return originPolicyDecision{allowed: true}
+	}
+	wildcard := false
 	for _, o := range allowedOrigins {
 		o = strings.TrimSpace(o)
 		if o == "*" {
-			return true
+			wildcard = true
+			continue
 		}
 		if strings.EqualFold(o, origin) {
-			return true
+			return originPolicyDecision{allowed: true}
 		}
 	}
+	if wildcard {
+		return originPolicyDecision{allowed: true, wildcard: true}
+	}
 	if len(allowedOrigins) > 0 {
-		return false
+		return originPolicyDecision{}
 	}
-	parsed, err := url.Parse(origin)
-	if err != nil || parsed.Host == "" {
-		return false
+	if parseErr != nil || parsed.Host == "" {
+		return originPolicyDecision{}
 	}
-	return strings.EqualFold(parsed.Host, r.Host)
+	return originPolicyDecision{}
 }
 
 // exportBaseDir returns the directory that script exports are confined to.
@@ -127,8 +160,8 @@ func allowPrivateOutbound() bool {
 
 // validateOutboundURL performs a syntactic SSRF check suitable for both
 // config-save time and a fast request-time pre-check: it rejects non-http(s)
-// schemes, missing hosts, literal IPs in the loopback/link-local/private/
-// unspecified ranges, and localhost names. It deliberately does NOT perform DNS
+// schemes, missing hosts, literal IPs outside the shared public-address policy,
+// and localhost names. It deliberately does NOT perform DNS
 // resolution — that is unreliable for not-yet-provisioned endpoints and is
 // rebindable. The authoritative, DNS-rebind-proof check happens at connect time
 // via ssrfSafeDialControl, which inspects the actually-resolved IP.
@@ -137,9 +170,9 @@ func validateOutboundURL(raw string) error {
 }
 
 // validateOutboundURLAllowingHosts is validateOutboundURL with a narrow,
-// caller-supplied allow-list of hostnames that may be private (e.g. a self-hosted
+// caller-supplied allow-list of hostnames that may be non-public (e.g. a self-hosted
 // GitHub Enterprise Server on an internal address). A host in `allowed` passes
-// even if it resolves to a private range; every other host is still subject to
+// even if it resolves to a non-public range; every other host is still subject to
 // the standard SSRF rejection. This keeps the control-plane locked down while
 // permitting exactly one operator-configured internal endpoint.
 func validateOutboundURLAllowingHosts(raw string, allowed map[string]struct{}) error {
@@ -216,13 +249,7 @@ func sameOriginRedirectPolicy(req *http.Request, via []*http.Request) error {
 // isDisallowedIP reports whether an IP is in a range we never allow outbound
 // (control-plane) requests to reach.
 func isDisallowedIP(ip net.IP) bool {
-	return ip.IsLoopback() ||
-		ip.IsUnspecified() ||
-		ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() ||
-		ip.IsInterfaceLocalMulticast() ||
-		ip.IsMulticast() ||
-		ip.IsPrivate()
+	return !netpolicy.IsPublicIP(ip)
 }
 
 // ssrfSafeDialControl returns a net.Dialer Control function that re-validates
@@ -256,7 +283,8 @@ func newSSRFSafeHTTPClient(timeout time.Duration) *http.Client {
 // permits connections to a small set of operator-configured hostnames even if
 // they resolve to private ranges (e.g. an internal GitHub Enterprise Server).
 // The allow check is by the pre-resolution request host, so only the configured
-// host bypasses the private-IP block; all other hosts keep ssrfSafeDialControl.
+// host bypasses the non-public-address block; all other hosts keep
+// ssrfSafeDialControl.
 // Pass nil/empty allowedHosts for the standard locked-down client.
 func newHostAllowlistedHTTPClient(allowedHosts []string, timeout time.Duration) *http.Client {
 	return newHostAllowlistedHTTPClientWithTLS(allowedHosts, nil, timeout)

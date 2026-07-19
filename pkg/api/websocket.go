@@ -67,7 +67,11 @@ func (h *Hub) upgrader() websocket.Upgrader {
 			h.allowedOriginsMu.RLock()
 			allowedOrigins := append([]string(nil), h.allowedOrigins...)
 			h.allowedOriginsMu.RUnlock()
-			return originAllowed(allowedOrigins, r)
+			decision := evaluateOriginPolicy(allowedOrigins, r)
+			// As with HTTP CORS, a wildcard must not authorize ambient browser
+			// credentials. Otherwise any site could open a cross-origin WebSocket
+			// carrying the user's session cookie.
+			return decision.allowed && !(decision.wildcard && strings.TrimSpace(r.Header.Get("Cookie")) != "")
 		},
 	}
 }

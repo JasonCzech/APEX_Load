@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
 import { readAppHistoryIndex, withAppHistoryIndex } from './appRouting'
+import type { WailsDesktopBridge } from './desktop/desktopBridge'
 import { ApiProvider } from './hooks/useApi'
 
 // Regression guard for a reported React Rules-of-Hooks violation:
@@ -76,6 +77,10 @@ class StubWebSocket {
   close() {}
   addEventListener() {}
   removeEventListener() {}
+}
+
+type DesktopWindow = typeof window & {
+  go?: { main?: { App?: WailsDesktopBridge } }
 }
 
 function jsonResponse(body: unknown): Response {
@@ -162,6 +167,7 @@ describe('AppShell hook-order stability across navigation', () => {
     navigationGuardMock.state.dirty = false
     navigationGuardMock.state.pending = null
     window.localStorage.clear()
+    delete (window as DesktopWindow).go
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -207,6 +213,7 @@ describe('AppShell hook-order stability across navigation', () => {
     animationGlobals.requestAnimationFrame = originalRaf
     animationGlobals.cancelAnimationFrame = originalCancelRaf
     window.localStorage.clear()
+    delete (window as DesktopWindow).go
     window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
     vi.clearAllMocks()
     navigationGuardMock.state.dirty = false
@@ -245,6 +252,33 @@ describe('AppShell hook-order stability across navigation', () => {
     }
 
     expect(hookOrderErrors).toEqual([])
+  })
+
+  it('replays an early Help browser action and surfaces a native launch failure', async () => {
+    const openInBrowser = vi.fn().mockRejectedValue(new Error('System browser launch was blocked'))
+    const rendererReady = vi.fn<(session: string) => Promise<string>>().mockResolvedValue(JSON.stringify({
+      delivery_id: '1',
+      events: [{ name: 'menu:open-browser' }],
+    }))
+    const rendererReadyAck = vi.fn<(session: string, deliveryId: string) => Promise<string>>().mockResolvedValue(JSON.stringify({
+      events: [],
+    }))
+    ;(window as DesktopWindow).go = {
+      main: {
+        App: { OpenInBrowser: openInBrowser, RendererReady: rendererReady, RendererReadyAck: rendererReadyAck },
+      },
+    }
+
+    await act(async () => {
+      root.render(<ApiProvider><App /></ApiProvider>)
+    })
+    await flush()
+
+    expect(rendererReady).toHaveBeenCalledTimes(1)
+    expect(rendererReadyAck).toHaveBeenCalledWith(rendererReady.mock.calls[0]?.[0], '1')
+    expect(openInBrowser).toHaveBeenCalledWith('admin', '')
+    const alerts = Array.from(container.querySelectorAll('[role="alert"]'))
+    expect(alerts.some(alert => alert.textContent?.includes('System browser launch was blocked'))).toBe(true)
   })
 
   it('applies one history-index transition when browsers emit popstate followed by hashchange', async () => {

@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/netpolicy"
 )
 
 // remoteOutboundAllowPrivateHostsEnv opts deployments that legitimately federate
@@ -31,20 +33,11 @@ func remoteOutboundAllowsPrivateHosts() bool {
 	return envBool(remoteOutboundAllowPrivateHostsEnv)
 }
 
-// isBlockedOutboundIP reports whether an IP must not be dialed for SSRF safety:
-// loopback, RFC1918/ULA private, link-local (which includes the 169.254.169.254
-// cloud-metadata endpoint), unspecified, and multicast ranges.
+// isBlockedOutboundIP reports whether an IP must not be dialed for SSRF safety.
+// The shared policy includes private/link-local addresses and IANA special-use
+// space that Go's built-in private/global predicates do not classify safely.
 func isBlockedOutboundIP(ip net.IP) bool {
-	if ip == nil {
-		return true
-	}
-	return ip.IsLoopback() ||
-		ip.IsPrivate() ||
-		ip.IsLinkLocalUnicast() ||
-		ip.IsLinkLocalMulticast() ||
-		ip.IsInterfaceLocalMulticast() ||
-		ip.IsUnspecified() ||
-		ip.IsMulticast()
+	return !netpolicy.IsPublicIP(ip)
 }
 
 // validateOutboundRemoteHost rejects a URL host that is a literal blocked IP, unless
@@ -60,7 +53,7 @@ func validateOutboundRemoteHost(host string) error {
 		return nil
 	}
 	if ip := net.ParseIP(host); ip != nil && isBlockedOutboundIP(ip) {
-		return fmt.Errorf("remote host %s is a private, loopback, or link-local address; set %s=true to allow internal remotes", host, remoteOutboundAllowPrivateHostsEnv)
+		return fmt.Errorf("remote host %s is a non-public or special-use address; set %s=true to allow internal remotes", host, remoteOutboundAllowPrivateHostsEnv)
 	}
 	return nil
 }
@@ -105,7 +98,7 @@ func buildGuardedHTTPClient(timeout time.Duration, allowPrivate bool) *http.Clie
 			var lastErr error
 			for _, ipAddr := range ips {
 				if !allowPrivate && isBlockedOutboundIP(ipAddr.IP) {
-					lastErr = fmt.Errorf("blocked outbound connection to %s (%s): private/loopback/link-local address", host, ipAddr.IP)
+					lastErr = fmt.Errorf("blocked outbound connection to %s (%s): non-public or special-use address", host, ipAddr.IP)
 					continue
 				}
 				conn, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(ipAddr.IP.String(), port))
