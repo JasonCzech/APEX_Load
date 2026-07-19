@@ -36,9 +36,21 @@ func (tr *TestRunner) ValidateScenarioLoadModel(req CreateScenarioRequest) (*Loa
 	tr.mu.RLock()
 	defer tr.mu.RUnlock()
 
+	// Apply the same canonical binding defaults and duplicate/enum checks as a
+	// scenario save before any pool lookup. This also gives the ownership gate a
+	// normalized pool ID/alias set and prevents validation from becoming a row
+	// read primitive for another project.
+	bindings, err := normalizeScenarioDataPoolBindings("draft-load-model-validation", req.DataPools)
+	if err != nil {
+		return nil, err
+	}
+	req.DataPools = bindings
 	testReq := createTestRequestFromScenarioDraft(req)
 	preview, err := tr.buildManagedTestLocked(testReq, "draft-load-model-validation", "DRAFT")
 	if err != nil {
+		return nil, err
+	}
+	if err := tr.validateDataPoolProjectsLocked(preview.ProjectID, bindings); err != nil {
 		return nil, err
 	}
 

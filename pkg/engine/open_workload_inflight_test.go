@@ -1,10 +1,105 @@
 package engine
 
 import (
+	"context"
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+func TestRunArrivalSchedulerUsesAbsoluteActiveDeadlines(t *testing.T) {
+	var active time.Duration
+	dispatchedAt := make([]time.Duration, 0, 5)
+	runArrivalScheduler(
+		context.Background(),
+		10,
+		5,
+		nil,
+		func(_ context.Context, delay time.Duration) bool {
+			active += delay
+			return true
+		},
+		func() time.Duration { return active },
+		func(_ int) {
+			dispatchedAt = append(dispatchedAt, active)
+			// Simulate material dispatcher overhead. Relative sleeps would add
+			// this 25ms to every 100ms arrival interval.
+			active += 25 * time.Millisecond
+		},
+		nil,
+	)
+	want := []time.Duration{0, 100 * time.Millisecond, 200 * time.Millisecond, 300 * time.Millisecond, 400 * time.Millisecond}
+	if !reflect.DeepEqual(dispatchedAt, want) {
+		t.Fatalf("dispatch active times = %v, want %v", dispatchedAt, want)
+	}
+}
+
+func TestRunArrivalSchedulerBoundsAndAccountsCatchUp(t *testing.T) {
+	activeReads := 0
+	dispatched := 0
+	shedStart := -1
+	shedCount := 0
+	runArrivalScheduler(
+		context.Background(), 1000, 2000, nil,
+		func(context.Context, time.Duration) bool { return true },
+		func() time.Duration {
+			activeReads++
+			if activeReads == 1 {
+				return 0 // scheduler origin
+			}
+			return 5 * time.Second // simulated stall after scheduler start
+		},
+		func(int) { dispatched++ },
+		func(first, count int) {
+			shedStart = first
+			shedCount += count
+		},
+	)
+	if dispatched != maxOpenWorkloadCatchUpBurst {
+		t.Fatalf("dispatched catch-up arrivals = %d, want bounded %d", dispatched, maxOpenWorkloadCatchUpBurst)
+	}
+	if shedStart != maxOpenWorkloadCatchUpBurst || shedCount != 2000-maxOpenWorkloadCatchUpBurst {
+		t.Fatalf("shed range = start %d count %d, want start %d count %d", shedStart, shedCount, maxOpenWorkloadCatchUpBurst, 2000-maxOpenWorkloadCatchUpBurst)
+	}
+}
+
+func TestRunArrivalSchedulerPauseDoesNotCreateBacklog(t *testing.T) {
+	var active time.Duration
+	wall := time.Duration(0)
+	paused := false
+	dispatchedAt := make([]time.Duration, 0, 2)
+	runArrivalScheduler(
+		context.Background(), 10, 2,
+		func(context.Context) error {
+			if paused {
+				wall += 10 * time.Second
+				paused = false
+			}
+			return nil
+		},
+		func(_ context.Context, delay time.Duration) bool {
+			active += delay
+			wall += delay
+			return true
+		},
+		func() time.Duration { return active },
+		func(index int) {
+			dispatchedAt = append(dispatchedAt, active)
+			if index == 0 {
+				paused = true
+			}
+		},
+		nil,
+	)
+	if !reflect.DeepEqual(dispatchedAt, []time.Duration{0, 100 * time.Millisecond}) {
+		t.Fatalf("dispatch active times across pause = %v", dispatchedAt)
+	}
+	if wall != 10*time.Second+100*time.Millisecond {
+		t.Fatalf("wall time = %v, want pause plus one active interval", wall)
+	}
+}
 
 func openWorkloadScript(tps float64) *dsl.Script {
 	script := &dsl.Script{}

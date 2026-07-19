@@ -45,6 +45,16 @@ func (s *Server) handleUpdateExecutionPlanSchedule(w http.ResponseWriter, r *htt
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	expectedRevision, preconditionErr := scheduleExpectedRevision(r, req.ExpectedRevision)
+	if preconditionErr != nil {
+		status := http.StatusBadRequest
+		if errors.Is(preconditionErr, errSchedulePreconditionRequired) {
+			status = http.StatusPreconditionRequired
+		}
+		writeError(w, status, preconditionErr.Error())
+		return
+	}
+	req.ExpectedRevision = expectedRevision
 	planID := r.PathValue("id")
 	scheduleID := r.PathValue("schedule_id")
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
@@ -55,6 +65,8 @@ func (s *Server) handleUpdateExecutionPlanSchedule(w http.ResponseWriter, r *htt
 		status := http.StatusBadRequest
 		if errors.Is(err, errNotExecutionLeader) {
 			status = http.StatusServiceUnavailable
+		} else if errors.Is(err, errScheduleConcurrentChange) {
+			status = http.StatusConflict
 		} else if errors.Is(err, errScheduleHasActiveOccurrence) {
 			status = http.StatusConflict
 		} else if errors.Is(err, errExecutionPlanSchedulePersistence) {

@@ -1000,7 +1000,11 @@ func (tr *TestRunner) launchStartWindowErrorLocked(test *ManagedTest, start time
 }
 
 func (tr *TestRunner) dueOneTimeScheduledTestIDsLocked(now time.Time, limit int) []string {
-	ids := make([]string, 0)
+	type dueTest struct {
+		id string
+		at time.Time
+	}
+	due := make([]dueTest, 0)
 	for id, test := range tr.tests {
 		if test == nil || test.Status != "SCHEDULED" || test.ScheduledStartAt == nil {
 			continue
@@ -1008,11 +1012,20 @@ func (tr *TestRunner) dueOneTimeScheduledTestIDsLocked(now time.Time, limit int)
 		if test.ScheduledStartAt.After(now) {
 			continue
 		}
-		ids = append(ids, id)
+		due = append(due, dueTest{id: id, at: test.ScheduledStartAt.UTC()})
 	}
-	sort.Strings(ids)
-	if limit > 0 && len(ids) > limit {
-		ids = ids[:limit]
+	sort.Slice(due, func(i, j int) bool {
+		if due[i].at.Equal(due[j].at) {
+			return due[i].id < due[j].id
+		}
+		return due[i].at.Before(due[j].at)
+	})
+	if limit > 0 && len(due) > limit {
+		due = due[:limit]
+	}
+	ids := make([]string, len(due))
+	for index := range due {
+		ids[index] = due[index].id
 	}
 	return ids
 }

@@ -1,8 +1,8 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 
 import {
-  API_GUIDE_TOGGLE_OPTIONS,
   apiGuideHashForToggle,
+  apiGuideToggleOptions,
   isApiGuideContentPageID,
   type ApiGuideContentPageID,
   type ApiGuideToggleID,
@@ -12,9 +12,11 @@ import PageViewToggle from './PageViewToggle'
 type ApiGuideTopbarToggleProps = {
   active: ApiGuideToggleID
   onContentPageChange?: (page: ApiGuideContentPageID) => void
+  includeAdminGuide?: boolean
 }
 
-export function ApiGuideTopbarToggle({ active, onContentPageChange }: ApiGuideTopbarToggleProps) {
+export function ApiGuideTopbarToggle({ active, onContentPageChange, includeAdminGuide = false }: ApiGuideTopbarToggleProps) {
+  const options = useMemo(() => apiGuideToggleOptions({ includeAdminGuide }), [includeAdminGuide])
   const handleChange = useCallback((value: ApiGuideToggleID) => {
     if (isApiGuideContentPageID(value)) {
       onContentPageChange?.(value)
@@ -30,7 +32,7 @@ export function ApiGuideTopbarToggle({ active, onContentPageChange }: ApiGuideTo
         value={active}
         ariaLabel="API guide sections"
         className="api-guide-section-toggle new-test-view-toggle topbar-page-section-toggle"
-        options={API_GUIDE_TOGGLE_OPTIONS}
+        options={options}
         onChange={handleChange}
       />
       <label className="api-guide-section-select-label">
@@ -41,7 +43,7 @@ export function ApiGuideTopbarToggle({ active, onContentPageChange }: ApiGuideTo
           aria-label="API guide section"
           onChange={event => handleChange(event.target.value as ApiGuideToggleID)}
         >
-          {API_GUIDE_TOGGLE_OPTIONS.map(option => (
+          {options.map(option => (
             <option key={option.value} value={option.value}>{option.label}</option>
           ))}
         </select>

@@ -151,6 +151,69 @@ function groupedMonitorHeaderLabel(severity: MonitorSeverity): string {
   }
 }
 
+const SCHEDULE_SWEEP_STALE_MS = 2 * 60 * 1000
+
+function scheduleHealthPresentation(health: ScenarioScheduleHealth | null, now = Date.now()): {
+  severity: MonitorSeverity
+  label: string
+  summary: string
+} {
+  if (!health) {
+    return { severity: 'unknown', label: 'checking', summary: 'Schedule health is unavailable.' }
+  }
+
+  const sweeps = Object.entries(health.sweeps || {})
+  const domainSweeps = sweeps.filter(([name]) => name !== 'scheduler')
+  const failedDomainSweeps = domainSweeps.filter(([, sweep]) => Boolean(sweep.last_error?.trim()))
+  const schedulerFailure = sweeps.filter(([name, sweep]) => name === 'scheduler' && Boolean(sweep.last_error?.trim()))
+  const failedSweeps = failedDomainSweeps.length > 0 ? failedDomainSweeps : schedulerFailure
+  const freshnessSweeps = domainSweeps.length > 0 ? domainSweeps : sweeps
+  const staleSweeps = freshnessSweeps.filter(([, sweep]) => {
+    if (!sweep.last_sweep_at) return true
+    const lastSweepAt = Date.parse(sweep.last_sweep_at)
+    return Number.isNaN(lastSweepAt) || now - lastSweepAt > SCHEDULE_SWEEP_STALE_MS
+  })
+  const scenarioConfigured = health.total
+  const planConfigured = health.execution_plan_total || 0
+  const oneTimeConfigured = health.one_time_scheduled || 0
+  const configured = scenarioConfigured + planConfigured + oneTimeConfigured
+  const due = health.due + (health.execution_plan_due || 0) + (health.one_time_due || 0)
+  const sweepNames = new Set(sweeps.map(([name]) => name))
+  const missingSweeps = [
+    scenarioConfigured > 0 && !sweepNames.has('scenario') ? 'scenario' : '',
+    planConfigured > 0 && !sweepNames.has('execution_plan') ? 'execution_plan' : '',
+    oneTimeConfigured > 0 && !sweepNames.has('one_time') ? 'one_time' : '',
+  ].filter(Boolean)
+
+  const details = [
+    scenarioConfigured > 0 ? `${health.enabled}/${scenarioConfigured} scenario schedules enabled` : '',
+    planConfigured > 0 ? `${health.execution_plan_enabled || 0}/${planConfigured} execution-plan schedules enabled` : '',
+    oneTimeConfigured > 0 ? `${oneTimeConfigured} one-time runs scheduled` : '',
+    due > 0 ? `${due} due across all schedule domains` : '',
+    health.failed > 0 ? `${health.failed} scenario occurrences failed` : '',
+    health.blocked > 0 ? `${health.blocked} scenario occurrences blocked` : '',
+    (health.execution_plan_blocked || 0) > 0 ? `${health.execution_plan_blocked} execution-plan schedules blocked` : '',
+    health.pending_approval > 0 ? `${health.pending_approval} pending approval` : '',
+    health.storage_error ? `Storage: ${health.storage_error}` : '',
+    failedSweeps.length > 0 ? `Failed sweeps: ${failedSweeps.map(([name]) => name).join(', ')}` : '',
+    missingSweeps.length > 0 ? `Missing sweep evidence: ${missingSweeps.join(', ')}` : '',
+    staleSweeps.length > 0 ? `Stale sweeps: ${staleSweeps.map(([name]) => name).join(', ')}` : '',
+  ].filter(Boolean).join('. ')
+
+  if (health.storage_error) return { severity: 'danger', label: 'storage error', summary: details }
+  if (health.is_leader === false) return { severity: 'danger', label: 'standby response', summary: `Schedule health was served by a non-leader controller. ${details}`.trim() }
+  if (failedSweeps.length > 0) return { severity: 'danger', label: `${failedSweeps.length} sweep failed`, summary: details }
+  if (health.failed > 0) return { severity: 'danger', label: `${health.failed} failed`, summary: details }
+  if (health.blocked > 0) return { severity: 'danger', label: `${health.blocked} blocked`, summary: details }
+  if ((health.execution_plan_blocked || 0) > 0) return { severity: 'danger', label: `${health.execution_plan_blocked} plan blocked`, summary: details }
+  if (missingSweeps.length > 0) return { severity: 'warning', label: `${missingSweeps.length} sweep pending`, summary: details }
+  if (staleSweeps.length > 0) return { severity: 'warning', label: `${staleSweeps.length} sweep stale`, summary: details }
+  if (health.pending_approval > 0) return { severity: 'warning', label: `${health.pending_approval} approval`, summary: details }
+  if (due > 0) return { severity: 'warning', label: `${due} due`, summary: details }
+  if (configured > 0) return { severity: 'healthy', label: `${configured} configured`, summary: details }
+  return { severity: 'unknown', label: 'no schedules', summary: 'No schedules configured.' }
+}
+
 type ApiCallResult<T> =
   | { ok: true; value: T }
   | { ok: false }
@@ -381,28 +444,8 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
   const fleetAuditHeaderLabel = canManageSystem
     ? fleetAuditEvents.length > 0 ? `${fleetAuditEvents.length} event${fleetAuditEvents.length === 1 ? '' : 's'}` : 'quiet'
     : 'admin only'
-  const scheduleHeaderSeverity: MonitorSeverity = !scheduleHealth
-    ? 'unknown'
-    : scheduleHealth.failed > 0 || scheduleHealth.blocked > 0
-      ? 'danger'
-      : scheduleHealth.pending_approval > 0 || scheduleHealth.due > 0
-        ? 'warning'
-        : scheduleHealth.total > 0
-          ? 'healthy'
-          : 'unknown'
-  const scheduleHeaderLabel = !scheduleHealth
-    ? 'checking'
-    : scheduleHealth.failed > 0
-      ? `${scheduleHealth.failed} failed`
-      : scheduleHealth.blocked > 0
-        ? `${scheduleHealth.blocked} blocked`
-        : scheduleHealth.pending_approval > 0
-          ? `${scheduleHealth.pending_approval} approval`
-          : scheduleHealth.due > 0
-            ? `${scheduleHealth.due} due`
-            : scheduleHealth.total > 0
-              ? `${scheduleHealth.enabled}/${scheduleHealth.total} enabled`
-              : 'no schedules'
+  const schedulePresentation = scheduleHealthPresentation(scheduleHealth)
+  const scheduleHeaderSeverity = schedulePresentation.severity
   const readinessReadyCount = systemReadiness?.checks.filter(check => check.status === 'ready').length ?? 0
   const readinessDegradedCount = systemReadiness?.checks.filter(check => check.status === 'degraded').length ?? 0
   const readinessBlockedCount = systemReadiness?.checks.filter(check => check.status === 'not_ready').length ?? 0
@@ -1482,10 +1525,10 @@ export default function MonitoringPage({ connectionState, telemetryDiagnostics =
       {
         label: 'Schedules',
         severity: scheduleHeaderSeverity,
-        summary: !scheduleHealth ? 'Schedule health is unavailable.' : scheduleHealth.total === 0 ? 'No schedules configured.' : `Schedules: ${scheduleHeaderLabel}.`,
+        summary: schedulePresentation.summary,
       },
     ]
-  }, [health, connectionState, readinessHeaderSeverity, systemReadiness, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, controllerHeaderSeverity, controllerStatusLabel, generatorHeaderSeverity, generators, generatorIssueCount, telemetryHeaderSeverity, telemetryDangerCount, telemetryWarningCount, fleetAlertHeaderSeverity, fleetAlerts, scheduleHeaderSeverity, scheduleHealth, scheduleHeaderLabel])
+  }, [health, connectionState, readinessHeaderSeverity, systemReadiness, readinessBlockedCount, readinessDegradedCount, readinessHeaderLabel, controllerHeaderSeverity, controllerStatusLabel, generatorHeaderSeverity, generators, generatorIssueCount, telemetryHeaderSeverity, telemetryDangerCount, telemetryWarningCount, fleetAlertHeaderSeverity, fleetAlerts, scheduleHeaderSeverity, schedulePresentation.summary])
 
   const overallSeverity = useMemo(() => {
     if (severityEntries.some(e => e.severity === 'danger')) return 'danger'

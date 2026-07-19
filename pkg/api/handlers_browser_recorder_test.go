@@ -545,6 +545,24 @@ func TestHandleConvertBrowserRecordingStoresScript(t *testing.T) {
 	}
 }
 
+func TestHandleConvertBrowserRecordingRejectsMalformedJSONBeforePersisting(t *testing.T) {
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+	stopBrowserRecordingViaAPI(t, server, id)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/browser-recorder/sessions/"+id+"/convert", bytes.NewBufferString(`{"name":`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("convert status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if got := len(server.runner.ListScripts()); got != 0 {
+		t.Fatalf("malformed browser conversion persisted %d scripts, want 0", got)
+	}
+}
+
 func TestHandleConvertBrowserRecordingStoresOnlyGovernedSecretReferences(t *testing.T) {
 	artifact := recordedBrowserArtifact()
 	artifact.HAR = []byte(`{"log":{"version":"1.2","entries":[{"startedDateTime":"2026-05-12T20:00:00Z","time":12,"request":{"method":"GET","url":"https://shop.example/api/cart","httpVersion":"HTTP/1.1","headers":[{"name":"Authorization","value":"Bearer browser-recorded-token"}],"queryString":[],"cookies":[],"headersSize":-1,"bodySize":0},"response":{"status":200,"statusText":"OK","httpVersion":"HTTP/1.1","headers":[{"name":"Content-Type","value":"application/json"}],"cookies":[],"content":{"size":2,"mimeType":"application/json","text":"{}"},"redirectURL":"","headersSize":-1,"bodySize":2},"cache":{},"timings":{"send":1,"wait":10,"receive":1}}]}}`)

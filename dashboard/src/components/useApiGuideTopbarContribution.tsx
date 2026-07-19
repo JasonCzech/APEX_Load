@@ -8,10 +8,11 @@ export function useApiGuideTopbarContribution(
   active: ApiGuideToggleID,
   title: string,
   onContentPageChange?: (page: ApiGuideContentPageID) => void,
+  includeAdminGuide = false,
 ) {
   const controls = useMemo(() => (
-    <ApiGuideTopbarToggle active={active} onContentPageChange={onContentPageChange} />
-  ), [active, onContentPageChange])
+    <ApiGuideTopbarToggle active={active} onContentPageChange={onContentPageChange} includeAdminGuide={includeAdminGuide} />
+  ), [active, onContentPageChange, includeAdminGuide])
 
   const topbarContribution = useMemo(() => ({
     id: 'api-guide-navigation',

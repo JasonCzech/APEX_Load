@@ -29,6 +29,7 @@ type MetricsCollector struct {
 	targetTPS         float64
 	groupTargetTPS    map[string]float64
 	groupActiveFn     func() map[string]int
+	groupRunTotals    sync.Map // map[string]*groupRunCounters; lock-free hot-path attribution
 }
 
 const throughputGapAlertThresholdPct = 5.0
@@ -39,6 +40,11 @@ type liveCounters struct {
 	activeVUsers      atomic.Int64
 	droppedResults    atomic.Int64
 	sheddedArrivals   atomic.Int64
+}
+
+type groupRunCounters struct {
+	totalTransactions atomic.Int64
+	totalErrors       atomic.Int64
 }
 
 type MetricsSnapshot struct {
@@ -280,10 +286,19 @@ func (mc *MetricsCollector) SetTargetTPS(target float64) {
 // surfaced via the snapshot telemetry so operators can see when the offered TPS
 // exceeds achievable throughput.
 func (mc *MetricsCollector) RecordSheddedArrival() {
+	mc.RecordSheddedArrivals(1)
+}
+
+// RecordSheddedArrivals adds arrivals that could not be dispatched. The bulk
+// form is used by the open-workload deadline scheduler when it deliberately
+// sheds an excessive catch-up backlog instead of creating an unbounded burst.
+func (mc *MetricsCollector) RecordSheddedArrivals(count int64) {
 	if mc == nil {
 		return
 	}
-	mc.current.sheddedArrivals.Add(1)
+	if count > 0 {
+		mc.current.sheddedArrivals.Add(count)
+	}
 }
 
 func (mc *MetricsCollector) SetGroupTargetTPS(group string, target float64) {
@@ -407,12 +422,37 @@ func (mc *MetricsCollector) RecordTransactionResult(r *protocol.Result) {
 	} else {
 		mc.current.totalErrors.Add(1)
 	}
+	group := strings.TrimSpace(r.Group)
+	if group != "" {
+		value, _ := mc.groupRunTotals.LoadOrStore(group, &groupRunCounters{})
+		counters := value.(*groupRunCounters)
+		if r.Success {
+			counters.totalTransactions.Add(1)
+		} else {
+			counters.totalErrors.Add(1)
+		}
+	}
 	metric := compactMetricsResult(r)
 	select {
 	case mc.ch <- metric:
 	default:
 		mc.current.droppedResults.Add(1)
 	}
+}
+
+// GroupRunTotals returns cumulative business-transaction counters for a group.
+// Unlike MetricsSnapshot.ByGroup, these values cover the complete run and are
+// therefore suitable for the terminal MultiGroupRunResult contract.
+func (mc *MetricsCollector) GroupRunTotals(group string) (transactions int64, errors int64) {
+	if mc == nil {
+		return 0, 0
+	}
+	value, ok := mc.groupRunTotals.Load(strings.TrimSpace(group))
+	if !ok {
+		return 0, 0
+	}
+	counters := value.(*groupRunCounters)
+	return counters.totalTransactions.Load(), counters.totalErrors.Load()
 }
 
 func (mc *MetricsCollector) aggregate(interval time.Duration) {

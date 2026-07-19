@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import userGuideMarkdown from '../../../docs/APPLICATION_USER_GUIDE.md?raw'
+import adminGuideMarkdown from '../../../docs/ADMIN_USER_GUIDE.md?raw'
 import { loadApiEndpointCatalog } from '../apiDocsClient'
 import { buildEndpointCatalogMap, endpointCatalogKey, type ApiEndpointCatalog, type ApiEndpointCatalogRoute } from '../apiEndpointCatalog'
 import { API_GUIDE_DEFAULT_PAGE, type ApiGuideContentPageID } from '../apiGuideNavigation'
@@ -7,6 +9,7 @@ import { buildAllowedOperationSet, canShowEndpointForDocs, docsVisibilityOperati
 import { useHasTopbarContributionProvider } from '../hooks/TopbarContributionProvider'
 import type { DashboardAuthEffectiveAccessResource } from '../types'
 import { ApiGuideTopbarToggle } from './ApiGuideTopbarToggle'
+import GuideMarkdownArticle from './GuideMarkdownArticle'
 import { useApiGuideTopbarContribution } from './useApiGuideTopbarContribution'
 
 type EndpointDoc = ApiEndpointCatalogRoute & {
@@ -93,10 +96,13 @@ export default function ApiGuidePage({
     }))
     .filter(group => group.endpoints.length > 0)
   const canUseAccessWorkspace = ['manage_users', 'manage_user_bindings', 'view_user_activity', 'manage_service_accounts'].some(operation => allowedOperations.has(operation))
+  // "Any administrator" gate: user/RBAC management OR system/fleet management. Drives
+  // whether the admin-only "Admin Guide" tab chip and section are shown.
+  const isAdmin = canUseAccessWorkspace || allowedOperations.has('manage_system')
   const handleContentPageChange = useCallback((page: ApiGuideContentPageID) => {
     setActiveGuideSection(page)
   }, [])
-  useApiGuideTopbarContribution(activeGuideSection, 'API Guide', handleContentPageChange)
+  useApiGuideTopbarContribution(activeGuideSection, 'API Guide', handleContentPageChange, isAdmin)
 
   useEffect(() => {
     setActiveGuideSection(activePage)
@@ -120,7 +126,12 @@ export default function ApiGuidePage({
     }
   }, [])
 
-  const activeContentPage = activeGuideSection
+  // Guard direct navigation to the admin guide: only render it once effective access
+  // has loaded and confirms an administrator; otherwise fall back to the default page.
+  const canShowAdminGuide = isAdmin && effectiveAccessLoaded
+  const activeContentPage = activeGuideSection === 'admin-guide' && !canShowAdminGuide
+    ? API_GUIDE_DEFAULT_PAGE
+    : activeGuideSection
   const endpointCatalogLoaded = endpointCatalog !== null
 
   return (
@@ -133,7 +144,7 @@ export default function ApiGuidePage({
       </div>
       {!hasTopbarContributionProvider && (
         <div className="inline-create-row api-guide-section-switcher">
-          <ApiGuideTopbarToggle active={activeGuideSection} onContentPageChange={handleContentPageChange} />
+          <ApiGuideTopbarToggle active={activeGuideSection} onContentPageChange={handleContentPageChange} includeAdminGuide={isAdmin} />
         </div>
       )}
 
@@ -173,6 +184,14 @@ export default function ApiGuidePage({
             <p>In local dev auth mode only, API clients may send <code>X-APEXLoad-Dev-View: admin|user</code> and <code>X-APEXLoad-Dev-Project-ID: &lt;project-id&gt;</code> to simulate dashboard Admin or project editor User behavior. Production auth modes ignore these headers.</p>
           </section>
         </>
+      )}
+
+      {activeContentPage === 'user-guide' && (
+        <GuideMarkdownArticle source={userGuideMarkdown} />
+      )}
+
+      {activeContentPage === 'admin-guide' && (
+        <GuideMarkdownArticle source={adminGuideMarkdown} />
       )}
 
       {activeContentPage === 'mcp' && (

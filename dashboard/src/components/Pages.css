@@ -1381,6 +1381,12 @@
   gap: 22px;
 }
 
+.guide-markdown-article {
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+
 .repository-guide-toc {
   background: var(--bg-card);
   border: 1px solid var(--border);

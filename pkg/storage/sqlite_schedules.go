@@ -791,6 +791,62 @@ func (s *SQLiteStore) CompareAndSwapScenarioScheduleOccurrenceIfLeaseTermHeld(oc
 	return updated, nil
 }
 
+// ResolveScenarioScheduleOccurrenceIfLeaseTermHeld atomically changes an
+// operator-blocked occurrence and its parent schedule. Keeping both CAS writes
+// in the execution-lease transaction closes the crash window where a resolved
+// occurrence could be left unreachable behind a future next_run_at.
+func (s *SQLiteStore) ResolveScenarioScheduleOccurrenceIfLeaseTermHeld(occurrence *ScenarioScheduleOccurrence, expectedOccurrenceRevision int64, schedule *ScenarioSchedule, expectedScheduleRevision int, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
+	originalScheduleRevision := schedule.Revision
+	originalOccurrenceRevision := occurrence.Revision
+	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
+	if err != nil || tx == nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	updated, err := updateScenarioScheduleIfRevisionWithExecutor(tx, schedule, expectedScheduleRevision)
+	if err != nil || !updated {
+		schedule.Revision = originalScheduleRevision
+		return updated, err
+	}
+	updated, err = compareAndSwapScenarioScheduleOccurrenceWithExecutor(tx, occurrence, expectedOccurrenceRevision)
+	if err != nil || !updated {
+		schedule.Revision = originalScheduleRevision
+		occurrence.Revision = originalOccurrenceRevision
+		return updated, err
+	}
+	if err := tx.Commit(); err != nil {
+		schedule.Revision = originalScheduleRevision
+		occurrence.Revision = originalOccurrenceRevision
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *SQLiteStore) ResolveScenarioScheduleOccurrence(occurrence *ScenarioScheduleOccurrence, expectedOccurrenceRevision int64, schedule *ScenarioSchedule, expectedScheduleRevision int) (bool, error) {
+	originalScheduleRevision := schedule.Revision
+	originalOccurrenceRevision := occurrence.Revision
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	updated, err := updateScenarioScheduleIfRevisionWithExecutor(tx, schedule, expectedScheduleRevision)
+	if err == nil && updated {
+		updated, err = compareAndSwapScenarioScheduleOccurrenceWithExecutor(tx, occurrence, expectedOccurrenceRevision)
+	}
+	if err != nil || !updated {
+		schedule.Revision = originalScheduleRevision
+		occurrence.Revision = originalOccurrenceRevision
+		return updated, err
+	}
+	if err := tx.Commit(); err != nil {
+		schedule.Revision = originalScheduleRevision
+		occurrence.Revision = originalOccurrenceRevision
+		return false, err
+	}
+	return true, nil
+}
+
 func (s *SQLiteStore) SaveScenarioScheduleOccurrenceIfLeaseHeld(occurrence *ScenarioScheduleOccurrence, leaseName, leaseOwnerID string) (bool, error) {
 	leaseName = strings.TrimSpace(leaseName)
 	leaseOwnerID = strings.TrimSpace(leaseOwnerID)

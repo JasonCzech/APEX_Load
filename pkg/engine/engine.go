@@ -99,6 +99,9 @@ func New(cfg Config) (*Engine, error) {
 	if cfg.Script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
+	if issues := dsl.ValidateWorkloadSettingsIssues(cfg.Script.Config.RunLogic, cfg.Script.Config.Pacing); len(issues) > 0 {
+		return nil, fmt.Errorf("invalid workload settings: %s", issues[0])
+	}
 	if cfg.VUsers <= 0 {
 		return nil, fmt.Errorf("vusers must be positive")
 	}
@@ -364,7 +367,7 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 			return arrivals
 		}
 		return 0
-	}(), nil, nil, func(arrival int) {
+	}(), nil, nil, func() time.Duration { return time.Since(start) }, func(arrival int) {
 		// Shed the arrival when the in-flight set is saturated: the SUT cannot
 		// keep up, so dropping it protects the generator from unbounded
 		// goroutine growth instead of silently throttling to a closed model.
@@ -422,6 +425,12 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 			}
 			vu.Run(loopCtx)
 		}(arrival)
+	}, func(_ int, count int) {
+		limiter.recordShed(int64(count))
+		e.metrics.RecordSheddedArrivals(int64(count))
+		if limiter.shouldWarn() {
+			slog.Warn("open workload shedding overdue arrivals: generator scheduler exceeded bounded catch-up burst", "shed", count, "max_catch_up_burst", maxOpenWorkloadCatchUpBurst, "tps", e.script.Config.Pacing.TPS)
+		}
 	})
 
 	if shed := limiter.Shed(); shed > 0 {
@@ -448,7 +457,7 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 }
 
 func newIterationRateLimiter(script *dsl.Script) *TokenBucket {
-	if script == nil || script.Config.Pacing.Type != "tps" || script.Config.Pacing.TPS <= 0 {
+	if script == nil || dsl.CanonicalPacingType(script.Config.Pacing.Type) != "tps" || script.Config.Pacing.TPS <= 0 {
 		return nil
 	}
 	return NewTokenBucket(script.Config.Pacing.TPS)

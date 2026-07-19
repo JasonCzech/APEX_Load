@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -35,8 +34,8 @@ func (s *Server) resolveExecutionPlanApproval(w http.ResponseWriter, r *http.Req
 	var body struct {
 		Reason string `json:"reason"`
 	}
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&body)
+	if !decodeOptionalJSONBody(w, r, &body) {
+		return
 	}
 	_, actorSubject, _ := s.resolveAuditActor(r)
 	approval, found, err := s.runner.ResolveExecutionPlanApproval(planID, approvalIDParam, approve, actorSubject, strings.TrimSpace(body.Reason))

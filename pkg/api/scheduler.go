@@ -53,6 +53,11 @@ type scenarioScheduler struct {
 	now      func() time.Time
 	ownerID  string
 	leaseTTL time.Duration
+	// oneTimeCursor rotates bounded one-time batches after failures. Without it,
+	// a stable lexical first page of blocked jobs can starve every later due job.
+	oneTimeCursor string
+	healthMu      sync.RWMutex
+	sweepHealth   map[string]SchedulerSweepHealth
 }
 
 const (
@@ -85,39 +90,95 @@ type CreateScenarioScheduleRequest struct {
 	// without disabling it; either bound may be nil for an open-ended pause.
 	DisabledFrom     *time.Time `json:"disabled_from,omitempty"`
 	DisabledUntil    *time.Time `json:"disabled_until,omitempty"`
+	ExpectedRevision *int       `json:"expected_revision,omitempty"`
 	OwnerSubject     string     `json:"-"`
 	OwnerDisplayName string     `json:"-"`
 	RBACReviewSource string     `json:"-"`
 }
 
 type ScenarioScheduleHealth struct {
-	Total           int            `json:"total"`
-	Enabled         int            `json:"enabled"`
-	Due             int            `json:"due"`
-	Blocked         int            `json:"blocked"`
-	Failed          int            `json:"failed"`
-	PendingApproval int            `json:"pending_approval"`
-	Queued          int            `json:"queued"`
-	Materialized    int            `json:"materialized"`
-	Skipped         int            `json:"skipped"`
-	Completed       int            `json:"completed"`
-	StatusCounts    map[string]int `json:"status_counts"`
+	Total                int                             `json:"total"`
+	Enabled              int                             `json:"enabled"`
+	Due                  int                             `json:"due"`
+	Blocked              int                             `json:"blocked"`
+	Failed               int                             `json:"failed"`
+	PendingApproval      int                             `json:"pending_approval"`
+	Queued               int                             `json:"queued"`
+	Materialized         int                             `json:"materialized"`
+	Skipped              int                             `json:"skipped"`
+	Completed            int                             `json:"completed"`
+	StatusCounts         map[string]int                  `json:"status_counts"`
+	IsLeader             bool                            `json:"is_leader"`
+	StorageError         string                          `json:"storage_error,omitempty"`
+	Sweeps               map[string]SchedulerSweepHealth `json:"sweeps,omitempty"`
+	ExecutionPlanTotal   int                             `json:"execution_plan_total"`
+	ExecutionPlanEnabled int                             `json:"execution_plan_enabled"`
+	ExecutionPlanDue     int                             `json:"execution_plan_due"`
+	ExecutionPlanBlocked int                             `json:"execution_plan_blocked"`
+	OneTimeScheduled     int                             `json:"one_time_scheduled"`
+	OneTimeDue           int                             `json:"one_time_due"`
+}
+
+type SchedulerSweepHealth struct {
+	LastSweepAt      *time.Time `json:"last_sweep_at,omitempty"`
+	LastSuccessfulAt *time.Time `json:"last_successful_at,omitempty"`
+	LastError        string     `json:"last_error,omitempty"`
 }
 
 func newScenarioScheduler(runner *TestRunner) *scenarioScheduler {
-	return &scenarioScheduler{runner: runner, now: time.Now, ownerID: uuid.New().String(), leaseTTL: 30 * time.Second}
+	return &scenarioScheduler{runner: runner, now: time.Now, ownerID: uuid.New().String(), leaseTTL: 30 * time.Second, sweepHealth: make(map[string]SchedulerSweepHealth)}
 }
 
-func (s *scenarioScheduler) RunDueSchedules() error {
+func (s *scenarioScheduler) RunDueSchedules() (runErr error) {
 	if s == nil || s.runner == nil {
 		return nil
 	}
-	// Materializing a due schedule starts a run, so scheduling is leader-only.
-	// This keeps scheduling on the same replica that executes; the dedicated
-	// scenario-scheduler lease below still guards against duplicate sweeps.
+	// Followers are healthy standbys, but they did not perform a sweep. Do not
+	// overwrite the last leader sweep with a misleading successful timestamp.
 	if !s.runner.isExecutionLeader() {
 		return nil
 	}
+	sweepAt := s.now().UTC()
+	type domainSweepState struct {
+		attempted bool
+		completed bool
+		err       error
+	}
+	var scenarioSweep, oneTimeSweep, executionPlanSweep domainSweepState
+	sweepAcquired := false
+	defer func() {
+		// A failed preflight belongs to the global scheduler health only: none of
+		// the three domains was attempted. Failure to acquire the secondary lease
+		// is normal standby contention and must not overwrite leader health.
+		if !sweepAcquired {
+			if runErr != nil {
+				s.recordSweepHealth("scheduler", sweepAt, runErr)
+			}
+			return
+		}
+		recordDomain := func(name string, state domainSweepState) error {
+			if !state.attempted {
+				return nil
+			}
+			domainErr := state.err
+			if !state.completed {
+				incompleteErr := runErr
+				if incompleteErr == nil {
+					incompleteErr = fmt.Errorf("%s scheduler sweep did not complete", name)
+				}
+				domainErr = errors.Join(domainErr, incompleteErr)
+			}
+			s.recordSweepHealth(name, sweepAt, domainErr)
+			return domainErr
+		}
+		scenarioErr := recordDomain("scenario", scenarioSweep)
+		oneTimeErr := recordDomain("one_time", oneTimeSweep)
+		executionPlanErr := recordDomain("execution_plan", executionPlanSweep)
+		s.recordSweepHealth("scheduler", sweepAt, errors.Join(runErr, scenarioErr, oneTimeErr, executionPlanErr))
+	}()
+	// Materializing a due schedule starts a run, so scheduling is leader-only.
+	// This keeps scheduling on the same replica that executes; the dedicated
+	// scenario-scheduler lease below still guards against duplicate sweeps.
 	leaseTerm, err := s.runner.captureExecutionLeaseTerm()
 	if err != nil {
 		return err
@@ -144,15 +205,19 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 	if !acquired {
 		return nil
 	}
+	sweepAcquired = true
 	if !s.runner.executionLeaseTermCurrent(leaseTerm) {
 		return errNotExecutionLeader
 	}
 	toStart := make([]*ManagedTest, 0)
+	scenarioSweep.attempted = true
 	s.runner.mu.Lock()
 	processedOccurrences := 0
 	scheduleSweepExhausted := false
 	for _, schedule := range s.runner.listAllScenarioSchedulesLocked() {
 		if !s.runner.executionLeaseTermCurrent(leaseTerm) {
+			scenarioSweep.err = errors.Join(scenarioSweep.err, errNotExecutionLeader)
+			scheduleSweepExhausted = true
 			break
 		}
 		if schedule == nil || !schedule.Enabled || schedule.NextRunAt == nil || schedule.NextRunAt.After(now) {
@@ -184,6 +249,7 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 			}
 			if loadErr != nil {
 				schedule.LastError = loadErr.Error()
+				scenarioSweep.err = errors.Join(scenarioSweep.err, loadErr)
 				break
 			}
 			// A durable occurrence always wins over missed-run policy. It may
@@ -191,6 +257,7 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 			// must be reconciled before skip/operator policy considers a new slot.
 			if existing == nil {
 				if handled, err := s.runner.applyMissedRunPolicyLocked(schedule, now, leaseTerm); err != nil {
+					scenarioSweep.err = errors.Join(scenarioSweep.err, err)
 					schedule.LastError = err.Error()
 					schedule.UpdatedAt = now
 					if saveErr := s.runner.saveScenarioScheduleForSweepLocked(schedule, leaseTerm); saveErr != nil {
@@ -202,10 +269,13 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 				}
 			}
 			if !s.runner.executionLeaseTermCurrent(leaseTerm) {
+				scenarioSweep.err = errors.Join(scenarioSweep.err, errNotExecutionLeader)
+				scheduleSweepExhausted = true
 				break
 			}
 			test, err := s.runner.runScenarioScheduleLocked(schedule, now, leaseTerm)
 			if err != nil {
+				scenarioSweep.err = errors.Join(scenarioSweep.err, err)
 				schedule.LastError = err.Error()
 				schedule.UpdatedAt = now
 				if saveErr := s.runner.saveScenarioScheduleForSweepLocked(schedule, leaseTerm); saveErr != nil {
@@ -224,26 +294,97 @@ func (s *scenarioScheduler) RunDueSchedules() error {
 			break
 		}
 	}
-	dueOneTimeScheduled := s.runner.dueOneTimeScheduledTestIDsLocked(now, maxOneTimeScheduledStartsPerSweep)
+	dueOneTimeScheduled := s.dueOneTimeScheduledTestIDsLocked(now, maxOneTimeScheduledStartsPerSweep)
 	s.runner.mu.Unlock()
 	if !s.runner.executionLeaseTermCurrent(leaseTerm) {
-		return nil
+		return errNotExecutionLeader
 	}
 	for _, test := range toStart {
 		go s.runner.runScenarioScheduledTestWithTerm(test, leaseTerm)
 	}
+	scenarioSweep.completed = true
+	oneTimeSweep.attempted = true
 	for _, testID := range dueOneTimeScheduled {
+		if !s.runner.executionLeaseTermCurrent(leaseTerm) {
+			oneTimeSweep.err = errors.Join(oneTimeSweep.err, errNotExecutionLeader)
+			return errNotExecutionLeader
+		}
 		if err := s.runner.startTestWithOptionsAndExpectedTerm(testID, StartTestOptions{}, &leaseTerm); err != nil {
+			oneTimeSweep.err = errors.Join(oneTimeSweep.err, err)
 			s.runner.markScheduledStartError(testID, err.Error())
 		}
 	}
+	if !s.runner.executionLeaseTermCurrent(leaseTerm) {
+		oneTimeSweep.err = errors.Join(oneTimeSweep.err, errNotExecutionLeader)
+		return errNotExecutionLeader
+	}
+	oneTimeSweep.completed = true
 	// Recurring execution-plan schedules share this leader-gated sweep + lease.
 	// Run lock-free (materialize takes tr.mu internally).
 	if !s.runner.executionLeaseTermCurrent(leaseTerm) {
+		return errNotExecutionLeader
+	}
+	executionPlanSweep.attempted = true
+	executionPlanSweep.err = s.runner.sweepDueExecutionPlanSchedulesWithTerm(now, leaseTerm)
+	executionPlanSweep.completed = !errors.Is(executionPlanSweep.err, errNotExecutionLeader)
+	return nil
+}
+
+func (s *scenarioScheduler) recordSweepHealth(name string, at time.Time, err error) {
+	if s == nil {
+		return
+	}
+	s.healthMu.Lock()
+	defer s.healthMu.Unlock()
+	state := s.sweepHealth[name]
+	state.LastSweepAt = cloneTimePtr(&at)
+	if err == nil {
+		state.LastSuccessfulAt = cloneTimePtr(&at)
+		state.LastError = ""
+	} else {
+		state.LastError = err.Error()
+	}
+	s.sweepHealth[name] = state
+}
+
+func (s *scenarioScheduler) healthSnapshot() map[string]SchedulerSweepHealth {
+	if s == nil {
 		return nil
 	}
-	s.runner.sweepDueExecutionPlanSchedulesWithTerm(now, leaseTerm)
-	return nil
+	s.healthMu.RLock()
+	defer s.healthMu.RUnlock()
+	out := make(map[string]SchedulerSweepHealth, len(s.sweepHealth))
+	for name, state := range s.sweepHealth {
+		state.LastSweepAt = cloneTimePtr(state.LastSweepAt)
+		state.LastSuccessfulAt = cloneTimePtr(state.LastSuccessfulAt)
+		out[name] = state
+	}
+	return out
+}
+
+func (s *scenarioScheduler) dueOneTimeScheduledTestIDsLocked(now time.Time, limit int) []string {
+	ids := s.runner.dueOneTimeScheduledTestIDsLocked(now, 0)
+	if limit <= 0 || len(ids) <= limit {
+		if len(ids) > 0 {
+			s.oneTimeCursor = ids[len(ids)-1]
+		}
+		return ids
+	}
+	start := 0
+	if s.oneTimeCursor != "" {
+		for index, id := range ids {
+			if id == s.oneTimeCursor {
+				start = (index + 1) % len(ids)
+				break
+			}
+		}
+	}
+	selected := make([]string, 0, limit)
+	for offset := 0; offset < limit; offset++ {
+		selected = append(selected, ids[(start+offset)%len(ids)])
+	}
+	s.oneTimeCursor = selected[len(selected)-1]
+	return selected
 }
 
 func (tr *TestRunner) applyMissedRunPolicyLocked(schedule *storage.ScenarioSchedule, now time.Time, leaseTerm executionLeaseTerm) (bool, error) {
@@ -1388,19 +1529,25 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		return nil, nil
 	}
 	occurrence := resumeOccurrence
-	if occurrence == nil {
+	isNewOccurrence := occurrence == nil
+	if isNewOccurrence {
 		occurrence = tr.buildScenarioScheduleOccurrence(schedule, plannedAt, "materializing", "due", "", nil, now)
 	}
 	occurrence.Status = "materializing"
-	occurrence.ReasonCode = "due"
+	if strings.TrimSpace(occurrence.ReasonCode) == "" {
+		occurrence.ReasonCode = "due"
+	}
 	occurrence.ConflictSummary = ""
 	occurrence.MaterializedAt = nil
-	occurrence.UpdatedAt = now
-	if strings.TrimSpace(occurrence.TestID) == "" {
-		occurrence.TestID = uuid.New().String()
+	testID := strings.TrimSpace(occurrence.TestID)
+	if testID == "" {
+		testID = scenarioScheduleOccurrenceMaterializationTestID(occurrence)
 	}
-	if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(occurrence, leaseTerm); err != nil {
-		return nil, err
+	if isNewOccurrence {
+		occurrence.UpdatedAt = now
+		if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(occurrence, leaseTerm); err != nil {
+			return nil, err
+		}
 	}
 	runName := strings.TrimSpace(schedule.RunNameTemplate)
 	if runName == "" {
@@ -1410,7 +1557,12 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		Name:       runName,
 		ScenarioID: schedule.ScenarioID,
 		ReleaseID:  schedule.ReleaseID,
-	}, occurrence.TestID, "QUEUED", leaseTerm)
+		creationActor: testCreationActor{
+			Type:        "system",
+			Subject:     schedule.OwnerSubject,
+			DisplayName: schedule.OwnerDisplayName,
+		},
+	}, testID, "QUEUED", leaseTerm)
 	if err == nil {
 		for _, group := range test.Groups {
 			if len(group.runtimeSecretValues) > 0 {
@@ -1545,6 +1697,33 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		return nil, err
 	}
 	return prepared, nil
+}
+
+func scenarioScheduleOccurrenceTestID(occurrenceID string) string {
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload:scenario-schedule-occurrence:"+strings.TrimSpace(occurrenceID))).String()
+}
+
+// scenarioScheduleOccurrenceMaterializationTestID keeps the original
+// occurrence-derived ID for first attempts, while operator retries/catch-ups
+// get a new deterministic ID from the revision committed by the resolution
+// CAS. A resumed occurrence is already a durable materializing anchor, so the
+// scheduler deliberately does not increment that revision before the test row
+// is persisted. Crash recovery therefore derives the same attempt ID.
+func scenarioScheduleOccurrenceMaterializationTestID(occurrence *storage.ScenarioScheduleOccurrence) string {
+	if occurrence == nil {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(occurrence.ReasonCode)) {
+	case "operator_retry", "operator_catch_up":
+		revision := occurrence.Revision
+		if revision < 1 {
+			revision = 1
+		}
+		seed := fmt.Sprintf("apexload:scenario-schedule-occurrence:%s:attempt:%d", strings.TrimSpace(occurrence.ID), revision)
+		return uuid.NewSHA1(uuid.NameSpaceURL, []byte(seed)).String()
+	default:
+		return scenarioScheduleOccurrenceTestID(occurrence.ID)
+	}
 }
 
 func (tr *TestRunner) failScheduledTestBeforeLaunchLocked(test *ManagedTest, now time.Time, message string) error {
@@ -1690,10 +1869,15 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 		// exists, resume materialization with the preassigned ID; this safely covers
 		// crashes between occurrence intent and test persistence.
 		if strings.TrimSpace(existing.TestID) == "" {
-			existing.TestID = uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload:scenario-schedule-occurrence:"+existing.ID)).String()
-			existing.UpdatedAt = now
-			if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(existing, leaseTerm); err != nil {
-				return false, nil, nil, err
+			candidateID := scenarioScheduleOccurrenceMaterializationTestID(existing)
+			if tr.tests[candidateID] != nil {
+				existing.TestID = candidateID
+				existing.UpdatedAt = now
+				if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(existing, leaseTerm); err != nil {
+					return false, nil, nil, err
+				}
+			} else {
+				return false, cloneScenarioScheduleOccurrence(existing), nil, nil
 			}
 		}
 		if recovered := tr.tests[existing.TestID]; recovered == nil {
@@ -1750,8 +1934,131 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 			status = "materialized"
 		}
 	}
-	if existing.ScheduleRevision != schedule.Revision && (status == "blocked" || status == "failed") {
-		return false, nil, nil, nil
+	if status == "blocked" && existing.ReasonCode == "approval_required" {
+		// Approval requests are revision-scoped. A schedule edit may replace the
+		// request, remove the policy, or resolve the request while this exact
+		// occurrence remains the durable planned_at anchor. Reconcile the current
+		// parent state without ever reattaching a rejected/superseded historical ID.
+		loadApproval := func(id string) (*storage.ScenarioScheduleApproval, error) {
+			if strings.TrimSpace(id) == "" {
+				return nil, nil
+			}
+			tr.mu.Unlock()
+			approval, loadErr := tr.scenarioStore.GetScenarioScheduleApproval(id)
+			tr.mu.Lock()
+			return approval, loadErr
+		}
+		resume := func(reason string) (bool, *storage.ScenarioScheduleOccurrence, *ManagedTest, error) {
+			existing.Status = "materializing"
+			existing.ReasonCode = reason
+			existing.ConflictSummary = ""
+			existing.TestID = ""
+			existing.UpdatedAt = now
+			if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(existing, leaseTerm); err != nil {
+				return true, nil, nil, err
+			}
+			return false, cloneScenarioScheduleOccurrence(existing), nil, nil
+		}
+		markBlocked := func(reasonCode, summary, requiredAction string) error {
+			existing.Status = "blocked"
+			existing.ReasonCode = reasonCode
+			existing.ConflictSummary = summary
+			existing.TestID = ""
+			existing.UpdatedAt = now
+			if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(existing, leaseTerm); err != nil {
+				return err
+			}
+			status = "blocked"
+			schedule.PendingApprovalID = ""
+			schedule.NextRequiredAction = requiredAction
+			schedule.LastError = summary
+			return nil
+		}
+
+		currentApprovalID := strings.TrimSpace(schedule.PendingApprovalID)
+		currentApprovalRequired := schedule.NextRequiredAction == "approval_required"
+		if currentApprovalRequired && currentApprovalID == "" {
+			summary := "schedule requires approval but has no current approval request"
+			if err := markBlocked("approval_state_inconsistent", summary, "operator_decision_required"); err != nil {
+				return true, nil, nil, err
+			}
+		} else if currentApprovalRequired {
+			approval, approvalErr := loadApproval(currentApprovalID)
+			if approvalErr != nil {
+				return true, nil, nil, approvalErr
+			}
+			approvalStatus := ""
+			if approval != nil && approval.ScheduleID == schedule.ID {
+				approvalStatus = strings.ToLower(strings.TrimSpace(approval.Status))
+			}
+			switch approvalStatus {
+			case "pending":
+				if existing.ApprovalID != currentApprovalID {
+					existing.ApprovalID = currentApprovalID
+					existing.ConflictSummary = "Schedule requires approval before materialization."
+					existing.UpdatedAt = now
+					if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(existing, leaseTerm); err != nil {
+						return true, nil, nil, err
+					}
+				}
+			case "approved":
+				schedule.PendingApprovalID = ""
+				schedule.NextRequiredAction = ""
+				schedule.LastError = ""
+				return resume("approval_granted")
+			case "rejected":
+				if err := markBlocked("approval_rejected", "schedule approval rejected", "approval_rejected"); err != nil {
+					return true, nil, nil, err
+				}
+			default:
+				summary := "current schedule approval is missing or no longer pending"
+				if err := markBlocked("approval_state_inconsistent", summary, "operator_decision_required"); err != nil {
+					return true, nil, nil, err
+				}
+			}
+		} else {
+			approval, approvalErr := loadApproval(existing.ApprovalID)
+			if approvalErr != nil {
+				return true, nil, nil, approvalErr
+			}
+			approvalStatus := ""
+			if approval != nil && approval.ScheduleID == schedule.ID {
+				approvalStatus = strings.ToLower(strings.TrimSpace(approval.Status))
+			}
+			switch approvalStatus {
+			case "approved":
+				return resume("approval_granted")
+			case "rejected":
+				if err := markBlocked("approval_rejected", "schedule approval rejected", "approval_rejected"); err != nil {
+					return true, nil, nil, err
+				}
+			case "pending", "superseded":
+				// The parent no longer requires this revision-scoped request.
+				return resume("approval_no_longer_required")
+			default:
+				summary := "blocked occurrence references a missing or invalid approval request"
+				if err := markBlocked("approval_state_inconsistent", summary, "operator_decision_required"); err != nil {
+					return true, nil, nil, err
+				}
+			}
+		}
+	}
+	if status == "blocked" && schedule.LastOccurrence != nil && schedule.LastOccurrence.ID == existing.ID &&
+		schedule.LastOccurrence.Revision == existing.Revision {
+		switch existing.ReasonCode {
+		case "approval_required":
+			if schedule.NextRequiredAction == "approval_required" && schedule.PendingApprovalID == existing.ApprovalID {
+				return true, nil, nil, nil
+			}
+		case "approval_rejected":
+			if schedule.NextRequiredAction == "approval_rejected" && schedule.PendingApprovalID == "" {
+				return true, nil, nil, nil
+			}
+		case "approval_state_inconsistent":
+			if schedule.NextRequiredAction == "operator_decision_required" && schedule.PendingApprovalID == "" {
+				return true, nil, nil, nil
+			}
+		}
 	}
 	schedule.LastOccurrence = cloneScenarioScheduleOccurrence(existing)
 	schedule.UpdatedAt = now
@@ -1792,6 +2099,12 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 		case "approval_required":
 			schedule.NextRequiredAction = "approval_required"
 			schedule.PendingApprovalID = existing.ApprovalID
+		case "approval_rejected":
+			schedule.PendingApprovalID = ""
+			schedule.NextRequiredAction = "approval_rejected"
+		case "approval_state_inconsistent":
+			schedule.PendingApprovalID = ""
+			schedule.NextRequiredAction = "operator_decision_required"
 		case "schedule_conflict":
 			schedule.NextRequiredAction = "resolve_conflict"
 		case "missed_run_requires_decision":
@@ -2108,10 +2421,6 @@ func (tr *TestRunner) attachLatestScenarioScheduleOccurrenceLocked(schedule *sto
 }
 
 func (tr *TestRunner) DeleteScenarioSchedule(scenarioID string, scheduleID string) (bool, error) {
-	leaseTerm, err := tr.captureExecutionLeaseTerm()
-	if err != nil {
-		return false, err
-	}
 	tr.refreshScenariosForHARead(true)
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
@@ -2131,13 +2440,12 @@ func (tr *TestRunner) DeleteScenarioSchedule(scenarioID string, scheduleID strin
 	}
 	if tr.scenarioStore != nil {
 		var result storage.ScheduleDeleteResult
-		if tr.durableExecutionFence {
-			store, ok := tr.scenarioStore.(leaseTermFencedScenarioScheduleDeletePersistence)
-			if !ok {
-				return true, fmt.Errorf("scenario schedule storage does not support lease-term-fenced guarded deletion")
-			}
-			result, err = store.DeleteScenarioScheduleGuardedIfLeaseTermHeld(scheduleID, executionLeaseName, leaseTerm.ownerID, leaseTerm.generation)
-		} else if store, ok := tr.scenarioStore.(guardedScenarioScheduleDeletePersistence); ok {
+		var err error
+		// Metadata deletion is replica-safe. The guarded transaction serializes
+		// with the leader's current-parent occurrence claim: either the claim wins
+		// and deletion reports a conflict, or deletion wins and the claim sees a
+		// missing parent.
+		if store, ok := tr.scenarioStore.(guardedScenarioScheduleDeletePersistence); ok {
 			result, err = store.DeleteScenarioScheduleGuarded(scheduleID)
 		} else {
 			err = tr.scenarioStore.DeleteScenarioSchedule(scheduleID)
@@ -2170,6 +2478,9 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 	scenario, ok := tr.scenarios[scenarioID]
 	if !ok {
 		return nil, fmt.Errorf("scenario not found: %s", scenarioID)
+	}
+	if existing != nil && req.ExpectedRevision != nil && *req.ExpectedRevision != existing.Revision {
+		return nil, fmt.Errorf("%w: expected revision %d, current revision %d", errScheduleConcurrentChange, *req.ExpectedRevision, existing.Revision)
 	}
 	name := strings.TrimSpace(req.Name)
 	if name == "" {
@@ -2286,7 +2597,7 @@ func (tr *TestRunner) upsertScenarioScheduleLocked(scenarioID string, scheduleID
 				return nil, err
 			}
 			if !changed {
-				return nil, fmt.Errorf("scenario schedule %q changed or was deleted; reload and retry", schedule.ID)
+				return nil, fmt.Errorf("%w: scenario schedule %q changed or was deleted; reload and retry", errScheduleConcurrentChange, schedule.ID)
 			}
 			if existing == nil {
 				scenario.Schedules = append(scenario.Schedules, cloneScenarioSchedule(schedule))
@@ -2739,6 +3050,8 @@ func (tr *TestRunner) prepareTestStartForScheduleSweepLockedWithTerm(id string, 
 	current.PendingReason = updated.PendingReason
 	current.QueuePosition = updated.QueuePosition
 	current.Error = updated.Error
+	current.StartedBySubject = updated.StartedBySubject
+	current.StartedByDisplayName = updated.StartedByDisplayName
 	current.executionFence = updated.executionFence
 	current.executionCtx = updated.executionCtx
 	current.cancel = updated.cancel

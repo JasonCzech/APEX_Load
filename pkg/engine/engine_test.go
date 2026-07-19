@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -827,5 +828,117 @@ func TestMultiGroup_RunOpenWorkloadOverlapsSlowIterations(t *testing.T) {
 	}
 	if elapsed := time.Since(started); elapsed > 900*time.Millisecond {
 		t.Fatalf("expected open workload to overlap slow iterations, got %v", elapsed)
+	}
+}
+
+func TestMultiGroupRunResultPopulatesCumulativeGroupCounters(t *testing.T) {
+	groupScript := func(iterations int) *dsl.Script {
+		return &dsl.Script{
+			Name:     "group-results",
+			Protocol: "stub",
+			Config:   dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: iterations}},
+			Actions:  []dsl.Action{{Name: "transaction", Type: "request", Target: "/"}},
+		}
+	}
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{
+			{Name: "buyers", Script: groupScript(2), VUsers: 1},
+			{Name: "sellers", Script: groupScript(3), VUsers: 1},
+		},
+		Duration: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+	result, err := mge.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(result.Groups) != 2 {
+		t.Fatalf("group results = %#v", result.Groups)
+	}
+	if got := result.Groups[0]; got.Name != "buyers" || got.TotalTransactions != 2 || got.TotalErrors != 0 {
+		t.Fatalf("buyers result = %#v", got)
+	}
+	if got := result.Groups[1]; got.Name != "sellers" || got.TotalTransactions != 3 || got.TotalErrors != 0 {
+		t.Fatalf("sellers result = %#v", got)
+	}
+}
+
+func TestMultiGroupOpenWorkloadPreBaselineDoesNotCreateStartupCatchUp(t *testing.T) {
+	const arrivals = 1100
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{{
+			Name: "open-group",
+			Script: &dsl.Script{
+				Name:     "pre-baseline-open-workload",
+				Protocol: "stub",
+				Config: dsl.ScriptConfig{
+					RunLogic: dsl.RunLogicConfig{Iterations: arrivals, WorkloadModel: "open"},
+					Pacing:   dsl.PacingConfig{Type: "tps", TPS: 20_000},
+				},
+				Actions: []dsl.Action{{Name: "transaction", Type: "request", Target: "/"}},
+			},
+			VUsers: 1,
+		}},
+		Duration:    2 * time.Second,
+		PreBaseline: 100 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+
+	result, err := mge.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.TotalTransactions != arrivals {
+		t.Fatalf("transactions = %d, want all %d arrivals after pre-baseline", result.TotalTransactions, arrivals)
+	}
+	if result.FinalSnapshot.Telemetry != nil && result.FinalSnapshot.Telemetry.SheddedArrivals != 0 {
+		t.Fatalf("pre-baseline created %d shed arrivals", result.FinalSnapshot.Telemetry.SheddedArrivals)
+	}
+}
+
+func TestNewMultiGroupRejectsDuplicateEffectiveNames(t *testing.T) {
+	script := func(name string) *dsl.Script {
+		return &dsl.Script{
+			Name:     name,
+			Protocol: "stub",
+			Actions:  []dsl.Action{{Name: "transaction", Type: "request", Target: "/"}},
+		}
+	}
+	tests := []struct {
+		name   string
+		groups []GroupConfig
+	}{
+		{
+			name: "explicit names",
+			groups: []GroupConfig{
+				{Name: "buyers", Script: script("first"), VUsers: 1},
+				{Name: "buyers", Script: script("second"), VUsers: 1},
+			},
+		},
+		{
+			name: "explicit and script fallback",
+			groups: []GroupConfig{
+				{Name: "buyers", Script: script("first"), VUsers: 1},
+				{Script: script("buyers"), VUsers: 1},
+			},
+		},
+		{
+			name: "normalized explicit names",
+			groups: []GroupConfig{
+				{Name: "  Buyers   East ", Script: script("first"), VUsers: 1},
+				{Name: "buyers east", Script: script("second"), VUsers: 1},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := NewMultiGroup(MultiGroupConfig{Groups: tt.groups, Duration: time.Second}); err == nil || !strings.Contains(err.Error(), "effective group name") {
+				t.Fatalf("NewMultiGroup error = %v, want duplicate effective group name", err)
+			}
+		})
 	}
 }

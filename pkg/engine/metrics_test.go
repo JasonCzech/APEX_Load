@@ -47,6 +47,10 @@ func TestMetricsCollector_RecordAndCount(t *testing.T) {
 	if got := mc.TotalErrors(); got != 1 {
 		t.Errorf("TotalErrors after business transactions = %d, want 1", got)
 	}
+	transactions, errors := mc.GroupRunTotals("buyers")
+	if transactions != 1 || errors != 1 {
+		t.Fatalf("buyers cumulative totals = (%d, %d), want (1, 1)", transactions, errors)
+	}
 }
 
 func TestMetricsCollector_RecordTracksDroppedResults(t *testing.T) {

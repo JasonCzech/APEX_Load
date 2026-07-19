@@ -124,6 +124,65 @@ func (tr *TestRunner) StartTestWithOptions(id string, opts StartTestOptions) err
 	return tr.startTestWithOptionsAndExpectedTerm(id, opts, nil)
 }
 
+func (tr *TestRunner) StartTestWithActor(id string, opts StartTestOptions, actor testCreationActor) error {
+	opts.actor = actor
+	return tr.startTestWithOptionsAndExpectedTerm(id, opts, nil)
+}
+
+type testActorAttributionSnapshot struct {
+	subject     string
+	displayName string
+}
+
+func applyTestStartedByActor(test *ManagedTest, actor testCreationActor) (testActorAttributionSnapshot, bool) {
+	if test == nil {
+		return testActorAttributionSnapshot{}, false
+	}
+	if strings.TrimSpace(actor.Subject) == "" {
+		actor.Subject = test.CreatedBySubject
+		actor.DisplayName = test.CreatedByDisplayName
+	}
+	if strings.TrimSpace(actor.Subject) == "" {
+		return testActorAttributionSnapshot{}, false
+	}
+	snapshot := testActorAttributionSnapshot{subject: test.StartedBySubject, displayName: test.StartedByDisplayName}
+	test.StartedBySubject = strings.TrimSpace(actor.Subject)
+	test.StartedByDisplayName = strings.TrimSpace(actor.DisplayName)
+	return snapshot, snapshot.subject != test.StartedBySubject || snapshot.displayName != test.StartedByDisplayName
+}
+
+func restoreTestStartedByActor(test *ManagedTest, snapshot testActorAttributionSnapshot) {
+	if test == nil {
+		return
+	}
+	test.StartedBySubject = snapshot.subject
+	test.StartedByDisplayName = snapshot.displayName
+}
+
+func applyTestStoppedByActor(test *ManagedTest, actor testCreationActor) (testActorAttributionSnapshot, bool) {
+	if test == nil || strings.TrimSpace(actor.Subject) == "" {
+		return testActorAttributionSnapshot{}, false
+	}
+	snapshot := testActorAttributionSnapshot{subject: test.StoppedBySubject, displayName: test.StoppedByDisplayName}
+	// stopped_by identifies the operator who initiated teardown. A later retry
+	// may come from another operator (or an automatic recovery worker), but it
+	// must not rewrite the durable provenance of the original stop request.
+	if strings.TrimSpace(snapshot.subject) != "" {
+		return snapshot, false
+	}
+	test.StoppedBySubject = strings.TrimSpace(actor.Subject)
+	test.StoppedByDisplayName = strings.TrimSpace(actor.DisplayName)
+	return snapshot, snapshot.subject != test.StoppedBySubject || snapshot.displayName != test.StoppedByDisplayName
+}
+
+func restoreTestStoppedByActor(test *ManagedTest, snapshot testActorAttributionSnapshot) {
+	if test == nil {
+		return
+	}
+	test.StoppedBySubject = snapshot.subject
+	test.StoppedByDisplayName = snapshot.displayName
+}
+
 // startTestWithOptionsAndExpectedTerm runs the ordinary start state machine,
 // optionally pinning every ownership claim to an immutable execution lease
 // term. Execution-plan goroutines use the pinned form so an old goroutine can
@@ -357,7 +416,11 @@ func (tr *TestRunner) evaluateStartGatesLocked(id string, test *ManagedTest, opt
 		return false, err
 	}
 	if blocked, reason := tr.evaluateQuotaBlockLocked(test, ""); blocked {
+		actorSnapshot, actorChanged := applyTestStartedByActor(test, opts.actor)
 		if err := tr.markTestPendingLocked(test, reason); err != nil {
+			if actorChanged {
+				restoreTestStartedByActor(test, actorSnapshot)
+			}
 			return false, err
 		}
 		return true, nil
@@ -443,6 +506,7 @@ func (tr *TestRunner) beginScriptShakeoutIfNeededWithExpectedTerm(id string, opt
 	previousPendingReason := test.PendingReason
 	previousQueuePosition := test.QueuePosition
 	previousError := test.Error
+	actorSnapshot, actorChanged := applyTestStartedByActor(test, opts.actor)
 	test.Status = "SHAKEOUT"
 	test.PendingSince = nil
 	test.PendingReason = ""
@@ -454,6 +518,9 @@ func (tr *TestRunner) beginScriptShakeoutIfNeededWithExpectedTerm(id string, opt
 		test.PendingReason = previousPendingReason
 		test.QueuePosition = previousQueuePosition
 		test.Error = previousError
+		if actorChanged {
+			restoreTestStartedByActor(test, actorSnapshot)
+		}
 		return nil, fmt.Errorf("persist script shakeout state: %w", err)
 	}
 	tr.broadcastEvent("script_shakeout_started", test)
@@ -542,7 +609,11 @@ func (tr *TestRunner) prepareTestStartLockedWithExpectedTerm(id string, opts Sta
 	previousExecutionCtx := test.executionCtx
 	previousCancel := test.cancel
 	previousBackend := test.executionBackend
+	actorSnapshot, actorChanged := applyTestStartedByActor(test, opts.actor)
 	if err := tr.markTestInitializingLockedWithExpectedTerm(test, expectedTerm); err != nil {
+		if actorChanged {
+			restoreTestStartedByActor(test, actorSnapshot)
+		}
 		return nil, err
 	}
 	if err := tr.saveManagedTestStartRecord(test); err != nil {
@@ -557,6 +628,9 @@ func (tr *TestRunner) prepareTestStartLockedWithExpectedTerm(id string, opts Sta
 		test.executionCtx = previousExecutionCtx
 		test.cancel = previousCancel
 		test.executionBackend = previousBackend
+		if actorChanged {
+			restoreTestStartedByActor(test, actorSnapshot)
+		}
 		return nil, fmt.Errorf("persist initializing test state: %w", err)
 	}
 	if previousCancel != nil {
@@ -668,7 +742,11 @@ func (tr *TestRunner) lockedTestStatus(id string) (string, *ManagedTest, string,
 }
 
 func (tr *TestRunner) StopTest(id string) error {
-	return tr.stopTestWithContextAndCIReason(context.Background(), id, true, "")
+	return tr.stopTestWithContextAndCIReasonAndActor(context.Background(), id, true, "", testCreationActor{})
+}
+
+func (tr *TestRunner) StopTestAsActor(id string, actor testCreationActor) error {
+	return tr.stopTestWithContextAndCIReasonAndActor(context.Background(), id, true, "", actor)
 }
 
 func (tr *TestRunner) stopTest(id string, requireLeadership bool) error {
@@ -683,7 +761,15 @@ func (tr *TestRunner) AbortCIRun(id string, reason string) error {
 	return tr.stopTestWithContextAndCIReason(context.Background(), id, true, normalizeCIAbortReason(reason))
 }
 
+func (tr *TestRunner) AbortCIRunAsActor(id string, reason string, actor testCreationActor) error {
+	return tr.stopTestWithContextAndCIReasonAndActor(context.Background(), id, true, normalizeCIAbortReason(reason), actor)
+}
+
 func (tr *TestRunner) stopTestWithContextAndCIReason(ctx context.Context, id string, requireLeadership bool, abortReason string) error {
+	return tr.stopTestWithContextAndCIReasonAndActor(ctx, id, requireLeadership, abortReason, testCreationActor{})
+}
+
+func (tr *TestRunner) stopTestWithContextAndCIReasonAndActor(ctx context.Context, id string, requireLeadership bool, abortReason string, actor testCreationActor) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -731,6 +817,7 @@ func (tr *TestRunner) stopTestWithContextAndCIReason(ctx context.Context, id str
 		return nil
 	}
 	previousError := test.Error
+	actorSnapshot, actorChanged := applyTestStoppedByActor(test, actor)
 	if abortReason != "" {
 		test.Error = "ci abort reason: " + abortReason
 	}
@@ -741,24 +828,29 @@ func (tr *TestRunner) stopTestWithContextAndCIReason(ctx context.Context, id str
 		// fail-closed STOPPING reservation, but retry idempotent backend teardown
 		// instead of telling operators that no work remains.
 		tr.cancelAllVUserScaleRampsLocked(test)
-		if test.Error != previousError {
+		if test.Error != previousError || actorChanged {
 			if err := tr.saveManagedTestRecord(test); err != nil {
 				test.Error = previousError
+				if actorChanged {
+					restoreTestStoppedByActor(test, actorSnapshot)
+				}
 				tr.mu.Unlock()
 				return fmt.Errorf("persist CI abort reason: %w", err)
 			}
 		}
-	case "QUEUED", "PENDING", "RESERVED", "SHAKEOUT", "SHAKEOUT_REVIEW", "INITIALIZING":
+	case "QUEUED", "PENDING", "RESERVED", "SCHEDULED", "SHAKEOUT", "SHAKEOUT_REVIEW", "INITIALIZING":
 		now := time.Now().UTC()
 		previousPendingSince := cloneTimePtr(test.PendingSince)
 		previousPendingReason := test.PendingReason
 		previousQueuePosition := test.QueuePosition
 		previousEndedAt := cloneTimePtr(test.EndedAt)
+		previousScheduledStartAt := cloneTimePtr(test.ScheduledStartAt)
 		test.Status = "ABORTED"
 		test.PendingSince = nil
 		test.PendingReason = ""
 		test.QueuePosition = 0
 		test.EndedAt = &now
+		test.ScheduledStartAt = nil
 		if test.Error == "" {
 			test.Error = "test cancelled before start"
 		}
@@ -768,7 +860,11 @@ func (tr *TestRunner) stopTestWithContextAndCIReason(ctx context.Context, id str
 			test.PendingReason = previousPendingReason
 			test.QueuePosition = previousQueuePosition
 			test.EndedAt = previousEndedAt
+			test.ScheduledStartAt = previousScheduledStartAt
 			test.Error = previousError
+			if actorChanged {
+				restoreTestStoppedByActor(test, actorSnapshot)
+			}
 			tr.mu.Unlock()
 			return fmt.Errorf("persist aborted test state: %w", err)
 		}
@@ -799,11 +895,17 @@ func (tr *TestRunner) stopTestWithContextAndCIReason(ctx context.Context, id str
 		if err := tr.saveManagedTestRecord(test); err != nil {
 			test.Status = status
 			test.Error = previousError
+			if actorChanged {
+				restoreTestStoppedByActor(test, actorSnapshot)
+			}
 			tr.mu.Unlock()
 			return fmt.Errorf("persist stopping test state: %w", err)
 		}
 		tr.cancelAllVUserScaleRampsLocked(test)
 	default:
+		if actorChanged {
+			restoreTestStoppedByActor(test, actorSnapshot)
+		}
 		tr.mu.Unlock()
 		return fmt.Errorf("test is %s and cannot be stopped", status)
 	}
@@ -849,8 +951,15 @@ func (tr *TestRunner) stopTestWithContextAndCIReason(ctx context.Context, id str
 				if test.Status == "STOPPING" {
 					test.Status = status
 					test.Error = previousError
+					if actorChanged {
+						restoreTestStoppedByActor(test, actorSnapshot)
+					}
 					if persistErr := tr.saveManagedTestRecord(test); persistErr != nil {
 						test.Status = "STOPPING"
+						if actorChanged {
+							test.StoppedBySubject = strings.TrimSpace(actor.Subject)
+							test.StoppedByDisplayName = strings.TrimSpace(actor.DisplayName)
+						}
 						if abortReason != "" {
 							test.Error = "ci abort reason: " + abortReason
 						}
@@ -866,8 +975,15 @@ func (tr *TestRunner) stopTestWithContextAndCIReason(ctx context.Context, id str
 			if test.Status == "STOPPING" {
 				test.Status = status
 				test.Error = previousError
+				if actorChanged {
+					restoreTestStoppedByActor(test, actorSnapshot)
+				}
 				if persistErr := tr.saveManagedTestRecord(test); persistErr != nil {
 					test.Status = "STOPPING"
+					if actorChanged {
+						test.StoppedBySubject = strings.TrimSpace(actor.Subject)
+						test.StoppedByDisplayName = strings.TrimSpace(actor.DisplayName)
+					}
 					if abortReason != "" {
 						test.Error = "ci abort reason: " + abortReason
 					}
@@ -899,6 +1015,10 @@ func (tr *TestRunner) enqueueStopTeardownRetry(testID string) {
 
 func (tr *TestRunner) AbortTest(id string) error {
 	return tr.StopTest(id)
+}
+
+func (tr *TestRunner) AbortTestAsActor(id string, actor testCreationActor) error {
+	return tr.StopTestAsActor(id, actor)
 }
 
 func (tr *TestRunner) MarkTestAbortReason(id string, reason string) error {
@@ -2527,7 +2647,7 @@ func (tr *TestRunner) requestStopIfRunning(test *ManagedTest, warningMessage str
 	}
 }
 
-func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts) (context.Context, chan struct{}, chan struct{}, bool, error) {
+func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts) (context.Context, chan struct{}, chan time.Time, bool, error) {
 	now := time.Now()
 	tr.mu.Lock()
 	previousExecutionCtx := test.executionCtx
@@ -2585,9 +2705,9 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 	tr.startStageSchedules(ctx, test, mge)
 
 	metricsDone := make(chan struct{})
-	metricsStopped := make(chan struct{})
+	metricsStopped := make(chan time.Time, 1)
 	go func() {
-		tr.broadcastMetrics(test, mge, artifacts, metricsDone)
+		metricsStopped <- tr.broadcastMetrics(test, mge, artifacts, metricsDone)
 		close(metricsStopped)
 	}()
 

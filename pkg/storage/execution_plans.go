@@ -81,6 +81,7 @@ type ExecutionPlanScheduleOccurrence struct {
 	Status          string     `json:"status"`
 	ReasonCode      string     `json:"reason_code,omitempty"`
 	RunID           string     `json:"run_id,omitempty"`
+	ApprovalID      string     `json:"approval_id,omitempty"`
 	ConflictSummary string     `json:"conflict_summary,omitempty"`
 	// Actor* is the immutable authority snapshot captured when this occurrence
 	// was claimed. It deliberately lives on the occurrence as well as the parent

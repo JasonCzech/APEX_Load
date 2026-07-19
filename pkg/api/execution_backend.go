@@ -122,7 +122,24 @@ func (localExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	err = localExecutionRunError(ctx, err)
 
 	close(metricsDone)
-	<-metricsStopped
+	lastPublishedSnapshot := <-metricsStopped
+	finalSnapshot := engine.MetricsSnapshot{}
+	if result != nil {
+		finalSnapshot = result.FinalSnapshot
+	}
+	// Run can return a nil result after recording partial work (for example, a
+	// later init-once failure). Its deferred collector Stop still drains that
+	// work into LatestSnapshot, so publish it through the normal terminal path.
+	if latest, ok := mge.LatestSnapshot(); ok && (finalSnapshot.Timestamp.IsZero() || latest.Timestamp.After(finalSnapshot.Timestamp)) {
+		finalSnapshot = latest
+	}
+	tr.mu.RLock()
+	groupVUsers := make(map[string]int, len(test.Groups))
+	for _, group := range test.Groups {
+		groupVUsers[group.Name] = group.VUsers
+	}
+	tr.mu.RUnlock()
+	tr.publishFinalLocalMetrics(test, finalSnapshot, lastPublishedSnapshot, groupVUsers, artifacts)
 
 	endTime := time.Now()
 	tr.mu.RLock()

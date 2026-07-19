@@ -93,7 +93,11 @@ export default function SwaggerDocsPage({
     [allowedOperations, category, myAccessOnly, operationsWithCatalog, query],
   )
   const groupedOperations = useMemo(() => groupByCategory(filteredOperations), [filteredOperations])
-  useApiGuideTopbarContribution('swagger', 'Swagger Docs')
+  // Mirror ApiGuidePage's "any administrator" gate so the admin-only guide chip stays
+  // visible while navigating across the shared API-guide toggle from the Swagger tab.
+  const isAdmin = ['manage_users', 'manage_user_bindings', 'view_user_activity', 'manage_service_accounts', 'manage_system']
+    .some(operation => allowedOperations.has(operation))
+  useApiGuideTopbarContribution('swagger', 'Swagger Docs', undefined, isAdmin)
 
   useEffect(() => {
     let cancelled = false

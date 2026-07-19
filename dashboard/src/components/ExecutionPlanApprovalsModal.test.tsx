@@ -45,7 +45,7 @@ describe('ExecutionPlanApprovalsModal accessibility', () => {
     const onClose = vi.fn()
     apiMock.listExecutionPlanApprovals.mockResolvedValue({ approvals: [], count: 0 })
     await act(async () => {
-      root.render(<ExecutionPlanApprovalsModal plan={plan} canManage onClose={onClose} />)
+      root.render(<ExecutionPlanApprovalsModal plan={plan} canAdmin onClose={onClose} />)
     })
     await flush()
 
@@ -64,7 +64,7 @@ describe('ExecutionPlanApprovalsModal accessibility', () => {
   it('announces API failures', async () => {
     apiMock.listExecutionPlanApprovals.mockRejectedValue(new ApiError('approvals unavailable', 503))
     await act(async () => {
-      root.render(<ExecutionPlanApprovalsModal plan={plan} canManage onClose={() => {}} />)
+      root.render(<ExecutionPlanApprovalsModal plan={plan} canAdmin onClose={() => {}} />)
     })
     await flush()
     expect(container.querySelector('[role="alert"]')?.textContent).toBe('approvals unavailable')

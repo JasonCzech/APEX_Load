@@ -55,11 +55,6 @@ func (s *Server) handleCreateTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if actorType == "user" || actorType == "service_account" {
-		// AttributeTestCreated sets CreatedBySubject/CreatedByDisplayName under
-		// tr.mu; writing them here directly would race the run/read paths.
-		s.runner.AttributeTestCreated(test.ID, actorSubject, actorDisplayName)
-	}
 	s.recordAuditEvent(r, "test.create", "success", "test", test.ID, test.ProjectID, map[string]any{"name": test.Name, "status": test.Status})
 
 	writeJSON(w, http.StatusCreated, maskManagedTest(test))
@@ -246,6 +241,8 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	req.actor = testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
 	if err := s.runner.StartTestWithOptions(id, req); err != nil {
 		var capacityErr *CapacityShortfallError
 		if errors.As(err, &capacityErr) {
@@ -294,16 +291,13 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
-	if actorType == "user" || actorType == "service_account" {
-		s.runner.AttributeTestStarted(id, actorSubject, actorDisplayName)
-	}
 	test, ok := s.waitForStartResponseState(id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "test not found")
 		return
 	}
-	if test.Status == "PENDING" {
+	switch strings.ToUpper(strings.TrimSpace(test.Status)) {
+	case "PENDING":
 		details := map[string]any{"status": test.Status, "pending_reason": test.PendingReason, "queue_position": test.QueuePosition}
 		s.recordAuditEvent(r, "test.start", "pending", "test", id, test.ProjectID, details)
 		s.recordAuditEvent(r, "capacity.fair_share.defer", "blocked", "test", id, test.ProjectID, details)
@@ -313,9 +307,49 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 			"message": "test queued until project capacity is available",
 		})
 		return
+	case "INITIALIZING":
+		details := map[string]any{"status": test.Status}
+		s.recordAuditEvent(r, "test.start", "accepted", "test", id, test.ProjectID, details)
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"status":  "initializing",
+			"test_id": id,
+			"test":    maskManagedTest(test),
+		})
+		return
+	case "RUNNING", "PAUSED":
+		s.recordAuditEvent(r, "test.start", "success", "test", id, test.ProjectID, map[string]any{"status": test.Status})
+		writeJSON(w, http.StatusOK, map[string]any{"status": "started", "test_id": id, "test": maskManagedTest(test)})
+		return
+	case "COMPLETE":
+		// Very short and iteration-bounded runs can legitimately finish before the
+		// synchronous response window closes. Report the authoritative terminal
+		// state instead of pretending the run is still starting.
+		s.recordAuditEvent(r, "test.start", "success", "test", id, test.ProjectID, map[string]any{"status": test.Status})
+		writeJSON(w, http.StatusOK, map[string]any{"status": "complete", "test_id": id, "test": maskManagedTest(test)})
+		return
+	case "FAILED":
+		s.recordAuditEvent(r, "test.start", "failure", "test", id, test.ProjectID, map[string]any{"status": test.Status})
+		writeError(w, http.StatusInternalServerError, firstNonEmpty(test.Error, "test failed during startup"))
+		return
+	case "ABORTED":
+		s.recordAuditEvent(r, "test.start", "failure", "test", id, test.ProjectID, map[string]any{"status": test.Status})
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":   "test was aborted before execution started",
+			"status":  "aborted",
+			"test_id": id,
+			"test":    maskManagedTest(test),
+		})
+		return
+	default:
+		s.recordAuditEvent(r, "test.start", "failure", "test", id, test.ProjectID, map[string]any{"status": test.Status})
+		writeJSON(w, http.StatusConflict, map[string]any{
+			"error":   "test did not enter a runnable state",
+			"status":  strings.ToLower(strings.TrimSpace(test.Status)),
+			"test_id": id,
+			"test":    maskManagedTest(test),
+		})
+		return
 	}
-	s.recordAuditEvent(r, "test.start", "success", "test", id, test.ProjectID, map[string]any{"status": test.Status})
-	writeJSON(w, http.StatusOK, map[string]any{"status": "started", "test_id": id, "test": maskManagedTest(test)})
 }
 
 const startResponseStateTimeout = 750 * time.Millisecond
@@ -408,13 +442,10 @@ func (s *Server) handleStopTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	if err := s.runner.StopTest(id); err != nil {
+	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	if err := s.runner.StopTestAsActor(id, testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
-	}
-	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
-	if actorType == "user" || actorType == "service_account" {
-		s.runner.AttributeTestStopped(id, actorSubject, actorDisplayName)
 	}
 	projectID := ""
 	if test, ok := s.runner.GetTest(id); ok {
@@ -429,13 +460,10 @@ func (s *Server) handleAbortTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := r.PathValue("id")
-	if err := s.runner.AbortTest(id); err != nil {
+	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	if err := s.runner.AbortTestAsActor(id, testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
-	}
-	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
-	if actorType == "user" || actorType == "service_account" {
-		s.runner.AttributeTestStopped(id, actorSubject, actorDisplayName)
 	}
 	projectID := ""
 	if test, ok := s.runner.GetTest(id); ok {

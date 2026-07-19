@@ -12,6 +12,20 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
+type failFastStartBackend struct{}
+
+func (failFastStartBackend) Run(runner *TestRunner, test *ManagedTest) {
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	if runner.tests[test.ID] != test {
+		return
+	}
+	now := time.Now().UTC()
+	test.Status = "FAILED"
+	test.Error = "synthetic startup failure"
+	test.EndedAt = &now
+}
+
 func TestHandleStartTestReturnsCapacityShortfallPayload(t *testing.T) {
 	store := &metricsStoreSpy{}
 	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
@@ -160,6 +174,104 @@ func TestWaitForStartResponseStateObservesRunningTransition(t *testing.T) {
 		t.Fatalf("status = %q, want RUNNING", observed.Status)
 	}
 	<-transitioned
+}
+
+func TestHandleStartTestDoesNotReportFastFailureAsStarted(t *testing.T) {
+	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.execution = failFastStartBackend{}
+	server.runner.StoreScript(&dsl.Script{
+		ID:       "script-api-fast-start-failure",
+		Name:     "API Fast Start Failure Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	testRun, err := server.runner.CreateTest(CreateTestRequest{
+		Name:     "API Fast Start Failure",
+		Duration: "30s",
+		ScriptID: "script-api-fast-start-failure",
+		VUsers:   1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tests/"+testRun.ID+"/start", nil)
+	req.Header.Set("X-Auth-Request-User", "starter@example.com")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusInternalServerError, resp.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+	if payload["status"] == "started" {
+		t.Fatalf("failed startup was reported as started: %#v", payload)
+	}
+	stored, ok := server.runner.GetTest(testRun.ID)
+	if !ok || stored.Status != "FAILED" {
+		t.Fatalf("stored status = %#v, want FAILED", stored)
+	}
+	if stored.StartedBySubject != "dev-mode" {
+		t.Fatalf("started_by_subject = %q, want dev-mode", stored.StartedBySubject)
+	}
+}
+
+func TestHandleStopScheduledTestPersistsActorAndClearsSchedule(t *testing.T) {
+	store := &metricsStoreSpy{}
+	server := NewServer(ServerConfig{Store: store, MaxConcurrent: 2, Addr: ":8080"})
+	server.runner.StoreScript(&dsl.Script{
+		ID:       "script-api-scheduled-stop",
+		Name:     "API Scheduled Stop Script",
+		Protocol: "http",
+		Version:  "1.0.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scheduledAt := time.Now().UTC().Add(time.Hour)
+	testRun, err := server.runner.CreateTest(CreateTestRequest{
+		Name:             "API Scheduled Stop",
+		Duration:         "30s",
+		ScriptID:         "script-api-scheduled-stop",
+		VUsers:           1,
+		ScheduledStartAt: &scheduledAt,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest returned error: %v", err)
+	}
+	if testRun.Status != "SCHEDULED" {
+		t.Fatalf("created status = %q, want SCHEDULED", testRun.Status)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tests/"+testRun.ID+"/stop", nil)
+	req.Header.Set("X-Auth-Request-User", "stopper@example.com")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	stored, ok := server.runner.GetTest(testRun.ID)
+	if !ok || stored.Status != "ABORTED" {
+		t.Fatalf("stored test = %#v, want ABORTED", stored)
+	}
+	if stored.ScheduledStartAt != nil {
+		t.Fatalf("scheduled_start_at = %v, want nil", stored.ScheduledStartAt)
+	}
+	if stored.StoppedBySubject != "dev-mode" {
+		t.Fatalf("stopped_by_subject = %q, want dev-mode", stored.StoppedBySubject)
+	}
+	if len(store.savedTests) == 0 {
+		t.Fatal("expected durable test writes")
+	}
+	last := store.savedTests[len(store.savedTests)-1]
+	if last.Status != "ABORTED" || last.StoppedBySubject != "dev-mode" || last.ScheduledStartAt != nil {
+		t.Fatalf("durable terminal record = %#v", last)
+	}
 }
 
 func TestHandleStartTestReturnsScriptShakeoutReviewPayload(t *testing.T) {

@@ -1473,6 +1473,183 @@ describe('TestHub', () => {
     }))
   })
 
+  it('edits and clones the complete stored scenario aggregate without clearing hidden fields', async () => {
+    const onSelectTest = vi.fn()
+    apiMock.listScripts.mockResolvedValue({
+      scripts: [{ id: 'script-1', name: 'Orders Flow', protocol: 'kafka', version: '1.0.0', created_at: '2026-05-12T00:00:00Z' }],
+      count: 1,
+    })
+    apiMock.listDataPools.mockResolvedValue({
+      data_pools: [
+        { id: 'pool-1', name: 'Customers', project_id: 'project-1', created_at: '', updated_at: '' },
+        { id: 'pool-2', name: 'Orders', project_id: 'project-1', created_at: '', updated_at: '' },
+      ],
+      count: 2,
+    })
+    const storedScenario = {
+      id: 'scenario-fidelity',
+      name: 'Messaging Fidelity',
+      duration: '8m',
+      start_delay: '45s',
+      scenario_mode: 'goal_oriented' as const,
+      assignment: { mode: 'auto' as const },
+      goal_config: {
+        target_average_tps: 80,
+        max_throttled_requests: 3,
+        max_end_to_end_latency_ms: 250,
+        max_partition_skew_pct: 15,
+        max_redelivery_rate_pct: 2,
+        max_dead_letter_rate_pct: 1,
+        stop_on_sla_breach: true,
+      },
+		runtime_settings: {
+			iterations: 4,
+			pacing: { type: 'random_delay', min_delay_ms: 100, max_delay_ms: 900 },
+			think_time: { type: 'normal', mean_ms: 250, std_ms: 75, min_ms: 25, max_ms: 900, multiplier: 1.5, limit_ms: 1200 },
+			error_handling: { max_retries: 3, retry_delay_ms: 150, retry_backoff: 'exponential' },
+        run_logic: { iterations: 4, workload_model: 'closed' },
+        http: { version: '2' },
+        web_runtime: { source_ips: ['10.0.0.8'] },
+        base_url: 'https://orders.example.test',
+        env: { REGION: 'east' },
+        redaction_rules: [{ name: 'token', pattern: 'secret-[0-9]+', replacement: '[MASKED]' }],
+      },
+      scripts: [{
+        order: 0,
+        script_id: 'script-1',
+        script_name: 'Orders Flow',
+        protocol: 'kafka',
+        name: 'Orders',
+        vusers: 12,
+        ramp_up: '1m',
+        ramp_down: '30s',
+        iterations: 7,
+        initialization: 'at_once' as const,
+			runtime_settings: {
+				run_logic: { iterations: 7, workload_model: 'closed' },
+				env: { TOPIC: 'orders' },
+			},
+			assignment: {
+				mode: 'region_weighted' as const,
+				region_weights: { east: 70, west: 30 },
+				required_labels: { tier: 'messaging' },
+				tolerate_generator_loss: true,
+			},
+      }],
+      data_pools: [
+        { id: 'binding-1', pool_id: 'pool-1', pool_name: 'Customers', alias: 'customers', access_mode: 'consume' as const, selection_strategy: 'unique' as const },
+        { id: 'binding-2', pool_id: 'pool-2', pool_name: 'Orders', alias: 'orders', access_mode: 'read_only' as const, selection_strategy: 'sequential' as const },
+      ],
+      associated_releases: [],
+      result_count: 0,
+      created_at: '2026-05-12T00:00:00Z',
+      updated_at: '2026-05-12T00:00:00Z',
+      script_count: 1,
+    }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [storedScenario], count: 1 })
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={onSelectTest} />)
+    })
+    await flushPromises()
+
+    const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit')
+    expect(editButton).toBeDefined()
+    await act(async () => {
+      editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    await clickButton('Save Scenario')
+    await flushPromises()
+
+    const fidelityPayload = expect.objectContaining({
+      name: 'Messaging Fidelity',
+      start_delay: '45s',
+      groups: [expect.objectContaining({
+        name: 'Orders',
+        script_id: 'script-1',
+        ramp_down: '30s',
+        iterations: 7,
+        initialization: 'at_once',
+			runtime_settings: expect.objectContaining({
+				run_logic: { iterations: 7, workload_model: 'closed' },
+				env: { TOPIC: 'orders' },
+			}),
+			assignment: {
+				mode: 'region_weighted',
+				region_weights: { east: 70, west: 30 },
+				required_labels: { tier: 'messaging' },
+				tolerate_generator_loss: true,
+			},
+      })],
+      data_pools: [
+        expect.objectContaining({ id: 'binding-1', pool_id: 'pool-1', alias: 'customers' }),
+        expect.objectContaining({ id: 'binding-2', pool_id: 'pool-2', alias: 'orders' }),
+      ],
+      goal_config: expect.objectContaining({
+        max_throttled_requests: 3,
+        max_end_to_end_latency_ms: 250,
+        max_partition_skew_pct: 15,
+        max_redelivery_rate_pct: 2,
+        max_dead_letter_rate_pct: 1,
+      }),
+		runtime_settings: expect.objectContaining({
+			pacing: { type: 'random_delay', min_delay_ms: 100, max_delay_ms: 900 },
+			think_time: { type: 'normal', mean_ms: 250, std_ms: 75, min_ms: 25, max_ms: 900, multiplier: 1.5, limit_ms: 1200, ignore: false },
+			error_handling: { max_retries: 3, retry_delay_ms: 150, retry_backoff: 'exponential' },
+        run_logic: { iterations: 4, workload_model: 'closed' },
+        http: { version: '2' },
+        web_runtime: { source_ips: ['10.0.0.8'] },
+        base_url: 'https://orders.example.test',
+        env: { REGION: 'east' },
+        redaction_rules: [{ name: 'token', pattern: 'secret-[0-9]+', replacement: '[MASKED]' }],
+      }),
+    })
+    expect(apiMock.updateScenario).toHaveBeenCalledWith('scenario-fidelity', fidelityPayload)
+
+    await act(async () => {
+      const cancel = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Cancel')
+      cancel?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    const duplicateButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Duplicate')
+    expect(duplicateButton).toBeDefined()
+    await act(async () => {
+      duplicateButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await clickButton('Save Scenario')
+    await flushPromises()
+
+    expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'Messaging Fidelity (Copy)',
+      start_delay: '45s',
+		groups: [expect.objectContaining({
+			script_id: 'script-1',
+			iterations: 7,
+			runtime_settings: expect.objectContaining({ env: { TOPIC: 'orders' } }),
+			assignment: expect.objectContaining({
+				mode: 'region_weighted',
+				region_weights: { east: 70, west: 30 },
+				tolerate_generator_loss: true,
+			}),
+      })],
+      data_pools: [
+        expect.objectContaining({ pool_id: 'pool-1', alias: 'customers' }),
+        expect.objectContaining({ pool_id: 'pool-2', alias: 'orders' }),
+      ],
+      goal_config: expect.objectContaining({ max_throttled_requests: 3, max_dead_letter_rate_pct: 1 }),
+		runtime_settings: expect.objectContaining({
+			pacing: { type: 'random_delay', min_delay_ms: 100, max_delay_ms: 900 },
+			think_time: { type: 'normal', mean_ms: 250, std_ms: 75, min_ms: 25, max_ms: 900, multiplier: 1.5, limit_ms: 1200, ignore: false },
+			base_url: 'https://orders.example.test',
+        env: { REGION: 'east' },
+      }),
+    }))
+    const clonedCalls = apiMock.createScenario.mock.calls
+    const clonedPayload = clonedCalls[clonedCalls.length - 1]?.[0]
+    expect(clonedPayload.data_pools.every((binding: { id?: string }) => binding.id === undefined)).toBe(true)
+  })
+
   it('creates a browser scenario with mobile runtime overrides', async () => {
     const onSelectTest = vi.fn()
     apiMock.listScripts.mockResolvedValue({

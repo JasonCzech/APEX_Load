@@ -353,6 +353,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	}
 	req.ReleaseID = releaseID
 	now := time.Now()
+	creationActor := normalizeTestCreationActor(req.creationActor)
 	refKey := ""
 	if status != "DRAFT" {
 		sequence, err := tr.nextRunSeqLocked(now)
@@ -386,6 +387,8 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		Duration:              dur,
 		DurationStr:           req.Duration,
 		CreatedAt:             now,
+		CreatedBySubject:      creationActor.Subject,
+		CreatedByDisplayName:  creationActor.DisplayName,
 		ScheduledStartAt:      cloneTimePtr(req.ScheduledStartAt),
 		groupSpecs:            engineGroups,
 	}
@@ -962,12 +965,18 @@ func (tr *TestRunner) compileManagedTestGroupsForModeWithDataSourcesLocked(group
 	testGroups := make([]TestGroup, 0, len(groups))
 	engineGroups := make([]engine.GroupConfig, 0, len(groups))
 	totalVUsers := 0
+	groupNameIndexes := make(map[string]int, len(groups))
 
 	for i, group := range groups {
 		testGroup, engineGroup, err := tr.compileManagedTestGroupForModeLocked(i, len(groups), group, runtimeSettings, sharedDataSources, scenarioMode)
 		if err != nil {
 			return nil, nil, 0, err
 		}
+		nameKey := normalizeEffectiveGroupName(testGroup.Name)
+		if previous, exists := groupNameIndexes[nameKey]; exists {
+			return nil, nil, 0, fmt.Errorf("group[%d]: effective group name %q duplicates group[%d] after normalization", i, testGroup.Name, previous)
+		}
+		groupNameIndexes[nameKey] = i
 		testGroups = append(testGroups, testGroup)
 		engineGroups = append(engineGroups, engineGroup)
 		if nonNegativeSumExceedsLimit(totalVUsers, testGroup.VUsers, maxManagedTestVUsers) {
@@ -977,6 +986,13 @@ func (tr *TestRunner) compileManagedTestGroupsForModeWithDataSourcesLocked(group
 	}
 
 	return testGroups, engineGroups, totalVUsers, nil
+}
+
+// normalizeEffectiveGroupName mirrors the case-insensitive, human-facing use of
+// group names throughout metrics, scaling, and distributed control. Collapsing
+// whitespace prevents visually identical names from creating ambiguous keys.
+func normalizeEffectiveGroupName(name string) string {
+	return strings.ToLower(strings.Join(strings.Fields(name), " "))
 }
 
 func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, group CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride, sharedDataSources []dsl.DataSource) (TestGroup, engine.GroupConfig, error) {

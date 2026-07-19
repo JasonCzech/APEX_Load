@@ -12,7 +12,6 @@ package api
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -353,18 +352,6 @@ type capacityFencedApprovalStore interface {
 	) (changed bool, overbooked bool, err error)
 }
 
-// decodeReservationApprovalRequest reads the optional approve-body override flag.
-// The approve endpoint historically took no body, so a missing/empty/invalid body
-// degrades to the zero value (no override).
-func decodeReservationApprovalRequest(r *http.Request) reservationApprovalRequest {
-	var req reservationApprovalRequest
-	if r.Body == nil {
-		return req
-	}
-	_ = json.NewDecoder(r.Body).Decode(&req)
-	return req
-}
-
 func (s *Server) transitionReservationApproval(w http.ResponseWriter, r *http.Request, state, action string) {
 	if s.store == nil {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
@@ -381,7 +368,9 @@ func (s *Server) transitionReservationApproval(w http.ResponseWriter, r *http.Re
 	// window, exceed the configured pool would let two bound timeslots claim
 	// capacity that does not exist. An admin can override with an explicit reason.
 	if state == "approved" {
-		approval = decodeReservationApprovalRequest(r)
+		if !decodeOptionalJSONBody(w, r, &approval) {
+			return
+		}
 		if approval.ConflictOverride {
 			if strings.TrimSpace(approval.Reason) == "" {
 				writeError(w, http.StatusBadRequest, "conflict_override requires a reason")

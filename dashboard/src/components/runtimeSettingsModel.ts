@@ -181,7 +181,10 @@ export function isRuntimeDraftEmpty(draft?: ScenarioRuntimeSettingsDraft): boole
     !draft.run_logic &&
     !draft.http &&
     !draft.web_runtime &&
-    !draft.browser_config
+    !draft.browser_config &&
+    !draft.base_url &&
+    !draft.env &&
+    !draft.redaction_rules
   )
 }
 
@@ -208,6 +211,9 @@ export function runtimeDraftFromOverride(override?: RuntimeSettingsOverride): Sc
     http: override.http,
     web_runtime: override.web_runtime,
     browser_config: override.browser_config,
+    base_url: override.base_url,
+    env: override.env ? { ...override.env } : undefined,
+    redaction_rules: override.redaction_rules ? override.redaction_rules.map(rule => ({ ...rule })) : undefined,
   }
 }
 
@@ -246,6 +252,9 @@ export function overrideFromRuntimeDraft(draft?: ScenarioRuntimeSettingsDraft): 
     http: draft.http,
     web_runtime: draft.web_runtime,
     browser_config: draft.browser_config,
+    base_url: draft.base_url,
+    env: draft.env ? { ...draft.env } : undefined,
+    redaction_rules: draft.redaction_rules ? draft.redaction_rules.map(rule => ({ ...rule })) : undefined,
   }
 }
 

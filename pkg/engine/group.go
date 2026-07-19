@@ -146,9 +146,13 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		return nil, fmt.Errorf("post-baseline must be non-negative")
 	}
 	totalVUsers := int64(0)
+	effectiveGroupNames := make(map[string]int, len(cfg.Groups))
 	for i, g := range cfg.Groups {
 		if g.Script == nil {
 			return nil, fmt.Errorf("group[%d] %q: script is required", i, g.Name)
+		}
+		if issues := dsl.ValidateWorkloadSettingsIssues(g.Script.Config.RunLogic, g.Script.Config.Pacing); len(issues) > 0 {
+			return nil, fmt.Errorf("group[%d] %q: invalid workload settings: %s", i, g.Name, issues[0])
 		}
 		if g.VUsers < 0 {
 			return nil, fmt.Errorf("group[%d] %q: vusers must be zero or greater", i, g.Name)
@@ -182,6 +186,12 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		if g.Name == "" {
 			cfg.Groups[i].Name = g.Script.Name
 		}
+		effectiveName := cfg.Groups[i].Name
+		effectiveNameKey := strings.ToLower(strings.Join(strings.Fields(effectiveName), " "))
+		if previous, exists := effectiveGroupNames[effectiveNameKey]; exists {
+			return nil, fmt.Errorf("group[%d] %q: effective group name duplicates group[%d]", i, effectiveName, previous)
+		}
+		effectiveGroupNames[effectiveNameKey] = i
 		dataProvider, err := NewShardedDataProviderWithAssets(g.Script.DataSources, g.DataShard, g.StagedDataFiles)
 		if err != nil {
 			return nil, fmt.Errorf("group[%d] %q: initialize data sources: %s", i, cfg.Groups[i].Name, scrubSensitiveText(err.Error()))
@@ -427,7 +437,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	openGroupErrors := make(chan error, len(runGroups))
 groupLoop:
 	for gi, group := range runGroups {
-		if group.Script.Config.Pacing.Type == "tps" && group.Script.Config.Pacing.TPS > 0 {
+		if dsl.CanonicalPacingType(group.Script.Config.Pacing.Type) == "tps" && group.Script.Config.Pacing.TPS > 0 {
 			targetTPS := group.Script.Config.Pacing.TPS
 			totalTargetTPS += targetTPS
 			mge.metrics.SetGroupTargetTPS(group.Name, targetTPS)
@@ -459,7 +469,7 @@ groupLoop:
 				defer wg.Done()
 				var initializedWorkers int64
 				var firstInitErr error
-				runArrivalScheduler(mge.arrivalCtx, group.Script.Config.Pacing.TPS, totalArrivals, mge.WaitIfPaused, mge.SleepActive, func(int) {
+				runArrivalScheduler(mge.arrivalCtx, group.Script.Config.Pacing.TPS, totalArrivals, mge.WaitIfPaused, mge.SleepActive, mge.ActiveElapsed, func(int) {
 					// Shed the arrival when the in-flight set is saturated: the SUT
 					// cannot keep up, so dropping it protects the generator from
 					// unbounded goroutine growth instead of silently throttling to a
@@ -485,6 +495,12 @@ groupLoop:
 						return
 					}
 					initializedWorkers++
+				}, func(_ int, count int) {
+					limiter.recordShed(int64(count))
+					mge.metrics.RecordSheddedArrivals(int64(count))
+					if limiter.shouldWarn() {
+						slog.Warn("open workload shedding overdue arrivals: generator scheduler exceeded bounded catch-up burst", "group", group.Name, "shed", count, "max_catch_up_burst", maxOpenWorkloadCatchUpBurst, "tps", group.Script.Config.Pacing.TPS)
+					}
 				})
 				if shed := limiter.Shed(); shed > 0 {
 					slog.Warn("open workload shed arrivals over the run (offered TPS exceeded achievable throughput)", "group", group.Name, "shed", shed, "max_in_flight", inFlightLimit)
@@ -551,6 +567,9 @@ groupLoop:
 	}
 	elapsed := time.Since(start)
 	mge.metrics.Stop()
+	for index := range groupResults {
+		groupResults[index].TotalTransactions, groupResults[index].TotalErrors = mge.metrics.GroupRunTotals(groupResults[index].Name)
+	}
 
 	result := &MultiGroupRunResult{
 		Duration:          elapsed,

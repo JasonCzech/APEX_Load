@@ -19,6 +19,7 @@ import './parityPanels.css'
 interface Props {
   projectId?: string
   canManage?: boolean
+  canAdmin?: boolean
   scenarioOptions?: { id: string; name: string }[]
   onOpenTest?: (testId: string) => void
   // When set, opens a new-plan draft pre-seeded with this scenario as the first entry.
@@ -98,7 +99,7 @@ function runStatusPill(status: string): string {
   }
 }
 
-export default function ExecutionPlansPanel({ projectId, canManage = false, scenarioOptions, onOpenTest, seedScenarioId, onSeedConsumed }: Props) {
+export default function ExecutionPlansPanel({ projectId, canManage = false, canAdmin = false, scenarioOptions, onOpenTest, seedScenarioId, onSeedConsumed }: Props) {
   const api = useExecutionPlansApi()
   const [plans, setPlans] = useState<ExecutionPlan[]>([])
   const [loading, setLoading] = useState(false)
@@ -631,6 +632,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
         <ExecutionPlanSchedulesModal
           plan={schedulesTarget}
           canManage={canManage}
+          canAdmin={canAdmin}
           onClose={() => setSchedulesTarget(null)}
         />
       )}
@@ -638,7 +640,7 @@ export default function ExecutionPlansPanel({ projectId, canManage = false, scen
       {approvalsTarget && (
         <ExecutionPlanApprovalsModal
           plan={approvalsTarget}
-          canManage={canManage}
+          canAdmin={canAdmin}
           onClose={() => setApprovalsTarget(null)}
           onResolved={() => void load()}
         />

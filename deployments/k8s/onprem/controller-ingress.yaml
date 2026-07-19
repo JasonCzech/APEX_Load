@@ -39,6 +39,44 @@ spec:
                 name: apexload-controller-active
                 port:
                   name: http
+          # Test lifecycle, execution-plan scheduling/materialization, and
+          # capacity binding are execution-leader mutations. Route each family
+          # through the generation-fenced active-controller endpoint.
+          - path: /api/v1/tests
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/scenarios
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/schedules/health
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/execution-plans
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/capacity/timeslots
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
           - path: /api/v1/system/execution-readiness
             pathType: Prefix
             backend:

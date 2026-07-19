@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -205,6 +206,7 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 	updateBody := bytes.NewBufferString(`{"name":"Nightly Smoke","cron_expr":"0 * * * *","run_name_template":"Hourly Checkout","enabled":false}`)
 	updateReq := httptest.NewRequest(http.MethodPut, "/api/v1/scenarios/"+scenario.ID+"/schedules/"+created.ID, updateBody)
 	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq.Header.Set("If-Match", strconv.Itoa(approvalPayload.Schedule.Revision))
 	updateResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(updateResp, updateReq)
 	if updateResp.Code != http.StatusOK {
@@ -216,6 +218,14 @@ func TestHandleScenarioScheduleCRUD(t *testing.T) {
 	}
 	if updated.CronExpr != "0 * * * *" || updated.RunNameTemplate != "Hourly Checkout" || updated.Enabled {
 		t.Fatalf("updated schedule = %#v, want hourly disabled schedule", updated)
+	}
+	staleReq := httptest.NewRequest(http.MethodPut, "/api/v1/scenarios/"+scenario.ID+"/schedules/"+created.ID, bytes.NewBufferString(`{"name":"Stale","cron_expr":"0 * * * *","enabled":false}`))
+	staleReq.Header.Set("Content-Type", "application/json")
+	staleReq.Header.Set("If-Match", strconv.Itoa(approvalPayload.Schedule.Revision))
+	staleResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(staleResp, staleReq)
+	if staleResp.Code != http.StatusConflict {
+		t.Fatalf("stale update status = %d, want %d body=%s", staleResp.Code, http.StatusConflict, staleResp.Body.String())
 	}
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/scenarios/"+scenario.ID+"/schedules/"+created.ID, nil)
@@ -460,6 +470,7 @@ func TestScenarioScheduleOpenEndedPauseSaves(t *testing.T) {
 	unpauseBody := bytes.NewBufferString(`{"name":"Paused","cron_expr":"*/10 * * * *"}`)
 	unpauseReq := httptest.NewRequest(http.MethodPut, "/api/v1/scenarios/"+scenario.ID+"/schedules/"+created.ID, unpauseBody)
 	unpauseReq.Header.Set("Content-Type", "application/json")
+	unpauseReq.Header.Set("If-Match", strconv.Itoa(created.Revision))
 	unpauseResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(unpauseResp, unpauseReq)
 	if unpauseResp.Code != http.StatusOK {

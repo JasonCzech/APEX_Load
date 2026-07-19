@@ -28,7 +28,7 @@ func TestExecutionPlanScheduleActorRoundTripsAndCASUpdates(t *testing.T) {
 	}
 	occurrence := &ExecutionPlanScheduleOccurrence{
 		ID: "occurrence-actor", ScheduleID: got.ID, PlannedAt: now, Status: "materializing", RunID: "run-actor",
-		CreatedAt: now, UpdatedAt: now,
+		ApprovalID: "approval-actor", CreatedAt: now, UpdatedAt: now,
 	}
 	claimed, err := store.ClaimExecutionPlanScheduleOccurrenceIfCurrent(occurrence)
 	if err != nil || !claimed {
@@ -63,7 +63,7 @@ func TestExecutionPlanScheduleActorRoundTripsAndCASUpdates(t *testing.T) {
 		t.Fatalf("CompareAndSwapExecutionPlanScheduleOccurrence = %v, %v", updated, err)
 	}
 	persistedOccurrence, err := store.GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, now)
-	if err != nil || persistedOccurrence.ActorType != "service_account" || persistedOccurrence.ActorSubject != "schedule-runner" || persistedOccurrence.ActorDisplayName != "Schedule Runner" {
+	if err != nil || persistedOccurrence.ActorType != "service_account" || persistedOccurrence.ActorSubject != "schedule-runner" || persistedOccurrence.ActorDisplayName != "Schedule Runner" || persistedOccurrence.ApprovalID != "approval-actor" {
 		t.Fatalf("immutable occurrence actor = %#v, %v", persistedOccurrence, err)
 	}
 }
@@ -125,6 +125,9 @@ func TestLegacyExecutionPlanScheduleMigrationUsesFailClosedActor(t *testing.T) {
 	}
 	if occurrence.ActorType != "legacy" || occurrence.ActorSubject != "controller:execution-plan-schedule-occurrence-legacy" {
 		t.Fatalf("legacy occurrence actor = %s/%s, want fail-closed legacy attribution", occurrence.ActorType, occurrence.ActorSubject)
+	}
+	if occurrence.ApprovalID != "" {
+		t.Fatalf("legacy occurrence approval id = %q, want empty migration default", occurrence.ApprovalID)
 	}
 }
 

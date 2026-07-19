@@ -134,16 +134,26 @@ func (s *Server) handleEvacuateGenerator(w http.ResponseWriter, r *http.Request)
 }
 
 func decodeOptionalJSONBody(w http.ResponseWriter, r *http.Request, dst any) bool {
-	if r.Body == nil {
+	if r == nil || r.Body == nil {
 		return true
 	}
 	defer r.Body.Close()
-	decoder := json.NewDecoder(r.Body)
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10))
+	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(dst); err != nil {
 		if errors.Is(err, io.EOF) {
 			return true
 		}
 		writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		return false
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		if err == nil {
+			writeError(w, http.StatusBadRequest, "invalid JSON: multiple JSON values are not allowed")
+		} else {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid JSON: %v", err))
+		}
 		return false
 	}
 	return true

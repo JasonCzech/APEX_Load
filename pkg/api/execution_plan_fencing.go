@@ -466,7 +466,13 @@ func (tr *TestRunner) startExecutionPlanTestWithTerm(testID string, term executi
 	// final validation and fence claim happen while tr.mu is held, so leadership
 	// loss followed by same-process reacquisition in the window above cannot let
 	// this old goroutine adopt the successor term.
-	if err := tr.startTestWithOptionsAndExpectedTerm(testID, StartTestOptions{}, &term); err != nil {
+	opts := StartTestOptions{}
+	tr.mu.RLock()
+	if test := tr.tests[testID]; test != nil && strings.TrimSpace(test.CreatedBySubject) != "" {
+		opts.actor = testCreationActor{Type: "system", Subject: test.CreatedBySubject, DisplayName: test.CreatedByDisplayName}
+	}
+	tr.mu.RUnlock()
+	if err := tr.startTestWithOptionsAndExpectedTerm(testID, opts, &term); err != nil {
 		return err
 	}
 	if !tr.executionLeaseTermCurrent(term) {

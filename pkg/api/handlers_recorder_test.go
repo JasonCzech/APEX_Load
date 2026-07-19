@@ -201,6 +201,51 @@ func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
 	}
 }
 
+func TestHandleConvertRecordingRejectsEmptyConversion(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	session, err := server.recorder.StartSession("rec-empty", "Empty Recording", recorder.SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.BaseURL = "https://shop.example.com"
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/rec-empty/convert", bytes.NewBufferString(`{"name":"Empty Converted"}`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusUnprocessableEntity, resp.Body.String())
+	}
+	if got := len(server.runner.ListScripts()); got != 0 {
+		t.Fatalf("empty conversion persisted %d scripts, want 0", got)
+	}
+}
+
+func TestHandleConvertRecordingRejectsMalformedJSONBeforePersisting(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	session, err := server.recorder.StartSession("rec-malformed", "Malformed Options", recorder.SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.BaseURL = "https://shop.example.com"
+	session.Requests = append(session.Requests, recorder.RecordedRequest{
+		Seq: 1, Method: http.MethodGet, URL: "https://shop.example.com/cart", Path: "/cart", StatusCode: http.StatusOK,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/rec-malformed/convert", bytes.NewBufferString(`{"name":`))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if got := len(server.runner.ListScripts()); got != 0 {
+		t.Fatalf("malformed conversion persisted %d scripts, want 0", got)
+	}
+}
+
 func TestHandleStartRecordingThreadsCaptureCookies(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/recorder/start", bytes.NewBufferString(`{

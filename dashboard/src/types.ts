@@ -191,6 +191,9 @@ export interface RuntimeSettingsOverride {
   http?: HTTPConfig
   web_runtime?: WebRuntimeConfig
   browser_config?: BrowserConfig
+  base_url?: string
+  env?: Record<string, string>
+  redaction_rules?: RedactionRule[]
 }
 
 export interface RuntimeSettingsFinding {
@@ -238,6 +241,9 @@ export interface ScenarioRuntimeSettingsDraft {
   http?: HTTPConfig
   web_runtime?: WebRuntimeConfig
   browser_config?: BrowserConfig
+  base_url?: string
+  env?: Record<string, string>
+  redaction_rules?: RedactionRule[]
 }
 
 export type ScenarioMode = 'vuser_driven' | 'goal_oriented'
@@ -271,6 +277,12 @@ export interface GoalConfig {
   max_lcp_ms?: number
   max_inp_ms?: number
   max_cls?: number
+  /** Streaming-ingestion thresholds for Event Hubs, Kafka, and JMS scenarios. */
+  max_throttled_requests?: number
+  max_end_to_end_latency_ms?: number
+  max_partition_skew_pct?: number
+  max_redelivery_rate_pct?: number
+  max_dead_letter_rate_pct?: number
   stop_on_sla_breach?: boolean
   stop_on_max_errors?: boolean
   sla_breach_window?: string
@@ -1662,6 +1674,7 @@ export interface ScenarioScheduleOccurrence {
   scenario_id: string
   project_id?: string
   schedule_revision: number
+	 revision?: number
   planned_at: string
   materialized_at?: string
   status: 'planned' | 'materialized' | 'queued' | 'blocked' | 'skipped' | 'failed' | 'approved' | 'completed' | string
@@ -1703,6 +1716,15 @@ export interface ScenarioScheduleHealth {
   skipped?: number
   completed?: number
   status_counts?: Record<string, number>
+  is_leader?: boolean
+  storage_error?: string
+  sweeps?: Record<string, { last_sweep_at?: string; last_successful_at?: string; last_error?: string }>
+  execution_plan_total?: number
+  execution_plan_enabled?: number
+  execution_plan_due?: number
+  execution_plan_blocked?: number
+  one_time_scheduled?: number
+  one_time_due?: number
 }
 
 export interface RunCalendarRange {
@@ -4460,6 +4482,7 @@ export interface ExecutionPlanScheduleRequest {
   missed_run_policy?: string
   disabled_from?: string
   disabled_until?: string
+	 expected_revision?: number
 }
 export interface ExecutionPlanScheduleListResponse {
   schedules: ExecutionPlanSchedule[]
@@ -4471,6 +4494,7 @@ export interface ExecutionPlanScheduleOccurrence {
   plan_id: string
   project_id?: string
   schedule_revision?: number
+	 revision?: number
   planned_at: string
   materialized_at?: string
   status: string // materializing | materialized | blocked | failed
@@ -4479,6 +4503,11 @@ export interface ExecutionPlanScheduleOccurrence {
   conflict_summary?: string
   created_at: string
   updated_at: string
+}
+export interface ScheduleOccurrenceResolutionRequest {
+	 action: 'retry' | 'catch_up' | 'skip'
+	 reason?: string
+	 expected_revision?: number
 }
 export interface ExecutionPlanScheduleOccurrenceListResponse {
   occurrences: ExecutionPlanScheduleOccurrence[]

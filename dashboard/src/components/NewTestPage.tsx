@@ -91,6 +91,7 @@ type ScheduleWindowDraft = {
 }
 
 type ScheduleDraft = {
+	revision?: number
   name: string
   cron_expr: string
   timezone: string
@@ -867,6 +868,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     return checks
   }, [activeApplication, release, scenario])
   const canManageTests = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'), [effectiveAuthAccessResources])
+  const canManageProjects = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_projects'), [effectiveAuthAccessResources])
   const canLaunch = readiness.every(item => item.ready) && !creating && canManageTests
   const runCreatePayload = useMemo(() => {
     if (!scenario || !activeApplication) return null
@@ -1427,6 +1429,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 	  availability_windows: scheduleWindowsToPayload(scheduleDraft.availability_windows, scheduleDraft.timezone),
 	  disabled_from: datetimeLocalToISO(scheduleDraft.disabled_from) || undefined,
 	  disabled_until: datetimeLocalToISO(scheduleDraft.disabled_until) || undefined,
+	  expected_revision: editingScheduleId ? scheduleDraft.revision : undefined,
 	}
 	try {
 	  if (editingScheduleId) {
@@ -1447,6 +1450,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   const editSchedule = (schedule: ScenarioSchedule) => {
 	setEditingScheduleId(schedule.id)
 	setScheduleDraft({
+	  revision: schedule.revision,
 	  name: schedule.name,
 	  cron_expr: schedule.cron_expr,
 	  timezone: schedule.timezone || 'UTC',
@@ -1487,6 +1491,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 	    availability_windows: schedule.availability_windows,
 	    disabled_from: schedule.disabled_from || undefined,
 	    disabled_until: schedule.disabled_until || undefined,
+	    expected_revision: schedule.revision,
 	  })
 	  await refreshSchedules(scenario.id)
 	} catch (err: unknown) {
@@ -1515,8 +1520,8 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   }
 
   const resolveScheduleApproval = async (schedule: ScenarioSchedule, approved: boolean) => {
-    if (!canManageTests) {
-      setError('Current session cannot manage scenario schedules for this project.')
+    if (!canManageProjects) {
+      setError('Project-admin access is required to resolve schedule approvals.')
       return
     }
     if (!scenario || !schedule.pending_approval_id) return
@@ -1554,6 +1559,29 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       setScheduleOccurrenceLoading(null)
     }
   }
+
+	const resolveScheduleOccurrence = async (schedule: ScenarioSchedule, occurrence: ScenarioScheduleOccurrence, action: 'retry' | 'catch_up' | 'skip') => {
+	  if (!canManageProjects || !scenario || occurrence.reason_code === 'approval_required') return
+	  setScheduleSubmitting(true)
+	  setError('')
+	  try {
+		await api.resolveScenarioScheduleOccurrence(
+		  scenario.id,
+		  schedule.id,
+		  occurrence.id,
+		  action,
+		  occurrence.revision,
+		  `Operator selected ${action.replace('_', ' ')} from the schedule dashboard.`,
+		)
+		const response = await api.listScenarioScheduleOccurrences(scenario.id, schedule.id)
+		setScheduleOccurrences(prev => ({ ...prev, [schedule.id]: response.occurrences || [] }))
+		await refreshSchedules(scenario.id)
+	  } catch (err: unknown) {
+		setError(getErrorMessage(err, 'Unable to resolve schedule occurrence'))
+	  } finally {
+		setScheduleSubmitting(false)
+	  }
+	}
 
   const showStartNow = true
   const startNowAllowed = immediatePreflight ? immediatePreflight.start_now_allowed : true
@@ -1858,10 +1886,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                               </td>
                               <td>
                                 <div className="inline-create-row">
-                                  {item.next_required_action === 'approval_required' && item.pending_approval_id && (
+                                  {canManageProjects && item.next_required_action === 'approval_required' && item.pending_approval_id && (
                                     <>
-                                      <button className="btn btn-secondary" onClick={() => resolveScheduleApproval(item, true)} disabled={!canManageTests}>Approve</button>
-                                      <button className="btn btn-secondary" onClick={() => resolveScheduleApproval(item, false)} disabled={!canManageTests}>Reject</button>
+                                      <button className="btn btn-secondary" onClick={() => resolveScheduleApproval(item, true)}>Approve</button>
+                                      <button className="btn btn-secondary" onClick={() => resolveScheduleApproval(item, false)}>Reject</button>
                                     </>
                                   )}
                                   <button className="btn btn-secondary" onClick={() => toggleScheduleOccurrences(item)}>{expandedScheduleId === item.id ? 'Hide Audit' : 'Audit Trail'}</button>
@@ -1895,6 +1923,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                                               <th>Test</th>
                                               <th>Approval</th>
                                               <th>Conflict</th>
+										  <th>Resolution</th>
                                             </tr>
                                           </thead>
                                           <tbody>
@@ -1907,6 +1936,15 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                                                 <td className="cell-mono">{occurrence.test_id || 'None'}</td>
                                                 <td className="cell-mono">{occurrence.approval_id || 'None'}</td>
                                                 <td>{occurrence.conflict_summary || 'None'}</td>
+											<td>
+											  {(occurrence.status === 'blocked' || occurrence.status === 'failed') && occurrence.reason_code !== 'approval_required' && canManageProjects ? (
+												<div className="inline-create-row" aria-label="Resolve occurrence">
+												  <button className="btn btn-secondary" disabled={scheduleSubmitting} onClick={() => resolveScheduleOccurrence(item, occurrence, 'retry')}>Retry</button>
+												  <button className="btn btn-secondary" disabled={scheduleSubmitting} onClick={() => resolveScheduleOccurrence(item, occurrence, 'catch_up')}>Catch up</button>
+												  <button className="btn btn-secondary" disabled={scheduleSubmitting} onClick={() => resolveScheduleOccurrence(item, occurrence, 'skip')}>Skip</button>
+												</div>
+											  ) : 'None'}
+											</td>
                                               </tr>
                                             ))}
                                           </tbody>

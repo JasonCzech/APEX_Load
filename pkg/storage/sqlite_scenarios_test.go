@@ -1,12 +1,121 @@
 package storage
 
 import (
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+func TestScenarioScriptIterationsRoundTripAcrossRestart(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "apexload.db")
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+
+	script := &dsl.Script{
+		ID:       "script-iterations",
+		Name:     "Iterative Checkout",
+		Protocol: "http",
+		Version:  "1.0",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions:  []dsl.Action{{Name: "Home", Type: "request", Method: "GET", Target: "/"}},
+	}
+	if err := store.SaveScript(script); err != nil {
+		t.Fatalf("SaveScript: %v", err)
+	}
+	iterations := 7
+	scenario := &Scenario{ID: "scn-iterations", Name: "Iteration Round Trip", Duration: "1m", CreatedAt: time.Now()}
+	if err := store.SaveScenario(scenario, []ScenarioScript{
+		{Order: 0, ScriptID: script.ID, VUsers: 10, Iterations: &iterations},
+		{Order: 1, ScriptID: script.ID, VUsers: 5},
+	}); err != nil {
+		t.Fatalf("SaveScenario: %v", err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	reopened, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("reopen NewSQLiteStore: %v", err)
+	}
+	defer reopened.Close()
+	_, groups, err := reopened.GetScenario(scenario.ID)
+	if err != nil {
+		t.Fatalf("GetScenario after restart: %v", err)
+	}
+	if len(groups) != 2 {
+		t.Fatalf("groups = %d, want 2", len(groups))
+	}
+	if groups[0].Iterations == nil || *groups[0].Iterations != iterations {
+		t.Fatalf("group 0 iterations = %#v, want %d", groups[0].Iterations, iterations)
+	}
+	if groups[1].Iterations != nil {
+		t.Fatalf("group 1 iterations = %#v, want nil", groups[1].Iterations)
+	}
+}
+
+func TestSQLiteStoreMigratesScenarioScriptIterationsColumn(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "legacy.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	_, err = db.Exec(`CREATE TABLE scenario_scripts (
+		scenario_id TEXT NOT NULL,
+		sort_order INTEGER NOT NULL,
+		name TEXT,
+		script_id TEXT NOT NULL,
+		vusers INTEGER,
+		ramp_up TEXT,
+		ramp_down TEXT,
+		stages_json TEXT,
+		initialization TEXT,
+		role TEXT,
+		runtime_settings_json TEXT,
+		assignment_json TEXT,
+		PRIMARY KEY (scenario_id, sort_order)
+	)`)
+	if err != nil {
+		t.Fatalf("create legacy scenario_scripts: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close legacy DB: %v", err)
+	}
+
+	store, err := NewSQLiteStore(dbPath)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore migration: %v", err)
+	}
+	defer store.Close()
+	rows, err := store.db.Query(`PRAGMA table_info(scenario_scripts)`)
+	if err != nil {
+		t.Fatalf("table_info: %v", err)
+	}
+	defer rows.Close()
+	found := false
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			t.Fatalf("scan table_info: %v", err)
+		}
+		if name == "iterations" {
+			found = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("table_info rows: %v", err)
+	}
+	if !found {
+		t.Fatal("scenario_scripts.iterations was not added")
+	}
+}
 
 // TestScenarioScriptRuntimeSettingsRoundTrip verifies the per-group
 // runtime_settings_json column persists and reloads an opaque override, and that

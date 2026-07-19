@@ -46,6 +46,9 @@ export type ScenarioUpsertPayload = {
     http?: HTTPConfig
     web_runtime?: WebRuntimeConfig
     browser_config?: BrowserConfig
+    base_url?: string
+    env?: Record<string, string>
+    redaction_rules?: Array<{ name?: string, pattern: string, replacement?: string }>
   }
   data_pools?: ScenarioDataPoolBinding[]
 }
@@ -149,23 +152,42 @@ export function buildScenarioGroupPayloads(groups: ScenarioDraftGroup[]): Scenar
 }
 
 export function buildGroupAssignmentPayload(assignment?: GeneratorAssignmentSettings): GeneratorAssignmentSettings | undefined {
-  if (!assignment?.mode && !assignment?.required_labels) return undefined
-  const requiredLabels = normalizeRequiredLabels(assignment.required_labels)
-  if (assignment.mode === 'specific_hosts') {
-    const selectedTargets = normalizeSelectedTargets(assignment.selected_targets)
-    return {
-      mode: 'specific_hosts',
-      selected_targets: selectedTargets,
-      ...(selectedTargets.length > 1 ? { shard_strategy: 'capacity_weighted' as const } : {}),
-      ...(requiredLabels ? { required_labels: requiredLabels } : {}),
-    }
-  }
-  if (assignment.mode === 'auto' || requiredLabels) {
-    return {
-      mode: 'auto',
-      ...(requiredLabels ? { required_labels: requiredLabels } : {}),
-    }
-  }
+	if (!assignment?.mode && !assignment?.required_labels && !assignment?.tolerate_generator_loss) return undefined
+	const requiredLabels = normalizeRequiredLabels(assignment.required_labels)
+	const lossTolerance = assignment.tolerate_generator_loss ? { tolerate_generator_loss: true } : {}
+	if (assignment.mode === 'specific_hosts') {
+		const selectedTargets = normalizeSelectedTargets(assignment.selected_targets)
+		return {
+			mode: 'specific_hosts',
+			selected_targets: selectedTargets,
+			...(selectedTargets.length > 1 ? { shard_strategy: 'capacity_weighted' as const } : {}),
+			...(requiredLabels ? { required_labels: requiredLabels } : {}),
+			...lossTolerance,
+		}
+	}
+	if (assignment.mode === 'region_weighted' && assignment.region_weights) {
+		return {
+			mode: 'region_weighted',
+			region_weights: { ...assignment.region_weights },
+			...(requiredLabels ? { required_labels: requiredLabels } : {}),
+			...lossTolerance,
+		}
+	}
+	if (assignment.mode === 'load_zone_weighted' && assignment.load_zone_weights) {
+		return {
+			mode: 'load_zone_weighted',
+			load_zone_weights: { ...assignment.load_zone_weights },
+			...(requiredLabels ? { required_labels: requiredLabels } : {}),
+			...lossTolerance,
+		}
+	}
+	if (assignment.mode === 'auto' || requiredLabels || assignment.tolerate_generator_loss) {
+		return {
+			mode: 'auto',
+			...(requiredLabels ? { required_labels: requiredLabels } : {}),
+			...lossTolerance,
+		}
+	}
   return undefined
 }
 
@@ -214,6 +236,11 @@ export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: G
     ...(hasValue(goalConfig.max_lcp_ms) ? { max_lcp_ms: goalConfig.max_lcp_ms } : {}),
     ...(hasValue(goalConfig.max_inp_ms) ? { max_inp_ms: goalConfig.max_inp_ms } : {}),
     ...(hasValue(goalConfig.max_cls) ? { max_cls: goalConfig.max_cls } : {}),
+    ...(hasValue(goalConfig.max_throttled_requests) ? { max_throttled_requests: goalConfig.max_throttled_requests } : {}),
+    ...(hasValue(goalConfig.max_end_to_end_latency_ms) ? { max_end_to_end_latency_ms: goalConfig.max_end_to_end_latency_ms } : {}),
+    ...(hasValue(goalConfig.max_partition_skew_pct) ? { max_partition_skew_pct: goalConfig.max_partition_skew_pct } : {}),
+    ...(hasValue(goalConfig.max_redelivery_rate_pct) ? { max_redelivery_rate_pct: goalConfig.max_redelivery_rate_pct } : {}),
+    ...(hasValue(goalConfig.max_dead_letter_rate_pct) ? { max_dead_letter_rate_pct: goalConfig.max_dead_letter_rate_pct } : {}),
     ...(goalConfig.stop_on_sla_breach ? { stop_on_sla_breach: true } : {}),
     ...(goalConfig.stop_on_max_errors ? { stop_on_max_errors: true } : {}),
     ...(goalConfig.sla_breach_window ? { sla_breach_window: goalConfig.sla_breach_window } : {}),
@@ -247,7 +274,7 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
     ? { ...runtimeSettings.browser }
     : undefined
 
-  if (!runtimeSettings.iterations && !pacing && !thinkTime && !browser && !runtimeSettings.log_level && !runtimeSettings.auto_transactions && !runtimeSettings.continue_on_error && !runtimeSettings.snapshot_on_error && runtimeSettings.max_retries === undefined && runtimeSettings.retry_delay_ms === undefined && !runtimeSettings.retry_backoff && !runtimeSettings.log && !runtimeSettings.run_logic && !runtimeSettings.http && !runtimeSettings.web_runtime && !runtimeSettings.browser_config) {
+  if (!runtimeSettings.iterations && !pacing && !thinkTime && !browser && !runtimeSettings.log_level && !runtimeSettings.auto_transactions && !runtimeSettings.continue_on_error && !runtimeSettings.snapshot_on_error && runtimeSettings.max_retries === undefined && runtimeSettings.retry_delay_ms === undefined && !runtimeSettings.retry_backoff && !runtimeSettings.log && !runtimeSettings.run_logic && !runtimeSettings.http && !runtimeSettings.web_runtime && !runtimeSettings.browser_config && !runtimeSettings.base_url && !runtimeSettings.env && !runtimeSettings.redaction_rules) {
     return undefined
   }
 
@@ -272,6 +299,9 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
     http: runtimeSettings.http,
     web_runtime: runtimeSettings.web_runtime,
     browser_config: runtimeSettings.browser_config,
+    base_url: runtimeSettings.base_url,
+    env: runtimeSettings.env ? { ...runtimeSettings.env } : undefined,
+    redaction_rules: runtimeSettings.redaction_rules ? runtimeSettings.redaction_rules.map(rule => ({ ...rule })) : undefined,
   }
 }
 
@@ -371,16 +401,11 @@ export function buildCreateTestPayload({
     payload.folder_id = folderId
   }
 
-  const normalizedGroups = buildScenarioGroupPayloads(groups)
-  if (normalizedGroups.length === 1 && !normalizedGroups[0].name && normalizedGroups[0].iterations === undefined && !normalizedGroups[0].stages?.length && !normalizedGroups[0].assignment) {
-    payload.script_id = normalizedGroups[0].script_id
-    payload.vusers = normalizedGroups[0].vusers
-    payload.ramp_up = normalizedGroups[0].ramp_up
-    payload.ramp_down = normalizedGroups[0].ramp_down
-    payload.initialization = normalizedGroups[0].initialization
-    return payload
-  }
-
-  payload.groups = normalizedGroups
+  // Always use the canonical group representation. The legacy single-script
+  // shorthand cannot represent the complete group contract (role, ramp-down,
+  // initialization, stages, iterations, runtime overrides, and placement), so
+  // flattening a seemingly-simple group makes later editor additions silently
+  // disappear at the API boundary.
+  payload.groups = buildScenarioGroupPayloads(groups)
   return payload
 }

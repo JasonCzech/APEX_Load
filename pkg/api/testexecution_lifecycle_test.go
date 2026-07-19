@@ -47,6 +47,80 @@ func (b *contextBlockingStopBackend) StopTestContext(ctx context.Context, _ *Tes
 	return ctx.Err()
 }
 
+type delayedFirstStopBackend struct {
+	mu      sync.Mutex
+	calls   int
+	started chan struct{}
+}
+
+func (*delayedFirstStopBackend) Run(*TestRunner, *ManagedTest) {}
+
+func (b *delayedFirstStopBackend) StopTestContext(ctx context.Context, _ *TestRunner, _ *ManagedTest) error {
+	b.mu.Lock()
+	b.calls++
+	first := b.calls == 1
+	b.mu.Unlock()
+	if !first {
+		return nil
+	}
+	close(b.started)
+	<-ctx.Done()
+	return ctx.Err()
+}
+
+func TestDuplicateStopPreservesInitiatingActor(t *testing.T) {
+	store := &metricsStoreSpy{}
+	runner := NewTestRunner(1, NewHub(), nil)
+	runner.testStore = store
+	backend := &delayedFirstStopBackend{started: make(chan struct{})}
+	executionCtx, cancelExecution := context.WithCancel(context.Background())
+	defer cancelExecution()
+	test := &ManagedTest{
+		ID:               "stop-actor-initiator",
+		Status:           "RUNNING",
+		executionCtx:     executionCtx,
+		cancel:           cancelExecution,
+		executionBackend: backend,
+	}
+	runner.tests[test.ID] = test
+
+	firstCtx, cancelFirst := context.WithCancel(context.Background())
+	firstDone := make(chan error, 1)
+	go func() {
+		firstDone <- runner.stopTestWithContextAndCIReasonAndActor(firstCtx, test.ID, false, "", testCreationActor{
+			Type: "user", Subject: "user:first", DisplayName: "First Operator",
+		})
+	}()
+	select {
+	case <-backend.started:
+	case <-time.After(time.Second):
+		t.Fatal("initial stop did not reach the delayed backend")
+	}
+	cancelFirst()
+	if err := <-firstDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("initial stop error = %v, want context cancellation", err)
+	}
+	if test.Status != "STOPPING" {
+		t.Fatalf("status after uncertain initial stop = %q, want STOPPING", test.Status)
+	}
+
+	if err := runner.stopTestWithContextAndCIReasonAndActor(context.Background(), test.ID, false, "", testCreationActor{
+		Type: "user", Subject: "user:second", DisplayName: "Second Operator",
+	}); err != nil {
+		t.Fatalf("duplicate stop retry: %v", err)
+	}
+	if test.StoppedBySubject != "user:first" || test.StoppedByDisplayName != "First Operator" {
+		t.Fatalf("stopped_by = %q/%q, want initiating actor", test.StoppedBySubject, test.StoppedByDisplayName)
+	}
+	if len(store.savedTests) == 0 {
+		t.Fatal("initial stop attribution was not persisted")
+	}
+	persisted := store.savedTests[len(store.savedTests)-1]
+	if persisted.StoppedBySubject != "user:first" || persisted.StoppedByDisplayName != "First Operator" {
+		t.Fatalf("durable stopped_by = %q/%q, want initiating actor", persisted.StoppedBySubject, persisted.StoppedByDisplayName)
+	}
+}
+
 type lifecycleTransitionBackend struct {
 	mu           sync.Mutex
 	runCalls     int

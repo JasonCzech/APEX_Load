@@ -1054,6 +1054,19 @@ func userForCalendarSchedule(schedule *storage.ScenarioSchedule, test *ManagedTe
 		user.OwnerSubject = schedule.OwnerSubject
 		user.OwnerDisplayName = schedule.OwnerDisplayName
 	}
+	// A recurring occurrence belongs to the schedule owner unless a concrete
+	// starter was captured for the materialized run. Every durable test now has
+	// creator attribution (including internal controller attribution), so using
+	// creator presence as the fallback gate would permanently hide the schedule
+	// owner for scheduler-created runs.
+	if test == nil || (test.StartedBySubject == "" && test.StartedByDisplayName == "") {
+		if user.OwnerSubject != "" || user.OwnerDisplayName != "" {
+			user.DisplayName = firstNonEmpty(user.OwnerDisplayName, user.OwnerSubject)
+			user.Subject = user.OwnerSubject
+			user.Attribution = "schedule_owner"
+			return user
+		}
+	}
 	if user.DisplayName == "" {
 		user.DisplayName = firstNonEmpty(user.OwnerDisplayName, user.OwnerSubject)
 		user.Subject = user.OwnerSubject

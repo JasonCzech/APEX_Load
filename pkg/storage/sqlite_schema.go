@@ -194,6 +194,7 @@ func schemaCreateTableStatements() []string {
 			ramp_up TEXT,
 			ramp_down TEXT,
 			stages_json TEXT,
+			iterations INTEGER,
 			initialization TEXT,
 			role TEXT,
 			runtime_settings_json TEXT,
@@ -889,6 +890,7 @@ func schemaCreateTableStatements() []string {
 			status TEXT NOT NULL,
 			reason_code TEXT,
 			run_id TEXT,
+			approval_id TEXT,
 			conflict_summary TEXT,
 			actor_type TEXT NOT NULL DEFAULT 'system',
 			actor_subject TEXT NOT NULL DEFAULT 'controller:execution-plan-schedule-occurrence',
@@ -1064,6 +1066,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "tests.stopped_by_display_name", query: `ALTER TABLE tests ADD COLUMN stopped_by_display_name TEXT`},
 		{name: "tests.execution_plan_approval_json", query: `ALTER TABLE tests ADD COLUMN execution_plan_approval_json TEXT`},
 		{name: "scenario_scripts.stages_json", query: `ALTER TABLE scenario_scripts ADD COLUMN stages_json TEXT`},
+		{name: "scenario_scripts.iterations", query: `ALTER TABLE scenario_scripts ADD COLUMN iterations INTEGER`},
 		{name: "scenario_scripts.role", query: `ALTER TABLE scenario_scripts ADD COLUMN role TEXT`},
 		{name: "scenario_scripts.runtime_settings_json", query: `ALTER TABLE scenario_scripts ADD COLUMN runtime_settings_json TEXT`},
 		{name: "scenario_scripts.assignment_json", query: `ALTER TABLE scenario_scripts ADD COLUMN assignment_json TEXT`},
@@ -1100,6 +1103,7 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "execution_plan_runs.transition_token", query: `ALTER TABLE execution_plan_runs ADD COLUMN transition_token TEXT NOT NULL DEFAULT ''`},
 		{name: "execution_plan_schedule_occurrences.revision", query: `ALTER TABLE execution_plan_schedule_occurrences ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
 		{name: "execution_plan_schedule_occurrences.transition_token", query: `ALTER TABLE execution_plan_schedule_occurrences ADD COLUMN transition_token TEXT NOT NULL DEFAULT ''`},
+		{name: "execution_plan_schedule_occurrences.approval_id", query: `ALTER TABLE execution_plan_schedule_occurrences ADD COLUMN approval_id TEXT`},
 		{name: "execution_plan_schedule_occurrences.actor_type", query: `ALTER TABLE execution_plan_schedule_occurrences ADD COLUMN actor_type TEXT NOT NULL DEFAULT 'legacy'`},
 		{name: "execution_plan_schedule_occurrences.actor_subject", query: `ALTER TABLE execution_plan_schedule_occurrences ADD COLUMN actor_subject TEXT NOT NULL DEFAULT 'controller:execution-plan-schedule-occurrence-legacy'`},
 		{name: "execution_plan_schedule_occurrences.actor_display_name", query: `ALTER TABLE execution_plan_schedule_occurrences ADD COLUMN actor_display_name TEXT NOT NULL DEFAULT ''`},
@@ -1901,6 +1905,7 @@ func insertLegacyScenarioScriptsTx(tx *storeTx, scenarioID, testID, groupsJSON s
 		RampUp         string      `json:"ramp_up"`
 		RampDown       string      `json:"ramp_down"`
 		Stages         []LoadStage `json:"stages"`
+		Iterations     *int        `json:"iterations"`
 		Initialization string      `json:"initialization"`
 		Role           string      `json:"role"`
 	}
@@ -1915,8 +1920,8 @@ func insertLegacyScenarioScriptsTx(tx *storeTx, scenarioID, testID, groupsJSON s
 		if err != nil {
 			return fmt.Errorf("marshal legacy test %s group %d stages: %w", testID, i, err)
 		}
-		if _, err := tx.Exec(`INSERT OR IGNORE INTO scenario_scripts (scenario_id, sort_order, name, script_id, vusers, ramp_up, ramp_down, stages_json, initialization, role)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, scenarioID, i, group.Name, group.ScriptID, group.VUsers, group.RampUp, group.RampDown, string(stagesJSON), group.Initialization, group.Role); err != nil {
+		if _, err := tx.Exec(`INSERT OR IGNORE INTO scenario_scripts (scenario_id, sort_order, name, script_id, vusers, ramp_up, ramp_down, stages_json, iterations, initialization, role)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, scenarioID, i, group.Name, group.ScriptID, group.VUsers, group.RampUp, group.RampDown, string(stagesJSON), group.Iterations, group.Initialization, group.Role); err != nil {
 			return err
 		}
 	}

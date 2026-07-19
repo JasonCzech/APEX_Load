@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -9,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/recorder"
 	"github.com/jasonczech/apexload/pkg/scrub"
 )
@@ -307,7 +307,9 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 		Name         string `json:"name"`
 		Parameterize bool   `json:"parameterize"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if !decodeOptionalJSONBody(w, r, &req) {
+		return
+	}
 
 	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize})
 	if result.Script != nil {
@@ -317,6 +319,10 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 	safeScript, _, err := applySuggestedSecretBindings(result.Script, 0)
 	if err != nil {
 		writeError(w, http.StatusUnprocessableEntity, "failed to prepare recorded credentials: "+err.Error())
+		return
+	}
+	if err := validateConvertedScriptForCommit(safeScript); err != nil {
+		writeError(w, http.StatusUnprocessableEntity, "recording did not produce an executable script: "+err.Error())
 		return
 	}
 	stored, err := s.runner.StoreScriptDurable(safeScript)
@@ -340,6 +346,16 @@ func (s *Server) handleConvertRecording(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusCreated, response)
 }
 
+func validateConvertedScriptForCommit(script *dsl.Script) error {
+	if script == nil {
+		return fmt.Errorf("conversion produced no script")
+	}
+	if issues := validateScript(script); len(issues) > 0 {
+		return fmt.Errorf("%s", strings.Join(issues, "; "))
+	}
+	return nil
+}
+
 func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	session, ok := s.recorder.GetSession(id)
@@ -352,7 +368,9 @@ func (s *Server) handlePreviewRecordingConversion(w http.ResponseWriter, r *http
 		Name         string `json:"name"`
 		Parameterize bool   `json:"parameterize"`
 	}
-	json.NewDecoder(r.Body).Decode(&req)
+	if !decodeOptionalJSONBody(w, r, &req) {
+		return
+	}
 
 	result := recorder.ConvertSessionWithOptions(session, req.Name, recorder.ConvertOptions{Parameterize: req.Parameterize})
 	if result.Script != nil {

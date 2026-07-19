@@ -237,6 +237,8 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 	}
 	metadata := ciRunMetadata{SchemaVersion: ciRunSchemaVersion, Source: req.Source, Name: strings.TrimSpace(req.Name), ReleaseID: strings.TrimSpace(req.ReleaseID), ScriptPath: firstNonEmpty(req.ScriptPath, req.Source.ScriptPath), ScriptIdentity: scriptIdentity, Execution: req.Execution, Goals: req.Goals, RequireSLA: req.Goals.RequireSLA, RequireResults: req.Goals.RequireResults, PublishCheck: req.shouldPublishCheck(), CheckInstallationID: githubPolicy.AppInstallationID, PolicyRevision: policy.Revision, IdempotencySHA: sha256String(idempotencyKey), DeploymentLeaseTokenSHA: deploymentLeaseTokenSHA}
 	existing, existingOK := s.runner.GetTest(testID)
+	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+	runActor := testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
 	if existingOK {
 		if err := validateExistingCIRun(existing, req.ProjectID, metadata); err != nil {
 			writeError(w, http.StatusConflict, err.Error())
@@ -304,16 +306,12 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		var started bool
-		existing, started, err = s.startOrAdoptCIRun(existing, req.ProjectID, metadata)
+		existing, started, err = s.startOrAdoptCIRun(existing, req.ProjectID, metadata, runActor)
 		if err != nil {
 			s.respondFailedCIRunStart(w, r, existing, "controller could not start recovered CI run", err)
 			return
 		}
 		if started {
-			actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
-			if actorType == "user" || actorType == "service_account" {
-				s.runner.AttributeTestStarted(existing.ID, actorSubject, actorDisplayName)
-			}
 			existing, _ = s.runner.GetTest(existing.ID)
 		}
 		response, _ := s.buildCIRunResponse(r.Context(), existing)
@@ -361,8 +359,7 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 		ScriptID: effectiveScriptID, VUsers: req.Execution.VUsers, RampUp: strings.TrimSpace(req.Execution.RampUp), ScenarioMode: scenarioMode, GoalConfig: goalConfig,
 		RuntimeSettings: &RuntimeSettingsOverride{BaseURL: strings.TrimSpace(req.Execution.BaseURL), Env: cloneCIStringMap(req.Execution.Variables)},
 	}
-	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
-	create.creationActor = testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
+	create.creationActor = runActor
 	if s.beforeCIRunMaterialize != nil {
 		s.beforeCIRunMaterialize(create)
 	}
@@ -377,15 +374,12 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 						return
 					}
 				}
-				existing, started, startErr := s.startOrAdoptCIRun(existing, req.ProjectID, metadata)
+				existing, started, startErr := s.startOrAdoptCIRun(existing, req.ProjectID, metadata, runActor)
 				if startErr != nil {
 					s.respondFailedCIRunStart(w, r, existing, "controller could not start recovered CI run", startErr)
 					return
 				}
 				if started {
-					if actorType == "user" || actorType == "service_account" {
-						s.runner.AttributeTestStarted(existing.ID, actorSubject, actorDisplayName)
-					}
 					existing, _ = s.runner.GetTest(existing.ID)
 				}
 				response, _ := s.buildCIRunResponse(r.Context(), existing)
@@ -412,23 +406,17 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		var started bool
-		test, started, err = s.startOrAdoptCIRun(test, req.ProjectID, metadata)
+		test, started, err = s.startOrAdoptCIRun(test, req.ProjectID, metadata, runActor)
 		if err != nil {
 			s.respondFailedCIRunStart(w, r, test, "controller could not start recovered CI run", err)
 			return
 		}
 		if started {
-			if actorType == "user" || actorType == "service_account" {
-				s.runner.AttributeTestStarted(test.ID, actorSubject, actorDisplayName)
-			}
 			test, _ = s.runner.GetTest(test.ID)
 		}
 		response, _ := s.buildCIRunResponse(r.Context(), test)
 		writeJSON(w, http.StatusAccepted, response)
 		return
-	}
-	if actorType == "user" || actorType == "service_account" {
-		s.runner.AttributeTestCreated(test.ID, actorSubject, actorDisplayName)
 	}
 	if metadata.PublishCheck {
 		if _, err := s.createCIGitHubCheck(r.Context(), checkClient, githubPolicy, test, metadata); err != nil {
@@ -441,14 +429,10 @@ func (s *Server) handleCreateCIRun(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	var started bool
-	test, started, err = s.startOrAdoptCIRun(test, req.ProjectID, metadata)
+	test, _, err = s.startOrAdoptCIRun(test, req.ProjectID, metadata, runActor)
 	if err != nil {
 		s.respondFailedCIRunStart(w, r, test, "controller could not start CI run", err)
 		return
-	}
-	if started && (actorType == "user" || actorType == "service_account") {
-		s.runner.AttributeTestStarted(test.ID, actorSubject, actorDisplayName)
 	}
 	test, _ = s.runner.GetTest(test.ID)
 	response, _ := s.buildCIRunResponse(r.Context(), test)
@@ -464,11 +448,11 @@ func ciRunNeedsStart(test *ManagedTest) bool {
 // QUEUED->start race. If another request starts or otherwise transitions the
 // same validated materialization first, its current state wins and both callers
 // can return the same accepted run instead of reporting a false start failure.
-func (s *Server) startOrAdoptCIRun(test *ManagedTest, projectID string, metadata ciRunMetadata) (*ManagedTest, bool, error) {
+func (s *Server) startOrAdoptCIRun(test *ManagedTest, projectID string, metadata ciRunMetadata, actor testCreationActor) (*ManagedTest, bool, error) {
 	if !ciRunNeedsStart(test) {
 		return test, false, nil
 	}
-	startErr := s.runner.StartTest(test.ID)
+	startErr := s.runner.StartTestWithActor(test.ID, StartTestOptions{}, actor)
 	if startErr == nil {
 		current, ok := s.runner.GetTest(test.ID)
 		if ok {
@@ -601,7 +585,8 @@ func (s *Server) handleAbortCIRun(w http.ResponseWriter, r *http.Request) {
 	}
 	abortReason := normalizeCIAbortReason(abortReq.Reason)
 	if !ciRunTerminal(test.Status) {
-		if err := s.runner.AbortCIRun(test.ID, abortReason); err != nil {
+		actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
+		if err := s.runner.AbortCIRunAsActor(test.ID, abortReason, testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}); err != nil {
 			status := http.StatusConflict
 			if errors.Is(err, errNotExecutionLeader) {
 				status = http.StatusServiceUnavailable
@@ -609,8 +594,6 @@ func (s *Server) handleAbortCIRun(w http.ResponseWriter, r *http.Request) {
 			writeError(w, status, "failed to abort CI run: "+err.Error())
 			return
 		}
-		_, actorSubject, actorDisplayName := s.resolveAuditActor(r)
-		s.runner.AttributeTestStopped(test.ID, actorSubject, actorDisplayName)
 	}
 	latest, _ := s.runner.GetTest(test.ID)
 	response, _ := s.buildCIRunResponse(r.Context(), latest)

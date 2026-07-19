@@ -21,14 +21,15 @@ import (
 // CreateExecutionPlanScheduleRequest is the create/update payload for a recurring
 // execution-plan schedule.
 type CreateExecutionPlanScheduleRequest struct {
-	Name            string     `json:"name"`
-	CronExpr        string     `json:"cron_expr"`
-	Timezone        string     `json:"timezone,omitempty"`
-	RunNameTemplate string     `json:"run_name_template,omitempty"`
-	Enabled         *bool      `json:"enabled,omitempty"`
-	MissedRunPolicy string     `json:"missed_run_policy,omitempty"`
-	DisabledFrom    *time.Time `json:"disabled_from,omitempty"`
-	DisabledUntil   *time.Time `json:"disabled_until,omitempty"`
+	Name             string     `json:"name"`
+	CronExpr         string     `json:"cron_expr"`
+	Timezone         string     `json:"timezone,omitempty"`
+	RunNameTemplate  string     `json:"run_name_template,omitempty"`
+	Enabled          *bool      `json:"enabled,omitempty"`
+	MissedRunPolicy  string     `json:"missed_run_policy,omitempty"`
+	DisabledFrom     *time.Time `json:"disabled_from,omitempty"`
+	DisabledUntil    *time.Time `json:"disabled_until,omitempty"`
+	ExpectedRevision *int       `json:"expected_revision,omitempty"`
 }
 
 type executionPlanScheduleCASPersistence interface {
@@ -129,6 +130,9 @@ func (tr *TestRunner) UpdateExecutionPlanSchedule(planID, scheduleID string, req
 	}
 	if existing == nil || existing.PlanID != planID {
 		return nil, false, nil
+	}
+	if req.ExpectedRevision != nil && *req.ExpectedRevision != existing.Revision {
+		return nil, true, fmt.Errorf("%w: expected revision %d, current revision %d", errScheduleConcurrentChange, *req.ExpectedRevision, existing.Revision)
 	}
 	updated, err := tr.upsertExecutionPlanScheduleWithTerm(planID, scheduleID, existing, req, leaseTerm, actors...)
 	return updated, true, err
@@ -349,7 +353,7 @@ func (tr *TestRunner) persistExecutionPlanScheduleWithTerm(schedule *storage.Exe
 			if !tr.executionLeaseTermCurrent(leaseTerm) {
 				return errNotExecutionLeader
 			}
-			return fmt.Errorf("execution plan schedule %s changed or was deleted concurrently", schedule.ID)
+			return fmt.Errorf("%w: execution plan schedule %s changed or was deleted concurrently", errScheduleConcurrentChange, schedule.ID)
 		}
 		return nil
 	}
@@ -471,25 +475,26 @@ func (tr *TestRunner) sweepDueExecutionPlanSchedules(now time.Time) {
 	if err != nil {
 		return
 	}
-	tr.sweepDueExecutionPlanSchedulesWithTerm(now, leaseTerm)
+	_ = tr.sweepDueExecutionPlanSchedulesWithTerm(now, leaseTerm)
 }
 
-func (tr *TestRunner) sweepDueExecutionPlanSchedulesWithTerm(now time.Time, leaseTerm executionLeaseTerm) {
+func (tr *TestRunner) sweepDueExecutionPlanSchedulesWithTerm(now time.Time, leaseTerm executionLeaseTerm) error {
 	if !tr.executionLeaseTermCurrent(leaseTerm) {
-		return
+		return errNotExecutionLeader
 	}
 	store := tr.execPlanScheduleStore
 	if store == nil {
-		return
+		return nil
 	}
 	schedules, err := store.ListAllExecutionPlanSchedules()
 	if err != nil {
-		return
+		return fmt.Errorf("list execution-plan schedules: %w", err)
 	}
+	var sweepErr error
 	processedOccurrences := 0
 	for _, schedule := range schedules {
 		if !tr.executionLeaseTermCurrent(leaseTerm) {
-			return
+			return errors.Join(sweepErr, errNotExecutionLeader)
 		}
 		if schedule == nil || !schedule.Enabled || schedule.NextRunAt == nil || schedule.NextRunAt.After(now) {
 			continue
@@ -497,11 +502,11 @@ func (tr *TestRunner) sweepDueExecutionPlanSchedulesWithTerm(now time.Time, leas
 		catchUpAll := normalizeScenarioScheduleMissedRunPolicy(schedule.MissedRunPolicy) == "catch_up_all"
 		for materialized := 0; schedule.NextRunAt != nil && !schedule.NextRunAt.After(now); materialized++ {
 			if processedOccurrences >= maxScheduledOccurrencesPerSweep {
-				return
+				return sweepErr
 			}
 			processedOccurrences++
 			if !tr.executionLeaseTermCurrent(leaseTerm) {
-				return
+				return errors.Join(sweepErr, errNotExecutionLeader)
 			}
 			if materialized >= maxScheduleCatchUpAllPerSweep {
 				schedule.NextRequiredAction = "catch_up_limit_reached"
@@ -514,6 +519,7 @@ func (tr *TestRunner) sweepDueExecutionPlanSchedulesWithTerm(now time.Time, leas
 			}
 			existing, loadErr := store.GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(schedule.ID, schedule.NextRunAt.UTC())
 			if loadErr != nil {
+				sweepErr = errors.Join(sweepErr, loadErr)
 				schedule.LastError = loadErr.Error()
 				break
 			}
@@ -522,6 +528,7 @@ func (tr *TestRunner) sweepDueExecutionPlanSchedulesWithTerm(now time.Time, leas
 			// this exact planned_at and cannot be replaced by a skip/decision row.
 			if existing == nil {
 				if handled, err := tr.applyMissedExecutionPlanSchedulePolicy(schedule, now, leaseTerm); err != nil {
+					sweepErr = errors.Join(sweepErr, err)
 					schedule.LastError = err.Error()
 					schedule.UpdatedAt = now
 					if saveErr := tr.persistExecutionPlanScheduleWithTerm(schedule, false, schedule.Revision, leaseTerm); saveErr != nil {
@@ -533,6 +540,7 @@ func (tr *TestRunner) sweepDueExecutionPlanSchedulesWithTerm(now time.Time, leas
 				}
 			}
 			if err := tr.runDueExecutionPlanScheduleOnceWithTerm(schedule, now, leaseTerm); err != nil {
+				sweepErr = errors.Join(sweepErr, err)
 				schedule.LastError = err.Error()
 				schedule.UpdatedAt = now
 				if saveErr := retryDurableTransition(func() error {
@@ -547,6 +555,7 @@ func (tr *TestRunner) sweepDueExecutionPlanSchedulesWithTerm(now time.Time, leas
 			}
 		}
 	}
+	return sweepErr
 }
 
 func (tr *TestRunner) applyMissedExecutionPlanSchedulePolicy(schedule *storage.ExecutionPlanSchedule, now time.Time, leaseTerm executionLeaseTerm) (bool, error) {
@@ -682,8 +691,18 @@ func (tr *TestRunner) runDueExecutionPlanScheduleOnceWithTerm(schedule *storage.
 		return fmt.Errorf("load execution-plan schedule occurrence: %w", err)
 	}
 	if existing != nil {
-		if strings.TrimSpace(existing.Status) == "materializing" || strings.TrimSpace(existing.Status) == "" {
+		status := strings.ToLower(strings.TrimSpace(existing.Status))
+		if status == "materializing" || status == "" {
 			return tr.recoverExecutionPlanScheduleOccurrence(schedule, existing, now, leaseTerm)
+		}
+		if status == "blocked" && existing.ReasonCode == "approval_required" {
+			return tr.reconcileExecutionPlanScheduleApprovalOccurrence(schedule, existing, now, leaseTerm)
+		}
+		// Operator-decision occurrences are durable gates. Do not reinterpret a
+		// blocked row as terminal and advance past it; only the resolution API may
+		// transition this exact CAS anchor to materializing or skipped.
+		if status == "blocked" && existing.ReasonCode == "missed_run_requires_decision" {
+			return nil
 		}
 		return tr.advanceExecutionPlanScheduleAfterOccurrence(schedule, existing, plannedAt, now, schedule.LastError, leaseTerm)
 	}
@@ -722,9 +741,85 @@ func (tr *TestRunner) runDueExecutionPlanScheduleOnceWithTerm(schedule *storage.
 		if strings.TrimSpace(existing.Status) == "materializing" || strings.TrimSpace(existing.Status) == "" {
 			return tr.recoverExecutionPlanScheduleOccurrence(schedule, existing, now, leaseTerm)
 		}
+		if strings.EqualFold(strings.TrimSpace(existing.Status), "blocked") && existing.ReasonCode == "approval_required" {
+			return tr.reconcileExecutionPlanScheduleApprovalOccurrence(schedule, existing, now, leaseTerm)
+		}
 		return tr.advanceExecutionPlanScheduleAfterOccurrence(schedule, existing, plannedAt, now, schedule.LastError, leaseTerm)
 	}
 	return tr.materializeClaimedExecutionPlanScheduleOccurrence(schedule, occurrence, now, leaseTerm)
+}
+
+// reconcileExecutionPlanScheduleApprovalOccurrence ties the governance
+// decision back to the exact scheduled occurrence that requested it. The
+// occurrence retains its preassigned RunID while blocked, so approval resumes
+// that run identity instead of starting an unrelated later cron occurrence.
+func (tr *TestRunner) reconcileExecutionPlanScheduleApprovalOccurrence(schedule *storage.ExecutionPlanSchedule, occurrence *storage.ExecutionPlanScheduleOccurrence, now time.Time, leaseTerm executionLeaseTerm) error {
+	if schedule == nil || occurrence == nil {
+		return fmt.Errorf("execution-plan schedule and occurrence are required")
+	}
+	approvalID := strings.TrimSpace(occurrence.ApprovalID)
+	if approvalID == "" {
+		return fmt.Errorf("scheduled execution-plan occurrence %s requires approval but has no approval correlation", occurrence.ID)
+	}
+	approval, err := tr.execPlanScheduleStore.GetExecutionPlanApproval(approvalID)
+	if err != nil {
+		return fmt.Errorf("load execution-plan approval %s for scheduled occurrence: %w", approvalID, err)
+	}
+	if approval == nil || strings.TrimSpace(approval.PlanID) != strings.TrimSpace(schedule.PlanID) {
+		return fmt.Errorf("scheduled execution-plan occurrence %s references a missing or mismatched approval %s", occurrence.ID, approvalID)
+	}
+	plan, err := tr.execPlanScheduleStore.GetExecutionPlan(schedule.PlanID)
+	if err != nil {
+		return fmt.Errorf("load execution plan %s while reconciling scheduled approval: %w", schedule.PlanID, err)
+	}
+	if plan == nil {
+		return fmt.Errorf("execution plan %s no longer exists while approval %s is pending", schedule.PlanID, approvalID)
+	}
+	contentChanged := strings.TrimSpace(approval.PlanContentHash) == "" || approval.PlanContentHash != tr.executionPlanApprovalContentHash(plan)
+	approvalStatus := strings.ToLower(strings.TrimSpace(approval.Status))
+	if contentChanged {
+		expectedRevision := occurrence.Revision
+		occurrence.Status = "materializing"
+		occurrence.ReasonCode = "approval_content_changed"
+		occurrence.ApprovalID = ""
+		occurrence.ConflictSummary = ""
+		occurrence.MaterializedAt = nil
+		occurrence.UpdatedAt = now
+		occurrence.TransitionToken = uuid.NewString()
+		if err := tr.persistExecutionPlanScheduleOccurrenceTransitionWithTerm(occurrence, expectedRevision, leaseTerm); err != nil {
+			return fmt.Errorf("resume scheduled occurrence after approval content changed: %w", err)
+		}
+		return tr.materializeClaimedExecutionPlanScheduleOccurrence(schedule, occurrence, now, leaseTerm)
+	}
+	switch approvalStatus {
+	case "pending":
+		// Initial finalization already holds next_run_at at this planned slot.
+		// Repair the parent only when a crash left the linkage incomplete.
+		holdError := firstNonEmpty(occurrence.ConflictSummary, "plan run requires approval (exceeds project quota)")
+		if schedule.NextRunAt != nil && schedule.NextRunAt.Equal(occurrence.PlannedAt) &&
+			schedule.NextRequiredAction == "approval_required" && schedule.LastError == holdError {
+			return nil
+		}
+		return tr.advanceExecutionPlanScheduleAfterOccurrence(schedule, occurrence, occurrence.PlannedAt, now, holdError, leaseTerm)
+	case "approved":
+		expectedRevision := occurrence.Revision
+		occurrence.Status = "materializing"
+		occurrence.ReasonCode = "approval_granted"
+		occurrence.ConflictSummary = ""
+		occurrence.MaterializedAt = nil
+		occurrence.UpdatedAt = now
+		occurrence.TransitionToken = uuid.NewString()
+		if err := tr.persistExecutionPlanScheduleOccurrenceTransitionWithTerm(occurrence, expectedRevision, leaseTerm); err != nil {
+			return fmt.Errorf("resume approved scheduled execution-plan occurrence: %w", err)
+		}
+		return tr.materializeClaimedExecutionPlanScheduleOccurrence(schedule, occurrence, now, leaseTerm)
+	case "rejected":
+		lastErr := firstNonEmpty(strings.TrimSpace(approval.DecisionReason), "execution-plan approval rejected")
+		occurrence.ConflictSummary = lastErr
+		return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "skipped", "approval_rejected", "", lastErr, leaseTerm)
+	default:
+		return fmt.Errorf("execution-plan approval %s has unsupported status %q", approval.ID, approval.Status)
+	}
 }
 
 // recoverExecutionPlanScheduleOccurrence resumes a materializing occurrence
@@ -819,7 +914,11 @@ func (tr *TestRunner) materializeClaimedExecutionPlanScheduleOccurrence(schedule
 		return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "failed", "materialize_failed", persistedRunID, err.Error(), leaseTerm)
 	}
 	if result.Blocked {
-		return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "blocked", "approval_required", "", "plan run requires approval (exceeds project quota)", leaseTerm)
+		if result.Approval == nil || strings.TrimSpace(result.Approval.ID) == "" {
+			return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "failed", "approval_correlation_missing", occurrence.RunID, "governance blocked the plan run without returning an approval correlation", leaseTerm)
+		}
+		occurrence.ApprovalID = result.Approval.ID
+		return tr.finalizeExecutionPlanScheduleOccurrence(schedule, occurrence, now, "blocked", "approval_required", occurrence.RunID, "plan run requires approval (exceeds project quota)", leaseTerm)
 	}
 	if result.RunID != occurrence.RunID {
 		lastErr := fmt.Sprintf("execution-plan materializer returned run %s for occurrence correlated to %s", result.RunID, occurrence.RunID)
@@ -892,7 +991,7 @@ func executionPlanScheduleOccurrenceTransitionMatches(current, intended *storage
 		current.PlanID == intended.PlanID && normalizeProjectID(current.ProjectID) == normalizeProjectID(intended.ProjectID) &&
 		current.PlannedAt.Equal(intended.PlannedAt) && current.Revision == expectedRevision+1 &&
 		current.TransitionToken == intended.TransitionToken && current.Status == intended.Status &&
-		current.ReasonCode == intended.ReasonCode && current.RunID == intended.RunID &&
+		current.ReasonCode == intended.ReasonCode && current.RunID == intended.RunID && current.ApprovalID == intended.ApprovalID &&
 		current.ConflictSummary == intended.ConflictSummary && current.ActorType == intended.ActorType &&
 		current.ActorSubject == intended.ActorSubject && current.ActorDisplayName == intended.ActorDisplayName &&
 		sameOptionalTime(current.MaterializedAt, intended.MaterializedAt)
@@ -930,6 +1029,26 @@ func (tr *TestRunner) advanceExecutionPlanScheduleAfterOccurrence(schedule *stor
 		return fmt.Errorf("execution-plan schedule storage is not configured")
 	}
 	previous := *schedule
+	if occurrence != nil && strings.EqualFold(strings.TrimSpace(occurrence.Status), "blocked") && occurrence.ReasonCode == "approval_required" {
+		holdAt := plannedAt.UTC()
+		holdError := firstNonEmpty(strings.TrimSpace(occurrence.ConflictSummary), strings.TrimSpace(lastErr), "plan run requires approval")
+		if schedule.NextRunAt != nil && schedule.NextRunAt.Equal(holdAt) &&
+			schedule.NextRequiredAction == "approval_required" && schedule.LastError == holdError {
+			return nil
+		}
+		schedule.NextRunAt = &holdAt
+		schedule.NextRequiredAction = "approval_required"
+		schedule.LastError = holdError
+		schedule.UpdatedAt = now
+		expectedRevision := schedule.Revision
+		if err := retryDurableTransition(func() error {
+			return tr.persistExecutionPlanScheduleWithTerm(schedule, false, expectedRevision, leaseTerm)
+		}); err != nil {
+			*schedule = previous
+			return fmt.Errorf("persist execution-plan schedule approval hold: %w", err)
+		}
+		return nil
+	}
 	if occurrence != nil && occurrence.RunID != "" {
 		schedule.LastRunRunID = occurrence.RunID
 		if occurrence.MaterializedAt != nil {

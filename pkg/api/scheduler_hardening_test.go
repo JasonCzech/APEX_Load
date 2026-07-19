@@ -156,7 +156,7 @@ func TestScenarioSchedulerRecoversMaterializingOccurrenceByPreassignedTestID(t *
 		}
 		now := time.Date(2026, time.July, 14, 12, 0, 0, 0, time.UTC)
 		due := now.Add(-time.Minute)
-		schedule := &storage.ScenarioSchedule{ID: "schedule-materializing-" + suffix, ScenarioID: scenario.ID, Revision: 1, Name: "Recovery", CronExpr: "*/5 * * * *", Enabled: true, NextRunAt: &due, CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour)}
+		schedule := &storage.ScenarioSchedule{ID: "schedule-materializing-" + suffix, ScenarioID: scenario.ID, Revision: 1, Name: "Recovery", CronExpr: "*/5 * * * *", Enabled: true, NextRunAt: &due, OwnerSubject: "scheduler-owner", OwnerDisplayName: "Scheduler Owner", CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour)}
 		runner.mu.Lock()
 		if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
 			runner.mu.Unlock()
@@ -188,6 +188,13 @@ func TestScenarioSchedulerRecoversMaterializingOccurrenceByPreassignedTestID(t *
 			}
 		case <-time.After(time.Second):
 			t.Fatal("resumed scheduled test did not start")
+		}
+		materialized, ok := runner.GetTest(reservedTestID)
+		if !ok {
+			t.Fatalf("materialized test %q not found", reservedTestID)
+		}
+		if materialized.CreatedBySubject != "scheduler-owner" || materialized.CreatedByDisplayName != "Scheduler Owner" || materialized.StartedBySubject != "scheduler-owner" || materialized.StartedByDisplayName != "Scheduler Owner" {
+			t.Fatalf("scheduled attribution = created %q/%q started %q/%q, want schedule owner throughout start", materialized.CreatedBySubject, materialized.CreatedByDisplayName, materialized.StartedBySubject, materialized.StartedByDisplayName)
 		}
 		occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
 		if err != nil {

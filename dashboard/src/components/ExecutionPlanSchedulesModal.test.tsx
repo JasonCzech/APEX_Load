@@ -77,6 +77,50 @@ describe('ExecutionPlanSchedulesModal accessibility', () => {
     expect(container.querySelector('[role="alert"]')?.textContent).toBe('schedules unavailable')
   })
 
+  it('keeps schedule CRUD available to editors but hides occurrence resolution', async () => {
+    apiMock.listExecutionPlanSchedules.mockResolvedValue({
+      schedules: [{
+        id: 'schedule-1',
+        plan_id: plan.id,
+        project_id: 'project-1',
+        revision: 1,
+        name: 'Nightly',
+        cron_expr: '0 2 * * *',
+        timezone: 'UTC',
+        enabled: true,
+        created_at: '',
+        updated_at: '',
+      }],
+      count: 1,
+    })
+    apiMock.listExecutionPlanScheduleOccurrences.mockResolvedValue({
+      occurrences: [{
+        id: 'occurrence-1',
+        schedule_id: 'schedule-1',
+        plan_id: plan.id,
+        project_id: 'project-1',
+        schedule_revision: 1,
+        revision: 1,
+        planned_at: '',
+        status: 'blocked',
+        created_at: '',
+        updated_at: '',
+      }],
+      count: 1,
+    })
+    await act(async () => {
+      root.render(<ExecutionPlanSchedulesModal plan={plan} canManage canAdmin={false} onClose={() => {}} />)
+    })
+    await flush()
+    expect(button('Edit')).toBeTruthy()
+    await act(async () => {
+      button('Runs').click()
+    })
+    await flush()
+    expect(container.textContent).toContain('blocked')
+    expect(Array.from(container.querySelectorAll('button')).some(item => item.textContent === 'Retry')).toBe(false)
+  })
+
   function button(label: string) {
     const match = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(item => item.textContent === label)
     if (!match) throw new Error(`button not found: ${label}`)

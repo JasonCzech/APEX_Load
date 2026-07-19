@@ -7,7 +7,7 @@ import { ExecutionPlan, ExecutionPlanApproval } from '../types'
 
 interface Props {
   plan: ExecutionPlan
-  canManage: boolean
+  canAdmin?: boolean
   onClose: () => void
   // Called after a pending approval is approved/rejected so the parent can
   // refresh any blocked-run state it is holding.
@@ -31,7 +31,7 @@ function formatTimestamp(iso?: string): string {
   return Number.isNaN(parsed.getTime()) ? iso : parsed.toLocaleString()
 }
 
-export default function ExecutionPlanApprovalsModal({ plan, canManage, onClose, onResolved }: Props) {
+export default function ExecutionPlanApprovalsModal({ plan, canAdmin = false, onClose, onResolved }: Props) {
   const api = useExecutionPlansApi()
   const [approvals, setApprovals] = useState<ExecutionPlanApproval[]>([])
   const [loading, setLoading] = useState(false)
@@ -136,7 +136,7 @@ export default function ExecutionPlanApprovalsModal({ plan, canManage, onClose, 
                       {approval.run_id ? <span>consumed by run {approval.run_id}</span> : null}
                     </div>
                   </div>
-                  {canManage && approval.status === 'pending' && (
+                  {canAdmin && approval.status === 'pending' && (
                     <div className="pp-row-actions pp-approval-actions">
                       <input
                         className="pp-approval-reason"

@@ -758,9 +758,11 @@ func TestDuplicateStopDoesNotClearFinalizerReservation(t *testing.T) {
 	}()
 	waitForGeneratorTestReservation(t, service, testID)
 
-	second, err := service.StopTest(context.Background(), &pb.StopRequest{TestId: testID})
-	if err != nil || !second.GetAcknowledged() {
-		t.Fatalf("duplicate StopTest = (%#v, %v), want idempotent acknowledgement", second, err)
+	duplicateCtx, cancel := context.WithTimeout(context.Background(), 25*time.Millisecond)
+	defer cancel()
+	second, err := service.StopTest(duplicateCtx, &pb.StopRequest{TestId: testID})
+	if second != nil || status.Code(err) != codes.DeadlineExceeded {
+		t.Fatalf("duplicate StopTest before finalization = (%#v, %v), want DeadlineExceeded", second, err)
 	}
 	service.mu.Lock()
 	_, stillStopping := service.stoppingTests[testID]
@@ -778,6 +780,10 @@ func TestDuplicateStopDoesNotClearFinalizerReservation(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("first StopTest did not complete")
+	}
+	second, err = service.StopTest(context.Background(), &pb.StopRequest{TestId: testID})
+	if err != nil || !second.GetAcknowledged() {
+		t.Fatalf("duplicate StopTest after finalization = (%#v, %v), want idempotent acknowledgement", second, err)
 	}
 }
 

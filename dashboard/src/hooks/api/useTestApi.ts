@@ -180,6 +180,7 @@ type ScenarioScheduleRequest = {
   availability_windows?: Array<{ name?: string, days_of_week?: number[], start_time: string, end_time: string, timezone?: string }>
   disabled_from?: string
   disabled_until?: string
+	 expected_revision?: number
 }
 
 type ScenarioScheduleListResponse = {
@@ -198,6 +199,11 @@ type ScenarioSchedulePreview = {
 type ScenarioScheduleOccurrencesResponse = {
   occurrences: ScenarioScheduleOccurrence[]
   count: number
+}
+
+type ScenarioScheduleOccurrenceResolutionResponse = {
+	occurrence: ScenarioScheduleOccurrence
+	schedule: ScenarioSchedule
 }
 
 type ScenarioScheduleApprovalResponse = {
@@ -467,6 +473,15 @@ export function useTestApi() {
     (scenarioId: string, scheduleId: string, occurrenceId: string) => request<{ deleted: string }>(`/scenarios/${scenarioId}/schedules/${scheduleId}/occurrences/${occurrenceId}`, { method: 'DELETE' }),
     [],
   )
+
+	const resolveScenarioScheduleOccurrence = useCallback(
+		(scenarioId: string, scheduleId: string, occurrenceId: string, action: 'retry' | 'catch_up' | 'skip', expectedRevision?: number, reason?: string) =>
+			request<ScenarioScheduleOccurrenceResolutionResponse>(`/scenarios/${scenarioId}/schedules/${scheduleId}/occurrences/${occurrenceId}/resolve`, {
+				method: 'POST',
+				body: JSON.stringify({ action, expected_revision: expectedRevision, reason: reason || '' }),
+			}),
+		[],
+	)
 
   const getScheduleHealth = useCallback(() => request<ScenarioScheduleHealth>('/schedules/health'), [])
 
@@ -764,6 +779,7 @@ export function useTestApi() {
       listScenarioScheduleOccurrences,
       listScenarioScheduleApprovals,
       deleteScenarioScheduleOccurrence,
+		  resolveScenarioScheduleOccurrence,
       getScheduleHealth,
       getRunCalendar,
       approveScenarioScheduleApproval,
@@ -798,6 +814,7 @@ export function useTestApi() {
       listScenarioScheduleOccurrences,
       listScenarioScheduleApprovals,
       deleteScenarioScheduleOccurrence,
+		  resolveScenarioScheduleOccurrence,
       getScheduleHealth,
       getRunCalendar,
       approveScenarioScheduleApproval,

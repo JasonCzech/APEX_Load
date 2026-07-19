@@ -15,6 +15,8 @@ kept for planning or audit context only.
 | [DEVELOPMENT.md](../DEVELOPMENT.md) | Current | Developer setup, package guide, testing policy |
 | [QUICK_REFERENCE.md](../QUICK_REFERENCE.md) | Current | Commands, DSL examples, common fixes |
 | [TROUBLESHOOTING.md](../TROUBLESHOOTING.md) | Current | Operational troubleshooting |
+| [APPLICATION_USER_GUIDE.md](APPLICATION_USER_GUIDE.md) | Current | End-user guide to the dashboard application (rendered in-app as API Guide → User Guide) |
+| [ADMIN_USER_GUIDE.md](ADMIN_USER_GUIDE.md) | Current | Administrator guide: users, RBAC, fleet, settings, governance (rendered in-app as API Guide → Admin Guide) |
 | [API_USER_GUIDE.md](API_USER_GUIDE.md) | Current | API workflows for operators and automation |
 | [SCRIPT_LIFECYCLE.md](SCRIPT_LIFECYCLE.md) | Current | Script source-to-run lifecycle |
 | [BROWSER_AND_MOBILE_SUPPORT.md](BROWSER_AND_MOBILE_SUPPORT.md) | Current | Browser canaries, mobile emulation, client metrics, benchmark evidence |

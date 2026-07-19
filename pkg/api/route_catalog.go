@@ -43,6 +43,7 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/auth/audit-events", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
 	routeAuth(http.MethodGet, "/api/v1/auth/audit-events/export", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
 	routeAuth(http.MethodGet, "/api/v1/schedules/health", viewerGlobalAccess()),
+	routeAuth(http.MethodPost, "/api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}/resolve", projectAdminAccess(resolveScenarioProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/run-calendar", viewerGlobalAccess()),
 
 	// Controller-native CI execution. ci_runner exists only on this bounded
@@ -65,6 +66,7 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPut, "/api/v1/execution-plans/{id}/schedules/{schedule_id}", editorProjectAccess(resolveExecutionPlanProjectID)),
 	routeAuth(http.MethodDelete, "/api/v1/execution-plans/{id}/schedules/{schedule_id}", editorProjectAccess(resolveExecutionPlanProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/execution-plans/{id}/schedules/{schedule_id}/occurrences", viewerProjectAccess(resolveExecutionPlanProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/execution-plans/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}/resolve", projectAdminAccess(resolveExecutionPlanProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/execution-plans/{id}/approvals", viewerProjectAccess(resolveExecutionPlanProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/execution-plans/{id}/approvals/{approval_id}/approve", projectAdminAccess(resolveExecutionPlanProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/execution-plans/{id}/approvals/{approval_id}/reject", projectAdminAccess(resolveExecutionPlanProjectID)),

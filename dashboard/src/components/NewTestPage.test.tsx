@@ -139,6 +139,7 @@ describe('NewTestPage', () => {
           operations: [
             { id: 'view_tests', label: 'View tests', allowed: true, grant_source: 'project' },
             { id: 'manage_tests', label: 'Manage tests', allowed: true, grant_source: 'project' },
+            { id: 'manage_projects', label: 'Manage projects', allowed: true, grant_source: 'project' },
           ],
         },
       ],

@@ -36,6 +36,7 @@ type handlerContractAnalysis struct {
 	rawRequest       bool
 	jsonResponse     bool
 	requestSchema    *oasSchema
+	responseSchemas  map[int]oasSchema
 }
 
 func newHandlerContractAnalysis() *handlerContractAnalysis {
@@ -48,6 +49,7 @@ func newHandlerContractAnalysis() *handlerContractAnalysis {
 		formFiles:       map[string]bool{},
 		statuses:        map[int]bool{},
 		responseMedia:   map[string]bool{},
+		responseSchemas: map[int]oasSchema{},
 	}
 }
 
@@ -61,14 +63,14 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 		return nil, fmt.Errorf("parse API handlers in %s: %w", dir, err)
 	}
 
-	functions := map[string]*ast.FuncDecl{}
+	functionCandidates := map[string][]*ast.FuncDecl{}
 	typeDefinitions := map[string]ast.Expr{}
 	for _, pkg := range packages {
 		for _, file := range pkg.Files {
 			for _, decl := range file.Decls {
 				fn, ok := decl.(*ast.FuncDecl)
 				if ok && fn.Body != nil {
-					functions[fn.Name.Name] = fn
+					functionCandidates[fn.Name.Name] = append(functionCandidates[fn.Name.Name], fn)
 				}
 				gen, ok := decl.(*ast.GenDecl)
 				if !ok || gen.Tok != token.TYPE {
@@ -83,19 +85,60 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 			}
 		}
 	}
+	functions := map[string]*ast.FuncDecl{}
+	functionResults := map[string][]ast.Expr{}
+	for name, candidates := range functionCandidates {
+		if len(candidates) == 1 {
+			functions[name] = candidates[0]
+			functionResults[name] = functionResultTypes(candidates[0])
+			continue
+		}
+		// Bare selector names are not type-safe: many receiver types expose Run,
+		// Get, Start, and similar methods. Never choose one based on randomized
+		// package/file map iteration. Route handlers are known to be Server methods,
+		// so retain that single unambiguous root while declining result inference for
+		// every ambiguous method name.
+		var serverHandler *ast.FuncDecl
+		for _, candidate := range candidates {
+			if receiverTypeName(candidate) == "Server" && strings.HasPrefix(name, "handle") {
+				if serverHandler != nil {
+					serverHandler = nil
+					break
+				}
+				serverHandler = candidate
+			}
+		}
+		if serverHandler != nil {
+			functions[name] = serverHandler
+		}
+	}
 
 	contracts := make(map[string]inferredRouteContract, len(routes))
 	for _, route := range routes {
 		analysis := newHandlerContractAnalysis()
 		if route.Handler != "" {
-			inspectHandlerContract(route.Handler, functions, typeDefinitions, analysis, map[string]bool{}, 0)
+			inspectHandlerContract(route.Handler, functions, functionResults, typeDefinitions, analysis, map[string]bool{}, 0)
 		}
 		contracts[route.Method+" "+route.Path] = inferredContractForAnalysis(route, analysis)
 	}
 	return contracts, nil
 }
 
-func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, typeDefinitions map[string]ast.Expr, analysis *handlerContractAnalysis, visiting map[string]bool, depth int) {
+func receiverTypeName(fn *ast.FuncDecl) string {
+	if fn == nil || fn.Recv == nil || len(fn.Recv.List) != 1 {
+		return ""
+	}
+	expr := fn.Recv.List[0].Type
+	if pointer, ok := expr.(*ast.StarExpr); ok {
+		expr = pointer.X
+	}
+	if ident, ok := expr.(*ast.Ident); ok {
+		return ident.Name
+	}
+	return ""
+}
+
+func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, functionResults map[string][]ast.Expr, typeDefinitions map[string]ast.Expr, analysis *handlerContractAnalysis, visiting map[string]bool, depth int) {
 	if depth > maxOpenAPIHandlerCallDepth || visiting[name] {
 		return
 	}
@@ -107,7 +150,7 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, typ
 	defer delete(visiting, name)
 
 	queryVariables := findQueryVariables(fn.Body)
-	variableTypes := findLocalVariableTypes(fn.Body)
+	variableTypes := findLocalVariableTypes(fn.Body, functionResults)
 	ast.Inspect(fn.Body, func(node ast.Node) bool {
 		if index, ok := node.(*ast.IndexExpr); ok && receiverIsQuery(index.X, queryVariables) {
 			if value, ok := stringLiteral(index.Index); ok && plausibleQueryName(value) {
@@ -187,6 +230,7 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, typ
 			if len(call.Args) > 1 {
 				if status, ok := openAPIHTTPStatus(call.Args[1]); ok {
 					analysis.statuses[status] = true
+					setInferredResponseSchema(call, status, variableTypes, functionResults, typeDefinitions, analysis)
 				}
 			}
 		case "writeError":
@@ -219,7 +263,7 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, typ
 		}
 
 		if depth < maxOpenAPIHandlerCallDepth && functions[callName] != nil && callPassesRequest(call) && shouldInspectCalledContract(callName) {
-			inspectHandlerContract(callName, functions, typeDefinitions, analysis, visiting, depth+1)
+			inspectHandlerContract(callName, functions, functionResults, typeDefinitions, analysis, visiting, depth+1)
 		}
 		return true
 	})
@@ -240,12 +284,53 @@ func shouldInspectCalledContract(name string) bool {
 }
 
 func inferredContractForAnalysis(route discoveredRoute, analysis *handlerContractAnalysis) inferredRouteContract {
+	headerParameters := inferredHeaderParameters(analysis)
+	responses := inferredResponses(route, analysis)
+	if isScheduleUpdateRoute(route.Method, route.Path) {
+		headerParameters = appendOrReplaceHeaderParameter(headerParameters, oasParameter{
+			Name:        "If-Match",
+			In:          "header",
+			Description: "Required unless expected_revision is supplied in the JSON body. Must identify the positive current schedule revision; weak ETag syntax is accepted.",
+			Required:    false,
+			Schema:      oasParamSchema{Type: "string"},
+		})
+		if responses == nil {
+			responses = map[string]oasResponse{}
+		}
+		responses["409"] = jsonErrorResponse("The schedule changed after the supplied revision was read, or an active occurrence prevents the update.")
+		responses["428"] = jsonErrorResponse("Supply either expected_revision in the JSON body or the If-Match header.")
+	}
 	return inferredRouteContract{
 		QueryParameters:  inferredQueryParameters(route, analysis),
-		HeaderParameters: inferredHeaderParameters(analysis),
+		HeaderParameters: headerParameters,
 		RequestBody:      inferredRequestBody(route, analysis),
-		Responses:        inferredResponses(route, analysis),
+		Responses:        responses,
 	}
+}
+
+func isScheduleUpdateRoute(method, path string) bool {
+	if method != http.MethodPut {
+		return false
+	}
+	return path == "/api/v1/scenarios/{id}/schedules/{schedule_id}" ||
+		path == "/api/v1/execution-plans/{id}/schedules/{schedule_id}"
+}
+
+func appendOrReplaceHeaderParameter(parameters []oasParameter, replacement oasParameter) []oasParameter {
+	for index := range parameters {
+		if strings.EqualFold(parameters[index].Name, replacement.Name) {
+			parameters[index] = replacement
+			sort.Slice(parameters, func(i, j int) bool {
+				return strings.ToLower(parameters[i].Name) < strings.ToLower(parameters[j].Name)
+			})
+			return parameters
+		}
+	}
+	parameters = append(parameters, replacement)
+	sort.Slice(parameters, func(i, j int) bool {
+		return strings.ToLower(parameters[i].Name) < strings.ToLower(parameters[j].Name)
+	})
+	return parameters
 }
 
 func inferredHeaderParameters(analysis *handlerContractAnalysis) []oasParameter {
@@ -354,6 +439,16 @@ func inferredRequestBody(route discoveredRoute, analysis *handlerContractAnalysi
 		if analysis.requestSchema != nil {
 			schema = *analysis.requestSchema
 		}
+		schema.Required = mergeOpenAPIRequiredFields(
+			schema.Required,
+			explicitRequestRequiredFields(route.Method, route.Path, schema.Properties),
+		)
+		if isScheduleUpdateRoute(route.Method, route.Path) {
+			if expectedRevision, ok := schema.Properties["expected_revision"]; ok {
+				expectedRevision.Description = "Required unless the If-Match header is supplied. Must be the positive current schedule revision."
+				schema.Properties["expected_revision"] = expectedRevision
+			}
+		}
 		return &oasRequestBody{
 			Required: !analysis.optionalJSONBody,
 			Content: map[string]oasMediaType{
@@ -372,7 +467,70 @@ func inferredRequestBody(route discoveredRoute, analysis *handlerContractAnalysi
 	return nil
 }
 
-func findLocalVariableTypes(body *ast.BlockStmt) map[string]ast.Expr {
+func explicitRequestRequiredFields(method, path string, properties map[string]oasSchema) []string {
+	declared := map[string][]string{
+		"POST /api/v1/scenarios":                                                                        {"name", "duration", "groups"},
+		"PUT /api/v1/scenarios/{id}":                                                                    {"name", "duration", "groups"},
+		"POST /api/v1/scenarios/{id}/schedules":                                                         {"name", "cron_expr"},
+		"PUT /api/v1/scenarios/{id}/schedules/{schedule_id}":                                            {"name", "cron_expr"},
+		"POST /api/v1/scenarios/{id}/schedules/preview":                                                 {"cron_expr"},
+		"POST /api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}/resolve":       {"action"},
+		"POST /api/v1/execution-plans/{id}/schedules":                                                   {"cron_expr"},
+		"PUT /api/v1/execution-plans/{id}/schedules/{schedule_id}":                                      {"cron_expr"},
+		"POST /api/v1/execution-plans/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}/resolve": {"action"},
+		"POST /api/v1/execution-plans":                                                                  {"name"},
+		"PUT /api/v1/execution-plans/{id}":                                                              {"name", "revision"},
+	}
+	fields := declared[method+" "+path]
+	if len(fields) == 0 {
+		return nil
+	}
+	required := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if _, ok := properties[field]; ok {
+			required = append(required, field)
+		}
+	}
+	sort.Strings(required)
+	return required
+}
+
+func mergeOpenAPIRequiredFields(existing, explicit []string) []string {
+	if len(existing) == 0 && len(explicit) == 0 {
+		return nil
+	}
+	unique := make(map[string]struct{}, len(existing)+len(explicit))
+	for _, field := range append(append([]string(nil), existing...), explicit...) {
+		if strings.TrimSpace(field) != "" {
+			unique[field] = struct{}{}
+		}
+	}
+	merged := make([]string, 0, len(unique))
+	for field := range unique {
+		merged = append(merged, field)
+	}
+	sort.Strings(merged)
+	return merged
+}
+
+func functionResultTypes(fn *ast.FuncDecl) []ast.Expr {
+	if fn == nil || fn.Type == nil || fn.Type.Results == nil {
+		return nil
+	}
+	results := make([]ast.Expr, 0, len(fn.Type.Results.List))
+	for _, field := range fn.Type.Results.List {
+		count := len(field.Names)
+		if count == 0 {
+			count = 1
+		}
+		for index := 0; index < count; index++ {
+			results = append(results, field.Type)
+		}
+	}
+	return results
+}
+
+func findLocalVariableTypes(body *ast.BlockStmt, functionResults map[string][]ast.Expr) map[string]ast.Expr {
 	variables := map[string]ast.Expr{}
 	ast.Inspect(body, func(node ast.Node) bool {
 		switch statement := node.(type) {
@@ -391,6 +549,17 @@ func findLocalVariableTypes(body *ast.BlockStmt) map[string]ast.Expr {
 				}
 			}
 		case *ast.AssignStmt:
+			if len(statement.Rhs) == 1 {
+				if call, ok := statement.Rhs[0].(*ast.CallExpr); ok {
+					results := functionResults[calledFunctionName(call.Fun)]
+					for index, lhs := range statement.Lhs {
+						ident, identOK := lhs.(*ast.Ident)
+						if identOK && ident.Name != "_" && index < len(results) {
+							variables[ident.Name] = results[index]
+						}
+					}
+				}
+			}
 			for index, rhs := range statement.Rhs {
 				if index >= len(statement.Lhs) {
 					continue
@@ -405,6 +574,35 @@ func findLocalVariableTypes(body *ast.BlockStmt) map[string]ast.Expr {
 		return true
 	})
 	return variables
+}
+
+func setInferredResponseSchema(call *ast.CallExpr, status int, variableTypes map[string]ast.Expr, functionResults map[string][]ast.Expr, typeDefinitions map[string]ast.Expr, analysis *handlerContractAnalysis) {
+	if analysis == nil || status < 200 || status >= 400 || len(call.Args) < 3 {
+		return
+	}
+	expr := inferredExpressionType(call.Args[len(call.Args)-1], variableTypes, functionResults)
+	if expr == nil {
+		return
+	}
+	schema := openAPISchemaForASTType(expr, typeDefinitions, map[string]bool{}, 0)
+	analysis.responseSchemas[status] = schema
+}
+
+func inferredExpressionType(expr ast.Expr, variableTypes map[string]ast.Expr, functionResults map[string][]ast.Expr) ast.Expr {
+	switch value := expr.(type) {
+	case *ast.Ident:
+		return variableTypes[value.Name]
+	case *ast.UnaryExpr:
+		return inferredExpressionType(value.X, variableTypes, functionResults)
+	case *ast.CompositeLit:
+		return value.Type
+	case *ast.CallExpr:
+		results := functionResults[calledFunctionName(value.Fun)]
+		if len(results) > 0 {
+			return results[0]
+		}
+	}
+	return nil
 }
 
 func setInferredRequestSchema(call *ast.CallExpr, variableTypes map[string]ast.Expr, typeDefinitions map[string]ast.Expr, analysis *handlerContractAnalysis) {
@@ -428,7 +626,7 @@ func setInferredRequestSchema(call *ast.CallExpr, variableTypes map[string]ast.E
 }
 
 func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr, visiting map[string]bool, depth int) oasSchema {
-	if expr == nil || depth > 8 {
+	if expr == nil {
 		additional := true
 		return oasSchema{Type: "object", AdditionalProperties: &additional}
 	}
@@ -446,6 +644,10 @@ func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr,
 		case "any", "interface{}":
 			return oasSchema{}
 		}
+		if depth > 8 {
+			additional := true
+			return oasSchema{Type: "object", Description: "Go type: " + value.Name, AdditionalProperties: &additional}
+		}
 		definition := typeDefinitions[value.Name]
 		if definition == nil || visiting[value.Name] {
 			additional := true
@@ -456,7 +658,10 @@ func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr,
 		delete(visiting, value.Name)
 		return schema
 	case *ast.StarExpr:
-		return openAPISchemaForASTType(value.X, typeDefinitions, visiting, depth+1)
+		// Pointer indirection does not make a JSON document structurally deeper.
+		// Keeping the same depth also lets scalar pointers retain their real type
+		// when nested request models approach the recursion guard.
+		return openAPISchemaForASTType(value.X, typeDefinitions, visiting, depth)
 	case *ast.ArrayType:
 		item := openAPISchemaForASTType(value.Elt, typeDefinitions, visiting, depth+1)
 		return oasSchema{Type: "array", Items: &item}
@@ -477,9 +682,13 @@ func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr,
 			return oasSchema{Type: "object", Description: "Go type: " + pkg.Name + "." + value.Sel.Name, AdditionalProperties: &additional}
 		}
 	case *ast.StructType:
+		if depth > 8 {
+			additional := true
+			return oasSchema{Type: "object", AdditionalProperties: &additional}
+		}
 		properties := map[string]oasSchema{}
 		for _, field := range value.Fields.List {
-			name, include := jsonFieldName(field)
+			name, include, _ := jsonFieldName(field)
 			if !include || name == "" {
 				continue
 			}
@@ -491,7 +700,13 @@ func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr,
 	return oasSchema{Type: "object", AdditionalProperties: &additional}
 }
 
-func jsonFieldName(field *ast.Field) (string, bool) {
+func jsonFieldName(field *ast.Field) (string, bool, bool) {
+	// encoding/json never serializes unexported fields, even when they carry an
+	// explicit tag. Exposing them here advertised process-only implementation
+	// details such as creationActor and runtimeSecretScope as public API fields.
+	if len(field.Names) > 0 && !ast.IsExported(field.Names[0].Name) {
+		return "", false, false
+	}
 	if field.Tag != nil {
 		tagValue, err := strconv.Unquote(field.Tag.Value)
 		if err == nil {
@@ -505,18 +720,25 @@ func jsonFieldName(field *ast.Field) (string, bool) {
 				}
 				name := strings.SplitN(jsonTag, ",", 2)[0]
 				if name == "-" {
-					return "", false
+					return "", false, false
 				}
 				if name != "" {
-					return name, true
+					omitEmpty := false
+					for _, option := range strings.Split(jsonTag, ",")[1:] {
+						if option == "omitempty" {
+							omitEmpty = true
+							break
+						}
+					}
+					return name, true, omitEmpty
 				}
 			}
 		}
 	}
 	if len(field.Names) == 0 {
-		return "", false
+		return "", false, false
 	}
-	return field.Names[0].Name, true
+	return field.Names[0].Name, true, false
 }
 
 func inferredResponses(route discoveredRoute, analysis *handlerContractAnalysis) map[string]oasResponse {
@@ -551,12 +773,12 @@ func inferredResponses(route discoveredRoute, analysis *handlerContractAnalysis)
 				"application/json": {Schema: oasSchema{Ref: "#/components/schemas/ErrorResponse"}},
 			}
 		} else if status < 400 && status != http.StatusNoContent && status != http.StatusNotModified && route.Method != http.MethodHead {
-			response.Content = inferredSuccessResponseContent(route, analysis)
+			response.Content = inferredSuccessResponseContent(route, analysis, status)
 		}
 		responses[strconv.Itoa(status)] = response
 	}
 	if !hasSuccessStatus(statuses) {
-		responses["2XX"] = oasResponse{Description: "Successful response; exact status is selected by the handler.", Content: inferredSuccessResponseContent(route, analysis)}
+		responses["2XX"] = oasResponse{Description: "Successful response; exact status is selected by the handler.", Content: inferredSuccessResponseContent(route, analysis, 0)}
 	}
 	if route.Authenticated {
 		responses["401"] = jsonErrorResponse("Authentication required or invalid.")
@@ -566,10 +788,20 @@ func inferredResponses(route discoveredRoute, analysis *handlerContractAnalysis)
 	return responses
 }
 
-func inferredSuccessResponseContent(route discoveredRoute, analysis *handlerContractAnalysis) map[string]oasMediaType {
+func inferredSuccessResponseContent(route discoveredRoute, analysis *handlerContractAnalysis, status int) map[string]oasMediaType {
 	content := map[string]oasMediaType{}
 	if analysis.jsonResponse {
-		content["application/json"] = oasMediaType{Schema: oasSchema{Description: "Operation-specific JSON response."}}
+		schema, ok := analysis.responseSchemas[status]
+		if !ok && status == 0 && len(analysis.responseSchemas) == 1 {
+			for _, candidate := range analysis.responseSchemas {
+				schema = candidate
+				ok = true
+			}
+		}
+		if !ok {
+			schema = oasSchema{Description: "Operation-specific JSON response."}
+		}
+		content["application/json"] = oasMediaType{Schema: schema}
 	}
 	for mediaType := range analysis.responseMedia {
 		if mediaType == "" {
@@ -754,6 +986,7 @@ func openAPIHTTPStatus(expr ast.Expr) (int, bool) {
 		"StatusForbidden": http.StatusForbidden, "StatusNotFound": http.StatusNotFound,
 		"StatusMethodNotAllowed": http.StatusMethodNotAllowed, "StatusConflict": http.StatusConflict,
 		"StatusGone": http.StatusGone, "StatusRequestEntityTooLarge": http.StatusRequestEntityTooLarge,
+		"StatusPreconditionRequired": http.StatusPreconditionRequired,
 		"StatusUnsupportedMediaType": http.StatusUnsupportedMediaType, "StatusUnprocessableEntity": http.StatusUnprocessableEntity,
 		"StatusTooManyRequests": http.StatusTooManyRequests, "StatusInternalServerError": http.StatusInternalServerError,
 		"StatusNotImplemented": http.StatusNotImplemented, "StatusBadGateway": http.StatusBadGateway,

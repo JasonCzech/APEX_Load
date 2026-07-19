@@ -293,7 +293,7 @@ describe('ExecutionPlansPanel', () => {
       count: 1,
     })
     await act(async () => {
-      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage canAdmin />)
     })
     await flush()
     const runBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Run')
@@ -319,7 +319,7 @@ describe('ExecutionPlansPanel', () => {
     })
     plansApiMock.approveExecutionPlanApproval.mockResolvedValue({ id: 'appr-1', plan_id: 'p1', policy: 'quota_burst', status: 'approved', requested_at: '', created_at: '', updated_at: '' })
     await act(async () => {
-      root.render(<ExecutionPlansPanel projectId="proj-a" canManage />)
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage canAdmin />)
     })
     await flush()
     const apprBtn = [...container.querySelectorAll('button')].find(b => b.textContent === 'Approvals')
@@ -337,6 +337,28 @@ describe('ExecutionPlansPanel', () => {
     })
     await flush()
     expect(plansApiMock.approveExecutionPlanApproval).toHaveBeenCalledWith('p1', 'appr-1', 'capacity confirmed')
+  })
+
+  it('lets editors inspect pending approvals without exposing project-admin decisions', async () => {
+    plansApiMock.listExecutionPlans.mockResolvedValue({ execution_plans: [plan({})], count: 1 })
+    plansApiMock.listExecutionPlanApprovals.mockResolvedValue({
+      approvals: [
+        { id: 'appr-1', plan_id: 'p1', policy: 'quota_burst', status: 'pending', required_role: 'ProjectAdmin', requested_at: '', created_at: '', updated_at: '' },
+      ],
+      count: 1,
+    })
+    await act(async () => {
+      root.render(<ExecutionPlansPanel projectId="proj-a" canManage canAdmin={false} />)
+    })
+    await flush()
+    const approvalsButton = [...container.querySelectorAll('button')].find(button => button.textContent === 'Approvals')
+    await act(async () => {
+      ;(approvalsButton as HTMLElement).click()
+    })
+    await flush()
+    expect(container.textContent).toContain('Approvals — “nightly”')
+    expect([...container.querySelectorAll('button')].some(button => button.textContent === 'Approve')).toBe(false)
+    expect([...container.querySelectorAll('button')].some(button => button.textContent === 'Reject')).toBe(false)
   })
 
   it('opens a pre-seeded draft from a handed-in scenario and consumes the seed', async () => {

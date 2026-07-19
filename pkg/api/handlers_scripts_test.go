@@ -5292,6 +5292,111 @@ func TestHandleSaveJMeterImportPersistsScriptsAndScenario(t *testing.T) {
 	}
 }
 
+func TestHandleSaveJMeterImportValidatesAllScriptsBeforePersisting(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"scripts": []map[string]any{
+			{
+				"name": "Valid_First", "version": "1.0.0", "protocol": "http",
+				"config":  map[string]any{"base_url": "https://api.example.com"},
+				"actions": []map[string]any{{"name": "Home", "type": "request", "method": "GET", "target": "/"}},
+			},
+			{
+				"name": "Invalid_Second", "version": "1.0.0", "protocol": "http",
+				"config":  map[string]any{"base_url": "https://api.example.com"},
+				"actions": []map[string]any{},
+			},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter/save", bytes.NewReader(body))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if scripts := server.runner.ListScripts(); len(scripts) != 0 {
+		t.Fatalf("partial JMeter import persisted scripts: %#v", scripts)
+	}
+}
+
+func TestHandleSaveJMeterImportRollsBackScriptsWhenScenarioFails(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	payload := map[string]any{
+		"scripts": []map[string]any{{
+			"name": "Scenario_Script", "version": "1.0.0", "protocol": "http",
+			"config":  map[string]any{"base_url": "https://api.example.com"},
+			"actions": []map[string]any{{"name": "Home", "type": "request", "method": "GET", "target": "/"}},
+		}},
+		"scenario_draft": map[string]any{
+			"name": "Invalid Scenario", "duration": "not-a-duration", "scenario_mode": "vuser_driven",
+			"groups": []map[string]any{{"name": "Users", "script_name": "Scenario_Script", "vusers": 1}},
+		},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter/save", bytes.NewReader(body))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if scripts := server.runner.ListScripts(); len(scripts) != 0 {
+		t.Fatalf("failed scenario left imported scripts behind: %#v", scripts)
+	}
+}
+
+func TestHandleSaveJMeterImportRejectsEveryUnresolvedScenarioGroupBeforePersisting(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		groups []map[string]any
+	}{
+		{
+			name: "mixed known and unknown",
+			groups: []map[string]any{
+				{"name": "Known", "script_name": "Known_Script", "vusers": 1},
+				{"name": "Missing", "script_name": "Missing_Script", "vusers": 1},
+			},
+		},
+		{
+			name:   "all unknown",
+			groups: []map[string]any{{"name": "Missing", "script_name": "Missing_Script", "vusers": 1}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := NewServer(ServerConfig{})
+			payload := map[string]any{
+				"scripts": []map[string]any{{
+					"name": "Known_Script", "version": "1.0.0", "protocol": "http",
+					"config":  map[string]any{"base_url": "https://api.example.com"},
+					"actions": []map[string]any{{"name": "Home", "type": "request", "method": "GET", "target": "/"}},
+				}},
+				"scenario_draft": map[string]any{
+					"name": "Unresolved Scenario", "duration": "1m", "scenario_mode": "vuser_driven", "groups": tc.groups,
+				},
+			}
+			body, err := json.Marshal(payload)
+			if err != nil {
+				t.Fatalf("json.Marshal returned error: %v", err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/jmeter/save", bytes.NewReader(body))
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+			if resp.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+			}
+			if scripts := server.runner.ListScripts(); len(scripts) != 0 {
+				t.Fatalf("unresolved scenario persisted scripts: %#v", scripts)
+			}
+		})
+	}
+}
+
 func buildEnterpriseArchiveImportArchive(t *testing.T, includeParameterFiles bool) []byte {
 	t.Helper()
 

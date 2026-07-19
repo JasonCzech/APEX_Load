@@ -33,6 +33,7 @@ type conditionalScenarioDeletePersistence interface {
 }
 
 var errScenarioConcurrentChange = fmt.Errorf("scenario changed concurrently after conflict preflight")
+var errScheduleConcurrentChange = errors.New("schedule changed concurrently")
 var errScheduleHasActiveOccurrence = errors.New("schedule has an active materializing occurrence")
 
 type executionFencedScenarioSchedulePersistence interface {
@@ -628,7 +629,7 @@ func (tr *TestRunner) saveScenarioScheduleLocked(schedule *storage.ScenarioSched
 				return err
 			}
 			if !changed {
-				return fmt.Errorf("scenario schedule %q changed or was deleted; reload and retry", schedule.ID)
+				return fmt.Errorf("%w: scenario schedule %q changed or was deleted; reload and retry", errScheduleConcurrentChange, schedule.ID)
 			}
 		} else if err := tr.scenarioStore.SaveScenarioSchedule(schedule); err != nil {
 			return err
@@ -759,7 +760,7 @@ func (tr *TestRunner) ListScenarioScheduleOccurrences(scenarioID string, schedul
 // ListScenarioScheduleOccurrencesPage is the controller-facing bounded history
 // read. Production storage applies LIMIT/OFFSET in SQL; compatibility stores
 // are sliced after their legacy read.
-func (tr *TestRunner) ListScenarioScheduleOccurrencesPage(scenarioID, scheduleID string, limit, offset int) ([]*storage.ScenarioScheduleOccurrence, bool) {
+func (tr *TestRunner) ListScenarioScheduleOccurrencesPage(scenarioID, scheduleID string, limit, offset int) ([]*storage.ScenarioScheduleOccurrence, bool, error) {
 	tr.refreshScenariosForHARead(true)
 	tr.mu.RLock()
 	scenario, ok := tr.scenarios[scenarioID]
@@ -775,10 +776,10 @@ func (tr *TestRunner) ListScenarioScheduleOccurrencesPage(scenarioID, scheduleID
 	store := tr.scenarioStore
 	tr.mu.RUnlock()
 	if !ok || !found {
-		return nil, false
+		return nil, false, nil
 	}
 	if store == nil {
-		return []*storage.ScenarioScheduleOccurrence{}, true
+		return []*storage.ScenarioScheduleOccurrence{}, true, nil
 	}
 	var occurrences []*storage.ScenarioScheduleOccurrence
 	var err error
@@ -793,13 +794,13 @@ func (tr *TestRunner) ListScenarioScheduleOccurrencesPage(scenarioID, scheduleID
 		}
 	}
 	if err != nil {
-		return []*storage.ScenarioScheduleOccurrence{}, true
+		return nil, true, fmt.Errorf("list scenario schedule occurrences: %w", err)
 	}
 	out := make([]*storage.ScenarioScheduleOccurrence, 0, len(occurrences))
 	for _, occurrence := range occurrences {
 		out = append(out, cloneScenarioScheduleOccurrence(occurrence))
 	}
-	return out, true
+	return out, true, nil
 }
 
 func pageScenarioScheduleOccurrences(items []*storage.ScenarioScheduleOccurrence, limit, offset int) []*storage.ScenarioScheduleOccurrence {
@@ -853,7 +854,7 @@ func (tr *TestRunner) ListScenarioScheduleApprovals(scenarioID string, scheduleI
 
 // ListScenarioScheduleApprovalsPage is the bounded API counterpart of the
 // complete approval-history reader used by scheduler internals.
-func (tr *TestRunner) ListScenarioScheduleApprovalsPage(scenarioID, scheduleID string, limit, offset int) ([]*storage.ScenarioScheduleApproval, bool) {
+func (tr *TestRunner) ListScenarioScheduleApprovalsPage(scenarioID, scheduleID string, limit, offset int) ([]*storage.ScenarioScheduleApproval, bool, error) {
 	tr.refreshScenariosForHARead(true)
 	tr.mu.RLock()
 	scenario, ok := tr.scenarios[scenarioID]
@@ -869,10 +870,10 @@ func (tr *TestRunner) ListScenarioScheduleApprovalsPage(scenarioID, scheduleID s
 	store := tr.scenarioStore
 	tr.mu.RUnlock()
 	if !ok || !found {
-		return nil, false
+		return nil, false, nil
 	}
 	if store == nil {
-		return []*storage.ScenarioScheduleApproval{}, true
+		return []*storage.ScenarioScheduleApproval{}, true, nil
 	}
 	var approvals []*storage.ScenarioScheduleApproval
 	var err error
@@ -897,10 +898,13 @@ func (tr *TestRunner) ListScenarioScheduleApprovalsPage(scenarioID, scheduleID s
 			}
 		}
 	}
-	if err != nil || approvals == nil {
-		return []*storage.ScenarioScheduleApproval{}, true
+	if err != nil {
+		return nil, true, fmt.Errorf("list scenario schedule approvals: %w", err)
 	}
-	return approvals, true
+	if approvals == nil {
+		approvals = []*storage.ScenarioScheduleApproval{}
+	}
+	return approvals, true, nil
 }
 
 // DeleteScenarioScheduleOccurrence removes a single occurrence record for a
@@ -996,6 +1000,8 @@ func (tr *TestRunner) ScenarioScheduleHealth(now time.Time) ScenarioScheduleHeal
 					health.StatusCounts[occurrence.Status]++
 				}
 			}
+		} else {
+			health.StorageError = "scenario occurrence history unavailable: " + err.Error()
 		}
 	}
 	health.Queued = health.StatusCounts["queued"]

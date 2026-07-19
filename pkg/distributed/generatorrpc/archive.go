@@ -8,10 +8,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
 
+	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
@@ -22,27 +24,32 @@ import (
 	"github.com/xitongsys/parquet-go/parquet"
 	"github.com/xitongsys/parquet-go/source"
 	"github.com/xitongsys/parquet-go/writer"
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 )
 
 const archiveSchemaVersion = "apexload.archive.v1"
 
 type archiveManifest struct {
-	SchemaVersion                string    `json:"schema_version"`
-	TestID                       string    `json:"test_id"`
-	TestName                     string    `json:"test_name"`
-	CreatedAt                    time.Time `json:"created_at"`
-	CompletedAt                  time.Time `json:"completed_at,omitempty"`
-	Status                       string    `json:"status,omitempty"`
-	Error                        string    `json:"error,omitempty"`
-	TransactionsFile             string    `json:"transactions_file"`
-	TransactionsParquetFile      string    `json:"transactions_parquet_file,omitempty"`
-	ResourceSamplesFile          string    `json:"resource_samples_file"`
-	ResourceSamplesParquetFile   string    `json:"resource_samples_parquet_file,omitempty"`
-	IntervalSummariesFile        string    `json:"interval_summaries_file"`
-	IntervalSummariesParquetFile string    `json:"interval_summaries_parquet_file,omitempty"`
-	TransactionCount             int64     `json:"transaction_count"`
-	ResourceSampleCount          int64     `json:"resource_sample_count"`
-	IntervalSummaryCount         int64     `json:"interval_summary_count"`
+	SchemaVersion                string          `json:"schema_version"`
+	TestID                       string          `json:"test_id"`
+	TestName                     string          `json:"test_name"`
+	CreatedAt                    time.Time       `json:"created_at"`
+	CompletedAt                  time.Time       `json:"completed_at,omitempty"`
+	Status                       string          `json:"status,omitempty"`
+	Error                        string          `json:"error,omitempty"`
+	ExecutionGeneration          uint64          `json:"execution_generation,omitempty"`
+	ExecutionGroups              []string        `json:"execution_groups,omitempty"`
+	TransactionsFile             string          `json:"transactions_file"`
+	TransactionsParquetFile      string          `json:"transactions_parquet_file,omitempty"`
+	ResourceSamplesFile          string          `json:"resource_samples_file"`
+	ResourceSamplesParquetFile   string          `json:"resource_samples_parquet_file,omitempty"`
+	IntervalSummariesFile        string          `json:"interval_summaries_file"`
+	IntervalSummariesParquetFile string          `json:"interval_summaries_parquet_file,omitempty"`
+	TransactionCount             int64           `json:"transaction_count"`
+	ResourceSampleCount          int64           `json:"resource_sample_count"`
+	IntervalSummaryCount         int64           `json:"interval_summary_count"`
+	TerminalMetrics              json.RawMessage `json:"terminal_metrics,omitempty"`
 }
 
 type archiveTransactionEvent struct {
@@ -146,6 +153,50 @@ type archiveRecorder struct {
 	recordErr       error
 	failureSignaled bool
 	closed          bool
+}
+
+func (w *archiveRecorder) bindExecution(generation uint64, group string) {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.manifest.ExecutionGeneration = generation
+	group = strings.TrimSpace(group)
+	if group == "" {
+		return
+	}
+	for _, existing := range w.manifest.ExecutionGroups {
+		if existing == group {
+			return
+		}
+	}
+	w.manifest.ExecutionGroups = append(w.manifest.ExecutionGroups, group)
+	sort.Strings(w.manifest.ExecutionGroups)
+}
+
+// setTerminalMetrics retains the compact aggregate/SLA evidence needed to
+// reconstruct a terminal stream tombstone after process restart. Raw
+// transaction samples are already durable in transactions.jsonl/parquet and
+// are intentionally omitted here to keep the manifest bounded.
+func (w *archiveRecorder) setTerminalMetrics(batch *pb.MetricsBatch) error {
+	if w == nil || batch == nil {
+		return nil
+	}
+	terminal := proto.Clone(batch).(*pb.MetricsBatch)
+	terminal.Transactions = nil
+	data, err := (protojson.MarshalOptions{UseProtoNames: true}).Marshal(terminal)
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.closed {
+		return fmt.Errorf("generator archive recorder is closed")
+	}
+	if err != nil {
+		w.recordErr = fmt.Errorf("encode terminal generator metrics: %w", err)
+		return w.recordErr
+	}
+	w.manifest.TerminalMetrics = append(w.manifest.TerminalMetrics[:0], data...)
+	return nil
 }
 
 type generatorArchiveByteBudget struct {

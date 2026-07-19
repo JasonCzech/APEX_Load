@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -272,13 +271,27 @@ func (s *Server) handleUpdateScenarioSchedule(w http.ResponseWriter, r *http.Req
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
+	expectedRevision, err := scheduleExpectedRevision(r, req.ExpectedRevision)
+	if err != nil {
+		status := http.StatusBadRequest
+		if errors.Is(err, errSchedulePreconditionRequired) {
+			status = http.StatusPreconditionRequired
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+	req.ExpectedRevision = expectedRevision
 	_, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	req.OwnerSubject = actorSubject
 	req.OwnerDisplayName = actorDisplayName
 	req.RBACReviewSource = "api"
 	schedule, ok, err := s.runner.UpdateScenarioSchedule(r.PathValue("id"), r.PathValue("schedule_id"), req)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		status := http.StatusBadRequest
+		if errors.Is(err, errScheduleConcurrentChange) {
+			status = http.StatusConflict
+		}
+		writeError(w, status, err.Error())
 		return
 	}
 	if !ok {
@@ -304,6 +317,10 @@ func (s *Server) handleDeleteScenarioSchedule(w http.ResponseWriter, r *http.Req
 			writeError(w, http.StatusConflict, err.Error())
 			return
 		}
+		if errors.Is(err, errNotExecutionLeader) {
+			writeError(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to delete scenario schedule")
 		return
 	}
@@ -320,7 +337,11 @@ func (s *Server) handleListScenarioScheduleOccurrences(w http.ResponseWriter, r 
 	if limit > maxScheduleHistoryListLimit {
 		limit = maxScheduleHistoryListLimit
 	}
-	occurrences, ok := s.runner.ListScenarioScheduleOccurrencesPage(r.PathValue("id"), r.PathValue("schedule_id"), limit, offset)
+	occurrences, ok, err := s.runner.ListScenarioScheduleOccurrencesPage(r.PathValue("id"), r.PathValue("schedule_id"), limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	if !ok {
 		writeError(w, http.StatusNotFound, "scenario schedule not found")
 		return
@@ -333,7 +354,11 @@ func (s *Server) handleListScenarioScheduleApprovals(w http.ResponseWriter, r *h
 	if limit > maxScheduleHistoryListLimit {
 		limit = maxScheduleHistoryListLimit
 	}
-	approvals, ok := s.runner.ListScenarioScheduleApprovalsPage(r.PathValue("id"), r.PathValue("schedule_id"), limit, offset)
+	approvals, ok, err := s.runner.ListScenarioScheduleApprovalsPage(r.PathValue("id"), r.PathValue("schedule_id"), limit, offset)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
 	if !ok {
 		writeError(w, http.StatusNotFound, "scenario schedule not found")
 		return
@@ -364,7 +389,46 @@ func (s *Server) handleDeleteScenarioScheduleOccurrence(w http.ResponseWriter, r
 }
 
 func (s *Server) handleScenarioScheduleHealth(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, s.runner.ScenarioScheduleHealth(time.Now().UTC()))
+	now := time.Now().UTC()
+	health := s.runner.ScenarioScheduleHealth(now)
+	health.IsLeader = s.runner.isExecutionLeader()
+	if s.scheduler != nil {
+		health.Sweeps = s.scheduler.healthSnapshot()
+	}
+	if store := s.runner.execPlanScheduleStore; store != nil {
+		schedules, err := store.ListAllExecutionPlanSchedules()
+		if err != nil {
+			health.StorageError = firstNonEmpty(health.StorageError, "execution-plan schedules unavailable: "+err.Error())
+		} else {
+			for _, schedule := range schedules {
+				if schedule == nil {
+					continue
+				}
+				health.ExecutionPlanTotal++
+				if schedule.Enabled {
+					health.ExecutionPlanEnabled++
+				}
+				if schedule.NextRunAt != nil && !schedule.NextRunAt.After(now) {
+					health.ExecutionPlanDue++
+				}
+				if schedule.NextRequiredAction == "operator_decision_required" || schedule.LastError != "" {
+					health.ExecutionPlanBlocked++
+				}
+			}
+		}
+	}
+	s.runner.mu.RLock()
+	for _, test := range s.runner.tests {
+		if test == nil || test.Status != "SCHEDULED" {
+			continue
+		}
+		health.OneTimeScheduled++
+		if test.ScheduledStartAt != nil && !test.ScheduledStartAt.After(now) {
+			health.OneTimeDue++
+		}
+	}
+	s.runner.mu.RUnlock()
+	writeJSON(w, http.StatusOK, health)
 }
 
 func (s *Server) handleApproveScenarioScheduleApproval(w http.ResponseWriter, r *http.Request) {
@@ -379,8 +443,8 @@ func (s *Server) handleResolveScenarioScheduleApproval(w http.ResponseWriter, r 
 	var req struct {
 		Reason string `json:"reason,omitempty"`
 	}
-	if r.Body != nil {
-		_ = json.NewDecoder(r.Body).Decode(&req)
+	if !decodeOptionalJSONBody(w, r, &req) {
+		return
 	}
 	_, actorSubject, _ := s.resolveAuditActor(r)
 	approval, schedule, ok, err := s.runner.ResolveScenarioScheduleApproval(r.PathValue("id"), r.PathValue("schedule_id"), r.PathValue("approval_id"), approved, actorSubject, req.Reason)

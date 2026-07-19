@@ -21,11 +21,13 @@ import {
 interface Props {
   plan: ExecutionPlan
   canManage: boolean
+  canAdmin?: boolean
   onClose: () => void
 }
 
 type ScheduleDraft = {
   id?: string
+	revision?: number
   name: string
   cron_expr: string
   timezone: string
@@ -75,7 +77,7 @@ function occurrenceStatusPill(status: string): string {
   }
 }
 
-export default function ExecutionPlanSchedulesModal({ plan, canManage, onClose }: Props) {
+export default function ExecutionPlanSchedulesModal({ plan, canManage, canAdmin = false, onClose }: Props) {
   const api = useExecutionPlansApi()
   const [schedules, setSchedules] = useState<ExecutionPlanSchedule[]>([])
   const [loading, setLoading] = useState(false)
@@ -121,6 +123,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, onClose }
   const startEdit = (schedule: ExecutionPlanSchedule) =>
     setDraft({
       id: schedule.id,
+	  revision: schedule.revision,
       name: schedule.name,
       cron_expr: schedule.cron_expr,
       timezone: schedule.timezone || 'UTC',
@@ -142,6 +145,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, onClose }
       missed_run_policy: draft.missed_run_policy || undefined,
       disabled_from: datetimeLocalToISO(draft.disabled_from) || undefined,
       disabled_until: datetimeLocalToISO(draft.disabled_until) || undefined,
+	  expected_revision: draft.id ? draft.revision : undefined,
     }
     setBusy(true)
     setError(null)
@@ -200,6 +204,26 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, onClose }
     },
     [api, occurrencesFor, plan.id],
   )
+
+	const resolveOccurrence = useCallback(async (schedule: ExecutionPlanSchedule, occurrence: ExecutionPlanScheduleOccurrence, action: 'retry' | 'catch_up' | 'skip') => {
+		if (!canAdmin || occurrence.reason_code === 'approval_required') return
+		setBusy(true)
+		setError(null)
+		try {
+			await api.resolveExecutionPlanScheduleOccurrence(plan.id, schedule.id, occurrence.id, {
+				action,
+				expected_revision: occurrence.revision,
+				reason: `Operator selected ${action.replace('_', ' ')} from the schedule dashboard.`,
+			})
+			const res = await api.listExecutionPlanScheduleOccurrences(plan.id, schedule.id)
+			setOccurrences(res.occurrences || [])
+			await load()
+		} catch (err) {
+			setError(err instanceof ApiError ? err.message : 'Failed to resolve occurrence.')
+		} finally {
+			setBusy(false)
+		}
+	}, [api, canAdmin, load, plan.id])
 
   const cronGloss = useMemo(
     () => (draft?.cron_expr.trim() ? describeCron(draft.cron_expr) : ''),
@@ -300,6 +324,7 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, onClose }
                     <option value="skip">skip</option>
                     <option value="catch_up_once">catch_up_once</option>
                     <option value="catch_up_all">catch_up_all</option>
+					<option value="require_operator_decision">require_operator_decision</option>
                   </select>
                 </label>
               </div>
@@ -401,13 +426,20 @@ export default function ExecutionPlanSchedulesModal({ plan, canManage, onClose }
                       ) : occurrences.length === 0 ? (
                         <div className="pp-empty">No runs materialized yet.</div>
                       ) : (
-                        occurrences.map(occ => (
-                          <div className="pp-row-meta pp-occurrence-row" key={occ.id}>
+						occurrences.map(occ => (
+						  <div className="pp-row-meta pp-occurrence-row" key={occ.id}>
                             <span className={occurrenceStatusPill(occ.status)}>{occ.status}</span>
                             <span>{formatTimestamp(occ.planned_at)}</span>
                             {occ.reason_code ? <span>{occ.reason_code}</span> : null}
                             {occ.run_id ? <span>run {occ.run_id}</span> : null}
                             {occ.conflict_summary ? <span>{occ.conflict_summary}</span> : null}
+							{canAdmin && occ.reason_code !== 'approval_required' && (occ.status === 'blocked' || occ.status === 'failed') ? (
+							  <span className="pp-row-actions" aria-label="Resolve occurrence">
+								<button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void resolveOccurrence(schedule, occ, 'retry')}>Retry</button>
+								<button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void resolveOccurrence(schedule, occ, 'catch_up')}>Catch up</button>
+								<button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void resolveOccurrence(schedule, occ, 'skip')}>Skip</button>
+							  </span>
+							) : null}
                           </div>
                         ))
                       )}

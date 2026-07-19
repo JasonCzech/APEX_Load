@@ -1483,6 +1483,16 @@
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/execution-plans/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}/resolve",
+      "operationId": "handleResolveExecutionPlanScheduleOccurrence",
+      "summary": "Resolve Execution Plan Schedule Occurrence",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: tests:run"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/fleet/alerts",
       "operationId": "handleGetFleetAlerts",
@@ -3161,6 +3171,16 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}/resolve",
+      "operationId": "handleResolveScenarioScheduleOccurrence",
+      "summary": "Resolve Scenario Schedule Occurrence",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: ProjectAdmin, SystemAdmin; project roles: ProjectAdmin; service-account scope: tests:run"
     },
     {
       "method": "GET",

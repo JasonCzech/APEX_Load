@@ -3,7 +3,6 @@ package engine
 import (
 	"context"
 	"math"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -15,7 +14,7 @@ func isOpenWorkload(script *dsl.Script) bool {
 		return false
 	}
 	tps := script.Config.Pacing.TPS
-	return strings.EqualFold(script.Config.RunLogic.WorkloadModel, "open") && script.Config.Pacing.Type == "tps" && tps > 0 && !math.IsNaN(tps) && !math.IsInf(tps, 0)
+	return dsl.CanonicalWorkloadModel(script.Config.RunLogic.WorkloadModel) == "open" && dsl.CanonicalPacingType(script.Config.Pacing.Type) == "tps" && tps > 0 && !math.IsNaN(tps) && !math.IsInf(tps, 0)
 }
 
 // defaultOpenWorkloadInFlightPerTPS bounds the live arrival-worker set, in the
@@ -26,6 +25,12 @@ func isOpenWorkload(script *dsl.Script) bool {
 // hits the cap. This keeps a healthy run unthrottled while preventing the live
 // goroutine set from growing without limit and OOM-ing the generator.
 const defaultOpenWorkloadInFlightPerTPS = 60
+
+// maxOpenWorkloadCatchUpBurst bounds the number of overdue arrivals released
+// in one scheduler turn. Ordinary dispatcher overhead is recovered from the
+// absolute active-time clock, while a severely stalled generator sheds the
+// excess backlog instead of producing an unbounded recovery spike.
+const maxOpenWorkloadCatchUpBurst = 1024
 
 // openWorkloadInFlightLimit returns the maximum number of concurrently live
 // arrival workers for an open workload. An explicit RunLogic.MaxInFlight wins;
@@ -90,9 +95,16 @@ func (l *inFlightLimiter) tryAcquire() bool {
 	case l.tokens <- struct{}{}:
 		return true
 	default:
-		l.shed.Add(1)
+		l.recordShed(1)
 		return false
 	}
+}
+
+func (l *inFlightLimiter) recordShed(count int64) {
+	if l == nil || count <= 0 {
+		return
+	}
+	l.shed.Add(count)
 }
 
 // release returns a slot. It must be called exactly once for each successful
@@ -142,25 +154,37 @@ func cloneSingleIterationScript(script *dsl.Script) *dsl.Script {
 	return &clone
 }
 
-func runArrivalScheduler(ctx context.Context, tps float64, totalArrivals int, waitIfPaused func(context.Context) error, sleepActive func(context.Context, time.Duration) bool, dispatch func(arrivalIndex int)) {
+func runArrivalScheduler(
+	ctx context.Context,
+	tps float64,
+	totalArrivals int,
+	waitIfPaused func(context.Context) error,
+	sleepActive func(context.Context, time.Duration) bool,
+	activeElapsed func() time.Duration,
+	dispatch func(arrivalIndex int),
+	shed func(firstArrivalIndex int, count int),
+) {
 	if tps <= 0 || math.IsNaN(tps) || math.IsInf(tps, 0) {
 		return
 	}
 	tps = min(tps, float64(dsl.MaxPacingTPS))
-	interval := time.Duration(float64(time.Second) / tps)
-	if interval <= 0 {
-		interval = time.Nanosecond
+	started := time.Now()
+	if activeElapsed == nil {
+		activeElapsed = func() time.Duration { return time.Since(started) }
 	}
-	for arrival := 0; totalArrivals <= 0 || arrival < totalArrivals; arrival++ {
-		if arrival > 0 {
-			if sleepActive != nil {
-				if !sleepActive(ctx, interval) {
-					return
-				}
-			} else if !sleepContext(ctx, interval) {
-				return
-			}
+	// ActiveElapsed is shared by every group in a multi-group run and includes
+	// pre-baseline plus any earlier group initialization. Anchor this scheduler
+	// to its own start so those phases cannot appear as overdue arrivals and
+	// trigger an artificial catch-up burst when the group starts.
+	activeOrigin := activeElapsed()
+	schedulerElapsed := func() time.Duration {
+		elapsed := activeElapsed() - activeOrigin
+		if elapsed < 0 {
+			return 0
 		}
+		return elapsed
+	}
+	for arrival := 0; totalArrivals <= 0 || arrival < totalArrivals; {
 		if waitIfPaused != nil {
 			if err := waitIfPaused(ctx); err != nil {
 				return
@@ -169,6 +193,65 @@ func runArrivalScheduler(ctx context.Context, tps float64, totalArrivals int, wa
 		if ctx.Err() != nil {
 			return
 		}
-		dispatch(arrival)
+
+		deadline := openWorkloadArrivalDeadline(arrival, tps)
+		now := schedulerElapsed()
+		if now < deadline {
+			delay := deadline - now
+			if sleepActive != nil {
+				if !sleepActive(ctx, delay) {
+					return
+				}
+			} else if !sleepContext(ctx, delay) {
+				return
+			}
+			continue
+		}
+
+		// Credit every arrival whose absolute active-time deadline has passed.
+		// This compensates for dispatcher work instead of adding that work to every
+		// relative sleep interval. The burst cap makes catch-up behavior explicit
+		// and bounded after long process stalls.
+		dueThrough := int(math.Floor(now.Seconds()*tps + 1e-9))
+		if dueThrough < arrival {
+			dueThrough = arrival
+		}
+		due := dueThrough - arrival + 1
+		if totalArrivals > 0 && due > totalArrivals-arrival {
+			due = totalArrivals - arrival
+		}
+		dispatchCount := min(due, maxOpenWorkloadCatchUpBurst)
+		for offset := 0; offset < dispatchCount; offset++ {
+			if waitIfPaused != nil {
+				if err := waitIfPaused(ctx); err != nil {
+					return
+				}
+			}
+			if ctx.Err() != nil {
+				return
+			}
+			dispatch(arrival + offset)
+		}
+		arrival += dispatchCount
+		if excess := due - dispatchCount; excess > 0 {
+			if shed != nil {
+				shed(arrival, excess)
+			}
+			arrival += excess
+		}
 	}
+}
+
+func openWorkloadArrivalDeadline(arrival int, tps float64) time.Duration {
+	if arrival <= 0 {
+		return 0
+	}
+	nanos := float64(arrival) * float64(time.Second) / tps
+	if nanos >= float64(math.MaxInt64) {
+		return time.Duration(math.MaxInt64)
+	}
+	if nanos <= 0 {
+		return 0
+	}
+	return time.Duration(nanos)
 }

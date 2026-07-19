@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/jmeter"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -367,8 +368,12 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	storedScripts := make([]*StoredScript, 0, len(req.Scripts))
-	scriptIDsByName := map[string]string{}
+	// Prepare and validate the whole import before the first durable write. This
+	// avoids leaving an early script behind when a later script has invalid secret
+	// bindings or DSL. A deferred compensation guard then covers every subsequent
+	// failure, including scenario validation/persistence.
+	preparedScripts := make([]*dsl.Script, 0, len(req.Scripts))
+	seenScriptNames := make(map[string]struct{}, len(req.Scripts))
 	for i := range req.Scripts {
 		script := req.Scripts[i]
 		safeScript, _, err := applySuggestedSecretBindings(&script, i)
@@ -380,50 +385,124 @@ func (s *Server) handleSaveJMeterImport(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
 			return
 		}
-		stored, err := s.runner.StoreScriptDurable(safeScript)
-		if err != nil {
-			for _, prior := range storedScripts {
-				if _, cleanupErr := s.runner.DeleteScriptDurable(prior.ID); cleanupErr != nil {
-					slog.Warn("failed to roll back imported JMeter script", "script_id", prior.ID, "error", cleanupErr)
-				}
-			}
-			writeError(w, http.StatusInternalServerError, "failed to save imported script: "+err.Error())
+		// Reserve a fresh ID before the durable write-ahead journal is prepared.
+		// Create-only persistence and conditional compensation then share the same
+		// ownership fence across crashes and concurrent edits.
+		safeScript.ID = uuid.NewString()
+		safeScript.RefKey = ""
+		if strings.TrimSpace(safeScript.Version) == "" {
+			safeScript.Version = "1"
+		}
+		nameKey := strings.TrimSpace(safeScript.Name)
+		if _, duplicate := seenScriptNames[nameKey]; duplicate {
+			writeError(w, http.StatusBadRequest, "JMeter import contains duplicate script name: "+nameKey)
 			return
 		}
-		storedScripts = append(storedScripts, stored)
-		scriptIDsByName[script.Name] = stored.ID
+		seenScriptNames[nameKey] = struct{}{}
+		preparedScripts = append(preparedScripts, safeScript)
+	}
+	if req.ScenarioDraft != nil {
+		for index, group := range req.ScenarioDraft.Groups {
+			scriptName := strings.TrimSpace(group.ScriptName)
+			if scriptName == "" {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("scenario group %d is missing script_name", index+1))
+				return
+			}
+			if _, ok := seenScriptNames[scriptName]; !ok {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("scenario group %d references unknown imported script %q", index+1, scriptName))
+				return
+			}
+		}
 	}
 
-	var storedScenario *StoredScenario
+	scriptIDsByName := make(map[string]string, len(preparedScripts))
+	scriptsByName := make(map[string]*dsl.Script, len(preparedScripts))
+	for _, safeScript := range preparedScripts {
+		name := strings.TrimSpace(safeScript.Name)
+		scriptIDsByName[name] = safeScript.ID
+		scriptsByName[name] = safeScript
+	}
+
+	var scenarioID string
+	var scenarioRequest *CreateScenarioRequest
 	if req.ScenarioDraft != nil && len(req.ScenarioDraft.Groups) > 0 {
 		groups := make([]CreateGroupEntry, 0, len(req.ScenarioDraft.Groups))
-		for _, group := range req.ScenarioDraft.Groups {
-			scriptID := scriptIDsByName[group.ScriptName]
-			if scriptID == "" {
-				continue
+		for index, group := range req.ScenarioDraft.Groups {
+			scriptName := strings.TrimSpace(group.ScriptName)
+			scriptID := scriptIDsByName[scriptName]
+			groupName := group.Name
+			if groupName == "" {
+				groupName = scriptsByName[scriptName].Name
+				if len(req.ScenarioDraft.Groups) > 1 {
+					groupName = fmt.Sprintf("%s (#%d)", groupName, index+1)
+				}
+			}
+			vusers := group.VUsers
+			if vusers == 0 {
+				vusers = 10
+			}
+			initialization := strings.ToLower(strings.TrimSpace(group.Initialization))
+			if initialization == "" {
+				initialization = "at_runtime"
 			}
 			groups = append(groups, CreateGroupEntry{
-				Name:         group.Name,
+				Name:         groupName,
 				ScriptID:     scriptID,
-				VUsers:       group.VUsers,
+				Role:         GroupRoleLoad,
+				VUsers:       vusers,
 				RampUp:       group.RampUp,
-				InitStrategy: firstNonEmpty(group.Initialization, "at_runtime"),
+				InitStrategy: initialization,
 			})
 		}
 		if len(groups) > 0 {
-			scenario, err := s.runner.StoreScenario(CreateScenarioRequest{
+			scenarioID = uuid.NewString()
+			request := CreateScenarioRequest{
 				Name:         firstNonEmpty(req.ScenarioDraft.Name, "Imported JMeter Scenario"),
 				Duration:     firstNonEmpty(req.ScenarioDraft.Duration, "5m"),
 				ScenarioMode: firstNonEmpty(req.ScenarioDraft.ScenarioMode, "vuser_driven"),
 				Groups:       groups,
-			})
-			if err != nil {
-				writeError(w, http.StatusBadRequest, "failed to save scenario draft: "+err.Error())
-				return
 			}
-			storedScenario = scenario
+			scenarioRequest = &request
 		}
 	}
+
+	transaction, err := newCreateImportTransaction(s, "jmeter", preparedScripts, scenarioID, scenarioRequest)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to prepare imported assets: "+err.Error())
+		return
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			if cleanupErr := transaction.rollback(); cleanupErr != nil {
+				slog.Warn("failed to fully compensate JMeter import", "error", cleanupErr)
+			}
+		}
+	}()
+
+	storedScripts := make([]*StoredScript, 0, len(preparedScripts))
+	for _, safeScript := range preparedScripts {
+		stored, err := transaction.createScript(safeScript)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "failed to save imported script: "+err.Error())
+			return
+		}
+		storedScripts = append(storedScripts, stored)
+	}
+
+	var storedScenario *StoredScenario
+	if scenarioRequest != nil {
+		storedScenario, err = transaction.createScenario(scenarioID, *scenarioRequest)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "failed to save scenario draft: "+err.Error())
+			return
+		}
+	}
+	if err := transaction.commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to commit imported assets: "+err.Error())
+		return
+	}
+	committed = true
 
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"scripts":  storedScripts,

@@ -2045,7 +2045,9 @@ function AppShell({
                   effectiveAccessError={effectiveAccessError}
                 />
               )}
-              {view.page === "repository-guide" && <RepositoryGuidePage />}
+              {view.page === "repository-guide" && (
+                <RepositoryGuidePage effectiveAccessResources={effectiveAccessResources} />
+              )}
               {view.page === "repository" && (
                 <ApplicationRepositoryPage
                   domains={domains}

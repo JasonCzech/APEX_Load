@@ -12,6 +12,7 @@ import {
   ExecutionPlanScheduleListResponse,
   ExecutionPlanScheduleOccurrenceListResponse,
   ExecutionPlanScheduleRequest,
+	ScheduleOccurrenceResolutionRequest,
 } from '../../types'
 import { request } from '../apiClient'
 
@@ -113,6 +114,15 @@ export function useExecutionPlansApi() {
     [],
   )
 
+	const resolveExecutionPlanScheduleOccurrence = useCallback(
+		(planId: string, scheduleId: string, occurrenceId: string, body: ScheduleOccurrenceResolutionRequest) =>
+			request<{ occurrence: import('../../types').ExecutionPlanScheduleOccurrence; schedule: ExecutionPlanSchedule }>(
+				`/execution-plans/${planId}/schedules/${scheduleId}/occurrences/${occurrenceId}/resolve`,
+				{ method: 'POST', body: JSON.stringify(body) },
+			),
+		[],
+	)
+
   // Governance approvals (quota-gated plan runs).
   const listExecutionPlanApprovals = useCallback(
     (planId: string) =>
@@ -153,6 +163,7 @@ export function useExecutionPlansApi() {
       updateExecutionPlanSchedule,
       deleteExecutionPlanSchedule,
       listExecutionPlanScheduleOccurrences,
+		  resolveExecutionPlanScheduleOccurrence,
       listExecutionPlanApprovals,
       approveExecutionPlanApproval,
       rejectExecutionPlanApproval,
@@ -171,6 +182,7 @@ export function useExecutionPlansApi() {
       updateExecutionPlanSchedule,
       deleteExecutionPlanSchedule,
       listExecutionPlanScheduleOccurrences,
+		  resolveExecutionPlanScheduleOccurrence,
       listExecutionPlanApprovals,
       approveExecutionPlanApproval,
       rejectExecutionPlanApproval,

@@ -782,7 +782,7 @@ func (tr *TestRunner) forgetRunSnapshotWriteStateLocked(testID string) {
 	tr.snapshotWriteMu.Unlock()
 }
 
-func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts, done chan struct{}) {
+func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts, done chan struct{}) time.Time {
 	groupVUsers := make(map[string]int)
 	for _, g := range test.Groups {
 		groupVUsers[g.Name] = g.VUsers
@@ -797,16 +797,18 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 	defer ticker.Stop()
 
 	lastLatencyCheck := time.Time{}
+	lastPublishedSnapshot := time.Time{}
 
 	for {
 		select {
 		case <-done:
-			return
+			return lastPublishedSnapshot
 		case <-ticker.C:
 			snap, ok := mge.LatestSnapshot()
-			if !ok {
+			if !ok || (!lastPublishedSnapshot.IsZero() && !snap.Timestamp.After(lastPublishedSnapshot)) {
 				continue
 			}
+			lastPublishedSnapshot = snap.Timestamp
 
 			live := buildLiveMetricsForBroadcast(snap, groupVUsers, time.Now())
 			if update, ok := tr.evaluateGoalControllerLocked(test, live, groupVUsers); ok {
@@ -822,6 +824,39 @@ func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroup
 			tr.publishLiveMetrics(test, live, artifacts)
 		}
 	}
+}
+
+// publishFinalLocalMetrics sends the collector's shutdown drain through the
+// same goal/SLA/live/archive pipeline as periodic samples. It deliberately does
+// not issue runtime scale/stop operations: the engine has already quiesced.
+// lastPublishedSnapshot suppresses a duplicate when the periodic broadcaster
+// won the shutdown race and already emitted this exact collector window.
+func (tr *TestRunner) publishFinalLocalMetrics(test *ManagedTest, snap engine.MetricsSnapshot, lastPublishedSnapshot time.Time, groupVUsers map[string]int, artifacts *runArtifacts) bool {
+	if snap.Timestamp.IsZero() || (!lastPublishedSnapshot.IsZero() && !snap.Timestamp.After(lastPublishedSnapshot)) {
+		return false
+	}
+	live := buildLiveMetricsFromSnapshot(snap, groupVUsers)
+	live.ActiveVUsers = 0
+	for _, group := range live.GroupMetrics {
+		if group != nil {
+			group.VUsers = 0
+		}
+	}
+	if update, ok := tr.evaluateGoalControllerLocked(test, live, groupVUsers); ok {
+		// Retain the terminal evaluation and breach evidence without attempting a
+		// late scale after MultiGroupEngine.Run has stopped accepting controls.
+		live.GoalStatus = update.Status
+	}
+	tr.publishLiveMetrics(test, live, artifacts)
+	go tr.measureNetworkLatency(test, live)
+
+	settings := tr.GetSystemSettings()
+	projectID := normalizeProjectID(test.ProjectID)
+	for _, alert := range buildThresholdAlerts(test, live, settings.Thresholds) {
+		alert["project_id"] = projectID
+		tr.hub.BroadcastScopedJSON(test.ID, projectID, alert)
+	}
+	return true
 }
 
 // evaluateGoalControllerLocked applies runtime goal targets to live and, for

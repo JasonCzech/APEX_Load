@@ -431,7 +431,7 @@ func collectExecutionPlanSchedules(rows *sql.Rows) ([]*ExecutionPlanSchedule, er
 
 const executionPlanScheduleOccurrenceColumns = `id, schedule_id, plan_id, COALESCE(project_id, ''), COALESCE(schedule_revision, 1),
 	COALESCE(revision, 1), COALESCE(transition_token, ''), planned_at, materialized_at, status,
-	COALESCE(reason_code, ''), COALESCE(run_id, ''), COALESCE(conflict_summary, ''),
+	COALESCE(reason_code, ''), COALESCE(run_id, ''), COALESCE(approval_id, ''), COALESCE(conflict_summary, ''),
 	COALESCE(actor_type, 'legacy'), COALESCE(actor_subject, 'controller:execution-plan-schedule-occurrence-legacy'),
 	COALESCE(actor_display_name, ''), created_at, updated_at
 	FROM execution_plan_schedule_occurrences`
@@ -516,11 +516,11 @@ func createExecutionPlanScheduleOccurrenceIfAbsentWithExecutor(executor testSave
 		return false, err
 	}
 	occurrence.Revision = 1
-	result, err := executor.Exec(`INSERT INTO execution_plan_schedule_occurrences (id, schedule_id, plan_id, project_id, schedule_revision, revision, transition_token, planned_at, materialized_at, status, reason_code, run_id, conflict_summary, actor_type, actor_subject, actor_display_name, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	result, err := executor.Exec(`INSERT INTO execution_plan_schedule_occurrences (id, schedule_id, plan_id, project_id, schedule_revision, revision, transition_token, planned_at, materialized_at, status, reason_code, run_id, approval_id, conflict_summary, actor_type, actor_subject, actor_display_name, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(schedule_id, planned_at) DO NOTHING`,
 		occurrence.ID, occurrence.ScheduleID, occurrence.PlanID, occurrence.ProjectID, occurrence.ScheduleRevision, occurrence.Revision, occurrence.TransitionToken,
-		occurrence.PlannedAt, occurrence.MaterializedAt, occurrence.Status, occurrence.ReasonCode, occurrence.RunID, occurrence.ConflictSummary,
+		occurrence.PlannedAt, occurrence.MaterializedAt, occurrence.Status, occurrence.ReasonCode, occurrence.RunID, occurrence.ApprovalID, occurrence.ConflictSummary,
 		occurrence.ActorType, occurrence.ActorSubject, occurrence.ActorDisplayName, occurrence.CreatedAt, occurrence.UpdatedAt)
 	if err != nil {
 		return false, err
@@ -547,8 +547,8 @@ func claimExecutionPlanScheduleOccurrenceIfCurrentWithExecutor(executor testSave
 		return false, err
 	}
 	occurrence.Revision = 1
-	result, err := executor.Exec(`INSERT INTO execution_plan_schedule_occurrences (id, schedule_id, plan_id, project_id, schedule_revision, revision, transition_token, planned_at, materialized_at, status, reason_code, run_id, conflict_summary, actor_type, actor_subject, actor_display_name, created_at, updated_at)
-		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+	result, err := executor.Exec(`INSERT INTO execution_plan_schedule_occurrences (id, schedule_id, plan_id, project_id, schedule_revision, revision, transition_token, planned_at, materialized_at, status, reason_code, run_id, approval_id, conflict_summary, actor_type, actor_subject, actor_display_name, created_at, updated_at)
+		SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 		FROM execution_plan_schedules
 		WHERE id = ?
 			AND COALESCE(revision, 1) = ?
@@ -556,7 +556,7 @@ func claimExecutionPlanScheduleOccurrenceIfCurrentWithExecutor(executor testSave
 			AND next_run_at = ?
 		ON CONFLICT(schedule_id, planned_at) DO NOTHING`,
 		occurrence.ID, occurrence.ScheduleID, occurrence.PlanID, occurrence.ProjectID, occurrence.ScheduleRevision, occurrence.Revision, occurrence.TransitionToken,
-		occurrence.PlannedAt, occurrence.MaterializedAt, occurrence.Status, occurrence.ReasonCode, occurrence.RunID, occurrence.ConflictSummary,
+		occurrence.PlannedAt, occurrence.MaterializedAt, occurrence.Status, occurrence.ReasonCode, occurrence.RunID, occurrence.ApprovalID, occurrence.ConflictSummary,
 		occurrence.ActorType, occurrence.ActorSubject, occurrence.ActorDisplayName, occurrence.CreatedAt, occurrence.UpdatedAt,
 		occurrence.ScheduleID, occurrence.ScheduleRevision, true, occurrence.PlannedAt)
 	if err != nil {
@@ -616,11 +616,11 @@ func compareAndSwapExecutionPlanScheduleOccurrenceWithExecutor(executor testSave
 		return false, err
 	}
 	result, err := executor.Exec(`UPDATE execution_plan_schedule_occurrences SET
-		materialized_at=?, status=?, reason_code=?, run_id=?, conflict_summary=?, transition_token=?, revision=revision+1, updated_at=?
+		materialized_at=?, status=?, reason_code=?, run_id=?, approval_id=?, conflict_summary=?, transition_token=?, revision=revision+1, updated_at=?
 		WHERE id=? AND schedule_id=? AND planned_at=? AND COALESCE(revision, 1)=?
 			AND COALESCE(actor_type, 'legacy')=? AND COALESCE(actor_subject, 'controller:execution-plan-schedule-occurrence-legacy')=?
 			AND COALESCE(actor_display_name, '')=?`,
-		occurrence.MaterializedAt, occurrence.Status, occurrence.ReasonCode, occurrence.RunID, occurrence.ConflictSummary,
+		occurrence.MaterializedAt, occurrence.Status, occurrence.ReasonCode, occurrence.RunID, occurrence.ApprovalID, occurrence.ConflictSummary,
 		occurrence.TransitionToken, occurrence.UpdatedAt, occurrence.ID, occurrence.ScheduleID, occurrence.PlannedAt, expectedRevision,
 		occurrence.ActorType, occurrence.ActorSubject, occurrence.ActorDisplayName)
 	if err != nil {
@@ -651,6 +651,60 @@ func (s *SQLiteStore) CompareAndSwapExecutionPlanScheduleOccurrenceIfLeaseTermHe
 		return false, err
 	}
 	return updated, nil
+}
+
+// ResolveExecutionPlanScheduleOccurrenceIfLeaseTermHeld is the plan-schedule
+// counterpart of ResolveScenarioScheduleOccurrenceIfLeaseTermHeld.
+func (s *SQLiteStore) ResolveExecutionPlanScheduleOccurrenceIfLeaseTermHeld(occurrence *ExecutionPlanScheduleOccurrence, expectedOccurrenceRevision int64, schedule *ExecutionPlanSchedule, expectedScheduleRevision int, leaseName, leaseOwnerID string, leaseGeneration uint64) (bool, error) {
+	originalScheduleRevision := schedule.Revision
+	originalOccurrenceRevision := occurrence.Revision
+	tx, err := s.beginExecutionLeaseTermTransaction(leaseName, leaseOwnerID, leaseGeneration)
+	if err != nil || tx == nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	updated, err := updateExecutionPlanScheduleIfRevisionWithExecutor(tx, schedule, expectedScheduleRevision)
+	if err != nil || !updated {
+		schedule.Revision = originalScheduleRevision
+		return updated, err
+	}
+	updated, err = compareAndSwapExecutionPlanScheduleOccurrenceWithExecutor(tx, occurrence, expectedOccurrenceRevision)
+	if err != nil || !updated {
+		schedule.Revision = originalScheduleRevision
+		occurrence.Revision = originalOccurrenceRevision
+		return updated, err
+	}
+	if err := tx.Commit(); err != nil {
+		schedule.Revision = originalScheduleRevision
+		occurrence.Revision = originalOccurrenceRevision
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *SQLiteStore) ResolveExecutionPlanScheduleOccurrence(occurrence *ExecutionPlanScheduleOccurrence, expectedOccurrenceRevision int64, schedule *ExecutionPlanSchedule, expectedScheduleRevision int) (bool, error) {
+	originalScheduleRevision := schedule.Revision
+	originalOccurrenceRevision := occurrence.Revision
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	updated, err := updateExecutionPlanScheduleIfRevisionWithExecutor(tx, schedule, expectedScheduleRevision)
+	if err == nil && updated {
+		updated, err = compareAndSwapExecutionPlanScheduleOccurrenceWithExecutor(tx, occurrence, expectedOccurrenceRevision)
+	}
+	if err != nil || !updated {
+		schedule.Revision = originalScheduleRevision
+		occurrence.Revision = originalOccurrenceRevision
+		return updated, err
+	}
+	if err := tx.Commit(); err != nil {
+		schedule.Revision = originalScheduleRevision
+		occurrence.Revision = originalOccurrenceRevision
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *SQLiteStore) GetExecutionPlanScheduleOccurrenceByScheduleAndPlannedAt(scheduleID string, plannedAt time.Time) (*ExecutionPlanScheduleOccurrence, error) {
@@ -752,7 +806,7 @@ func scanExecutionPlanScheduleOccurrence(row scanner) (*ExecutionPlanScheduleOcc
 	err := row.Scan(
 		&occurrence.ID, &occurrence.ScheduleID, &occurrence.PlanID, &occurrence.ProjectID, &occurrence.ScheduleRevision,
 		&occurrence.Revision, &occurrence.TransitionToken, &occurrence.PlannedAt, &occurrence.MaterializedAt,
-		&occurrence.Status, &occurrence.ReasonCode, &occurrence.RunID, &occurrence.ConflictSummary,
+		&occurrence.Status, &occurrence.ReasonCode, &occurrence.RunID, &occurrence.ApprovalID, &occurrence.ConflictSummary,
 		&occurrence.ActorType, &occurrence.ActorSubject, &occurrence.ActorDisplayName,
 		&occurrence.CreatedAt, &occurrence.UpdatedAt,
 	)

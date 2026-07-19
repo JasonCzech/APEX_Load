@@ -721,7 +721,9 @@ func (s *Server) handlePreviewBrowserRecordingConversion(w http.ResponseWriter, 
 	}
 
 	var req browserRecordingConvertRequest
-	json.NewDecoder(r.Body).Decode(&req)
+	if !decodeOptionalJSONBody(w, r, &req) {
+		return
+	}
 
 	result := s.convertBrowserRecording(artifact, info, req)
 	warnings := append([]string(nil), result.Warnings...)
@@ -773,67 +775,114 @@ func (s *Server) handleConvertBrowserRecording(w http.ResponseWriter, r *http.Re
 	}
 
 	var req browserRecordingConvertRequest
-	json.NewDecoder(r.Body).Decode(&req)
+	if !decodeOptionalJSONBody(w, r, &req) {
+		return
+	}
 
 	result := s.convertBrowserRecording(artifact, info, req)
 
 	// Store every generated script (one for the single-script path, several
 	// when splitting at transactions).
-	storedScripts := make([]*StoredScript, 0, len(result.Scripts))
+	preparedScripts := make([]*dsl.Script, 0, len(result.Scripts))
 	for scriptIndex, sc := range result.Scripts {
 		if sc == nil {
 			continue
 		}
 		safeScript, _, err := applySuggestedSecretBindings(sc, scriptIndex)
 		if err != nil {
-			for _, prior := range storedScripts {
-				if _, cleanupErr := s.runner.DeleteScriptDurable(prior.ID); cleanupErr != nil {
-					slog.Warn("failed to roll back converted browser script", "script_id", prior.ID, "error", cleanupErr)
-				}
-			}
 			writeError(w, http.StatusUnprocessableEntity, "failed to prepare recorded credentials: "+err.Error())
 			return
 		}
-		stored, err := s.runner.StoreScriptDurable(safeScript)
+		if err := validateConvertedScriptForCommit(safeScript); err != nil {
+			writeError(w, http.StatusUnprocessableEntity, "browser recording did not produce an executable script: "+err.Error())
+			return
+		}
+		// Reserve a fresh create-only ID before the durable import journal is
+		// prepared. Rollback is then fenced to the exact created version.
+		safeScript.ID = uuid.NewString()
+		safeScript.RefKey = ""
+		if strings.TrimSpace(safeScript.Version) == "" {
+			safeScript.Version = "1"
+		}
+		preparedScripts = append(preparedScripts, safeScript)
+	}
+	if len(preparedScripts) == 0 {
+		writeError(w, http.StatusUnprocessableEntity, "conversion produced no scripts")
+		return
+	}
+
+	warnings := append([]string(nil), result.Warnings...)
+	var httpScript *dsl.Script
+	var preparedHTTPScript *dsl.Script
+	var httpWarnings []string
+	if req.AlsoCreateHTTPScript {
+		var err error
+		httpScript, httpWarnings, err = s.createHTTPScriptFromHAR(artifact, info, req.Name)
 		if err != nil {
-			for _, prior := range storedScripts {
-				if _, cleanupErr := s.runner.DeleteScriptDurable(prior.ID); cleanupErr != nil {
-					slog.Warn("failed to roll back converted browser script", "script_id", prior.ID, "error", cleanupErr)
+			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
+		} else if httpScript == nil {
+			warnings = append(warnings, "HTTP script generation skipped: conversion produced no script")
+		} else {
+			safeHTTPScript, _, bindingErr := applySuggestedSecretBindings(httpScript, len(result.Scripts))
+			if bindingErr != nil {
+				warnings = append(warnings, "HTTP script persistence skipped: failed to prepare recorded credentials: "+bindingErr.Error())
+			} else if validationErr := validateConvertedScriptForCommit(safeHTTPScript); validationErr != nil {
+				warnings = append(warnings, "HTTP script persistence skipped: "+validationErr.Error())
+			} else {
+				safeHTTPScript.ID = uuid.NewString()
+				safeHTTPScript.RefKey = ""
+				if strings.TrimSpace(safeHTTPScript.Version) == "" {
+					safeHTTPScript.Version = "1"
 				}
+				preparedHTTPScript = safeHTTPScript
 			}
+		}
+	}
+
+	transactionScripts := append([]*dsl.Script(nil), preparedScripts...)
+	if preparedHTTPScript != nil {
+		transactionScripts = append(transactionScripts, preparedHTTPScript)
+	}
+	transaction, err := newCreateImportTransaction(s, "browser-recording", transactionScripts, "", nil)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to prepare converted scripts: "+err.Error())
+		return
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			if cleanupErr := transaction.rollback(); cleanupErr != nil {
+				slog.Warn("failed to fully compensate browser recording conversion", "recording_session_id", id, "error", cleanupErr)
+			}
+		}
+	}()
+
+	storedScripts := make([]*StoredScript, 0, len(preparedScripts))
+	for _, safeScript := range preparedScripts {
+		stored, err := transaction.createScript(safeScript)
+		if err != nil {
 			writeError(w, http.StatusInternalServerError, "failed to save converted script: "+err.Error())
 			return
 		}
 		storedScripts = append(storedScripts, stored)
 	}
-	if len(storedScripts) == 0 {
-		writeError(w, http.StatusUnprocessableEntity, "conversion produced no scripts")
-		return
-	}
 	primary := storedScripts[0]
 
-	warnings := append([]string(nil), result.Warnings...)
-	var httpScript *dsl.Script
 	var httpStored *StoredScript
-	if req.AlsoCreateHTTPScript {
-		var httpWarnings []string
-		var err error
-		httpScript, httpWarnings, err = s.createHTTPScriptFromHAR(artifact, info, req.Name)
+	if preparedHTTPScript != nil {
+		httpStored, err = transaction.createScript(preparedHTTPScript)
 		if err != nil {
-			warnings = append(warnings, "HTTP script generation skipped: "+err.Error())
-		} else {
-			safeHTTPScript, _, bindingErr := applySuggestedSecretBindings(httpScript, len(result.Scripts))
-			if bindingErr != nil {
-				warnings = append(warnings, "HTTP script persistence skipped: failed to prepare recorded credentials: "+bindingErr.Error())
-			} else if httpStored, err = s.runner.StoreScriptDurable(safeHTTPScript); err != nil {
-				warnings = append(warnings, "HTTP script persistence skipped: "+err.Error())
-				httpStored = nil
-			} else {
-				warnings = append(warnings, httpWarnings...)
-				warnings = append(warnings, fmt.Sprintf("also created HTTP script %q (%s) from the recorded HAR", httpStored.Name, httpStored.ID))
-			}
+			writeError(w, http.StatusInternalServerError, "failed to save converted HTTP script: "+err.Error())
+			return
 		}
+		warnings = append(warnings, httpWarnings...)
+		warnings = append(warnings, fmt.Sprintf("also created HTTP script %q (%s) from the recorded HAR", httpStored.Name, httpStored.ID))
 	}
+	if err := transaction.commit(); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to commit converted scripts: "+err.Error())
+		return
+	}
+	committed = true
 
 	s.browserRecording.NotifyConverted(id, primary.ID, primary.Name)
 	s.recordAuditEvent(r, "browser_recording.convert", "success", "script", primary.ID, primary.ProjectID,

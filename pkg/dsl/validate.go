@@ -36,21 +36,6 @@ func ValidateScriptIssues(script *Script) []string {
 	}
 	fileDataSourceIssues := validateFileDataSourceReferenceIssues(script)
 
-	if strings.HasPrefix(strings.TrimSpace(script.Protocol), "jms-") {
-		issues := append(validateJMSScriptIssues(script), validateExecutionResourceIssues(script)...)
-		return append(issues, fileDataSourceIssues...)
-	}
-
-	if strings.TrimSpace(script.Protocol) == "kafka" {
-		issues := append(validateKafkaScriptIssues(script), validateExecutionResourceIssues(script)...)
-		return append(issues, fileDataSourceIssues...)
-	}
-
-	if strings.TrimSpace(script.Protocol) == "eventhubs" {
-		issues := append(validateEventHubsScriptIssues(script), validateExecutionResourceIssues(script)...)
-		return append(issues, fileDataSourceIssues...)
-	}
-
 	var issues []string
 	if strings.TrimSpace(script.Name) == "" {
 		issues = append(issues, "script name is required")
@@ -73,6 +58,23 @@ func ValidateScriptIssues(script *Script) []string {
 	}
 	for i, action := range script.Teardown {
 		issues = append(issues, validateActionForProtocolAtPath(script.Protocol, fmt.Sprintf("teardown[%d]", i), i, action)...)
+	}
+
+	// Messaging protocols have additional configuration and action semantics,
+	// but they still participate in the common init/action/teardown and shared
+	// script validation above and below. Keeping these as additive validators
+	// prevents an early return from skipping lifecycle, data-source, file,
+	// extractor, and nested-control checks.
+	switch ProtocolFamily(script.Protocol) {
+	case "jms":
+		issues = append(issues, validateJMSScriptIssues(script)...)
+		issues = append(issues, validateExecutionResourceIssues(script)...)
+	case "kafka":
+		issues = append(issues, validateKafkaScriptIssues(script)...)
+		issues = append(issues, validateExecutionResourceIssues(script)...)
+	case "eventhubs":
+		issues = append(issues, validateEventHubsScriptIssues(script)...)
+		issues = append(issues, validateExecutionResourceIssues(script)...)
 	}
 
 	if script.Protocol == "soap" {
@@ -102,8 +104,7 @@ func ValidateScriptIssues(script *Script) []string {
 	issues = append(issues, validateWebSocketConfigIssues(script)...)
 	issues = append(issues, validateGRPCConfigIssues(script)...)
 	issues = append(issues, validateWebRuntimeIssues(script)...)
-	issues = append(issues, validateRunLogicIssues(script.Config.RunLogic)...)
-	issues = append(issues, validatePacingResourceIssues(script.Config.Pacing)...)
+	issues = append(issues, ValidateWorkloadSettingsIssues(script.Config.RunLogic, script.Config.Pacing)...)
 	issues = append(issues, validateGoalConfigIssues(script.GoalConfig)...)
 	if script.Protocol == "bruno" {
 		issues = append(issues, validateBrunoConfigIssues(script.Config.Bruno)...)
@@ -291,8 +292,8 @@ func firstNonEmptyString(values ...string) string {
 }
 
 func protocolAllowsEmptyBaseURL(protocolName string) bool {
-	switch strings.TrimSpace(protocolName) {
-	case "browser", "bruno", "database", "network", "kafka", "eventhubs", "sap_gui", "java_vuser":
+	switch ProtocolFamily(protocolName) {
+	case "browser", "bruno", "database", "network", "jms", "kafka", "eventhubs", "sap_gui", "java_vuser":
 		return true
 	default:
 		return false
@@ -322,9 +323,53 @@ func validateRunLogicIssues(runLogic RunLogicConfig) []string {
 	return issues
 }
 
+// CanonicalWorkloadModel returns the runtime spelling for a workload model.
+// Empty means the documented closed-model default. Validation rejects any
+// other value, while canonicalization keeps case and surrounding whitespace
+// from producing different validation and execution behavior.
+func CanonicalWorkloadModel(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return "closed"
+	}
+	return value
+}
+
+// CanonicalPacingType returns the runtime spelling for a pacing type. Empty
+// means the documented no-pacing default.
+func CanonicalPacingType(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		return "none"
+	}
+	return value
+}
+
+// ValidateWorkloadSettingsIssues validates the execution settings that decide
+// whether the engine runs a closed VUser model or an open arrival model. It is
+// exported so engine constructors can enforce the same contract for direct
+// library callers instead of silently falling back to a different model.
+func ValidateWorkloadSettingsIssues(runLogic RunLogicConfig, pacing PacingConfig) []string {
+	issues := validateRunLogicIssues(runLogic)
+	workloadModel := CanonicalWorkloadModel(runLogic.WorkloadModel)
+	if !isAllowedValue(workloadModel, "closed", "open") {
+		issues = append(issues, "config.run_logic.workload_model must be closed or open")
+	}
+	issues = append(issues, validatePacingResourceIssues(pacing)...)
+	if workloadModel == "open" {
+		if CanonicalPacingType(pacing.Type) != "tps" {
+			issues = append(issues, "open workloads require config.pacing.type to be tps")
+		}
+		if pacing.TPS <= 0 || math.IsNaN(pacing.TPS) || math.IsInf(pacing.TPS, 0) {
+			issues = append(issues, "open workloads require config.pacing.tps to be finite and greater than zero")
+		}
+	}
+	return issues
+}
+
 func validatePacingResourceIssues(pacing PacingConfig) []string {
 	var issues []string
-	if pacing.Type != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(pacing.Type)), "none", "fixed_delay", "random_delay", "fixed_interval", "random_interval", "tps") {
+	if !isAllowedValue(CanonicalPacingType(pacing.Type), "none", "fixed_delay", "random_delay", "fixed_interval", "random_interval", "tps") {
 		issues = append(issues, "config.pacing.type must be none, fixed_delay, random_delay, fixed_interval, random_interval, or tps")
 	}
 	for _, field := range []struct {
@@ -402,8 +447,7 @@ func validateExecutionResourceIssues(script *Script) []string {
 		return nil
 	}
 	issues := validateParameterIssues(script)
-	issues = append(issues, validateRunLogicIssues(script.Config.RunLogic)...)
-	issues = append(issues, validatePacingResourceIssues(script.Config.Pacing)...)
+	issues = append(issues, ValidateWorkloadSettingsIssues(script.Config.RunLogic, script.Config.Pacing)...)
 	issues = append(issues, validateThinkTimeResourceIssues("config.think_time", script.Config.ThinkTime)...)
 	issues = append(issues, validateErrorHandlingResourceIssues(script.Config.ErrorHandling)...)
 	for i, action := range script.Init {
@@ -510,6 +554,18 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	rebased := func(nestedIssues []string) []string {
 		return rebaseActionIssues(fmt.Sprintf("actions[%d]", index), path, nestedIssues)
 	}
+	protocolFamily := ProtocolFamily(protocol)
+	if protocolFamily == "jms" || protocolFamily == "kafka" || protocolFamily == "eventhubs" {
+		spec, ok := protocolActionSpec(protocolFamily, action.Type)
+		if !ok {
+			label := map[string]string{"jms": "JMS", "kafka": "Kafka", "eventhubs": "Event Hubs"}[protocolFamily]
+			return append(issues, fmt.Sprintf("%s: unsupported %s action type %q", actionLabel(path, action), label, action.Type))
+		}
+		if spec.Validate != nil {
+			return append(issues, rebased(spec.Validate(index, action))...)
+		}
+		return issues
+	}
 	switch protocol {
 	case "bruno":
 		spec, ok := protocolActionSpec("bruno", action.Type)
@@ -539,15 +595,6 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 		return append(issues, rebased(validateHTTPSequenceActionIssues(index, action))...)
 	}
 	if CanonicalActionType(action.Type) == "http_oauth2_token" {
-		return issues
-	}
-	// JMS and Kafka actions resolve their destination/topic from script config
-	// (config.jms.destination / config.kafka.topic) when target is omitted, so the
-	// generic "missing target" rule must not apply to them — otherwise a JMS/Kafka
-	// action nested in a control_if/control_loop body is falsely flagged as
-	// "missing target" even though the config-level destination is set. The
-	// destination-aware checks live in the top-level JMS/Kafka validators.
-	if ProtocolFamily(protocol) == "jms" || protocol == "kafka" {
 		return issues
 	}
 	if action.Target == "" {
@@ -1991,6 +2038,9 @@ func validateKafkaScriptIssues(script *Script) []string {
 		issues = append(issues, validateBodyFileIssues(fmt.Sprintf("actions[%d]", i), action)...)
 		if action.Type == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing type", i, action.Name))
+		} else if isEngineActionType(action.Type) {
+			// Common lifecycle validation handles engine actions and recursively
+			// validates their nested messaging steps.
 		} else if _, ok := protocolActionSpec("kafka", action.Type); !ok {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: unsupported Kafka action type %q", i, action.Name, action.Type))
 		}
@@ -2095,6 +2145,9 @@ func validateEventHubsScriptIssues(script *Script) []string {
 		issues = append(issues, validateBodyFileIssues(fmt.Sprintf("actions[%d]", i), action)...)
 		if action.Type == "" {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: missing type", i, action.Name))
+		} else if isEngineActionType(action.Type) {
+			// Common lifecycle validation handles engine actions and recursively
+			// validates their nested messaging steps.
 		} else if _, ok := protocolActionSpec("eventhubs", action.Type); !ok {
 			issues = append(issues, fmt.Sprintf("actions[%d] %q: unsupported Event Hubs action type %q", i, action.Name, action.Type))
 		}

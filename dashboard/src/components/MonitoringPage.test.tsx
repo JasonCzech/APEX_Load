@@ -1327,13 +1327,20 @@ describe('MonitoringPage', () => {
       total: 6,
       enabled: 5,
       due: 2,
-      blocked: 1,
+      blocked: 0,
       failed: 0,
       pending_approval: 3,
       queued: 2,
       materialized: 9,
       skipped: 4,
       completed: 8,
+      is_leader: true,
+      execution_plan_total: 2,
+      execution_plan_enabled: 1,
+      execution_plan_due: 1,
+      execution_plan_blocked: 1,
+      one_time_scheduled: 1,
+      one_time_due: 1,
       status_counts: {
         queued: 2,
       },
@@ -1349,6 +1356,8 @@ describe('MonitoringPage', () => {
     expect(advisoryBadge).toBeTruthy()
     expect(advisoryBadge?.className).toContain('danger')
     expect(advisoryBadge?.textContent).toContain('2 issues need attention')
+    expect(advisoryBadge?.getAttribute('title')).toContain('1 execution-plan schedules blocked')
+    expect(advisoryBadge?.getAttribute('title')).toContain('4 due across all schedule domains')
     expect(container.querySelector('.monitor-schedule-health-card')).toBeNull()
     expect(container.querySelector('[data-card-id="schedule-health"]')).toBeNull()
     expect(visibleMonitorCardIds()).toEqual(['run-calendar'])
@@ -1356,6 +1365,53 @@ describe('MonitoringPage', () => {
     expect(container.textContent).not.toContain('Advisory Panel')
     expect(container.textContent).not.toContain('Enabled Schedules')
     expect(apiMock.getScheduleHealth).toHaveBeenCalled()
+  })
+
+  it('reports scheduler storage errors and stale domain sweeps', async () => {
+    apiMock.getScheduleHealth.mockResolvedValue({
+      total: 1,
+      enabled: 1,
+      due: 0,
+      blocked: 0,
+      failed: 0,
+      pending_approval: 0,
+      is_leader: true,
+      storage_error: 'schedule metadata unavailable',
+      sweeps: {
+        scenario: { last_sweep_at: '2020-01-01T00:00:00Z', last_successful_at: '2020-01-01T00:00:00Z' },
+        execution_plan: { last_sweep_at: new Date().toISOString(), last_successful_at: new Date().toISOString() },
+      },
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    const advisoryBadge = container.querySelector('.monitor-title-advisory')
+    expect(advisoryBadge?.className).toContain('danger')
+    expect(advisoryBadge?.getAttribute('title')).toContain('Storage: schedule metadata unavailable')
+    expect(advisoryBadge?.getAttribute('title')).toContain('Stale sweeps: scenario')
+  })
+
+  it('does not report configured schedules healthy before their first sweep', async () => {
+    apiMock.getScheduleHealth.mockResolvedValue({
+      total: 1,
+      enabled: 1,
+      due: 0,
+      blocked: 0,
+      failed: 0,
+      pending_approval: 0,
+      is_leader: true,
+      sweeps: {},
+    })
+
+    await act(async () => {
+      root.render(<MonitoringPage connectionState="connected" telemetryDiagnostics={[]} />)
+    })
+
+    const advisoryBadge = container.querySelector('.monitor-title-advisory')
+    expect(advisoryBadge?.className).toContain('warning')
+    expect(advisoryBadge?.getAttribute('title')).toContain('Missing sweep evidence: scenario')
   })
 
   it('renders run calendar events and opens test details', async () => {

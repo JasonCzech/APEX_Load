@@ -143,7 +143,7 @@ func (vu *VUser) Run(ctx context.Context) {
 
 	// --- Build pacing config ---
 	pacingCfg := PacingRuntimeConfig{
-		Type:          cfg.Pacing.Type,
+		Type:          dsl.CanonicalPacingType(cfg.Pacing.Type),
 		DelayMs:       cfg.Pacing.DelayMs,
 		MinDelayMs:    cfg.Pacing.MinDelayMs,
 		MaxDelayMs:    cfg.Pacing.MaxDelayMs,

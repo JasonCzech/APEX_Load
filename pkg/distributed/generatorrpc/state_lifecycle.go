@@ -17,6 +17,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/storage"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/encoding/protojson"
 )
 
 const (
@@ -462,6 +463,8 @@ func (s *Service) removeGeneratorArchiveRecords(records []generatorArchiveRemova
 						s.archiveIdentities[record.TestID] = removal.identity
 					}
 				}
+			} else {
+				s.deleteTerminalBatchesForTestLocked(record.TestID)
 			}
 			delete(s.archiveDeleting, record.TestID)
 			s.mu.Unlock()
@@ -590,7 +593,7 @@ func (s *Service) sweepGeneratorArchiveDirectories(now time.Time) {
 	toLoad := append([]directory(nil), retained[removeCount:]...)
 	toLoad = append(toLoad, failedRemovals...)
 	for _, dir := range toLoad {
-		record, err := s.loadRetainedGeneratorArchive(dir.testID, dir.identity)
+		record, terminalBatch, err := s.loadRetainedGeneratorArchive(dir.testID, dir.identity)
 		if err != nil {
 			// Keep a quarantined catalog entry so the test ID remains reserved and
 			// normal TTL/count retention can remove the crash-left directory. This
@@ -610,43 +613,71 @@ func (s *Service) sweepGeneratorArchiveDirectories(now time.Time) {
 		}
 		s.archiveRecords[dir.testID] = record
 		s.archiveIdentities[dir.testID] = dir.identity
+		if terminalBatch != nil {
+			key := terminalBatchKey{testID: terminalBatch.GetTestId(), generation: terminalBatch.GetExecutionGeneration()}
+			s.terminalBatches[key] = terminalMetricsTombstone{batch: terminalBatch, completedAt: record.CompletedAt}
+		}
 	}
 }
 
-func (s *Service) loadRetainedGeneratorArchive(testID string, expectedIdentity os.FileInfo) (*storage.RunArchiveRecord, error) {
+func (s *Service) loadRetainedGeneratorArchive(testID string, expectedIdentity os.FileInfo) (*storage.RunArchiveRecord, *pb.MetricsBatch, error) {
 	runRoot, identity, err := openGeneratorArchiveRun(s.archiveNamespace, testID, false)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer runRoot.Close()
 	if expectedIdentity == nil || !os.SameFile(expectedIdentity, identity) {
-		return nil, fmt.Errorf("generator archive run changed during recovery")
+		return nil, nil, fmt.Errorf("generator archive run changed during recovery")
 	}
 	manifestFile, _, err := openGeneratorArchiveRegularFile(runRoot, "manifest.json")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer manifestFile.Close()
 	const manifestLimit = int64(8 << 20)
 	data, err := io.ReadAll(io.LimitReader(manifestFile, manifestLimit+1))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if int64(len(data)) > manifestLimit {
-		return nil, fmt.Errorf("generator archive manifest exceeds %d bytes", manifestLimit)
+		return nil, nil, fmt.Errorf("generator archive manifest exceeds %d bytes", manifestLimit)
 	}
 	var manifest archiveManifest
 	if err := json.Unmarshal(data, &manifest); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if manifest.TestID != testID || manifest.SchemaVersion == "" || manifest.CompletedAt.IsZero() {
-		return nil, fmt.Errorf("generator archive manifest is incomplete or mismatched")
+		return nil, nil, fmt.Errorf("generator archive manifest is incomplete or mismatched")
 	}
-	return &storage.RunArchiveRecord{
+	record := &storage.RunArchiveRecord{
 		TestID: manifest.TestID, SchemaVersion: manifest.SchemaVersion,
 		ArchivePath:      filepath.Join(s.generatorArchiveRoot(), testID),
 		ManifestPath:     filepath.Join(s.generatorArchiveRoot(), testID, "manifest.json"),
 		TransactionCount: manifest.TransactionCount, ResourceSampleCount: manifest.ResourceSampleCount,
 		IntervalSummaryCount: manifest.IntervalSummaryCount, CreatedAt: manifest.CreatedAt, CompletedAt: manifest.CompletedAt,
-	}, nil
+	}
+	var terminalBatch *pb.MetricsBatch
+	if isGeneratorTerminalLifecycle(manifest.Status) {
+		if len(manifest.TerminalMetrics) > 0 {
+			terminalBatch = &pb.MetricsBatch{}
+			if err := (protojson.UnmarshalOptions{DiscardUnknown: false}).Unmarshal(manifest.TerminalMetrics, terminalBatch); err != nil {
+				return nil, nil, fmt.Errorf("decode retained terminal metrics: %w", err)
+			}
+			if terminalBatch.GetTestId() != testID || terminalBatch.GetExecutionGeneration() != manifest.ExecutionGeneration || !isGeneratorTerminalLifecycle(terminalBatch.GetLifecycleState()) {
+				return nil, nil, fmt.Errorf("retained terminal metrics identity is incomplete or mismatched")
+			}
+		} else {
+			// Backward compatibility for archives finalized before aggregate terminal
+			// evidence was embedded in the manifest.
+			groups := make(map[string]int32, len(manifest.ExecutionGroups))
+			for _, group := range manifest.ExecutionGroups {
+				groups[group] = 0
+			}
+			terminalBatch = s.metricsBatchForState(testID, manifest.ExecutionGeneration, 0, false, groups, manifest.Status, manifest.Error)
+		}
+		terminalBatch.LifecycleState = manifest.Status
+		terminalBatch.LifecycleError = manifest.Error
+		terminalBatch.TimestampUnixMs = manifest.CompletedAt.UnixMilli()
+	}
+	return record, terminalBatch, nil
 }

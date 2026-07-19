@@ -1466,6 +1466,7 @@ type StartTestOptions struct {
 	OverrideCapacityShortfall   bool `json:"override_capacity_shortfall,omitempty"`
 	OverrideScriptShakeoutError bool `json:"override_script_shakeout_failure,omitempty"`
 	SkipLaunchWindowPreflight   bool `json:"-"`
+	actor                       testCreationActor
 }
 
 type CapacityShortfallError struct {

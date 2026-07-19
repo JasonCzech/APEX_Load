@@ -369,7 +369,7 @@ func (s *Service) detachFencedTests(testIDs []string, maximumGeneration uint64) 
 		if !ok || assignment.executionGeneration > maximumGeneration {
 			continue
 		}
-		s.stoppingTests[testID] = struct{}{}
+		s.markStoppingLocked(testID, assignment.executionGeneration)
 		delete(s.assignments, testID)
 		s.stopCompletionTimerLocked(testID)
 		s.stopStageTimerLocked(testID)
@@ -402,6 +402,7 @@ func (s *Service) finishDetachedFencedTest(ctx context.Context, stop detachedFen
 	if err := waitForGeneratorExecutions(ctx, stop.executions); err != nil {
 		finish := func() {
 			_ = waitForGeneratorExecutions(context.Background(), stop.executions)
+			s.captureStoppedExecutionMetrics(&stop.assignment, stop.executions)
 			s.finishStoppedTestWithState(stop.testID, stop.assignment, stop.writer, stop.finalState, stop.finalError)
 			s.completeDetachedExecutionFence()
 		}
@@ -419,6 +420,7 @@ func (s *Service) finishDetachedFencedTest(ctx context.Context, stop detachedFen
 		defer s.finalizerWG.Done()
 	}
 	defer s.completeDetachedExecutionFence()
+	s.captureStoppedExecutionMetrics(&stop.assignment, stop.executions)
 	_, finalError := s.finishStoppedTestWithState(stop.testID, stop.assignment, stop.writer, stop.finalState, stop.finalError)
 	// A FAILED lifecycle reason is expected evidence for a fenced/shutdown test;
 	// only a changed error (for example an appended archive-finalization failure)

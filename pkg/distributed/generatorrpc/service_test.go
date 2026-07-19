@@ -71,8 +71,10 @@ func TestBroadcastMetricsCountsSubscriberDrops(t *testing.T) {
 	if err != nil {
 		t.Fatalf("register subscriber: %v", err)
 	}
-	for i := 0; i < cap(subscriber.updates); i++ {
-		subscriber.updates <- &pb.MetricsBatch{TestId: "queued"}
+	for i := 0; i < metricsSubscriberQueueCapacity; i++ {
+		if dropped := subscriber.enqueue(&pb.MetricsBatch{TestId: "queued"}); dropped != 0 {
+			t.Fatalf("fill queue dropped batch %d", i)
+		}
 	}
 
 	service.broadcastMetrics(&pb.MetricsBatch{TestId: "dropped", ExecutionGeneration: 0})

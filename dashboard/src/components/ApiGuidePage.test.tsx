@@ -325,4 +325,44 @@ describe('ApiGuidePage', () => {
     expect(container.textContent).toContain('catalog route unavailable')
     expect(container.querySelector('.api-guide-endpoint-grid')).toBeNull()
   })
+
+  it('shows the User Guide tab to everyone and renders its content', async () => {
+    await renderApiGuidePage({ effectiveAccessResources: accessResources(['view_scripts']) })
+
+    expect(topbarText()).toContain('User Guide')
+    expect(findTopbarButton('Admin Guide')).toBeUndefined()
+
+    const userGuideButton = await selectTopbarPage('User Guide')
+    expect(userGuideButton?.getAttribute('aria-pressed')).toBe('true')
+    expect(window.location.hash).toBe('#/docs?guide=user-guide')
+    expect(container.textContent).toContain('What APEX Load Does')
+    expect(container.textContent).not.toContain('Responses And Errors')
+  })
+
+  it('hides the Admin Guide tab from non-admins and guards direct navigation', async () => {
+    await renderApiGuidePage({ activePage: 'admin-guide', effectiveAccessResources: accessResources(['view_scripts']) })
+
+    expect(findTopbarButton('Admin Guide')).toBeUndefined()
+    // Direct navigation to the admin guide falls back to the default General page.
+    expect(container.textContent).toContain('Responses And Errors')
+    expect(container.textContent).not.toContain('The Access Console')
+  })
+
+  it('shows the Admin Guide tab to administrators and renders its content', async () => {
+    await renderApiGuidePage({ effectiveAccessResources: accessResources(['manage_users']) })
+
+    expect(topbarText()).toContain('Admin Guide')
+
+    const adminButton = await selectTopbarPage('Admin Guide')
+    expect(adminButton?.getAttribute('aria-pressed')).toBe('true')
+    expect(window.location.hash).toBe('#/docs?guide=admin-guide')
+    expect(container.textContent).toContain('The Access Console')
+    expect(container.textContent).not.toContain('Responses And Errors')
+  })
+
+  it('shows the Admin Guide tab for system administrators without user-management access', async () => {
+    await renderApiGuidePage({ effectiveAccessResources: accessResources(['manage_system']) })
+
+    expect(topbarText()).toContain('Admin Guide')
+  })
 })

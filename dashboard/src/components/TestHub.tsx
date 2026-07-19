@@ -45,6 +45,8 @@ interface Props {
 export interface ScenarioFormState {
   name: string
   duration: string
+  /** Preserved even though start delay is not currently exposed by this editor. */
+  start_delay: string
   groups: ScenarioFormGroup[]
   scenario_mode: ScenarioMode
   script_shakeout: boolean
@@ -66,6 +68,8 @@ export interface ScenarioFormState {
   runtime_ignore_think_time: boolean
   runtime_log_level: string
   runtime_auto_transactions: string
+  /** Canonical stored override used to retain advanced fields the compact editor does not expose. */
+  runtime_settings?: RuntimeSettingsOverride
   browser_device_profile?: string
   browser_orientation?: string
   browser_touch_mode?: '' | 'true' | 'false'
@@ -77,6 +81,8 @@ export interface ScenarioFormState {
   data_pool_alias?: string
   data_pool_access_mode?: ScenarioDataPoolBinding['access_mode']
   data_pool_selection_strategy?: ScenarioDataPoolBinding['selection_strategy']
+  /** Complete aggregate retained while the compact data-pool editor changes the first binding. */
+  data_pools?: ScenarioDataPoolBinding[]
 }
 
 interface ScenarioFormGroup {
@@ -87,6 +93,7 @@ interface ScenarioFormGroup {
   ramp_up: string
   ramp_down: string
   stages: LoadStageDraft[]
+  iterations?: number
   initialization: 'at_runtime' | 'at_once'
   /** Per-group runtime overrides layered over the scenario-wide defaults. */
   runtimeSettings?: ScenarioRuntimeSettingsDraft
@@ -131,6 +138,7 @@ function emptyScenarioForm(scriptId = ''): ScenarioFormState {
   return {
     name: '',
     duration: '1m',
+    start_delay: '',
     groups: [emptyScenarioGroup(scriptId)],
     scenario_mode: 'vuser_driven',
     script_shakeout: false,
@@ -292,6 +300,7 @@ function normalizeGroupForPayload(group: ScenarioFormGroup) {
     rampUp: group.ramp_up,
     rampDown: group.ramp_down,
     stages: group.stages.map(normalizeStageForPayload),
+    iterations: group.iterations,
     initialization: group.initialization,
     runtimeSettings: group.runtimeSettings,
     assignment: group.assignment,
@@ -307,6 +316,7 @@ function scenarioFormGroupFromStored(group: StoredScenario['scripts'][number], f
     ramp_up: group.ramp_up || '',
     ramp_down: group.ramp_down || '',
     stages: group.stages ? [...group.stages] : [],
+    iterations: group.iterations,
     initialization: group.initialization || 'at_runtime',
     runtimeSettings: runtimeDraftFromOverride(group.runtime_settings),
     assignment: cloneAssignment(group.assignment),
@@ -478,20 +488,36 @@ function browserRuntimeFromForm(form: ScenarioFormState) {
 }
 
 function pacingFromForm(form: ScenarioFormState): RuntimeSettingsOverride['pacing'] | undefined {
-  if (!form.runtime_pacing_type) return undefined
-  if (form.runtime_pacing_type === 'none') return { type: 'none' }
-  if (form.runtime_pacing_type === 'fixed_interval') {
-    return { type: 'fixed_interval', interval_ms: form.runtime_pacing_interval_ms }
-  }
-  if (form.runtime_pacing_type === 'tps') {
-    return { type: 'tps', tps: form.runtime_pacing_tps }
-  }
-  return { type: 'fixed_delay', delay_ms: form.runtime_pacing_delay_ms }
+	const preserved = form.runtime_settings?.pacing
+	if (!form.runtime_pacing_type) return preserved ? { ...preserved } : undefined
+	const sameType = preserved?.type === form.runtime_pacing_type
+	if (form.runtime_pacing_type === 'none') return sameType ? { ...preserved, type: 'none' } : { type: 'none' }
+	if (form.runtime_pacing_type === 'fixed_interval') {
+		return { ...(sameType ? preserved : {}), type: 'fixed_interval', interval_ms: form.runtime_pacing_interval_ms }
+	}
+	if (form.runtime_pacing_type === 'tps') {
+		return { ...(sameType ? preserved : {}), type: 'tps', tps: form.runtime_pacing_tps }
+	}
+	if (form.runtime_pacing_type === 'fixed_delay') {
+		return { ...(sameType ? preserved : {}), type: 'fixed_delay', delay_ms: form.runtime_pacing_delay_ms }
+	}
+	// The compact editor does not expose every DSL pacing model. Preserve an
+	// unknown stored model byte-for-byte during a no-op edit/clone instead of
+	// coercing it to fixed_delay.
+	return sameType ? { ...preserved } : { type: form.runtime_pacing_type }
 }
 
 function thinkTimeFromForm(form: ScenarioFormState): RuntimeSettingsOverride['think_time'] | undefined {
-  if (form.runtime_ignore_think_time) {
-    return { type: 'fixed', mean_ms: form.runtime_think_time_ms ?? 0, ignore: true }
+	const preserved = form.runtime_settings?.think_time
+	if (preserved) {
+		return {
+			...preserved,
+			...(form.runtime_think_time_ms !== undefined ? { mean_ms: form.runtime_think_time_ms } : {}),
+			ignore: form.runtime_ignore_think_time,
+		}
+	}
+	if (form.runtime_ignore_think_time) {
+		return { type: 'fixed', mean_ms: form.runtime_think_time_ms ?? 0, ignore: true }
   }
   if (form.runtime_think_time_ms !== undefined) {
     return { type: 'fixed', mean_ms: form.runtime_think_time_ms, ignore: false }
@@ -499,12 +525,14 @@ function thinkTimeFromForm(form: ScenarioFormState): RuntimeSettingsOverride['th
   return undefined
 }
 
-function runtimeSettingsFromForm(form: ScenarioFormState, includeBrowser: boolean) {
+function runtimeSettingsFromForm(form: ScenarioFormState, includeBrowser: boolean): ScenarioRuntimeSettingsDraft {
+  const preserved = runtimeDraftFromOverride(form.runtime_settings)
   return {
+    ...preserved,
     iterations: form.runtime_iterations,
     pacing: pacingFromForm(form),
     think_time: thinkTimeFromForm(form),
-    browser: includeBrowser ? browserRuntimeFromForm(form) : undefined,
+    browser: includeBrowser ? browserRuntimeFromForm(form) : preserved?.browser,
     log_level: form.runtime_log_level,
     auto_transactions: form.runtime_auto_transactions,
     continue_on_error: form.continue_on_error,
@@ -552,6 +580,7 @@ function scenarioFormStateFromStoredScenario(
   return {
     name: cloneDraft ? `${scenario.name} (Copy)` : scenario.name,
     duration: scenario.duration,
+    start_delay: scenario.start_delay || '',
     groups: ensureScenarioGroups(groups),
     scenario_mode: scenario.scenario_mode || 'vuser_driven',
     script_shakeout: Boolean(scenario.script_shakeout),
@@ -573,6 +602,7 @@ function scenarioFormStateFromStoredScenario(
     runtime_ignore_think_time: Boolean(thinkTime?.ignore),
     runtime_log_level: runtimeSettings?.log_level || '',
     runtime_auto_transactions: runtimeSettings?.auto_transactions || '',
+    runtime_settings: runtimeSettings,
     browser_device_profile: scenario.runtime_settings?.browser?.device_profile || '',
     browser_orientation: scenario.runtime_settings?.browser?.orientation || '',
     browser_touch_mode: booleanSelectValue(scenario.runtime_settings?.browser?.touch_mode),
@@ -584,6 +614,13 @@ function scenarioFormStateFromStoredScenario(
     data_pool_alias: firstPool?.alias || '',
     data_pool_access_mode: firstPool?.access_mode || 'read_only',
     data_pool_selection_strategy: firstPool?.selection_strategy || 'sequential',
+    data_pools: scenario.data_pools?.map(binding => cloneDraft ? {
+      pool_id: binding.pool_id,
+      pool_name: binding.pool_name,
+      alias: binding.alias,
+      access_mode: binding.access_mode,
+      selection_strategy: binding.selection_strategy,
+    } : { ...binding }),
   }
 }
 
@@ -1199,6 +1236,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     () => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'),
     [effectiveAuthAccessResources],
   )
+  const canManageProjects = useMemo(
+    () => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_projects'),
+    [effectiveAuthAccessResources],
+  )
   const shapeCatalog = useMemo(
     () => buildScenarioShapeCatalog(loadModelSupportMatrix, loadModelTemplates),
     [loadModelSupportMatrix, loadModelTemplates],
@@ -1264,17 +1305,19 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const showModelPreview = showForm && wizardStep !== 'start' && wizardStep !== 'scripts'
 
   const buildScenarioDraftPayload = useCallback((draftForm: ScenarioFormState = form) => {
+    const retainedPools = (draftForm.data_pools || []).map(binding => ({ ...binding }))
     const dataPoolsPayload = draftForm.data_pool_id ? [{
+      ...(retainedPools[0] || {}),
       pool_id: draftForm.data_pool_id,
       alias: (draftForm.data_pool_alias || dataPools.find(pool => pool.id === draftForm.data_pool_id)?.name || 'data').trim().toLowerCase().replace(/\s+/g, '_'),
       access_mode: draftForm.data_pool_access_mode || 'read_only',
       selection_strategy: draftForm.data_pool_selection_strategy || 'sequential',
-    }] : []
+    }, ...retainedPools.slice(1)] : []
 
     return buildScenarioUpsertPayload({
       name: draftForm.name || 'Draft scenario',
       duration: draftForm.duration || '1m',
-      startDelay: '',
+      startDelay: draftForm.start_delay,
       scenarioMode: draftForm.scenario_mode,
       scriptShakeout: draftForm.script_shakeout,
       resourceBaseline: draftForm.resource_baseline,
@@ -1677,7 +1720,17 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     openEdit(scenario)
     setEditingId(null)
     editingBaselineFormRef.current = ''
-    setForm(prev => ({ ...prev, name: `${scenario.name} (Copy)` }))
+    setForm(prev => ({
+      ...prev,
+      name: `${scenario.name} (Copy)`,
+      data_pools: prev.data_pools?.map(binding => ({
+        pool_id: binding.pool_id,
+        pool_name: binding.pool_name,
+        alias: binding.alias,
+        access_mode: binding.access_mode,
+        selection_strategy: binding.selection_strategy,
+      })),
+    }))
   }
 
   const selectScenarioSourceMode = (mode: ScenarioSourceMode) => {
@@ -3506,6 +3559,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
           <ExecutionPlansPanel
             projectId={activeProject?.id}
             canManage={canManageTests}
+            canAdmin={canManageProjects}
             scenarioOptions={scenarios.map(scenario => ({ id: scenario.id, name: scenario.name }))}
             onOpenTest={onSelectTest}
             seedScenarioId={planSeedScenarioId ?? undefined}
