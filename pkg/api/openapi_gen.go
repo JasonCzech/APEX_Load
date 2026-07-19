@@ -26,9 +26,13 @@ import (
 )
 
 const openapiInfoDescription = "Kubernetes-native performance testing platform REST API.\n\n" +
-	"All endpoints and their required roles are generated from the controller routing " +
-	"layer (`pkg/api/server.go`) by `cmd/swaggergen`. Do not hand-edit this file — run " +
-	"`go generate ./pkg/api` after changing routes."
+	"The route inventory, path parameters, deprecation state, and access requirements are " +
+	"generated from the controller routing layer (`pkg/api/server.go`) by `cmd/swaggergen`. " +
+	"Handler analysis adds query parameter names and types, JSON/multipart/raw request media " +
+	"with serializable top-level shapes, declared response statuses, and response media. " +
+	"Semantic validation rules and some dynamic representations remain handler-defined. Use the " +
+	"API User Guide for workflow examples and the generated Endpoint Map for a compact route " +
+	"inventory. Do not hand-edit this file — run `go generate ./pkg/api` after changing routes."
 
 var pathParamRe = regexp.MustCompile(`\{([^}]+)\}`)
 
@@ -67,8 +71,10 @@ type oasComponents struct {
 
 type oasSecurityScheme struct {
 	Type         string `yaml:"type"`
-	Scheme       string `yaml:"scheme"`
-	BearerFormat string `yaml:"bearerFormat"`
+	Scheme       string `yaml:"scheme,omitempty"`
+	BearerFormat string `yaml:"bearerFormat,omitempty"`
+	Name         string `yaml:"name,omitempty"`
+	In           string `yaml:"in,omitempty"`
 }
 
 type oasOperation struct {
@@ -82,27 +88,33 @@ type oasOperation struct {
 	Security    *[]map[string][]string `yaml:"security,omitempty"`
 	Parameters  []oasParameter         `yaml:"parameters,omitempty"`
 	Tags        []string               `yaml:"tags"`
+	XHandler    string                 `yaml:"x-handler,omitempty"`
 }
 
 // noSecurity is the per-operation override emitted for public (unauthenticated)
 // routes; it renders as `security: []`, overriding the document-level bearerAuth.
 var noSecurity = []map[string][]string{}
+var optionalMetricsSecurity = []map[string][]string{{}, {"bearerAuth": {}}}
 
 const publicRoleText = "Public (no authentication required)"
 
 type oasResponse struct {
-	Description string `yaml:"description"`
+	Description string                  `yaml:"description"`
+	Content     map[string]oasMediaType `yaml:"content,omitempty"`
 }
 
 type oasParameter struct {
-	Name     string         `yaml:"name"`
-	In       string         `yaml:"in"`
-	Required bool           `yaml:"required"`
-	Schema   oasParamSchema `yaml:"schema"`
+	Name        string         `yaml:"name"`
+	In          string         `yaml:"in"`
+	Description string         `yaml:"description,omitempty"`
+	Required    bool           `yaml:"required"`
+	Schema      oasParamSchema `yaml:"schema"`
 }
 
 type oasParamSchema struct {
-	Type string `yaml:"type"`
+	Type   string          `yaml:"type"`
+	Format string          `yaml:"format,omitempty"`
+	Items  *oasParamSchema `yaml:"items,omitempty"`
 }
 
 type oasRequestBody struct {
@@ -115,12 +127,22 @@ type oasMediaType struct {
 }
 
 type oasSchema struct {
-	Ref        string               `yaml:"$ref,omitempty"`
-	Type       string               `yaml:"type,omitempty"`
-	Properties map[string]oasSchema `yaml:"properties,omitempty"`
-	Items      *oasSchema           `yaml:"items,omitempty"`
-	Enum       []string             `yaml:"enum,omitempty"`
-	Required   []string             `yaml:"required,omitempty"`
+	Ref                  string               `yaml:"$ref,omitempty"`
+	Type                 string               `yaml:"type,omitempty"`
+	Format               string               `yaml:"format,omitempty"`
+	Description          string               `yaml:"description,omitempty"`
+	Properties           map[string]oasSchema `yaml:"properties,omitempty"`
+	Items                *oasSchema           `yaml:"items,omitempty"`
+	AdditionalProperties *bool                `yaml:"additionalProperties,omitempty"`
+	Enum                 []string             `yaml:"enum,omitempty"`
+	Required             []string             `yaml:"required,omitempty"`
+}
+
+type inferredRouteContract struct {
+	QueryParameters  []oasParameter
+	HeaderParameters []oasParameter
+	RequestBody      *oasRequestBody
+	Responses        map[string]oasResponse
 }
 
 // discoveredRoute is one controller route extracted from the routing source.
@@ -171,6 +193,10 @@ func GenerateOpenAPIYAML(serverGoPath string) ([]byte, error) {
 	if len(routes) == 0 {
 		return nil, fmt.Errorf("no routes discovered in %s", serverGoPath)
 	}
+	contracts, err := inferRouteContracts(serverGoPath, routes)
+	if err != nil {
+		return nil, err
+	}
 
 	doc := oasDoc{
 		OpenAPI: "3.0.3",
@@ -182,12 +208,16 @@ func GenerateOpenAPIYAML(serverGoPath string) ([]byte, error) {
 		Servers: []oasServer{{URL: "http://localhost:8080", Description: "Local development server"}},
 		Components: oasComponents{
 			SecuritySchemes: map[string]oasSecurityScheme{
-				"bearerAuth": {Type: "http", Scheme: "bearer", BearerFormat: "JWT"},
+				"bearerAuth":  {Type: "http", Scheme: "bearer", BearerFormat: "JWT or service-account key"},
+				"apiKeyAuth":  {Type: "apiKey", Name: "X-APEXLoad-API-Key", In: "header"},
+				"oidcSession": {Type: "apiKey", Name: "apexload_auth_session", In: "cookie"},
 			},
 			Schemas: openAPIComponentSchemas(),
 		},
-		Security: []map[string][]string{{"bearerAuth": {}}},
-		Paths:    buildPaths(routes),
+		// Each map entry is an alternative (logical OR). Trusted-header identity is
+		// deployment-specific and is therefore described in the API User Guide.
+		Security: []map[string][]string{{"bearerAuth": {}}, {"apiKeyAuth": {}}, {"oidcSession": {}}},
+		Paths:    buildPaths(routes, contracts),
 	}
 
 	var buf bytes.Buffer
@@ -269,9 +299,10 @@ func discoverControllerRoutes(serverGoPath string) ([]discoveredRoute, error) {
 			return true
 		}
 		handler, actionArg := findHandlerFunc(call.Args[1])
+		authenticated := chainRequiresAuth(call.Args[1]) || inHandlerAuthenticatedRoute(method, path, handler)
 		routes = append(routes, discoveredRoute{
 			Method: method, Path: path, Handler: handler, ActionArg: actionArg,
-			Authenticated: chainRequiresAuth(call.Args[1]),
+			Authenticated: authenticated,
 		})
 		return true
 	})
@@ -280,25 +311,36 @@ func discoverControllerRoutes(serverGoPath string) ([]discoveredRoute, error) {
 
 // buildPaths renders the discovered routes into the OpenAPI paths object, keeping
 // operationIds unique and deterministic.
-func buildPaths(routes []discoveredRoute) map[string]map[string]oasOperation {
+func buildPaths(routes []discoveredRoute, contracts map[string]inferredRouteContract) map[string]map[string]oasOperation {
 	docs := buildRouteDocs(routes)
 	paths := map[string]map[string]oasOperation{}
 	for _, doc := range docs {
+		contract := contracts[doc.Method+" "+doc.Path]
+		responses := contract.Responses
+		if len(responses) == 0 {
+			responses = broadOperationResponses()
+		}
 		op := oasOperation{
 			Summary:     doc.Summary,
-			Description: fmt.Sprintf("**Handler:** `%s`\n\n**Access Control:** %s", doc.HandlerLabel, doc.Access),
+			Description: fmt.Sprintf("**Access Control:** %s", doc.Access),
 			OperationID: doc.OperationID,
 			Deprecated:  deprecatedRoute(doc.Path),
-			Responses:   map[string]oasResponse{"200": {Description: "Successful operation"}},
+			Responses:   responses,
 			XRoles:      doc.Access,
 			Tags:        []string{tagForPath(doc.Path)},
-			Parameters:  doc.Parameters,
+			Parameters:  append(append(doc.Parameters, contract.QueryParameters...), contract.HeaderParameters...),
+			XHandler:    doc.HandlerLabel,
 		}
 		if requestBody := requestBodyForRoute(doc.Method, doc.Path); requestBody != nil {
 			op.RequestBody = requestBody
+		} else if contract.RequestBody != nil {
+			op.RequestBody = contract.RequestBody
 		}
 		if !doc.Authenticated {
 			op.Security = &noSecurity
+		}
+		if doc.Path == "/metrics" {
+			op.Security = &optionalMetricsSecurity
 		}
 		if paths[doc.Path] == nil {
 			paths[doc.Path] = map[string]oasOperation{}
@@ -308,12 +350,28 @@ func buildPaths(routes []discoveredRoute) map[string]map[string]oasOperation {
 	return paths
 }
 
+func broadOperationResponses() map[string]oasResponse {
+	return map[string]oasResponse{
+		"2XX": {Description: "Successful response; the exact status and representation are operation-specific."},
+		"4XX": {Description: "Request, authentication, authorization, resource, or state error."},
+		"5XX": {Description: "Controller-side failure."},
+	}
+}
+
 func deprecatedRoute(path string) bool {
 	return strings.HasPrefix(path, "/api/v1/script-debug/sessions/")
 }
 
 func openAPIComponentSchemas() map[string]oasSchema {
 	return map[string]oasSchema{
+		"ErrorResponse": {
+			Type: "object",
+			Properties: map[string]oasSchema{
+				"error": {Type: "string", Description: "Human-readable error message."},
+				"code":  {Type: "string", Description: "Optional stable machine-readable error code."},
+			},
+			Required: []string{"error"},
+		},
 		"ScriptDebugBreakpoint": {
 			Type: "object",
 			Properties: map[string]oasSchema{
@@ -395,7 +453,7 @@ func buildRouteDocs(routes []discoveredRoute) []routeDoc {
 		seenRoutes[routeKey] = true
 
 		roles := publicRoleText
-		if r.Authenticated {
+		if r.Authenticated || r.Path == "/metrics" {
 			roles = routeRolesText(r.Method, r.Path)
 		}
 
@@ -450,6 +508,12 @@ func buildRouteDocs(routes []discoveredRoute) []routeDoc {
 // routeRolesText resolves the access requirement using the real runtime authorization
 // logic so the documented roles cannot drift from enforcement.
 func routeRolesText(method, path string) string {
+	if method == http.MethodPost && strings.HasSuffix(path, "/monitoring/collectors/{id}/heartbeat") {
+		return "Collector token via Bearer or X-APEXLoad-API-Key"
+	}
+	if method == http.MethodGet && path == "/metrics" {
+		return "Public when no metrics token is configured; otherwise requires the metrics Bearer token"
+	}
 	concrete := pathParamRe.ReplaceAllString(path, "x")
 	req, err := http.NewRequest(method, "http://localhost"+concrete, nil)
 	if err != nil {
@@ -468,20 +532,35 @@ func routeRolesText(method, path string) string {
 	return renderAccessRoles(requirement)
 }
 
-func renderAccessRoles(req accessRequirement) string {
-	entityScoped := req.ProjectLookup != nil || req.DomainLookup != nil || req.RepositoryLookup != nil ||
-		len(req.ProjectRoles) > 0 || len(req.DomainRoles) > 0 || len(req.RepositoryRoles) > 0
-	if entityScoped {
-		return "Requires Authentication (Role based on specific entity)"
+func inHandlerAuthenticatedRoute(method, path, handler string) bool {
+	if method == http.MethodGet && path == "/api/v1/auth/diagnostics" {
+		return true
 	}
-	if len(req.GlobalRoles) > 0 {
-		names := make([]string, 0, len(req.GlobalRoles))
-		for _, role := range req.GlobalRoles {
+	return method == http.MethodPost && path == "/api/v1/monitoring/collectors/{id}/heartbeat" && handler == "handleCollectorHeartbeat"
+}
+
+func renderAccessRoles(req accessRequirement) string {
+	parts := []string{"Requires authentication"}
+	appendRoles := func(scope string, roles []string) {
+		if len(roles) == 0 {
+			return
+		}
+		names := make([]string, 0, len(roles))
+		for _, role := range roles {
 			names = append(names, roleDisplayName(role))
 		}
-		return "Roles: " + strings.Join(names, ", ")
+		parts = append(parts, scope+" roles: "+strings.Join(names, ", "))
 	}
-	return "Requires Authentication"
+	appendRoles("global", req.GlobalRoles)
+	appendRoles("project", req.ProjectRoles)
+	appendRoles("domain", req.DomainRoles)
+	appendRoles("repository", req.RepositoryRoles)
+	if req.ServiceAccountScope != "" {
+		parts = append(parts, "service-account scope: "+req.ServiceAccountScope)
+	} else if req.ServiceAccountScopeLookup != nil {
+		parts = append(parts, "service-account scope: determined from the request")
+	}
+	return strings.Join(parts, "; ")
 }
 
 func roleDisplayName(role string) string {
@@ -606,18 +685,27 @@ func splitMethodPath(pattern string) (method, path string, ok bool) {
 	return parts[0], parts[1], true
 }
 
-// humanizeHandler turns "handleGetTestSLAStatus" into "Get Test S L A Status" by
-// dropping the handle prefix and inserting a space before every uppercase rune.
+// humanizeHandler turns handler identifiers into readable API summaries while
+// preserving initialisms (for example, "handleGetAPIDocs" -> "Get API Docs").
 func humanizeHandler(handler string) string {
 	name := strings.TrimPrefix(handler, "handle")
+	runes := []rune(name)
 	var b strings.Builder
-	for i, r := range name {
-		if i > 0 && unicode.IsUpper(r) {
+	for i, r := range runes {
+		if i > 0 && unicode.IsUpper(r) &&
+			(unicode.IsLower(runes[i-1]) || (i+1 < len(runes) && unicode.IsLower(runes[i+1]) && unicode.IsUpper(runes[i-1]))) {
 			b.WriteByte(' ')
 		}
 		b.WriteRune(r)
 	}
-	return strings.TrimSpace(b.String())
+	readable := strings.TrimSpace(b.String())
+	replacer := strings.NewReplacer(
+		"Git Hub", "GitHub",
+		"Open API", "OpenAPI",
+		"Async API", "AsyncAPI",
+		"Web Socket", "WebSocket",
+	)
+	return replacer.Replace(readable)
 }
 
 func titleWord(s string) string {
@@ -636,6 +724,12 @@ func tagForPath(path string) string {
 	}
 	if segment == "" {
 		return "General"
+	}
+	switch segment {
+	case "ci":
+		return "CI/CD"
+	case "docs":
+		return "Documentation"
 	}
 	words := strings.Split(segment, "-")
 	for i, w := range words {
@@ -658,6 +752,8 @@ func docsCategoryForPath(path string) string {
 		return "General"
 	case "ai":
 		return "AI Assistance"
+	case "ci":
+		return "CI/CD"
 	case "application-repository", "applications", "domains", "folders", "projects":
 		return "Workspace & Assets"
 	case "archives", "releases", "reports", "results":
@@ -672,6 +768,8 @@ func docsCategoryForPath(path string) string {
 		return "Script Authoring"
 	case "data-pools":
 		return "Data & Parameters"
+	case "docs":
+		return "Documentation"
 	case "desktop", "downloads", "system":
 		return "System & Distribution"
 	case "fleet", "metrics", "monitoring", "ws":

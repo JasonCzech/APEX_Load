@@ -61,6 +61,7 @@ not the source of truth for current API or DSL contracts.
 
 ## Historical
 
-Historical reviews are archived under [archive/reviews](archive/reviews/README.md).
-They are preserved for audit context and should not be treated as current
-product documentation.
+Point-in-time reviews live under `docs/reviews/`; older reviews are archived under
+[archive/reviews](archive/reviews/README.md). Both locations are preserved for
+audit context and are excluded from current-document freshness checks. They
+should not be treated as current product documentation.

@@ -118,7 +118,7 @@ export default function SwaggerDocsPage({
       <div className="page-header">
         <div>
           <h2>Swagger Docs</h2>
-          <p className="page-subtitle">{stripMarkdown(document.description) || 'Interactive API reference generated from the APEX Load OpenAPI document.'}</p>
+          <p className="page-subtitle">{stripMarkdown(document.description) || 'Searchable route and access reference generated from the APEX Load OpenAPI document.'}</p>
         </div>
       </div>
 
@@ -140,7 +140,7 @@ export default function SwaggerDocsPage({
         <div className="swagger-docs-stats">
           <div><span>Operations</span><strong>{document.operations.length}</strong></div>
           <div><span>Categories</span><strong>{categories.length}</strong></div>
-          <div><span>Auth</span><strong>Bearer</strong></div>
+          <div><span>Auth</span><strong>Bearer, API key, OIDC</strong></div>
         </div>
       </section>
 
@@ -173,7 +173,7 @@ export default function SwaggerDocsPage({
       <section className="swagger-docs-results" aria-live="polite">
         <div className="api-guide-section-header">
           <h3>API Reference</h3>
-          <p>{filteredOperations.length} endpoint{filteredOperations.length === 1 ? '' : 's'} shown. Swagger is complete by default; access badges reflect the current dashboard context.</p>
+          <p>{filteredOperations.length} endpoint{filteredOperations.length === 1 ? '' : 's'} shown. All registered routes are included by default. Query/header names and types, request media/top-level fields, declared response statuses/media, and access requirements are generated from route and handler code; detailed validation rules remain handler-defined.</p>
         </div>
         {filteredOperations.length === 0 ? (
           <div className="api-guide-callout">
@@ -247,6 +247,29 @@ function SwaggerOperationCard({
               <dd>{operation.tags.length ? operation.tags.join(', ') : 'None'}</dd>
             </div>
           </dl>
+          {operation.requestBody && (
+            <div className="swagger-request-body-detail">
+              <h5>Request Body {operation.requestBody.required ? '(required)' : '(optional)'}</h5>
+              {operation.requestBody.media.map(media => (
+                <div key={`${operation.operationId}-${media.mediaType}`}>
+                  <p><code>{media.mediaType}</code>{media.schemaRef ? <> · <code>{media.schemaRef}</code></> : media.schemaType ? ` · ${media.schemaType}` : ''}</p>
+                  {media.fields.length > 0 ? (
+                    <table>
+                      <thead><tr><th>Field</th><th>Type</th></tr></thead>
+                      <tbody>
+                        {media.fields.map(field => (
+                          <tr key={`${operation.operationId}-${media.mediaType}-${field.name}`}>
+                            <td><code>{field.name}</code></td>
+                            <td>{field.type}{field.format ? ` (${field.format})` : ''}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : <p>Payload fields are operation-specific or defined by the referenced schema.</p>}
+                </div>
+              ))}
+            </div>
+          )}
           <div className="swagger-detail-grid">
             <div>
               <h5>Parameters</h5>
@@ -264,7 +287,7 @@ function SwaggerOperationCard({
                     ))}
                   </tbody>
                 </table>
-              ) : <p>No parameters.</p>}
+              ) : <p>No path or query parameters are declared.</p>}
             </div>
             <div>
               <h5>Responses</h5>
@@ -296,9 +319,16 @@ function renderAccessBadge(
   effectiveAccessError: boolean,
 ) {
   if (!catalogRoute) return <span className="swagger-access-badge swagger-access-muted">Unmatched</span>
+  if (catalogRoute.path === '/metrics') {
+    return <span className="swagger-access-badge swagger-access-muted">Conditional auth</span>
+  }
   const visibility = classifyEndpointForDocs(catalogRoute)
   if (!visibility.classified) return <span className="swagger-access-badge swagger-access-muted">Unclassified</span>
-  if (visibility.operations.length === 0) return <span className="swagger-access-badge swagger-access-public">Public</span>
+  if (visibility.operations.length === 0) {
+    return catalogRoute.public
+      ? <span className="swagger-access-badge swagger-access-public">Public</span>
+      : <span className="swagger-access-badge swagger-access-available">Authenticated</span>
+  }
   if (!effectiveAccessLoaded) return <span className="swagger-access-badge swagger-access-muted">Checking access</span>
   if (effectiveAccessError) return <span className="swagger-access-badge swagger-access-muted">Access unavailable</span>
   const visible = visibility.operations.some(operation => allowedOperations.has(operation))

@@ -109,9 +109,33 @@ paths:
 
         **Access Control:** Requires widget viewer'
       operationId: handleGetWidget
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                payload:
+                  type: string
+                  format: binary
+                metadata:
+                  type: object
+                  properties:
+                    nested:
+                      type: string
       responses:
         '200':
           description: Successful operation
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  result:
+                    type: string
       x-roles: Requires widget viewer
       parameters:
         - name: id
@@ -136,6 +160,18 @@ paths:
       roles: 'Requires widget viewer',
       tags: ['Widgets'],
       parameters: [{ name: 'id', location: 'path', required: true, type: 'string' }],
+      requestBody: {
+        required: true,
+        media: [{
+          mediaType: 'application/json',
+          schemaType: 'object',
+          fields: [
+            { name: 'name', type: 'string', format: '' },
+            { name: 'payload', type: 'string', format: 'binary' },
+            { name: 'metadata', type: 'object', format: '' },
+          ],
+        }],
+      },
       responses: [{ status: '200', description: 'Successful operation' }],
     })
   })
@@ -212,6 +248,7 @@ paths:
     expect(container.textContent).toContain('/api/v1/domains')
     expect(container.textContent).toContain('Not in my access')
     expect(container.textContent).toContain('Public')
+    expect(container.textContent).toContain('Conditional auth')
 
     const firstDetails = container.querySelector('details') as HTMLDetailsElement | null
     expect(firstDetails).not.toBeNull()
@@ -223,6 +260,18 @@ paths:
     expect(container.textContent).toContain('Operation ID')
     expect(container.textContent).toContain('Access Control')
     expect(container.textContent).toContain('OpenAPI Tags')
+
+    const ciRunSummary = Array.from(container.querySelectorAll('.swagger-operation-card summary'))
+      .find(summary => summary.textContent?.includes('/api/v1/ci/runs') && summary.textContent?.includes('POST'))
+    expect(ciRunSummary).toBeDefined()
+    await act(async () => {
+      const details = ciRunSummary?.closest('details') as HTMLDetailsElement | null
+      if (!details) return
+      details.open = true
+      details.dispatchEvent(new Event('toggle', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('Request Body (required)')
+    expect(container.textContent).toContain('project_id')
 
     const categorySelect = container.querySelector('.swagger-docs-controls select') as HTMLSelectElement | null
     expect(categorySelect).not.toBeNull()

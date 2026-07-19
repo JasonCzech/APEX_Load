@@ -258,7 +258,7 @@ describe('ApiGuidePage', () => {
     expect(codeValues).not.toContain('PUT /api/v1/projects/{id}/github/policy')
     expect(container.textContent).not.toContain('/api/v1/scenarios')
     expect(codeValues).not.toContain('POST /api/v1/library/remotes')
-    expect(container.textContent).toContain('filtered to your current domain, project, and role access')
+    expect(container.textContent).toContain('filtered using your current effective operations')
 
     await selectTopbarPage('Authentication')
     expect(container.textContent).toContain('/api/v1/auth/me')

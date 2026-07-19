@@ -1336,13 +1336,15 @@
   gap: 12px;
 }
 
-.swagger-detail-grid h5 {
+.swagger-detail-grid h5,
+.swagger-request-body-detail h5 {
   margin: 0 0 8px;
   color: var(--text-primary);
   font-size: 13px;
 }
 
-.swagger-detail-grid table {
+.swagger-detail-grid table,
+.swagger-request-body-detail table {
   width: 100%;
   border-collapse: collapse;
   overflow: hidden;
@@ -1351,7 +1353,9 @@
 }
 
 .swagger-detail-grid th,
-.swagger-detail-grid td {
+.swagger-detail-grid td,
+.swagger-request-body-detail th,
+.swagger-request-body-detail td {
   border-bottom: 1px solid var(--border);
   color: var(--text-primary);
   padding: 8px;
@@ -1359,7 +1363,8 @@
   vertical-align: top;
 }
 
-.swagger-detail-grid th {
+.swagger-detail-grid th,
+.swagger-request-body-detail th {
   color: var(--text-muted);
   font-size: 11px;
   font-weight: 800;
@@ -1367,7 +1372,8 @@
   text-transform: uppercase;
 }
 
-.swagger-detail-grid tr:last-child td {
+.swagger-detail-grid tr:last-child td,
+.swagger-request-body-detail tr:last-child td {
   border-bottom: none;
 }
 

@@ -10,6 +10,24 @@ export type SwaggerResponse = {
   description: string
 }
 
+export type SwaggerRequestBodyField = {
+  name: string
+  type: string
+  format: string
+}
+
+export type SwaggerRequestBodyMedia = {
+  mediaType: string
+  schemaType: string
+  schemaRef: string
+  fields: SwaggerRequestBodyField[]
+}
+
+export type SwaggerRequestBody = {
+  required: boolean
+  media: SwaggerRequestBodyMedia[]
+}
+
 export type SwaggerOperation = {
   method: string
   path: string
@@ -20,6 +38,7 @@ export type SwaggerOperation = {
   roles: string
   tags: string[]
   parameters: SwaggerParameter[]
+  requestBody: SwaggerRequestBody | null
   responses: SwaggerResponse[]
 }
 
@@ -42,11 +61,12 @@ const CATEGORY_BY_PATH_SEGMENT: Record<string, string> = {
   'browser-recorder': 'Recording & Replay',
   'browser-replay': 'Recording & Replay',
   capacity: 'Scheduling',
+  ci: 'CI/CD',
   'correlation-rulesets': 'Script Authoring',
   correlations: 'Script Authoring',
   'data-pools': 'Data & Parameters',
   desktop: 'System & Distribution',
-  docs: 'System & Distribution',
+  docs: 'Documentation',
   domains: 'Workspace & Assets',
   downloads: 'System & Distribution',
   dsl: 'Script Authoring',
@@ -168,18 +188,18 @@ function parseParameters(lines: string[]) {
     const indent = countLeadingSpaces(line)
     if (!trimmed) continue
     if (indent <= 6 && !trimmed.startsWith('-')) break
-    const nameMatch = trimmed.match(/^-\s+name:\s*(.+)$/)
+    const nameMatch = indent === 8 ? trimmed.match(/^-\s+name:\s*(.+)$/) : null
     if (nameMatch) {
       current = { name: cleanYamlValue(nameMatch[1]), location: '', required: false, type: '' }
       parameters.push(current)
       continue
     }
     if (!current) continue
-    const locationMatch = trimmed.match(/^in:\s*(.+)$/)
+    const locationMatch = indent === 10 ? trimmed.match(/^in:\s*(.+)$/) : null
     if (locationMatch) current.location = cleanYamlValue(locationMatch[1])
-    const requiredMatch = trimmed.match(/^required:\s*(.+)$/)
+    const requiredMatch = indent === 10 ? trimmed.match(/^required:\s*(.+)$/) : null
     if (requiredMatch) current.required = cleanYamlValue(requiredMatch[1]).toLowerCase() === 'true'
-    const typeMatch = trimmed.match(/^type:\s*(.+)$/)
+    const typeMatch = indent === 12 ? trimmed.match(/^type:\s*(.+)$/) : null
     if (typeMatch) current.type = cleanYamlValue(typeMatch[1])
   }
   return parameters
@@ -196,17 +216,61 @@ function parseResponses(lines: string[]) {
     const indent = countLeadingSpaces(line)
     if (!trimmed) continue
     if (indent <= 6 && !trimmed.startsWith('-')) break
-    const statusMatch = trimmed.match(/^['"]?([^:'"]+)['"]?:\s*$/)
+    const statusMatch = indent === 8 ? trimmed.match(/^['"]?([^:'"]+)['"]?:\s*$/) : null
     if (statusMatch) {
       current = { status: statusMatch[1], description: '' }
       responses.push(current)
       continue
     }
     if (!current) continue
-    const descriptionMatch = trimmed.match(/^description:\s*(.+)$/)
+    const descriptionMatch = indent === 10 ? trimmed.match(/^description:\s*(.+)$/) : null
     if (descriptionMatch) current.description = cleanYamlValue(descriptionMatch[1])
   }
   return responses
+}
+
+function parseRequestBody(lines: string[]): SwaggerRequestBody | null {
+  const start = lines.findIndex(line => /^ {6}requestBody:\s*$/.test(line))
+  if (start < 0) return null
+  const requestLines: string[] = []
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (line.trim() && countLeadingSpaces(line) <= 6) break
+    requestLines.push(line)
+  }
+  const requiredLine = requestLines.find(line => /^ {8}required:\s*/.test(line))
+  const required = cleanYamlValue(requiredLine?.replace(/^ {8}required:\s*/, '') || '').toLowerCase() === 'true'
+  const media: SwaggerRequestBodyMedia[] = []
+
+  for (let index = 0; index < requestLines.length; index += 1) {
+    const mediaMatch = requestLines[index].match(/^ {10}([^\s][^:]*\/[^:]+):\s*$/)
+    if (!mediaMatch) continue
+    const mediaType = cleanYamlValue(mediaMatch[1])
+    let end = index + 1
+    while (end < requestLines.length && !/^ {10}[^\s][^:]*\/[^:]+:\s*$/.test(requestLines[end])) end += 1
+    const mediaLines = requestLines.slice(index + 1, end)
+    const schemaType = cleanYamlValue(mediaLines.find(line => /^ {14}type:\s*/.test(line))?.replace(/^ {14}type:\s*/, '') || '')
+    const schemaRef = cleanYamlValue(mediaLines.find(line => /^ {14}\$ref:\s*/.test(line))?.replace(/^ {14}\$ref:\s*/, '') || '')
+    const fields: SwaggerRequestBodyField[] = []
+    const propertiesIndex = mediaLines.findIndex(line => /^ {14}properties:\s*$/.test(line))
+    if (propertiesIndex >= 0) {
+      for (let fieldIndex = propertiesIndex + 1; fieldIndex < mediaLines.length; fieldIndex += 1) {
+        const fieldMatch = mediaLines[fieldIndex].match(/^ {16}([^\s][^:]*):\s*$/)
+        if (!fieldMatch) continue
+        let fieldEnd = fieldIndex + 1
+        while (fieldEnd < mediaLines.length && !/^ {16}[^:]+:\s*$/.test(mediaLines[fieldEnd])) fieldEnd += 1
+        const fieldLines = mediaLines.slice(fieldIndex + 1, fieldEnd)
+        fields.push({
+          name: cleanYamlValue(fieldMatch[1]),
+          type: cleanYamlValue(fieldLines.find(line => /^ {18}type:\s*/.test(line))?.replace(/^ {18}type:\s*/, '') || 'object'),
+          format: cleanYamlValue(fieldLines.find(line => /^ {18}format:\s*/.test(line))?.replace(/^ {18}format:\s*/, '') || ''),
+        })
+      }
+    }
+    media.push({ mediaType, schemaType, schemaRef, fields })
+    index = end - 1
+  }
+  return { required, media }
 }
 
 function parseOperation(path: string, method: string, lines: string[]): SwaggerOperation {
@@ -222,6 +286,7 @@ function parseOperation(path: string, method: string, lines: string[]): SwaggerO
     roles: readField(lines, 'x-roles', 6),
     tags,
     parameters: parseParameters(lines),
+    requestBody: parseRequestBody(lines),
     responses: parseResponses(lines),
   }
 }

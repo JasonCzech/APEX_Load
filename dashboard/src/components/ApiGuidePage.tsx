@@ -275,7 +275,7 @@ export default function ApiGuidePage({
         <section className="page-section">
           <div className="api-guide-section-header">
             <h3>Endpoint Map</h3>
-            <p>Generated from the controller route catalog and filtered to your current domain, project, and role access. Use Swagger for the complete API contract.</p>
+            <p>Generated from the controller route catalog and filtered using your current effective operations. The controller remains the authorization authority; use Swagger for the complete registered route inventory and access requirements.</p>
           </div>
           {renderCatalogState(endpointCatalogLoaded, endpointCatalogError)}
           {endpointCatalogLoaded && renderAccessState(effectiveAccessLoaded, effectiveAccessError, visibleEndpointGroups.length === 0, 'No endpoints are visible for the current access context.')}

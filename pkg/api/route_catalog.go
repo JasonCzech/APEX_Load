@@ -14,6 +14,7 @@ type apiRouteAuthRule struct {
 }
 
 var routeCatalogAuthRules = []apiRouteAuthRule{
+	routeAuth(http.MethodGet, "/api/v1/auth/diagnostics", systemAdminAccess()),
 	routeAuth(http.MethodGet, "/api/v1/docs/swagger.yaml", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/docs/endpoint-catalog", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/system/settings", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),

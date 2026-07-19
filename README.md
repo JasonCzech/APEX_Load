@@ -316,7 +316,8 @@ go run ./cmd/apexctl run \
 
 ## API Documentation
 
-The exhaustive REST API docs are generated from the controller routing layer.
+The exhaustive REST route inventory and portable parameter/body/response contract are
+generated from the controller routing and handler layers.
 Do not maintain endpoint catalogs by hand in Markdown.
 
 - Generated OpenAPI: [docs/swagger.yaml](docs/swagger.yaml)

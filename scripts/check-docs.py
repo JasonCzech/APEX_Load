@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ARCHIVE_PREFIX = Path("docs/archive/reviews")
+NON_CURRENT_PREFIXES = (Path("docs/archive/reviews"), Path("docs/reviews"))
 METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE", "WS"}
 STALE_PHRASES = [
     "OpenTelemetry native",
@@ -37,7 +37,11 @@ def git_files(pattern: str) -> list[Path]:
 
 
 def active_markdown_files() -> list[Path]:
-    return [p for p in git_files("*.md") if not p.is_relative_to(ARCHIVE_PREFIX)]
+    return [
+        p
+        for p in git_files("*.md")
+        if not any(p.is_relative_to(prefix) for prefix in NON_CURRENT_PREFIXES)
+    ]
 
 
 def route_checked_markdown_files(files: list[Path]) -> list[Path]:
