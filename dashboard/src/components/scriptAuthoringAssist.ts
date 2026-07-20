@@ -29,14 +29,10 @@ export interface ActionTemplateDefinition {
   action: ScriptActionDefinition
 }
 
-export interface ImportedDraftDiffSummary {
-  changed: boolean
-  configChanged: boolean
-  actionChanges: number
-  parameterChanges: number
-  dataSourceChanges: number
-  details: string[]
-}
+export {
+  buildImportedDraftDiffSummary,
+  type ImportedDraftDiffSummary,
+} from './scriptEditorImportModel'
 
 export interface MigrationAssistantSuggestion {
   key: 'normalize_action_names' | 'normalize_think_time' | 'apply_gentle_pacing' | 'apply_per_action_transactions'
@@ -767,92 +763,6 @@ export function buildProtocolStarterTemplates(protocol: string, nextIndex: numbe
           action: { name: `Poll_${sequence}`, type: 'GET', method: 'GET', target: '/orders/{{param.order_id}}', headers: {}, body: '', extractors: [], assertions: [{ type: 'status_code', expected: 200 }], think_time_after: true },
         },
       ]
-  }
-}
-
-function compareConfig(left: ScriptConfig, right: ScriptConfig): boolean {
-  return JSON.stringify(left || {}) !== JSON.stringify(right || {})
-}
-
-function compareNamedList(left: Array<{ name?: string | null }>, right: Array<{ name?: string | null }>): number {
-  const leftNames = new Set(left.map((item) => normalizeTokenName(item.name || '')).filter(Boolean))
-  const rightNames = new Set(right.map((item) => normalizeTokenName(item.name || '')).filter(Boolean))
-  let delta = 0
-  leftNames.forEach((name) => {
-    if (!rightNames.has(name)) delta += 1
-  })
-  rightNames.forEach((name) => {
-    if (!leftNames.has(name)) delta += 1
-  })
-  return delta
-}
-
-export function buildImportedDraftDiffSummary(baseline: ScriptDefinition | null | undefined, current: ScriptDefinition): ImportedDraftDiffSummary {
-  if (!baseline) {
-    return {
-      changed: false,
-      configChanged: false,
-      actionChanges: 0,
-      parameterChanges: 0,
-      dataSourceChanges: 0,
-      details: [],
-    }
-  }
-
-  const details: string[] = []
-  const configChanged = compareConfig(baseline.config, current.config)
-  if (configChanged) {
-    details.push('Runtime or protocol configuration has changed.')
-  }
-
-  let actionChanges = Math.abs(baseline.actions.length - current.actions.length)
-  const renamedActions: string[] = []
-  const changedActionTargets: string[] = []
-  const comparedActionCount = Math.min(baseline.actions.length, current.actions.length)
-  for (let index = 0; index < comparedActionCount; index += 1) {
-    const before = baseline.actions[index]
-    const after = current.actions[index]
-    if (before.name !== after.name) {
-      actionChanges += 1
-      renamedActions.push(`${before.name || `Action ${index + 1}`} -> ${after.name || `Action ${index + 1}`}`)
-    } else if (
-      before.type !== after.type
-      || before.target !== after.target
-      || before.body !== after.body
-      || JSON.stringify(before.headers || {}) !== JSON.stringify(after.headers || {})
-    ) {
-      actionChanges += 1
-      changedActionTargets.push(after.name || `Action ${index + 1}`)
-    }
-  }
-
-  if (renamedActions.length > 0) {
-    details.push(`Renamed ${renamedActions.length} action${renamedActions.length === 1 ? '' : 's'}: ${renamedActions.slice(0, 3).join(', ')}${renamedActions.length > 3 ? ', ...' : ''}`)
-  }
-  if (changedActionTargets.length > 0) {
-    details.push(`Updated ${changedActionTargets.length} action target or body definition${changedActionTargets.length === 1 ? '' : 's'}.`)
-  }
-  if (baseline.actions.length !== current.actions.length) {
-    details.push(`Action count changed from ${baseline.actions.length} to ${current.actions.length}.`)
-  }
-
-  const parameterChanges = compareNamedList(baseline.parameters || [], current.parameters || [])
-  if (parameterChanges > 0) {
-    details.push(`Parameter definitions changed across ${parameterChanges} named entry${parameterChanges === 1 ? '' : 'ies'}.`)
-  }
-
-  const dataSourceChanges = compareNamedList(baseline.data_sources || [], current.data_sources || [])
-  if (dataSourceChanges > 0) {
-    details.push(`Data sources changed across ${dataSourceChanges} named entry${dataSourceChanges === 1 ? '' : 'ies'}.`)
-  }
-
-  return {
-    changed: configChanged || actionChanges > 0 || parameterChanges > 0 || dataSourceChanges > 0,
-    configChanged,
-    actionChanges,
-    parameterChanges,
-    dataSourceChanges,
-    details,
   }
 }
 

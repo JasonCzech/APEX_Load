@@ -5,6 +5,17 @@ import (
 	"strings"
 )
 
+func validateJavaVuserActionIssues(index int, action Action) []string {
+	spec, ok := protocolActionSpec("java_vuser", action.Type)
+	if !ok {
+		return []string{fmt.Sprintf("actions[%d] %q: unsupported Java Vuser action type %q", index, action.Name, action.Type)}
+	}
+	if spec.Validate != nil {
+		return spec.Validate(index, action)
+	}
+	return nil
+}
+
 func javaVuserActionSpecs() []ActionSpec {
 	return []ActionSpec{
 		{

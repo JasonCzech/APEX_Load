@@ -4,7 +4,7 @@ import {
   CapacityTimeslot,
   CapacityTimeslotAvailabilityResponse,
   CapacityTimeslotListResponse,
-} from '../../types'
+} from '../../types/capacity'
 import { request } from '../apiClient'
 
 function buildQuery(params: Record<string, string | number | undefined>) {
