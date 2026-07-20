@@ -4,14 +4,14 @@ Status: Current
 
 APEX Load supports messaging workloads through compiled protocol packages and
 build-tag-gated real adapters. The default build keeps broker execution safe for
-local validation by using in-memory mocks or fail-closed unavailable adapters.
+local validation by using in-memory mocks or fail-fast availability gates.
 
 ## Current Support Summary
 
 | Platform | Import | Runtime | Notes |
 | --- | --- | --- | --- |
-| JMS family | Partial | Mock/default; Solace and Azure Service Bus real adapters are build-tag gated | IBM MQ remains mock/stub-only. |
-| Apache Kafka | Partial | Mock/default; real franz-go adapter behind `-tags kafka_real` | Includes produce/consume/request-reply and Event Hubs Kafka-endpoint profile guidance. |
+| JMS family | Partial | Mock/default; Solace and Azure Service Bus real adapters are build-tag gated | IBM MQ is mock-only; non-mock scripts fail validation and initialization. Generic acknowledgement/transaction actions are mock-only. |
+| Apache Kafka | Partial | Mock/default; real franz-go adapter behind `-tags kafka_real` | Includes produce/consume/request-reply and Event Hubs Kafka-endpoint profile guidance; seek is mock-only. |
 | Azure Event Hubs | Partial | Mock/default; native AMQP adapter behind `-tags eventhubs_real` | Native protocol is producer-first with observer consume probes. |
 | AsyncAPI import | Partial | Generates Kafka/Event Hubs or review drafts depending on bindings and adapter availability | Unsupported bindings remain review-only rather than pretending to execute. |
 

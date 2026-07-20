@@ -4,6 +4,15 @@
 {{- if and .Values.projectSecrets.wrappingMasterKey .Values.bruno.artifactMasterKey (ne .Values.projectSecrets.wrappingMasterKey .Values.bruno.artifactMasterKey) }}
 {{- fail "projectSecrets.wrappingMasterKey and bruno.artifactMasterKey must match because the controller uses one wrapping key" }}
 {{- end }}
+{{- if and .Values.tracing.enabled (not .Values.tracing.endpoint) }}
+{{- fail "tracing.endpoint is required when tracing.enabled=true" }}
+{{- end }}
+{{- if not (has .Values.tracing.protocol (list "http/protobuf" "grpc")) }}
+{{- fail "tracing.protocol must be http/protobuf or grpc" }}
+{{- end }}
+{{- if and .Values.tracing.headersSecretName (not .Values.tracing.headersSecretKey) }}
+{{- fail "tracing.headersSecretKey is required when tracing.headersSecretName is set" }}
+{{- end }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -44,6 +53,13 @@ data:
   APEXLOAD_METRICS_ADDR: {{ .Values.dataPlatform.metricsAddr | quote }}
   APEXLOAD_API_KEY_RATE_LIMIT_PER_MINUTE: {{ .Values.dataPlatform.apiKeyRateLimitPerMinute | quote }}
   APEXLOAD_IDEMPOTENCY_KEY_TTL: {{ .Values.dataPlatform.idempotencyKeyTTL | quote }}
+  APEXLOAD_OTEL_ENABLED: {{ .Values.tracing.enabled | quote }}
+  OTEL_EXPORTER_OTLP_ENDPOINT: {{ .Values.tracing.endpoint | quote }}
+  OTEL_EXPORTER_OTLP_PROTOCOL: {{ .Values.tracing.protocol | quote }}
+  OTEL_TRACES_SAMPLER: {{ .Values.tracing.sampler | quote }}
+  OTEL_TRACES_SAMPLER_ARG: {{ .Values.tracing.samplerArg | quote }}
+  APEXLOAD_OTEL_ACTION_SAMPLE_RATIO: {{ .Values.tracing.actionSampleRatio | quote }}
+  OTEL_RESOURCE_ATTRIBUTES: {{ .Values.tracing.resourceAttributes | quote }}
   APEXLOAD_BRUNO_IMPORT_ENABLED: {{ .Values.bruno.importEnabled | quote }}
   APEXLOAD_BRUNO_SAFE_EXECUTION_ENABLED: {{ .Values.bruno.enabled | quote }}
   APEXLOAD_BRUNO_DEVELOPER_EXECUTION_ENABLED: "false"

@@ -1,9 +1,8 @@
 # Benchmark Artifact: Harness Overhead Per Transaction
 
-This is a **reproducible** benchmark of the per-transaction harness overhead — the
-metrics hot path that every transaction pays on a load generator. It provides
-evidence for the `< 50 µs` harness-overhead design target instead of leaving it
-aspirational.
+This is a reproducible benchmark of one component of per-transaction harness
+overhead: the metrics hot path every result pays on a load generator. It does
+not, by itself, evaluate the `< 50 µs` complete-harness design target.
 
 ## What it measures (and what it does not)
 
@@ -11,9 +10,10 @@ aspirational.
   two atomic counter updates plus a non-blocking buffered-channel handoff
   (`pkg/engine/metrics.go`). This is the per-transaction bookkeeping cost the
   harness adds on top of the actual protocol I/O.
-- **Does NOT measure:** end-to-end protocol time, nor full-pod density (10k
-  VUsers/pod). Those remain environment- and protocol-specific and require a
-  separate, hardware-pinned density run before being claimed.
+- **Does NOT measure:** action resolution, redaction, protocol dispatch, result
+  handling outside the collector, end-to-end protocol time, or full-pod density.
+  Those remain environment- and protocol-specific and require hardware-pinned
+  evidence before being claimed.
 
 ## How to reproduce
 
@@ -21,10 +21,15 @@ aspirational.
 go test -run='^$' -bench=BenchmarkHarnessOverhead -benchmem ./pkg/engine/
 ```
 
-A CI guardrail (`TestHarnessOverheadUnderTarget` in
+A CI component guardrail (`TestHarnessOverheadUnderTarget` in
 `pkg/engine/harness_overhead_benchmark_test.go`) runs the benchmark inline and
 fails if the metrics hot path regresses past a generous fraction of the budget,
-so a future change that adds a lock or an allocation to `Record` is caught.
+so a future change that adds a lock or allocation to `Record` is caught. Passing
+that guardrail is not a full-harness target-attainment result.
+
+For versioned JSON, machine/build metadata, raw samples, and the other three
+performance-target probes, use
+[`PERFORMANCE_BENCHMARK_EVIDENCE.md`](PERFORMANCE_BENCHMARK_EVIDENCE.md).
 
 ## Result (reference run)
 
@@ -33,13 +38,10 @@ so a future change that adds a lock or an allocation to `Record` is caught.
 | `BenchmarkHarnessOverheadPerTransaction` | Apple M4 (darwin/arm64) | ~8.4 | 0 |
 | `BenchmarkHarnessOverheadParallel` (contended) | Apple M4 (darwin/arm64) | ~45 | 0 |
 
-Interpretation: the metrics hot path costs **single-digit nanoseconds** per
-transaction serially and tens of nanoseconds under heavy goroutine contention,
-with **zero allocations** — three to four orders of magnitude below the 50 µs
-target. The `< 50 µs` budget therefore has substantial headroom for the rest of
-the per-transaction work (variable interpolation, think-time computation, result
-construction).
+Interpretation: this historical developer-machine sample characterizes the
+collector hot path only. Its numerical relation to 50 µs must not be presented
+as proof that the complete transaction harness meets the target.
 
-> Reproduce on your own generator-class hardware before quoting numbers in a
-> customer-facing context; the table above is a developer-machine reference, not
-> a generator-pod SLA.
+> Reproduce on generator-class hardware and collect the complete transaction
+> path before quoting a target result. The table is a developer-machine
+> component reference, not a generator-pod SLA.

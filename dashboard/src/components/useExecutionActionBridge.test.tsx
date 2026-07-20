@@ -169,9 +169,24 @@ describe('useExecutionActionBridge', () => {
     expect(readTestId('control-feedback')).toBe('Test resumed')
   })
 
-  it('routes stop and abort through the shared execution action bridge', async () => {
+  it.each(['RUNNING', 'PAUSED', 'STOPPING'] as const)(
+    'keeps an active %s run stopping after an abort request until durable completion',
+    async (status) => {
+      apiMock.abortTest.mockResolvedValue(undefined)
+
+      await act(async () => {
+        root.render(<ActionBridgeHarness initialTest={{ ...buildRunningTest(), status }} />)
+      })
+
+      await click('abort')
+
+      expect(apiMock.abortTest).toHaveBeenCalledWith('test-1')
+      expect(readTestId('status')).toBe('STOPPING')
+    },
+  )
+
+  it('routes stop through the shared execution action bridge', async () => {
     apiMock.stopTest.mockResolvedValue(undefined)
-    apiMock.abortTest.mockResolvedValue(undefined)
 
     await act(async () => {
       root.render(<ActionBridgeHarness initialTest={buildRunningTest()} />)
@@ -181,15 +196,20 @@ describe('useExecutionActionBridge', () => {
 
     expect(apiMock.stopTest).toHaveBeenCalledWith('test-1')
     expect(readTestId('status')).toBe('STOPPING')
+  })
+
+  it('retains the current state and reports feedback when abort teardown fails', async () => {
+    apiMock.abortTest.mockRejectedValue(new Error('generator teardown unavailable'))
 
     await act(async () => {
-      root.render(<ActionBridgeHarness initialTest={buildRunningTest()} />)
+      root.render(<ActionBridgeHarness initialTest={{ ...buildRunningTest(), status: 'PAUSED' }} />)
     })
 
     await click('abort')
 
     expect(apiMock.abortTest).toHaveBeenCalledWith('test-1')
-    expect(readTestId('status')).toBe('ABORTED')
+    expect(readTestId('status')).toBe('PAUSED')
+    expect(readTestId('control-feedback')).toBe('Error aborting: generator teardown unavailable')
   })
 
   async function click(testId: string) {

@@ -23,6 +23,9 @@ import (
 	"github.com/andybalholm/brotli"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/klauspost/compress/zstd"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func init() {
@@ -280,10 +283,20 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		redactedAuthHeader = buildRedactedActionAuthHeader(action.Auth)
 	}
 	redactedRequestHeaders := redactedRequestHeadersForSnapshot(req.Header, action.RedactedHeaders, typedAuthApplied, redactedAuthHeader)
+	// User-authored traceparent always wins. When traceparent propagation is
+	// enabled, continue the active OTel action/test context and fall back to a
+	// synthetic header only when no active span exists.
 	explicitCorrelationID := correlationIDFromHTTPHeader(req.Header)
 	generatedTraceparent := ""
 	if h.traceparentEnabled {
+		if strings.TrimSpace(req.Header.Get("Traceparent")) == "" {
+			injectActiveTraceContext(req.Context(), req.Header)
+		}
 		generatedTraceparent = ensureTraceparentHeader(req.Header, h.traceparentSampled)
+	}
+	result.CorrelationID = explicitCorrelationID
+	if result.CorrelationID == "" {
+		result.CorrelationID = generatedTraceparent
 	}
 	var staleCacheEntry *httpCacheEntry
 	cacheHit := false
@@ -840,6 +853,27 @@ func ensureTraceparentHeader(headers http.Header, sampled bool) string {
 	traceparent := newTraceparent(sampled)
 	headers.Set("Traceparent", traceparent)
 	return traceparent
+}
+
+func injectActiveTraceContext(ctx context.Context, headers http.Header) string {
+	if headers == nil {
+		return ""
+	}
+	if existing := strings.TrimSpace(headers.Get("Traceparent")); existing != "" {
+		return existing
+	}
+	if spanContext := trace.SpanContextFromContext(ctx); !spanContext.IsValid() {
+		return ""
+	}
+	carrier := propagation.HeaderCarrier(headers)
+	otel.GetTextMapPropagator().Inject(ctx, carrier)
+	if injected := strings.TrimSpace(headers.Get("Traceparent")); injected != "" {
+		return injected
+	}
+	// Embedders may install a tracer provider but leave the global propagator at
+	// its default no-op. W3C propagation is APEX Load's explicit contract.
+	propagation.TraceContext{}.Inject(ctx, carrier)
+	return strings.TrimSpace(headers.Get("Traceparent"))
 }
 
 func (h *HTTP) OAuthHTTPClient() *http.Client {

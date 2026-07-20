@@ -6,7 +6,13 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
-import TestHub from './TestHub'
+import { type StoredScenario } from '../types'
+import TestHub, {
+  reseedScenarioGroups,
+  runtimeSettingsFromForm,
+  scenarioFormStateFromStoredScenario,
+} from './TestHub'
+import { applyEffectiveRuntimeSettingsToGroups, copyRuntimeSettingsForProtocol } from './runtimeSettingsApply'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -170,6 +176,323 @@ describe('TestHub', () => {
     })
   }
 
+  it('round-trips and edits canonical runtime sections through compact scenario controls', () => {
+    const stored: StoredScenario = {
+      id: 'canonical-runtime',
+      name: 'Canonical runtime',
+      duration: '5m',
+      scripts: [],
+      created_at: '',
+      updated_at: '',
+      script_count: 0,
+      runtime_settings: {
+        // Conflicting legacy aliases must be ignored while canonical sections exist.
+        iterations: 99,
+        auto_transactions: 'none',
+        log_level: 'disabled',
+        browser: { device_profile: 'legacy-device', headless: true },
+        run_logic: {
+          iterations: 4,
+          auto_transactions: 'per_action',
+          workload_model: 'open',
+          action_sequence: ['login', 'browse'],
+        },
+        log: {
+          level: 'extended',
+          on_error_only: true,
+          extended_options: ['advanced_trace'],
+        },
+        browser_config: {
+          engine: 'firefox',
+          device_profile: 'pixel_8',
+          headless: false,
+          client_metrics: true,
+          viewport: { width: 1440, height: 900 },
+        },
+      },
+    }
+
+    const form = scenarioFormStateFromStoredScenario(stored, '')
+    expect(form.runtime_iterations).toBe(4)
+    expect(form.runtime_auto_transactions).toBe('per_action')
+    expect(form.runtime_log_level).toBe('extended')
+    expect(form.browser_device_profile).toBe('pixel_8')
+    expect(form.browser_headless).toBe('false')
+
+    const roundTripped = runtimeSettingsFromForm(form, true)
+    expect(roundTripped.run_logic).toEqual(stored.runtime_settings?.run_logic)
+    expect(roundTripped.log).toEqual(stored.runtime_settings?.log)
+    expect(roundTripped.browser_config).toEqual(stored.runtime_settings?.browser_config)
+    expect(roundTripped.iterations).toBeUndefined()
+    expect(roundTripped.auto_transactions).toBe('')
+    expect(roundTripped.log_level).toBe('')
+    expect(roundTripped.browser).toBeUndefined()
+
+    const edited = runtimeSettingsFromForm({
+      ...form,
+      runtime_iterations: 7,
+      runtime_auto_transactions: 'per_iteration',
+      runtime_log_level: 'standard',
+      browser_device_profile: 'iphone_15_pro',
+      browser_headless: 'true',
+    }, true)
+    expect(edited.run_logic).toEqual({
+      iterations: 7,
+      auto_transactions: 'per_iteration',
+      workload_model: 'open',
+      action_sequence: ['login', 'browse'],
+    })
+    expect(edited.log).toEqual({
+      level: 'standard',
+      on_error_only: true,
+      extended_options: ['advanced_trace'],
+    })
+    expect(edited.browser_config).toEqual({
+      engine: 'firefox',
+      device_profile: 'iphone_15_pro',
+      headless: true,
+      client_metrics: true,
+      viewport: { width: 1440, height: 900 },
+    })
+    expect(edited.iterations).toBeUndefined()
+    expect(edited.auto_transactions).toBe('')
+    expect(edited.log_level).toBe('')
+    expect(edited.browser).toBeUndefined()
+  })
+
+  it('retains advanced per-group configuration when a workload shape is re-seeded', () => {
+    const previous = [{
+      name: 'Browser observer',
+      script_id: 'browser-script',
+      role: 'observer' as const,
+      vusers: 2,
+      ramp_up: '1m',
+      ramp_down: '1m',
+      stages: [],
+      iterations: 7,
+      initialization: 'at_once' as const,
+      runtimeSettings: {
+        iterations: 3,
+        log_level: '',
+        auto_transactions: '',
+        http: { request_timeout_ms: 2500 },
+        browser_config: { engine: 'chromium' },
+      },
+      assignment: { mode: 'specific_hosts' as const, selected_targets: ['generator-a'] },
+    }]
+
+    const reseeded = reseedScenarioGroups([{
+      name: 'Stepped browser',
+      vusers: 20,
+      ramp_up: '2m',
+      stages: [{ type: 'hold', duration: '5m', target_vusers: 20 }],
+    }], previous)
+
+    expect(reseeded[0]).toMatchObject({
+      name: 'Stepped browser',
+      script_id: 'browser-script',
+      role: 'observer',
+      vusers: 20,
+      iterations: 7,
+      initialization: 'at_once',
+      runtimeSettings: {
+        iterations: 3,
+        http: { request_timeout_ms: 2500 },
+        browser_config: { engine: 'chromium' },
+      },
+      assignment: { mode: 'specific_hosts', selected_targets: ['generator-a'] },
+    })
+    reseeded[0].runtimeSettings!.http!.request_timeout_ms = 999
+    reseeded[0].assignment!.selected_targets![0] = 'changed'
+    expect(previous[0].runtimeSettings.http.request_timeout_ms).toBe(2500)
+    expect(previous[0].assignment.selected_targets[0]).toBe('generator-a')
+  })
+
+  it('filters every protocol-specific runtime section when applying overrides to groups', () => {
+    const source = {
+      iterations: 4,
+      log_level: '',
+      auto_transactions: '',
+      browser: { headless: true },
+      browser_config: { engine: 'chromium' },
+      http: { request_timeout_ms: 1500 },
+      web_runtime: { additional_attributes: { runner: 'ApexLoad' } },
+      run_logic: { global_iterations: 100 },
+      env: { REGION: 'east' },
+    }
+
+    const kafka = copyRuntimeSettingsForProtocol(source, 'kafka')
+    expect(kafka).toMatchObject({ iterations: 4, run_logic: { global_iterations: 100 }, env: { REGION: 'east' } })
+    expect(kafka.browser).toBeUndefined()
+    expect(kafka.browser_config).toBeUndefined()
+    expect(kafka.http).toBeUndefined()
+    expect(kafka.web_runtime).toBeUndefined()
+
+    const http = copyRuntimeSettingsForProtocol(source, 'http')
+    expect(http.browser).toBeUndefined()
+    expect(http.browser_config).toBeUndefined()
+    expect(http.http).toEqual({ request_timeout_ms: 1500 })
+    expect(http.web_runtime).toEqual({ additional_attributes: { runner: 'ApexLoad' } })
+
+    const browser = copyRuntimeSettingsForProtocol(source, 'browser')
+    expect(browser.browser).toEqual({ headless: true })
+    expect(browser.browser_config).toEqual({ engine: 'chromium' })
+    expect(browser.http).toEqual({ request_timeout_ms: 1500 })
+    expect(browser.web_runtime).toEqual({ additional_attributes: { runner: 'ApexLoad' } })
+    browser.env!.REGION = 'changed'
+    expect(source.env.REGION).toBe('east')
+  })
+
+  it('applies an inheriting source effective profile instead of the target script defaults', () => {
+    const groups = [
+      {
+        name: 'Source',
+        script_id: 'source-script',
+        vusers: 10,
+        iterations: 7,
+        ramp_up: '',
+        ramp_down: '',
+        stages: [],
+        initialization: 'at_runtime' as const,
+        runtimeSettings: undefined,
+      },
+      {
+        name: 'Target',
+        script_id: 'target-script',
+        vusers: 10,
+        iterations: 99,
+        ramp_up: '',
+        ramp_down: '',
+        stages: [],
+        initialization: 'at_runtime' as const,
+        runtimeSettings: {
+          http: { request_timeout_ms: 777 },
+          log_level: '',
+          auto_transactions: '',
+          env: { API_SECRET: 'target-secret' },
+          redaction_rules: [{ name: 'target-token', pattern: 'target-secret', replacement: '***' }],
+        },
+      },
+    ]
+    const scripts = [
+      {
+        id: 'source-script',
+        name: 'Source script',
+        protocol: 'http',
+        version: '1.0',
+        created_at: '',
+        script: {
+          name: 'Source script',
+          protocol: 'http',
+          version: '1.0',
+          config: {
+            base_url: 'https://source.test',
+            pacing: { type: 'fixed_delay', delay_ms: 125 },
+            log: { level: 'extended' },
+            http: { request_timeout_ms: 1500, tls: { insecure_skip_verify: false } },
+            web_runtime: {
+              additional_attributes: { source: 'yes' },
+              network_simulation: { latency_ms: 10 },
+            },
+          },
+          actions: [],
+        },
+      },
+      {
+        id: 'target-script',
+        name: 'Target script',
+        protocol: 'http',
+        version: '1.0',
+        created_at: '',
+        script: {
+          name: 'Target script',
+          protocol: 'http',
+          version: '1.0',
+          config: {
+            base_url: 'https://target.test',
+            pacing: { type: 'fixed_delay', delay_ms: 999 },
+            log: { level: 'disabled' },
+            http: { request_timeout_ms: 9999, tls: { insecure_skip_verify: true } },
+          },
+          actions: [],
+        },
+      },
+    ]
+
+    const result = applyEffectiveRuntimeSettingsToGroups(
+      groups,
+      scripts,
+      {
+        base_url: 'https://engine.test',
+        log: { level: 'standard', on_error_only: true },
+        http: { connect_timeout_ms: 500 },
+      },
+      {
+        log_level: 'standard',
+        auto_transactions: '',
+        continue_on_error: false,
+        http: { idle_timeout_ms: 2500 },
+        web_runtime: {
+          additional_attributes: { scenario: 'yes' },
+          network_simulation: { jitter_ms: 2 },
+        },
+        env: { SOURCE_SECRET: 'source-secret' },
+        redaction_rules: [{ name: 'source-token', pattern: 'source-secret', replacement: '[SOURCE]' }],
+      },
+      0,
+      [1],
+    )
+
+    expect(result[0].runtimeSettings).toBeUndefined()
+    expect(result[1].runtimeSettings).toMatchObject({
+      iterations: 7,
+      pacing: { type: 'fixed_delay', delay_ms: 125 },
+      log_level: '',
+      continue_on_error: false,
+      log: { level: 'standard' },
+      http: { idle_timeout_ms: 2500 },
+      web_runtime: {
+        additional_attributes: { scenario: 'yes' },
+        network_simulation: { jitter_ms: 2 },
+      },
+      base_url: 'https://source.test',
+      env: { API_SECRET: 'target-secret' },
+      redaction_rules: [{ name: 'target-token', pattern: 'target-secret', replacement: '***' }],
+    })
+    expect(result[1].runtimeSettings?.http?.request_timeout_ms).not.toBe(9999)
+    expect(result[1].runtimeSettings?.pacing?.delay_ms).not.toBe(999)
+    expect(result[1].runtimeSettings?.env).not.toHaveProperty('SOURCE_SECRET')
+    expect(result[1].iterations).toBeUndefined()
+
+    const emptyProtected = applyEffectiveRuntimeSettingsToGroups(
+      [groups[0], {
+        ...groups[1],
+        runtimeSettings: { http: { request_timeout_ms: 777 }, log_level: '', auto_transactions: '', env: {}, redaction_rules: [] },
+      }],
+      scripts,
+      undefined,
+      undefined,
+      0,
+      [1],
+    )
+    expect(emptyProtected[1].runtimeSettings?.env).toEqual({})
+    expect(emptyProtected[1].runtimeSettings?.redaction_rules).toEqual([])
+
+    const absentProtected = applyEffectiveRuntimeSettingsToGroups(
+      [groups[0], {
+        ...groups[1],
+        runtimeSettings: { http: { request_timeout_ms: 777 }, log_level: '', auto_transactions: '' },
+      }],
+      scripts,
+      undefined,
+      undefined,
+      0,
+      [1],
+    )
+    expect(absentProtected[1].runtimeSettings?.env).toBeUndefined()
+    expect(absentProtected[1].runtimeSettings?.redaction_rules).toBeUndefined()
+  })
+
   beforeEach(() => {
     container = document.createElement('div')
     document.body.appendChild(container)
@@ -198,6 +521,9 @@ describe('TestHub', () => {
             max_vusers: 50,
             p95_latency_ms: 800,
             max_error_pct: 1,
+            max_dead_letter_rate_pct: 0.5,
+            stop_on_sla_breach: true,
+            sla_breach_window: '15s',
           },
           groups: [{ name: 'arrival-rate', vusers: 10, ramp_up: '2m' }],
         },
@@ -671,6 +997,51 @@ describe('TestHub', () => {
     const modeSelect = Array.from(container.querySelectorAll('select')).find(select => select.value === 'goal_oriented')
     expect(modeSelect?.value).toBe('goal_oriented')
     expect(container.textContent).toContain('Goal Controller')
+    for (const label of [
+      'Max Error Count',
+      'Max LCP (ms)',
+      'Max INP (ms)',
+      'Max CLS',
+      'Max Throttled Requests',
+      'Max End-to-End Latency (ms)',
+      'Max Partition Skew %',
+      'Max Redelivery Rate %',
+      'Max Dead-Letter Rate %',
+      'SLA Breach Window',
+      'Stop on sustained SLA breach',
+      'Stop when total errors exceed max error count',
+    ]) {
+      expect(container.textContent).toContain(label)
+    }
+  })
+
+  it('rejects a persistent goal-oriented scenario without a goal or guardrail', async () => {
+    await act(async () => {
+      root.render(<TestHub initialView="builder" testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await clickWizardStep('Scripts')
+    const nameInput = Array.from(container.querySelectorAll('input')).find(input => input.placeholder === 'Scenario name')
+    expect(nameInput).toBeDefined()
+    if (!nameInput) return
+    await act(async () => {
+      setInputValue(nameInput, 'Invalid Empty Goal')
+    })
+    await chooseLibraryScriptForGroup()
+    await clickWizardStep('Run Settings')
+
+    const modeSelect = findControlByLabel<HTMLSelectElement>(container, 'Scenario Mode', 'select')
+    expect(modeSelect).toBeDefined()
+    if (!modeSelect) return
+    await act(async () => {
+      setSelectValue(modeSelect, 'goal_oriented')
+    })
+    await clickButton('Save Scenario')
+    await flushPromises()
+
+    expect(apiMock.createScenario).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Goal-oriented scenarios require at least one goal or guardrail setting')
   })
 
   it('seeds stair-step stages when a stepped-ramp shape is selected manually', async () => {
@@ -794,7 +1165,7 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Load Per Group')
     expect(container.textContent).toContain('Pre-Run Assurance')
     expect(container.textContent).toContain('Advanced Stair-Step Ramp')
-    expect(container.textContent).not.toContain('Auto Assignment')
+    expect(container.textContent).not.toContain('Automatic placement')
 
     const workspace = container.querySelector('.scenario-builder-workspace.with-preview')
     expect(workspace).toBeTruthy()
@@ -804,7 +1175,7 @@ describe('TestHub', () => {
     await clickRunSettingsTab('Controller/Generator')
 
     expect(container.textContent).toContain('Controller / Generator Assignment')
-    expect(container.textContent).toContain('Auto Assignment')
+    expect(container.textContent).toContain('Automatic placement')
     expect(container.textContent).not.toContain('Load Per Group')
 
     await clickRunSettingsTab('Browser/Script Runtime')
@@ -814,7 +1185,7 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Pacing')
     expect(container.textContent).toContain('Auto-transactions')
     expect(container.textContent).toContain('Think Time')
-    expect(container.textContent).not.toContain('Auto Assignment')
+    expect(container.textContent).not.toContain('Automatic placement')
   })
 
   it('shows multi-group Scenario tab load settings in horizontal group tabs', async () => {
@@ -929,6 +1300,59 @@ describe('TestHub', () => {
     }))
   })
 
+  it('promotes a stored compact group iteration edit to one canonical runtime value', async () => {
+    const storedScenario: StoredScenario = {
+      id: 'scenario-compact-iterations',
+      name: 'Compact iterations',
+      duration: '5m',
+      scripts: [{
+        order: 0,
+        script_id: 'script-1',
+        script_name: 'Checkout Flow',
+        protocol: 'http',
+        vusers: 10,
+        iterations: 7,
+      }],
+      created_at: '2026-05-12T00:00:00Z',
+      updated_at: '2026-05-12T00:00:00Z',
+      script_count: 1,
+    }
+    apiMock.listScenarios.mockResolvedValue({ scenarios: [storedScenario], count: 1 })
+
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flushPromises()
+
+    const editButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit')
+    expect(editButton).toBeDefined()
+    await act(async () => {
+      editButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+    await clickWizardStep('Run Settings')
+    await clickRunSettingsTab('Browser/Script Runtime')
+    await clickRunSettingsTab('Run Logic')
+
+    const iterationsInput = findControlByLabel<HTMLInputElement>(container, 'Iterations', 'input')
+    expect(iterationsInput?.value).toBe('7')
+    if (!iterationsInput) return
+    await act(async () => {
+      setInputValue(iterationsInput, '5')
+    })
+
+    await clickButton('Save Scenario')
+    await flushPromises()
+
+    expect(apiMock.updateScenario).toHaveBeenCalledWith('scenario-compact-iterations', expect.any(Object))
+    const updateCall = apiMock.updateScenario.mock.calls.find(call => call[0] === 'scenario-compact-iterations')
+    const groupPayload = updateCall?.[1]?.groups?.[0]
+    expect(groupPayload).toBeDefined()
+    expect(groupPayload).not.toHaveProperty('iterations')
+    expect(groupPayload?.runtime_settings).not.toHaveProperty('iterations')
+    expect(groupPayload?.runtime_settings?.run_logic).toEqual(expect.objectContaining({ iterations: 5 }))
+  })
+
   it('shows saved assignment defaults in the scenario library', async () => {
     const onSelectTest = vi.fn()
     apiMock.listScenarios.mockResolvedValue({
@@ -982,7 +1406,7 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('PI29')
     expect(container.textContent).toContain('No data pools')
     expect(container.textContent).toContain('0 results')
-    expect(container.textContent).not.toContain('Auto Assignment')
+    expect(container.textContent).not.toContain('Automatic placement')
     expect(container.textContent).not.toContain('Uses controller recommendations')
 
     const searchInput = container.querySelector('input[type="search"]') as HTMLInputElement | null
@@ -1299,7 +1723,7 @@ describe('TestHub', () => {
     expect(container.textContent).toContain('Start')
     expect(container.textContent).toContain('Finish')
     expect(container.textContent).not.toContain('Last Run')
-    expect(container.textContent).not.toContain('Auto Assignment')
+    expect(container.textContent).not.toContain('Automatic placement')
     expect(container.textContent).not.toContain('Uses controller recommendations')
     expect(container.querySelector('.scenario-clone-card')).toBeNull()
     expect(apiMock.listScenarioResults).toHaveBeenCalledWith('scenario-source')
@@ -1360,7 +1784,7 @@ describe('TestHub', () => {
       data_pools: [expect.objectContaining({
         pool_id: 'pool-1',
         alias: 'customers',
-        access_mode: 'consume',
+        access_mode: 'read_only',
         selection_strategy: 'unique',
       })],
     }))
@@ -1492,7 +1916,7 @@ describe('TestHub', () => {
       duration: '8m',
       start_delay: '45s',
       scenario_mode: 'goal_oriented' as const,
-      assignment: { mode: 'auto' as const },
+      assignment: { mode: 'region_weighted' as const, region_weights: { east: 70, west: 30 } },
       goal_config: {
         target_average_tps: 80,
         max_throttled_requests: 3,
@@ -1530,10 +1954,8 @@ describe('TestHub', () => {
 				env: { TOPIC: 'orders' },
 			},
 			assignment: {
-				mode: 'region_weighted' as const,
-				region_weights: { east: 70, west: 30 },
+				mode: 'auto' as const,
 				required_labels: { tier: 'messaging' },
-				tolerate_generator_loss: true,
 			},
       }],
       data_pools: [
@@ -1565,26 +1987,24 @@ describe('TestHub', () => {
     const fidelityPayload = expect.objectContaining({
       name: 'Messaging Fidelity',
       start_delay: '45s',
+      assignment: { mode: 'region_weighted', region_weights: { east: 70, west: 30 } },
       groups: [expect.objectContaining({
         name: 'Orders',
         script_id: 'script-1',
         ramp_down: '30s',
-        iterations: 7,
         initialization: 'at_once',
 			runtime_settings: expect.objectContaining({
 				run_logic: { iterations: 7, workload_model: 'closed' },
 				env: { TOPIC: 'orders' },
 			}),
 			assignment: {
-				mode: 'region_weighted',
-				region_weights: { east: 70, west: 30 },
+				mode: 'auto',
 				required_labels: { tier: 'messaging' },
-				tolerate_generator_loss: true,
 			},
       })],
       data_pools: [
-        expect.objectContaining({ id: 'binding-1', pool_id: 'pool-1', alias: 'customers' }),
-        expect.objectContaining({ id: 'binding-2', pool_id: 'pool-2', alias: 'orders' }),
+        expect.objectContaining({ id: 'binding-1', pool_id: 'pool-1', alias: 'customers', access_mode: 'read_only' }),
+        expect.objectContaining({ id: 'binding-2', pool_id: 'pool-2', alias: 'orders', access_mode: 'read_only' }),
       ],
       goal_config: expect.objectContaining({
         max_throttled_requests: 3,
@@ -1606,6 +2026,73 @@ describe('TestHub', () => {
       }),
     })
     expect(apiMock.updateScenario).toHaveBeenCalledWith('scenario-fidelity', fidelityPayload)
+    const firstFidelityUpdate = apiMock.updateScenario.mock.calls.find(call => call[0] === 'scenario-fidelity')?.[1]
+    expect(firstFidelityUpdate?.groups?.[0]).not.toHaveProperty('iterations')
+
+    // Re-open the same durable weighted assignment. The root editor must expose
+    // and persist the weights and loss-tolerance policy instead of showing them
+    // as read-only preservation text.
+    const editAgain = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit')
+    expect(editAgain).toBeDefined()
+    await act(async () => {
+      editAgain?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await clickWizardStep('Run Settings')
+    await clickRunSettingsTab('Controller/Generator')
+    const rootPlacement = container.querySelector('.scenario-root-placement-editor')
+    const placementModes = Array.from(rootPlacement?.querySelectorAll('[aria-label="Scenario generator placement"] label') || [])
+    expect(placementModes.map(label => label.textContent)).toEqual(expect.arrayContaining([
+      expect.stringContaining('Automatic placement'),
+      expect.stringContaining('Pin to host(s)'),
+      expect.stringContaining('Region-weighted placement'),
+      expect.stringContaining('Load-zone-weighted placement'),
+      expect.stringContaining('Require capability'),
+    ]))
+    const weightedRadio = placementModes.find(label => label.textContent?.includes('Region-weighted placement'))?.querySelector<HTMLInputElement>('input')
+    expect(weightedRadio?.checked).toBe(true)
+    const eastWeight = rootPlacement?.querySelector<HTMLInputElement>('[aria-label="Region east weight"]')
+    const tolerateLoss = Array.from(rootPlacement?.querySelectorAll('label') || [])
+      .find(label => label.textContent?.includes('Tolerate generator loss'))
+      ?.querySelector<HTMLInputElement>('input')
+    expect(eastWeight).toBeDefined()
+    expect(tolerateLoss?.checked).toBe(false)
+    if (!eastWeight || !tolerateLoss) return
+    await act(async () => {
+      setInputValue(eastWeight, '85')
+      tolerateLoss.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await clickButton('Save Scenario')
+    await flushPromises()
+    expect(apiMock.updateScenario).toHaveBeenLastCalledWith('scenario-fidelity', expect.objectContaining({
+      assignment: {
+        mode: 'region_weighted',
+        region_weights: { east: 85, west: 30 },
+        tolerate_generator_loss: true,
+      },
+    }))
+
+    // Re-open once more and explicitly choose automatic placement. The hidden
+    // weighted section must be removed from the serialized assignment.
+    const editForAuto = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Edit')
+    expect(editForAuto).toBeDefined()
+    await act(async () => {
+      editForAuto?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await clickWizardStep('Run Settings')
+    await clickRunSettingsTab('Controller/Generator')
+    const autoRootPlacement = container.querySelector('.scenario-root-placement-editor')
+    const autoRadio = Array.from(autoRootPlacement?.querySelectorAll('[aria-label="Scenario generator placement"] label') || [])
+      .find(label => label.textContent?.includes('Automatic placement'))
+      ?.querySelector<HTMLInputElement>('input')
+    expect(autoRadio).toBeDefined()
+    await act(async () => {
+      autoRadio?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await clickButton('Save Scenario')
+    await flushPromises()
+    expect(apiMock.updateScenario).toHaveBeenLastCalledWith('scenario-fidelity', expect.objectContaining({
+      assignment: { mode: 'auto' },
+    }))
 
     await act(async () => {
       const cancel = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Cancel')
@@ -1625,12 +2112,10 @@ describe('TestHub', () => {
       start_delay: '45s',
 		groups: [expect.objectContaining({
 			script_id: 'script-1',
-			iterations: 7,
 			runtime_settings: expect.objectContaining({ env: { TOPIC: 'orders' } }),
 			assignment: expect.objectContaining({
-				mode: 'region_weighted',
-				region_weights: { east: 70, west: 30 },
-				tolerate_generator_loss: true,
+				mode: 'auto',
+				required_labels: { tier: 'messaging' },
 			}),
       })],
       data_pools: [
@@ -1647,6 +2132,7 @@ describe('TestHub', () => {
     }))
     const clonedCalls = apiMock.createScenario.mock.calls
     const clonedPayload = clonedCalls[clonedCalls.length - 1]?.[0]
+    expect(clonedPayload.groups?.[0]).not.toHaveProperty('iterations')
     expect(clonedPayload.data_pools.every((binding: { id?: string }) => binding.id === undefined)).toBe(true)
   })
 
@@ -1832,6 +2318,9 @@ describe('TestHub', () => {
         target_average_tps: 25,
         min_vusers: 5,
         max_vusers: 50,
+        max_dead_letter_rate_pct: 0.5,
+        stop_on_sla_breach: true,
+        sla_breach_window: '15s',
       }),
       groups: [expect.objectContaining({
         script_id: 'script-1',

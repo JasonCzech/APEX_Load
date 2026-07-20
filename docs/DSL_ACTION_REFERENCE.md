@@ -1094,7 +1094,7 @@ Runs a LoadRunner Java Vuser lifecycle through the governed JVM sidecar runner.
 
 ### `jms_ack`
 
-Acknowledges the last consumed message (client acknowledgement mode).
+Acknowledges consumed messages in mock mode. Real adapters reject generic JMS settlement; use provider-specific settlement where available.
 
 ### `jms_browse`
 
@@ -1117,11 +1117,13 @@ Cancels scheduled (future-enqueue) Azure Service Bus messages by sequence number
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string |  | Destination the messages were scheduled to; falls back to config.jms.destination. |
-| `params.sequence_numbers` | array |  | Scheduled sequence numbers (from jms_scheduled_sequence) to cancel. |
+| `params.destination` | string |  | Scheduled-message destination alternative to target; falls back to config.jms.destination. |
+| `params.sequence_numbers` | any | yes | Positive scheduled sequence numbers to cancel (array, one number, or comma-separated string; values come from jms_scheduled_sequence). |
+| `params.timeout_ms` | int |  | Cancellation timeout in milliseconds; falls back to config.jms.timeout_ms. |
 
 ### `jms_commit`
 
-Commits the transacted session.
+Commits the transacted mock session. Real adapters reject generic JMS transaction actions.
 
 ### `jms_consume`
 
@@ -1138,6 +1140,7 @@ Consumes the next message from a queue or topic.
 | `params.dead_letter` | bool |  | Consume from / classify the dead-letter destination. |
 | `params.sub_queue` | enum: none\|dead_letter\|transfer_dead_letter |  | Azure Service Bus sub-queue to receive from (requires jms_servicebus_real). |
 | `params.peek_lock` | bool |  | Azure Service Bus: defer settlement instead of auto-completing, returning a settlement_token for a later jms_settle (requires jms_servicebus_real). |
+| `params.session_token` | string |  | Token from jms_session_accept used to consume through an accepted Azure Service Bus session (requires jms_servicebus_real). |
 | `params.selector` | string |  | JMS message selector (SQL-92 subset over headers/properties) — only matching messages are consumed. Supported by Solace/AMQP and the mock; Azure Service Bus uses subscription rules instead. |
 
 ### `jms_publish`
@@ -1155,9 +1158,9 @@ Publishes a message to a queue or topic.
 | `params.correlation_id` | string |  | Correlation ID set on the outgoing message. |
 | `params.dead_letter` | bool |  | Marks this action as targeting a dead-letter destination (drives dead-letter classification). |
 | `params.message_id` | string |  | Explicit message ID (Service Bus duplicate detection uses it); defaults to a generated UUID. |
-| `params.session_id` | string |  | Azure Service Bus session ID for session-enabled entities (ignored by other providers). |
-| `params.partition_key` | string |  | Azure Service Bus partition key (co-locates messages on one partition). |
-| `params.scheduled_enqueue_ms` | int |  | Azure Service Bus scheduled enqueue delay in milliseconds (the broker holds the message until then). |
+| `params.session_id` | string |  | Azure Service Bus session ID for session-enabled entities; requires the real Service Bus adapter. |
+| `params.partition_key` | string |  | Azure Service Bus partition key (co-locates messages on one partition); requires the real Service Bus adapter. |
+| `params.scheduled_enqueue_ms` | int |  | Azure Service Bus scheduled enqueue delay in milliseconds; requires the real Service Bus adapter, which holds the message until then. |
 | `params.time_to_live_ms` | int |  | Message time-to-live in milliseconds before the broker expires it. |
 | `params.message_type` | enum: text\|bytes\|map\|stream\|object |  | JMS message type. map/stream read params.map_body/params.stream_body; text/bytes/object use body. |
 | `params.map_body` | object |  | Named values for a MapMessage (message_type=map); JSON-encoded into the body for replay. |
@@ -1172,7 +1175,10 @@ Receives previously deferred Azure Service Bus messages by sequence number (peek
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string |  | Source queue/topic; falls back to config.jms.destination. |
-| `params.sequence_numbers` | array |  | Sequence numbers (array of numbers, or comma-separated string) to fetch. |
+| `params.destination` | string |  | Source queue/topic alternative to target; falls back to config.jms.destination. |
+| `params.destination_type` | enum: queue\|topic |  | Source destination kind; falls back to config.jms.destination_type. |
+| `params.subscription` | string |  | Topic subscription when receiving deferred messages from a topic. |
+| `params.sequence_numbers` | any | yes | Positive sequence numbers to fetch (array of numbers, one number, or a comma-separated string). |
 | `params.timeout_ms` | int |  | Receive timeout in milliseconds. |
 
 ### `jms_renew_lock`
@@ -1181,7 +1187,8 @@ Renews the broker lock on a peek-locked Azure Service Bus message. Requires jms_
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `params.settlement_token` | string |  | Token from a peek_lock jms_consume identifying the in-flight message. |
+| `params.settlement_token` | string | yes | Token from a peek_lock jms_consume identifying the in-flight message. |
+| `params.timeout_ms` | int |  | Lock-renewal timeout in milliseconds; falls back to config.jms.timeout_ms. |
 
 ### `jms_request_reply`
 
@@ -1192,13 +1199,19 @@ Sends a request message and waits for the correlated reply.
 | `target` | string |  | Request destination; falls back to config.jms.destination. |
 | `body` | string |  | Request payload; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request payload. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
+| `headers` | object |  | Request message properties/headers. |
 | `params.reply_to` | string |  | Reply destination; required unless config.jms.reply_to is set. |
 | `params.subscription` | string |  | Azure Service Bus topic subscription for consuming replies from a topic; falls back to config.jms.subscription. |
 | `params.timeout_ms` | int |  | Reply timeout in milliseconds. |
 | `params.destination` | string |  | Request destination alternative to target; falls back to config.jms.destination. |
 | `params.destination_type` | enum: queue\|topic |  | Destination kind; falls back to config.jms.destination_type. |
 | `params.correlation_id` | string |  | Correlation ID for matching the reply; defaults to the request message ID. |
-| `params.selector` | string |  | JMS message selector applied when consuming the reply (Solace/AMQP or the mock). |
+| `params.dead_letter` | bool |  | Marks the request destination as a dead-letter destination for dependency classification. |
+| `params.message_id` | string |  | Explicit request message ID; defaults to a generated UUID. |
+| `params.session_id` | string |  | Azure Service Bus session ID for a session-enabled request entity; requires the real Service Bus adapter. |
+| `params.partition_key` | string |  | Azure Service Bus partition key for the request message; requires the real Service Bus adapter. |
+| `params.scheduled_enqueue_ms` | int |  | Azure Service Bus scheduled enqueue delay for the request message; requires the real Service Bus adapter. |
+| `params.time_to_live_ms` | int |  | Request message time-to-live in milliseconds. |
 | `params.message_type` | enum: text\|bytes\|map\|stream\|object |  | JMS message type of the request. map/stream read params.map_body/params.stream_body; text/bytes/object use body. |
 | `params.map_body` | object |  | Named values for a MapMessage request (message_type=map); JSON-encoded into the body for replay. |
 | `params.stream_body` | array |  | Ordered values for a StreamMessage request (message_type=stream); JSON-encoded into the body for replay. |
@@ -1207,7 +1220,7 @@ Sends a request message and waits for the correlated reply.
 
 ### `jms_rollback`
 
-Rolls back the transacted session.
+Rolls back and requeues the transacted mock session. Real adapters reject generic JMS transaction actions.
 
 ### `jms_session_accept`
 
@@ -1216,8 +1229,11 @@ Accepts an Azure Service Bus session (specific or next available), returning a s
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string |  | Session-enabled queue/topic; falls back to config.jms.destination. |
+| `params.destination` | string |  | Session-enabled queue/topic alternative to target; falls back to config.jms.destination. |
+| `params.destination_type` | enum: queue\|topic |  | Destination kind; falls back to config.jms.destination_type. |
 | `params.session_id` | string |  | Specific session id to accept; empty accepts the next available session. |
 | `params.subscription` | string |  | Topic subscription when the destination is a topic. |
+| `params.timeout_ms` | int |  | Session-accept timeout in milliseconds; falls back to config.jms.timeout_ms. |
 
 ### `jms_session_close`
 
@@ -1225,7 +1241,8 @@ Closes an accepted Azure Service Bus session and releases its receiver. Requires
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `params.session_token` | string |  | Token from jms_session_accept. |
+| `params.session_token` | string | yes | Token from jms_session_accept. |
+| `params.timeout_ms` | int |  | Session-close timeout in milliseconds; falls back to config.jms.timeout_ms. |
 
 ### `jms_session_state`
 
@@ -1233,8 +1250,9 @@ Gets or sets the session state for an accepted Azure Service Bus session. Requir
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `params.session_token` | string |  | Token from jms_session_accept. |
+| `params.session_token` | string | yes | Token from jms_session_accept. |
 | `params.session_state` | string |  | When set, stores this as the session state; when absent, the current state is read into the jms_session_state extraction. |
+| `params.timeout_ms` | int |  | Session-state operation timeout in milliseconds; falls back to config.jms.timeout_ms. |
 
 ### `jms_settle`
 
@@ -1242,10 +1260,11 @@ Settles a peek-locked Azure Service Bus message (complete/abandon/dead-letter/de
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `params.settlement_token` | string |  | Token from a peek_lock jms_consume identifying the in-flight message. |
+| `params.settlement_token` | string | yes | Token from a peek_lock jms_consume identifying the in-flight message. |
 | `params.disposition` | enum: complete\|abandon\|dead_letter\|defer |  | How to settle the message (default complete). |
 | `params.dead_letter_reason` | string |  | Reason recorded when disposition=dead_letter. |
 | `params.dead_letter_description` | string |  | Description recorded when disposition=dead_letter. |
+| `params.timeout_ms` | int |  | Settlement operation timeout in milliseconds; falls back to config.jms.timeout_ms. |
 
 ## Protocol: kafka
 

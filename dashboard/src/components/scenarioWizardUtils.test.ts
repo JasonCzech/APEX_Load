@@ -24,7 +24,7 @@ describe('scenarioWizardUtils', () => {
   })
 
   it('parses source-style duration strings into seconds', () => {
-    expect(parseDurationSeconds('1h 2m 3s')).toBe(3723)
+    expect(parseDurationSeconds('1h2m3s')).toBe(3723)
     expect(parseDurationSeconds('90s')).toBe(90)
     expect(parseDurationSeconds('2m')).toBe(120)
     expect(parseDurationSeconds('', 45)).toBe(45)
@@ -86,6 +86,19 @@ describe('scenarioWizardUtils', () => {
     ])
     expect(longTimeline.status).toBe('error')
     expect(longTimeline.message).toContain('longer than')
+  })
+
+  it('compares large stage timelines at exact nanosecond precision', () => {
+    const oneNanosecondOver = validateStageTimeline('17280000000000001ns', [
+      { type: 'hold', duration: '17280000000000000ns', target_vusers: 10 },
+      { type: 'hold', duration: '2ns', target_vusers: 10 },
+    ])
+    expect(oneNanosecondOver.status).toBe('error')
+
+    const oneNanosecondShort = validateStageTimeline('17280000000000001ns', [
+      { type: 'hold', duration: '17280000000000000ns', target_vusers: 10 },
+    ])
+    expect(oneNanosecondShort.status).toBe('warning')
   })
 })
 

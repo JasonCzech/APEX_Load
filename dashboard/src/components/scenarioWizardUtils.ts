@@ -1,5 +1,5 @@
-import { LoadModelSupportEntry, LoadModelTemplate, LoadStageDraft, ScenarioMode, StageTimelineValidationResult } from '../types'
-import { formatTimeCompact, parseDurationToSeconds } from '../utils/timeUtils'
+import { GoalConfig, LoadModelSupportEntry, LoadModelTemplate, LoadStageDraft, ScenarioMode, StageTimelineValidationResult } from '../types'
+import { formatTimeCompact, parseDurationToNanoseconds, parseDurationToSeconds } from '../utils/timeUtils'
 
 export type ScenarioWizardStep = 'start' | 'source' | 'scripts' | 'run' | 'data' | 'review'
 
@@ -78,6 +78,7 @@ export interface ScenarioSeedGroup {
   ramp_up?: string
   ramp_down?: string
   stages?: LoadStageDraft[]
+  iterations?: number
 }
 
 export interface ScenarioSeed {
@@ -86,7 +87,7 @@ export interface ScenarioSeed {
   script_shakeout?: boolean
   resource_baseline?: boolean
   groups?: ScenarioSeedGroup[]
-  goal?: ScenarioShapePresetGoal
+  goal?: GoalConfig
   pacing?: Omit<Partial<ScenarioShapePresetPacing>, 'type'> & { type?: ScenarioShapePacingType | '' }
   think_time?: { mean_ms?: number, ignore?: boolean }
   iterations?: number
@@ -570,10 +571,11 @@ export function formatModelTimeLabel(seconds: number): string {
 
 export function validateStageTimeline(duration: string, stages: LoadStageDraft[]): StageTimelineValidationResult {
   const scenarioDurationSeconds = parseDurationToSeconds(duration)
+  const scenarioDurationNanoseconds = parseDurationToNanoseconds(duration)
   if (stages.length === 0) {
     return { status: 'ok', totalSeconds: 0, scenarioDurationSeconds }
   }
-  if (scenarioDurationSeconds <= 0) {
+  if (scenarioDurationNanoseconds === null) {
     return {
       status: 'error',
       totalSeconds: 0,
@@ -583,9 +585,15 @@ export function validateStageTimeline(duration: string, stages: LoadStageDraft[]
   }
 
   let hasInvalidStage = false
+  let totalNanoseconds = 0n
   const totalSeconds = stages.reduce((sum, stage) => {
     const seconds = parseDurationToSeconds(stage.duration)
-    if (seconds <= 0) hasInvalidStage = true
+    const nanoseconds = parseDurationToNanoseconds(stage.duration)
+    if (nanoseconds === null) {
+      hasInvalidStage = true
+    } else {
+      totalNanoseconds += nanoseconds
+    }
     return sum + seconds
   }, 0)
 
@@ -598,7 +606,7 @@ export function validateStageTimeline(duration: string, stages: LoadStageDraft[]
     }
   }
 
-  if (totalSeconds > scenarioDurationSeconds) {
+  if (totalNanoseconds > scenarioDurationNanoseconds) {
     return {
       status: 'error',
       totalSeconds,
@@ -607,7 +615,7 @@ export function validateStageTimeline(duration: string, stages: LoadStageDraft[]
     }
   }
 
-  if (totalSeconds < scenarioDurationSeconds) {
+  if (totalNanoseconds < scenarioDurationNanoseconds) {
     return {
       status: 'warning',
       totalSeconds,

@@ -32,8 +32,8 @@ describe('scenarioDraftUtils', () => {
 	  expect(draft.assignment).toEqual({ mode: 'auto', selected_targets: [] })
 	  expect(draft.goalConfig.sla_breach_window).toBe('30s')
 	  expect(draft.goalConfig.stop_on_max_errors).toBe(false)
-	  expect(draft.runtimeSettings.continue_on_error).toBe(false)
-	  expect(draft.runtimeSettings.snapshot_on_error).toBe(false)
+	  expect(draft.runtimeSettings.continue_on_error).toBeUndefined()
+	  expect(draft.runtimeSettings.snapshot_on_error).toBeUndefined()
 	  expect(draft.runtimeSettings.browser).toBeUndefined()
 	})
 
@@ -108,6 +108,7 @@ describe('scenarioDraftUtils', () => {
 	  expect(draft.groups).toEqual([{
 	    name: 'Checkout',
 	    scriptId: 'script-1',
+	    revisionSourceGroupIndex: 0,
 	    vusers: 30,
 	    rampUp: '30s',
 	    rampDown: '15s',
@@ -115,6 +116,61 @@ describe('scenarioDraftUtils', () => {
 	    initialization: 'at_once',
 	    assignment: undefined,
 	  }])
+	})
+
+	it('preserves and clones the complete source-run revision context', () => {
+	  const binding = {
+	    id: 'binding-1',
+	    scenario_id: 'scenario-1',
+	    pool_id: 'pool-1',
+	    pool_name: 'Orders',
+	    alias: 'orders',
+	    access_mode: 'consume',
+	    selection_strategy: 'sequential',
+	  }
+	  const writeBinding = {
+	    ...binding,
+	    id: 'binding-2',
+	    pool_id: 'pool-2',
+	    alias: 'accounts',
+	    access_mode: 'read_write',
+	  }
+	  const canonicalBindings = [binding, writeBinding].map(item => ({ ...item, access_mode: 'read_only' }))
+	  const draft = buildScenarioDraftFromTest({
+	    id: 'test-context',
+	    name: 'Context Run',
+	    status: 'QUEUED',
+	    application_id: 'application-1',
+	    release_id: 'release-1',
+	    scenario_id: 'scenario-1',
+	    project_id: 'project-1',
+	    folder_id: null,
+	    data_pools: [binding, writeBinding],
+	    total_vusers: 1,
+	    duration: '1m',
+	    created_at: '2026-07-19T12:00:00Z',
+	    groups: [{ name: '', script_id: 'script-1', protocol: 'http', vusers: 1, initialization: 'at_runtime' }],
+	  } as never)
+
+	  expect(draft.revisionContext).toEqual({
+	    sourceTestId: 'test-context',
+	    applicationId: 'application-1',
+	    releaseId: 'release-1',
+	    scenarioId: 'scenario-1',
+	    projectId: 'project-1',
+	    folderId: null,
+	    dataPools: canonicalBindings,
+	  })
+
+	  const initialized = buildInitialScenarioDraft(draft, [])
+	  expect(initialized.revisionContext).toEqual(draft.revisionContext)
+	  expect(initialized.revisionContext).not.toBe(draft.revisionContext)
+	  expect(initialized.revisionContext?.dataPools).not.toBe(draft.revisionContext?.dataPools)
+	  initialized.revisionContext!.dataPools[0].alias = 'changed'
+	  expect(draft.revisionContext?.dataPools[0].alias).toBe('orders')
+	  expect(binding.alias).toBe('orders')
+	  expect(binding.access_mode).toBe('consume')
+	  expect(writeBinding.access_mode).toBe('read_write')
 	})
 
 	it('preserves root and group generator assignment labels in drafts', () => {
@@ -212,11 +268,95 @@ describe('scenarioDraftUtils', () => {
 	      protocol: 'http',
 	      vusers: 30,
 	      iterations: 3,
+	      iteration_override: 3,
+	      iteration_override_known: true,
 	      initialization: 'at_once',
 	    }],
 	  } as never)
 
 	  expect(draft.groups[0].iterations).toBe(3)
+	  expect(draft.groups[0].iterationPayloadSource).toBe('top_level')
+	})
+
+	it('displays group runtime iterations without duplicating a compact override', () => {
+	  const draft = buildScenarioDraftFromTest({
+	    id: 'test-runtime-iterations',
+	    name: 'Runtime iterations',
+	    status: 'QUEUED',
+	    total_vusers: 2,
+	    duration: '1m',
+	    created_at: '2026-07-19T12:00:00Z',
+	    groups: [{
+	      name: 'Runtime', script_id: 'script-1', protocol: 'http', vusers: 2,
+	      iterations: 7, iteration_override_known: true, initialization: 'at_runtime',
+	      runtime_settings: { run_logic: { iterations: 7, workload_model: 'closed' } },
+	    }],
+	  } as never)
+
+	  expect(draft.groups[0].iterations).toBe(7)
+	  expect(draft.groups[0].iterationPayloadSource).toBe('runtime')
+	})
+
+	it('does not promote inherited or legacy effective iterations into group overrides', () => {
+	  const inherited = buildScenarioDraftFromTest({
+	    id: 'test-inherited-iterations',
+	    name: 'Inherited iterations',
+	    status: 'QUEUED',
+	    total_vusers: 2,
+	    duration: '1m',
+	    created_at: '2026-07-19T12:00:00Z',
+	    runtime_settings: { run_logic: { iterations: 5 } },
+	    groups: [{
+	      name: 'Inherited', script_id: 'script-1', protocol: 'http', vusers: 2,
+	      iterations: 5, iteration_override_known: true, initialization: 'at_runtime',
+	    }],
+	  } as never)
+	  const legacyUnknown = buildScenarioDraftFromTest({
+	    id: 'test-legacy-iterations',
+	    name: 'Legacy iterations',
+	    status: 'QUEUED',
+	    total_vusers: 2,
+	    duration: '1m',
+	    created_at: '2026-07-19T12:00:00Z',
+	    groups: [{
+	      name: 'Legacy', script_id: 'script-1', protocol: 'http', vusers: 2,
+	      iterations: 7, initialization: 'at_runtime',
+	    }],
+	  } as never)
+
+	  expect(inherited.groups[0].iterations).toBeUndefined()
+	  expect(legacyUnknown.groups[0].iterations).toBeUndefined()
+	})
+
+	it('preserves explicit false error handling separately from inherited settings', () => {
+	  const inherited = buildScenarioDraftFromTest({
+	    id: 'test-inherited',
+	    name: 'Inherited Runtime',
+	    status: 'QUEUED',
+	    total_vusers: 1,
+	    duration: '1m',
+	    created_at: '2026-05-12T20:00:00Z',
+	    groups: [],
+	    script_id: 'script-1',
+	  } as never)
+	  const explicitFalse = buildScenarioDraftFromTest({
+	    id: 'test-explicit',
+	    name: 'Explicit Runtime',
+	    status: 'QUEUED',
+	    total_vusers: 1,
+	    duration: '1m',
+	    created_at: '2026-05-12T20:00:00Z',
+	    runtime_settings: {
+	      error_handling: { continue_on_error: false, snapshot_on_error: false },
+	    },
+	    groups: [],
+	    script_id: 'script-1',
+	  } as never)
+
+	  expect(inherited.runtimeSettings.continue_on_error).toBeUndefined()
+	  expect(inherited.runtimeSettings.snapshot_on_error).toBeUndefined()
+	  expect(explicitFalse.runtimeSettings.continue_on_error).toBe(false)
+	  expect(explicitFalse.runtimeSettings.snapshot_on_error).toBe(false)
 	})
 
 	it('updates nested goal and runtime settings through one reducer state', () => {
@@ -251,5 +391,48 @@ describe('scenarioDraftUtils', () => {
 		expect(withErrorHandling.runtimeSettings.continue_on_error).toBe(true)
 		expect(withErrorHandling.groups[0].scriptId).toBe('script-1')
 		expect(withErrorHandling.duration).toBe('1m')
+	})
+
+	it('marks added and script-replaced revision groups as new immutable identities', () => {
+		const revision = buildInitialScenarioDraft(buildScenarioDraftFromTest({
+			id: 'queued-source',
+			name: 'Queued source',
+			status: 'QUEUED',
+			total_vusers: 3,
+			duration: '1m',
+			created_at: '2026-07-19T12:00:00Z',
+			groups: [{
+				name: 'Original',
+				script_id: 'script-1',
+				protocol: 'http',
+				vusers: 3,
+				iterations: 7,
+				initialization: 'at_runtime',
+				runtime_settings: {
+					run_logic: { iterations: 7 },
+					http: { credentials: { username: '******', password: '******' } },
+				},
+			}],
+		} as never), [])
+
+		const replaced = scenarioDraftReducer(revision, {
+			type: 'updateGroup',
+			index: 0,
+			patch: { scriptId: 'script-2' },
+		})
+		expect(replaced.groups[0]).toMatchObject({
+			scriptId: 'script-2',
+			revisionNewGroup: true,
+		})
+		expect(replaced.groups[0].revisionSourceGroupIndex).toBeUndefined()
+		expect(replaced.groups[0].runtimeSettings).toBeUndefined()
+		expect(replaced.groups[0].iterations).toBeUndefined()
+
+		const added = scenarioDraftReducer(revision, {
+			type: 'addGroup',
+			group: buildDefaultScenarioGroup([{ id: 'script-2', name: 'Replacement', protocol: 'http' }] as never[]),
+		})
+		expect(added.groups[1].revisionSourceGroupIndex).toBeUndefined()
+		expect(added.groups[1].revisionNewGroup).toBe(true)
 	})
 })

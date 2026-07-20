@@ -1,4 +1,5 @@
 import { type ScriptConfig, type ScriptDefinition } from '../types/scripts'
+import { jmsConfigForProtocol, jmsProtocolForProvider } from './scriptEditorHelpers'
 import './ImportRuntimeOptions.css'
 
 interface Props {
@@ -33,6 +34,13 @@ export default function ImportRuntimeOptions({ script, onChange, disabled = fals
   const numberValue = (raw: string) => Math.max(0, Number(raw) || 0)
   const updateKafka = (patch: NonNullable<ScriptConfig['kafka']>) => updateConfig(next => ({ ...next, kafka: { ...(next.kafka || {}), ...patch } }))
   const updateJMS = (patch: NonNullable<ScriptConfig['jms']>) => updateConfig(next => ({ ...next, jms: { ...(next.jms || {}), ...patch } }))
+  const updateJMSProvider = (provider: string) => {
+    const protocol = jmsProtocolForProvider(provider)
+    if (!protocol) return
+    const nextConfig = structuredClone(config)
+    nextConfig.jms = jmsConfigForProtocol(protocol, nextConfig.jms || {}) || undefined
+    onChange({ ...script, protocol, config: nextConfig })
+  }
 
   return (
     <details className="import-runtime-options">
@@ -153,7 +161,7 @@ export default function ImportRuntimeOptions({ script, onChange, disabled = fals
             </label>
             <label>
               <span>Provider</span>
-              <select value={jms.provider || 'solace'} disabled={disabled} onChange={event => updateJMS({ provider: event.target.value })}>
+              <select value={jms.provider || 'solace'} disabled={disabled} onChange={event => updateJMSProvider(event.target.value)}>
                 <option value="solace">Solace / AMQP</option>
                 <option value="ibmmq">IBM MQ</option>
                 <option value="servicebus">Azure Service Bus</option>

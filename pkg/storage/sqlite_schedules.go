@@ -897,6 +897,37 @@ func (s *SQLiteStore) GetScenarioScheduleOccurrenceByScheduleAndPlannedAt(schedu
 	return occurrence, err
 }
 
+// GetScenarioScheduleOccurrenceByTestID resolves the durable calendar identity
+// used by test-lifecycle reconciliation. The schema permits legacy rows without
+// a test ID, so test_id is indexed but not unique; fail closed if corrupt data
+// associates one globally unique test with more than one occurrence.
+func (s *SQLiteStore) GetScenarioScheduleOccurrenceByTestID(testID string) (*ScenarioScheduleOccurrence, error) {
+	testID = strings.TrimSpace(testID)
+	if testID == "" {
+		return nil, nil
+	}
+	rows, err := s.db.Query(`SELECT `+scenarioScheduleOccurrenceColumns+` WHERE test_id = ? ORDER BY planned_at DESC LIMIT 2`, testID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var occurrence *ScenarioScheduleOccurrence
+	for rows.Next() {
+		current, err := scanScenarioScheduleOccurrence(rows)
+		if err != nil {
+			return nil, err
+		}
+		if occurrence != nil {
+			return nil, fmt.Errorf("test %q is correlated to more than one scenario schedule occurrence", testID)
+		}
+		occurrence = current
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return occurrence, nil
+}
+
 func (s *SQLiteStore) ListScenarioScheduleOccurrences(scheduleID string) ([]*ScenarioScheduleOccurrence, error) {
 	return s.listScenarioScheduleOccurrencesPage(scheduleID, 0, 0)
 }

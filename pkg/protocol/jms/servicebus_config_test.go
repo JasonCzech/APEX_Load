@@ -116,6 +116,14 @@ func TestServiceBusConsumeDestination(t *testing.T) {
 	}
 }
 
+func TestServiceBusMockComposedDestinationSubscriptionIsAuthoritative(t *testing.T) {
+	p := &JMS{provider: "servicebus", cfg: config{Mock: true}}
+	topic, subscription := p.mockTopicCoordinates("orders/subscriptions/perf", "other")
+	if topic != "orders" || subscription != "perf" {
+		t.Fatalf("mock topic coordinates = (%q, %q), want (orders, perf)", topic, subscription)
+	}
+}
+
 func TestServiceBusReplyToDestination(t *testing.T) {
 	if got := serviceBusReplyToDestination("orders.reply/subscriptions/perf"); got != "orders.reply" {
 		t.Fatalf("serviceBusReplyToDestination(subscription) = %q, want orders.reply", got)

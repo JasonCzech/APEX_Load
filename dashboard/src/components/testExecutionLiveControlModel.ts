@@ -13,7 +13,7 @@ export interface LiveControlPreview {
   hasPendingChanges: boolean
 }
 
-export type VUserGroupAction = 'run' | 'pause' | 'stop'
+export type VUserGroupAction = 'run' | 'pause'
 
 interface BuildLiveControlPreviewOptions {
   test: TestSummary | null | undefined

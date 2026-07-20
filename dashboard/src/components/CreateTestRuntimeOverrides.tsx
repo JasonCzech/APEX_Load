@@ -275,7 +275,7 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
         <label>
           <span>Log Level</span>
           <select
-            value={runtimeSettings.log_level}
+            value={runtimeSettings.log_level ?? ''}
             onChange={(event) => onRuntimeSettingChange('log_level', event.target.value)}
           >
             <option value="">Script default</option>
@@ -287,7 +287,7 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
         <label>
           <span>Auto-Transactions</span>
           <select
-            value={runtimeSettings.auto_transactions}
+            value={runtimeSettings.auto_transactions ?? ''}
             onChange={(event) => onRuntimeSettingChange('auto_transactions', event.target.value)}
           >
             <option value="">Script default</option>
@@ -299,7 +299,7 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
         <label className="checkbox-label">
           <input
             type="checkbox"
-            checked={runtimeSettings.continue_on_error}
+            checked={runtimeSettings.continue_on_error ?? false}
             onChange={(event) => onRuntimeSettingChange('continue_on_error', event.target.checked)}
           />
           <span>Continue on error</span>
@@ -307,7 +307,7 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
         <label className="checkbox-label">
           <input
             type="checkbox"
-            checked={runtimeSettings.snapshot_on_error}
+            checked={runtimeSettings.snapshot_on_error ?? false}
             onChange={(event) => onRuntimeSettingChange('snapshot_on_error', event.target.checked)}
           />
           <span>Snapshot on error</span>

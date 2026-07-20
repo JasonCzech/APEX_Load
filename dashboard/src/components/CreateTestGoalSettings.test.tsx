@@ -129,4 +129,64 @@ describe('CreateTestGoalSettings', () => {
     })
     expect(onGoalConfigChange).toHaveBeenCalledWith('max_lcp_ms', undefined)
   })
+
+  it('renders valid zero thresholds and edits all messaging guardrails', async () => {
+    const onGoalConfigChange = vi.fn()
+
+    await act(async () => {
+      root.render(
+        <CreateTestGoalSettings
+          goalConfig={{
+            max_error_pct: 0,
+            max_throttled_requests: 0,
+            max_partition_skew_pct: 0,
+            max_redelivery_rate_pct: 0,
+            max_dead_letter_rate_pct: 0,
+          }}
+          onGoalConfigChange={onGoalConfigChange}
+        />,
+      )
+    })
+
+    const inputFor = (label: string) => Array.from(container.querySelectorAll('label'))
+      .find(candidate => candidate.querySelector('span')?.textContent === label)
+      ?.querySelector('input[type="number"]') as HTMLInputElement | null
+
+    expect(inputFor('Max Error %')?.value).toBe('0')
+    expect(inputFor('Max Throttled Requests')?.value).toBe('0')
+    expect(inputFor('Max Partition Skew %')?.value).toBe('0')
+    expect(inputFor('Max Redelivery Rate %')?.value).toBe('0')
+    expect(inputFor('Max Dead-Letter Rate %')?.value).toBe('0')
+    expect(inputFor('Max Error Count')?.step).toBe('1')
+    expect(inputFor('Min VUsers')?.step).toBe('1')
+    expect(inputFor('Max Throttled Requests')?.step).toBe('1')
+    expect(inputFor('Target Avg TPS')?.step).toBe('any')
+    expect(inputFor('P95 Latency Ceiling (ms)')?.step).toBe('any')
+    expect(inputFor('Max CLS')?.step).toBe('any')
+    expect(inputFor('Max End-to-End Latency (ms)')?.step).toBe('any')
+
+    const edits = [
+      ['Max Throttled Requests', '2', 'max_throttled_requests', 2],
+      ['Max End-to-End Latency (ms)', '500', 'max_end_to_end_latency_ms', 500],
+      ['Max Partition Skew %', '10', 'max_partition_skew_pct', 10],
+      ['Max Redelivery Rate %', '1.5', 'max_redelivery_rate_pct', 1.5],
+      ['Max Dead-Letter Rate %', '0.5', 'max_dead_letter_rate_pct', 0.5],
+    ] as const
+
+    await act(async () => {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      for (const [label, value] of edits) {
+        const input = inputFor(label)
+        expect(input).not.toBeNull()
+        if (!input) continue
+        valueSetter?.call(input, value)
+        input.dispatchEvent(new Event('input', { bubbles: true }))
+        input.dispatchEvent(new Event('change', { bubbles: true }))
+      }
+    })
+
+    for (const [, , field, value] of edits) {
+      expect(onGoalConfigChange).toHaveBeenCalledWith(field, value)
+    }
+  })
 })

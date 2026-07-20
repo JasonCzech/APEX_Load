@@ -663,7 +663,8 @@ func (tr *TestRunner) refreshPendingQueueMetadataLocked() {
 		blocked, reason := tr.evaluateQuotaBlockLocked(test, "")
 		if blocked {
 			test.PendingReason = reason
-		} else {
+		} else if !strings.HasPrefix(test.PendingReason, pendingSecretRequirementsReasonPrefix) &&
+			!strings.HasPrefix(test.PendingReason, pendingCapacityAuthorizationReasonPrefix) {
 			test.PendingReason = "ready to start when the queue advances"
 		}
 	}

@@ -3629,7 +3629,7 @@
             ]
           },
           "then": {
-            "description": "Acknowledges the last consumed message (client acknowledgement mode)."
+            "description": "Acknowledges consumed messages in mock mode. Real adapters reject generic JMS settlement; use provider-specific settlement where available."
           }
         },
         {
@@ -3706,18 +3706,31 @@
             "properties": {
               "params": {
                 "properties": {
+                  "destination": {
+                    "description": "Scheduled-message destination alternative to target; falls back to config.jms.destination.",
+                    "type": "string"
+                  },
                   "sequence_numbers": {
-                    "description": "Scheduled sequence numbers (from jms_scheduled_sequence) to cancel.",
-                    "type": "array"
+                    "description": "Positive scheduled sequence numbers to cancel (array, one number, or comma-separated string; values come from jms_scheduled_sequence)."
+                  },
+                  "timeout_ms": {
+                    "description": "Cancellation timeout in milliseconds; falls back to config.jms.timeout_ms.",
+                    "type": "integer"
                   }
                 },
+                "required": [
+                  "sequence_numbers"
+                ],
                 "type": "object"
               },
               "target": {
                 "description": "Destination the messages were scheduled to; falls back to config.jms.destination.",
                 "type": "string"
               }
-            }
+            },
+            "required": [
+              "params"
+            ]
           }
         },
         {
@@ -3734,7 +3747,7 @@
             ]
           },
           "then": {
-            "description": "Commits the transacted session."
+            "description": "Commits the transacted mock session. Real adapters reject generic JMS transaction actions."
           }
         },
         {
@@ -3777,6 +3790,10 @@
                   },
                   "selector": {
                     "description": "JMS message selector (SQL-92 subset over headers/properties) — only matching messages are consumed. Supported by Solace/AMQP and the mock; Azure Service Bus uses subscription rules instead.",
+                    "type": "string"
+                  },
+                  "session_token": {
+                    "description": "Token from jms_session_accept used to consume through an accepted Azure Service Bus session (requires jms_servicebus_real).",
                     "type": "string"
                   },
                   "sub_queue": {
@@ -3893,7 +3910,7 @@
                     "type": "string"
                   },
                   "partition_key": {
-                    "description": "Azure Service Bus partition key (co-locates messages on one partition).",
+                    "description": "Azure Service Bus partition key (co-locates messages on one partition); requires the real Service Bus adapter.",
                     "type": "string"
                   },
                   "priority": {
@@ -3901,11 +3918,11 @@
                     "type": "integer"
                   },
                   "scheduled_enqueue_ms": {
-                    "description": "Azure Service Bus scheduled enqueue delay in milliseconds (the broker holds the message until then).",
+                    "description": "Azure Service Bus scheduled enqueue delay in milliseconds; requires the real Service Bus adapter, which holds the message until then.",
                     "type": "integer"
                   },
                   "session_id": {
-                    "description": "Azure Service Bus session ID for session-enabled entities (ignored by other providers).",
+                    "description": "Azure Service Bus session ID for session-enabled entities; requires the real Service Bus adapter.",
                     "type": "string"
                   },
                   "stream_body": {
@@ -3944,22 +3961,43 @@
             "properties": {
               "params": {
                 "properties": {
+                  "destination": {
+                    "description": "Source queue/topic alternative to target; falls back to config.jms.destination.",
+                    "type": "string"
+                  },
+                  "destination_type": {
+                    "description": "Source destination kind; falls back to config.jms.destination_type.",
+                    "enum": [
+                      "queue",
+                      "topic"
+                    ],
+                    "type": "string"
+                  },
                   "sequence_numbers": {
-                    "description": "Sequence numbers (array of numbers, or comma-separated string) to fetch.",
-                    "type": "array"
+                    "description": "Positive sequence numbers to fetch (array of numbers, one number, or a comma-separated string)."
+                  },
+                  "subscription": {
+                    "description": "Topic subscription when receiving deferred messages from a topic.",
+                    "type": "string"
                   },
                   "timeout_ms": {
                     "description": "Receive timeout in milliseconds.",
                     "type": "integer"
                   }
                 },
+                "required": [
+                  "sequence_numbers"
+                ],
                 "type": "object"
               },
               "target": {
                 "description": "Source queue/topic; falls back to config.jms.destination.",
                 "type": "string"
               }
-            }
+            },
+            "required": [
+              "params"
+            ]
           }
         },
         {
@@ -3983,11 +4021,21 @@
                   "settlement_token": {
                     "description": "Token from a peek_lock jms_consume identifying the in-flight message.",
                     "type": "string"
+                  },
+                  "timeout_ms": {
+                    "description": "Lock-renewal timeout in milliseconds; falls back to config.jms.timeout_ms.",
+                    "type": "integer"
                   }
                 },
+                "required": [
+                  "settlement_token"
+                ],
                 "type": "object"
               }
-            }
+            },
+            "required": [
+              "params"
+            ]
           }
         },
         {
@@ -4014,11 +4062,19 @@
                 "description": "Local file containing the request payload. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
+              "headers": {
+                "description": "Request message properties/headers.",
+                "type": "object"
+              },
               "params": {
                 "properties": {
                   "correlation_id": {
                     "description": "Correlation ID for matching the reply; defaults to the request message ID.",
                     "type": "string"
+                  },
+                  "dead_letter": {
+                    "description": "Marks the request destination as a dead-letter destination for dependency classification.",
+                    "type": "boolean"
                   },
                   "delivery_mode": {
                     "description": "Per-message delivery mode of the request; falls back to config.jms.delivery_mode.",
@@ -4044,6 +4100,10 @@
                     "description": "Named values for a MapMessage request (message_type=map); JSON-encoded into the body for replay.",
                     "type": "object"
                   },
+                  "message_id": {
+                    "description": "Explicit request message ID; defaults to a generated UUID.",
+                    "type": "string"
+                  },
                   "message_type": {
                     "description": "JMS message type of the request. map/stream read params.map_body/params.stream_body; text/bytes/object use body.",
                     "enum": [
@@ -4055,6 +4115,10 @@
                     ],
                     "type": "string"
                   },
+                  "partition_key": {
+                    "description": "Azure Service Bus partition key for the request message; requires the real Service Bus adapter.",
+                    "type": "string"
+                  },
                   "priority": {
                     "description": "JMS message priority 0-9 of the request; applied by the AMQP/Solace adapter.",
                     "type": "integer"
@@ -4063,8 +4127,12 @@
                     "description": "Reply destination; required unless config.jms.reply_to is set.",
                     "type": "string"
                   },
-                  "selector": {
-                    "description": "JMS message selector applied when consuming the reply (Solace/AMQP or the mock).",
+                  "scheduled_enqueue_ms": {
+                    "description": "Azure Service Bus scheduled enqueue delay for the request message; requires the real Service Bus adapter.",
+                    "type": "integer"
+                  },
+                  "session_id": {
+                    "description": "Azure Service Bus session ID for a session-enabled request entity; requires the real Service Bus adapter.",
                     "type": "string"
                   },
                   "stream_body": {
@@ -4074,6 +4142,10 @@
                   "subscription": {
                     "description": "Azure Service Bus topic subscription for consuming replies from a topic; falls back to config.jms.subscription.",
                     "type": "string"
+                  },
+                  "time_to_live_ms": {
+                    "description": "Request message time-to-live in milliseconds.",
+                    "type": "integer"
                   },
                   "timeout_ms": {
                     "description": "Reply timeout in milliseconds.",
@@ -4103,7 +4175,7 @@
             ]
           },
           "then": {
-            "description": "Rolls back the transacted session."
+            "description": "Rolls back and requeues the transacted mock session. Real adapters reject generic JMS transaction actions."
           }
         },
         {
@@ -4124,6 +4196,18 @@
             "properties": {
               "params": {
                 "properties": {
+                  "destination": {
+                    "description": "Session-enabled queue/topic alternative to target; falls back to config.jms.destination.",
+                    "type": "string"
+                  },
+                  "destination_type": {
+                    "description": "Destination kind; falls back to config.jms.destination_type.",
+                    "enum": [
+                      "queue",
+                      "topic"
+                    ],
+                    "type": "string"
+                  },
                   "session_id": {
                     "description": "Specific session id to accept; empty accepts the next available session.",
                     "type": "string"
@@ -4131,6 +4215,10 @@
                   "subscription": {
                     "description": "Topic subscription when the destination is a topic.",
                     "type": "string"
+                  },
+                  "timeout_ms": {
+                    "description": "Session-accept timeout in milliseconds; falls back to config.jms.timeout_ms.",
+                    "type": "integer"
                   }
                 },
                 "type": "object"
@@ -4163,11 +4251,21 @@
                   "session_token": {
                     "description": "Token from jms_session_accept.",
                     "type": "string"
+                  },
+                  "timeout_ms": {
+                    "description": "Session-close timeout in milliseconds; falls back to config.jms.timeout_ms.",
+                    "type": "integer"
                   }
                 },
+                "required": [
+                  "session_token"
+                ],
                 "type": "object"
               }
-            }
+            },
+            "required": [
+              "params"
+            ]
           }
         },
         {
@@ -4195,11 +4293,21 @@
                   "session_token": {
                     "description": "Token from jms_session_accept.",
                     "type": "string"
+                  },
+                  "timeout_ms": {
+                    "description": "Session-state operation timeout in milliseconds; falls back to config.jms.timeout_ms.",
+                    "type": "integer"
                   }
                 },
+                "required": [
+                  "session_token"
+                ],
                 "type": "object"
               }
-            }
+            },
+            "required": [
+              "params"
+            ]
           }
         },
         {
@@ -4241,11 +4349,21 @@
                   "settlement_token": {
                     "description": "Token from a peek_lock jms_consume identifying the in-flight message.",
                     "type": "string"
+                  },
+                  "timeout_ms": {
+                    "description": "Settlement operation timeout in milliseconds; falls back to config.jms.timeout_ms.",
+                    "type": "integer"
                   }
                 },
+                "required": [
+                  "settlement_token"
+                ],
                 "type": "object"
               }
-            }
+            },
+            "required": [
+              "params"
+            ]
           }
         },
         {

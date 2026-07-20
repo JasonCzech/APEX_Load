@@ -37,12 +37,11 @@ function LiveControlsHarness({ test }: { test: TestSummary | null }) {
       <button data-testid="toggle" onClick={model.onToggleControls}>toggle</button>
       <button data-testid="set-target" onClick={() => model.onVuserTargetChange('Checkout', 42)}>target</button>
       <button data-testid="set-pause" onClick={() => model.onVuserGroupActionChange('Checkout', 'pause')}>pause</button>
-      <button data-testid="set-stop" onClick={() => model.onVuserGroupActionChange('Checkout', 'stop')}>stop</button>
       <button data-testid="toggle-ramp" onClick={() => model.onVuserRampEnabledChange(true)}>ramp</button>
       <button data-testid="set-ramp-duration" onClick={() => model.onVuserRampDurationChange('2m')}>ramp duration</button>
       <button data-testid="set-duration" onClick={() => model.onDurationInputChange('15m')}>duration</button>
       <button data-testid="scale" onClick={() => void model.onScaleVUsers('Checkout')}>scale</button>
-      <button data-testid="stop-all" onClick={() => void model.onStopAllVUsers()}>stop all</button>
+      <button data-testid="pause-all" onClick={() => void model.onPauseAllVUsers()}>pause all</button>
       <button data-testid="adjust" onClick={() => void model.onAdjustDuration()}>adjust</button>
     </div>
   )
@@ -121,6 +120,24 @@ describe('useExecutionLiveControls', () => {
     expect(showControlFeedback).toHaveBeenCalledWith('Duration adjusted to 15m')
   })
 
+  it('caps observer live scaling at 10 while load groups retain larger targets', async () => {
+    apiMock.scaleVUsers.mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(<LiveControlsHarness test={{
+        ...buildRunningTest(),
+        total_vusers: 10,
+        groups: [{ ...buildRunningTest().groups[0], role: 'observer', protocol: 'browser', vusers: 10 }],
+      }} />)
+    })
+
+    await click('set-target')
+    expect(readTestId('target')).toBe('10')
+    expect(readTestId('projected-total')).toBe('10')
+
+    await click('scale')
+    expect(apiMock.scaleVUsers).toHaveBeenCalledWith('test-1', 'Checkout', 10, { action: 'run' })
+  })
+
   it('passes gradual VUser ramp options through the api bridge', async () => {
     apiMock.scaleVUsers.mockResolvedValue(undefined)
 
@@ -142,7 +159,7 @@ describe('useExecutionLiveControls', () => {
     expect(showControlFeedback).toHaveBeenCalledWith('Ramping Checkout to 42 VUsers over 2m')
   })
 
-  it('applies per-group pause and stop actions as zero-target scaling commands', async () => {
+  it('applies per-group pause as a resumable zero-target scaling command', async () => {
     apiMock.scaleVUsers.mockResolvedValue(undefined)
 
     await act(async () => {
@@ -159,14 +176,9 @@ describe('useExecutionLiveControls', () => {
     await click('scale')
     expect(apiMock.scaleVUsers).toHaveBeenLastCalledWith('test-1', 'Checkout', 0, { action: 'pause' })
     expect(showControlFeedback).toHaveBeenCalledWith('Paused Checkout VUsers')
-
-    await click('set-stop')
-    await click('scale')
-    expect(apiMock.scaleVUsers).toHaveBeenLastCalledWith('test-1', 'Checkout', 0, { action: 'stop' })
-    expect(showControlFeedback).toHaveBeenCalledWith('Stopped Checkout VUsers')
   })
 
-  it('stops all VUsers through the scaling api and honors gradual ramp settings', async () => {
+  it('pauses all VUsers through the scaling api and honors gradual ramp settings', async () => {
     apiMock.scaleVUsers.mockResolvedValue(undefined)
 
     await act(async () => {
@@ -175,11 +187,11 @@ describe('useExecutionLiveControls', () => {
 
     await click('toggle-ramp')
     await click('set-ramp-duration')
-    await click('stop-all')
+    await click('pause-all')
 
-    expect(apiMock.scaleVUsers).toHaveBeenCalledWith('test-1', 'Checkout', 0, { action: 'stop', ramp_duration: '2m' })
+    expect(apiMock.scaleVUsers).toHaveBeenCalledWith('test-1', 'Checkout', 0, { action: 'pause', ramp_duration: '2m' })
     expect(readTestId('target')).toBe('0')
-    expect(showControlFeedback).toHaveBeenCalledWith('Ramping all VUsers to 0 over 2m')
+    expect(showControlFeedback).toHaveBeenCalledWith('Pausing all VUsers over 2m')
   })
 
   it('keeps the projected model pointed at an active backend VUser ramp target', async () => {

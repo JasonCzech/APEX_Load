@@ -42,9 +42,15 @@ type VUser struct {
 	// under this context so its transaction completes and is recorded instead
 	// of being lost when another VUser trips the goal-exhaustion cancel.
 	// When nil, the context passed to Run governs everything.
-	HardStopCtx  context.Context
-	SkipInit     bool
-	SkipTeardown bool
+	HardStopCtx context.Context
+	// ActionBoundaryCtx is cancelled by explicit graceful stop, per-VUser scale
+	// down, and hard stop, but not by shared execution-goal exhaustion. The
+	// current action continues under HardStopCtx, while pause gates, think time,
+	// nested-control boundaries, and pacing use this context so graceful stop
+	// proceeds directly to teardown before another action begins.
+	ActionBoundaryCtx context.Context
+	SkipInit          bool
+	SkipTeardown      bool
 	// rng, when set, makes random template builtins ({{fn.random}}, {{fake.*}})
 	// deterministic. Set by the replay path; nil in load runs (time-seeded).
 	rng *rand.Rand
@@ -189,6 +195,10 @@ func (vu *VUser) Run(ctx context.Context) {
 	if vu.HardStopCtx != nil {
 		iterCtx = vu.HardStopCtx
 	}
+	boundaryCtx := ctx
+	if vu.ActionBoundaryCtx != nil {
+		boundaryCtx = vu.ActionBoundaryCtx
+	}
 
 	applyActionThinkTime := func(action dsl.Action) {
 		if !action.ThinkTimeAfter {
@@ -217,7 +227,7 @@ func (vu *VUser) Run(ctx context.Context) {
 				thinkCfg.Ignore = true
 			}
 		}
-		vu.sleepActive(iterCtx, computeThinkTime(thinkCfg))
+		vu.sleepActive(boundaryCtx, computeThinkTime(thinkCfg))
 	}
 
 	// --- Main iteration loop ---
@@ -233,7 +243,7 @@ func (vu *VUser) Run(ctx context.Context) {
 			break
 		}
 		if vu.PauseControl != nil {
-			if err := vu.PauseControl.WaitIfPaused(iterCtx); err != nil {
+			if err := vu.PauseControl.WaitIfPaused(ctx); err != nil {
 				break
 			}
 		}
@@ -243,11 +253,11 @@ func (vu *VUser) Run(ctx context.Context) {
 		if iterationTxMode && vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartTransaction() {
 			break
 		}
-		if pacingCfg.Type == "tps" && !pacingCfg.RateLimiter.WaitContext(iterCtx) {
+		if pacingCfg.Type == "tps" && !pacingCfg.RateLimiter.WaitContext(boundaryCtx) {
 			break
 		}
 		if vu.PauseControl != nil {
-			if err := vu.PauseControl.WaitIfPaused(iterCtx); err != nil {
+			if err := vu.PauseControl.WaitIfPaused(boundaryCtx); err != nil {
 				break
 			}
 		}
@@ -306,11 +316,11 @@ func (vu *VUser) Run(ctx context.Context) {
 		var runActions func(actions []dsl.Action, depth int) actionFlow
 		runOne := func(action dsl.Action, depth int) actionFlow {
 			if vu.PauseControl != nil {
-				if err := vu.PauseControl.WaitIfPaused(iterCtx); err != nil {
+				if err := vu.PauseControl.WaitIfPaused(boundaryCtx); err != nil {
 					return flowTeardown
 				}
 			}
-			if iterCtx.Err() != nil {
+			if boundaryCtx.Err() != nil || iterCtx.Err() != nil {
 				return flowTeardown
 			}
 
@@ -373,7 +383,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					restore := func() { restoreRows(); restoreLoopIndex() }
 					for pass := 0; pass < rows.Len() && pass < maxPasses; pass++ {
 						row := rows.Row(pass)
-						if iterCtx.Err() != nil {
+						if boundaryCtx.Err() != nil || iterCtx.Err() != nil {
 							restore()
 							return flowTeardown
 						}
@@ -403,7 +413,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					warnLoopTruncation(logger, action.Name, loop.Count, maxPasses)
 				}
 				for pass := 0; ; pass++ {
-					if iterCtx.Err() != nil {
+					if boundaryCtx.Err() != nil || iterCtx.Err() != nil {
 						restoreLoopIndex()
 						return flowTeardown
 					}
@@ -569,7 +579,7 @@ func (vu *VUser) Run(ctx context.Context) {
 
 		// Apply pacing between iterations (interruptible: a scale/ramp-down or
 		// hard stop cuts the pacing sleep short instead of holding load).
-		applyIterationPacingCtx(iterCtx, pacingCfg, iterStart)
+		applyIterationPacingCtx(boundaryCtx, pacingCfg, iterStart)
 	}
 
 teardown:

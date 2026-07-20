@@ -73,6 +73,90 @@ describe('DurationField', () => {
     })
     expect(onChange).toHaveBeenCalledWith('10m')
   })
+
+  it('preserves fractional and sub-second duration precision', async () => {
+    const onChange = vi.fn()
+    await act(async () => {
+      root.render(<DurationField label="SLA window" value="1500ms" onChange={onChange} />)
+    })
+
+    const input = container.querySelector<HTMLInputElement>('input')
+    expect(input?.value).toBe('1.5')
+    expect(input?.step).toBe('any')
+    if (!input) return
+
+    await act(async () => {
+      setInputValue(input, '0.25')
+    })
+    expect(onChange).toHaveBeenCalledWith('0.25s')
+  })
+
+  it('keeps nanosecond durations editable and serializes them without exponent notation', async () => {
+    const onChange = vi.fn()
+    await act(async () => {
+      root.render(<DurationField label="Polling interval" value="250ns" onChange={onChange} />)
+    })
+
+    const input = container.querySelector<HTMLInputElement>('input')
+    const select = container.querySelector<HTMLSelectElement>('select')
+    expect(Number(input?.value)).toBe(0.00000025)
+    expect(select?.value).toBe('s')
+    if (!select) return
+
+    await act(async () => {
+      setSelectValue(select, 's')
+    })
+    expect(onChange).toHaveBeenCalledWith('0.00000025s')
+  })
+
+  it.each([
+    ['+1s', 1, '1s'],
+    ['.5s', 0.5, '0.5s'],
+    ['1.s', 1, '1s'],
+    ['1µs', 0.000001, '0.000001s'],
+  ])('normalizes editable Go duration %s without losing precision', async (source, numericValue, serialized) => {
+    const onChange = vi.fn()
+    await act(async () => {
+      root.render(<DurationField label="Duration" value={source} onChange={onChange} />)
+    })
+
+    const input = container.querySelector<HTMLInputElement>('input')
+    const select = container.querySelector<HTMLSelectElement>('select')
+    expect(Number(input?.value)).toBe(numericValue)
+    if (!select) return
+
+    await act(async () => {
+      setSelectValue(select, 's')
+    })
+    expect(onChange).toHaveBeenCalledWith(serialized)
+  })
+
+  it.each([
+    ['17280000000000001ns', '17280000.000000001', '17280000.000000001s'],
+    ['9223372036854775807ns', '9223372036.854775807', '9223372036.854775807s'],
+  ])('round-trips exact large duration %s through selection and input', async (source, numericText, serialized) => {
+    const onChange = vi.fn()
+    await act(async () => {
+      root.render(<DurationField label="Duration" value={source} onChange={onChange} />)
+    })
+
+    const input = container.querySelector<HTMLInputElement>('input')
+    const select = container.querySelector<HTMLSelectElement>('select')
+    expect(input?.value).toBe(numericText)
+    expect(select?.value).toBe('s')
+    if (!input || !select) return
+
+    await act(async () => {
+      setSelectValue(select, 's')
+    })
+    expect(onChange).toHaveBeenLastCalledWith(serialized)
+
+    onChange.mockClear()
+    await act(async () => {
+      setInputValue(input, `${numericText}0`)
+    })
+    expect(onChange).toHaveBeenLastCalledWith(serialized)
+  })
 })
 
 function setInputValue(input: HTMLInputElement, value: string) {

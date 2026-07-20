@@ -94,9 +94,12 @@ type MultiGroupEngine struct {
 	baseCtx               context.Context
 	loopCtx               context.Context
 	arrivalCtx            context.Context
+	gracefulCtx           context.Context
 	arrivalStop           context.CancelFunc
+	gracefulCancel        context.CancelFunc
 	softStop              context.CancelFunc
 	gracefulStopRequested bool
+	gracefulStopCh        chan struct{}
 	mockNamespace         string
 	scaleGuard            bool
 }
@@ -242,6 +245,7 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		postBaseline:   cfg.PostBaseline,
 		metrics:        NewMetricsCollector(10000),
 		readyCh:        make(chan struct{}),
+		gracefulStopCh: make(chan struct{}),
 		vuserIDSpan:    int(^uint(0) >> 1),
 		paused:         cfg.StartPaused,
 		pauseRequested: cfg.StartPaused,
@@ -311,21 +315,28 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	baseCtx, baseCancel := context.WithCancel(ctx)
 	loopCtx, loopCancel := context.WithCancel(baseCtx)
 	arrivalCtx, arrivalCancel := context.WithCancel(baseCtx)
+	gracefulCtx, gracefulCancel := context.WithCancel(baseCtx)
 	softStopAll := func() {
 		loopCancel()
 		arrivalCancel()
 	}
+	explicitGracefulStop := func() {
+		gracefulCancel()
+		softStopAll()
+	}
 	mge.baseCtx = baseCtx
 	mge.loopCtx = loopCtx
 	mge.arrivalCtx = arrivalCtx
+	mge.gracefulCtx = gracefulCtx
 	mge.arrivalStop = arrivalCancel
+	mge.gracefulCancel = gracefulCancel
 	mge.cancel = baseCancel
-	mge.softStop = softStopAll
+	mge.softStop = explicitGracefulStop
 	if mge.gracefulStopRequested {
 		// GracefulStop can race immediately after CommitWork marks an execution
 		// started but before this Run goroutine initializes its cancellation
 		// functions. Honor the latched request before any VUser can be spawned.
-		softStopAll()
+		explicitGracefulStop()
 	}
 	// Publish mge.wg under the lock alongside baseCtx so any ScaleVUsers caller
 	// that observes a running baseCtx also sees a non-nil wg (avoids a nil-deref
@@ -359,10 +370,12 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 	defer baseCancel()
 	defer loopCancel()
 	defer arrivalCancel()
+	defer gracefulCancel()
 	defer func() {
 		mge.mu.Lock()
 		mge.softStop = nil
 		mge.arrivalStop = nil
+		mge.gracefulCancel = nil
 		mge.mu.Unlock()
 	}()
 
@@ -398,7 +411,11 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		}
 	}()
 
-	if err := waitForBaselineWindow(ctx, mge.preBaseline); err != nil {
+	// A graceful stop cancels loopCtx while deliberately preserving baseCtx so
+	// in-flight actions can drain. The pre-load baseline must observe that soft
+	// stop too; waiting on the caller context alone would strand the run in
+	// STOPPING until the entire baseline window elapsed.
+	if err := waitForBaselineWindow(loopCtx, mge.preBaseline); err != nil {
 		return nil, err
 	}
 	mge.mu.Lock()
@@ -562,7 +579,10 @@ groupLoop:
 		return nil, err
 	}
 	runAtOnceTeardown()
-	if err := waitForBaselineWindow(ctx, mge.postBaseline); err != nil {
+	mge.mu.Lock()
+	gracefulStopCh := mge.gracefulStopCh
+	mge.mu.Unlock()
+	if err := waitForPostBaselineWindow(ctx, gracefulStopCh, mge.postBaseline); err != nil {
 		return nil, err
 	}
 	elapsed := time.Since(start)
@@ -652,6 +672,25 @@ func waitForBaselineWindow(ctx context.Context, duration time.Duration) error {
 	}
 }
 
+func waitForPostBaselineWindow(ctx context.Context, gracefulStop <-chan struct{}, duration time.Duration) error {
+	if duration <= 0 {
+		return nil
+	}
+	timer := time.NewTimer(duration)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-gracefulStop:
+		// Post-baseline is idle observation, not action/teardown drain work. An
+		// explicit graceful stop skips it, while natural duration completion keeps
+		// the full configured window because it does not close this signal.
+		return nil
+	case <-timer.C:
+		return nil
+	}
+}
+
 func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup, reserved bool) error {
 	if !reserved {
 		mge.mu.Lock()
@@ -672,7 +711,16 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 	// iteration. cancelVUser sheds load promptly by cancelling BOTH shedCtx (the
 	// running iteration) and vuCtx (no further iterations).
 	shedCtx, shedCancel := context.WithCancel(mge.baseCtx)
+	// Boundary cancellation is distinct from vuCtx. The shared goal limiter
+	// cancels loopCtx/vuCtx after exhaustion, but a VUser that already reserved an
+	// iteration is entitled to finish every action. Only explicit graceful stop,
+	// hard stop, or this VUser's scale/ramp-down cancellation ends that iteration
+	// at its next action boundary.
+	boundaryCtx, boundaryCancel := context.WithCancel(shedCtx)
+	stopGracefulLink := context.AfterFunc(mge.gracefulCtx, boundaryCancel)
 	cancelVUser := func() {
+		stopGracefulLink()
+		boundaryCancel()
 		shedCancel()
 		vuCancel()
 	}
@@ -736,6 +784,7 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 			Rendezvous:           group.rendezvous,
 			ExecutionGoals:       group.executionGoals,
 			HardStopCtx:          shedCtx,
+			ActionBoundaryCtx:    boundaryCtx,
 			DataProvider:         group.dataProvider,
 			SkipInit:             groupLifecycleAtOnce(group),
 			SkipTeardown:         groupLifecycleAtOnce(group),
@@ -880,7 +929,11 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 	// See spawnVUser: shedCtx interrupts the running iteration on stop/hard-stop
 	// without being tripped by a shared-goal soft stop.
 	shedCtx, shedCancel := context.WithCancel(mge.baseCtx)
+	boundaryCtx, boundaryCancel := context.WithCancel(shedCtx)
+	stopGracefulLink := context.AfterFunc(mge.gracefulCtx, boundaryCancel)
 	cancelVUser := func() {
+		stopGracefulLink()
+		boundaryCancel()
 		shedCancel()
 		vuCancel()
 	}
@@ -950,20 +1003,21 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 		}()
 
 		vu = &VUser{
-			ID:              runtimeVUserID,
-			Group:           group.Name,
-			Proto:           vuProto,
-			Script:          iterationScript,
-			Metrics:         mge.metrics,
-			ResultSink:      group.ResultSink,
-			RedactionConfig: group.RedactionConfig,
-			SecretResolver:  group.SecretResolver,
-			PauseControl:    mge,
-			ExecutionGoals:  group.executionGoals,
-			HardStopCtx:     shedCtx,
-			DataProvider:    group.dataProvider,
-			SkipInit:        groupLifecycleAtOnce(group),
-			SkipTeardown:    groupLifecycleAtOnce(group),
+			ID:                runtimeVUserID,
+			Group:             group.Name,
+			Proto:             vuProto,
+			Script:            iterationScript,
+			Metrics:           mge.metrics,
+			ResultSink:        group.ResultSink,
+			RedactionConfig:   group.RedactionConfig,
+			SecretResolver:    group.SecretResolver,
+			PauseControl:      mge,
+			ExecutionGoals:    group.executionGoals,
+			HardStopCtx:       shedCtx,
+			ActionBoundaryCtx: boundaryCtx,
+			DataProvider:      group.dataProvider,
+			SkipInit:          groupLifecycleAtOnce(group),
+			SkipTeardown:      groupLifecycleAtOnce(group),
 		}
 		vu.Run(vuCtx)
 	}()
@@ -1308,6 +1362,12 @@ func (mge *MultiGroupEngine) Stop() {
 
 func (mge *MultiGroupEngine) GracefulStop() {
 	mge.mu.Lock()
+	if mge.gracefulStopCh == nil {
+		mge.gracefulStopCh = make(chan struct{})
+	}
+	if !mge.gracefulStopRequested {
+		close(mge.gracefulStopCh)
+	}
 	mge.gracefulStopRequested = true
 	cancel := mge.softStop
 	mge.mu.Unlock()
@@ -1316,6 +1376,15 @@ func (mge *MultiGroupEngine) GracefulStop() {
 		return
 	}
 	mge.Stop()
+}
+
+// GracefulStopRequested reports whether the engine was asked to drain current
+// actions instead of hard-canceling them. It is safe for controller lifecycle
+// diagnostics and tests while a run is active.
+func (mge *MultiGroupEngine) GracefulStopRequested() bool {
+	mge.mu.Lock()
+	defer mge.mu.Unlock()
+	return mge.gracefulStopRequested
 }
 
 func (mge *MultiGroupEngine) LatestSnapshot() (MetricsSnapshot, bool) {

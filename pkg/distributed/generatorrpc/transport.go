@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/codes"
@@ -266,7 +267,12 @@ func ServerOptionsFromEnv() ([]grpc.ServerOption, error) {
 		return nil, err
 	}
 
-	var options = []grpc.ServerOption{grpc.MaxRecvMsgSize(grpcMessageSize(generatorRPCMaxReceiveBytes()))}
+	var options = []grpc.ServerOption{
+		grpc.MaxRecvMsgSize(grpcMessageSize(generatorRPCMaxReceiveBytes())),
+		// A stats handler composes with the existing TLS/token interceptors and
+		// instruments unary plus streaming RPCs without changing auth ordering.
+		grpc.StatsHandler(otelgrpc.NewServerHandler()),
+	}
 	if env.CertFile != "" {
 		loadConfig := func() (*tls.Config, error) {
 			cert, err := loadTransportKeyPair(env.CertFile, env.KeyFile)
@@ -323,6 +329,7 @@ func DialOptionsFromEnv() ([]grpc.DialOption, error) {
 		return nil, err
 	}
 	options := []grpc.DialOption{
+		grpc.WithStatsHandler(otelgrpc.NewClientHandler()),
 		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(grpcMessageSize(archiveArtifactUnaryReceiveMaxSize))),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff: backoff.Config{

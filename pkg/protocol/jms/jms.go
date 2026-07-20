@@ -263,21 +263,41 @@ type messageBrowser interface {
 // topicAdapter is an OPTIONAL capability for JMS topic fan-out + durable/shared
 // subscriptions (P2.3). A topic publish reaches every registered subscription;
 // each subscription consumes with an independent cursor. Implemented by the mock
-// and the AMQP/Solace adapter (durable receiver). Azure Service Bus is NOT routed
-// here — its topic/subscription addressing is handled by the standard path — so
-// the Service Bus adapter does not implement it.
+// and the AMQP/Solace adapter (durable receiver). Real Azure Service Bus is NOT
+// routed here — its topic/subscription addressing is handled by the standard
+// path — but Service Bus mock mode uses this capability for faithful fan-out.
 type topicAdapter interface {
 	PublishTopic(ctx context.Context, topic string, msg message) error
 	ConsumeTopic(ctx context.Context, topic, subscription, selector string, durable bool, timeout time.Duration) (message, error)
 	BrowseTopic(ctx context.Context, topic, subscription, selector string, max int, timeout time.Duration) ([]message, error)
 }
 
+// topicRequestReplyAdapter is the mock-only companion to topicAdapter for a
+// request/reply exchange whose request and reply entities are Service Bus
+// topics. Real Service Bus keeps using its native composed subscription address.
+type topicRequestReplyAdapter interface {
+	RequestReplyTopic(ctx context.Context, requestTopic, replyTopic, subscription string, request message, timeout time.Duration) (message, message, error)
+}
+
+// serviceBusMockTopicAdapter models Azure Service Bus subscriptions as durable
+// broker entities in mock mode. A Service Bus subscription can exist before
+// this process first consumes from it, so a publish followed by an action-level
+// subscription consume must still see the message. Keeping this as a separate
+// capability avoids changing ordinary JMS topic semantics.
+type serviceBusMockTopicAdapter interface {
+	PublishServiceBusTopic(ctx context.Context, topic string, msg message) error
+	ConsumeServiceBusTopic(ctx context.Context, topic, subscription, selector string, timeout time.Duration) (message, error)
+	BrowseServiceBusTopic(ctx context.Context, topic, subscription, selector string, max int, timeout time.Duration) ([]message, error)
+}
+
 var broker = &memoryBroker{
-	queues:     make(map[string][]message),
-	topics:     make(map[string]map[string][]message),
-	refs:       make(map[string]int),
-	queueBytes: make(map[string]int64),
-	topicBytes: make(map[string]map[string]int64),
+	queues:              make(map[string][]message),
+	topics:              make(map[string]map[string][]message),
+	serviceBusHistory:   make(map[string][]message),
+	refs:                make(map[string]int),
+	queueBytes:          make(map[string]int64),
+	topicBytes:          make(map[string]map[string]int64),
+	serviceBusHistBytes: make(map[string]int64),
 }
 
 type memoryBroker struct {
@@ -290,7 +310,11 @@ type memoryBroker struct {
 	topics     map[string]map[string][]message
 	queueBytes map[string]int64
 	topicBytes map[string]map[string]int64
-	totalBytes int64
+	// serviceBusHistory is a bounded topic log used only by the Service Bus
+	// mock. It materializes a durable action-level subscription on first use.
+	serviceBusHistory   map[string][]message
+	serviceBusHistBytes map[string]int64
+	totalBytes          int64
 	// seqLast is a monotonic broker sequence assigned to published messages that
 	// carry none, so consumers can detect duplicate / out-of-order delivery (real
 	// brokers assign sequence numbers; the mock mirrors that for fidelity). A
@@ -354,6 +378,13 @@ func (b *memoryBroker) release(namespace string) {
 			delete(b.topicBytes, topic)
 		}
 	}
+	for topic := range b.serviceBusHistory {
+		if strings.HasPrefix(topic, prefix) {
+			b.totalBytes -= b.serviceBusHistBytes[topic]
+			delete(b.serviceBusHistory, topic)
+			delete(b.serviceBusHistBytes, topic)
+		}
+	}
 	if b.totalBytes < 0 {
 		b.totalBytes = 0
 	}
@@ -404,6 +435,11 @@ func messageSize(msg message) int {
 
 func (b *memoryBroker) resourceKeyCountLocked() int {
 	count := len(b.queues) + len(b.topics)
+	for topic := range b.serviceBusHistory {
+		if _, exists := b.topics[topic]; !exists {
+			count++
+		}
+	}
 	for _, subscriptions := range b.topics {
 		count += len(subscriptions)
 	}
@@ -419,6 +455,11 @@ func (b *memoryBroker) resourceKeyBytesLocked() int {
 		total += len(topic)
 		for subscription := range subscriptions {
 			total += len(subscription)
+		}
+	}
+	for topic := range b.serviceBusHistory {
+		if _, exists := b.topics[topic]; !exists {
+			total += len(topic)
 		}
 	}
 	return total
@@ -439,11 +480,27 @@ func (b *memoryBroker) validateNewResourceKeysLocked(keys ...string) error {
 }
 
 func (b *memoryBroker) ensureAccountingLocked() {
-	if b.queueBytes != nil && b.topicBytes != nil {
+	if b.serviceBusHistory == nil {
+		b.serviceBusHistory = make(map[string][]message)
+	}
+	if b.queueBytes != nil && b.topicBytes != nil && b.serviceBusHistBytes != nil {
+		return
+	}
+	// Some focused tests seed queue/topic accounting and totalBytes directly.
+	// Initialize the new history ledger without discarding that existing state.
+	if b.queueBytes != nil && b.topicBytes != nil && b.serviceBusHistBytes == nil {
+		b.serviceBusHistBytes = make(map[string]int64, len(b.serviceBusHistory))
+		for topic, queue := range b.serviceBusHistory {
+			bounded, retained := boundedMessageQueueStats(queue)
+			b.serviceBusHistory[topic] = bounded
+			b.serviceBusHistBytes[topic] = retained
+			b.totalBytes += retained
+		}
 		return
 	}
 	b.queueBytes = make(map[string]int64, len(b.queues))
 	b.topicBytes = make(map[string]map[string]int64, len(b.topics))
+	b.serviceBusHistBytes = make(map[string]int64, len(b.serviceBusHistory))
 	b.totalBytes = 0
 	for destination, queue := range b.queues {
 		bounded, retained := boundedMessageQueueStats(queue)
@@ -459,6 +516,12 @@ func (b *memoryBroker) ensureAccountingLocked() {
 			b.topicBytes[topic][subscription] = retained
 			b.totalBytes += retained
 		}
+	}
+	for topic, queue := range b.serviceBusHistory {
+		bounded, retained := boundedMessageQueueStats(queue)
+		b.serviceBusHistory[topic] = bounded
+		b.serviceBusHistBytes[topic] = retained
+		b.totalBytes += retained
 	}
 }
 
@@ -478,6 +541,12 @@ func (b *memoryBroker) setTopicQueueLocked(topic, subscription string, queue []m
 	b.totalBytes += retained - b.topicBytes[topic][subscription]
 	b.topics[topic][subscription] = queue
 	b.topicBytes[topic][subscription] = retained
+}
+
+func (b *memoryBroker) setServiceBusHistoryLocked(topic string, queue []message, retained int64) {
+	b.totalBytes += retained - b.serviceBusHistBytes[topic]
+	b.serviceBusHistory[topic] = queue
+	b.serviceBusHistBytes[topic] = retained
 }
 
 // assignSequenceLocked stamps a monotonic sequence on a message that doesn't
@@ -643,6 +712,17 @@ func (b *memoryBroker) subscribe(topic, subscription string) error {
 		b.topicBytes[topic][subscription] = 0
 		return nil
 	}
+	if _, retainedTopicExists := b.serviceBusHistory[topic]; retainedTopicExists {
+		if b.resourceKeyCountLocked() >= maxJMSDestinationKeys {
+			return fmt.Errorf("mock JMS destination capacity exceeded (%d keys)", maxJMSDestinationKeys)
+		}
+		if err := b.validateNewResourceKeysLocked(subscription); err != nil {
+			return err
+		}
+		b.topics[topic] = map[string][]message{subscription: nil}
+		b.topicBytes[topic] = map[string]int64{subscription: 0}
+		return nil
+	}
 	// A new topic consumes one key and its first subscription consumes another.
 	if b.resourceKeyCountLocked()+2 > maxJMSDestinationKeys {
 		return fmt.Errorf("mock JMS destination capacity exceeded (%d keys)", maxJMSDestinationKeys)
@@ -675,6 +755,103 @@ func (b *memoryBroker) publishTopic(topic string, msg message) error {
 		queue, retained := boundedMessageQueueStats(append(b.topics[topic][sub], cloneMessageValue(msg)))
 		b.setTopicQueueLocked(topic, sub, queue, retained)
 	}
+	return nil
+}
+
+func appendBoundedMessage(queue []message, msg message) ([]message, int64) {
+	// Copy before appending so a rejected aggregate-capacity check cannot mutate
+	// the backing array of the live broker queue.
+	candidate := make([]message, len(queue), len(queue)+1)
+	copy(candidate, queue)
+	candidate = append(candidate, cloneMessageValue(msg))
+	return boundedMessageQueueStats(candidate)
+}
+
+// publishServiceBusTopic records one bounded history copy and independently
+// fans out to every currently materialized subscription. The history is used
+// only when a Service Bus mock subscription is first referenced by an action.
+func (b *memoryBroker) publishServiceBusTopic(topic string, msg message) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.ensureAccountingLocked()
+
+	_, hasHistory := b.serviceBusHistory[topic]
+	_, hasTopic := b.topics[topic]
+	if !hasHistory && !hasTopic {
+		if b.resourceKeyCountLocked() >= maxJMSDestinationKeys {
+			return fmt.Errorf("mock JMS destination capacity exceeded (%d keys)", maxJMSDestinationKeys)
+		}
+		if err := b.validateNewResourceKeysLocked(topic); err != nil {
+			return err
+		}
+	}
+	msgBytes := int64(messageSize(msg))
+	if msgBytes > maxJMSQueueBytes {
+		return fmt.Errorf("mock JMS message exceeds per-destination capacity (%d bytes)", maxJMSQueueBytes)
+	}
+	b.assignSequenceLocked(&msg)
+
+	history, historyBytes := appendBoundedMessage(b.serviceBusHistory[topic], msg)
+	delta := historyBytes - b.serviceBusHistBytes[topic]
+	type pendingQueue struct {
+		subscription string
+		messages     []message
+		bytes        int64
+	}
+	pending := make([]pendingQueue, 0, len(b.topics[topic]))
+	for subscription, queue := range b.topics[topic] {
+		messages, retained := appendBoundedMessage(queue, msg)
+		delta += retained - b.topicBytes[topic][subscription]
+		pending = append(pending, pendingQueue{subscription: subscription, messages: messages, bytes: retained})
+	}
+	if delta > maxJMSRetainedBytes-b.totalBytes {
+		return fmt.Errorf("mock JMS aggregate retention capacity exceeded (%d bytes)", maxJMSRetainedBytes)
+	}
+	b.setServiceBusHistoryLocked(topic, history, historyBytes)
+	for _, queue := range pending {
+		b.setTopicQueueLocked(topic, queue.subscription, queue.messages, queue.bytes)
+	}
+	return nil
+}
+
+// subscribeServiceBus materializes an action-level durable subscription from
+// the bounded topic history. Registration is idempotent: repeated consumes do
+// not replay history, while a distinct subscription receives an independent
+// deep copy.
+func (b *memoryBroker) subscribeServiceBus(topic, subscription string) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.ensureAccountingLocked()
+	if subscriptions := b.topics[topic]; subscriptions != nil {
+		if _, exists := subscriptions[subscription]; exists {
+			return nil
+		}
+	}
+	_, hasHistory := b.serviceBusHistory[topic]
+	_, hasTopic := b.topics[topic]
+	additionalKeys := 1
+	keys := []string{subscription}
+	if !hasHistory && !hasTopic {
+		additionalKeys++
+		keys = append([]string{topic}, keys...)
+	}
+	if b.resourceKeyCountLocked()+additionalKeys > maxJMSDestinationKeys {
+		return fmt.Errorf("mock JMS destination capacity exceeded (%d keys)", maxJMSDestinationKeys)
+	}
+	if err := b.validateNewResourceKeysLocked(keys...); err != nil {
+		return err
+	}
+
+	history := b.serviceBusHistory[topic]
+	queue := make([]message, len(history))
+	for i := range history {
+		queue[i] = cloneMessageValue(history[i])
+	}
+	retained := b.serviceBusHistBytes[topic]
+	if retained > maxJMSRetainedBytes-b.totalBytes {
+		return fmt.Errorf("mock JMS aggregate retention capacity exceeded (%d bytes)", maxJMSRetainedBytes)
+	}
+	b.setTopicQueueLocked(topic, subscription, queue, retained)
 	return nil
 }
 
@@ -723,6 +900,12 @@ func (b *memoryBroker) requeueTopic(topic, subscription string, msg message) err
 // consumeTopic pops the first message matching the selector from a subscription's
 // independent queue.
 func (b *memoryBroker) consumeTopic(topic, subscription string, sel *selector) (message, bool) {
+	return b.consumeTopicWhere(topic, subscription, func(msg message) bool {
+		return sel.matches(msg.Headers, msg.Properties)
+	})
+}
+
+func (b *memoryBroker) consumeTopicWhere(topic, subscription string, match func(message) bool) (message, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.ensureAccountingLocked()
@@ -731,7 +914,7 @@ func (b *memoryBroker) consumeTopic(topic, subscription string, sel *selector) (
 	}
 	queue := b.topics[topic][subscription]
 	for i, m := range queue {
-		if sel.matches(m.Headers, m.Properties) {
+		if match == nil || match(m) {
 			copy(queue[i:], queue[i+1:])
 			queue[len(queue)-1] = message{}
 			retainedQueue := queue[:len(queue)-1]
@@ -740,6 +923,17 @@ func (b *memoryBroker) consumeTopic(topic, subscription string, sel *selector) (
 		}
 	}
 	return message{}, false
+}
+
+func (b *memoryBroker) hasTopicMatching(topic, subscription string, match func(message) bool) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, msg := range b.topics[topic][subscription] {
+		if match == nil || match(msg) {
+			return true
+		}
+	}
+	return false
 }
 
 // browseTopic returns deep copies of a subscription's matching messages without
@@ -758,6 +952,11 @@ func (j *JMS) Name() string {
 }
 
 func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
+	provider, err := resolveJMSProvider(j.name, j.provider, stringValue(cfg, "jms_provider"))
+	if err != nil {
+		return err
+	}
+	j.provider = provider
 	j.allowedTargetHosts = protocol.TargetPolicyHosts(cfg)
 	timeoutMS, err := boundedJMSInteger(cfg["jms_timeout_ms"], int((5*time.Second)/time.Millisecond), 0, int(MaxConfiguredTimeout/time.Millisecond))
 	if err != nil {
@@ -784,9 +983,6 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 			InsecureSkipVerify: boolValue(cfg, "jms_tls_insecure_skip_verify"),
 		},
 		Mock: boolValue(cfg, "jms_mock"),
-	}
-	if provider := stringValue(cfg, "jms_provider"); provider != "" {
-		j.provider = provider
 	}
 	if j.cfg.DestinationType == "" {
 		j.cfg.DestinationType = "queue"
@@ -821,13 +1017,14 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 		// publish that lands before the subscriber's first consume is still captured
 		// (durable-subscription semantics). Without this, the mock only retains
 		// messages published after the first consume registers the subscription.
-		if !strings.EqualFold(strings.TrimSpace(j.provider), "servicebus") &&
-			strings.EqualFold(strings.TrimSpace(j.cfg.DestinationType), "topic") &&
-			strings.TrimSpace(j.cfg.Subscription) != "" && strings.TrimSpace(j.cfg.Destination) != "" {
-			if err := broker.subscribe(mockJMSKey(j.mockNamespace, j.cfg.Destination), j.cfg.Subscription); err != nil {
-				j.mockRelease.Do(func() { broker.release(j.mockNamespace) })
-				j.adapter = nil
-				return err
+		if strings.EqualFold(strings.TrimSpace(j.cfg.DestinationType), "topic") {
+			topicName, subscription := j.mockTopicCoordinates(j.cfg.Destination, j.cfg.Subscription)
+			if topicName != "" && subscription != "" {
+				if err := broker.subscribe(mockJMSKey(j.mockNamespace, topicName), subscription); err != nil {
+					j.mockRelease.Do(func() { broker.release(j.mockNamespace) })
+					j.adapter = nil
+					return err
+				}
 			}
 		}
 	} else {
@@ -841,6 +1038,52 @@ func (j *JMS) Init(_ context.Context, cfg map[string]any) error {
 	return nil
 }
 
+// resolveJMSProvider keeps the registered protocol name and configured provider
+// on one immutable adapter lane. A provider value must never silently switch a
+// jms-solace instance to Service Bus (or make an unknown value fall through to
+// Solace), because that changes credentials, addressing, and wire semantics.
+func resolveJMSProvider(protocolName, runtimeProvider, configuredProvider string) (string, error) {
+	name := strings.ToLower(strings.TrimSpace(protocolName))
+	if name == "jms" {
+		return "", fmt.Errorf("generic JMS protocol %q is not executable; use jms-solace, jms-ibmmq, or jms-servicebus", protocolName)
+	}
+
+	expected := ""
+	switch name {
+	case "jms-solace":
+		expected = "solace"
+	case "jms-ibmmq":
+		expected = "ibmmq"
+	case "jms-servicebus":
+		expected = "servicebus"
+	default:
+		return "", fmt.Errorf("JMS protocol %q is not supported; use jms-solace, jms-ibmmq, or jms-servicebus", protocolName)
+	}
+
+	validate := func(source, provider string) error {
+		provider = strings.ToLower(strings.TrimSpace(provider))
+		if provider == "" {
+			return nil
+		}
+		switch provider {
+		case "solace", "ibmmq", "servicebus":
+		default:
+			return fmt.Errorf("%s %q is not supported; use solace, ibmmq, or servicebus", source, provider)
+		}
+		if provider != expected {
+			return fmt.Errorf("%s %q does not match protocol %q; expected %q", source, provider, name, expected)
+		}
+		return nil
+	}
+	if err := validate("JMS runtime provider", runtimeProvider); err != nil {
+		return "", err
+	}
+	if err := validate("jms_provider", configuredProvider); err != nil {
+		return "", err
+	}
+	return expected, nil
+}
+
 // selectAdapter chooses the non-mock broker adapter based on the configured
 // provider and the operator-owned sidecar command. It enforces the security
 // invariant that the sidecar command may ONLY come from the operator env var
@@ -852,11 +1095,16 @@ func (j *JMS) selectAdapter() (brokerAdapter, error) {
 		return nil, fmt.Errorf("script-supplied sidecar_command is not allowed; configure %s on the runner", sidecarCommandEnv)
 	}
 
-	switch j.provider {
+	switch strings.ToLower(strings.TrimSpace(j.provider)) {
 	case "ibmmq":
-		return unavailableIbmMqAdapter{cfg: j.cfg}, nil
+		return nil, fmt.Errorf("real IBM MQ adapter is not available in this build; enable mock mode for local replay")
 	case "servicebus":
 		return newServiceBusAdapter(j.cfg), nil
+	case "solace":
+		// Solace supports either the compiled adapter or the explicitly
+		// operator-configured sidecar below.
+	default:
+		return nil, fmt.Errorf("JMS provider %q is not supported; use solace, ibmmq, or servicebus", j.provider)
 	}
 
 	if strings.EqualFold(strings.TrimSpace(j.cfg.Properties["adapter"]), "sidecar") {
@@ -927,7 +1175,11 @@ func (j *JMS) Execute(ctx context.Context, action *protocol.Action) (*protocol.R
 		hasRequestMsg = err == nil
 		hasResponseMsg = err == nil
 	case "jms_ack", "jms_commit", "jms_rollback":
-		err = j.settle(action, result)
+		if !j.cfg.Mock {
+			err = fmt.Errorf("%s is supported only in mock mode; real adapters do not implement generic JMS settlement", action.Type)
+		} else {
+			err = j.settle(action, result)
+		}
 	case "jms_settle", "jms_renew_lock":
 		err = j.settleAdvanced(ctx, action, result)
 	case "jms_session_accept", "jms_session_state", "jms_session_close", "jms_receive_deferred", "jms_cancel_scheduled":
@@ -1080,6 +1332,36 @@ func (j *JMS) validateActionBounds(action *protocol.Action) error {
 			}
 		}
 	}
+	if strings.EqualFold(action.Type, "jms_request_reply") && strings.TrimSpace(paramString(action.Params, "selector", "")) != "" {
+		return fmt.Errorf("JMS selector is not supported by jms_request_reply")
+	}
+	if _, sidecar := j.adapter.(sidecarAdapter); sidecar {
+		if strings.EqualFold(action.Type, "jms_browse") {
+			return fmt.Errorf("jms_browse is not supported by the Solace sidecar adapter")
+		}
+		if strings.EqualFold(action.Type, "jms_consume") && strings.TrimSpace(paramString(action.Params, "selector", "")) != "" {
+			return fmt.Errorf("JMS params.selector is not supported by the Solace sidecar adapter")
+		}
+		for _, field := range []string{"destination_type", "subscription", "subscription_mode"} {
+			if strings.TrimSpace(paramString(action.Params, field, "")) != "" {
+				return fmt.Errorf("JMS action-level params.%s is not supported by the Solace sidecar adapter", field)
+			}
+		}
+	}
+	if j.cfg.Mock && strings.EqualFold(strings.TrimSpace(j.provider), "servicebus") &&
+		(strings.EqualFold(action.Type, "jms_publish") || strings.EqualFold(action.Type, "jms_request_reply")) {
+		for _, field := range []string{"session_id", "partition_key"} {
+			if strings.TrimSpace(paramString(action.Params, field, "")) != "" {
+				return fmt.Errorf("JMS params.%s requires the real Azure Service Bus adapter and is not supported in mock mode", field)
+			}
+		}
+		if raw, present := action.Params["scheduled_enqueue_ms"]; present {
+			delay, _ := boundedJMSInteger(raw, 0, 0, int(MaxConfiguredMessageDuration/time.Millisecond))
+			if delay > 0 {
+				return fmt.Errorf("JMS params.scheduled_enqueue_ms requires the real Azure Service Bus adapter and is not supported in mock mode")
+			}
+		}
+	}
 	if raw, present := action.Params["max"]; present {
 		if _, err := boundedJMSInteger(raw, 0, 0, MaxJMSBrowseMessages); err != nil {
 			return fmt.Errorf("JMS browse max: %w", err)
@@ -1201,9 +1483,15 @@ func (j *JMS) publish(ctx context.Context, action *protocol.Action, result *prot
 	}
 	var published message
 	var err error
-	if topic, ok := j.adapter.(topicAdapter); ok && j.useTopicFanout(action) {
+	if topic, ok := j.adapter.(serviceBusMockTopicAdapter); ok && j.usesMockServiceBusTopic(action) {
+		// Service Bus subscriptions are durable broker entities. Retain a bounded
+		// topic history so an action-level subscription declared by a later
+		// consume still observes this publish.
+		err = topic.PublishServiceBusTopic(ctx, j.topicNameForFanout(destination), msg)
+		published = msg
+	} else if topic, ok := j.adapter.(topicAdapter); ok && j.useTopicFanout(action) {
 		// Topic publish fans out to every registered subscription.
-		err = topic.PublishTopic(ctx, destination, msg)
+		err = topic.PublishTopic(ctx, j.topicNameForFanout(destination), msg)
 		published = msg
 	} else {
 		published, err = j.adapter.Publish(ctx, destination, msg)
@@ -1244,6 +1532,26 @@ func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *prot
 	selectorExpr := paramString(action.Params, "selector", "")
 	topic, isTopicCap := j.adapter.(topicAdapter)
 	switch {
+	case j.usesMockServiceBusTopic(action):
+		serviceBusTopic, ok := j.adapter.(serviceBusMockTopicAdapter)
+		if !ok {
+			return message{}, fmt.Errorf("Service Bus mock topic adapter is unavailable")
+		}
+		sub := j.subscriptionName(action)
+		if sub == "" {
+			return message{}, fmt.Errorf("jms_consume from a topic requires a subscription (params.subscription or config.jms.subscription)")
+		}
+		if selectorExpr != "" {
+			if _, cErr := compileSelector(selectorExpr); cErr != nil {
+				result.StatusCode = 400
+				return message{}, cErr
+			}
+		}
+		topicName := j.topicNameForFanout(destination)
+		msg, err = serviceBusTopic.ConsumeServiceBusTopic(ctx, topicName, sub, selectorExpr, j.timeout(action))
+		if err == nil {
+			msg.sourceTopic, msg.sourceSubscription = topicName, sub
+		}
 	case isTopicCap && j.useTopicFanout(action):
 		// Topic fan-out: consume from a named subscription's independent queue.
 		sub := j.subscriptionName(action)
@@ -1256,11 +1564,12 @@ func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *prot
 				return message{}, cErr
 			}
 		}
-		msg, err = topic.ConsumeTopic(ctx, destination, sub, selectorExpr, j.isDurableSubscription(action), j.timeout(action))
+		topicName := j.topicNameForFanout(destination)
+		msg, err = topic.ConsumeTopic(ctx, topicName, sub, selectorExpr, j.isDurableSubscription(action), j.timeout(action))
 		if err == nil {
 			// Record the topic origin so a later rollback requeues to this
 			// subscription rather than into the unrelated queue map.
-			msg.sourceTopic, msg.sourceSubscription = destination, sub
+			msg.sourceTopic, msg.sourceSubscription = topicName, sub
 		}
 	case selectorExpr != "":
 		// Selector is incompatible with the Service Bus advanced-consume controls
@@ -1296,7 +1605,7 @@ func (j *JMS) consume(ctx context.Context, action *protocol.Action, result *prot
 		return message{}, err
 	}
 	result.BytesReceived = int64(len(msg.Body))
-	if msg.Destination == "" {
+	if msg.Destination == "" || j.usesMockServiceBusTopic(action) {
 		msg.Destination = destination
 	}
 	if err := addMessageExtractions(result, msg); err != nil {
@@ -1375,12 +1684,22 @@ func (j *JMS) browse(ctx context.Context, action *protocol.Action, result *proto
 		msgs []message
 		err  error
 	)
-	if topic, ok := j.adapter.(topicAdapter); ok && j.useTopicFanout(action) {
+	if j.usesMockServiceBusTopic(action) {
+		topic, ok := j.adapter.(serviceBusMockTopicAdapter)
+		if !ok {
+			return message{}, false, fmt.Errorf("Service Bus mock topic adapter is unavailable")
+		}
 		sub := j.subscriptionName(action)
 		if sub == "" {
 			return message{}, false, fmt.Errorf("jms_browse on a topic requires a subscription (params.subscription or config.jms.subscription)")
 		}
-		msgs, err = topic.BrowseTopic(ctx, destination, sub, selectorExpr, max, j.timeout(action))
+		msgs, err = topic.BrowseServiceBusTopic(ctx, j.topicNameForFanout(destination), sub, selectorExpr, max, j.timeout(action))
+	} else if topic, ok := j.adapter.(topicAdapter); ok && j.useTopicFanout(action) {
+		sub := j.subscriptionName(action)
+		if sub == "" {
+			return message{}, false, fmt.Errorf("jms_browse on a topic requires a subscription (params.subscription or config.jms.subscription)")
+		}
+		msgs, err = topic.BrowseTopic(ctx, j.topicNameForFanout(destination), sub, selectorExpr, max, j.timeout(action))
 	} else {
 		br, ok := j.adapter.(messageBrowser)
 		if !ok {
@@ -1398,7 +1717,7 @@ func (j *JMS) browse(ctx context.Context, action *protocol.Action, result *proto
 		return message{}, false, nil
 	}
 	first := msgs[0]
-	if first.Destination == "" {
+	if first.Destination == "" || j.usesMockServiceBusTopic(action) {
 		first.Destination = destination
 	}
 	result.BytesReceived = int64(len(first.Body))
@@ -1631,8 +1950,9 @@ func (j *JMS) sessionAdvanced(ctx context.Context, action *protocol.Action, resu
 	return message{}, false, fmt.Errorf("unsupported session action %q", action.Type)
 }
 
-// parseSequenceNumbers parses a sequence-number list from a DSL param: a JSON
-// array of numbers ([]any of float64/int/json.Number) or a comma-separated string.
+// parseSequenceNumbers parses a positive sequence-number list from a DSL param:
+// a JSON array of numbers ([]any of float64/int/json.Number), one number, or a
+// comma-separated string.
 func parseSequenceNumbers(raw any) ([]int64, error) {
 	if raw == nil {
 		return nil, nil
@@ -1643,13 +1963,18 @@ func parseSequenceNumbers(raw any) ([]int64, error) {
 		if len(v) > MaxJMSSequenceNumbers {
 			return nil, fmt.Errorf("sequence_numbers must not exceed %d entries", MaxJMSSequenceNumbers)
 		}
+		for _, item := range v {
+			if item <= 0 {
+				return nil, fmt.Errorf("invalid sequence_numbers entry %d: must be greater than zero", item)
+			}
+		}
 		return append([]int64(nil), v...), nil
 	case []any:
 		if len(v) > MaxJMSSequenceNumbers {
 			return nil, fmt.Errorf("sequence_numbers must not exceed %d entries", MaxJMSSequenceNumbers)
 		}
 		for _, item := range v {
-			n, err := toInt64(item)
+			n, err := positiveSequenceNumber(item)
 			if err != nil {
 				return nil, fmt.Errorf("invalid sequence_numbers entry %v: %w", item, err)
 			}
@@ -1670,7 +1995,7 @@ func parseSequenceNumbers(raw any) ([]int64, error) {
 			if part == "" {
 				continue
 			}
-			n, err := strconv.ParseInt(part, 10, 64)
+			n, err := positiveSequenceNumber(part)
 			if err != nil {
 				return nil, fmt.Errorf("invalid sequence_numbers entry %q: %w", part, err)
 			}
@@ -1680,13 +2005,33 @@ func parseSequenceNumbers(raw any) ([]int64, error) {
 			}
 		}
 	default:
-		if n, err := toInt64(raw); err == nil {
-			out = append(out, n)
-		} else {
-			return nil, fmt.Errorf("sequence_numbers must be a list of numbers")
+		n, err := positiveSequenceNumber(raw)
+		if err != nil {
+			return nil, fmt.Errorf("invalid sequence_numbers entry %v: %w", raw, err)
 		}
+		out = append(out, n)
 	}
 	return out, nil
+}
+
+func positiveSequenceNumber(value any) (int64, error) {
+	n, err := toInt64(value)
+	if err != nil {
+		return 0, err
+	}
+	if n <= 0 {
+		return 0, fmt.Errorf("must be greater than zero")
+	}
+	return n, nil
+}
+
+// ValidateSequenceNumbers exposes the runtime parser's exact acceptance
+// contract to the DSL preflight validator without exporting the parsed values.
+// Keeping one parser prevents drafts from passing validation only to fail when
+// the Service Bus action executes.
+func ValidateSequenceNumbers(raw any) (int, error) {
+	values, err := parseSequenceNumbers(raw)
+	return len(values), err
 }
 
 func toInt64(v any) (int64, error) {
@@ -1757,7 +2102,25 @@ func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result 
 	if err := validateJMSMessageBounds(request); err != nil {
 		return message{}, message{}, err
 	}
-	sent, response, err := j.adapter.RequestReply(ctx, requestDestination, replyDestination, request, j.timeout(action))
+	var sent, response message
+	var err error
+	if topic, ok := j.adapter.(topicRequestReplyAdapter); ok && j.usesMockServiceBusTopic(action) {
+		subscription := paramString(action.Params, "subscription", j.cfg.Subscription)
+		_, subscription = j.mockTopicCoordinates(replyDestination, subscription)
+		if subscription == "" {
+			return message{}, message{}, fmt.Errorf("jms_request_reply on a topic requires a subscription (params.subscription or config.jms.subscription)")
+		}
+		sent, response, err = topic.RequestReplyTopic(
+			ctx,
+			j.topicNameForFanout(requestDestination),
+			j.topicNameForFanout(replyDestination),
+			subscription,
+			request,
+			j.timeout(action),
+		)
+	} else {
+		sent, response, err = j.adapter.RequestReply(ctx, requestDestination, replyDestination, request, j.timeout(action))
+	}
 	if err != nil {
 		result.StatusCode = 204
 		return message{}, message{}, err
@@ -1779,7 +2142,7 @@ func (j *JMS) requestReply(ctx context.Context, action *protocol.Action, result 
 }
 
 func (j *JMS) timeout(action *protocol.Action) time.Duration {
-	timeout := durationParam(action.Params, "timeout_ms", j.cfg.Timeout)
+	timeout := durationParam(action.Params, "timeout_ms", j.cfg.Timeout, MaxConfiguredTimeout)
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
@@ -1826,11 +2189,11 @@ func (a memoryAdapter) RequestReply(ctx context.Context, requestDestination stri
 	}
 
 	matchesRequest := func(reply message) bool {
-		return request.CorrelationID == "" ||
+		return reply.ID != request.ID && (request.CorrelationID == "" ||
 			reply.CorrelationID == request.CorrelationID ||
 			reply.Headers["jms_correlation_id"] == request.CorrelationID ||
 			reply.Properties["jms_correlation_id"] == request.CorrelationID ||
-			reply.Properties["JMSCorrelationID"] == request.CorrelationID
+			reply.Properties["JMSCorrelationID"] == request.CorrelationID)
 	}
 	if (request.CorrelationID != "" && !a.broker.hasMatching(a.destination(replyDestination), matchesRequest)) ||
 		(request.CorrelationID == "" && !a.broker.hasMessages(a.destination(replyDestination))) {
@@ -1861,6 +2224,59 @@ func (a memoryAdapter) RequestReply(ctx context.Context, requestDestination stri
 			return request, message{}, ctx.Err()
 		case <-deadline.C:
 			return request, message{}, fmt.Errorf("no correlated JMS reply received from %q within %s", replyDestination, timeout)
+		case <-tick.C:
+		}
+	}
+}
+
+func (a memoryAdapter) RequestReplyTopic(ctx context.Context, requestTopic, replyTopic, subscription string, request message, timeout time.Duration) (message, message, error) {
+	requestKey := a.destination(requestTopic)
+	replyKey := a.destination(replyTopic)
+	if err := a.broker.subscribe(requestKey, subscription); err != nil {
+		return message{}, message{}, err
+	}
+	if err := a.broker.subscribe(replyKey, subscription); err != nil {
+		return message{}, message{}, err
+	}
+	if err := a.broker.publishTopic(requestKey, request); err != nil {
+		return message{}, message{}, err
+	}
+
+	matchesRequest := func(reply message) bool {
+		return reply.ID != request.ID && (request.CorrelationID == "" ||
+			reply.CorrelationID == request.CorrelationID ||
+			reply.Headers["jms_correlation_id"] == request.CorrelationID ||
+			reply.Properties["jms_correlation_id"] == request.CorrelationID ||
+			reply.Properties["JMSCorrelationID"] == request.CorrelationID)
+	}
+	if !a.broker.hasTopicMatching(replyKey, subscription, matchesRequest) {
+		logicalReplyDestination := serviceBusConsumeDestination(replyTopic, "topic", subscription)
+		if err := a.broker.publishTopic(replyKey, message{
+			ID:            uuid.NewString(),
+			CorrelationID: request.CorrelationID,
+			Destination:   logicalReplyDestination,
+			Headers:       cloneStringMap(request.Headers),
+			Properties:    cloneStringMap(request.Properties),
+			Body:          request.Body,
+			CreatedAt:     time.Now(),
+		}); err != nil {
+			return request, message{}, err
+		}
+	}
+
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if response, ok := a.broker.consumeTopicWhere(replyKey, subscription, matchesRequest); ok {
+			return request, response, nil
+		}
+		select {
+		case <-ctx.Done():
+			return request, message{}, ctx.Err()
+		case <-deadline.C:
+			return request, message{}, fmt.Errorf("no correlated JMS reply received on topic %q subscription %q within %s", replyTopic, subscription, timeout)
 		case <-tick.C:
 		}
 	}
@@ -1915,6 +2331,10 @@ func (a memoryAdapter) PublishTopic(_ context.Context, topic string, msg message
 	return a.broker.publishTopic(a.destination(topic), msg)
 }
 
+func (a memoryAdapter) PublishServiceBusTopic(_ context.Context, topic string, msg message) error {
+	return a.broker.publishServiceBusTopic(a.destination(topic), msg)
+}
+
 // ConsumeTopic registers the subscription (so future publishes fan out to it,
 // even across timed-out polls) then consumes its next matching message (P2.3).
 // The mock retains messages for durable and non-durable subscriptions alike (it
@@ -1945,10 +2365,47 @@ func (a memoryAdapter) ConsumeTopic(ctx context.Context, topic, subscription, se
 	}
 }
 
+func (a memoryAdapter) ConsumeServiceBusTopic(ctx context.Context, topic, subscription, selectorExpr string, timeout time.Duration) (message, error) {
+	if err := a.broker.subscribeServiceBus(a.destination(topic), subscription); err != nil {
+		return message{}, err
+	}
+	sel, err := compileSelector(selectorExpr)
+	if err != nil {
+		return message{}, err
+	}
+	deadline := time.NewTimer(timeout)
+	defer deadline.Stop()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		if msg, ok := a.broker.consumeTopic(a.destination(topic), subscription, sel); ok {
+			return msg, nil
+		}
+		select {
+		case <-ctx.Done():
+			return message{}, ctx.Err()
+		case <-deadline.C:
+			return message{}, fmt.Errorf("no JMS message received on Service Bus topic %q subscription %q within %s", topic, subscription, timeout)
+		case <-tick.C:
+		}
+	}
+}
+
 // BrowseTopic registers the subscription then non-destructively reads its
 // matching messages (P2.3).
 func (a memoryAdapter) BrowseTopic(_ context.Context, topic, subscription, selectorExpr string, max int, _ time.Duration) ([]message, error) {
 	if err := a.broker.subscribe(a.destination(topic), subscription); err != nil {
+		return nil, err
+	}
+	sel, err := compileSelector(selectorExpr)
+	if err != nil {
+		return nil, err
+	}
+	return a.broker.browseTopic(a.destination(topic), subscription, sel, max), nil
+}
+
+func (a memoryAdapter) BrowseServiceBusTopic(_ context.Context, topic, subscription, selectorExpr string, max int, _ time.Duration) ([]message, error) {
+	if err := a.broker.subscribeServiceBus(a.destination(topic), subscription); err != nil {
 		return nil, err
 	}
 	sel, err := compileSelector(selectorExpr)
@@ -2229,37 +2686,6 @@ func (a unavailableSolaceAdapter) err() error {
 	return fmt.Errorf("real Solace JMS adapter is not available in this build; enable mock mode for local replay")
 }
 
-type unavailableIbmMqAdapter struct {
-	cfg config
-}
-
-func (a unavailableIbmMqAdapter) Publish(context.Context, string, message) (message, error) {
-	return message{}, a.err()
-}
-
-func (a unavailableIbmMqAdapter) Consume(context.Context, string, time.Duration) (message, error) {
-	return message{}, a.err()
-}
-
-func (a unavailableIbmMqAdapter) RequestReply(context.Context, string, string, message, time.Duration) (message, message, error) {
-	return message{}, message{}, a.err()
-}
-
-func (a unavailableIbmMqAdapter) HealthCheck(context.Context) error {
-	if a.cfg.BrokerURL == "" {
-		return fmt.Errorf("jms broker_url is not configured")
-	}
-	return a.err()
-}
-
-func (a unavailableIbmMqAdapter) Teardown(context.Context) error {
-	return nil
-}
-
-func (a unavailableIbmMqAdapter) err() error {
-	return fmt.Errorf("real IBM MQ adapter is not available in this build; enable mock mode for local replay")
-}
-
 type unavailableServiceBusAdapter struct {
 	cfg config
 }
@@ -2324,7 +2750,7 @@ func (j *JMS) buildMessage(action *protocol.Action, destination string) message 
 		// support them.
 		SessionID:    paramString(action.Params, "session_id", ""),
 		PartitionKey: paramString(action.Params, "partition_key", ""),
-		TimeToLive:   durationParam(action.Params, "time_to_live_ms", 0),
+		TimeToLive:   durationParam(action.Params, "time_to_live_ms", 0, MaxConfiguredMessageDuration),
 		// JMS message-type + delivery controls (P2.3). delivery_mode falls back to
 		// the connection default (closing the previously-dead config.jms.delivery_mode).
 		Type:         strings.ToLower(paramString(action.Params, "message_type", "")),
@@ -2341,7 +2767,7 @@ func (j *JMS) buildMessage(action *protocol.Action, destination string) message 
 		msg.Priority = &pr
 	}
 	applyTypedBody(&msg, action.Params)
-	if delay := durationParam(action.Params, "scheduled_enqueue_ms", 0); delay > 0 {
+	if delay := durationParam(action.Params, "scheduled_enqueue_ms", 0, MaxConfiguredMessageDuration); delay > 0 {
 		msg.ScheduledEnqueueAt = msg.CreatedAt.Add(delay)
 	}
 	return msg
@@ -2388,11 +2814,12 @@ func (j *JMS) consumeDestination(action *protocol.Action) string {
 }
 
 // useTopicFanout reports whether this action routes through the topic fan-out
-// capability: destination_type=topic on a non-Service-Bus provider. Service Bus
-// encodes topic/subscription in the destination string and uses the standard
-// path, so it is excluded.
+// capability. Real Service Bus uses its native composed subscription address;
+// Service Bus mock mode uses the in-memory fan-out path so publish/consume and
+// browse exercise actual topic/subscription semantics instead of mismatched
+// queue keys.
 func (j *JMS) useTopicFanout(action *protocol.Action) bool {
-	if strings.EqualFold(strings.TrimSpace(j.provider), "servicebus") {
+	if strings.EqualFold(strings.TrimSpace(j.provider), "servicebus") && !j.cfg.Mock {
 		return false
 	}
 	destType := paramString(action.Params, "destination_type", j.cfg.DestinationType)
@@ -2402,7 +2829,11 @@ func (j *JMS) useTopicFanout(action *protocol.Action) bool {
 // subscriptionName resolves the topic subscription identifier (params.subscription
 // then config.jms.subscription).
 func (j *JMS) subscriptionName(action *protocol.Action) string {
-	return paramString(action.Params, "subscription", j.cfg.Subscription)
+	subscription := paramString(action.Params, "subscription", j.cfg.Subscription)
+	if j.cfg.Mock && strings.EqualFold(strings.TrimSpace(j.provider), "servicebus") {
+		_, subscription = j.mockTopicCoordinates(j.consumeDestination(action), subscription)
+	}
+	return subscription
 }
 
 // isDurableSubscription reports whether subscription_mode requests a durable
@@ -2418,6 +2849,33 @@ func (j *JMS) serviceBusConsumeDestination(action *protocol.Action, destination 
 	destinationType := paramString(action.Params, "destination_type", j.cfg.DestinationType)
 	subscription := paramString(action.Params, "subscription", j.cfg.Subscription)
 	return serviceBusConsumeDestination(destination, destinationType, subscription)
+}
+
+func (j *JMS) usesMockServiceBusTopic(action *protocol.Action) bool {
+	return j.cfg.Mock && strings.EqualFold(strings.TrimSpace(j.provider), "servicebus") && j.useTopicFanout(action)
+}
+
+// mockTopicCoordinates converts a Service Bus composed subscription address
+// back into the base topic + subscription used by the in-memory broker. Other
+// JMS providers already carry these as separate values.
+func (j *JMS) mockTopicCoordinates(destination, subscription string) (string, string) {
+	destination = strings.TrimSpace(destination)
+	subscription = strings.TrimSpace(subscription)
+	if j.cfg.Mock && strings.EqualFold(strings.TrimSpace(j.provider), "servicebus") {
+		if topic, embeddedSubscription, ok := splitServiceBusSubscription(destination); ok {
+			destination = topic
+			// A composed Service Bus entity is authoritative. The real adapter
+			// likewise ignores a separate subscription value once the destination
+			// already names /subscriptions/{name}.
+			subscription = embeddedSubscription
+		}
+	}
+	return destination, subscription
+}
+
+func (j *JMS) topicNameForFanout(destination string) string {
+	topic, _ := j.mockTopicCoordinates(destination, "")
+	return topic
 }
 
 func addMessageExtractions(result *protocol.Result, msg message) error {
@@ -2786,17 +3244,14 @@ func boundedJMSInteger(value any, fallback, minimum, maximum int) (int, error) {
 	return int(parsed), nil
 }
 
-func durationValue(cfg map[string]any, key string, fallback time.Duration) time.Duration {
-	switch value := cfg[key].(type) {
-	case int:
-		return time.Duration(value) * time.Millisecond
-	case int64:
-		return time.Duration(value) * time.Millisecond
-	case float64:
-		return time.Duration(value) * time.Millisecond
-	default:
+func durationValue(cfg map[string]any, key string, fallback, maximum time.Duration) time.Duration {
+	fallbackMillis := int(fallback / time.Millisecond)
+	maximumMillis := int(maximum / time.Millisecond)
+	value, err := boundedJMSInteger(cfg[key], fallbackMillis, 0, maximumMillis)
+	if err != nil {
 		return fallback
 	}
+	return time.Duration(value) * time.Millisecond
 }
 
 func stringMapValue(cfg map[string]any, key string) map[string]string {
@@ -2818,11 +3273,11 @@ func paramString(params map[string]any, key string, fallback string) string {
 	return value
 }
 
-func durationParam(params map[string]any, key string, fallback time.Duration) time.Duration {
+func durationParam(params map[string]any, key string, fallback, maximum time.Duration) time.Duration {
 	if params == nil {
 		return fallback
 	}
-	return durationValue(params, key, fallback)
+	return durationValue(params, key, fallback, maximum)
 }
 
 func boolParam(params map[string]any, key string, fallback bool) bool {

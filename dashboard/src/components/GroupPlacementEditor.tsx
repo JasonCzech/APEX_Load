@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react'
 import { GeneratorAssignmentSettings, SystemInventoryGenerator } from '../types'
 import { normalizeRequiredLabels } from './assignmentLabels'
+import { isPositiveSafeInteger } from './generatorAssignmentValidation'
 import './GroupPlacementEditor.css'
 
-type PlacementMode = 'inherit' | 'auto' | 'specific_hosts' | 'required_labels'
+type PlacementMode = 'inherit' | 'auto' | 'specific_hosts' | 'required_labels' | 'region_weighted' | 'load_zone_weighted'
 
 interface Props {
   assignment?: GeneratorAssignmentSettings
@@ -15,13 +16,22 @@ interface Props {
   protocol?: string
   compact?: boolean
   allowInherit?: boolean
+  scope?: 'group' | 'scenario'
 }
 
 function assignmentMode(assignment?: GeneratorAssignmentSettings): PlacementMode {
   if (assignment?.mode === 'specific_hosts') return 'specific_hosts'
+  if (assignment?.mode === 'region_weighted') return 'region_weighted'
+  if (assignment?.mode === 'load_zone_weighted') return 'load_zone_weighted'
   if (normalizeRequiredLabels(assignment?.required_labels)) return 'required_labels'
   if (assignment?.mode === 'auto') return 'auto'
   return 'inherit'
+}
+
+function weightSummary(weights?: Record<string, number>) {
+  const entries = Object.entries(weights || {})
+  if (entries.length === 0) return 'No weights configured'
+  return entries.map(([key, value]) => `${key}=${value}`).join(', ')
 }
 
 function labelSummary(labels?: Record<string, string>) {
@@ -118,9 +128,12 @@ export default function GroupPlacementEditor({
   protocol,
   compact = false,
   allowInherit = true,
+  scope = 'group',
 }: Props) {
   const rawMode = assignmentMode(assignment)
   const derivedMode: PlacementMode = !allowInherit && rawMode === 'inherit' ? 'auto' : rawMode
+  const unsupportedGroupWeighted = scope === 'group' && (rawMode === 'region_weighted' || rawMode === 'load_zone_weighted')
+  const unsupportedGroupLossTolerance = scope === 'group' && Boolean(assignment?.tolerate_generator_loss)
   const selectedTargets = assignment?.selected_targets || []
   const requiredLabels = normalizeRequiredLabels(assignment?.required_labels)
 
@@ -129,6 +142,9 @@ export default function GroupPlacementEditor({
   // serialized assignment. Track the selected mode locally so the capability panel
   // stays open while labels are still empty, instead of snapping back to auto (H2).
   const [mode, setLocalMode] = useState<PlacementMode>(derivedMode)
+  const [newWeightKey, setNewWeightKey] = useState('')
+  const [newWeightValue, setNewWeightValue] = useState('1')
+  const [weightError, setWeightError] = useState('')
   useEffect(() => {
     setLocalMode(prev => {
       if (prev === 'required_labels' && derivedMode === 'auto' && !normalizeRequiredLabels(assignment?.required_labels)) {
@@ -144,6 +160,14 @@ export default function GroupPlacementEditor({
   const matchingLabelHosts = generatorInventory?.filter(generator => generatorCanRun(generator, protocol) && labelsMatch(generator, requiredLabels)).length ?? 0
   const selectedTargetSet = new Set(selectedTargets)
   const selectedCapacity = rows.reduce((total, generator) => selectedTargetSet.has(generator.target) ? total + (generator.available_capacity || 0) : total, 0)
+  const lossTolerance = scope === 'scenario' && assignment?.tolerate_generator_loss ? { tolerate_generator_loss: true as const } : {}
+  const regionKeys = Array.from(new Set((generatorInventory || []).map(generator => generator.region?.trim()).filter((value): value is string => Boolean(value)))).sort()
+  const loadZoneKeys = Array.from(new Set((generatorInventory || []).map(generator => (
+    generator.labels?.load_zone
+    || generator.labels?.['topology.kubernetes.io/zone']
+    || generator.region
+    || ''
+  ).trim()).filter(Boolean))).sort()
 
   const setMode = (nextMode: PlacementMode) => {
     setLocalMode(nextMode)
@@ -152,14 +176,31 @@ export default function GroupPlacementEditor({
       return
     }
     if (nextMode === 'auto') {
-      onChange({ mode: 'auto' })
+      onChange({ mode: 'auto', ...lossTolerance })
       return
     }
     if (nextMode === 'specific_hosts') {
-      onChange({ mode: 'specific_hosts', selected_targets: selectedTargets })
+      onChange({
+        mode: 'specific_hosts',
+        selected_targets: selectedTargets,
+        ...(requiredLabels ? { required_labels: requiredLabels } : {}),
+        ...lossTolerance,
+      })
       return
     }
-    onChange({ mode: 'auto', required_labels: requiredLabels || {} })
+    if (nextMode === 'region_weighted') {
+      const existing = assignment?.region_weights || {}
+      const weights = Object.keys(existing).length ? existing : Object.fromEntries(regionKeys.map(key => [key, 1]))
+      onChange({ mode: 'region_weighted', region_weights: { ...weights }, ...(requiredLabels ? { required_labels: requiredLabels } : {}), ...lossTolerance })
+      return
+    }
+    if (nextMode === 'load_zone_weighted') {
+      const existing = assignment?.load_zone_weights || {}
+      const weights = Object.keys(existing).length ? existing : Object.fromEntries(loadZoneKeys.map(key => [key, 1]))
+      onChange({ mode: 'load_zone_weighted', load_zone_weights: { ...weights }, ...(requiredLabels ? { required_labels: requiredLabels } : {}), ...lossTolerance })
+      return
+    }
+    onChange({ mode: 'auto', required_labels: requiredLabels || {}, ...lossTolerance })
   }
 
   const toggleTarget = (target: string, checked: boolean) => {
@@ -171,6 +212,7 @@ export default function GroupPlacementEditor({
       selected_targets: nextTargets,
       ...(nextTargets.length > 1 ? { shard_strategy: 'capacity_weighted' as const } : {}),
       ...(requiredLabels ? { required_labels: requiredLabels } : {}),
+      ...lossTolerance,
     })
   }
 
@@ -178,12 +220,79 @@ export default function GroupPlacementEditor({
     const next = { ...(requiredLabels || {}) }
     if (value) next[key] = value
     else delete next[key]
-    onChange({ mode: 'auto', required_labels: next })
+    onChange({ mode: 'auto', required_labels: next, ...lossTolerance })
   }
+
+  const setWeight = (key: string, rawValue: string) => {
+    const field = mode === 'region_weighted' ? 'region_weights' : 'load_zone_weights'
+    const current = { ...(assignment?.[field] || {}) }
+    const value = Number(rawValue)
+    if (rawValue.trim() === '') {
+      delete current[key]
+      setWeightError(Object.keys(current).length === 0 ? 'Add at least one positive whole-number weight.' : '')
+    } else if (!isPositiveSafeInteger(value)) {
+      setWeightError('Weights must be positive whole numbers.')
+      return
+    } else {
+      current[key] = value
+      setWeightError('')
+    }
+    onChange({
+      mode,
+      [field]: current,
+      ...(requiredLabels ? { required_labels: requiredLabels } : {}),
+      ...lossTolerance,
+    } as GeneratorAssignmentSettings)
+  }
+
+  const addWeight = () => {
+    const key = newWeightKey.trim()
+    const value = Number(newWeightValue)
+    if (!key) {
+      setWeightError('Enter a region or load-zone name.')
+      return
+    }
+    if (!isPositiveSafeInteger(value)) {
+      setWeightError('Weights must be positive whole numbers.')
+      return
+    }
+    setWeight(key, String(value))
+    setNewWeightKey('')
+    setNewWeightValue('1')
+  }
+
+  const setLossTolerance = (enabled: boolean) => {
+    const next: GeneratorAssignmentSettings = assignment ? { ...assignment } : { mode: 'auto' }
+    if (enabled) next.tolerate_generator_loss = true
+    else delete next.tolerate_generator_loss
+    onChange(next)
+  }
+
+  const removeUnsupportedGroupLossTolerance = () => {
+    if (!assignment) return
+    const next = { ...assignment }
+    delete next.tolerate_generator_loss
+    onChange(next)
+  }
+
+  const useAutomaticGroupPlacement = () => {
+    setLocalMode('auto')
+    onChange({ mode: 'auto' })
+  }
+
+  const activeWeights = mode === 'region_weighted' ? assignment?.region_weights : assignment?.load_zone_weights
+  const activeWeightEntries = Object.entries(activeWeights || {})
+  const storedWeightError = activeWeightEntries.length === 0
+    ? 'Add at least one positive whole-number weight.'
+    : activeWeightEntries.some(([key, value]) => !key.trim() || !isPositiveSafeInteger(value))
+      ? 'Weight names must be non-empty and weights must be positive whole numbers.'
+      : ''
+  const newWeightIsValid = isPositiveSafeInteger(Number(newWeightValue))
+  const newWeightDraftError = newWeightValue.trim() && !newWeightIsValid ? 'Weights must be positive whole numbers.' : ''
 
   return (
     <div className={`group-placement-editor ${compact ? 'compact' : ''}`}>
-      <div className="new-test-placement-toggle" role="radiogroup" aria-label="Group generator placement">
+      <div className="new-test-placement-toggle" role="radiogroup" aria-label={`${scope === 'scenario' ? 'Scenario' : 'Group'} generator placement`}>
         {allowInherit && (
           <label className={mode === 'inherit' ? 'selected' : ''}>
             <input type="radio" checked={mode === 'inherit'} onChange={() => setMode('inherit')} />
@@ -198,6 +307,18 @@ export default function GroupPlacementEditor({
           <input type="radio" checked={mode === 'specific_hosts'} onChange={() => setMode('specific_hosts')} />
           <span>Pin to host(s)</span>
         </label>
+        {scope === 'scenario' && (
+          <>
+            <label className={mode === 'region_weighted' ? 'selected' : ''}>
+              <input type="radio" checked={mode === 'region_weighted'} onChange={() => setMode('region_weighted')} />
+              <span>Region-weighted placement</span>
+            </label>
+            <label className={mode === 'load_zone_weighted' ? 'selected' : ''}>
+              <input type="radio" checked={mode === 'load_zone_weighted'} onChange={() => setMode('load_zone_weighted')} />
+              <span>Load-zone-weighted placement</span>
+            </label>
+          </>
+        )}
         <label className={mode === 'required_labels' ? 'selected' : ''}>
           <input type="radio" checked={mode === 'required_labels'} onChange={() => setMode('required_labels')} />
           <span>Require capability</span>
@@ -205,7 +326,50 @@ export default function GroupPlacementEditor({
       </div>
 
       {mode === 'inherit' && <p className="scenario-assignment-copy secondary">Inherits the scenario Controller / Generator assignment.</p>}
-      {mode === 'auto' && <p className="scenario-assignment-copy secondary">Uses automatic placement for this group.</p>}
+      {mode === 'auto' && <p className="scenario-assignment-copy secondary">Uses automatic placement for this {scope}.</p>}
+      {unsupportedGroupWeighted && (
+        <div className="settings-error-inline" role="alert">
+          Weighted placement is not supported for individual groups. Choose inherit, automatic placement, host pinning, or a required capability.
+          <button type="button" className="secondary-button" onClick={useAutomaticGroupPlacement}>Use automatic placement</button>
+        </div>
+      )}
+      {unsupportedGroupLossTolerance && (
+        <div className="settings-error-inline" role="alert">
+          Generator-loss tolerance is executed only at scenario scope.
+          <button type="button" className="secondary-button" onClick={removeUnsupportedGroupLossTolerance}>Remove unsupported setting</button>
+        </div>
+      )}
+      {scope === 'scenario' && (mode === 'region_weighted' || mode === 'load_zone_weighted') && (() => {
+        const weights = mode === 'region_weighted' ? assignment?.region_weights : assignment?.load_zone_weights
+        return (
+          <div className="new-test-generator-picker weighted-placement-editor">
+            <p className="scenario-assignment-copy secondary">
+              {mode === 'region_weighted' ? 'Region' : 'Load-zone'} weights: {weightSummary(weights)}. Each weight must be greater than zero.
+            </p>
+            {Object.entries(weights || {}).map(([key, value]) => (
+              <label key={key} className="scenario-field">
+                <span>{key}</span>
+                <input
+                  aria-label={`${mode === 'region_weighted' ? 'Region' : 'Load zone'} ${key} weight`}
+                  className="settings-input"
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={value}
+                  aria-invalid={!isPositiveSafeInteger(value)}
+                  onChange={event => setWeight(key, event.target.value)}
+                />
+              </label>
+            ))}
+            <div className="scenario-browser-grid">
+              <label><span>{mode === 'region_weighted' ? 'Region' : 'Load zone'} name</span><input aria-label="New placement weight name" className="settings-input" value={newWeightKey} onChange={event => setNewWeightKey(event.target.value)} /></label>
+              <label><span>Weight</span><input aria-label="New placement weight value" className="settings-input" type="number" min={1} step={1} value={newWeightValue} aria-invalid={!newWeightIsValid} onChange={event => setNewWeightValue(event.target.value)} /></label>
+              <button type="button" className="secondary-button" disabled={!newWeightKey.trim() || !newWeightIsValid} onClick={addWeight}>Add weight</button>
+            </div>
+            {(weightError || storedWeightError || newWeightDraftError) && <p className="settings-error-inline" role="alert">{weightError || storedWeightError || newWeightDraftError}</p>}
+          </div>
+        )
+      })()}
 
       {mode === 'specific_hosts' && (
         <div className="new-test-generator-picker">
@@ -239,6 +403,7 @@ export default function GroupPlacementEditor({
             <strong>{formatHostSelectionSummary(selectedTargets)}</strong>
             <span>{selectedCapacity} selected VUser capacity</span>
           </div>
+          {selectedTargets.every(target => !target.trim()) && <p className="settings-error-inline" role="alert">Select at least one load generator host.</p>}
         </div>
       )}
 
@@ -260,6 +425,13 @@ export default function GroupPlacementEditor({
             <span>{matchingLabelHosts} matching generator{matchingLabelHosts === 1 ? '' : 's'}</span>
           </div>
         </div>
+      )}
+
+      {scope === 'scenario' && mode !== 'inherit' && (
+        <label className={`scenario-option-card ${assignment?.tolerate_generator_loss ? 'selected' : ''}`}>
+          <input type="checkbox" checked={Boolean(assignment?.tolerate_generator_loss)} onChange={event => setLossTolerance(event.target.checked)} />
+          <div><strong>Tolerate generator loss</strong><span>Continue on surviving assigned generators when policy permits.</span></div>
+        </label>
       )}
     </div>
   )

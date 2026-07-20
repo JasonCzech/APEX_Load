@@ -22,6 +22,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/engine"
 	browserprotocol "github.com/jasonczech/apexload/pkg/protocol/browser"
 	"github.com/jasonczech/apexload/pkg/scrub"
+	"github.com/jasonczech/apexload/pkg/telemetry"
 )
 
 // requireExecutionLeader writes a 503 and returns false when this replica does
@@ -243,6 +244,7 @@ func (s *Server) handleStartTest(w http.ResponseWriter, r *http.Request) {
 	}
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
 	req.actor = testCreationActor{Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName}
+	req.traceContext = telemetry.Detach(r.Context())
 	if err := s.runner.StartTestWithOptions(id, req); err != nil {
 		var capacityErr *CapacityShortfallError
 		if errors.As(err, &capacityErr) {
@@ -448,11 +450,16 @@ func (s *Server) handleStopTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	projectID := ""
+	status := "stopping"
 	if test, ok := s.runner.GetTest(id); ok {
 		projectID = test.ProjectID
+		status = strings.ToLower(strings.TrimSpace(test.Status))
+		if status == "" {
+			status = "stopping"
+		}
 	}
 	s.recordAuditEvent(r, "test.stop", "success", "test", id, projectID, nil)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "stopping", "test_id": id})
+	writeJSON(w, http.StatusOK, map[string]any{"status": status, "test_id": id, "stop_requested": true})
 }
 
 func (s *Server) handleAbortTest(w http.ResponseWriter, r *http.Request) {
@@ -466,11 +473,16 @@ func (s *Server) handleAbortTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	projectID := ""
+	status := "stopping"
 	if test, ok := s.runner.GetTest(id); ok {
 		projectID = test.ProjectID
+		status = strings.ToLower(strings.TrimSpace(test.Status))
+		if status == "" {
+			status = "stopping"
+		}
 	}
 	s.recordAuditEvent(r, "test.abort", "success", "test", id, projectID, nil)
-	writeJSON(w, http.StatusOK, map[string]string{"status": "aborted", "test_id": id})
+	writeJSON(w, http.StatusOK, map[string]any{"status": status, "test_id": id, "abort_requested": true})
 }
 
 func (s *Server) handlePauseTest(w http.ResponseWriter, r *http.Request) {

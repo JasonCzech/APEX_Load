@@ -1233,10 +1233,22 @@ func (b *distributedExecutionBackend) failClosedDistributedCommit(tr *TestRunner
 }
 
 func (b *distributedExecutionBackend) StopTest(tr *TestRunner, test *ManagedTest) error {
-	return b.StopTestContext(context.Background(), tr, test)
+	return b.stopTestContext(context.Background(), tr, test, true)
 }
 
 func (b *distributedExecutionBackend) StopTestContext(parent context.Context, tr *TestRunner, test *ManagedTest) error {
+	return b.stopTestContext(parent, tr, test, true)
+}
+
+func (b *distributedExecutionBackend) AbortTest(tr *TestRunner, test *ManagedTest) error {
+	return b.stopTestContext(context.Background(), tr, test, false)
+}
+
+func (b *distributedExecutionBackend) AbortTestContext(parent context.Context, tr *TestRunner, test *ManagedTest) error {
+	return b.stopTestContext(parent, tr, test, false)
+}
+
+func (b *distributedExecutionBackend) stopTestContext(parent context.Context, tr *TestRunner, test *ManagedTest, graceful bool) error {
 	if parent == nil {
 		parent = context.Background()
 	}
@@ -1302,7 +1314,7 @@ func (b *distributedExecutionBackend) StopTestContext(parent context.Context, tr
 				return
 			}
 			ctx, cancel := context.WithTimeout(stopBase, b.timeout)
-			stop, err := stopGeneratorTest(ctx, client, test.ID, true, executionGeneration)
+			stop, err := stopGeneratorTest(ctx, client, test.ID, graceful, executionGeneration)
 			cancel()
 			if err == nil && !stop.Acknowledged {
 				err = fmt.Errorf("generator did not acknowledge stop for %s", test.ID)
@@ -1335,7 +1347,11 @@ func (b *distributedExecutionBackend) StopTestContext(parent context.Context, tr
 	sort.Strings(acknowledgedTargets)
 	stopErr := errors.Join(stopErrs...)
 	if stopErr == nil {
-		b.startDistributedStopFinalizer(tr, test, executionGeneration)
+		if graceful {
+			b.startDistributedStopFinalizer(tr, test, executionGeneration)
+		} else {
+			b.finalizeAcknowledgedForcedStop(tr, test)
+		}
 		return nil
 	}
 	return &distributedStopFanoutError{

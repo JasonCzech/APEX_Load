@@ -100,6 +100,54 @@ func TestCreateTestBindsTimeslot(t *testing.T) {
 	}
 }
 
+func TestManualStartUsesActualTimeForFutureCapacityTimeslot(t *testing.T) {
+	for _, testCase := range []struct {
+		name          string
+		reserveWindow bool
+		wantStatus    string
+	}{
+		{name: "scheduled", wantStatus: "SCHEDULED"},
+		{name: "reserved", reserveWindow: true, wantStatus: "RESERVED"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			runner, store := storeBackedRunner(t)
+			futureStart := ceilToNextQuarterHour(time.Now().UTC().Add(time.Hour))
+			slotID := "future-slot-" + testCase.name
+			if err := store.SaveCapacityReservation(&storage.CapacityReservation{
+				ID: slotID, ProjectID: "proj-a", StartAt: futureStart, EndAt: futureStart.Add(time.Hour),
+				ApprovalState:     "approved",
+				RequestedCapacity: &storage.CapacityReservationRequest{VUsers: reservedInt(100)},
+			}); err != nil {
+				t.Fatalf("SaveCapacityReservation: %v", err)
+			}
+			created, err := runner.CreateTest(CreateTestRequest{
+				Name: "Future " + testCase.name, Duration: "10m", ScriptID: "script-1", VUsers: 10, ProjectID: "proj-a",
+				ScheduledStartAt: &futureStart, ReserveLaunchWindow: testCase.reserveWindow, TimeslotID: &slotID,
+			})
+			if err != nil {
+				t.Fatalf("CreateTest: %v", err)
+			}
+			if created.Status != testCase.wantStatus {
+				t.Fatalf("created status = %q, want %q", created.Status, testCase.wantStatus)
+			}
+			started := make(chan string, 1)
+			runner.setExecutionBackend(&scheduleExecutionBackend{started: started})
+			if err := runner.StartTest(created.ID); err == nil || !strings.Contains(err.Error(), "no longer fits") {
+				t.Fatalf("early StartTest error = %v, want actual-time timeslot rejection", err)
+			}
+			select {
+			case id := <-started:
+				t.Fatalf("future-slot test %q dispatched early", id)
+			case <-time.After(100 * time.Millisecond):
+			}
+			current, _ := runner.GetTest(created.ID)
+			if current.Status != testCase.wantStatus {
+				t.Fatalf("status after rejected early start = %q, want %q", current.Status, testCase.wantStatus)
+			}
+		})
+	}
+}
+
 func TestSaveNewManagedTestWithTimeslotIsIdempotentForSameMaterialization(t *testing.T) {
 	runner, store := storeBackedRunner(t)
 	if err := store.SaveCapacityReservation(approvedTimeslot(time.Now())); err != nil {

@@ -5,7 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import GroupPlacementEditor from './GroupPlacementEditor'
-import { GeneratorAssignmentSettings } from '../types'
+import { GeneratorAssignmentSettings, SystemInventoryGenerator } from '../types'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -40,6 +40,16 @@ function Harness({ availableLabels, availableTargets, protocol }: {
       protocol={protocol}
       allowInherit
     />
+  )
+}
+
+function AssignmentHarness({ initialAssignment, availableTargets = [], generatorInventory, scope = 'group' }: { initialAssignment: GeneratorAssignmentSettings, availableTargets?: string[], generatorInventory?: SystemInventoryGenerator[], scope?: 'group' | 'scenario' }) {
+  const [assignment, setAssignment] = useState<GeneratorAssignmentSettings | undefined>(initialAssignment)
+  return (
+    <>
+      <GroupPlacementEditor assignment={assignment} onChange={setAssignment} availableTargets={availableTargets} generatorInventory={generatorInventory} allowInherit scope={scope} />
+      <output data-testid="assignment-json">{JSON.stringify(assignment)}</output>
+    </>
   )
 }
 
@@ -103,5 +113,152 @@ describe('GroupPlacementEditor', () => {
     act(() => radio('Inherit scenario default').click())
     expect(radio('Inherit scenario default').checked).toBe(true)
     expect(container.textContent).toContain('Inherits the scenario')
+  })
+
+  it.each([
+    ['region', { mode: 'region_weighted' as const, region_weights: { east: 70, west: 30 } }, 'Region-weighted placement', 'east=70, west=30'],
+    ['load-zone', { mode: 'load_zone_weighted' as const, load_zone_weights: { blue: 60, green: 40 } }, 'Load-zone-weighted placement', 'blue=60, green=40'],
+  ])('shows a stored %s weighted assignment truthfully and can clear it to auto', (_name, assignment, label, summary) => {
+    act(() => root.render(<AssignmentHarness initialAssignment={assignment} scope="scenario" />))
+
+    expect(radio(label).checked).toBe(true)
+    expect(container.textContent).toContain(summary)
+    expect(radio('Automatic placement').checked).toBe(false)
+
+    act(() => radio('Automatic placement').click())
+    expect(radio('Automatic placement').checked).toBe(true)
+    expect(container.textContent).toContain('Uses automatic placement')
+  })
+
+  it('preserves generator-loss tolerance while editing pinned hosts', () => {
+    act(() => root.render(
+      <AssignmentHarness
+        initialAssignment={{ mode: 'specific_hosts', selected_targets: ['gen-a'], tolerate_generator_loss: true }}
+        availableTargets={['gen-a', 'gen-b']}
+        scope="scenario"
+      />,
+    ))
+
+    const genB = Array.from(container.querySelectorAll('.new-test-generator-option')).find(option => option.textContent?.includes('gen-b'))
+      ?.querySelector<HTMLInputElement>('input[type=checkbox]')
+    expect(genB).toBeDefined()
+    act(() => genB?.click())
+
+    const serialized = JSON.parse(container.querySelector('[data-testid="assignment-json"]')?.textContent || '{}')
+    expect(serialized).toMatchObject({
+      mode: 'specific_hosts',
+      selected_targets: ['gen-a', 'gen-b'],
+      shard_strategy: 'capacity_weighted',
+      tolerate_generator_loss: true,
+    })
+  })
+
+  it('authors region weights from live inventory and toggles generator-loss tolerance', () => {
+    const generator = (target: string, region: string): SystemInventoryGenerator => ({
+      target,
+      generator_id: target,
+      region,
+      status: 'connected',
+      available_capacity: 100,
+      active_vusers: 0,
+      cpu_percent: 0,
+      memory_bytes: 0,
+      goroutine_count: 0,
+      cpu_limit_cores: 4,
+      memory_limit_bytes: 1024,
+      max_vusers: 100,
+    })
+    act(() => root.render(
+      <AssignmentHarness
+        initialAssignment={{ mode: 'auto' }}
+        generatorInventory={[generator('gen-east', 'east'), generator('gen-west', 'west')]}
+        scope="scenario"
+      />,
+    ))
+
+    act(() => radio('Region-weighted placement').click())
+    let serialized = JSON.parse(container.querySelector('[data-testid="assignment-json"]')?.textContent || '{}')
+    expect(serialized).toMatchObject({ mode: 'region_weighted', region_weights: { east: 1, west: 1 } })
+
+    const east = container.querySelector<HTMLInputElement>('[aria-label="Region east weight"]')
+    expect(east).toBeTruthy()
+    act(() => {
+      if (east) {
+        const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+        setter.call(east, '70')
+        east.dispatchEvent(new Event('input', { bubbles: true }))
+      }
+    })
+    const loss = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Tolerate generator loss'))?.querySelector<HTMLInputElement>('input')
+    act(() => loss?.click())
+
+    serialized = JSON.parse(container.querySelector('[data-testid="assignment-json"]')?.textContent || '{}')
+    expect(serialized).toMatchObject({ mode: 'region_weighted', region_weights: { east: 70, west: 1 }, tolerate_generator_loss: true })
+  })
+
+  it('authors a load-zone weight without inventory', () => {
+    act(() => root.render(<AssignmentHarness initialAssignment={{ mode: 'auto' }} scope="scenario" />))
+    act(() => radio('Load-zone-weighted placement').click())
+
+    const name = container.querySelector<HTMLInputElement>('[aria-label="New placement weight name"]')
+    const value = container.querySelector<HTMLInputElement>('[aria-label="New placement weight value"]')
+    const setInput = (input: HTMLInputElement | null, next: string) => {
+      if (!input) return
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      setter.call(input, next)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+    act(() => {
+      setInput(name, 'zone-a')
+      setInput(value, '100')
+    })
+    const add = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Add weight')
+    act(() => add?.click())
+
+    const serialized = JSON.parse(container.querySelector('[data-testid="assignment-json"]')?.textContent || '{}')
+    expect(serialized).toMatchObject({ mode: 'load_zone_weighted', load_zone_weights: { 'zone-a': 100 } })
+  })
+
+  it('restricts weighted placement and generator-loss tolerance to scenario scope', () => {
+    act(() => root.render(
+      <AssignmentHarness
+        initialAssignment={{ mode: 'region_weighted', region_weights: { east: 1 }, tolerate_generator_loss: true }}
+      />,
+    ))
+
+    expect(() => radio('Region-weighted placement')).toThrow()
+    expect(() => radio('Load-zone-weighted placement')).toThrow()
+    expect(container.textContent).toContain('Weighted placement is not supported for individual groups')
+    expect(container.textContent).toContain('Generator-loss tolerance is executed only at scenario scope')
+    expect(container.textContent).not.toContain('Tolerate generator loss')
+
+    const useAutomatic = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Use automatic placement')
+    act(() => useAutomatic?.click())
+    const serialized = JSON.parse(container.querySelector('[data-testid="assignment-json"]')?.textContent || '{}')
+    expect(serialized).toEqual({ mode: 'auto' })
+  })
+
+  it('requires at least one host and positive whole-number weights', () => {
+    act(() => root.render(<AssignmentHarness initialAssignment={{ mode: 'specific_hosts', selected_targets: [] }} />))
+    expect(container.textContent).toContain('Select at least one load generator host')
+
+    act(() => root.render(
+      <AssignmentHarness
+        key="weighted"
+        initialAssignment={{ mode: 'region_weighted', region_weights: { east: 2 } }}
+        scope="scenario"
+      />,
+    ))
+    const weight = container.querySelector<HTMLInputElement>('[aria-label="Region east weight"]')
+    expect(weight?.step).toBe('1')
+    act(() => {
+      if (!weight) return
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+      setter.call(weight, '1.5')
+      weight.dispatchEvent(new Event('input', { bubbles: true }))
+    })
+    expect(container.textContent).toContain('Weights must be positive whole numbers')
+    const serialized = JSON.parse(container.querySelector('[data-testid="assignment-json"]')?.textContent || '{}')
+    expect(serialized.region_weights).toEqual({ east: 2 })
   })
 })

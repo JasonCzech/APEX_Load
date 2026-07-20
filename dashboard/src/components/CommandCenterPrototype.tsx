@@ -1437,7 +1437,12 @@ export default function CommandCenterPrototype({
     if (liveMode && testId) {
       try {
         await api.abortTest(testId)
-        updateLiveStatus('ABORTED', 'Abort requested. Live run state moved to aborted.')
+        const nextStatus = runStatus === 'RUNNING' || runStatus === 'PAUSED' || runStatus === 'STOPPING'
+          ? 'STOPPING'
+          : 'ABORTED'
+        updateLiveStatus(nextStatus, nextStatus === 'STOPPING'
+          ? 'Abort requested. Waiting for generator teardown and finalization.'
+          : 'Abort requested. Pre-start run cancelled.')
       } catch (error: unknown) {
         setState(prev => ({ ...prev, feedback: getErrorMessage(error, 'Unable to abort test') }))
       }

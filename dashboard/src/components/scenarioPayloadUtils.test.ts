@@ -2,8 +2,8 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { buildCreateTestPayload, buildGoalConfigPayload, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
-import { buildScenarioDraftFromTest } from './scenarioDraftUtils'
+import { buildCreateTestPayload, buildGoalConfigPayload, buildScenarioGroupPayloads, buildScenarioUpsertPayload } from './scenarioPayloadUtils'
+import { buildInitialScenarioDraft, buildScenarioDraftFromTest, scenarioDraftReducer } from './scenarioDraftUtils'
 
 describe('scenarioPayloadUtils', () => {
   it('keeps a single unnamed group in the canonical groups payload', () => {
@@ -29,8 +29,6 @@ describe('scenarioPayloadUtils', () => {
         think_time: undefined,
         log_level: '',
         auto_transactions: '',
-        continue_on_error: false,
-        snapshot_on_error: false,
       },
       projectId: 'project-1',
       folderId: 'folder-1',
@@ -53,6 +51,134 @@ describe('scenarioPayloadUtils', () => {
         initialization: 'at_runtime',
       }],
     })
+  })
+
+  it('does not duplicate canonical group runtime iterations as a compact override', () => {
+    const payload = buildCreateTestPayload({
+      duration: '1m',
+      startDelay: '',
+      scenarioMode: 'vuser_driven',
+      scriptShakeout: false,
+      resourceBaseline: false,
+      groups: [{
+        name: 'Runtime iterations',
+        scriptId: 'script-1',
+        vusers: 2,
+        rampUp: '',
+        rampDown: '',
+        iterations: 7,
+        iterationPayloadSource: 'runtime',
+        initialization: 'at_runtime',
+        runtimeSettings: { log_level: '', auto_transactions: '', run_logic: { iterations: 7, workload_model: 'closed' } },
+      }],
+      goalConfig: {},
+      runtimeSettings: { log_level: '', auto_transactions: '' },
+    })
+
+    expect(payload.groups?.[0]).not.toHaveProperty('iterations')
+    expect(payload.groups?.[0].runtime_settings?.run_logic).toEqual({ iterations: 7, workload_model: 'closed' })
+  })
+
+  it('canonicalizes legacy group runtime iterations on edit and removes them on clear', () => {
+    const mapped = buildScenarioDraftFromTest({
+      id: 'legacy-runtime-iterations',
+      name: 'Legacy runtime iterations',
+      status: 'QUEUED',
+      total_vusers: 2,
+      duration: '1m',
+      created_at: '2026-07-19T12:00:00Z',
+      groups: [{
+        name: 'Legacy', script_id: 'script-1', protocol: 'http', vusers: 2,
+        iterations: 5, initialization: 'at_runtime',
+        runtime_settings: { iterations: 5, http: { version: '2' } },
+      }],
+    } as never)
+
+    expect(mapped.groups[0].iterationPayloadSource).toBe('runtime')
+    const edited = scenarioDraftReducer(mapped, {
+      type: 'updateGroup', index: 0, patch: { iterations: 8 },
+    })
+    const editedGroup = buildScenarioGroupPayloads(edited.groups)[0]
+    expect(editedGroup).not.toHaveProperty('iterations')
+    expect(editedGroup.runtime_settings).not.toHaveProperty('iterations')
+    expect(editedGroup.runtime_settings?.run_logic).toEqual({ iterations: 8 })
+    expect(editedGroup.runtime_settings?.http).toEqual({ version: '2' })
+
+    const cleared = scenarioDraftReducer(edited, {
+      type: 'updateGroup', index: 0, patch: { iterations: undefined },
+    })
+    const clearedGroup = buildScenarioGroupPayloads(cleared.groups)[0]
+    expect(clearedGroup).not.toHaveProperty('iterations')
+    expect(clearedGroup.runtime_settings).not.toHaveProperty('iterations')
+    expect(clearedGroup.runtime_settings).not.toHaveProperty('run_logic')
+    expect(clearedGroup.runtime_settings?.http).toEqual({ version: '2' })
+  })
+
+  it('edits and clears canonical group run-logic iterations without a compact duplicate', () => {
+    const mapped = buildScenarioDraftFromTest({
+      id: 'canonical-runtime-iterations',
+      name: 'Canonical runtime iterations',
+      status: 'QUEUED',
+      total_vusers: 2,
+      duration: '1m',
+      created_at: '2026-07-19T12:00:00Z',
+      groups: [{
+        name: 'Canonical', script_id: 'script-1', protocol: 'http', vusers: 2,
+        iterations: 5, initialization: 'at_runtime',
+        runtime_settings: {
+          iterations: 77,
+          run_logic: { iterations: 5, max_transactions: 25, workload_model: 'closed' },
+        },
+      }],
+    } as never)
+
+    const edited = scenarioDraftReducer(mapped, {
+      type: 'updateGroup', index: 0, patch: { iterations: 8 },
+    })
+    const editedGroup = buildScenarioGroupPayloads(edited.groups)[0]
+    expect(editedGroup).not.toHaveProperty('iterations')
+    expect(editedGroup.runtime_settings).not.toHaveProperty('iterations')
+    expect(editedGroup.runtime_settings?.run_logic).toEqual({
+      iterations: 8,
+      max_transactions: 25,
+      workload_model: 'closed',
+    })
+
+    const cleared = scenarioDraftReducer(edited, {
+      type: 'updateGroup', index: 0, patch: { iterations: undefined },
+    })
+    const clearedGroup = buildScenarioGroupPayloads(cleared.groups)[0]
+    expect(clearedGroup).not.toHaveProperty('iterations')
+    expect(clearedGroup.runtime_settings).not.toHaveProperty('iterations')
+    expect(clearedGroup.runtime_settings?.run_logic).toEqual({
+      max_transactions: 25,
+      workload_model: 'closed',
+    })
+  })
+
+  it('retains runtime provenance for zero run-logic iterations before a later edit', () => {
+    const mapped = buildScenarioDraftFromTest({
+      id: 'zero-runtime-iterations',
+      name: 'Zero runtime iterations',
+      status: 'QUEUED',
+      total_vusers: 2,
+      duration: '1m',
+      created_at: '2026-07-19T12:00:00Z',
+      groups: [{
+        name: 'Zero', script_id: 'script-1', protocol: 'http', vusers: 2,
+        iterations: 0, initialization: 'at_runtime',
+        runtime_settings: { run_logic: { iterations: 0, max_transactions: 25 } },
+      }],
+    } as never)
+
+    expect(mapped.groups[0].iterations).toBeUndefined()
+    expect(mapped.groups[0].iterationPayloadSource).toBe('runtime')
+    const edited = scenarioDraftReducer(mapped, {
+      type: 'updateGroup', index: 0, patch: { iterations: 4 },
+    })
+    const payloadGroup = buildScenarioGroupPayloads(edited.groups)[0]
+    expect(payloadGroup).not.toHaveProperty('iterations')
+    expect(payloadGroup.runtime_settings?.run_logic).toEqual({ iterations: 4, max_transactions: 25 })
   })
 
   it('builds a scenario upsert payload with groups, goal config, runtime settings, and data pools', () => {
@@ -204,8 +330,6 @@ describe('scenarioPayloadUtils', () => {
         runtimeSettings: {
           log_level: '',
           auto_transactions: '',
-          continue_on_error: false,
-          snapshot_on_error: false,
           http: { version: '2' },
           env: { REGION: 'east' },
         },
@@ -215,8 +339,6 @@ describe('scenarioPayloadUtils', () => {
       runtimeSettings: {
         log_level: '',
         auto_transactions: '',
-        continue_on_error: false,
-        snapshot_on_error: false,
       },
     })
 
@@ -258,8 +380,6 @@ describe('scenarioPayloadUtils', () => {
             think_time: undefined,
             log_level: 'debug',
             auto_transactions: '',
-            continue_on_error: false,
-            snapshot_on_error: false,
           },
         },
         {
@@ -278,8 +398,6 @@ describe('scenarioPayloadUtils', () => {
         think_time: undefined,
         log_level: '',
         auto_transactions: '',
-        continue_on_error: false,
-        snapshot_on_error: false,
       },
 		})
 
@@ -300,8 +418,6 @@ describe('scenarioPayloadUtils', () => {
 			runtimeSettings: {
 				log_level: '',
 				auto_transactions: '',
-				continue_on_error: false,
-				snapshot_on_error: false,
 			},
 		}
 		const placementCases = [
@@ -374,8 +490,6 @@ describe('scenarioPayloadUtils', () => {
         think_time: undefined,
         log_level: '',
         auto_transactions: '',
-        continue_on_error: false,
-        snapshot_on_error: false,
       },
     })
 
@@ -414,8 +528,6 @@ describe('scenarioPayloadUtils', () => {
         think_time: undefined,
         log_level: '',
         auto_transactions: '',
-        continue_on_error: false,
-        snapshot_on_error: false,
       },
     })
 
@@ -447,8 +559,6 @@ describe('scenarioPayloadUtils', () => {
         think_time: undefined,
         log_level: '',
         auto_transactions: '',
-        continue_on_error: false,
-        snapshot_on_error: false,
       },
     })
 
@@ -491,8 +601,6 @@ describe('scenarioPayloadUtils', () => {
         think_time: undefined,
         log_level: '',
         auto_transactions: '',
-        continue_on_error: false,
-        snapshot_on_error: false,
       },
     })
 
@@ -533,8 +641,6 @@ describe('scenarioPayloadUtils', () => {
         think_time: undefined,
         log_level: '',
         auto_transactions: '',
-        continue_on_error: false,
-        snapshot_on_error: false,
       },
     })
 
@@ -572,8 +678,6 @@ describe('scenarioPayloadUtils', () => {
         think_time: undefined,
         log_level: '',
         auto_transactions: '',
-        continue_on_error: false,
-        snapshot_on_error: false,
       },
     })
 
@@ -679,6 +783,366 @@ describe('scenarioPayloadUtils', () => {
     })
   })
 
+  it('round-trips the full queued-run hierarchy and data-pool snapshot into a revision payload', () => {
+    const sourceBinding = {
+      id: 'binding-1',
+      scenario_id: 'scenario-1',
+      pool_id: 'pool-1',
+      pool_name: 'Orders',
+      alias: 'orders',
+      access_mode: 'read_only',
+      selection_strategy: 'unique',
+    } as const
+    const draft = buildInitialScenarioDraft(buildScenarioDraftFromTest({
+      id: 'test-context',
+      name: 'Context Run',
+      status: 'QUEUED',
+      application_id: 'application-1',
+      release_id: 'release-1',
+      scenario_id: 'scenario-1',
+      project_id: 'project-1',
+      folder_id: null,
+      data_pools: [sourceBinding],
+      total_vusers: 1,
+      duration: '1m',
+      created_at: '2026-07-19T12:00:00Z',
+      groups: [{ name: '', script_id: 'script-1', protocol: 'http', vusers: 1, initialization: 'at_runtime' }],
+    } as never), [])
+    const context = draft.revisionContext!
+
+    const payload = buildCreateTestPayload({
+      name: draft.name,
+      duration: draft.duration,
+      startDelay: draft.startDelay,
+      scenarioMode: draft.scenarioMode,
+      scriptShakeout: draft.scriptShakeout,
+      resourceBaseline: draft.resourceBaseline,
+      assignment: draft.assignment,
+      groups: draft.groups,
+      goalConfig: draft.goalConfig,
+      runtimeSettings: draft.runtimeSettings,
+      applicationId: context.applicationId,
+      releaseId: context.releaseId,
+      scenarioId: context.scenarioId,
+      revisionSourceTestId: context.sourceTestId,
+      projectId: context.projectId,
+      folderId: context.folderId,
+      dataPools: context.dataPools,
+    })
+
+    expect(payload).toEqual(expect.objectContaining({
+      application_id: 'application-1',
+      release_id: 'release-1',
+      scenario_id: 'scenario-1',
+      revision_source_test_id: 'test-context',
+      project_id: 'project-1',
+      folder_id: null,
+      data_pools: [sourceBinding],
+    }))
+    expect(payload.data_pools).not.toBe(context.dataPools)
+
+    const emptySnapshot = buildCreateTestPayload({
+      duration: '1m',
+      startDelay: '',
+      scenarioMode: 'vuser_driven',
+      scriptShakeout: false,
+      resourceBaseline: false,
+      groups: draft.groups,
+      goalConfig: {},
+      runtimeSettings: { log_level: '', auto_transactions: '' },
+      dataPools: [],
+    })
+    expect(emptySnapshot.data_pools).toEqual([])
+  })
+
+  it('round-trips every supported scenario execution setting through revision and create serialization', () => {
+    const source = {
+      id: 'test-complete',
+      name: 'Complete Messaging Revision',
+      status: 'QUEUED',
+      total_vusers: 12,
+      duration: '12m',
+      start_delay: '15s',
+      created_at: '2026-07-19T12:00:00Z',
+      scenario_mode: 'goal_oriented',
+      script_shakeout: true,
+      resource_baseline: true,
+      assignment: {
+        mode: 'region_weighted',
+        region_weights: { east: 60, west: 40 },
+        required_labels: { protocol: 'messaging' },
+        tolerate_generator_loss: true,
+      },
+      goal_config: {
+        target_average_tps: 500,
+        p95_latency_ms: 800,
+        max_error_pct: 0,
+        max_avg_server_processing_ms: 400,
+        max_avg_transfer_ms: 100,
+        max_error_count: 10,
+        min_vusers: 2,
+        max_vusers: 50,
+        max_lcp_ms: 2500,
+        max_inp_ms: 200,
+        max_cls: 0.1,
+        max_throttled_requests: 0,
+        max_end_to_end_latency_ms: 500,
+        max_partition_skew_pct: 0,
+        max_redelivery_rate_pct: 0,
+        max_dead_letter_rate_pct: 0,
+        stop_on_sla_breach: true,
+        stop_on_max_errors: true,
+        sla_breach_window: '45s',
+      },
+      runtime_settings: {
+        iterations: 3,
+        pacing: { type: 'fixed_delay', delay_ms: 250 },
+        think_time: { type: 'fixed', mean_ms: 100, ignore: false },
+        browser: { headless: false, device_profile: 'pixel_8', touch_mode: false, orientation: 'landscape' },
+        log_level: 'extended',
+        auto_transactions: 'per_action',
+        error_handling: {
+          continue_on_error: false,
+          snapshot_on_error: false,
+          max_retries: 0,
+          retry_delay_ms: 0,
+          retry_backoff: 'fixed',
+        },
+        log: { level: 'extended', on_error_only: false, extended_options: ['request_headers'] },
+        run_logic: { iterations: 3, max_transactions: 100, auto_transactions: 'per_iteration' },
+        http: { version: '2', keep_alive: false, request_timeout_ms: 5000 },
+        web_runtime: { source_ips: ['10.0.0.1'], network_simulation: { mode: 'preset', preset: 'dsl' } },
+        browser_config: { engine: 'chromium', headless: false, viewport: { width: 1280, height: 720 } },
+        base_url: 'https://example.test',
+        env: { REGION: 'east', TENANT: 'alpha' },
+        redaction_rules: [{ name: 'token', pattern: 'token=[^&]+', replacement: 'token=[redacted]' }],
+      },
+      groups: [{
+        name: 'Messaging observer',
+        script_id: 'script-messaging',
+        script_name: 'Messaging Script',
+        protocol: 'kafka',
+        role: 'observer',
+        vusers: 12,
+        ramp_up: '30s',
+        ramp_down: '20s',
+        stages: [
+          { name: 'Ramp', type: 'ramp_up', duration: '2m', target_vusers: 12, target_tps: 200 },
+          { name: 'Hold', type: 'hold', duration: '9m', target_vusers: 12, target_tps: 500 },
+        ],
+        iterations: 4,
+        initialization: 'at_once',
+        runtime_settings: {
+          iterations: 4,
+          pacing: { type: 'tps', tps: 25 },
+          error_handling: { continue_on_error: true, snapshot_on_error: false },
+          base_url: 'https://group.example.test',
+          env: { TOPIC: 'orders' },
+          redaction_rules: [{ pattern: 'secret', replacement: '[redacted]' }],
+        },
+        assignment: { mode: 'auto', required_labels: { broker: 'kafka' }, tolerate_generator_loss: true },
+      }],
+    } as const
+
+    const mapped = buildScenarioDraftFromTest(source as never)
+    const reloaded = buildInitialScenarioDraft(mapped, [])
+    const payload = buildCreateTestPayload({
+      name: reloaded.name,
+      duration: reloaded.duration,
+      startDelay: reloaded.startDelay,
+      scenarioMode: reloaded.scenarioMode,
+      scriptShakeout: reloaded.scriptShakeout,
+      resourceBaseline: reloaded.resourceBaseline,
+      assignment: reloaded.assignment,
+      groups: reloaded.groups,
+      goalConfig: reloaded.goalConfig,
+      runtimeSettings: reloaded.runtimeSettings,
+    })
+
+    expect(payload.goal_config).toEqual(source.goal_config)
+    const expectedCanonicalRuntime: Record<string, unknown> = { ...source.runtime_settings }
+    delete expectedCanonicalRuntime.iterations
+    delete expectedCanonicalRuntime.browser
+    delete expectedCanonicalRuntime.log_level
+    delete expectedCanonicalRuntime.auto_transactions
+    expect(payload.runtime_settings).toEqual(expectedCanonicalRuntime)
+    expect(payload.groups).toEqual([{
+      name: 'Messaging observer',
+      script_id: 'script-messaging',
+      revision_source_group_index: 0,
+      role: 'observer',
+      vusers: 12,
+      ramp_up: '30s',
+      ramp_down: '20s',
+      stages: source.groups[0].stages,
+      initialization: 'at_once',
+      runtime_settings: source.groups[0].runtime_settings,
+      assignment: { mode: 'auto', required_labels: { broker: 'kafka' }, tolerate_generator_loss: true },
+    }])
+
+    expect(reloaded.runtimeSettings).not.toBe(mapped.runtimeSettings)
+    expect(reloaded.runtimeSettings.env).not.toBe(mapped.runtimeSettings.env)
+    expect(reloaded.groups[0].stages).not.toBe(mapped.groups[0].stages)
+    expect(reloaded.groups[0].runtimeSettings).not.toBe(mapped.groups[0].runtimeSettings)
+    reloaded.runtimeSettings.env!.REGION = 'mutated'
+    reloaded.groups[0].stages![0].duration = '99m'
+    expect(source.runtime_settings.env.REGION).toBe('east')
+    expect(source.groups[0].stages[0].duration).toBe('2m')
+  })
+
+  it('applies queued-revision compact edits to canonical runtime sections', () => {
+    const mapped = buildScenarioDraftFromTest({
+      id: 'canonical-revision',
+      name: 'Canonical Revision',
+      status: 'QUEUED',
+      total_vusers: 5,
+      duration: '5m',
+      created_at: '2026-07-19T12:00:00Z',
+      groups: [{
+        name: 'Canonical group',
+        script_id: 'script-1',
+        protocol: 'browser',
+        vusers: 5,
+        iterations: 88,
+        initialization: 'at_runtime',
+        runtime_settings: {
+          iterations: 77,
+          run_logic: { iterations: 2, max_transactions: 25, workload_model: 'closed' },
+        },
+      }],
+      script_id: 'script-1',
+      runtime_settings: {
+        iterations: 91,
+        auto_transactions: 'none',
+        log_level: 'disabled',
+        browser: { headless: true, device_profile: 'legacy-device', touch_mode: true, orientation: 'landscape' },
+        run_logic: {
+          iterations: 3,
+          auto_transactions: 'per_iteration',
+          max_transactions: 100,
+          workload_model: 'open',
+          action_sequence: ['login', 'browse'],
+        },
+        log: {
+          level: 'extended',
+          on_error_only: true,
+          extended_options: ['advanced_trace'],
+        },
+        browser_config: {
+          engine: 'firefox',
+          headless: false,
+          device_profile: 'pixel_8',
+          client_metrics: true,
+          viewport: { width: 1440, height: 900 },
+        },
+      },
+    } as never)
+
+    // Canonical sections win during modal hydration even when conflicting legacy
+    // aliases are present in the stored queued run.
+    expect(mapped.runtimeSettings.iterations).toBe(3)
+    expect(mapped.runtimeSettings.auto_transactions).toBe('per_iteration')
+    expect(mapped.runtimeSettings.log_level).toBe('extended')
+    expect(mapped.runtimeSettings.browser).toEqual({
+      headless: false,
+      device_profile: 'pixel_8',
+      touch_mode: undefined,
+      orientation: undefined,
+    })
+    expect(mapped.groups[0].iterations).toBe(2)
+
+    const edits = [
+      { type: 'setRuntimeSettingField' as const, field: 'iterations' as const, value: 7 },
+      { type: 'setRuntimeSettingField' as const, field: 'auto_transactions' as const, value: 'per_action' },
+      { type: 'setRuntimeSettingField' as const, field: 'log_level' as const, value: 'standard' },
+      {
+        type: 'setRuntimeSettingField' as const,
+        field: 'browser' as const,
+        value: { headless: true, device_profile: 'iphone_15_pro', touch_mode: false, orientation: 'portrait' },
+      },
+    ]
+    const rootRevised = edits.reduce(scenarioDraftReducer, mapped)
+    const revised = scenarioDraftReducer(rootRevised, {
+      type: 'updateGroup',
+      index: 0,
+      patch: { iterations: 8 },
+    })
+    const payload = buildCreateTestPayload({
+      name: revised.name,
+      duration: revised.duration,
+      startDelay: revised.startDelay,
+      scenarioMode: revised.scenarioMode,
+      scriptShakeout: revised.scriptShakeout,
+      resourceBaseline: revised.resourceBaseline,
+      assignment: revised.assignment,
+      groups: revised.groups,
+      goalConfig: revised.goalConfig,
+      runtimeSettings: revised.runtimeSettings,
+    })
+
+    expect(payload.runtime_settings?.run_logic).toEqual({
+      iterations: 7,
+      auto_transactions: 'per_action',
+      max_transactions: 100,
+      workload_model: 'open',
+      action_sequence: ['login', 'browse'],
+    })
+    expect(payload.runtime_settings?.log).toEqual({
+      level: 'standard',
+      on_error_only: true,
+      extended_options: ['advanced_trace'],
+    })
+    expect(payload.runtime_settings?.browser_config).toEqual({
+      engine: 'firefox',
+      headless: true,
+      device_profile: 'iphone_15_pro',
+      touch_mode: false,
+      orientation: 'portrait',
+      client_metrics: true,
+      viewport: { width: 1440, height: 900 },
+    })
+    expect(payload.runtime_settings).not.toHaveProperty('iterations')
+    expect(payload.runtime_settings).not.toHaveProperty('auto_transactions')
+    expect(payload.runtime_settings).not.toHaveProperty('log_level')
+    expect(payload.runtime_settings).not.toHaveProperty('browser')
+    expect(payload.groups?.[0]).not.toHaveProperty('iterations')
+    expect(payload.groups?.[0].runtime_settings?.run_logic).toEqual({
+      iterations: 8,
+      max_transactions: 25,
+      workload_model: 'closed',
+    })
+    expect(payload.groups?.[0].runtime_settings).not.toHaveProperty('iterations')
+  })
+
+  it('distinguishes inherited error handling from an explicit false override', () => {
+    const inherited = buildScenarioDraftFromTest({
+      id: 'inherit', name: 'Inherited', status: 'QUEUED', total_vusers: 1,
+      duration: '1m', created_at: '2026-07-19T12:00:00Z', groups: [], script_id: 'script-1',
+    } as never)
+    const explicitFalse = buildScenarioDraftFromTest({
+      id: 'false', name: 'Explicit false', status: 'QUEUED', total_vusers: 1,
+      duration: '1m', created_at: '2026-07-19T12:00:00Z', groups: [], script_id: 'script-1',
+      runtime_settings: { error_handling: { continue_on_error: false, snapshot_on_error: false } },
+    } as never)
+
+    const serialize = (draft: ReturnType<typeof buildScenarioDraftFromTest>) => buildCreateTestPayload({
+      duration: draft.duration,
+      startDelay: draft.startDelay,
+      scenarioMode: draft.scenarioMode,
+      scriptShakeout: draft.scriptShakeout,
+      resourceBaseline: draft.resourceBaseline,
+      assignment: draft.assignment,
+      groups: draft.groups,
+      goalConfig: draft.goalConfig,
+      runtimeSettings: draft.runtimeSettings,
+    })
+
+    expect(serialize(inherited).runtime_settings).toBeUndefined()
+    expect(serialize(explicitFalse).runtime_settings).toEqual({
+      error_handling: { continue_on_error: false, snapshot_on_error: false },
+    })
+  })
+
   it('serializes richer runtime override fields when provided', () => {
     const payload = buildCreateTestPayload({
       name: 'Runtime Override Test',
@@ -710,7 +1174,7 @@ describe('scenarioPayloadUtils', () => {
     expect(payload.runtime_settings).toEqual({
       pacing: { type: 'tps', tps: 25 },
       think_time: { type: 'fixed', mean_ms: 500, ignore: false },
-      error_handling: { continue_on_error: true },
+      error_handling: { continue_on_error: true, snapshot_on_error: false },
     })
   })
 })

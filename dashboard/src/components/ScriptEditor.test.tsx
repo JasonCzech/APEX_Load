@@ -5008,6 +5008,7 @@ describe('ScriptEditor', () => {
     const protocolSelect = configPanel?.querySelector('select[aria-label="Protocol"]') as HTMLSelectElement | null
     expect(protocolSelect).not.toBeNull()
     expect(protocolSelect?.value).toBe('http')
+    expect(Array.from(protocolSelect?.options || []).some(option => option.value === 'jms-servicebus')).toBe(true)
   })
 
   it('keeps the protocol selector aligned with newer blank script protocols', async () => {

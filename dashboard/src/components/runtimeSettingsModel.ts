@@ -158,8 +158,6 @@ export function isRuntimeFieldApplicable(field: RuntimeFieldKey, protocol?: stri
 export const EMPTY_RUNTIME_DRAFT: ScenarioRuntimeSettingsDraft = {
   log_level: '',
   auto_transactions: '',
-  continue_on_error: false,
-  snapshot_on_error: false,
 }
 
 /** isRuntimeDraftEmpty reports whether a draft carries no actual override. */
@@ -172,8 +170,8 @@ export function isRuntimeDraftEmpty(draft?: ScenarioRuntimeSettingsDraft): boole
     !draft.browser &&
     !draft.log_level &&
     !draft.auto_transactions &&
-    !draft.continue_on_error &&
-    !draft.snapshot_on_error &&
+    draft.continue_on_error === undefined &&
+    draft.snapshot_on_error === undefined &&
     draft.max_retries === undefined &&
     draft.retry_delay_ms === undefined &&
     !draft.retry_backoff &&
@@ -201,8 +199,8 @@ export function runtimeDraftFromOverride(override?: RuntimeSettingsOverride): Sc
     browser: override.browser,
     log_level: override.log_level || '',
     auto_transactions: override.auto_transactions || '',
-    continue_on_error: Boolean(override.error_handling?.continue_on_error),
-    snapshot_on_error: Boolean(override.error_handling?.snapshot_on_error),
+    continue_on_error: override.error_handling?.continue_on_error,
+    snapshot_on_error: override.error_handling?.snapshot_on_error,
     max_retries: override.error_handling?.max_retries,
     retry_delay_ms: override.error_handling?.retry_delay_ms,
     retry_backoff: override.error_handling?.retry_backoff,
@@ -225,18 +223,18 @@ export function runtimeDraftFromOverride(override?: RuntimeSettingsOverride): Sc
 export function overrideFromRuntimeDraft(draft?: ScenarioRuntimeSettingsDraft): RuntimeSettingsOverride | undefined {
   if (isRuntimeDraftEmpty(draft) || !draft) return undefined
   const hasErrorHandling =
-    draft.continue_on_error ||
-    draft.snapshot_on_error ||
+    draft.continue_on_error !== undefined ||
+    draft.snapshot_on_error !== undefined ||
     draft.max_retries !== undefined ||
     draft.retry_delay_ms !== undefined ||
     Boolean(draft.retry_backoff)
   const errorHandling = hasErrorHandling
     ? {
-        continue_on_error: draft.continue_on_error || undefined,
-        snapshot_on_error: draft.snapshot_on_error || undefined,
-        max_retries: draft.max_retries,
-        retry_delay_ms: draft.retry_delay_ms,
-        retry_backoff: draft.retry_backoff || undefined,
+        ...(draft.continue_on_error !== undefined ? { continue_on_error: draft.continue_on_error } : {}),
+        ...(draft.snapshot_on_error !== undefined ? { snapshot_on_error: draft.snapshot_on_error } : {}),
+        ...(draft.max_retries !== undefined ? { max_retries: draft.max_retries } : {}),
+        ...(draft.retry_delay_ms !== undefined ? { retry_delay_ms: draft.retry_delay_ms } : {}),
+        ...(draft.retry_backoff ? { retry_backoff: draft.retry_backoff } : {}),
       }
     : undefined
   return {
@@ -316,8 +314,8 @@ export function formatBrowserConfig(browser?: RuntimeSettingsOverride['browser_c
  * lowest resolution layer (below scenario default and group override). This is what
  * lets the Effective value column show the real script value (e.g. "Fixed delay ·
  * 250ms") instead of a generic "Script default" placeholder. Fields with no
- * script-config equivalent — web_runtime is a runtime-only concept — are left unset
- * and fall through to the script-default label.
+ * script-config equivalent are left unset and fall through to the engine-default
+ * label.
  */
 export function runtimeOverrideFromScriptConfig(config?: ScriptConfig): RuntimeSettingsOverride | undefined {
   if (!config) return undefined
@@ -340,7 +338,9 @@ export function runtimeOverrideFromScriptConfig(config?: ScriptConfig): RuntimeS
     log: config.log,
     run_logic: config.run_logic,
     http: config.http,
+    web_runtime: config.web_runtime,
     browser_config: config.browser,
+    base_url: config.base_url || undefined,
   }
 }
 

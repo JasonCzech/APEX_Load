@@ -519,6 +519,25 @@ func (b *distributedExecutionBackend) startDistributedStopFinalizer(tr *TestRunn
 	}()
 }
 
+// finalizeAcknowledgedForcedStop runs only after every target acknowledged a
+// graceful=false Stop RPC. At that point remote execution teardown is complete,
+// so retain the durable STOPPING fence while the normal archive/terminal path
+// finishes, then publish ABORTED. A concurrent graceful finalizer observes
+// remoteFinalizing and exits without issuing a later duplicate escalation.
+func (b *distributedExecutionBackend) finalizeAcknowledgedForcedStop(tr *TestRunner, test *ManagedTest) {
+	if b == nil || tr == nil || test == nil {
+		return
+	}
+	tr.mu.Lock()
+	if tr.tests[test.ID] != test || test.Status != "STOPPING" || test.remoteFinalizing {
+		tr.mu.Unlock()
+		return
+	}
+	test.remoteFinalizing = true
+	tr.mu.Unlock()
+	go b.completeDistributedTestRun(tr, test, "ABORTED", "")
+}
+
 func (b *distributedExecutionBackend) forceStopDistributedTargets(parent context.Context, testID string, executionGeneration uint64, clients map[string]generatorClient) error {
 	targets := orderedGeneratorTargets(clients, b.configuredTargets())
 	if len(targets) == 0 {

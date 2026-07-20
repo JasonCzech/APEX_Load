@@ -48,7 +48,8 @@ func (s *Server) validateExecutionPlan(plan *storage.ExecutionPlan) (int, string
 		return http.StatusBadRequest, "run_mode must be parallel or sequential"
 	}
 	planProject := normalizeProjectID(plan.ProjectID)
-	for _, entry := range plan.Entries {
+	for entryIndex := range plan.Entries {
+		entry := &plan.Entries[entryIndex]
 		if strings.TrimSpace(entry.ScenarioID) == "" {
 			return http.StatusBadRequest, "every execution plan entry requires a scenario_id"
 		}
@@ -67,14 +68,11 @@ func (s *Server) validateExecutionPlan(plan *storage.ExecutionPlan) (int, string
 		if len(entry.DataPools) > maxExecutionPlanDataPoolsPerEntry {
 			return http.StatusBadRequest, fmt.Sprintf("execution plan entry contains %d data pools; limit is %d", len(entry.DataPools), maxExecutionPlanDataPoolsPerEntry)
 		}
-		for _, binding := range entry.DataPools {
-			if strings.TrimSpace(binding.PoolID) == "" {
-				return http.StatusBadRequest, "every execution plan entry data pool requires a pool_id"
-			}
-			if strings.TrimSpace(binding.Alias) == "" {
-				return http.StatusBadRequest, "every execution plan entry data pool requires an alias"
-			}
+		normalizedDataPools, err := normalizeDataPoolBindingIntent(entry.DataPools)
+		if err != nil {
+			return http.StatusBadRequest, fmt.Sprintf("invalid execution plan entry data pools: %v", err)
 		}
+		entry.DataPools = normalizedDataPools
 		// Cross-tenant guards use durable ownership, not the controller's
 		// eventually-consistent HA cache. Unknown scenarios remain valid draft
 		// references and fail per-entry at materialization, but an existing

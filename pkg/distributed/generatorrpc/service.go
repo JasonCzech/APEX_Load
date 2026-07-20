@@ -26,6 +26,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
+	apptelemetry "github.com/jasonczech/apexload/pkg/telemetry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -1604,7 +1605,9 @@ func (s *Service) CommitWork(ctx context.Context, request *pb.WorkCommitRequest)
 			if exec.started.Load() {
 				continue
 			}
-			execCtx, cancel := context.WithCancel(context.Background())
+			// The run can outlive CommitWork by hours. Retain only the immutable
+			// server SpanContext, never RPC cancellation, auth metadata, or values.
+			execCtx, cancel := context.WithCancel(apptelemetry.Detach(ctx))
 			exec.cancel = cancel
 			exec.startAt = startAt
 			exec.started.Store(true)

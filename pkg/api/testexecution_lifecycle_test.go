@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -23,6 +24,55 @@ type statusFailingLifecycleStore struct {
 	*metricsStoreSpy
 	status string
 	err    error
+}
+
+func TestLocalStopIsGracefulAndAbortIsForceful(t *testing.T) {
+	t.Run("stop", func(t *testing.T) {
+		runner := NewTestRunner(1, NewHub(), nil)
+		executionCtx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		multi := &engine.MultiGroupEngine{}
+		test := &ManagedTest{
+			ID: "local-graceful-stop", Name: "local graceful stop", Status: "RUNNING",
+			executionCtx: executionCtx, cancel: cancel, multiEngine: multi,
+		}
+		runner.tests[test.ID] = test
+
+		if err := runner.StopTest(test.ID); err != nil {
+			t.Fatalf("StopTest: %v", err)
+		}
+		if test.Status != "STOPPING" || !multi.GracefulStopRequested() {
+			t.Fatalf("graceful stop state = status %q requested %v", test.Status, multi.GracefulStopRequested())
+		}
+		if executionCtx.Err() != nil {
+			t.Fatalf("graceful stop hard-canceled execution context: %v", executionCtx.Err())
+		}
+	})
+
+	t.Run("abort", func(t *testing.T) {
+		runner := NewTestRunner(1, NewHub(), nil)
+		executionCtx, cancel := context.WithCancel(context.Background())
+		multi := &engine.MultiGroupEngine{}
+		test := &ManagedTest{
+			ID: "local-force-abort", Name: "local force abort", Status: "RUNNING",
+			executionCtx: executionCtx, cancel: cancel, multiEngine: multi,
+		}
+		runner.tests[test.ID] = test
+		actor := testCreationActor{Subject: "user:aborter", DisplayName: "Abort Operator"}
+
+		if err := runner.AbortTestAsActor(test.ID, actor); err != nil {
+			t.Fatalf("AbortTestAsActor: %v", err)
+		}
+		if test.Status != "STOPPING" || multi.GracefulStopRequested() {
+			t.Fatalf("force abort state = status %q graceful requested %v", test.Status, multi.GracefulStopRequested())
+		}
+		if executionCtx.Err() == nil {
+			t.Fatal("force abort did not cancel execution context")
+		}
+		if test.StoppedBySubject != actor.Subject || test.StoppedByDisplayName != actor.DisplayName {
+			t.Fatalf("abort actor = %q/%q, want %q/%q", test.StoppedBySubject, test.StoppedByDisplayName, actor.Subject, actor.DisplayName)
+		}
+	})
 }
 
 func (s *statusFailingLifecycleStore) SaveTest(record *storage.TestRecord) error {

@@ -650,6 +650,7 @@ export function buildProtocolStarterTemplates(protocol: string, nextIndex: numbe
         },
       ]
     case 'jms-solace':
+    case 'jms-servicebus':
     case 'jms-ibmmq':
       return [
         {

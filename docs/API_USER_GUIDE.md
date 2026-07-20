@@ -476,6 +476,8 @@ Control endpoints:
 | `POST` | `/api/v1/tests/{id}/pause` | Soft-pause between actions. |
 | `POST` | `/api/v1/tests/{id}/resume` | Resume a paused run. |
 | `PATCH` | `/api/v1/tests/{id}/vusers` | Change VUser count for a group. Send `action: "run"` to apply `target_vusers`, or `action: "pause"` / `"stop"` to drive that group to zero. Include optional `ramp_duration`, such as `"2m"`, to add or remove VUsers gradually. |
+
+`stop` lets each VUser finish its currently executing action, skips remaining think time/actions, and then runs teardown. `abort` hard-cancels active local work and sends `graceful: false` to distributed generators. Active requests remain durably `STOPPING` until teardown/archive finalization publishes a terminal `ABORTED` state; the control response therefore reports the current durable status plus `stop_requested` or `abort_requested`. Queued and other pre-start runs transition directly to `ABORTED`.
 | `PATCH` | `/api/v1/tests/{id}/goal-targets` | Adjust per-group TPS targets for a `goal_oriented` run. Request: `{"group":"<name>","target_tps":<float>}`. Response includes updated `goal_targets` map and the new aggregate `target_average_tps`. Broadcasts `goal_target_changed` on the WebSocket. Returns `409` if the test is not `goal_oriented`. |
 | `PATCH` | `/api/v1/tests/{id}/duration` | Extend or shorten duration. |
 | `PATCH` | `/api/v1/tests/{id}/move` | Move a run into another folder. |
@@ -603,7 +605,7 @@ The assisted-authoring surface is policy-gated and defaults to the deterministic
 
 ### 11. Manage Data Pools And Project Secrets
 
-Data pools are project-scoped reusable row sets. They can be bound to scenarios and overridden per execution-plan entry. Project secrets back the `{{secret.name}}` template namespace and expose metadata/status without returning secret values.
+Data pools are project-scoped reusable row sets. They can be bound to scenarios and overridden per execution-plan entry. Test execution currently supports only `access_mode: read_only`: rows are snapshotted into the run and the durable pool is not mutated. `read_write` and `consume` requests are rejected until durable, HA-safe row coordination is available. Project secrets back the `{{secret.name}}` template namespace and expose metadata/status without returning secret values.
 
 | Method | Path | Purpose |
 | --- | --- | --- |

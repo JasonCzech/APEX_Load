@@ -104,7 +104,7 @@ describe('testExecutionLiveControlModel', () => {
     ])
   })
 
-  it('projects group pause and stop actions to zero VUsers', () => {
+  it('projects a resumable group pause to zero VUsers', () => {
     const preview = buildLiveControlPreview({
       test: buildRunningTest(),
       durationInput: '10m',

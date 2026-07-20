@@ -557,6 +557,26 @@ describe('CommandCenterPrototype', () => {
     expect(shelfButton('Abort')).toBeUndefined()
   })
 
+  it('keeps a live run STOPPING after an abort acknowledgement until durable finalization', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => jsonResponse({}))
+    await act(async () => {
+      root.render(<CommandCenterPrototype testId="live-vuser-1" initialTest={buildLiveVuserTest()} history={[]} />)
+    })
+
+    const runActions = container.querySelector('.command-run-actions') as HTMLElement
+    const abort = Array.from(runActions.querySelectorAll('button')).find(button => button.textContent?.trim() === 'Abort') as HTMLButtonElement
+    await click(abort)
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/v1/tests/live-vuser-1/abort'),
+      expect.objectContaining({ method: 'POST' }),
+    )
+    expect(container.textContent).toContain('STOPPING')
+    expect(container.textContent).toContain('Abort requested. Waiting for generator teardown and finalization.')
+    expect(container.textContent).not.toContain('ABORTED')
+    expect(Array.from(runActions.querySelectorAll('button')).some(button => button.textContent?.trim() === 'Abort')).toBe(true)
+  })
+
   it('stages slider targets and updates the current target indicator without calling the API', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch')
     await renderPrototype()

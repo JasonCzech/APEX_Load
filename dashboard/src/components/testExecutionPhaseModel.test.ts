@@ -9,6 +9,7 @@ describe('testExecutionPhaseModel', () => {
       isPaused: false,
       isStopping: false,
       showLiveControls: true,
+      showAbortControl: true,
       showArchiveSection: false,
       showArchiveDownload: false,
     })
@@ -18,6 +19,7 @@ describe('testExecutionPhaseModel', () => {
       isPaused: false,
       isStopping: false,
       showLiveControls: true,
+      showAbortControl: true,
       showArchiveSection: false,
       showArchiveDownload: false,
     })
@@ -29,17 +31,19 @@ describe('testExecutionPhaseModel', () => {
       isPaused: true,
       isStopping: false,
       showLiveControls: true,
+      showAbortControl: true,
       showArchiveSection: true,
       showArchiveDownload: true,
     })
   })
 
-  it('keeps stopping tests out of both live controls and archive views until the run resolves', () => {
+  it('keeps only abort escalation available while a stopping run resolves', () => {
     expect(buildExecutionPhaseModel({ status: 'STOPPING' } as never, true)).toEqual({
       isRunning: false,
       isPaused: false,
       isStopping: true,
       showLiveControls: false,
+      showAbortControl: true,
       showArchiveSection: false,
       showArchiveDownload: false,
     })
@@ -51,6 +55,7 @@ describe('testExecutionPhaseModel', () => {
       isPaused: false,
       isStopping: false,
       showLiveControls: false,
+      showAbortControl: false,
       showArchiveSection: true,
       showArchiveDownload: false,
     })

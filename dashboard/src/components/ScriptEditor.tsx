@@ -98,6 +98,8 @@ import {
 import {
   defaultAssertionForProtocol,
   defaultExtractorForProtocol,
+  jmsConfigForProtocol,
+  jmsProviderForProtocol,
   sanitizeDownloadName,
 } from './scriptEditorHelpers'
 import {
@@ -224,6 +226,7 @@ const SCRIPT_PROTOCOL_OPTIONS = [
   { value: 'network', label: 'Network' },
   { value: 'browser', label: 'Web/HTML Browser' },
   { value: 'jms-solace', label: 'JMS Solace' },
+  { value: 'jms-servicebus', label: 'JMS Azure Service Bus' },
   { value: 'jms-ibmmq', label: 'JMS IBM MQ' },
   { value: 'kafka', label: 'Kafka' },
 ] as const
@@ -2597,6 +2600,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const isBrowserScript = script.protocol === 'browser'
   const isHttpScript = script.protocol === 'http'
   const isJmsScript = script.protocol.startsWith('jms')
+  const jmsProvider = jmsProviderForProtocol(script.protocol)
   const isJavaHttpScript = script.protocol === 'java_http'
   const isSoapScript = script.protocol === 'soap'
   const isWebSocketScript = script.protocol === 'websocket'
@@ -3996,16 +4000,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
           shouldSelectFirstAction = true
         }
       }
-      if (protocol === 'jms-solace' || protocol === 'jms-ibmmq') {
-        next.config.jms = {
-          provider: protocol === 'jms-solace' ? 'solace' : 'ibmmq',
-          destination_type: 'queue',
-          acknowledgement: 'auto',
-          delivery_mode: 'persistent',
-          timeout_ms: 5000,
-                          mock: true,
-                          ...(next.config.jms || {}),
-        }
+      const selectedJmsProvider = jmsProviderForProtocol(protocol)
+      if (selectedJmsProvider) {
+        next.config.jms = jmsConfigForProtocol(protocol, next.config.jms || {}) || undefined
         if (next.actions.length === 0) {
           next.actions = [{ ...JSON.parse(JSON.stringify(EMPTY_JMS_ACTION)), name: 'Publish_Message' }]
           shouldSelectFirstAction = true
@@ -9099,7 +9096,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                   {isJmsScript && (
                     <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('jms') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('jms')}>
                       <RuntimeSectionIcon section="jms" />
-                      <span className="section-label">Solace JMS</span>
+                      <span className="section-label">{formatScriptProtocolLabel(script.protocol)}</span>
                       <span className="section-summary">{script.config.jms?.mock ? 'Mock broker' : script.config.jms?.broker_url ? 'Broker configured' : 'Not configured'}</span>
                     </button>
                   )}
@@ -9257,10 +9254,12 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                               <span>Broker URL</span>
                               <input value={script.config.jms?.broker_url || ''} onChange={e => updateField('config.jms.broker_url', e.target.value)} placeholder="tcps://broker.example.com:55443" />
                             </label>
-                            <label>
-                              <span>Message VPN</span>
-                              <input value={script.config.jms?.message_vpn || ''} onChange={e => updateField('config.jms.message_vpn', e.target.value)} placeholder="default" />
-                            </label>
+                            {jmsProvider === 'solace' && (
+                              <label>
+                                <span>Message VPN</span>
+                                <input value={script.config.jms?.message_vpn || ''} onChange={e => updateField('config.jms.message_vpn', e.target.value)} placeholder="default" />
+                              </label>
+                            )}
                             <label>
                               <span>Default Destination</span>
                               <input value={script.config.jms?.destination || ''} onChange={e => updateField('config.jms.destination', e.target.value)} placeholder="orders.in" />
@@ -9270,7 +9269,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                       </div>
                       {isJmsScript && (
                         <div className="parameter-empty-state" style={{ marginTop: 12 }}>
-                          JMS Solace scripts use publish, consume, and request/reply actions with message body, headers, properties, correlation IDs, and reply destinations in the action editor below.
+                          {formatScriptProtocolLabel(script.protocol)} scripts use publish, consume, and request/reply actions with message body, headers, properties, correlation IDs, and reply destinations in the action editor below.
                         </div>
                       )}
                       {isBrowserScript && (
@@ -9571,7 +9570,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                   <div className={`settings-section ${runtimeSectionIsActive('jms') ? 'open' : ''}`}>
                     <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('jms')}>
                       <RuntimeSectionIcon section="jms" />
-                      <span className="section-label">Solace JMS</span>
+                      <span className="section-label">{formatScriptProtocolLabel(script.protocol)}</span>
                       <span className="section-summary">
                         {script.config.jms?.mock ? 'Mock broker' : script.config.jms?.broker_url ? 'Broker configured' : 'Not configured'}
                       </span>
@@ -9584,22 +9583,24 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                           <div className="form-grid">
                             <label className="full-width"><span>Broker URL</span>
                               <input value={script.config.jms?.broker_url || ''} placeholder="tcps://broker.example.com:55443"
-                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', broker_url: e.target.value })} /></label>
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, broker_url: e.target.value })} /></label>
                             <label><span>Client ID</span>
                               <input value={script.config.jms?.client_id || ''} placeholder="apexload-{{fn.uuid()}}"
-                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', client_id: e.target.value })} /></label>
-                            <label><span>Message VPN</span>
-                              <input value={script.config.jms?.message_vpn || ''} placeholder="default"
-                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', message_vpn: e.target.value })} /></label>
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, client_id: e.target.value })} /></label>
+                            {jmsProvider === 'solace' && (
+                              <label><span>Message VPN</span>
+                                <input value={script.config.jms?.message_vpn || ''} placeholder="default"
+                                  onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider, message_vpn: e.target.value })} /></label>
+                            )}
                             <label><span>Username</span>
                               <input value={script.config.jms?.username || ''}
-                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', username: e.target.value })} /></label>
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, username: e.target.value })} /></label>
                             <label><span>Password</span>
                               <input type="password" value={script.config.jms?.password || ''}
-                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', password: e.target.value })} /></label>
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, password: e.target.value })} /></label>
                             <label className="checkbox-label">
                               <input type="checkbox" checked={script.config.jms?.mock ?? true}
-                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', mock: e.target.checked })} />
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, mock: e.target.checked })} />
                               <span>Use local mock broker for replay</span>
                             </label>
                           </div>
@@ -9609,36 +9610,44 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                           <div className="form-grid">
                             <label><span>Destination</span>
                               <input value={script.config.jms?.destination || ''} placeholder="orders.in"
-                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', destination: e.target.value })} /></label>
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, destination: e.target.value })} /></label>
                             <label><span>Destination Type</span>
                               <select value={script.config.jms?.destination_type || 'queue'}
-                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', destination_type: e.target.value })}>
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, destination_type: e.target.value })}>
                                 <option value="queue">Queue</option>
                                 <option value="topic">Topic</option>
                               </select></label>
                             <label><span>Reply To</span>
                               <input value={script.config.jms?.reply_to || ''} placeholder="orders.reply"
-                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', reply_to: e.target.value })} /></label>
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, reply_to: e.target.value })} /></label>
+                            {jmsProvider === 'servicebus' && (
+                              <label><span>Topic Subscription</span>
+                                <input value={script.config.jms?.subscription || ''} placeholder="orders-workers"
+                                  onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider, subscription: e.target.value })} /></label>
+                            )}
                             <label><span>Timeout (s)</span>
                               <SecondsFromMillisecondsInput valueMs={script.config.jms?.timeout_ms} fallbackMs={5000}
-                                onChangeMs={value => updateField('config.jms', { ...script.config.jms, provider: 'solace', timeout_ms: value ?? 0 })} /></label>
+                                onChangeMs={value => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, timeout_ms: value ?? 0 })} /></label>
                             <label><span>Acknowledgement</span>
                               <select value={script.config.jms?.acknowledgement || 'auto'}
-                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', acknowledgement: e.target.value })}>
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, acknowledgement: e.target.value })}>
                                 <option value="auto">Auto</option>
-                                <option value="client">Client</option>
-                                <option value="transacted">Transacted</option>
+                                <option value="dups_ok">Duplicates OK</option>
+                                <option value="client">Client (mock only)</option>
+                                <option value="transacted">Transacted (mock only)</option>
                               </select></label>
                             <label><span>Delivery Mode</span>
                               <select value={script.config.jms?.delivery_mode || 'persistent'}
-                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: 'solace', delivery_mode: e.target.value })}>
+                                onChange={e => updateField('config.jms', { ...script.config.jms, provider: jmsProvider || script.config.jms?.provider, delivery_mode: e.target.value })}>
                                 <option value="persistent">Persistent</option>
                                 <option value="non_persistent">Non-persistent</option>
                               </select></label>
                           </div>
                         </div>
                         <div className="parameter-empty-state" style={{ marginTop: 12 }}>
-                          IBM MQ remains review-only until a registered runtime adapter is present. This editor executes the JMS Solace adapter and keeps IBM MQ imports visible for manual conversion.
+                          {jmsProvider === 'ibmmq'
+                            ? 'IBM MQ supports mock replay only; real-mode validation fails closed until a governed MQI adapter is present.'
+                            : `${formatScriptProtocolLabel(script.protocol)} real execution requires a build that includes its provider adapter; use mock replay for local shakeout.`}
                         </div>
                       </div>
                     )}

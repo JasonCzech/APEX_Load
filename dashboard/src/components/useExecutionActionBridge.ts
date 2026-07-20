@@ -135,7 +135,17 @@ export function useExecutionActionBridge(
   const onAbort = useCallback(async () => {
     try {
       await api.abortTest(testId)
-      setTest((prev) => (prev ? { ...prev, status: 'ABORTED' } : null))
+      setTest((prev) => {
+        if (!prev) return null
+        // Abort forcefully cancels active generator work, but durable run state
+        // still passes through STOPPING while teardown/finalization completes.
+        // Polling/events publish ABORTED afterward; pre-start cancellation is
+        // synchronous and can be shown as ABORTED immediately.
+        const status = prev.status === 'RUNNING' || prev.status === 'PAUSED' || prev.status === 'STOPPING'
+          ? 'STOPPING'
+          : 'ABORTED'
+        return { ...prev, status }
+      })
     } catch (error: unknown) {
       showControlFeedback(`Error aborting: ${getErrorMessage(error, 'Unable to abort test')}`)
     }

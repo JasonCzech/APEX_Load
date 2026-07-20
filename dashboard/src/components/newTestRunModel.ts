@@ -44,7 +44,9 @@ export type RunDefaultEditDraft = {
   value: string
   pacingType: string
   pacingAmount: string
+  pacingConfig?: RuntimeSettingsOverride['pacing']
   thinkIgnore: boolean
+  thinkTimeConfig?: RuntimeSettingsOverride['think_time']
 }
 
 export type ScenarioScriptGroup = StoredScenario['scripts'][number]
@@ -68,17 +70,22 @@ export type GroupEditDraft = {
   auto_transactions: string
   pacingType: string
   pacingAmount: string
+  pacingConfig?: RuntimeSettingsOverride['pacing']
   thinkTimeMs: string
   thinkIgnore: boolean
+  thinkTimeConfig?: RuntimeSettingsOverride['think_time']
   continue_on_error: string
   snapshot_on_error: string
   browser_device_profile: string
   browser_headless: string
   browser_touch_mode: string
   browser_orientation: string
-  assignmentMode: 'auto' | 'specific_hosts' | 'required_labels'
+  assignmentMode: 'auto' | 'specific_hosts' | 'required_labels' | 'region_weighted' | 'load_zone_weighted'
   selectedTargets: string[]
   requiredLabels: Record<string, string>
+  regionWeights: Record<string, number>
+  loadZoneWeights: Record<string, number>
+  tolerateGeneratorLoss?: boolean
 }
 
 export type RunLoadProfilePreview = {
@@ -108,20 +115,15 @@ export function groupOverrideKey(group: ScenarioScriptGroup) {
 
 export function hasRuntimeSettingsValues(settings?: RuntimeSettingsOverride) {
   if (!settings) return false
-  return settings.iterations !== undefined
-    || Boolean(settings.pacing)
-    || Boolean(settings.think_time)
-    || Boolean(settings.log_level)
-    || Boolean(settings.auto_transactions)
-    || Boolean(settings.error_handling)
-    || Boolean(settings.browser)
+  return Object.values(settings).some(value => value !== undefined && value !== null && value !== '')
 }
 
 export function hasGroupAssignmentValues(assignment?: GeneratorAssignmentSettings) {
   if (!assignment) return false
   if (assignment.mode === 'specific_hosts') return Boolean(assignment.selected_targets?.length)
-  if (assignment.mode === 'auto') return true
-  return Boolean(normalizeRequiredLabels(assignment.required_labels))
+  if (assignment.mode === 'region_weighted') return Boolean(Object.keys(assignment.region_weights || {}).length)
+  if (assignment.mode === 'load_zone_weighted') return Boolean(Object.keys(assignment.load_zone_weights || {}).length)
+  return assignment.mode === 'auto' || Boolean(normalizeRequiredLabels(assignment.required_labels))
 }
 
 export function hasGroupOverrideValues(override?: GroupRunOverride) {
@@ -215,7 +217,101 @@ function formatRuntimeBrowserTableValue(browser?: RuntimeSettingsOverride['brows
 
 function hasActivePlacementAssignment(assignment?: GeneratorAssignmentSettings) {
   if (assignment?.mode === 'specific_hosts') return Boolean(assignment.selected_targets?.length)
+  if (assignment?.mode === 'region_weighted') return Boolean(Object.keys(assignment.region_weights || {}).length)
+  if (assignment?.mode === 'load_zone_weighted') return Boolean(Object.keys(assignment.load_zone_weights || {}).length)
   return Boolean(normalizeRequiredLabels(assignment?.required_labels))
+}
+
+/** Deep-clone the JSON runtime contract so run-only edits never alias scenario state. */
+export function cloneRuntimeSettingsForRun(settings?: RuntimeSettingsOverride): RuntimeSettingsOverride | undefined {
+  return settings ? JSON.parse(JSON.stringify(settings)) as RuntimeSettingsOverride : undefined
+}
+
+/** Overlay a run-only patch without discarding unedited advanced runtime sections. */
+export function mergeRuntimeSettingsForRun(base?: RuntimeSettingsOverride, overlay?: RuntimeSettingsOverride): RuntimeSettingsOverride | undefined {
+  if (!base && !overlay) return undefined
+  const merged = cloneRuntimeSettingsForRun(base) || {}
+  const patch = cloneRuntimeSettingsForRun(overlay)
+  if (patch) {
+    for (const [key, value] of Object.entries(patch)) {
+      if (value !== undefined) (merged as Record<string, unknown>)[key] = value
+    }
+  }
+  return hasRuntimeSettingsValues(merged) ? merged : undefined
+}
+
+function runtimeIterations(settings?: RuntimeSettingsOverride) {
+  return settings?.run_logic?.iterations ?? settings?.iterations
+}
+
+function runtimeLogLevel(settings?: RuntimeSettingsOverride) {
+  return settings?.log?.level ?? settings?.log_level
+}
+
+function runtimeAutoTransactions(settings?: RuntimeSettingsOverride) {
+  return settings?.run_logic?.auto_transactions ?? settings?.auto_transactions
+}
+
+function runtimeBrowser(settings?: RuntimeSettingsOverride): RuntimeSettingsOverride['browser'] | undefined {
+  if (settings?.browser_config) {
+    return {
+      headless: settings.browser_config.headless,
+      device_profile: settings.browser_config.device_profile,
+      touch_mode: settings.browser_config.touch_mode,
+      orientation: settings.browser_config.orientation,
+    }
+  }
+  return settings?.browser
+}
+
+export function setRuntimeIterations(settings: RuntimeSettingsOverride, value: number | undefined) {
+  if (settings.run_logic) {
+    settings.run_logic = { ...settings.run_logic, iterations: value }
+    delete settings.iterations
+  } else if (value === undefined) {
+    delete settings.iterations
+  } else {
+    settings.iterations = value
+  }
+}
+
+export function setRuntimeLogLevel(settings: RuntimeSettingsOverride, value: string | undefined) {
+  if (settings.log) {
+    settings.log = { ...settings.log, level: value }
+    delete settings.log_level
+  } else if (!value) {
+    delete settings.log_level
+  } else {
+    settings.log_level = value
+  }
+}
+
+export function setRuntimeAutoTransactions(settings: RuntimeSettingsOverride, value: string | undefined) {
+  if (settings.run_logic) {
+    settings.run_logic = { ...settings.run_logic, auto_transactions: value }
+    delete settings.auto_transactions
+  } else if (!value) {
+    delete settings.auto_transactions
+  } else {
+    settings.auto_transactions = value
+  }
+}
+
+export function setRuntimeBrowser(settings: RuntimeSettingsOverride, browser: RuntimeSettingsOverride['browser']) {
+  if (settings.browser_config) {
+    settings.browser_config = {
+      ...settings.browser_config,
+      headless: browser?.headless,
+      device_profile: browser?.device_profile,
+      touch_mode: browser?.touch_mode,
+      orientation: browser?.orientation,
+    }
+    delete settings.browser
+  } else if (browser && Object.values(browser).some(value => value !== undefined && value !== '')) {
+    settings.browser = { ...browser }
+  } else {
+    delete settings.browser
+  }
 }
 
 export function getEffectiveRunDuration(scenario?: StoredScenario | null, overrides?: RunDefaultOverrides) {
@@ -231,26 +327,37 @@ export function getEffectiveRuntimeDefaults(scenario: StoredScenario, overrides:
   const runtimeOverrides = overrides.runtime_settings
   const scenarioRuntime = scenario.runtime_settings
   return {
-    iterations: hasOwnKey(runtimeOverrides, 'iterations') ? runtimeOverrides.iterations ?? undefined : scenarioRuntime?.iterations,
+    iterations: hasOwnKey(runtimeOverrides, 'iterations') ? runtimeOverrides.iterations ?? undefined : runtimeIterations(scenarioRuntime),
     pacing: hasOwnKey(runtimeOverrides, 'pacing') ? runtimeOverrides.pacing ?? undefined : scenarioRuntime?.pacing,
     think_time: hasOwnKey(runtimeOverrides, 'think_time') ? runtimeOverrides.think_time ?? undefined : scenarioRuntime?.think_time,
-    browser: scenarioRuntime?.browser,
-    log_level: hasOwnKey(runtimeOverrides, 'log_level') ? runtimeOverrides.log_level || undefined : scenarioRuntime?.log_level,
-    auto_transactions: hasOwnKey(runtimeOverrides, 'auto_transactions') ? runtimeOverrides.auto_transactions || undefined : scenarioRuntime?.auto_transactions,
+    browser: runtimeBrowser(scenarioRuntime),
+    log_level: hasOwnKey(runtimeOverrides, 'log_level') ? runtimeOverrides.log_level || undefined : runtimeLogLevel(scenarioRuntime),
+    auto_transactions: hasOwnKey(runtimeOverrides, 'auto_transactions') ? runtimeOverrides.auto_transactions || undefined : runtimeAutoTransactions(scenarioRuntime),
     continue_on_error: hasOwnKey(runtimeOverrides, 'continue_on_error') ? runtimeOverrides.continue_on_error ?? undefined : scenarioRuntime?.error_handling?.continue_on_error,
     snapshot_on_error: hasOwnKey(runtimeOverrides, 'snapshot_on_error') ? runtimeOverrides.snapshot_on_error ?? undefined : scenarioRuntime?.error_handling?.snapshot_on_error,
   }
 }
 
+export function stagedGroupPeakVUsers(group: ScenarioScriptGroup): number | undefined {
+  if (!group.stages?.length) return undefined
+
+  const peakTarget = group.stages.reduce((peak, stage) => {
+    const target = Number(stage.target_vusers)
+    return Number.isFinite(target) ? Math.max(peak, target) : peak
+  }, 0)
+  return peakTarget > 0 ? peakTarget : group.vusers
+}
+
 export function applyGroupOverride(group: ScenarioScriptGroup, override?: GroupRunOverride): ScenarioScriptGroup {
-  if (!override) return group
+  const stagedPeak = stagedGroupPeakVUsers(group)
+  if (!override && stagedPeak === undefined) return group
   return {
     ...group,
-    vusers: hasOwnKey(override, 'vusers') ? Number(override.vusers) : group.vusers,
-    ramp_up: hasOwnKey(override, 'ramp_up') ? override.ramp_up : group.ramp_up,
-    ramp_down: hasOwnKey(override, 'ramp_down') ? override.ramp_down : group.ramp_down,
-    initialization: hasOwnKey(override, 'initialization') ? override.initialization : group.initialization,
-    assignment: override.assignment || group.assignment,
+    vusers: stagedPeak ?? (hasOwnKey(override || {}, 'vusers') ? Number(override?.vusers) : group.vusers),
+    ramp_up: hasOwnKey(override || {}, 'ramp_up') ? override?.ramp_up : group.ramp_up,
+    ramp_down: hasOwnKey(override || {}, 'ramp_down') ? override?.ramp_down : group.ramp_down,
+    initialization: hasOwnKey(override || {}, 'initialization') ? override?.initialization : group.initialization,
+    assignment: override?.assignment || group.assignment,
   }
 }
 
@@ -260,21 +367,22 @@ export function buildEffectiveScenarioGroups(scenario: StoredScenario | undefine
 
 export function effectiveGroupIterations(group: ScenarioScriptGroup, scenario: StoredScenario, runDefaultOverrides: RunDefaultOverrides, groupOverride?: GroupRunOverride) {
   const runDefaults = getEffectiveRuntimeDefaults(scenario, runDefaultOverrides)
-  return groupOverride?.runtime_settings?.iterations ?? runDefaults.iterations ?? group.iterations ?? group.runtime_settings?.iterations
+  return runtimeIterations(groupOverride?.runtime_settings) ?? runtimeIterations(group.runtime_settings) ?? group.iterations ?? runDefaults.iterations
 }
 
 export function effectiveGroupRuntimeSettings(group: ScenarioScriptGroup, scenario: StoredScenario, runDefaultOverrides: RunDefaultOverrides, groupOverride?: GroupRunOverride) {
   const runDefaults = getEffectiveRuntimeDefaults(scenario, runDefaultOverrides)
   const groupRuntime = group.runtime_settings
+  const overrideRuntime = groupOverride?.runtime_settings
   return {
     iterations: effectiveGroupIterations(group, scenario, runDefaultOverrides, groupOverride),
-    pacing: groupOverride?.runtime_settings?.pacing ?? runDefaults.pacing ?? groupRuntime?.pacing,
-    think_time: groupOverride?.runtime_settings?.think_time ?? runDefaults.think_time ?? groupRuntime?.think_time,
-    browser: groupOverride?.runtime_settings?.browser ?? runDefaults.browser ?? groupRuntime?.browser,
-    log_level: groupOverride?.runtime_settings?.log_level ?? runDefaults.log_level ?? groupRuntime?.log_level,
-    auto_transactions: groupOverride?.runtime_settings?.auto_transactions ?? runDefaults.auto_transactions ?? groupRuntime?.auto_transactions,
-    continue_on_error: groupOverride?.runtime_settings?.error_handling?.continue_on_error ?? runDefaults.continue_on_error ?? groupRuntime?.error_handling?.continue_on_error,
-    snapshot_on_error: groupOverride?.runtime_settings?.error_handling?.snapshot_on_error ?? runDefaults.snapshot_on_error ?? groupRuntime?.error_handling?.snapshot_on_error,
+    pacing: overrideRuntime?.pacing ?? groupRuntime?.pacing ?? runDefaults.pacing,
+    think_time: overrideRuntime?.think_time ?? groupRuntime?.think_time ?? runDefaults.think_time,
+    browser: runtimeBrowser(overrideRuntime) ?? runtimeBrowser(groupRuntime) ?? runDefaults.browser,
+    log_level: runtimeLogLevel(overrideRuntime) ?? runtimeLogLevel(groupRuntime) ?? runDefaults.log_level,
+    auto_transactions: runtimeAutoTransactions(overrideRuntime) ?? runtimeAutoTransactions(groupRuntime) ?? runDefaults.auto_transactions,
+    continue_on_error: overrideRuntime?.error_handling?.continue_on_error ?? groupRuntime?.error_handling?.continue_on_error ?? runDefaults.continue_on_error,
+    snapshot_on_error: overrideRuntime?.error_handling?.snapshot_on_error ?? groupRuntime?.error_handling?.snapshot_on_error ?? runDefaults.snapshot_on_error,
   }
 }
 
@@ -284,25 +392,38 @@ function hasRunRuntimeOverrides(overrides: RunDefaultOverrides) {
 
 export function buildRuntimeSettingsForRun(scenario: StoredScenario, overrides: RunDefaultOverrides): RuntimeSettingsOverride | undefined {
   if (!hasRunRuntimeOverrides(overrides)) return undefined
-  const effective = getEffectiveRuntimeDefaults(scenario, overrides)
   const runtimeOverrides = overrides.runtime_settings
-  const payload: RuntimeSettingsOverride = {}
+  const payload = cloneRuntimeSettingsForRun(scenario.runtime_settings) || {}
 
-  if (effective.iterations !== undefined) payload.iterations = Number(effective.iterations)
-  if (effective.pacing) payload.pacing = { ...effective.pacing }
-  if (effective.think_time) payload.think_time = { ...effective.think_time }
-  if (effective.browser) payload.browser = { ...effective.browser }
-  if (effective.log_level) payload.log_level = effective.log_level
-  if (effective.auto_transactions) payload.auto_transactions = effective.auto_transactions
-
-  const shouldSendErrorHandling = Boolean(scenario.runtime_settings?.error_handling)
-    || hasOwnKey(runtimeOverrides, 'continue_on_error')
-    || hasOwnKey(runtimeOverrides, 'snapshot_on_error')
-  if (shouldSendErrorHandling) {
-    payload.error_handling = {
-      continue_on_error: effective.continue_on_error ?? false,
-      snapshot_on_error: effective.snapshot_on_error ?? false,
+  if (hasOwnKey(runtimeOverrides, 'iterations')) {
+    setRuntimeIterations(payload, runtimeOverrides.iterations == null ? undefined : Number(runtimeOverrides.iterations))
+  }
+  if (hasOwnKey(runtimeOverrides, 'pacing')) {
+    if (runtimeOverrides.pacing) payload.pacing = { ...runtimeOverrides.pacing }
+    else delete payload.pacing
+  }
+  if (hasOwnKey(runtimeOverrides, 'think_time')) {
+    if (runtimeOverrides.think_time) payload.think_time = { ...runtimeOverrides.think_time }
+    else delete payload.think_time
+  }
+  if (hasOwnKey(runtimeOverrides, 'log_level')) {
+    setRuntimeLogLevel(payload, runtimeOverrides.log_level || undefined)
+  }
+  if (hasOwnKey(runtimeOverrides, 'auto_transactions')) {
+    setRuntimeAutoTransactions(payload, runtimeOverrides.auto_transactions || undefined)
+  }
+  if (hasOwnKey(runtimeOverrides, 'continue_on_error') || hasOwnKey(runtimeOverrides, 'snapshot_on_error')) {
+    const errorHandling = { ...(payload.error_handling || {}) }
+    if (hasOwnKey(runtimeOverrides, 'continue_on_error')) {
+      if (runtimeOverrides.continue_on_error == null) delete errorHandling.continue_on_error
+      else errorHandling.continue_on_error = runtimeOverrides.continue_on_error
     }
+    if (hasOwnKey(runtimeOverrides, 'snapshot_on_error')) {
+      if (runtimeOverrides.snapshot_on_error == null) delete errorHandling.snapshot_on_error
+      else errorHandling.snapshot_on_error = runtimeOverrides.snapshot_on_error
+    }
+    if (Object.values(errorHandling).some(value => value !== undefined && value !== '')) payload.error_handling = errorHandling
+    else delete payload.error_handling
   }
 
   return payload
@@ -398,7 +519,7 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
       key: 'iterations',
       label: 'Iterations',
       value: effectiveRuntime.iterations === undefined ? 'Script default' : String(effectiveRuntime.iterations),
-      scenarioValue: String(scenario.runtime_settings?.iterations ?? 'Script default'),
+      scenarioValue: String(runtimeIterations(scenario.runtime_settings) ?? 'Script default'),
       isDefault: effectiveRuntime.iterations === undefined,
       isOverridden: hasOwnKey(overrides.runtime_settings, 'iterations'),
     },
@@ -406,7 +527,7 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
       key: 'log_level',
       label: 'Log Level',
       value: effectiveRuntime.log_level || 'Script default',
-      scenarioValue: scenario.runtime_settings?.log_level || 'Script default',
+      scenarioValue: runtimeLogLevel(scenario.runtime_settings) || 'Script default',
       isDefault: !effectiveRuntime.log_level,
       isOverridden: hasOwnKey(overrides.runtime_settings, 'log_level'),
     },
@@ -414,7 +535,7 @@ export function buildRunDefaultCards(scenario: StoredScenario | undefined, overr
       key: 'auto_transactions',
       label: 'Auto Transactions',
       value: effectiveRuntime.auto_transactions || 'Script default',
-      scenarioValue: scenario.runtime_settings?.auto_transactions || 'Script default',
+      scenarioValue: runtimeAutoTransactions(scenario.runtime_settings) || 'Script default',
       isDefault: !effectiveRuntime.auto_transactions,
       isOverridden: hasOwnKey(overrides.runtime_settings, 'auto_transactions'),
     },
@@ -493,7 +614,12 @@ export function buildRunDefaultEditDraft(key: RunDefaultKey, scenario: StoredSce
         : pacing?.type === 'tps'
           ? pacing.tps
           : ''
-    return { ...base, pacingType: pacing?.type || '', pacingAmount: amount === undefined ? '' : String(amount) }
+    return {
+      ...base,
+      pacingType: pacing?.type || '',
+      pacingAmount: amount === undefined ? '' : String(amount),
+      pacingConfig: pacing ? { ...pacing } : undefined,
+    }
   }
   if (key === 'think_time') {
     const thinkTime = effectiveRuntime.think_time
@@ -501,6 +627,7 @@ export function buildRunDefaultEditDraft(key: RunDefaultKey, scenario: StoredSce
       ...base,
       value: thinkTime?.ignore ? '' : (thinkTime?.mean_ms === undefined ? '' : String(thinkTime.mean_ms)),
       thinkIgnore: Boolean(thinkTime?.ignore),
+      thinkTimeConfig: thinkTime ? { ...thinkTime } : undefined,
     }
   }
   if (key === 'continue_on_error') {
@@ -523,7 +650,7 @@ export function buildGroupsForRunPayload(scenario: StoredScenario | undefined, o
     const key = groupOverrideKey(group)
     const override = overrides[key]
     const effective = applyGroupOverride(group, override)
-    const runtimeSettings = override?.runtime_settings || group.runtime_settings
+    const runtimeSettings = mergeRuntimeSettingsForRun(group.runtime_settings, override?.runtime_settings)
     const assignment = override?.assignment || group.assignment
     return {
       name: effective.name || effective.script_name || `Group ${effective.order + 1}`,
@@ -550,6 +677,14 @@ export function formatGroupPlacement(override?: GroupRunOverride, group?: Scenar
   if (assignment?.mode === 'auto' && labelText) {
     return labelText
   }
+  if (assignment?.mode === 'region_weighted') {
+    const weights = Object.entries(assignment.region_weights || {}).map(([name, weight]) => `${name} ${weight}%`).join(', ')
+    return weights ? `Region weighted: ${weights}` : 'Region weighted'
+  }
+  if (assignment?.mode === 'load_zone_weighted') {
+    const weights = Object.entries(assignment.load_zone_weights || {}).map(([name, weight]) => `${name} ${weight}%`).join(', ')
+    return weights ? `Load-zone weighted: ${weights}` : 'Load-zone weighted'
+  }
   const targets = assignment?.selected_targets || []
   if (!targets.length) return 'Auto'
   const hostText = targets.length === 1 ? `Pinned: ${targets[0]}` : `Sharded: ${targets.length} hosts, capacity weighted`
@@ -569,10 +704,12 @@ export function groupPlacementSummary(overrides: Record<string, GroupRunOverride
   const pinned = placements.filter(assignment => (assignment?.selected_targets || []).length === 1).length
   const sharded = placements.filter(assignment => (assignment?.selected_targets || []).length > 1).length
   const capability = placements.filter(assignment => !(assignment?.selected_targets || []).length && normalizeRequiredLabels(assignment?.required_labels)).length
+  const weighted = placements.filter(assignment => assignment?.mode === 'region_weighted' || assignment?.mode === 'load_zone_weighted').length
   return [
     pinned > 0 ? formatCount(pinned, 'pinned group') : '',
     sharded > 0 ? formatCount(sharded, 'sharded group') : '',
     capability > 0 ? formatCount(capability, 'capability-constrained group') : '',
+    weighted > 0 ? formatCount(weighted, 'weighted group') : '',
   ].filter(Boolean).join(', ')
 }
 
@@ -635,6 +772,9 @@ export function emptyGroupEditDraft(): GroupEditDraft {
     assignmentMode: 'auto',
     selectedTargets: [],
     requiredLabels: {},
+    regionWeights: {},
+    loadZoneWeights: {},
+    tolerateGeneratorLoss: undefined,
   }
 }
 
@@ -651,8 +791,10 @@ function buildRuntimeGroupEditDraftValues(runtime: ReturnType<typeof effectiveGr
   | 'auto_transactions'
   | 'pacingType'
   | 'pacingAmount'
+  | 'pacingConfig'
   | 'thinkTimeMs'
   | 'thinkIgnore'
+  | 'thinkTimeConfig'
   | 'continue_on_error'
   | 'snapshot_on_error'
   | 'browser_device_profile'
@@ -667,8 +809,10 @@ function buildRuntimeGroupEditDraftValues(runtime: ReturnType<typeof effectiveGr
     auto_transactions: runtime.auto_transactions || 'none',
     pacingType: runtime.pacing?.type || '',
     pacingAmount: pacingAmount === undefined ? '' : String(pacingAmount),
+    pacingConfig: runtime.pacing ? { ...runtime.pacing } : undefined,
     thinkTimeMs: runtime.think_time?.mean_ms === undefined ? '' : String(runtime.think_time.mean_ms),
     thinkIgnore: Boolean(runtime.think_time?.ignore),
+    thinkTimeConfig: runtime.think_time ? { ...runtime.think_time } : undefined,
     continue_on_error: String(Boolean(runtime.continue_on_error)),
     snapshot_on_error: String(Boolean(runtime.snapshot_on_error)),
     browser_device_profile: runtime.browser?.device_profile || '',
@@ -685,9 +829,13 @@ export function buildGroupEditDraft(group: ScenarioScriptGroup, scenario: Stored
   const requiredLabels = normalizeRequiredLabels(assignment?.required_labels) || {}
   const assignmentMode = assignment?.mode === 'specific_hosts'
     ? 'specific_hosts'
-    : Object.keys(requiredLabels).length > 0
-      ? 'required_labels'
-      : 'auto'
+    : assignment?.mode === 'region_weighted'
+      ? 'region_weighted'
+      : assignment?.mode === 'load_zone_weighted'
+        ? 'load_zone_weighted'
+        : Object.keys(requiredLabels).length > 0
+          ? 'required_labels'
+          : 'auto'
   return {
     ...emptyGroupEditDraft(),
     vusers: String(effective.vusers || ''),
@@ -698,5 +846,8 @@ export function buildGroupEditDraft(group: ScenarioScriptGroup, scenario: Stored
     assignmentMode,
     selectedTargets: assignment?.selected_targets || [],
     requiredLabels,
+    regionWeights: { ...(assignment?.region_weights || {}) },
+    loadZoneWeights: { ...(assignment?.load_zone_weights || {}) },
+    tolerateGeneratorLoss: assignment?.tolerate_generator_loss,
   }
 }

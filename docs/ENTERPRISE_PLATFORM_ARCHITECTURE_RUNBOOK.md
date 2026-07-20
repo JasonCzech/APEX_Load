@@ -8,7 +8,7 @@ This runbook defines the production reference architecture for APEX Load as a sh
 | --- | --- | --- |
 | Controller API | REST API, WebSocket streams, Auth/RBAC, scheduling, orchestration, capacity advice, archive/report APIs | Metadata records, run state, settings, audit events |
 | Scenario scheduler | Materializes due scenario schedules into queued runs | Schedule records and materialized run records |
-| Load generators | Execute protocol load, stream metrics, produce per-run artifacts | No durable control-plane state |
+| Load generators | Execute protocol load, stream metrics, produce per-run artifacts | Durable execution-generation high-water and retained run artifacts; no metadata intent ownership |
 | Dashboard | Static React SPA served by the controller | No server-side state |
 | Metadata store | Projects, applications, releases, scripts, scenarios, schedules, settings, service accounts, tests, audit events | System of record |
 | Archive store | Immutable run bundles, manifests, JSONL/Parquet exports, reports, browser diagnostics | Evidence and reporting artifacts |
@@ -33,15 +33,29 @@ Generators are replaceable workers. The controller and metadata store own intent
 
 ## HA Controller Behavior
 
-APEX Load can run multiple controller API replicas for read-heavy and user-facing traffic only when all replicas share the same metadata and archive stores. Background loops must be single-active before multi-replica production:
+APEX Load can run multiple controller API replicas when they share PostgreSQL,
+Redis/Valkey, and the configured archive backend. Execution is intentionally
+single-owner even though read/API traffic is multi-replica. With
+`APEXLOAD_CONTROLLER_HA=true`, a durable lease records an acquisition-specific
+owner token, expiry, and monotonic generation. Execution-state writes verify the
+owner/generation in the same database transaction; a newly elected replica stays
+unadmitted until durable recovery finishes, and leadership loss synchronously
+closes admission and cancels process-local/generator work.
 
-- Scenario schedule materialization
-- Queued-run reconciliation
-- Generator inventory reconciliation
-- Archive retention or pruning
-- Notification retries
+The execution owner gates scenario and execution-plan materialization, queued-run
+promotion/reconciliation, provisioning recovery, usage-accounting cadence,
+archive finalization recovery, and retention mutations. Scenario occurrence and
+plan-run uniqueness/CAS fences remain in place as a second layer. Observational
+work such as read serving and generator inventory probes may run per replica.
+In Kubernetes, execution/CI mutations use the selectorless active Service; its
+EndpointSlice update is fenced by the same durable owner and generation.
 
-Until leader election or database advisory locks are implemented, run one active scheduler/controller worker and treat additional controller replicas as API-only. A production HA deployment should guard each singleton loop with a lease that records owner identity, lease expiry, and last heartbeat.
+This implementation does not by itself certify an AKS deployment. Keep one
+controller by default. Before enabling multiple production replicas, pass a real
+pod-termination/network-disruption exercise with PostgreSQL, Redis, the object
+archive backend, and generators. The deterministic repository soak is described
+in `AKS_INTEGRATION_READINESS.md` and is a process-loss simulation, not that
+production evidence.
 
 All reconciler loops must be idempotent:
 
@@ -55,8 +69,8 @@ All reconciler loops must be idempotent:
 | Condition | Expected behavior |
 | --- | --- |
 | Controller restarts with queued tests | Reload queued tests and continue capacity/start reconciliation |
-| Controller restarts during local run | Mark unresolved in-process run as interrupted or failed with an audit event unless the run can be safely reattached |
-| Controller restarts during distributed run | Re-probe generator RPC, reattach metrics/archive streams when possible, otherwise mark run as interrupted with generator reachability details |
+| Controller restarts during local run | The successor claims the new execution term and marks an unresolved in-process run failed; a committed terminal manifest can be recovered through the archive outbox |
+| Controller restarts during distributed run | Loss cleanup stops stale generator work; the successor marks the unresolved active row failed rather than replaying the start, and retained terminal artifacts remain eligible for archive recovery |
 | Scheduler restarts | Evaluate persisted `next_run_at` values and materialize due schedules once |
 | Archive writer restarts mid-run | Preserve partial files for diagnosis; final manifest is written only after successful finalize |
 | Dashboard static assets missing | API remains available; readiness reports dashboard/static asset state once that check is added |
@@ -112,14 +126,17 @@ Before promoting an environment:
 4. Confirm `/api/v1/system/readiness` is `ready` or only intentionally `degraded`.
 5. Confirm `/api/v1/system/inventory` reports expected generator regions and capacities.
 6. Run a smoke scenario and verify live metrics, archive manifest, and report download.
-7. Enable exactly one active scheduler loop until leader election is implemented.
+7. Keep one controller replica unless HA prerequisites are configured. For HA,
+   verify the shared PostgreSQL/Redis/archive backends, active EndpointSlice,
+   durable generator state, and failover evidence in
+   `AKS_INTEGRATION_READINESS.md`.
 
 ## Plan Mapping
 
 | Plan item | Status | Artifact |
 | --- | --- | --- |
 | P1.1 Control-plane boundaries | Complete | This runbook |
-| P1.2 HA controller behavior | Complete for architecture contract; implementation remains in P7.5 | HA behavior and restart contract sections |
+| P1.2 HA controller behavior | Opt-in implementation complete; production AKS disruption evidence remains an operational gate | HA behavior and restart contract sections; `AKS_INTEGRATION_READINESS.md` |
 | P1.3 Production readiness checks | Complete for initial API surface and dashboard operator visibility; extend as new dependencies land | `/api/v1/system/readiness`, Settings > General, Monitoring |
 | P1.4 Upgrade and migration policy | Complete | Upgrade and migration policy section |
 | P1.5 Operator architecture runbook | Complete | This runbook |

@@ -13,6 +13,10 @@ import { buildDefaultScenarioGroup, buildInitialScenarioDraft, scenarioDraftRedu
 import { buildCreateTestPayload } from './scenarioPayloadUtils'
 import DurationField from './DurationField'
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
+import { hasGoalModeConfiguration, validateGoalConfig } from './goalConfigValidation'
+import GroupPlacementEditor from './GroupPlacementEditor'
+import { effectiveGroupVUsers, validateAggregateVUserDemand, validateGroupExecutionEnvelope } from './observerGroupModel'
+import { validateGeneratorAssignment } from './generatorAssignmentValidation'
 
 interface Props {
   scripts: StoredScript[]
@@ -28,57 +32,6 @@ type LoadProfilePoint = {
   time: number
   total: number
 } & Record<`group${number}`, number>
-
-function isValidDurationInput(value?: string): boolean {
-  return !value || parseDurationToSeconds(value) > 0
-}
-
-function validateGoalConfig(goalConfig: ScenarioDraftState['goalConfig']): string | null {
-  if (goalConfig.p95_latency_ms !== undefined && goalConfig.p95_latency_ms <= 0) {
-    return 'Goal-oriented scenarios require P95 latency ceiling to be greater than 0 ms'
-  }
-  if (goalConfig.max_error_pct !== undefined && (goalConfig.max_error_pct < 0 || goalConfig.max_error_pct > 100)) {
-    return 'Goal-oriented scenarios require max error % to be between 0 and 100'
-  }
-  if (goalConfig.max_avg_server_processing_ms !== undefined && goalConfig.max_avg_server_processing_ms <= 0) {
-    return 'Goal-oriented scenarios require max average server processing to be greater than 0 ms'
-  }
-  if (goalConfig.max_avg_transfer_ms !== undefined && goalConfig.max_avg_transfer_ms <= 0) {
-    return 'Goal-oriented scenarios require max average transfer time to be greater than 0 ms'
-  }
-  if (goalConfig.min_vusers !== undefined && goalConfig.min_vusers < 1) {
-    return 'Goal-oriented scenarios require min VUsers to be greater than 0'
-  }
-  if (goalConfig.max_vusers !== undefined && goalConfig.max_vusers < 1) {
-    return 'Goal-oriented scenarios require max VUsers to be greater than 0'
-  }
-  if (
-    goalConfig.min_vusers !== undefined &&
-    goalConfig.max_vusers !== undefined &&
-    goalConfig.min_vusers > goalConfig.max_vusers
-  ) {
-    return 'Goal-oriented scenarios require min VUsers to be less than or equal to max VUsers'
-  }
-  if (goalConfig.max_error_count !== undefined && goalConfig.max_error_count < 1) {
-    return 'Goal-oriented scenarios require max error count to be greater than 0'
-  }
-  if (goalConfig.sla_breach_window && !isValidDurationInput(goalConfig.sla_breach_window)) {
-    return 'Goal-oriented scenarios require a valid SLA breach window duration'
-  }
-  if (
-    goalConfig.stop_on_sla_breach &&
-    goalConfig.p95_latency_ms === undefined &&
-    goalConfig.max_error_pct === undefined &&
-    goalConfig.max_avg_server_processing_ms === undefined &&
-    goalConfig.max_avg_transfer_ms === undefined
-  ) {
-    return 'Goal-oriented scenarios require a latency, error, server processing, or transfer threshold when stop on sustained SLA breach is enabled'
-  }
-  if (goalConfig.stop_on_max_errors && goalConfig.max_error_count === undefined) {
-    return 'Goal-oriented scenarios require max error count when stop on max errors is enabled'
-  }
-  return null
-}
 
 export default function CreateTestModal({ scripts, projectId, folderId, onClose, onCreated, initialScenario, mode = 'create-queued-run' }: Props) {
   const api = useApi()
@@ -101,7 +54,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
   const scenarioNameRef = useRef<HTMLInputElement | null>(null)
   const titleId = useId()
 
-  const { name, duration, startDelay, scenarioMode, scriptShakeout, resourceBaseline, assignment, groups, goalConfig, runtimeSettings } = scenarioDraft
+  const { name, duration, startDelay, scenarioMode, scriptShakeout, resourceBaseline, assignment, groups, goalConfig, runtimeSettings, revisionContext } = scenarioDraft
   const isReviseMode = mode === 'revise-queued-run'
   const modalTitle = isReviseMode ? 'Create Revised Queued Run' : 'Create Queued Run'
   const submitLabel = isReviseMode ? 'Create Revised Copy' : 'Create Queued Run'
@@ -138,45 +91,17 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     dispatchScenarioDraft({ type: 'setRuntimeSettingField', field, value })
   }
 
-  const setAssignmentMode = (mode: 'auto' | 'specific_hosts') => {
-    updateScenarioField('assignment', {
-      mode,
-      selected_targets: mode === 'specific_hosts' ? (assignment.selected_targets || []) : [],
-    })
-  }
-
-  const toggleAssignmentTarget = (target: string, checked: boolean) => {
-    const current = new Set(assignment.selected_targets || [])
-    if (checked) current.add(target)
-    else current.delete(target)
-    updateScenarioField('assignment', {
-      mode: 'specific_hosts',
-      selected_targets: Array.from(current),
-    })
-  }
-
   const removeGroup = (idx: number) => {
     dispatchScenarioDraft({ type: 'removeGroup', index: idx })
   }
 
-  const totalVUsers = groups.reduce((sum, g) => sum + g.vusers, 0)
+  const totalVUsers = groups.reduce((sum, group) => sum + effectiveGroupVUsers(group), 0)
   const assignmentRecommendation = draftEstimate?.assignment_recommendation
   const availableTargets = assignmentRecommendation?.available_targets || []
   const recommendedTargets = assignmentRecommendation?.recommended_targets || []
   const availableLabels = assignmentRecommendation?.available_labels || {}
   const footprint = draftEstimate?.footprint
-  const hasGoalModeConfig = Boolean(
-    goalConfig.target_average_tps ||
-    goalConfig.p95_latency_ms ||
-    goalConfig.max_error_pct ||
-    goalConfig.max_avg_server_processing_ms ||
-    goalConfig.max_avg_transfer_ms ||
-    goalConfig.max_error_count ||
-    goalConfig.min_vusers ||
-    goalConfig.max_vusers ||
-    goalConfig.stop_on_sla_breach ||
-    goalConfig.stop_on_max_errors,
-  )
+  const hasGoalModeConfig = hasGoalModeConfiguration(goalConfig)
 
   // Calculate chart data
   const chartData = (() => {
@@ -242,8 +167,13 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     goalConfig,
     runtimeSettings,
     assignment,
-    projectId,
-    folderId,
+    applicationId: revisionContext?.applicationId,
+    releaseId: revisionContext?.releaseId,
+    scenarioId: revisionContext?.scenarioId,
+    revisionSourceTestId: revisionContext?.sourceTestId,
+    projectId: revisionContext?.projectId ?? projectId,
+    folderId: revisionContext ? revisionContext.folderId : folderId,
+    dataPools: revisionContext?.dataPools,
   })
 
   const buildEstimatePayload = useCallback(() => buildCreateTestPayload({
@@ -259,9 +189,14 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     assignment: assignment.mode === 'specific_hosts' && (assignment.selected_targets || []).length === 0
       ? { mode: 'auto', selected_targets: [] }
       : assignment,
-    projectId,
-    folderId,
-  }), [assignment, duration, folderId, goalConfig, groups, name, projectId, resourceBaseline, runtimeSettings, scenarioMode, scriptShakeout, startDelay])
+    applicationId: revisionContext?.applicationId,
+    releaseId: revisionContext?.releaseId,
+    scenarioId: revisionContext?.scenarioId,
+    revisionSourceTestId: revisionContext?.sourceTestId,
+    projectId: revisionContext?.projectId ?? projectId,
+    folderId: revisionContext ? revisionContext.folderId : folderId,
+    dataPools: revisionContext?.dataPools,
+  }), [assignment, duration, folderId, goalConfig, groups, name, projectId, resourceBaseline, revisionContext, runtimeSettings, scenarioMode, scriptShakeout, startDelay])
 
   useEffect(() => {
     const canEstimate = Boolean(duration.trim()) && groups.every((group) => group.scriptId)
@@ -317,6 +252,23 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
     setError('')
     setLoading(true)
     try {
+      const rootAssignmentError = validateGeneratorAssignment(assignment, 'scenario', 'Scenario assignment')
+      if (rootAssignmentError) throw new Error(rootAssignmentError)
+      for (let index = 0; index < groups.length; index += 1) {
+        const group = groups[index]
+        const script = scripts.find(item => item.id === group.scriptId)
+        const groupError = validateGroupExecutionEnvelope({
+          role: group.role,
+          protocol: script?.protocol,
+          vusers: effectiveGroupVUsers(group),
+          label: group.name || `Group ${index + 1}`,
+        })
+        if (groupError) throw new Error(groupError)
+        const assignmentError = validateGeneratorAssignment(group.assignment, 'group', group.name || `Group ${index + 1}`)
+        if (assignmentError) throw new Error(assignmentError)
+      }
+      const aggregateError = validateAggregateVUserDemand(groups)
+      if (aggregateError) throw new Error(aggregateError)
       const payload = buildPayload()
 
       if (scenarioMode === 'goal_oriented') {
@@ -456,23 +408,6 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
                 </div>
               </div>
 
-              <div className="scenario-mode-switcher assignment-mode-switcher">
-                <button
-                  type="button"
-                  className={`mode-chip ${assignment.mode !== 'specific_hosts' ? 'active' : ''}`}
-                  onClick={() => setAssignmentMode('auto')}
-                >
-                  Auto Assignment
-                </button>
-                <button
-                  type="button"
-                  className={`mode-chip ${assignment.mode === 'specific_hosts' ? 'active' : ''}`}
-                  onClick={() => setAssignmentMode('specific_hosts')}
-                >
-                  Specific Hostnames
-                </button>
-              </div>
-
               {footprint && (
                 <div className="assignment-footprint-grid">
                   <div className="assignment-footprint-card">
@@ -497,44 +432,24 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
                 <p className="assignment-copy">{assignmentRecommendation.summary}</p>
               )}
 
-              {assignment.mode === 'specific_hosts' ? (
-                availableTargets.length > 0 ? (
-                  <>
-                    {(assignment.selected_targets || []).length === 0 && (
-                      <p className="assignment-copy secondary">Select at least one hostname to lock this run to explicit generator targets.</p>
-                    )}
-                    <div className="assignment-target-list">
-                      {availableTargets.map((target) => {
-                        const checked = (assignment.selected_targets || []).includes(target)
-                        const recommended = recommendedTargets.includes(target)
-                        return (
-                          <label key={target} className={`assignment-target ${checked ? 'selected' : ''}`}>
-                            <input
-                              type="checkbox"
-                              checked={checked}
-                              onChange={(event) => toggleAssignmentTarget(target, event.target.checked)}
-                            />
-                            <div>
-                              <strong>{target}</strong>
-                              <span>{recommended ? 'Recommended for current footprint' : 'Available configured host'}</span>
-                            </div>
-                          </label>
-                        )
-                      })}
-                    </div>
-                  </>
-                ) : (
-                  <p className="assignment-copy secondary">No distributed generator hostnames are currently configured on this controller.</p>
-                )
-              ) : recommendedTargets.length > 0 ? (
+              <GroupPlacementEditor
+                assignment={assignment}
+                onChange={next => updateScenarioField('assignment', next || { mode: 'auto' })}
+                availableTargets={availableTargets}
+                recommendedTargets={recommendedTargets}
+                generatorInventory={generatorInventory}
+                availableLabels={availableLabels}
+                allowInherit={false}
+                scope="scenario"
+              />
+
+              {(!assignment.mode || assignment.mode === 'auto') && recommendedTargets.length > 0 ? (
                 <div className="assignment-chip-row">
                   {recommendedTargets.map((target) => (
                     <span key={target} className="assignment-chip">{target}</span>
                   ))}
                 </div>
-              ) : (
-                <p className="assignment-copy secondary">Auto-assignment will use the controller&apos;s configured generator inventory when distributed execution is enabled.</p>
-              )}
+              ) : null}
 
               {assignmentRecommendation?.warnings && assignmentRecommendation.warnings.length > 0 && (
                 <div className="assignment-warnings">

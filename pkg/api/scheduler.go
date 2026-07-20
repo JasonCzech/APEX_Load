@@ -40,6 +40,10 @@ type latestScenarioScheduleOccurrenceStore interface {
 	LatestScenarioScheduleOccurrence(scheduleID string) (*storage.ScenarioScheduleOccurrence, error)
 }
 
+type scenarioScheduleOccurrenceByTestStore interface {
+	GetScenarioScheduleOccurrenceByTestID(testID string) (*storage.ScenarioScheduleOccurrence, error)
+}
+
 type atomicScenarioScheduleApprovalStore interface {
 	ResolveScenarioScheduleApproval(approval *storage.ScenarioScheduleApproval, schedule *storage.ScenarioSchedule, expectedScheduleRevision int) (bool, error)
 }
@@ -1647,10 +1651,15 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		}
 		return nil, err
 	}
-	occurrence.Status = "materialized"
-	occurrence.ReasonCode = "started"
-	occurrence.TestID = test.ID
-	occurrence.MaterializedAt = &now
+	if prepared == nil {
+		markScenarioScheduleOccurrenceQueued(occurrence, test)
+	} else {
+		occurrence.Status = "materialized"
+		occurrence.ReasonCode = "started"
+		occurrence.TestID = test.ID
+		occurrence.ConflictSummary = ""
+		occurrence.MaterializedAt = &now
+	}
 	occurrence.UpdatedAt = now
 	if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(occurrence, leaseTerm); err != nil {
 		if failErr := tr.failScheduledTestBeforeLaunchLocked(test, now, "save materialized schedule occurrence: "+err.Error()); failErr != nil {
@@ -1659,7 +1668,10 @@ func (tr *TestRunner) runScenarioScheduleLocked(schedule *storage.ScenarioSchedu
 		return nil, err
 	}
 	schedule.LastRunTestID = test.ID
-	schedule.LastRunAt = &now
+	if occurrence.MaterializedAt != nil {
+		materializedAt := occurrence.MaterializedAt.UTC()
+		schedule.LastRunAt = &materializedAt
+	}
 	schedule.LastOccurrence = cloneScenarioScheduleOccurrence(occurrence)
 	schedule.NextRequiredAction = ""
 	schedule.LastError = ""
@@ -1846,6 +1858,15 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 		// test as a successful materialization.
 		if recovered := tr.tests[existing.TestID]; recovered != nil {
 			switch recovered.Status {
+			case "PENDING":
+				// Repair rows written by older controllers that labeled a quota-
+				// queued run as started.
+				markScenarioScheduleOccurrenceQueued(existing, recovered)
+				existing.UpdatedAt = now
+				if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(existing, leaseTerm); err != nil {
+					return true, nil, nil, err
+				}
+				status = "queued"
 			case "INITIALIZING":
 				cause := fmt.Errorf("correlated scheduled test %s was left initializing after occurrence materialization", recovered.ID)
 				return true, nil, nil, tr.failRecoveredScenarioSchedulePreparationLocked(schedule, existing, recovered, now, "recovery_interrupted", cause.Error(), cause, leaseTerm)
@@ -1897,6 +1918,23 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 				return true, nil, nil, errors.Join(fmt.Errorf("resume correlated scheduled test %s: %w", recovered.ID, err), saveErr, failErr)
 			}
 			recoveredPrepared = prepared
+			if prepared == nil && recovered.Status == "PENDING" {
+				markScenarioScheduleOccurrenceQueued(existing, recovered)
+				existing.UpdatedAt = now
+				if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(existing, leaseTerm); err != nil {
+					return true, nil, nil, err
+				}
+				status = "queued"
+			}
+		} else if recovered.Status == "PENDING" {
+			// The quota transition committed before the prior controller could
+			// update its materializing occurrence. Converge without re-preparing.
+			markScenarioScheduleOccurrenceQueued(existing, recovered)
+			existing.UpdatedAt = now
+			if err := tr.saveScenarioScheduleOccurrenceForSweepLocked(existing, leaseTerm); err != nil {
+				return true, nil, nil, err
+			}
+			status = "queued"
 		} else if recovered.Status == "INITIALIZING" {
 			// There is no safe commit point from which an INITIALIZING test can be
 			// resumed: after restart its execution context is gone, while in this
@@ -1917,7 +1955,7 @@ func (tr *TestRunner) reconcileScenarioScheduleOccurrenceLocked(schedule *storag
 			}
 			status = "failed"
 		}
-		if status != "failed" {
+		if status != "failed" && status != "queued" {
 			existing.Status = "materialized"
 			existing.ReasonCode = "recovered"
 			if existing.MaterializedAt == nil {
@@ -2211,6 +2249,24 @@ func (tr *TestRunner) buildScenarioScheduleOccurrence(schedule *storage.Scenario
 	}
 }
 
+// markScenarioScheduleOccurrenceQueued records that a due occurrence produced
+// a durable run but did not cross the execution boundary. In particular,
+// quota admission transitions the run to PENDING; the calendar must not claim
+// it started or assign a materialization timestamp while it waits.
+func markScenarioScheduleOccurrenceQueued(occurrence *storage.ScenarioScheduleOccurrence, test *ManagedTest) {
+	if occurrence == nil {
+		return
+	}
+	occurrence.Status = "queued"
+	occurrence.ReasonCode = "quota_pending"
+	occurrence.MaterializedAt = nil
+	if test == nil {
+		return
+	}
+	occurrence.TestID = test.ID
+	occurrence.ConflictSummary = strings.TrimSpace(test.PendingReason)
+}
+
 func cloneScenarioSchedule(schedule *storage.ScenarioSchedule) *storage.ScenarioSchedule {
 	if schedule == nil {
 		return nil
@@ -2266,6 +2322,108 @@ func cloneScenarioScheduleOccurrence(occurrence *storage.ScenarioScheduleOccurre
 		cloned.MaterializedAt = &materializedAt
 	}
 	return &cloned
+}
+
+type scenarioScheduleLifecycleSnapshot struct {
+	schedule   *storage.ScenarioSchedule
+	occurrence *storage.ScenarioScheduleOccurrence
+}
+
+// loadScenarioScheduleLifecycleForTest reads the already-atomic durable
+// test/occurrence/schedule transition without holding the runner mutex. The
+// calendar projection is latest-by-planned-at: the test-correlated occurrence
+// identifies the parent, but an older run finishing later must not replace a
+// newer planned occurrence in the schedule cache.
+func (tr *TestRunner) loadScenarioScheduleLifecycleForTest(testID string) (*scenarioScheduleLifecycleSnapshot, error) {
+	if tr == nil || tr.scenarioStore == nil || strings.TrimSpace(testID) == "" {
+		return nil, nil
+	}
+	store, ok := tr.scenarioStore.(scenarioScheduleOccurrenceByTestStore)
+	if !ok {
+		return nil, nil
+	}
+	occurrence, err := store.GetScenarioScheduleOccurrenceByTestID(testID)
+	if err != nil {
+		return nil, err
+	}
+	if occurrence == nil {
+		return nil, nil
+	}
+	schedule, err := tr.scenarioStore.GetScenarioSchedule(occurrence.ScheduleID)
+	if err != nil {
+		return nil, err
+	}
+	if schedule == nil {
+		return nil, nil
+	}
+	latest := occurrence
+	if latestStore, ok := tr.scenarioStore.(latestScenarioScheduleOccurrenceStore); ok {
+		latest, err = latestStore.LatestScenarioScheduleOccurrence(schedule.ID)
+		if err != nil {
+			return nil, err
+		}
+		if latest == nil {
+			latest = occurrence
+		}
+	}
+	return &scenarioScheduleLifecycleSnapshot{
+		schedule:   cloneScenarioSchedule(schedule),
+		occurrence: cloneScenarioScheduleOccurrence(latest),
+	}, nil
+}
+
+// syncScenarioScheduleLifecycleForTest mirrors a durable lifecycle snapshot
+// into this controller's authoring cache. Storage I/O happens before taking
+// tr.mu so a slow or unavailable database cannot stall all runner operations.
+// Durable state remains authoritative if the read fails; HA readers and the
+// next leadership refresh will converge independently.
+func (tr *TestRunner) syncScenarioScheduleLifecycleForTest(testID string) error {
+	snapshot, err := tr.loadScenarioScheduleLifecycleForTest(testID)
+	if err != nil || snapshot == nil || snapshot.schedule == nil {
+		return err
+	}
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	schedule := snapshot.schedule
+	scenario := tr.scenarios[schedule.ScenarioID]
+	if scenario == nil {
+		return nil
+	}
+	for index, current := range scenario.Schedules {
+		if current == nil || current.ID != schedule.ID {
+			continue
+		}
+		if schedule.Revision < current.Revision {
+			return nil
+		}
+		schedule.LastOccurrence = cloneScenarioScheduleOccurrence(snapshot.occurrence)
+		scenario.Schedules[index] = cloneScenarioSchedule(schedule)
+		tr.contentRevision++
+		return nil
+	}
+	return nil
+}
+
+// scenarioScheduleIDForTest resolves the durable parent identity outside the
+// runner mutex. Lookup failures are admission failures, not "no schedule": the
+// latter would revalidate an occurrence against its own recurring projection
+// and could terminalize an otherwise valid queued run.
+func (tr *TestRunner) scenarioScheduleIDForTest(testID string) (string, error) {
+	if tr == nil || tr.scenarioStore == nil || strings.TrimSpace(testID) == "" {
+		return "", nil
+	}
+	store, ok := tr.scenarioStore.(scenarioScheduleOccurrenceByTestStore)
+	if !ok {
+		return "", nil
+	}
+	occurrence, err := store.GetScenarioScheduleOccurrenceByTestID(testID)
+	if err != nil {
+		return "", err
+	}
+	if occurrence == nil {
+		return "", nil
+	}
+	return strings.TrimSpace(occurrence.ScheduleID), nil
 }
 
 func (tr *TestRunner) CreateScenarioSchedule(scenarioID string, req CreateScenarioScheduleRequest) (*storage.ScenarioSchedule, error) {

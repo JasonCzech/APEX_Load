@@ -247,6 +247,15 @@ func TestResolveGoalConfig_UsesScriptDefaultsAndCLIOverrides(t *testing.T) {
 	}
 }
 
+func TestResolveGoalConfig_RejectsWindowOnlyConfiguration(t *testing.T) {
+	goalConfig := resolveGoalConfig(&dsl.Script{
+		GoalConfig: &dsl.GoalConfig{SLABreachWindow: "30s"},
+	}, runArgs{})
+	if goalConfig != nil {
+		t.Fatalf("goalConfig = %#v, want nil for an SLA window without a goal or guardrail", goalConfig)
+	}
+}
+
 func TestApplyRuntimeOverrides_ReplacesEnvPlaceholdersAndBaseURL(t *testing.T) {
 	script := &dsl.Script{
 		Name:     "preview",

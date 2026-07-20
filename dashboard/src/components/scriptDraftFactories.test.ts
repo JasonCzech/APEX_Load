@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { type AuthoringComponent } from '../types'
-import { composeComponentDraft, createApiDraft, createDatabaseDraft, createGrpcDraft, createIbmMqDraft, createJavaHttpDraft, createJmsDraft, createNetworkDraft, createSoapDraft, createWebDraft, createWebSocketDraft } from './scriptDraftFactories'
+import { composeComponentDraft, createApiDraft, createDatabaseDraft, createGrpcDraft, createIbmMqDraft, createJavaHttpDraft, createJmsDraft, createNetworkDraft, createServiceBusJmsDraft, createSoapDraft, createWebDraft, createWebSocketDraft } from './scriptDraftFactories'
 
 describe('scriptDraftFactories', () => {
   it('creates the default API script draft', () => {
@@ -55,6 +55,17 @@ describe('scriptDraftFactories', () => {
     expect(draft.protocol).toBe('jms-ibmmq')
     expect(draft.config?.jms?.provider).toBe('ibmmq')
     expect(draft.actions.length).toBe(0)
+  })
+
+  it('creates the Azure Service Bus JMS script draft', () => {
+    const draft = createServiceBusJmsDraft()
+    expect(draft.protocol).toBe('jms-servicebus')
+    expect(draft.config?.jms).toEqual(expect.objectContaining({
+      provider: 'servicebus',
+      destination_type: 'queue',
+      subscription: '',
+      mock: true,
+    }))
   })
 
   it('creates first-class native protocol drafts', () => {

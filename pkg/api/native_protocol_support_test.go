@@ -6,6 +6,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func TestNativeProtocolSupportMatrixEndpointCoversRemainingExecutableProtocols(t *testing.T) {
@@ -25,7 +27,7 @@ func TestNativeProtocolSupportMatrixEndpointCoversRemainingExecutableProtocols(t
 	if payload.SchemaVersion != nativeProtocolSupportSchemaVersion {
 		t.Fatalf("schema version = %q", payload.SchemaVersion)
 	}
-	for _, protocol := range []string{"websocket", "grpc", "database", "network", "jms-solace", "jms-servicebus", "kafka"} {
+	for _, protocol := range []string{"websocket", "grpc", "database", "network"} {
 		entry := nativeProtocolMatrixEntry(payload.SupportMatrix, protocol)
 		if entry == nil {
 			t.Fatalf("support matrix missing %s", protocol)
@@ -36,6 +38,30 @@ func TestNativeProtocolSupportMatrixEndpointCoversRemainingExecutableProtocols(t
 		if len(entry.ActionEditor) == 0 || len(entry.ReplayEvidence) == 0 || len(entry.ReportExport) == 0 {
 			t.Fatalf("%s entry missing parity surfaces: %#v", protocol, entry)
 		}
+	}
+	for protocol, available := range map[string]bool{
+		"jms-solace":     dsl.SolaceJMSRealAdapterAvailable(),
+		"jms-servicebus": dsl.ServiceBusJMSRealAdapterAvailable(),
+		"kafka":          dsl.KafkaRealAdapterAvailable(),
+	} {
+		entry := nativeProtocolMatrixEntry(payload.SupportMatrix, protocol)
+		if entry == nil {
+			t.Fatalf("support matrix missing %s", protocol)
+		}
+		wantStatus, wantPosture := realAdapterSupport(available)
+		if entry.Status != wantStatus || entry.ExecutionPosture != wantPosture {
+			t.Fatalf("%s status/posture = %s/%s, want %s/%s", protocol, entry.Status, entry.ExecutionPosture, wantStatus, wantPosture)
+		}
+		if len(entry.ActionEditor) == 0 || len(entry.ReplayEvidence) == 0 || len(entry.ReportExport) == 0 {
+			t.Fatalf("%s entry missing parity surfaces: %#v", protocol, entry)
+		}
+	}
+	ibmMQEntry := nativeProtocolMatrixEntry(payload.SupportMatrix, "jms-ibmmq")
+	if ibmMQEntry == nil {
+		t.Fatal("support matrix missing jms-ibmmq")
+	}
+	if ibmMQEntry.Status != "review_only" || ibmMQEntry.ExecutionPosture != "mock_only" {
+		t.Fatalf("jms-ibmmq status/posture = %s/%s", ibmMQEntry.Status, ibmMQEntry.ExecutionPosture)
 	}
 	kafkaEntry := nativeProtocolMatrixEntry(payload.SupportMatrix, "kafka")
 	if kafkaEntry == nil {
@@ -48,8 +74,8 @@ func TestNativeProtocolSupportMatrixEndpointCoversRemainingExecutableProtocols(t
 			t.Fatalf("Kafka native support matrix has stale Avro review-only wording: %q", gap)
 		}
 	}
-	if payload.StatusCounts["supported"] < 5 {
-		t.Fatalf("status counts = %#v, want at least five supported protocols", payload.StatusCounts)
+	if payload.StatusCounts["supported"] < 4 || payload.StatusCounts["review_only"] != 1 {
+		t.Fatalf("status counts = %#v, want four baseline supported protocols and one review-only protocol", payload.StatusCounts)
 	}
 }
 

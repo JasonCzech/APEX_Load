@@ -197,7 +197,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
     durationInput,
     onDurationInputChange,
     onScaleVUsers,
-    onStopAllVUsers,
+    onPauseAllVUsers,
     onAdjustDuration,
     liveControlPreview,
   } = useExecutionLiveControls(testId, test, showControlFeedback)
@@ -257,7 +257,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
     onResume,
     onStart,
     onStop,
-    onStopAllVUsers,
+    onPauseAllVUsers,
   })
   topbarActionHandlers.current = {
     onAbort,
@@ -267,7 +267,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
     onResume,
     onStart,
     onStop,
-    onStopAllVUsers,
+    onPauseAllVUsers,
   }
 
   const executionPhase = test ? buildExecutionPhaseModel(test, hasArchive) : null
@@ -276,6 +276,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
   const isPaused = executionPhase?.isPaused ?? false
   const isStopping = executionPhase?.isStopping ?? false
   const showLiveControls = executionPhase?.showLiveControls ?? false
+  const showAbortControl = executionPhase?.showAbortControl ?? false
   const showArchiveSection = executionPhase?.showArchiveSection ?? false
   const showArchiveDownload = executionPhase?.showArchiveDownload ?? false
   const isMultiGroup = executionStatus?.isMultiGroup ?? false
@@ -341,13 +342,13 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
         onClick: () => setShowScenarioEditor(true),
       },
       {
-        id: 'stop-vusers',
-        label: 'Stop VUsers',
-        compactLabel: 'Stop VU',
+        id: 'pause-vusers',
+        label: 'Pause VUsers',
+        compactLabel: 'Pause VU',
         tone: 'secondary',
         hidden: !showLiveControls,
         disabled: !hasActiveVUsers || rampInputMissing || isStopping,
-        onClick: () => { void topbarActionHandlers.current.onStopAllVUsers() },
+        onClick: () => { void topbarActionHandlers.current.onPauseAllVUsers() },
       },
       {
         id: 'test-notes',
@@ -417,7 +418,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
         label: 'Abort',
         compactLabel: 'Abort',
         tone: 'danger',
-        hidden: !showLiveControls,
+        hidden: !showAbortControl,
         // Abort stays enabled during STOPPING so a wedged graceful stop can be escalated.
         disabled: false,
         onClick: () => { void topbarActionHandlers.current.onAbort() },
@@ -435,6 +436,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
     rampInputMissing,
     remainingSeconds,
     showArchiveDownload,
+    showAbortControl,
     showLiveControls,
     targetVUsers,
     test,
@@ -584,7 +586,7 @@ export default function TestExecution({ testId, history, initialWorkspaceTabId, 
       vuserRampDuration={vuserRampDuration}
       onVuserRampDurationChange={onVuserRampDurationChange}
       onScaleVUsers={onScaleVUsers}
-      onStopAllVUsers={onStopAllVUsers}
+      onPauseAllVUsers={onPauseAllVUsers}
       durationInput={durationInput}
       onDurationInputChange={onDurationInputChange}
       onAdjustDuration={onAdjustDuration}

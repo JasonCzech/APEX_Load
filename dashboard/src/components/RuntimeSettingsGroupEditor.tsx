@@ -9,10 +9,12 @@ import {
   isRuntimeDraftEmpty,
   isRuntimeFieldApplicable,
   overrideFromRuntimeDraft,
+  runtimeDraftFromOverride,
   runtimeOverrideFromScriptConfig,
   RUNTIME_FIELD_SOURCE_LABEL,
   type RuntimeFieldKey,
 } from './runtimeSettingsModel'
+import { materializeRuntimeSettingsForApply } from './runtimeSettingsApply'
 import WebHttpTab from './runtimeTabs/WebHttpTab'
 
 export interface RuntimeEditorGroup {
@@ -86,6 +88,40 @@ type RuntimeTabId =
 /** Nested sub-tabs within the HTTP Transport tab (mirrors the Script Editor). */
 type HttpSubTabId = 'timeouts' | 'connection' | 'tls' | 'proxy' | 'authentication' | 'browser_emulation'
 
+type HTTPSettings = NonNullable<ScenarioRuntimeSettingsDraft['http']>
+type BrowserSettings = NonNullable<ScenarioRuntimeSettingsDraft['browser_config']>
+type ErrorHandlingSettings = NonNullable<RuntimeSettingsOverride['error_handling']>
+type LogSettings = NonNullable<RuntimeSettingsOverride['log']>
+type RunLogicSettings = NonNullable<RuntimeSettingsOverride['run_logic']>
+type ThinkTimeSettings = NonNullable<RuntimeSettingsOverride['think_time']>
+type PacingSettings = NonNullable<RuntimeSettingsOverride['pacing']>
+
+/**
+ * Apply one UI edit to a replacement section. The first edit materializes the
+ * inherited section; later edits preserve only the already-authoritative group
+ * section. Clearing one control copies that control's inherited value because a
+ * partial replacement section cannot otherwise inherit an individual field.
+ */
+function editReplacementSection<T extends object>(
+  current: Partial<T> | undefined,
+  next: Partial<T> | undefined,
+  inherited: Partial<T> | undefined,
+): Partial<T> {
+  const edited: Partial<T> = structuredClone(current ?? inherited ?? {})
+  if (!next) return edited
+  for (const key of Object.keys(next) as Array<keyof T>) {
+    const value = next[key]
+    if (value === undefined) {
+      const inheritedValue = inherited?.[key]
+      if (inheritedValue === undefined) delete edited[key]
+      else Object.assign(edited, { [key]: structuredClone(inheritedValue) })
+    } else {
+      Object.assign(edited, { [key]: structuredClone(value) })
+    }
+  }
+  return edited
+}
+
 function groupLabel(group: RuntimeEditorGroup, index: number): string {
   return group.name || `Group ${index + 1}`
 }
@@ -125,26 +161,74 @@ export default function RuntimeSettingsGroupEditor({
   const scriptDefault = runtimeOverrideFromScriptConfig(focusGroup.scriptConfig)
   const engineDefault = runtimeOverrideFromScriptConfig(engineDefaults)
 
-  // The value each field INHERITS when not overridden at the group level: scenario
-  // default over script config over engine default (engine lowest). Used to fill the
-  // input placeholders (via `inh`) so the user sees the actual inherited value,
-  // never a bare "Inherit".
-  const inheritedHttp = {
-    ...engineDefault?.http, ...scriptDefault?.http, ...scenarioDefault?.http,
-    tls: { ...engineDefault?.http?.tls, ...scriptDefault?.http?.tls, ...scenarioDefault?.http?.tls },
-    proxy: { ...engineDefault?.http?.proxy, ...scriptDefault?.http?.proxy, ...scenarioDefault?.http?.proxy },
-    auth: { ...engineDefault?.http?.auth, ...scriptDefault?.http?.auth, ...scenarioDefault?.http?.auth },
+  // Resolve the inherited profile through the same precedence rules as the Go
+  // controller. Most runtime sections replace as a whole; web_runtime is the sole
+  // section whose populated top-level units overlay the lower layer.
+  const inheritedDraft = materializeRuntimeSettingsForApply(
+    engineDefaults,
+    focusGroup.scriptConfig,
+    runtimeDraftFromOverride(scenarioDefault),
+  )
+  const inheritedOverride = overrideFromRuntimeDraft(inheritedDraft)
+  const inheritedHttp: HTTPSettings = structuredClone(inheritedOverride?.http ?? {})
+  const inheritedBrowser: BrowserSettings = structuredClone(
+    inheritedOverride?.browser_config ?? inheritedOverride?.browser ?? {},
+  )
+  const inheritedThink: Partial<ThinkTimeSettings> = structuredClone(inheritedOverride?.think_time ?? {})
+  const inheritedPacing: Partial<PacingSettings> = structuredClone(inheritedOverride?.pacing ?? {})
+  const inheritedError: ErrorHandlingSettings = structuredClone(inheritedOverride?.error_handling ?? {})
+  const inheritedLog: LogSettings = structuredClone(
+    inheritedOverride?.log ?? (inheritedOverride?.log_level ? { level: inheritedOverride.log_level } : {}),
+  )
+  const inheritedRunLogic: RunLogicSettings = structuredClone(
+    inheritedOverride?.run_logic ?? {
+      iterations: inheritedOverride?.iterations,
+      auto_transactions: inheritedOverride?.auto_transactions,
+    },
+  )
+  const inheritedWeb = structuredClone(inheritedOverride?.web_runtime ?? {})
+  const inheritedIterations = inheritedRunLogic.iterations ?? inheritedOverride?.iterations
+
+  const flatCurrentError: ErrorHandlingSettings = {
+    continue_on_error: draft.continue_on_error,
+    snapshot_on_error: draft.snapshot_on_error,
+    max_retries: draft.max_retries,
+    retry_delay_ms: draft.retry_delay_ms,
+    retry_backoff: draft.retry_backoff || undefined,
   }
-  const inheritedBrowser = {
-    ...engineDefault?.browser_config, ...scriptDefault?.browser_config, ...scenarioDefault?.browser_config,
-    viewport: { ...engineDefault?.browser_config?.viewport, ...scriptDefault?.browser_config?.viewport, ...scenarioDefault?.browser_config?.viewport },
-  }
-  const inheritedThink = { ...engineDefault?.think_time, ...scriptDefault?.think_time, ...scenarioDefault?.think_time }
-  const inheritedPacing = { ...engineDefault?.pacing, ...scriptDefault?.pacing, ...scenarioDefault?.pacing }
-  const inheritedError = { ...engineDefault?.error_handling, ...scriptDefault?.error_handling, ...scenarioDefault?.error_handling }
-  const inheritedRunLogic = { ...engineDefault?.run_logic, ...scriptDefault?.run_logic, ...scenarioDefault?.run_logic }
-  const inheritedWeb = { ...engineDefault?.web_runtime, ...scriptDefault?.web_runtime, ...scenarioDefault?.web_runtime }
-  const inheritedIterations = scenarioDefault?.iterations ?? scriptDefault?.iterations ?? engineDefault?.iterations ?? inheritedRunLogic.iterations
+  const hasCurrentError = Object.values(flatCurrentError).some(value => value !== undefined)
+  const currentError = hasCurrentError ? flatCurrentError : undefined
+
+  const hasLegacyLog = Boolean(draft.log_level)
+  const currentLog: LogSettings | undefined = draft.log
+    ? structuredClone(draft.log)
+    : hasLegacyLog
+      ? { ...structuredClone(inheritedLog), level: draft.log_level }
+      : undefined
+
+  const hasLegacyRunLogic = draft.iterations !== undefined || Boolean(draft.auto_transactions)
+  const currentRunLogic: RunLogicSettings | undefined = draft.run_logic
+    ? structuredClone(draft.run_logic)
+    : hasLegacyRunLogic
+      ? {
+          ...structuredClone(inheritedRunLogic),
+          ...(draft.iterations !== undefined ? { iterations: draft.iterations } : {}),
+          ...(draft.auto_transactions ? { auto_transactions: draft.auto_transactions } : {}),
+        }
+      : undefined
+
+  const hasLegacyBrowser = Boolean(draft.browser)
+  const currentBrowser: BrowserSettings | undefined = draft.browser_config
+    ? structuredClone(draft.browser_config)
+    : hasLegacyBrowser
+      ? { ...structuredClone(inheritedBrowser), ...structuredClone(draft.browser) }
+      : undefined
+
+  const effectiveThink = draft.think_time ?? inheritedThink
+  const effectiveError = currentError ?? inheritedError
+  const effectiveLog = currentLog ?? inheritedLog
+  const effectiveHttp = draft.http ?? inheritedHttp
+  const effectiveBrowser = currentBrowser ?? inheritedBrowser
 
   const browserApplicable = isRuntimeFieldApplicable('browser', focusGroup.protocol)
   const httpApplicable = isRuntimeFieldApplicable('http', focusGroup.protocol)
@@ -156,30 +240,67 @@ export default function RuntimeSettingsGroupEditor({
   }
 
   const patchHttp = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['http']>>) => {
-    patch({ http: { ...draft.http, ...next } })
+    const hasCurrentSection = draft.http !== undefined
+    const current = hasCurrentSection ? draft.http : inheritedHttp
+    const topLevelNext = { ...next }
+    delete topLevelNext.tls
+    delete topLevelNext.proxy
+    delete topLevelNext.auth
+    const edited = editReplacementSection<HTTPSettings>(current, topLevelNext, inheritedHttp) as HTTPSettings
+
+    if (Object.prototype.hasOwnProperty.call(next, 'tls')) {
+      const tls = editReplacementSection(
+        hasCurrentSection ? (draft.http?.tls ?? {}) : inheritedHttp.tls,
+        next.tls,
+        inheritedHttp.tls,
+      )
+      if (Object.keys(tls).length > 0) edited.tls = tls
+      else delete edited.tls
+    }
+    if (Object.prototype.hasOwnProperty.call(next, 'proxy')) {
+      const proxy = editReplacementSection(
+        hasCurrentSection ? (draft.http?.proxy ?? {}) : inheritedHttp.proxy,
+        next.proxy,
+        inheritedHttp.proxy,
+      )
+      if (Object.keys(proxy).length > 0) edited.proxy = proxy
+      else delete edited.proxy
+    }
+    if (Object.prototype.hasOwnProperty.call(next, 'auth')) {
+      const auth = editReplacementSection(
+        hasCurrentSection ? (draft.http?.auth ?? {}) : inheritedHttp.auth,
+        next.auth,
+        inheritedHttp.auth,
+      )
+      if (Object.keys(auth).length > 0) edited.auth = auth
+      else delete edited.auth
+    }
+    patch({ http: edited })
   }
 
   // think_time / pacing carry the full DSL config; merge into the section, keeping the
   // required type/mean_ms so the section stays valid. Clearing routes through the type
   // select (Inherit) which sets the whole section undefined.
   const patchThinkTime = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['think_time']>>) => {
-    // Seed a brand-new override from the inherited mean rather than 0. The backend
-    // replaces the whole think_time section, and mean_ms is required, so editing
-    // only the distribution (or a secondary field) on an inheriting group must not
-    // silently drop the effective mean to 0 — carry the inherited value instead.
-    const base = draft.think_time ?? { type: 'fixed', mean_ms: inheritedThink.mean_ms ?? 0 }
-    patch({ think_time: { ...base, ...next } })
+    const edited = editReplacementSection(draft.think_time, next, inheritedThink)
+    const effective = {
+      type: edited.type || 'fixed',
+      mean_ms: edited.mean_ms ?? 0,
+      ...edited,
+    }
+    patch({ think_time: effective })
   }
 
   const patchPacing = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['pacing']>>) => {
-    const base = draft.pacing ?? { type: 'none' }
-    patch({ pacing: { ...base, ...next } })
+    const edited = editReplacementSection(draft.pacing, next, inheritedPacing)
+    const effective = { type: edited.type || 'none', ...edited }
+    patch({ pacing: effective })
   }
 
   const toggleLogOption = (option: string, on: boolean) => {
-    const current = draft.log?.extended_options ?? []
+    const current = effectiveLog.extended_options ?? []
     const nextOptions = on ? Array.from(new Set([...current, option])) : current.filter(o => o !== option)
-    patchLog({ extended_options: nextOptions.length ? nextOptions : undefined })
+    patchLog({ extended_options: nextOptions })
   }
 
   // patchLog/patchRunLogic edit the full section, promoting the legacy single-field
@@ -187,26 +308,52 @@ export default function RuntimeSettingsGroupEditor({
   // them — so a section override always carries every field (section-replace safe) and
   // the legacy shim is never double-emitted alongside it.
   const patchLog = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['log']>>) => {
-    const base = { level: draft.log?.level ?? (draft.log_level || undefined) }
-    patch({ log: { ...base, ...draft.log, ...next }, log_level: '' })
+    const effective = editReplacementSection(currentLog, next, inheritedLog)
+    patch({ log: effective, log_level: '' })
   }
 
   const patchRunLogic = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['run_logic']>>) => {
-    const base = {
-      iterations: draft.run_logic?.iterations ?? draft.iterations,
-      auto_transactions: draft.run_logic?.auto_transactions ?? (draft.auto_transactions || undefined),
-    }
-    patch({ run_logic: { ...base, ...draft.run_logic, ...next }, iterations: undefined, auto_transactions: '' })
+    const effective = editReplacementSection(currentRunLogic, next, inheritedRunLogic)
+    patch({ run_logic: effective, iterations: undefined, auto_transactions: '' })
+  }
+
+  const patchErrorHandling = (next: Partial<ErrorHandlingSettings>) => {
+    const effective = editReplacementSection(currentError, next, inheritedError)
+    patch({
+      continue_on_error: effective.continue_on_error,
+      snapshot_on_error: effective.snapshot_on_error,
+      max_retries: effective.max_retries,
+      retry_delay_ms: effective.retry_delay_ms,
+      retry_backoff: effective.retry_backoff,
+    })
   }
 
   const patchBrowserConfig = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['browser_config']>>) => {
-    const base = {
-      device_profile: draft.browser_config?.device_profile ?? draft.browser?.device_profile,
-      orientation: draft.browser_config?.orientation ?? draft.browser?.orientation,
-      touch_mode: draft.browser_config?.touch_mode ?? draft.browser?.touch_mode,
-      headless: draft.browser_config?.headless ?? draft.browser?.headless,
+    const hasCurrentSection = currentBrowser !== undefined
+    const topLevelNext = { ...next }
+    delete topLevelNext.viewport
+    delete topLevelNext.review_policy
+    const edited = editReplacementSection<BrowserSettings>(currentBrowser, topLevelNext, inheritedBrowser) as BrowserSettings
+
+    if (Object.prototype.hasOwnProperty.call(next, 'viewport')) {
+      const viewport = editReplacementSection(
+        hasCurrentSection ? (currentBrowser?.viewport ?? {}) : inheritedBrowser.viewport,
+        next.viewport,
+        inheritedBrowser.viewport,
+      )
+      if (Object.keys(viewport).length > 0) edited.viewport = viewport
+      else delete edited.viewport
     }
-    patch({ browser_config: { ...base, ...draft.browser_config, ...next }, browser: undefined })
+    if (Object.prototype.hasOwnProperty.call(next, 'review_policy')) {
+      const reviewPolicy = editReplacementSection(
+        hasCurrentSection ? (currentBrowser?.review_policy ?? {}) : inheritedBrowser.review_policy,
+        next.review_policy,
+        inheritedBrowser.review_policy,
+      )
+      if (Object.keys(reviewPolicy).length > 0) edited.review_policy = reviewPolicy
+      else delete edited.review_policy
+    }
+    patch({ browser_config: edited, browser: undefined })
   }
 
   const browserBoolValue = (a?: boolean, b?: boolean): string => {
@@ -219,10 +366,13 @@ export default function RuntimeSettingsGroupEditor({
       case 'iterations': {
         // fieldHasOverride reports an override when the value lives in the
         // promoted run_logic section, so clearing must strip both the legacy
-        // top-level field AND the section copies; drop run_logic only when it
-        // becomes fully empty so unrelated section fields are preserved.
-        const rl = draft.run_logic ? { ...draft.run_logic, iterations: undefined, global_iterations: undefined } : undefined
-        patch({ iterations: undefined, run_logic: rl && Object.values(rl).some(v => v !== undefined) ? rl : undefined })
+        // top-level field AND the section copy. When run_logic retains sibling
+        // fields, its replacement semantics require us to materialize the inherited
+        // iterations value; simply omitting it would reset duration behavior.
+        const rl: Partial<RunLogicSettings> | undefined = draft.run_logic ? { ...draft.run_logic, iterations: undefined } : undefined
+        const hasRunLogicSibling = Boolean(rl && Object.entries(rl).some(([key, value]) => key !== 'iterations' && value !== undefined))
+        if (rl && hasRunLogicSibling && inheritedIterations !== undefined) rl.iterations = inheritedIterations
+        patch({ iterations: undefined, run_logic: hasRunLogicSibling ? rl : undefined })
         break
       }
       case 'pacing':
@@ -235,17 +385,23 @@ export default function RuntimeSettingsGroupEditor({
         patch({ browser: undefined })
         break
       case 'log_level': {
-        const lg = draft.log ? { ...draft.log, level: undefined } : undefined
-        patch({ log_level: '', log: lg && Object.values(lg).some(v => v !== undefined) ? lg : undefined })
+        const lg: Partial<LogSettings> | undefined = draft.log ? { ...draft.log, level: undefined } : undefined
+        const hasLogSibling = Boolean(lg && Object.entries(lg).some(([key, value]) => key !== 'level' && value !== undefined))
+        if (lg && hasLogSibling && inheritedLog.level !== undefined) lg.level = inheritedLog.level
+        patch({ log_level: '', log: hasLogSibling ? lg : undefined })
         break
       }
       case 'auto_transactions': {
-        const rl = draft.run_logic ? { ...draft.run_logic, auto_transactions: undefined } : undefined
-        patch({ auto_transactions: '', run_logic: rl && Object.values(rl).some(v => v !== undefined) ? rl : undefined })
+        const rl: Partial<RunLogicSettings> | undefined = draft.run_logic ? { ...draft.run_logic, auto_transactions: undefined } : undefined
+        const hasRunLogicSibling = Boolean(rl && Object.entries(rl).some(([key, value]) => key !== 'auto_transactions' && value !== undefined))
+        if (rl && hasRunLogicSibling && inheritedRunLogic.auto_transactions !== undefined) {
+          rl.auto_transactions = inheritedRunLogic.auto_transactions
+        }
+        patch({ auto_transactions: '', run_logic: hasRunLogicSibling ? rl : undefined })
         break
       }
       case 'error_handling':
-        patch({ continue_on_error: false, snapshot_on_error: false, max_retries: undefined, retry_delay_ms: undefined, retry_backoff: undefined })
+        patch({ continue_on_error: undefined, snapshot_on_error: undefined, max_retries: undefined, retry_delay_ms: undefined, retry_backoff: undefined })
         break
       case 'log':
         patch({ log: undefined, log_level: '' })
@@ -450,8 +606,8 @@ export default function RuntimeSettingsGroupEditor({
                 <span>Distribution</span>
                 <select
                   className="settings-input"
-                  value={draft.think_time?.ignore ? '' : (draft.think_time?.type || '')}
-                  disabled={Boolean(draft.think_time?.ignore)}
+                  value={effectiveThink.ignore ? '' : (draft.think_time?.type || '')}
+                  disabled={Boolean(effectiveThink.ignore)}
                   onChange={event => {
                     const type = event.target.value
                     if (!type) {
@@ -469,7 +625,7 @@ export default function RuntimeSettingsGroupEditor({
               </label>
               <label>
                 <span>Mean (ms)</span>
-                <input className="settings-input" type="number" min={0} value={draft.think_time?.mean_ms ?? ''} disabled={Boolean(draft.think_time?.ignore)} onChange={event => patchThinkTime({ mean_ms: event.target.value === '' ? (inheritedThink.mean_ms ?? 0) : Number(event.target.value) })} placeholder={inh(inheritedThink.mean_ms)} />
+                <input className="settings-input" type="number" min={0} value={draft.think_time?.mean_ms ?? ''} disabled={Boolean(effectiveThink.ignore)} onChange={event => patchThinkTime({ mean_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.mean_ms)} />
               </label>
               {draft.think_time?.type === 'gaussian' && (
                 <label>
@@ -499,11 +655,11 @@ export default function RuntimeSettingsGroupEditor({
               </label>
             </div>
             <div className="scenario-option-grid">
-              <label className={`scenario-option-card ${draft.think_time?.ignore ? 'selected' : ''}`}>
+              <label className={`scenario-option-card ${effectiveThink.ignore ? 'selected' : ''}`}>
                 <input
                   type="checkbox"
-                  checked={Boolean(draft.think_time?.ignore)}
-                  onChange={event => patchThinkTime({ ignore: event.target.checked || undefined })}
+                  checked={Boolean(effectiveThink.ignore)}
+                  onChange={event => patchThinkTime({ ignore: event.target.checked })}
                 />
                 <div><strong>Ignore think time</strong><span>Bypass scripted think times for this group.</span></div>
               </label>
@@ -520,7 +676,8 @@ export default function RuntimeSettingsGroupEditor({
                 value={pacingType}
                 onChange={event => {
                   const type = event.target.value as NonNullable<ScenarioRuntimeSettingsDraft['pacing']>['type'] | ''
-                  patch({ pacing: type ? { type } : undefined })
+                  if (type) patchPacing({ type })
+                  else patch({ pacing: undefined })
                 }}
               >
                 <option value="">Inherit</option>
@@ -643,12 +800,12 @@ export default function RuntimeSettingsGroupEditor({
         {activeTab === 'error_handling' && (
           <>
             <div className="scenario-option-grid">
-              <label className={`scenario-option-card ${draft.continue_on_error ? 'selected' : ''}`}>
-                <input type="checkbox" checked={draft.continue_on_error} onChange={event => patch({ continue_on_error: event.target.checked })} />
+              <label className={`scenario-option-card ${effectiveError.continue_on_error ? 'selected' : ''}`}>
+                <input type="checkbox" checked={effectiveError.continue_on_error ?? false} onChange={event => patchErrorHandling({ continue_on_error: event.target.checked })} />
                 <div><strong>Continue on error</strong><span>Keep iterating after a failed step.</span></div>
               </label>
-              <label className={`scenario-option-card ${draft.snapshot_on_error ? 'selected' : ''}`}>
-                <input type="checkbox" checked={draft.snapshot_on_error} onChange={event => patch({ snapshot_on_error: event.target.checked })} />
+              <label className={`scenario-option-card ${effectiveError.snapshot_on_error ? 'selected' : ''}`}>
+                <input type="checkbox" checked={effectiveError.snapshot_on_error ?? false} onChange={event => patchErrorHandling({ snapshot_on_error: event.target.checked })} />
                 <div><strong>Snapshot on error</strong><span>Capture diagnostics when a step fails.</span></div>
               </label>
             </div>
@@ -669,7 +826,7 @@ export default function RuntimeSettingsGroupEditor({
                   type="number"
                   min={0}
                   value={draft.max_retries ?? ''}
-                  onChange={event => patch({ max_retries: event.target.value === '' ? undefined : Number(event.target.value) })}
+                  onChange={event => patchErrorHandling({ max_retries: event.target.value === '' ? undefined : Number(event.target.value) })}
                   placeholder={inh(inheritedError.max_retries, '0')}
                 />
               </label>
@@ -680,7 +837,7 @@ export default function RuntimeSettingsGroupEditor({
                   type="number"
                   min={0}
                   value={draft.retry_delay_ms ?? ''}
-                  onChange={event => patch({ retry_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })}
+                  onChange={event => patchErrorHandling({ retry_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })}
                   placeholder={inh(inheritedError.retry_delay_ms)}
                 />
               </label>
@@ -689,30 +846,29 @@ export default function RuntimeSettingsGroupEditor({
                 <select
                   className="settings-input"
                   value={draft.retry_backoff || ''}
-                  onChange={event => patch({ retry_backoff: event.target.value || undefined })}
+                  onChange={event => patchErrorHandling({ retry_backoff: event.target.value || undefined })}
                 >
                   <option value="">Inherit</option>
-                  <option value="constant">Constant</option>
-                  <option value="linear">Linear</option>
+                  <option value="fixed">Fixed</option>
                   <option value="exponential">Exponential</option>
                 </select>
               </label>
             </div>
             <div className="scenario-option-grid">
-              <label className={`scenario-option-card ${draft.log?.on_error_only ? 'selected' : ''}`}>
-                <input type="checkbox" checked={Boolean(draft.log?.on_error_only)} onChange={event => patchLog({ on_error_only: event.target.checked || undefined })} />
+              <label className={`scenario-option-card ${effectiveLog.on_error_only ? 'selected' : ''}`}>
+                <input type="checkbox" checked={Boolean(effectiveLog.on_error_only)} onChange={event => patchLog({ on_error_only: event.target.checked })} />
                 <div><strong>Extended logging on error only</strong><span>Use extended logging only when a step fails.</span></div>
               </label>
-              <label className={`scenario-option-card ${draft.log?.extended_options?.includes('parameter_substitution') ? 'selected' : ''}`}>
-                <input type="checkbox" checked={Boolean(draft.log?.extended_options?.includes('parameter_substitution'))} onChange={event => toggleLogOption('parameter_substitution', event.target.checked)} />
+              <label className={`scenario-option-card ${effectiveLog.extended_options?.includes('parameter_substitution') ? 'selected' : ''}`}>
+                <input type="checkbox" checked={Boolean(effectiveLog.extended_options?.includes('parameter_substitution'))} onChange={event => toggleLogOption('parameter_substitution', event.target.checked)} />
                 <div><strong>Parameter substitution</strong><span>Log each parameter substitution.</span></div>
               </label>
-              <label className={`scenario-option-card ${draft.log?.extended_options?.includes('data_returned') ? 'selected' : ''}`}>
-                <input type="checkbox" checked={Boolean(draft.log?.extended_options?.includes('data_returned'))} onChange={event => toggleLogOption('data_returned', event.target.checked)} />
+              <label className={`scenario-option-card ${effectiveLog.extended_options?.includes('data_returned') ? 'selected' : ''}`}>
+                <input type="checkbox" checked={Boolean(effectiveLog.extended_options?.includes('data_returned'))} onChange={event => toggleLogOption('data_returned', event.target.checked)} />
                 <div><strong>Data returned</strong><span>Log the data returned by the server.</span></div>
               </label>
-              <label className={`scenario-option-card ${draft.log?.extended_options?.includes('advanced_trace') ? 'selected' : ''}`}>
-                <input type="checkbox" checked={Boolean(draft.log?.extended_options?.includes('advanced_trace'))} onChange={event => toggleLogOption('advanced_trace', event.target.checked)} />
+              <label className={`scenario-option-card ${effectiveLog.extended_options?.includes('advanced_trace') ? 'selected' : ''}`}>
+                <input type="checkbox" checked={Boolean(effectiveLog.extended_options?.includes('advanced_trace'))} onChange={event => toggleLogOption('advanced_trace', event.target.checked)} />
                 <div><strong>Advanced trace</strong><span>Capture full advanced trace detail.</span></div>
               </label>
             </div>
@@ -791,8 +947,8 @@ export default function RuntimeSettingsGroupEditor({
                     <label><span>CA cert file</span><input className="settings-input" type="text" value={draft.http?.tls?.ca_cert_file || ''} onChange={event => patchTls({ ca_cert_file: event.target.value || undefined })} placeholder={inh(inheritedHttp.tls?.ca_cert_file)} /></label>
                   </div>
                   <div className="scenario-option-grid">
-                    <label className={`scenario-option-card ${draft.http?.tls?.insecure_skip_verify ? 'selected' : ''}`}>
-                      <input type="checkbox" checked={Boolean(draft.http?.tls?.insecure_skip_verify)} onChange={event => patchTls({ insecure_skip_verify: event.target.checked || undefined })} />
+                    <label className={`scenario-option-card ${effectiveHttp.tls?.insecure_skip_verify ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(effectiveHttp.tls?.insecure_skip_verify)} onChange={event => patchTls({ insecure_skip_verify: event.target.checked })} />
                       <div><strong>Skip TLS verification</strong><span>Do not validate the server certificate (test environments only).</span></div>
                     </label>
                   </div>
@@ -891,38 +1047,38 @@ export default function RuntimeSettingsGroupEditor({
                     </label>
                     <label><span>Browser user agent</span><input className="settings-input" type="text" value={draft.browser_config?.user_agent || ''} onChange={event => patchBrowserConfig({ user_agent: event.target.value || undefined })} placeholder={inh(inheritedBrowser.user_agent)} /></label>
                     <label><span>Slow-mo (ms)</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.slow_mo_ms ?? ''} onChange={event => patchBrowserConfig({ slow_mo_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedBrowser.slow_mo_ms)} /></label>
-                    <label><span>Viewport width</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.width ?? ''} onChange={event => patchBrowserConfig({ viewport: { ...draft.browser_config?.viewport, width: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedBrowser.viewport?.width)} /></label>
-                    <label><span>Viewport height</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.height ?? ''} onChange={event => patchBrowserConfig({ viewport: { ...draft.browser_config?.viewport, height: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedBrowser.viewport?.height)} /></label>
+                    <label><span>Viewport width</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.width ?? ''} onChange={event => patchBrowserConfig({ viewport: { width: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedBrowser.viewport?.width)} /></label>
+                    <label><span>Viewport height</span><input className="settings-input" type="number" min={0} value={draft.browser_config?.viewport?.height ?? ''} onChange={event => patchBrowserConfig({ viewport: { height: event.target.value === '' ? undefined : Number(event.target.value) } })} placeholder={inh(inheritedBrowser.viewport?.height)} /></label>
                     <label><span>Capture screenshots</span><input className="settings-input" type="text" value={draft.browser_config?.capture_screenshots || ''} onChange={event => patchBrowserConfig({ capture_screenshots: event.target.value || undefined })} placeholder={inh(inheritedBrowser.capture_screenshots)} /></label>
                     <label><span>Download resources</span><input className="settings-input" type="text" value={draft.browser_config?.download_resources || ''} onChange={event => patchBrowserConfig({ download_resources: event.target.value || undefined })} placeholder={inh(inheritedBrowser.download_resources)} /></label>
                   </div>
                   <div className="scenario-option-grid">
-                    <label className={`scenario-option-card ${draft.browser_config?.client_metrics ? 'selected' : ''}`}>
-                      <input type="checkbox" checked={Boolean(draft.browser_config?.client_metrics)} onChange={event => patchBrowserConfig({ client_metrics: event.target.checked || undefined })} />
+                    <label className={`scenario-option-card ${effectiveBrowser.client_metrics ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(effectiveBrowser.client_metrics)} onChange={event => patchBrowserConfig({ client_metrics: event.target.checked })} />
                       <div><strong>Client metrics</strong><span>Collect browser client-side metrics.</span></div>
                     </label>
-                    <label className={`scenario-option-card ${draft.browser_config?.cache_enabled ? 'selected' : ''}`}>
-                      <input type="checkbox" checked={Boolean(draft.browser_config?.cache_enabled)} onChange={event => patchBrowserConfig({ cache_enabled: event.target.checked || undefined })} />
+                    <label className={`scenario-option-card ${effectiveBrowser.cache_enabled ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(effectiveBrowser.cache_enabled)} onChange={event => patchBrowserConfig({ cache_enabled: event.target.checked })} />
                       <div><strong>Cache enabled</strong><span>Allow the browser cache during replay.</span></div>
                     </label>
-                    <label className={`scenario-option-card ${draft.browser_config?.cache_content_urls ? 'selected' : ''}`}>
-                      <input type="checkbox" checked={Boolean(draft.browser_config?.cache_content_urls)} onChange={event => patchBrowserConfig({ cache_content_urls: event.target.checked || undefined })} />
+                    <label className={`scenario-option-card ${effectiveBrowser.cache_content_urls ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(effectiveBrowser.cache_content_urls)} onChange={event => patchBrowserConfig({ cache_content_urls: event.target.checked })} />
                       <div><strong>Cache content URLs</strong><span>Cache static content URLs.</span></div>
                     </label>
-                    <label className={`scenario-option-card ${draft.browser_config?.check_newer_versions ? 'selected' : ''}`}>
-                      <input type="checkbox" checked={Boolean(draft.browser_config?.check_newer_versions)} onChange={event => patchBrowserConfig({ check_newer_versions: event.target.checked || undefined })} />
+                    <label className={`scenario-option-card ${effectiveBrowser.check_newer_versions ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(effectiveBrowser.check_newer_versions)} onChange={event => patchBrowserConfig({ check_newer_versions: event.target.checked })} />
                       <div><strong>Check newer versions</strong><span>Check for newer resource versions.</span></div>
                     </label>
-                    <label className={`scenario-option-card ${draft.browser_config?.new_user_per_iteration ? 'selected' : ''}`}>
-                      <input type="checkbox" checked={Boolean(draft.browser_config?.new_user_per_iteration)} onChange={event => patchBrowserConfig({ new_user_per_iteration: event.target.checked || undefined })} />
+                    <label className={`scenario-option-card ${effectiveBrowser.new_user_per_iteration ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(effectiveBrowser.new_user_per_iteration)} onChange={event => patchBrowserConfig({ new_user_per_iteration: event.target.checked })} />
                       <div><strong>New user per iteration</strong><span>Start each iteration with a fresh browser profile.</span></div>
                     </label>
-                    <label className={`scenario-option-card ${draft.browser_config?.review_policy?.allow_reviewed_javascript ? 'selected' : ''}`}>
-                      <input type="checkbox" checked={Boolean(draft.browser_config?.review_policy?.allow_reviewed_javascript)} onChange={event => patchBrowserConfig({ review_policy: { ...draft.browser_config?.review_policy, allow_reviewed_javascript: event.target.checked || undefined } })} />
+                    <label className={`scenario-option-card ${effectiveBrowser.review_policy?.allow_reviewed_javascript ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(effectiveBrowser.review_policy?.allow_reviewed_javascript)} onChange={event => patchBrowserConfig({ review_policy: { allow_reviewed_javascript: event.target.checked } })} />
                       <div><strong>Allow reviewed JavaScript</strong><span>Permit JavaScript steps that passed review.</span></div>
                     </label>
-                    <label className={`scenario-option-card ${draft.browser_config?.review_policy?.allow_review_required ? 'selected' : ''}`}>
-                      <input type="checkbox" checked={Boolean(draft.browser_config?.review_policy?.allow_review_required)} onChange={event => patchBrowserConfig({ review_policy: { ...draft.browser_config?.review_policy, allow_review_required: event.target.checked || undefined } })} />
+                    <label className={`scenario-option-card ${effectiveBrowser.review_policy?.allow_review_required ? 'selected' : ''}`}>
+                      <input type="checkbox" checked={Boolean(effectiveBrowser.review_policy?.allow_review_required)} onChange={event => patchBrowserConfig({ review_policy: { allow_review_required: event.target.checked } })} />
                       <div><strong>Allow review-required</strong><span>Permit steps still pending review.</span></div>
                     </label>
                   </div>

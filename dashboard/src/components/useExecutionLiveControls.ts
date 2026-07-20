@@ -4,6 +4,7 @@ import { useApi } from '../hooks/useApi'
 import { TestSummary } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import { buildLiveControlPreview, LiveControlPreview, VUserGroupAction } from './testExecutionLiveControlModel'
+import { clampVUsersForRole, maxVUsersForRole } from './observerGroupModel'
 
 interface ExecutionLiveControlsModel {
   showControls: boolean
@@ -19,7 +20,7 @@ interface ExecutionLiveControlsModel {
   durationInput: string
   onDurationInputChange: (value: string) => void
   onScaleVUsers: (groupName: string) => Promise<void>
-  onStopAllVUsers: () => Promise<void>
+  onPauseAllVUsers: () => Promise<void>
   onAdjustDuration: () => Promise<void>
   liveControlPreview: LiveControlPreview
 }
@@ -67,7 +68,10 @@ export function useExecutionLiveControls(
       const next: Record<string, number> = {}
       const nextSynced: Record<string, number> = {}
       test.groups.forEach((group) => {
-        const syncedTarget = test.vuser_ramps?.[group.name]?.target_vusers ?? group.vusers
+        const syncedTarget = clampVUsersForRole(
+          test.vuser_ramps?.[group.name]?.target_vusers ?? group.vusers,
+          group.role,
+        )
         const previousValue = isNewTest ? undefined : prev[group.name]
         const previousSyncedValue = isNewTest ? undefined : syncedVuserTargetsRef.current[group.name]
         nextSynced[group.name] = syncedTarget
@@ -93,6 +97,11 @@ export function useExecutionLiveControls(
     const action = vuserGroupActions[groupName] ?? 'run'
     const configuredTarget = vuserTargets[groupName]
     if (action === 'run' && (configuredTarget === undefined || configuredTarget < 0)) return
+    const group = test?.groups?.find(candidate => candidate.name === groupName)
+    if (action === 'run' && configuredTarget > maxVUsersForRole(group?.role)) {
+      showControlFeedback(`Error: ${groupName} cannot exceed ${maxVUsersForRole(group?.role)} VUsers`)
+      return
+    }
     const target = action === 'run' ? configuredTarget : 0
 
     try {
@@ -109,10 +118,6 @@ export function useExecutionLiveControls(
         showControlFeedback(rampDuration
           ? `Pausing ${groupName} VUsers over ${rampDuration}`
           : `Paused ${groupName} VUsers`)
-      } else if (action === 'stop') {
-        showControlFeedback(rampDuration
-          ? `Stopping ${groupName} VUsers over ${rampDuration}`
-          : `Stopped ${groupName} VUsers`)
       } else {
         showControlFeedback(rampDuration
           ? `Ramping ${groupName} to ${target} VUsers over ${rampDuration}`
@@ -121,9 +126,9 @@ export function useExecutionLiveControls(
     } catch (error: unknown) {
       showControlFeedback(`Error: ${getErrorMessage(error, 'Unable to scale VUsers')}`)
     }
-  }, [api, showControlFeedback, testId, vuserGroupActions, vuserRampDuration, vuserRampEnabled, vuserTargets])
+  }, [api, showControlFeedback, test?.groups, testId, vuserGroupActions, vuserRampDuration, vuserRampEnabled, vuserTargets])
 
-  const onStopAllVUsers = useCallback(async () => {
+  const onPauseAllVUsers = useCallback(async () => {
     if (!test?.groups?.length) return
 
     const activeGroups = test.groups.filter((group) => {
@@ -136,8 +141,8 @@ export function useExecutionLiveControls(
       const rampDuration = vuserRampEnabled ? vuserRampDuration.trim() : ''
       await Promise.all(activeGroups.map((group) => (
         rampDuration
-          ? api.scaleVUsers(testId, group.name, 0, { action: 'stop', ramp_duration: rampDuration })
-          : api.scaleVUsers(testId, group.name, 0, { action: 'stop' })
+          ? api.scaleVUsers(testId, group.name, 0, { action: 'pause', ramp_duration: rampDuration })
+          : api.scaleVUsers(testId, group.name, 0, { action: 'pause' })
       )))
       setVuserTargets((prev) => {
         const next = { ...prev }
@@ -147,10 +152,10 @@ export function useExecutionLiveControls(
         return next
       })
       showControlFeedback(rampDuration
-        ? `Ramping all VUsers to 0 over ${rampDuration}`
-        : 'Stopped all VUsers')
+        ? `Pausing all VUsers over ${rampDuration}`
+        : 'Paused all VUsers')
     } catch (error: unknown) {
-      showControlFeedback(`Error: ${getErrorMessage(error, 'Unable to stop VUsers')}`)
+      showControlFeedback(`Error: ${getErrorMessage(error, 'Unable to pause VUsers')}`)
     }
   }, [api, showControlFeedback, test, testId, vuserRampDuration, vuserRampEnabled])
 
@@ -181,8 +186,9 @@ export function useExecutionLiveControls(
   }, [])
 
   const onVuserTargetChange = useCallback((groupName: string, value: number) => {
-    setVuserTargets((prev) => ({ ...prev, [groupName]: value }))
-  }, [])
+    const role = test?.groups?.find(group => group.name === groupName)?.role
+    setVuserTargets((prev) => ({ ...prev, [groupName]: clampVUsersForRole(value, role) }))
+  }, [test?.groups])
 
   const onVuserGroupActionChange = useCallback((groupName: string, value: VUserGroupAction) => {
     setVuserGroupActions((prev) => ({ ...prev, [groupName]: value }))
@@ -202,7 +208,7 @@ export function useExecutionLiveControls(
     durationInput,
     onDurationInputChange: setDurationInput,
     onScaleVUsers,
-    onStopAllVUsers,
+    onPauseAllVUsers,
     onAdjustDuration,
     liveControlPreview,
   }

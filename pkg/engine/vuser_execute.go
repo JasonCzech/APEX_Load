@@ -13,6 +13,11 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
+	apptelemetry "github.com/jasonczech/apexload/pkg/telemetry"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingConfig, logCfg dsl.LogConfig) {
@@ -273,7 +278,45 @@ func (vu *VUser) executeWithRetryStream(
 	action *protocol.Action,
 	errCfg dsl.ErrorHandlingConfig,
 	emit func(*protocol.Result) error,
-) (*protocol.Result, error) {
+) (finalResult *protocol.Result, finalErr error) {
+	var actionSpan trace.Span
+	attemptCount := 0
+	if apptelemetry.ShouldStartActionSpan(ctx) {
+		attributes := []attribute.KeyValue{
+			attribute.String("apexload.action.type", apptelemetry.BoundedIdentifier(actionTypeForTrace(action))),
+		}
+		if vu.Script != nil {
+			attributes = append(attributes,
+				attribute.String("apexload.protocol", apptelemetry.BoundedIdentifier(vu.Script.Protocol)),
+			)
+		}
+		ctx, actionSpan = otel.Tracer("github.com/jasonczech/apexload/pkg/engine").Start(
+			ctx,
+			"apexload.action",
+			trace.WithSpanKind(trace.SpanKindInternal),
+			trace.WithAttributes(attributes...),
+		)
+		defer func() {
+			actionSpan.SetAttributes(attribute.Int("apexload.action.attempts", attemptCount))
+			if finalErr != nil {
+				actionSpan.SetAttributes(attribute.String("error.type", apptelemetry.BoundedIdentifier(fmt.Sprintf("%T", finalErr))))
+				actionSpan.SetStatus(codes.Error, "protocol action failed")
+			} else if finalResult == nil || !finalResult.Success {
+				actionSpan.SetAttributes(attribute.Bool("apexload.action.success", false))
+				if finalResult != nil && finalResult.StatusCode > 0 {
+					actionSpan.SetAttributes(attribute.Int("apexload.action.status_code", finalResult.StatusCode))
+				}
+				actionSpan.SetStatus(codes.Error, "protocol action was unsuccessful")
+			} else {
+				actionSpan.SetAttributes(attribute.Bool("apexload.action.success", true))
+				if finalResult.StatusCode > 0 {
+					actionSpan.SetAttributes(attribute.Int("apexload.action.status_code", finalResult.StatusCode))
+				}
+				actionSpan.SetStatus(codes.Ok, "")
+			}
+			actionSpan.End()
+		}()
+	}
 	if err := vu.checkResolvedSecrets(); err != nil {
 		return nil, err
 	}
@@ -299,6 +342,7 @@ func (vu *VUser) executeWithRetryStream(
 
 	var lastResult *protocol.Result
 	for attempt := 0; attempt < maxAttempts; attempt++ {
+		attemptCount = attempt + 1
 		if attempt > 0 {
 			// Apply backoff
 			delay := baseRetryDelay
@@ -365,6 +409,16 @@ func (vu *VUser) executeWithRetryStream(
 	}
 
 	return lastResult, nil
+}
+
+func actionTypeForTrace(action *protocol.Action) string {
+	if action == nil {
+		return ""
+	}
+	if action.Type != "" {
+		return strings.ToLower(strings.TrimSpace(action.Type))
+	}
+	return strings.ToLower(strings.TrimSpace(action.Method))
 }
 
 func (vu *VUser) extendRuntimeRedactionForActionAuth(action *protocol.Action) error {

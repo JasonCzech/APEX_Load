@@ -274,6 +274,22 @@ func TestJMSTopicFanoutRejectsBeforeAggregateAmplification(t *testing.T) {
 	}
 }
 
+func TestJMSServiceBusDurableHistoryRejectsAtomicallyAtAggregateCap(t *testing.T) {
+	b := &memoryBroker{
+		queues: map[string][]message{},
+		topics: map[string]map[string][]message{"events": {"perf": nil, "audit": nil}}, refs: map[string]int{},
+		queueBytes: map[string]int64{}, topicBytes: map[string]map[string]int64{"events": {"perf": 0, "audit": 0}},
+		serviceBusHistory: map[string][]message{}, serviceBusHistBytes: map[string]int64{},
+		totalBytes: maxJMSRetainedBytes - 1,
+	}
+	if err := b.publishServiceBusTopic("events", message{Body: []byte("xx")}); err == nil || !strings.Contains(err.Error(), "aggregate") {
+		t.Fatalf("Service Bus durable publish at aggregate cap error = %v", err)
+	}
+	if len(b.serviceBusHistory["events"]) != 0 || len(b.topics["events"]["perf"]) != 0 || len(b.topics["events"]["audit"]) != 0 {
+		t.Fatal("rejected Service Bus durable publish mutated history or subscription queues")
+	}
+}
+
 func TestJMSConsumeClearsRemovedBackingArrayReference(t *testing.T) {
 	backing := []message{{Body: []byte("first")}, {Body: []byte("second")}}
 	b := &memoryBroker{queues: map[string][]message{"q": backing}, topics: map[string]map[string][]message{}, refs: map[string]int{}}

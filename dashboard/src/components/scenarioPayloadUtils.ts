@@ -6,6 +6,8 @@ import { BrowserConfig, ErrorHandlingConfig, HTTPConfig, LogConfig, PacingConfig
 export type ScenarioGroupPayload = {
   name?: string
   script_id: string
+  revision_source_group_index?: number
+  revision_new_group?: boolean
   role?: 'load' | 'observer'
   vusers: number
   ramp_up?: string
@@ -57,6 +59,10 @@ export type CreateTestPayload = {
   name?: string
   duration: string
   start_delay?: string
+  application_id?: string
+  release_id?: string
+  scenario_id?: string
+  revision_source_test_id?: string
   project_id?: string
   folder_id?: string | null
   scenario_mode: ScenarioMode
@@ -71,6 +77,7 @@ export type CreateTestPayload = {
   groups?: ScenarioGroupPayload[]
   goal_config?: GoalConfig
   runtime_settings?: ScenarioUpsertPayload['runtime_settings']
+  data_pools?: ScenarioDataPoolBinding[]
 }
 
 type ScenarioPayloadInput = {
@@ -92,8 +99,13 @@ type ScenarioUpsertPayloadInput = ScenarioPayloadInput & {
 
 type CreateTestPayloadInput = ScenarioPayloadInput & {
   name?: string
+  applicationId?: string
+  releaseId?: string
+  scenarioId?: string
+  revisionSourceTestId?: string
   projectId?: string
   folderId?: string | null
+  dataPools?: ScenarioDataPoolBinding[]
 }
 
 export function buildScenarioGroupPayloads(groups: ScenarioDraftGroup[]): ScenarioGroupPayload[] {
@@ -102,6 +114,13 @@ export function buildScenarioGroupPayloads(groups: ScenarioDraftGroup[]): Scenar
       script_id: group.scriptId,
       vusers: group.vusers,
       initialization: group.initialization,
+    }
+
+    if (group.revisionSourceGroupIndex !== undefined) {
+      payload.revision_source_group_index = group.revisionSourceGroupIndex
+    }
+    if (group.revisionNewGroup) {
+      payload.revision_new_group = true
     }
 
     if (group.name) {
@@ -131,7 +150,7 @@ export function buildScenarioGroupPayloads(groups: ScenarioDraftGroup[]): Scenar
         }))
     }
 
-    if (group.iterations !== undefined) {
+    if (group.iterations !== undefined && group.iterationPayloadSource !== 'runtime') {
       payload.iterations = Number(group.iterations)
     }
 
@@ -250,6 +269,9 @@ export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: G
 }
 
 export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSettings): ScenarioUpsertPayload['runtime_settings'] | undefined {
+  const hasCanonicalRunLogic = runtimeSettings.run_logic !== undefined
+  const hasCanonicalLog = runtimeSettings.log !== undefined
+  const hasCanonicalBrowser = runtimeSettings.browser_config !== undefined
   const pacing = runtimeSettings.pacing && runtimeSettings.pacing.type
     ? { ...runtimeSettings.pacing }
     : undefined
@@ -265,7 +287,7 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
   )
     ? { ...runtimeSettings.think_time }
     : undefined
-  const browser = runtimeSettings.browser && (
+  const browser = !hasCanonicalBrowser && runtimeSettings.browser && (
     runtimeSettings.browser.headless !== undefined
     || runtimeSettings.browser.device_profile
     || runtimeSettings.browser.touch_mode !== undefined
@@ -274,34 +296,42 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
     ? { ...runtimeSettings.browser }
     : undefined
 
-  if (!runtimeSettings.iterations && !pacing && !thinkTime && !browser && !runtimeSettings.log_level && !runtimeSettings.auto_transactions && !runtimeSettings.continue_on_error && !runtimeSettings.snapshot_on_error && runtimeSettings.max_retries === undefined && runtimeSettings.retry_delay_ms === undefined && !runtimeSettings.retry_backoff && !runtimeSettings.log && !runtimeSettings.run_logic && !runtimeSettings.http && !runtimeSettings.web_runtime && !runtimeSettings.browser_config && !runtimeSettings.base_url && !runtimeSettings.env && !runtimeSettings.redaction_rules) {
+  const hasErrorHandling = runtimeSettings.continue_on_error !== undefined
+    || runtimeSettings.snapshot_on_error !== undefined
+    || runtimeSettings.max_retries !== undefined
+    || runtimeSettings.retry_delay_ms !== undefined
+    || Boolean(runtimeSettings.retry_backoff)
+
+  if ((!hasCanonicalRunLogic && runtimeSettings.iterations === undefined) && !pacing && !thinkTime && !browser && (!hasCanonicalLog && !runtimeSettings.log_level) && (!hasCanonicalRunLogic && !runtimeSettings.auto_transactions) && !hasErrorHandling && !runtimeSettings.log && !runtimeSettings.run_logic && !runtimeSettings.http && !runtimeSettings.web_runtime && !runtimeSettings.browser_config && !runtimeSettings.base_url && !runtimeSettings.env && !runtimeSettings.redaction_rules) {
     return undefined
   }
 
   return {
-    iterations: runtimeSettings.iterations ? Number(runtimeSettings.iterations) : undefined,
-    pacing,
-    think_time: thinkTime,
-    browser,
-    log_level: runtimeSettings.log_level || undefined,
-    auto_transactions: runtimeSettings.auto_transactions || undefined,
-    error_handling: runtimeSettings.continue_on_error || runtimeSettings.snapshot_on_error || runtimeSettings.max_retries !== undefined || runtimeSettings.retry_delay_ms !== undefined || runtimeSettings.retry_backoff
-      ? {
-        continue_on_error: runtimeSettings.continue_on_error || undefined,
-        snapshot_on_error: runtimeSettings.snapshot_on_error || undefined,
-        max_retries: runtimeSettings.max_retries,
-        retry_delay_ms: runtimeSettings.retry_delay_ms,
-        retry_backoff: runtimeSettings.retry_backoff || undefined,
-      }
-      : undefined,
-    log: runtimeSettings.log,
-    run_logic: runtimeSettings.run_logic,
-    http: runtimeSettings.http,
-    web_runtime: runtimeSettings.web_runtime,
-    browser_config: runtimeSettings.browser_config,
-    base_url: runtimeSettings.base_url,
-    env: runtimeSettings.env ? { ...runtimeSettings.env } : undefined,
-    redaction_rules: runtimeSettings.redaction_rules ? runtimeSettings.redaction_rules.map(rule => ({ ...rule })) : undefined,
+    ...(!hasCanonicalRunLogic && runtimeSettings.iterations !== undefined
+      ? { iterations: Number(runtimeSettings.iterations) }
+      : {}),
+    ...(pacing ? { pacing } : {}),
+    ...(thinkTime ? { think_time: thinkTime } : {}),
+    ...(browser ? { browser } : {}),
+    ...(!hasCanonicalLog && runtimeSettings.log_level ? { log_level: runtimeSettings.log_level } : {}),
+    ...(!hasCanonicalRunLogic && runtimeSettings.auto_transactions
+      ? { auto_transactions: runtimeSettings.auto_transactions }
+      : {}),
+    ...(hasErrorHandling ? { error_handling: {
+        ...(runtimeSettings.continue_on_error !== undefined ? { continue_on_error: runtimeSettings.continue_on_error } : {}),
+        ...(runtimeSettings.snapshot_on_error !== undefined ? { snapshot_on_error: runtimeSettings.snapshot_on_error } : {}),
+        ...(runtimeSettings.max_retries !== undefined ? { max_retries: runtimeSettings.max_retries } : {}),
+        ...(runtimeSettings.retry_delay_ms !== undefined ? { retry_delay_ms: runtimeSettings.retry_delay_ms } : {}),
+        ...(runtimeSettings.retry_backoff ? { retry_backoff: runtimeSettings.retry_backoff } : {}),
+      } } : {}),
+    ...(runtimeSettings.log !== undefined ? { log: runtimeSettings.log } : {}),
+    ...(runtimeSettings.run_logic !== undefined ? { run_logic: runtimeSettings.run_logic } : {}),
+    ...(runtimeSettings.http !== undefined ? { http: runtimeSettings.http } : {}),
+    ...(runtimeSettings.web_runtime !== undefined ? { web_runtime: runtimeSettings.web_runtime } : {}),
+    ...(runtimeSettings.browser_config !== undefined ? { browser_config: runtimeSettings.browser_config } : {}),
+    ...(runtimeSettings.base_url !== undefined ? { base_url: runtimeSettings.base_url } : {}),
+    ...(runtimeSettings.env ? { env: { ...runtimeSettings.env } } : {}),
+    ...(runtimeSettings.redaction_rules ? { redaction_rules: runtimeSettings.redaction_rules.map(rule => ({ ...rule })) } : {}),
   }
 }
 
@@ -362,8 +392,13 @@ export function buildCreateTestPayload({
   groups,
   goalConfig,
   runtimeSettings,
+  applicationId,
+  releaseId,
+  scenarioId,
+  revisionSourceTestId,
   projectId,
   folderId,
+  dataPools,
 }: CreateTestPayloadInput): CreateTestPayload {
   const resolvedAssignment = buildRootAssignmentPayload(assignment)
 
@@ -397,8 +432,28 @@ export function buildCreateTestPayload({
     payload.project_id = projectId
   }
 
+  if (applicationId) {
+    payload.application_id = applicationId
+  }
+
+  if (releaseId) {
+    payload.release_id = releaseId
+  }
+
+  if (scenarioId) {
+    payload.scenario_id = scenarioId
+  }
+
+  if (revisionSourceTestId) {
+    payload.revision_source_test_id = revisionSourceTestId
+  }
+
   if (folderId !== undefined) {
     payload.folder_id = folderId
+  }
+
+  if (dataPools !== undefined) {
+    payload.data_pools = dataPools.map(binding => ({ ...binding }))
   }
 
   // Always use the canonical group representation. The legacy single-script

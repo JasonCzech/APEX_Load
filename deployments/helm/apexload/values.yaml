@@ -217,6 +217,21 @@ serviceMonitor:
   interval: 15s
   scrapeTimeout: 10s
 
+tracing:
+  # Disabled by default. When enabled, endpoint is required and is shared by
+  # controller/generator; use collector routing by their distinct service.name.
+  # Collector authentication headers must come from an existing Secret; never
+  # place their value in this file or the shared ConfigMap.
+  enabled: false
+  endpoint: ""
+  protocol: http/protobuf
+  sampler: parentbased_traceidratio
+  samplerArg: "0.10"
+  actionSampleRatio: "0.01"
+  resourceAttributes: ""
+  headersSecretName: ""
+  headersSecretKey: OTEL_EXPORTER_OTLP_HEADERS
+
 certManager:
   enabled: false
   issuerName: apexload-grpc-ca

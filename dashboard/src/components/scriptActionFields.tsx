@@ -583,6 +583,7 @@ export function NetworkActionFields({
 export interface JmsActionFieldsProps {
   action: Action
   index: number
+  protocol: string
   onAddAssertion: (i: number) => void
   onAddExtractor: (i: number) => void
   onAddHeader: (i: number) => void
@@ -602,6 +603,7 @@ export interface JmsActionFieldsProps {
 export function JmsActionFields({
   action,
   index,
+  protocol,
   onAddAssertion,
   onAddExtractor,
   onAddHeader,
@@ -694,7 +696,7 @@ export function JmsActionFields({
       <ProtocolExtractorsSection
         action={action}
         index={index}
-        protocol="jms-solace"
+        protocol={protocol}
         onAddExtractor={onAddExtractor}
         onRemoveExtractor={onRemoveExtractor}
         onUpdateExtractor={onUpdateExtractor}
@@ -703,7 +705,7 @@ export function JmsActionFields({
       <ProtocolAssertionsSection
         action={action}
         index={index}
-        protocol="jms-solace"
+        protocol={protocol}
         onAddAssertion={onAddAssertion}
         onRemoveAssertion={onRemoveAssertion}
         onUpdateAssertion={onUpdateAssertion}
@@ -867,6 +869,7 @@ export interface ProtocolExtractorsSectionProps {
 function extractorSourceOptions(protocol: string): Array<[string, string]> {
   switch (protocol) {
     case 'jms-solace':
+    case 'jms-servicebus':
     case 'jms-ibmmq':
       return [['body', 'Body'], ['header', 'Header'], ['property', 'Property'], ['message_id', 'Message ID'], ['correlation_id', 'Correlation ID']]
     case 'database':
@@ -938,6 +941,7 @@ export interface ProtocolAssertionsSectionProps {
 function assertionOptions(protocol: string): Array<[string, string]> {
   switch (protocol) {
     case 'jms-solace':
+    case 'jms-servicebus':
     case 'jms-ibmmq':
       return [['message_received', 'Message Received'], ['body_contains', 'Body Contains'], ['property_equals', 'Property Equals'], ['header_equals', 'Header Equals'], ['correlation_match', 'Correlation Match'], ['response_time_ms', 'Response Time (ms)']]
     case 'websocket':

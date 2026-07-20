@@ -46,6 +46,11 @@ func TestCreateTestAuthorizationIncludesStoredScenarioProject(t *testing.T) {
 func TestResolveTestCreateProjectReconcilesAllReferencedResources(t *testing.T) {
 	store, _ := newCreateTestProjectIsolationServer(t)
 	now := time.Now().UTC()
+	if err := store.SaveTest(&storage.TestRecord{
+		ID: "queued-revision-project-b", Name: "Queued revision", Status: "QUEUED", ProjectID: "project-b", Duration: int64(time.Minute), StartTime: now,
+	}); err != nil {
+		t.Fatalf("SaveTest(revision source): %v", err)
+	}
 	if err := store.SaveScenario(
 		&storage.Scenario{ID: "scenario-project-b", Name: "Project B scenario", Duration: "30s", CreatedAt: now, UpdatedAt: now},
 		[]storage.ScenarioScript{{ScenarioID: "scenario-project-b", ScriptID: "script-project-b", VUsers: 1}},
@@ -60,6 +65,8 @@ func TestResolveTestCreateProjectReconcilesAllReferencedResources(t *testing.T) 
 		wantProject string
 	}{
 		{name: "scenario determines scope", body: `{"scenario_id":"scenario-project-b"}`, wantProject: "project-b"},
+		{name: "revision source determines scope", body: `{"revision_source_test_id":"queued-revision-project-b"}`, wantProject: "project-b"},
+		{name: "declared project conflicts with revision source", body: `{"project_id":"project-a","revision_source_test_id":"queued-revision-project-b"}`, wantStatus: http.StatusBadRequest},
 		{name: "declared project conflicts with scenario", body: `{"project_id":"project-a","scenario_id":"scenario-project-b"}`, wantStatus: http.StatusBadRequest},
 		{name: "declared project conflicts with release", body: `{"project_id":"project-a","script_id":"script-project-a","release_id":"release-project-b"}`, wantStatus: http.StatusBadRequest},
 		{name: "declared project conflicts with application", body: `{"project_id":"project-a","script_id":"script-project-a","application_id":"application-project-b"}`, wantStatus: http.StatusBadRequest},

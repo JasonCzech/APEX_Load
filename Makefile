@@ -1,4 +1,4 @@
-.PHONY: all build test test-jms-solace-real clean generator controller apexctl recording-agent collector-agent package-recording-agent desktop desktop-release desktop-api-binaries clients desktop-preflight clients-release java-vuser-runner proto generate lint docker-generator docker-controller docker-local-up docker-local-down docker-local-logs docker-local-prometheus-check docker-push docker-push-acr k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-aks-render k8s-aks-apply k8s-aks-status k8s-aks-delete k8s-onprem-apply k8s-onprem-autoscaling-apply k8s-onprem-status k8s-onprem-delete k8s-smoke-test
+.PHONY: all build test test-jms-solace-real performance-smoke performance-evidence clean generator controller apexctl recording-agent collector-agent package-recording-agent desktop desktop-release desktop-api-binaries clients desktop-preflight clients-release java-vuser-runner proto generate lint docker-generator docker-controller docker-local-up docker-local-down docker-local-logs docker-local-prometheus-check docker-push docker-push-acr k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-aks-render k8s-aks-apply k8s-aks-status k8s-aks-delete k8s-onprem-apply k8s-onprem-autoscaling-apply k8s-onprem-status k8s-onprem-delete k8s-smoke-test
 
 VERSION    ?= $(shell ./scripts/resolve-version.sh 2>/dev/null || echo 0.1.0)
 COMMIT     ?= $(shell git rev-parse HEAD 2>/dev/null)
@@ -86,6 +86,17 @@ test:
 
 test-jms-solace-real:
 	go test -tags jms_solace_real ./pkg/protocol/jms
+
+# Safe local diagnostic: writes JSON to stdout and never creates an artifact.
+performance-smoke:
+	go run ./cmd/apexbench -profile smoke
+
+# Publishable component artifact plumbing. Both paths must be explicit and the
+# runner refuses to replace either existing file.
+performance-evidence:
+	test -n "$(PERF_JSON)" || (echo "PERF_JSON is required" && exit 1)
+	test -n "$(PERF_MD)" || (echo "PERF_MD is required" && exit 1)
+	./scripts/run-performance-evidence.sh "$(PERF_JSON)" "$(PERF_MD)"
 
 test-cover:
 	go test -race -coverprofile=coverage.out ./...

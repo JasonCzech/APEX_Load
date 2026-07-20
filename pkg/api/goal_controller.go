@@ -139,8 +139,7 @@ func hasGoalConfig(config *GoalConfig) bool {
 		config.MaxRedeliveryRatePct != nil ||
 		config.MaxDeadLetterRatePct != nil ||
 		config.StopOnSLABreach ||
-		config.StopOnMaxErrors ||
-		config.SLABreachWindow != ""
+		config.StopOnMaxErrors
 }
 
 func evaluateGoalController(now time.Time, currentTotalVUsers int, live *LiveMetrics, config *GoalConfig, state *goalControllerState) goalControllerUpdate {

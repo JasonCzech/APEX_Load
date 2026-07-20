@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -16,6 +17,31 @@ type scenarioRecoveryFaultStore struct {
 	failNextOccurrenceSave bool
 	failNextScheduleSave   bool
 	err                    error
+}
+
+// scheduleQuotaRaceStore consumes the last concurrency slot after the
+// scheduler's calendar preflight but before start admission. It deterministically
+// exercises the prepare-to-PENDING path without relying on goroutine timing.
+type scheduleQuotaRaceStore struct {
+	*metricsStoreSpy
+	runner *TestRunner
+	once   sync.Once
+}
+
+func (s *scheduleQuotaRaceStore) SaveTest(test *storage.TestRecord) error {
+	if err := s.metricsStoreSpy.SaveTest(test); err != nil {
+		return err
+	}
+	if test != nil && test.Status == "QUEUED" && s.runner != nil {
+		s.once.Do(func() {
+			s.runner.mu.Lock()
+			s.runner.tests["quota-race-winner"] = &ManagedTest{
+				ID: "quota-race-winner", Name: "Concurrent quota winner", Status: "RUNNING", TotalVUsers: 1,
+			}
+			s.runner.mu.Unlock()
+		})
+	}
+	return nil
 }
 
 func (s *scenarioRecoveryFaultStore) consumeOccurrenceFailure() bool {
@@ -56,6 +82,88 @@ func (s *scenarioRecoveryFaultStore) SaveScenarioSchedule(schedule *storage.Scen
 		return s.err
 	}
 	return s.metricsStoreSpy.SaveScenarioSchedule(schedule)
+}
+
+func TestScenarioSchedulerRecordsQuotaPendingOccurrenceAsQueued(t *testing.T) {
+	store := &scheduleQuotaRaceStore{metricsStoreSpy: &metricsStoreSpy{}}
+	runner := NewTestRunner(1, NewHub(), store)
+	store.runner = runner
+	backend := &scheduleExecutionBackend{started: make(chan string, 1)}
+	runner.setExecutionBackend(backend)
+	runner.StoreScript(&dsl.Script{
+		ID: "script-quota-pending-schedule", Name: "Quota pending schedule", Protocol: "http", Version: "1.0.0",
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{{Name: "step", Type: "request", Target: "/"}},
+	})
+	scenario, err := runner.StoreScenario(CreateScenarioRequest{
+		Name: "Quota pending schedule", Duration: "1m",
+		Groups: []CreateGroupEntry{{ScriptID: "script-quota-pending-schedule", VUsers: 1}},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario: %v", err)
+	}
+	now := time.Date(2026, time.July, 19, 16, 0, 0, 0, time.UTC)
+	schedule := &storage.ScenarioSchedule{
+		ID: "schedule-quota-pending", ScenarioID: scenario.ID, Revision: 1,
+		Name: "Quota pending", CronExpr: "*/5 * * * *", Enabled: true, NextRunAt: &now,
+		CreatedAt: now.Add(-time.Hour), UpdatedAt: now.Add(-time.Hour),
+	}
+	runner.mu.Lock()
+	if err := runner.saveScenarioScheduleLocked(schedule); err != nil {
+		runner.mu.Unlock()
+		t.Fatalf("saveScenarioScheduleLocked: %v", err)
+	}
+	runner.mu.Unlock()
+
+	scheduler := newScenarioScheduler(runner)
+	scheduler.now = func() time.Time { return now }
+	if err := scheduler.RunDueSchedules(); err != nil {
+		t.Fatalf("RunDueSchedules: %v", err)
+	}
+	select {
+	case testID := <-backend.started:
+		t.Fatalf("quota-pending scheduled test %q was dispatched", testID)
+	default:
+	}
+
+	var pending *ManagedTest
+	runner.mu.RLock()
+	for id, test := range runner.tests {
+		if id != "quota-race-winner" {
+			pending = test
+			break
+		}
+	}
+	runner.mu.RUnlock()
+	if pending == nil || pending.Status != "PENDING" || !strings.Contains(pending.PendingReason, "global test slot") {
+		t.Fatalf("scheduled run = %#v, want quota PENDING", pending)
+	}
+	occurrences, err := store.ListScenarioScheduleOccurrences(schedule.ID)
+	if err != nil {
+		t.Fatalf("ListScenarioScheduleOccurrences: %v", err)
+	}
+	if len(occurrences) != 1 {
+		t.Fatalf("occurrences = %#v, want one", occurrences)
+	}
+	occurrence := occurrences[0]
+	if occurrence.Status != "queued" || occurrence.ReasonCode != "quota_pending" || occurrence.TestID != pending.ID || occurrence.MaterializedAt != nil {
+		t.Fatalf("occurrence = %#v, want queued/quota_pending without materialized_at", occurrence)
+	}
+	if !strings.Contains(occurrence.ConflictSummary, "global test slot") {
+		t.Fatalf("occurrence conflict summary = %q, want quota reason", occurrence.ConflictSummary)
+	}
+	runner.mu.RLock()
+	currentSchedule := cloneScenarioSchedule(runner.scenarios[scenario.ID].Schedules[0])
+	runner.mu.RUnlock()
+	if currentSchedule.LastRunAt != nil {
+		t.Fatalf("schedule LastRunAt = %v, want nil before actual start", currentSchedule.LastRunAt)
+	}
+	if currentSchedule.LastRunTestID != pending.ID || currentSchedule.LastOccurrence == nil || currentSchedule.LastOccurrence.Status != "queued" {
+		t.Fatalf("schedule audit state = %#v, want queued test reference", currentSchedule)
+	}
+	if currentSchedule.NextRunAt == nil || !currentSchedule.NextRunAt.After(now) {
+		t.Fatalf("schedule NextRunAt = %v, want advanced recurrence", currentSchedule.NextRunAt)
+	}
 }
 
 func TestScenarioSchedulerFailsPreparedTestWhenNextRunCalculationFails(t *testing.T) {

@@ -722,6 +722,7 @@ func cloneArchiveTestGroups(groups []TestGroup) []TestGroup {
 	for i := range cloned {
 		cloned[i].Stages = cloneLoadStages(groups[i].Stages)
 		cloned[i].Iterations = cloneIntPtr(groups[i].Iterations)
+		cloned[i].IterationOverride = cloneIntPtr(groups[i].IterationOverride)
 		cloned[i].RuntimeSettings = cloneRuntimeSettings(groups[i].RuntimeSettings)
 		cloned[i].Assignment = cloneGeneratorAssignmentSettings(groups[i].Assignment)
 		cloned[i].RunLogicGoals = cloneRunLogicGoalSnapshot(groups[i].RunLogicGoals)

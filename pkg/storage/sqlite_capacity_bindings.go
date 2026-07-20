@@ -32,6 +32,11 @@ const (
 	CapacityBindingTestExists            CapacityBindingResult = "test_exists"
 )
 
+// ErrCapacityReservationStartInvalid marks a launch-time failure of the
+// reciprocal reservation/test invariant. Callers must not persist an active
+// test state when the bound slot was rejected, resized, removed, or re-bound.
+var ErrCapacityReservationStartInvalid = errors.New("bound capacity reservation is not valid for test start")
+
 // CapacityBindingReleaseResult distinguishes a stale lease from an already
 // released pair. That distinction is important to HA retry workers: a stale
 // epoch must stop instead of treating its no-op as successful cleanup.
@@ -387,6 +392,77 @@ func testForCapacityBindingUpdate(tx *storeTx, dialect storeDialect, id string) 
 		return nil, err
 	}
 	return &test, nil
+}
+
+// validateCapacityReservationForTestStart locks and validates the reservation
+// and reciprocal test row in the same transaction that will persist SHAKEOUT or
+// INITIALIZING. The lock order is reservation -> test, matching reject/unbind,
+// so a concurrent rejection and start have exactly one durable winner.
+func validateCapacityReservationForTestStart(tx *storeTx, dialect storeDialect, test *TestRecord) (string, error) {
+	if test == nil || test.TimeslotID == nil || strings.TrimSpace(*test.TimeslotID) == "" {
+		return "", nil
+	}
+	slotID := strings.TrimSpace(*test.TimeslotID)
+	reservation, err := capacityReservationForUpdate(tx, dialect, slotID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", fmt.Errorf("%w: timeslot %q no longer exists", ErrCapacityReservationStartInvalid, slotID)
+		}
+		return "", err
+	}
+	if strings.ToLower(strings.TrimSpace(reservation.ApprovalState)) != "approved" {
+		return "", fmt.Errorf("%w: timeslot %q is %q", ErrCapacityReservationStartInvalid, slotID, reservation.ApprovalState)
+	}
+	if reservation.BoundTestID == nil || strings.TrimSpace(*reservation.BoundTestID) != strings.TrimSpace(test.ID) {
+		return "", fmt.Errorf("%w: timeslot %q is no longer bound to test %q", ErrCapacityReservationStartInvalid, slotID, test.ID)
+	}
+	if normalizeProjectID(reservation.ProjectID) != normalizeProjectID(test.ProjectID) {
+		return "", fmt.Errorf("%w: timeslot %q belongs to a different project", ErrCapacityReservationStartInvalid, slotID)
+	}
+
+	// Lock the reciprocal test row after the reservation. A committed reject
+	// clears this pointer, so a stale in-memory TestRecord cannot restore it via
+	// the full-row start upsert.
+	durable, err := testForCapacityBindingUpdate(tx, dialect, test.ID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", fmt.Errorf("%w: bound test %q no longer exists", ErrCapacityReservationStartInvalid, test.ID)
+		}
+		return "", err
+	}
+	if durable.TimeslotID == nil || strings.TrimSpace(*durable.TimeslotID) != slotID {
+		return "", fmt.Errorf("%w: test %q no longer carries timeslot %q", ErrCapacityReservationStartInvalid, test.ID, slotID)
+	}
+
+	windowStartSet := test.CapacityWindowStartAt != nil && !test.CapacityWindowStartAt.IsZero()
+	windowEndSet := test.CapacityWindowEndAt != nil && !test.CapacityWindowEndAt.IsZero()
+	if windowStartSet != windowEndSet {
+		return "", fmt.Errorf("%w: test %q has an incomplete capacity window", ErrCapacityReservationStartInvalid, test.ID)
+	}
+	launchDuration := time.Duration(test.Duration)
+	if windowStartSet {
+		launchDuration = test.CapacityWindowEndAt.Sub(*test.CapacityWindowStartAt)
+		if launchDuration < 0 {
+			return "", fmt.Errorf("%w: test %q has an invalid capacity window", ErrCapacityReservationStartInvalid, test.ID)
+		}
+	}
+	// CapacityWindowStartAt is the planned bind instant. At the execution
+	// boundary the run consumes capacity at the database's current time, while
+	// retaining the authoritative full-window span (delay/baselines included).
+	// Never substitute a future ScheduledStartAt here: that would authorize an
+	// early manual/pending start against capacity that does not exist yet.
+	startAt, err := preciseDatabaseTime(tx, dialect)
+	if err != nil {
+		return "", err
+	}
+	endAt := startAt.Add(launchDuration)
+	if startAt.Before(reservation.StartAt.UTC()) || endAt.After(reservation.EndAt.UTC()) {
+		return "", fmt.Errorf("%w: timeslot %q no longer contains test %q launch window", ErrCapacityReservationStartInvalid, slotID, test.ID)
+	}
+	if reservation.RequestedCapacity != nil && reservation.RequestedCapacity.VUsers != nil && test.TotalVUsers > *reservation.RequestedCapacity.VUsers {
+		return "", fmt.Errorf("%w: timeslot %q no longer covers %d VUsers", ErrCapacityReservationStartInvalid, slotID, test.TotalVUsers)
+	}
+	return slotID, nil
 }
 
 func (s *SQLiteStore) ClearCapacityReservationBindingAndTestIfLeaseHeld(reservationID, testID string, updatedAt time.Time, leaseName, leaseOwnerID string) (CapacityBindingReleaseResult, error) {

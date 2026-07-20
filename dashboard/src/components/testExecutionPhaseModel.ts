@@ -5,6 +5,7 @@ interface ExecutionPhaseModel {
   isPaused: boolean
   isStopping: boolean
   showLiveControls: boolean
+  showAbortControl: boolean
   showArchiveSection: boolean
   showArchiveDownload: boolean
 }
@@ -19,6 +20,10 @@ export function buildExecutionPhaseModel(test: TestSummary, hasArchive: boolean)
     isPaused,
     isStopping,
     showLiveControls: isRunning || isPaused,
+    // Detailed live controls are unsafe once teardown starts, but operators
+    // must retain one escalation path so a wedged graceful stop can retry the
+    // backend's idempotent teardown.
+    showAbortControl: isRunning || isPaused || isStopping,
     showArchiveSection: !isRunning && !isStopping,
     showArchiveDownload: !isRunning && !isStopping && hasArchive,
   }

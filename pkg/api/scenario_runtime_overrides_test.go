@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -359,6 +360,435 @@ func TestApplyScenarioRuntimeToGroupsSkipsIncompatibleAndNeverLeaksSecrets(t *te
 				t.Fatalf("stored target env %q == [REDACTED]; sentinel must never be persisted", k)
 			}
 		}
+	}
+}
+
+func TestApplyScenarioRuntimeToGroupsMaterializesInheritedSourceScriptRuntime(t *testing.T) {
+	server, _ := newRuntimeOverrideTestServer(t)
+	source := httpScript("script-inherited-source", "Inherited Source")
+	source.Config.Pacing = dsl.PacingConfig{Type: "fixed_delay", DelayMs: 500}
+	target := httpScript("script-different-target", "Different Target")
+	target.Config.Pacing = dsl.PacingConfig{Type: "fixed_delay", DelayMs: 900}
+	server.runner.StoreScript(source)
+	server.runner.StoreScript(target)
+
+	scenario, err := server.runner.StoreScenario(CreateScenarioRequest{
+		Name:     "Inherited source runtime",
+		Duration: "1m",
+		Groups: []CreateGroupEntry{
+			{Name: "Source", ScriptID: source.ID, VUsers: 1},
+			{
+				Name: "Target", ScriptID: target.ID, VUsers: 1,
+				RuntimeSettings: &RuntimeSettingsOverride{
+					Pacing:    &dsl.PacingConfig{Type: "fixed_delay", DelayMs: 1200},
+					ThinkTime: &dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 250},
+					Env:       map[string]string{"TARGET_REGION": "west"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("StoreScenario: %v", err)
+	}
+
+	out, ok, err := server.runner.ApplyScenarioRuntimeToGroups(scenario.ID, ApplyRuntimeToGroupsRequest{
+		SourceGroup:  0,
+		TargetGroups: []int{1},
+		Fields:       []string{"pacing"},
+	})
+	if err != nil || !ok {
+		t.Fatalf("ApplyScenarioRuntimeToGroups: ok=%v err=%v", ok, err)
+	}
+	targetRuntime := out.Scenario.Scripts[1].RuntimeSettings
+	if targetRuntime == nil || targetRuntime.Pacing == nil || targetRuntime.Pacing.Type != "fixed_delay" || targetRuntime.Pacing.DelayMs != 500 {
+		t.Fatalf("target pacing = %#v, want inherited source-script fixed_delay/500", targetRuntime)
+	}
+	if targetRuntime.ThinkTime == nil || targetRuntime.ThinkTime.MeanMs != 250 || targetRuntime.Env["TARGET_REGION"] != "west" {
+		t.Fatalf("target-only runtime siblings were not preserved: %#v", targetRuntime)
+	}
+
+	created, err := server.runner.CreateTest(CreateTestRequest{ScenarioID: scenario.ID})
+	if err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+	if got := created.Groups[1].script.Config.Pacing; got.Type != "fixed_delay" || got.DelayMs != 500 {
+		t.Fatalf("target executable pacing = %#v, want copied source effective fixed_delay/500", got)
+	}
+}
+
+func TestApplyScenarioRuntimeToGroupsMaterializesEngineDefaultsAndPreservesTargetLocalFields(t *testing.T) {
+	server, store := newRuntimeOverrideTestServer(t)
+	server.runner.StoreScript(httpScript("script-clear-source", "Source"))
+	server.runner.StoreScript(httpScript("script-clear-target", "Target"))
+
+	now := time.Now().UTC()
+	server.runner.scenarios["scn-apply-clear"] = &StoredScenario{
+		ID:        "scn-apply-clear",
+		Name:      "Apply Clear Scenario",
+		Duration:  "1m",
+		CreatedAt: now,
+		UpdatedAt: now,
+		Scripts: []ScenarioScriptRef{
+			{Order: 0, ScriptID: "script-clear-source", Name: "Source", Protocol: "http", VUsers: 1},
+			{
+				Order: 1, ScriptID: "script-clear-target", Name: "Target", Protocol: "http", VUsers: 1,
+				RuntimeSettings: &RuntimeSettingsOverride{
+					Pacing:    &dsl.PacingConfig{Type: "fixed_delay", DelayMs: 900},
+					LogLevel:  "extended",
+					HTTP:      &dsl.HTTPConfig{Version: "2"},
+					ThinkTime: &dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 250},
+					Env:       map[string]string{"TARGET_ONLY": "secret"},
+					RedactionRules: []engine.RedactionRule{
+						{Name: "target-local", Pattern: `customer-[0-9]+`},
+					},
+				},
+			},
+		},
+		ScriptCount: 2,
+	}
+	persisted := storedScenarioToStorage(server.runner.scenarios["scn-apply-clear"])
+	if err := store.SaveScenario(persisted, storedScenarioRefsToStorage(server.runner.scenarios["scn-apply-clear"])); err != nil {
+		t.Fatalf("SaveScenario: %v", err)
+	}
+	server.runner.scenarios["scn-apply-clear"].UpdatedAt = persisted.UpdatedAt
+
+	out, ok, err := server.runner.ApplyScenarioRuntimeToGroups("scn-apply-clear", ApplyRuntimeToGroupsRequest{
+		SourceGroup:  0,
+		TargetGroups: []int{1},
+		Fields:       []string{"pacing", "log_level", "http"},
+	})
+	if err != nil || !ok {
+		t.Fatalf("ApplyScenarioRuntimeToGroups: ok=%v err=%v", ok, err)
+	}
+	if out.Applied != 1 {
+		t.Fatalf("applied = %d, want 1", out.Applied)
+	}
+
+	target := server.runner.scenarios["scn-apply-clear"].Scripts[1].RuntimeSettings
+	if target == nil {
+		t.Fatal("target runtime settings = nil, want unselected target-local fields preserved")
+	}
+	if target.Pacing == nil || target.Pacing.Type != "none" {
+		t.Fatalf("target pacing = %#v, want source effective engine default none", target.Pacing)
+	}
+	if target.LogLevel != "standard" {
+		t.Fatalf("target log level = %q, want source effective engine default standard", target.LogLevel)
+	}
+	if target.HTTP == nil || target.HTTP.ConnectTimeoutMs != 30000 || target.HTTP.TLS.MinVersion != "1.2" {
+		t.Fatalf("target HTTP = %#v, want source effective engine defaults", target.HTTP)
+	}
+	if target.ThinkTime == nil || target.ThinkTime.MeanMs != 250 {
+		t.Fatalf("unselected think time = %#v, want fixed/250 preserved", target.ThinkTime)
+	}
+	if got := target.Env["TARGET_ONLY"]; got != "secret" {
+		t.Fatalf("target-local env = %q, want secret preserved", got)
+	}
+	if len(target.RedactionRules) != 1 || target.RedactionRules[0].Name != "target-local" {
+		t.Fatalf("target-local redaction rules = %#v, want preserved", target.RedactionRules)
+	}
+}
+
+func TestApplyScenarioRuntimeToGroupsRejectsInvalidCoupledSettingsAtomically(t *testing.T) {
+	server, store := newRuntimeOverrideTestServer(t)
+	server.runner.StoreScript(httpScript("script-open-source", "Open Source"))
+	server.runner.StoreScript(httpScript("script-closed-target", "Closed Target"))
+
+	now := time.Now().UTC()
+	scenario := &StoredScenario{
+		ID:        "scn-apply-invalid",
+		Name:      "Apply Invalid Scenario",
+		Duration:  "1m",
+		CreatedAt: now,
+		UpdatedAt: now,
+		Scripts: []ScenarioScriptRef{
+			{
+				Order: 0, ScriptID: "script-open-source", Name: "Open Source", Protocol: "http", VUsers: 1,
+				RuntimeSettings: &RuntimeSettingsOverride{
+					RunLogic: &dsl.RunLogicConfig{WorkloadModel: "open"},
+					Pacing:   &dsl.PacingConfig{Type: "tps", TPS: 10},
+				},
+			},
+			{
+				Order: 1, ScriptID: "script-closed-target", Name: "Closed Target", Protocol: "http", VUsers: 1,
+				RuntimeSettings: &RuntimeSettingsOverride{
+					RunLogic: &dsl.RunLogicConfig{WorkloadModel: "closed"},
+					Pacing:   &dsl.PacingConfig{Type: "fixed_delay", DelayMs: 100},
+				},
+			},
+		},
+		ScriptCount: 2,
+	}
+	server.runner.scenarios[scenario.ID] = scenario
+	persisted := storedScenarioToStorage(scenario)
+	if err := store.SaveScenario(persisted, storedScenarioRefsToStorage(scenario)); err != nil {
+		t.Fatalf("SaveScenario: %v", err)
+	}
+	scenario.UpdatedAt = persisted.UpdatedAt
+
+	_, ok, err := server.runner.ApplyScenarioRuntimeToGroups(scenario.ID, ApplyRuntimeToGroupsRequest{
+		SourceGroup:  0,
+		TargetGroups: []int{1},
+		Fields:       []string{"run_logic"},
+	})
+	if !ok || err == nil {
+		t.Fatalf("ApplyScenarioRuntimeToGroups: ok=%v err=%v, want validation error", ok, err)
+	}
+	if got := server.runner.scenarios[scenario.ID].Scripts[1].RuntimeSettings.RunLogic.WorkloadModel; got != "closed" {
+		t.Fatalf("stored target workload_model = %q, want closed after atomic rejection", got)
+	}
+	if got := server.runner.scenarios[scenario.ID].Scripts[1].RuntimeSettings.Pacing.Type; got != "fixed_delay" {
+		t.Fatalf("stored target pacing = %q, want fixed_delay after atomic rejection", got)
+	}
+}
+
+func TestApplyScenarioRuntimeToGroupsRejectsOutOfRangeTargetAtomically(t *testing.T) {
+	server, store := newRuntimeOverrideTestServer(t)
+	server.runner.StoreScript(httpScript("script-range-source", "Range Source"))
+	server.runner.StoreScript(httpScript("script-range-target", "Range Target"))
+
+	now := time.Now().UTC()
+	scenario := &StoredScenario{
+		ID:        "scn-apply-target-range",
+		Name:      "Apply Target Range Scenario",
+		Duration:  "1m",
+		CreatedAt: now,
+		UpdatedAt: now,
+		Scripts: []ScenarioScriptRef{
+			{
+				Order: 0, ScriptID: "script-range-source", Name: "Range Source", Protocol: "http", VUsers: 1,
+				RuntimeSettings: &RuntimeSettingsOverride{Pacing: &dsl.PacingConfig{Type: "fixed_delay", DelayMs: 250}},
+			},
+			{
+				Order: 1, ScriptID: "script-range-target", Name: "Range Target", Protocol: "http", VUsers: 1,
+				RuntimeSettings: &RuntimeSettingsOverride{
+					Pacing:    &dsl.PacingConfig{Type: "fixed_delay", DelayMs: 900},
+					ThinkTime: &dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 125},
+				},
+			},
+		},
+		ScriptCount: 2,
+	}
+	server.runner.scenarios[scenario.ID] = scenario
+	persisted := storedScenarioToStorage(scenario)
+	if err := store.SaveScenario(persisted, storedScenarioRefsToStorage(scenario)); err != nil {
+		t.Fatalf("SaveScenario: %v", err)
+	}
+	scenario.UpdatedAt = persisted.UpdatedAt
+
+	memoryBefore, err := json.Marshal(server.runner.scenarios[scenario.ID])
+	if err != nil {
+		t.Fatalf("marshal in-memory baseline: %v", err)
+	}
+	durableScenarioBefore, durableChildrenBefore, err := store.GetScenario(scenario.ID)
+	if err != nil {
+		t.Fatalf("GetScenario baseline: %v", err)
+	}
+	durableBefore, err := json.Marshal(struct {
+		Scenario *storage.Scenario        `json:"scenario"`
+		Scripts  []storage.ScenarioScript `json:"scripts"`
+	}{durableScenarioBefore, durableChildrenBefore})
+	if err != nil {
+		t.Fatalf("marshal durable baseline: %v", err)
+	}
+	revisionBefore := server.runner.contentRevision
+
+	tests := []struct {
+		name    string
+		targets []int
+		wantErr string
+	}{
+		{name: "valid followed by upper bound", targets: []int{1, 2}, wantErr: "target_groups[1] 2 out of range [0,2)"},
+		{name: "valid followed by negative index", targets: []int{1, -1}, wantErr: "target_groups[1] -1 out of range [0,2)"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			out, ok, err := server.runner.ApplyScenarioRuntimeToGroups(scenario.ID, ApplyRuntimeToGroupsRequest{
+				SourceGroup:  0,
+				TargetGroups: test.targets,
+				Fields:       []string{"pacing"},
+			})
+			if !ok || err == nil || err.Error() != test.wantErr {
+				t.Fatalf("ApplyScenarioRuntimeToGroups: response=%#v ok=%v err=%v, want nil/true/%q", out, ok, err, test.wantErr)
+			}
+			if out != nil {
+				t.Fatalf("response = %#v, want nil after atomic rejection", out)
+			}
+
+			memoryAfter, marshalErr := json.Marshal(server.runner.scenarios[scenario.ID])
+			if marshalErr != nil {
+				t.Fatalf("marshal in-memory state: %v", marshalErr)
+			}
+			if !bytes.Equal(memoryAfter, memoryBefore) {
+				t.Fatalf("in-memory scenario changed after rejected request:\n before=%s\n  after=%s", memoryBefore, memoryAfter)
+			}
+			if server.runner.contentRevision != revisionBefore {
+				t.Fatalf("content revision = %d, want unchanged %d", server.runner.contentRevision, revisionBefore)
+			}
+
+			durableScenarioAfter, durableChildrenAfter, getErr := store.GetScenario(scenario.ID)
+			if getErr != nil {
+				t.Fatalf("GetScenario after rejection: %v", getErr)
+			}
+			durableAfter, marshalErr := json.Marshal(struct {
+				Scenario *storage.Scenario        `json:"scenario"`
+				Scripts  []storage.ScenarioScript `json:"scripts"`
+			}{durableScenarioAfter, durableChildrenAfter})
+			if marshalErr != nil {
+				t.Fatalf("marshal durable state: %v", marshalErr)
+			}
+			if !bytes.Equal(durableAfter, durableBefore) {
+				t.Fatalf("durable scenario changed after rejected request:\n before=%s\n  after=%s", durableBefore, durableAfter)
+			}
+		})
+	}
+}
+
+func TestCreateTestRequestFromScenarioReconcilesMaskedCompleteRuntimeProfiles(t *testing.T) {
+	prior := &StoredScenario{
+		Name:     "Scenario",
+		Duration: "1m",
+		RuntimeSettings: &RuntimeSettingsOverride{
+			Log: &dsl.LogConfig{Level: "standard", ExtendedOptions: []string{"advanced_trace"}},
+			Env: map[string]string{"ROOT_TOKEN": "root-secret"},
+		},
+		Scripts: []ScenarioScriptRef{{
+			Order: 0, ScriptID: "script-a", Name: "A", VUsers: 1,
+			RuntimeSettings: &RuntimeSettingsOverride{
+				HTTP: &dsl.HTTPConfig{Version: "2"},
+				Env:  map[string]string{"GROUP_TOKEN": "group-secret"},
+			},
+		}},
+	}
+	req := CreateTestRequest{
+		RuntimeSettings: maskRuntimeSettings(prior.RuntimeSettings),
+		Groups: []CreateGroupEntry{{
+			ScriptID:        "script-a",
+			VUsers:          1,
+			RuntimeSettings: maskRuntimeSettings(prior.Scripts[0].RuntimeSettings),
+		}},
+	}
+	req.RuntimeSettings.Log.Level = "extended"
+
+	got := createTestRequestFromScenario(req, prior)
+	if got.RuntimeSettings == nil || got.RuntimeSettings.Env["ROOT_TOKEN"] != "root-secret" {
+		t.Fatalf("root runtime credentials = %#v, want authoritative secret restored", got.RuntimeSettings)
+	}
+	if got.RuntimeSettings.Log == nil || got.RuntimeSettings.Log.Level != "extended" || len(got.RuntimeSettings.Log.ExtendedOptions) != 1 {
+		t.Fatalf("root log = %#v, want edited level with advanced sibling preserved", got.RuntimeSettings.Log)
+	}
+	groupRuntime := got.Groups[0].RuntimeSettings
+	if groupRuntime == nil || groupRuntime.Env["GROUP_TOKEN"] != "group-secret" || groupRuntime.HTTP == nil || groupRuntime.HTTP.Version != "2" {
+		t.Fatalf("group runtime = %#v, want masked credential reconciled and advanced HTTP preserved", groupRuntime)
+	}
+}
+
+func TestCreateTestRequestFromScenarioReconcilesReorderedDuplicateScriptGroupsByStableIdentity(t *testing.T) {
+	prior := &StoredScenario{
+		Name: "Duplicate script groups", Duration: "1m",
+		Scripts: []ScenarioScriptRef{
+			{
+				Order: 0, ScriptID: "shared-script", Name: "Primary", VUsers: 1,
+				RuntimeSettings: &RuntimeSettingsOverride{Env: map[string]string{"GROUP_TOKEN": "primary-secret"}},
+			},
+			{
+				Order: 1, ScriptID: "shared-script", Name: "Secondary", VUsers: 1,
+				RuntimeSettings: &RuntimeSettingsOverride{Env: map[string]string{"GROUP_TOKEN": "secondary-secret"}},
+			},
+		},
+	}
+	req := CreateTestRequest{Groups: []CreateGroupEntry{
+		{Name: "Secondary", ScriptID: "shared-script", VUsers: 1, RuntimeSettings: maskRuntimeSettings(prior.Scripts[1].RuntimeSettings)},
+		{Name: "Primary", ScriptID: "shared-script", VUsers: 1, RuntimeSettings: maskRuntimeSettings(prior.Scripts[0].RuntimeSettings)},
+	}}
+
+	got := createTestRequestFromScenario(req, prior)
+	if value := got.Groups[0].RuntimeSettings.Env["GROUP_TOKEN"]; value != "secondary-secret" {
+		t.Fatalf("reordered Secondary credential = %q, want secondary-secret", value)
+	}
+	if value := got.Groups[1].RuntimeSettings.Env["GROUP_TOKEN"]; value != "primary-secret" {
+		t.Fatalf("reordered Primary credential = %q, want primary-secret", value)
+	}
+}
+
+func TestCreateTestRequestFromScenarioRevisionUsesQueuedRunCredentialBaseline(t *testing.T) {
+	scenario := &StoredScenario{
+		Name: "Mutable scenario", Duration: "1m",
+		RuntimeSettings: &RuntimeSettingsOverride{
+			HTTP: &dsl.HTTPConfig{Auth: dsl.AuthConfig{Token: "scenario-current-token"}},
+			Env:  map[string]string{"ROOT_TOKEN": "scenario-current-env"},
+		},
+		Scripts: []ScenarioScriptRef{{
+			ScriptID: "script-a", Name: "Primary", VUsers: 1,
+			RuntimeSettings: &RuntimeSettingsOverride{
+				HTTP: &dsl.HTTPConfig{Auth: dsl.AuthConfig{Token: "scenario-current-group-token"}},
+				Env:  map[string]string{"GROUP_TOKEN": "scenario-current-group-env"},
+			},
+		}},
+	}
+	source := &ManagedTest{
+		ID: "queued-source", Name: "Queued source", Status: "QUEUED", DurationStr: "1m",
+		RuntimeSettings: &RuntimeSettingsOverride{
+			HTTP: &dsl.HTTPConfig{Auth: dsl.AuthConfig{Token: "queued-run-token"}},
+			Env:  map[string]string{"ROOT_TOKEN": "queued-run-env"},
+		},
+		Groups: []TestGroup{{
+			ScriptID: "script-a", Name: "Primary", VUsers: 1,
+			RuntimeSettings: &RuntimeSettingsOverride{
+				HTTP: &dsl.HTTPConfig{Auth: dsl.AuthConfig{Token: "queued-run-group-token"}},
+				Env:  map[string]string{"GROUP_TOKEN": "queued-run-group-env"},
+			},
+		}},
+	}
+	req := CreateTestRequest{
+		RuntimeSettings: maskRuntimeSettings(source.RuntimeSettings),
+		Groups: []CreateGroupEntry{{
+			ScriptID: "script-a", Name: "Primary", VUsers: 1,
+			RuntimeSettings: maskRuntimeSettings(source.Groups[0].RuntimeSettings),
+		}},
+	}
+
+	got := createTestRequestFromScenarioRevision(req, scenario, source)
+	if got.RuntimeSettings == nil || got.RuntimeSettings.HTTP == nil || got.RuntimeSettings.HTTP.Auth.Token != "queued-run-token" || got.RuntimeSettings.Env["ROOT_TOKEN"] != "queued-run-env" {
+		t.Fatalf("root revision credentials = %#v, want queued-run baseline", got.RuntimeSettings)
+	}
+	if group := got.Groups[0].RuntimeSettings; group == nil || group.HTTP == nil || group.HTTP.Auth.Token != "queued-run-group-token" || group.Env["GROUP_TOKEN"] != "queued-run-group-env" {
+		t.Fatalf("group revision credentials = %#v, want queued-run baseline", group)
+	}
+}
+
+func TestReplaceRuntimeFieldsCopiesCanonicalSectionValuesThroughCompactAliases(t *testing.T) {
+	headed := false
+	touch := true
+	source := &RuntimeSettingsOverride{
+		RunLogic: &dsl.RunLogicConfig{Iterations: 7, AutoTransactions: "per_iteration", WorkloadModel: "open"},
+		Log:      &dsl.LogConfig{Level: "extended", OnErrorOnly: true},
+		BrowserConfig: &dsl.BrowserConfig{
+			Headless: &headed, DeviceProfile: "pixel_8", TouchMode: &touch, Orientation: "portrait",
+		},
+	}
+	target := &RuntimeSettingsOverride{
+		RunLogic: &dsl.RunLogicConfig{Iterations: 2, AutoTransactions: "none", MaxTransactions: 99},
+		Log:      &dsl.LogConfig{Level: "standard", ExtendedOptions: []string{"parameter_substitution"}},
+		BrowserConfig: &dsl.BrowserConfig{
+			Engine: "firefox", DeviceProfile: "desktop",
+		},
+	}
+
+	got := replaceRuntimeFields(target, source, []string{"iterations", "auto_transactions", "log_level", "browser"})
+	if got.RunLogic == nil || got.RunLogic.Iterations != 7 || got.RunLogic.AutoTransactions != "per_iteration" || got.RunLogic.MaxTransactions != 99 {
+		t.Fatalf("run_logic = %#v, want compact values copied with target sibling preserved", got.RunLogic)
+	}
+	if got.Iterations != nil || got.AutoTransactions != "" {
+		t.Fatalf("legacy run aliases remained authoritative: iterations=%v auto_transactions=%q", got.Iterations, got.AutoTransactions)
+	}
+	if got.Log == nil || got.Log.Level != "extended" || len(got.Log.ExtendedOptions) != 1 {
+		t.Fatalf("log = %#v, want canonical level copied with target sibling preserved", got.Log)
+	}
+	if got.BrowserConfig == nil || got.BrowserConfig.Engine != "firefox" || got.BrowserConfig.DeviceProfile != "pixel_8" || got.BrowserConfig.Headless == nil || *got.BrowserConfig.Headless || got.BrowserConfig.TouchMode == nil || !*got.BrowserConfig.TouchMode {
+		t.Fatalf("browser_config = %#v, want compact browser fields copied with advanced target siblings", got.BrowserConfig)
+	}
+	if got.Browser != nil {
+		t.Fatalf("legacy browser alias remained alongside canonical section: %#v", got.Browser)
 	}
 }
 

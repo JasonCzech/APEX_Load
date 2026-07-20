@@ -349,6 +349,199 @@ func (tr *TestRunner) repairCapacityReservationBindings() error {
 	return nil
 }
 
+func capacityBindingMatchesRecord(test *ManagedTest, record *storage.TestRecord) bool {
+	if test == nil || record == nil {
+		return true
+	}
+	return strings.TrimSpace(trimPtr(test.TimeslotID)) == strings.TrimSpace(trimPtr(record.TimeslotID)) &&
+		sameOptionalTime(test.CapacityWindowStartAt, record.CapacityWindowStartAt) &&
+		sameOptionalTime(test.CapacityWindowEndAt, record.CapacityWindowEndAt)
+}
+
+// applyStoredCapacityBindingLocked refreshes the three reciprocal binding
+// fields whose source of truth is the durable tests row. Caller holds tr.mu.
+func applyStoredCapacityBindingLocked(test *ManagedTest, record *storage.TestRecord) bool {
+	if test == nil || record == nil || capacityBindingMatchesRecord(test, record) {
+		return false
+	}
+	test.TimeslotID = cloneStringPtr(record.TimeslotID)
+	test.CapacityWindowStartAt = cloneTimePtr(record.CapacityWindowStartAt)
+	test.CapacityWindowEndAt = cloneTimePtr(record.CapacityWindowEndAt)
+	return true
+}
+
+func (tr *TestRunner) broadcastCapacityBindingUpdated(test *ManagedTest) {
+	if tr == nil || tr.hub == nil || test == nil {
+		return
+	}
+	tr.hub.BroadcastScopedJSON(test.ID, normalizeProjectID(test.ProjectID), map[string]any{
+		"type":        "test_capacity_binding_updated",
+		"test_id":     test.ID,
+		"project_id":  normalizeProjectID(test.ProjectID),
+		"test_name":   test.Name,
+		"status":      test.Status,
+		"timeslot_id": cloneStringPtr(test.TimeslotID),
+		"timestamp":   time.Now().UTC(),
+	})
+}
+
+// clearLiveCapacityReservationBinding is the local fast path after a storage
+// transaction atomically clears reservation.bound_test_id and tests.timeslot_id.
+// Cross-replica start/read paths independently refresh from the durable row.
+func (tr *TestRunner) clearLiveCapacityReservationBinding(testID, slotID string) bool {
+	if tr == nil {
+		return false
+	}
+	testID = strings.TrimSpace(testID)
+	slotID = strings.TrimSpace(slotID)
+	if testID == "" || slotID == "" {
+		return false
+	}
+	tr.mu.Lock()
+	test := tr.tests[testID]
+	if test == nil || strings.TrimSpace(trimPtr(test.TimeslotID)) != slotID {
+		tr.mu.Unlock()
+		return false
+	}
+	test.TimeslotID = nil
+	test.CapacityWindowStartAt = nil
+	test.CapacityWindowEndAt = nil
+	snapshot := cloneManagedTestSummaryForReadLocked(test)
+	tr.mu.Unlock()
+	tr.broadcastCapacityBindingUpdated(snapshot)
+	return true
+}
+
+// refreshTestCapacityBindingFromStore closes the HA invalidation gap at every
+// execution boundary. A reject/edit may be served by another replica; querying
+// the reciprocal durable test row prevents this controller from launching or
+// serializing a stale timeslot pointer.
+func (tr *TestRunner) refreshTestCapacityBindingFromStore(id string) error {
+	if tr == nil || tr.testStore == nil || strings.TrimSpace(id) == "" {
+		return nil
+	}
+	record, err := tr.testStore.GetTest(strings.TrimSpace(id))
+	if err != nil {
+		return fmt.Errorf("refresh test capacity binding: %w", err)
+	}
+	// A few focused compatibility stores return (nil, nil) for lookups. Their
+	// runners have no cross-replica durable identity to reconcile.
+	if record == nil {
+		return nil
+	}
+	tr.mu.Lock()
+	current := tr.tests[record.ID]
+	if current == nil {
+		tr.mu.Unlock()
+		return nil
+	}
+	if !sameStoredTestIdentity(current, record) {
+		tr.mu.Unlock()
+		return fmt.Errorf("test %s durable identity changed before start", record.ID)
+	}
+	changed := applyStoredCapacityBindingLocked(current, record)
+	var snapshot *ManagedTest
+	if changed {
+		snapshot = cloneManagedTestSummaryForReadLocked(current)
+	}
+	tr.mu.Unlock()
+	if changed {
+		tr.broadcastCapacityBindingUpdated(snapshot)
+	}
+	return nil
+}
+
+type testCapacityBindingListPersistence interface {
+	ListTestCapacityBindings([]string) ([]storage.TestCapacityBindingState, error)
+}
+
+// refreshCapacityBindingsForHAListRead gives list/summary responses the same
+// reciprocal-binding fidelity as single-test reads. Leaders deliberately skip
+// the follower's full-map refresh, and followers can be inside its throttle
+// window, so both use this lightweight bulk projection before serialization.
+// Concurrent callers share a completed refresh, while a later sequential read
+// performs a new query and can immediately observe a cross-replica mutation.
+func (tr *TestRunner) refreshCapacityBindingsForHAListRead() {
+	if tr == nil || tr.leadership == nil || tr.testStore == nil {
+		return
+	}
+	reader, ok := tr.testStore.(testCapacityBindingListPersistence)
+	if !ok {
+		return
+	}
+	requestedAt := time.Now()
+	for {
+		tr.capacityBindingReadMu.Lock()
+		if !tr.capacityBindingReadAt.IsZero() && !tr.capacityBindingReadAt.Before(requestedAt) {
+			tr.capacityBindingReadMu.Unlock()
+			return
+		}
+		if tr.capacityBindingReadCh != nil {
+			completed := tr.capacityBindingReadCh
+			tr.capacityBindingReadMu.Unlock()
+			<-completed
+			continue
+		}
+		completed := make(chan struct{})
+		tr.capacityBindingReadCh = completed
+		tr.capacityBindingReadMu.Unlock()
+
+		err := tr.reconcileCapacityBindingsForHAListRead(reader)
+
+		tr.capacityBindingReadMu.Lock()
+		tr.capacityBindingReadAt = time.Now()
+		tr.capacityBindingReadCh = nil
+		close(completed)
+		tr.capacityBindingReadMu.Unlock()
+		if err != nil {
+			slog.Warn("failed to refresh capacity bindings for HA test list", "error", err)
+		}
+		return
+	}
+}
+
+func (tr *TestRunner) reconcileCapacityBindingsForHAListRead(reader testCapacityBindingListPersistence) error {
+	tr.mu.RLock()
+	testIDs := make([]string, 0, len(tr.tests))
+	for id, test := range tr.tests {
+		if test != nil {
+			testIDs = append(testIDs, id)
+		}
+	}
+	tr.mu.RUnlock()
+	if len(testIDs) == 0 {
+		return nil
+	}
+	sort.Strings(testIDs)
+	states, err := reader.ListTestCapacityBindings(testIDs)
+	if err != nil {
+		return err
+	}
+
+	changed := make([]*ManagedTest, 0)
+	tr.mu.Lock()
+	for _, state := range states {
+		record := &storage.TestRecord{
+			ID:                    state.ID,
+			ProjectID:             state.ProjectID,
+			StartTime:             state.StartTime,
+			TimeslotID:            state.TimeslotID,
+			CapacityWindowStartAt: state.CapacityWindowStartAt,
+			CapacityWindowEndAt:   state.CapacityWindowEndAt,
+		}
+		current := tr.tests[state.ID]
+		if !sameStoredTestIdentity(current, record) || !applyStoredCapacityBindingLocked(current, record) {
+			continue
+		}
+		changed = append(changed, cloneManagedTestSummaryForReadLocked(current))
+	}
+	tr.mu.Unlock()
+	for _, snapshot := range changed {
+		tr.broadcastCapacityBindingUpdated(snapshot)
+	}
+	return nil
+}
+
 // launchTimeslotRevalidationErrorLocked re-checks a run's bound capacity timeslot
 // at the actual launch instant. A timeslot is validated and bound at create time,
 // but between then and launch it can be rejected, re-bound, resized, or the run's
@@ -377,12 +570,11 @@ func (tr *TestRunner) launchTimeslotRevalidationErrorLocked(test *ManagedTest, n
 	launchStart := now.UTC()
 	if test.StartedAt != nil && !test.StartedAt.IsZero() && (test.Status == "RUNNING" || test.Status == "PAUSED" || test.Status == "STOPPING") {
 		launchStart = test.StartedAt.UTC()
-	} else if test.ScheduledStartAt != nil && test.ScheduledStartAt.After(launchStart) {
-		// A future schedule still starts at its requested instant. A delayed
-		// schedule starts now; trusting its stale timestamp could admit a run whose
-		// actual end extends past the reservation.
-		launchStart = test.ScheduledStartAt.UTC()
 	}
+	// This is an execution-boundary check, not a planning check. A manual start
+	// of a future SCHEDULED/RESERVED test runs now; validating against its future
+	// ScheduledStartAt would let it consume capacity before the reservation begins.
+	// Creation/binding already validates the planned window separately.
 	window := launchWindowForTest(test, launchStart)
 	if err := reservationFitError(reservation, window.StartAt, window.EndAt, test.TotalVUsers); err != nil {
 		return fmt.Errorf("bound capacity timeslot %q no longer fits this run: %w", slotID, err)

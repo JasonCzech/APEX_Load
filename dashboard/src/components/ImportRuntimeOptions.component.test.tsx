@@ -106,4 +106,33 @@ describe('ImportRuntimeOptions', () => {
     const updated = onChange.mock.calls[0][0] as ScriptDefinition
     expect(updated.config.error_handling?.continue_on_error).toBe(true)
   })
+
+  it('changes the JMS protocol and provider as one execution contract', () => {
+    const script = buildScript()
+    script.protocol = 'jms-solace'
+    script.config.jms = {
+      provider: 'solace',
+      message_vpn: 'orders-vpn',
+      destination: 'orders',
+      subscription: 'orders-subscription',
+      mock: true,
+    }
+    const onChange = render(script)
+
+    act(() => {
+      setNativeValue(inputByLabel('Provider'), 'servicebus')
+    })
+
+    const updated = onChange.mock.calls[0][0] as ScriptDefinition
+    expect(updated.protocol).toBe('jms-servicebus')
+    expect(updated.config.jms).toEqual(expect.objectContaining({
+      provider: 'servicebus',
+      destination: 'orders',
+      subscription: 'orders-subscription',
+      mock: true,
+    }))
+    expect(updated.config.jms).not.toHaveProperty('message_vpn')
+    expect(script.protocol).toBe('jms-solace')
+    expect(script.config.jms?.provider).toBe('solace')
+  })
 })

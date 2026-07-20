@@ -298,6 +298,30 @@ describe('TestExecution workspace layout', () => {
     expect(runningActions.onPause).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps abort escalation reachable in STOPPING without exposing live mutation controls', async () => {
+    configureHooks(makeTest('PAUSED'))
+    await renderExecution()
+
+    expect(topbarText()).toContain('Resume')
+    expect(topbarText()).toContain('Stop Test')
+    expect(topbarText()).toContain('Abort')
+    expect(container.textContent).toContain('Live Controls Content')
+
+    configureHooks(makeTest('STOPPING'))
+    await renderExecution()
+
+    expect(topbarText()).toContain('Stopping')
+    expect(topbarText()).toContain('Abort')
+    expect(topbarText()).not.toContain('Pause')
+    expect(topbarText()).not.toContain('Resume')
+    expect(topbarText()).not.toContain('Stop Test')
+    expect(container.textContent).not.toContain('Live Controls Content')
+
+    const stoppingActions = latestActionBridge()
+    await clickTopbarButton('Abort')
+    expect(stoppingActions.onAbort).toHaveBeenCalledTimes(1)
+  })
+
   it('keeps the topbar registration stable while invoking the latest action callbacks', async () => {
     const queuedTest = makeTest('QUEUED')
     configureHooks(queuedTest)
@@ -696,7 +720,7 @@ describe('TestExecution workspace layout', () => {
       durationInput: '5m',
       onDurationInputChange: vi.fn(),
       onScaleVUsers: vi.fn(),
-      onStopAllVUsers: vi.fn(),
+      onPauseAllVUsers: vi.fn(),
       onAdjustDuration: vi.fn(),
       liveControlPreview: {
         currentTotal: 6,

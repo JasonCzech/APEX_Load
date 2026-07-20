@@ -1127,48 +1127,62 @@ type ScriptRecordingRecord struct {
 
 // TestRecord represents a persisted test run.
 type TestRecord struct {
-	ID                    string     `json:"id"`
-	RefKey                string     `json:"ref_key,omitempty"`
-	MaterializationKey    string     `json:"materialization_key,omitempty"`
-	Name                  string     `json:"name"`
-	Status                string     `json:"status"`
-	ApplicationID         string     `json:"application_id,omitempty"`
-	ReleaseID             string     `json:"release_id,omitempty"`
-	ScenarioID            string     `json:"scenario_id,omitempty"`
-	ProjectID             string     `json:"project_id,omitempty"`
-	FolderID              *string    `json:"folder_id,omitempty"`
-	ScenarioMode          string     `json:"scenario_mode,omitempty"`
-	ScriptShakeout        bool       `json:"script_shakeout,omitempty"`
-	ResourceBaseline      bool       `json:"resource_baseline,omitempty"`
-	StartDelay            string     `json:"start_delay,omitempty"`
-	Assignment            any        `json:"assignment,omitempty"` // JSON blob
-	TotalVUsers           int        `json:"total_vusers"`
-	Duration              int64      `json:"duration_ns"`
-	StartTime             time.Time  `json:"start_time"`
-	ScheduledStartAt      *time.Time `json:"scheduled_start_at,omitempty"`
-	PendingSince          *time.Time `json:"pending_since,omitempty"`
-	PausedAt              *time.Time `json:"paused_at,omitempty"`
-	CumulativePause       int64      `json:"cumulative_pause_ns,omitempty"`
-	CapacityWindowStartAt *time.Time `json:"capacity_window_start_at,omitempty"`
-	CapacityWindowEndAt   *time.Time `json:"capacity_window_end_at,omitempty"`
-	BaselinePinned        bool       `json:"baseline_pinned,omitempty"`
-	BaselinePinnedAt      *time.Time `json:"baseline_pinned_at,omitempty"`
-	EndTime               *time.Time `json:"end_time,omitempty"`
-	Error                 string     `json:"error,omitempty"`
-	CreatedBySubject      string     `json:"created_by_subject,omitempty"`
-	CreatedByDisplayName  string     `json:"created_by_display_name,omitempty"`
-	StartedBySubject      string     `json:"started_by_subject,omitempty"`
-	StartedByDisplayName  string     `json:"started_by_display_name,omitempty"`
-	StoppedBySubject      string     `json:"stopped_by_subject,omitempty"`
-	StoppedByDisplayName  string     `json:"stopped_by_display_name,omitempty"`
-	Groups                any        `json:"groups"`                            // JSON blob
-	RuntimeSettings       any        `json:"runtime_settings,omitempty"`        // JSON blob
-	GoalConfig            any        `json:"goal_config,omitempty"`             // JSON blob
-	ExecutionPlanApproval any        `json:"execution_plan_approval,omitempty"` // JSON blob
+	ID                    string                    `json:"id"`
+	RefKey                string                    `json:"ref_key,omitempty"`
+	MaterializationKey    string                    `json:"materialization_key,omitempty"`
+	Name                  string                    `json:"name"`
+	Status                string                    `json:"status"`
+	ApplicationID         string                    `json:"application_id,omitempty"`
+	ReleaseID             string                    `json:"release_id,omitempty"`
+	ScenarioID            string                    `json:"scenario_id,omitempty"`
+	ProjectID             string                    `json:"project_id,omitempty"`
+	FolderID              *string                   `json:"folder_id,omitempty"`
+	ScenarioMode          string                    `json:"scenario_mode,omitempty"`
+	ScriptShakeout        bool                      `json:"script_shakeout,omitempty"`
+	ResourceBaseline      bool                      `json:"resource_baseline,omitempty"`
+	StartDelay            string                    `json:"start_delay,omitempty"`
+	Assignment            any                       `json:"assignment,omitempty"` // JSON blob
+	TotalVUsers           int                       `json:"total_vusers"`
+	Duration              int64                     `json:"duration_ns"`
+	StartTime             time.Time                 `json:"start_time"`
+	ScheduledStartAt      *time.Time                `json:"scheduled_start_at,omitempty"`
+	PendingSince          *time.Time                `json:"pending_since,omitempty"`
+	PausedAt              *time.Time                `json:"paused_at,omitempty"`
+	CumulativePause       int64                     `json:"cumulative_pause_ns,omitempty"`
+	CapacityWindowStartAt *time.Time                `json:"capacity_window_start_at,omitempty"`
+	CapacityWindowEndAt   *time.Time                `json:"capacity_window_end_at,omitempty"`
+	BaselinePinned        bool                      `json:"baseline_pinned,omitempty"`
+	BaselinePinnedAt      *time.Time                `json:"baseline_pinned_at,omitempty"`
+	EndTime               *time.Time                `json:"end_time,omitempty"`
+	Error                 string                    `json:"error,omitempty"`
+	CreatedBySubject      string                    `json:"created_by_subject,omitempty"`
+	CreatedByDisplayName  string                    `json:"created_by_display_name,omitempty"`
+	StartedBySubject      string                    `json:"started_by_subject,omitempty"`
+	StartedByDisplayName  string                    `json:"started_by_display_name,omitempty"`
+	StoppedBySubject      string                    `json:"stopped_by_subject,omitempty"`
+	StoppedByDisplayName  string                    `json:"stopped_by_display_name,omitempty"`
+	Groups                any                       `json:"groups"`                            // JSON blob
+	DataPools             []ScenarioDataPoolBinding `json:"data_pools,omitempty"`              // JSON blob
+	RuntimeSettings       any                       `json:"runtime_settings,omitempty"`        // JSON blob
+	GoalConfig            any                       `json:"goal_config,omitempty"`             // JSON blob
+	StartAuthorization    any                       `json:"start_authorization,omitempty"`     // JSON blob
+	ExecutionPlanApproval any                       `json:"execution_plan_approval,omitempty"` // JSON blob
 	// TimeslotID persists the capacity reservation a run is bound to, so the
 	// binding survives a controller restart / HA failover and can be re-validated
 	// at launch time.
 	TimeslotID *string `json:"timeslot_id,omitempty"`
+}
+
+// TestCapacityBindingState is the lightweight durable projection used by HA
+// list readers to reconcile reciprocal timeslot fields without hydrating full
+// test rows, histories, or archives.
+type TestCapacityBindingState struct {
+	ID                    string
+	ProjectID             string
+	StartTime             time.Time
+	TimeslotID            *string
+	CapacityWindowStartAt *time.Time
+	CapacityWindowEndAt   *time.Time
 }
 
 // TestBaselineState is the durable baseline projection returned after an

@@ -16,6 +16,8 @@ type fanoutAtomicityClient struct {
 	stopResult     generatorrpc.StopResult
 	stopErr        error
 	stopCalls      int
+	stopGraceful   []bool
+	stopResultFunc func(call int, graceful bool) (generatorrpc.StopResult, error)
 	durationCalls  []int64
 	durationResult func(call int, seconds int64) (generatorrpc.DurationResult, error)
 }
@@ -52,11 +54,18 @@ func (c *fanoutAtomicityClient) OpenHeartbeat(context.Context) (*generatorrpc.He
 	return nil, errors.New("not implemented")
 }
 
-func (c *fanoutAtomicityClient) StopTest(context.Context, string, bool) (generatorrpc.StopResult, error) {
+func (c *fanoutAtomicityClient) StopTest(_ context.Context, _ string, graceful bool) (generatorrpc.StopResult, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
 	c.stopCalls++
-	return c.stopResult, c.stopErr
+	call := c.stopCalls
+	c.stopGraceful = append(c.stopGraceful, graceful)
+	fn := c.stopResultFunc
+	result, err := c.stopResult, c.stopErr
+	c.mu.Unlock()
+	if fn != nil {
+		return fn(call, graceful)
+	}
+	return result, err
 }
 
 func (c *fanoutAtomicityClient) GetArchiveArtifact(context.Context, generatorrpc.ArchiveArtifactRequest) ([]byte, error) {
@@ -69,6 +78,12 @@ func (c *fanoutAtomicityClient) durations() []int64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return append([]int64(nil), c.durationCalls...)
+}
+
+func (c *fanoutAtomicityClient) stopModes() []bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]bool(nil), c.stopGraceful...)
 }
 
 func TestDistributedStopFanoutErrorIsFailClosedAfterDispatch(t *testing.T) {
@@ -190,12 +205,96 @@ func TestAcknowledgedDistributedStopEscalatesAndLeavesStopping(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	client.mu.Lock()
-	stopCalls := client.stopCalls
-	client.mu.Unlock()
-	if stopCalls < 2 {
-		t.Fatalf("stop RPC calls = %d, want graceful request plus forced escalation", stopCalls)
+	modes := client.stopModes()
+	if len(modes) < 2 {
+		t.Fatalf("stop RPC modes = %v, want graceful request plus forced escalation", modes)
 	}
+	if !modes[0] {
+		t.Fatalf("first stop RPC graceful = false, want true: %v", modes)
+	}
+	forceSeen := false
+	for _, graceful := range modes[1:] {
+		if !graceful {
+			forceSeen = true
+			break
+		}
+	}
+	if !forceSeen {
+		t.Fatalf("stop RPC modes = %v, want later graceful=false escalation", modes)
+	}
+}
+
+func TestRunnerAbortFirstDistributedFanoutIsForceful(t *testing.T) {
+	wantErr := errors.New("abort response lost")
+	client := &fanoutAtomicityClient{stopErr: wantErr}
+	backend := newDistributedExecutionBackend([]string{"gen-a"}, time.Second, nil)
+	executionCtx, cancelExecution := context.WithCancel(context.Background())
+	test := &ManagedTest{
+		ID: "runner-first-force-abort", Status: "RUNNING", executionBackend: backend,
+		executionCtx: executionCtx, cancel: cancelExecution,
+		remoteClientsByTarget: map[string]generatorClient{"gen-a": client},
+	}
+	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}, execution: backend, hub: NewHub()}
+
+	err := runner.AbortTest(test.ID)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("AbortTest error = %v, want %v", err, wantErr)
+	}
+	runner.mu.Lock()
+	runner.shuttingDown = true
+	runner.mu.Unlock()
+	if got := client.stopModes(); len(got) < 1 || got[0] {
+		t.Fatalf("first Abort fan-out modes = %v, want first mode false", got)
+	}
+	if executionCtx.Err() == nil || test.Status != "STOPPING" {
+		t.Fatalf("abort state = ctxErr %v status %q, want cancelled/STOPPING", executionCtx.Err(), test.Status)
+	}
+}
+
+func TestAmbiguousStopThenAbortRetryNeverDowngradesForce(t *testing.T) {
+	responseLost := errors.New("stop response lost")
+	client := &fanoutAtomicityClient{
+		stopResultFunc: func(call int, _ bool) (generatorrpc.StopResult, error) {
+			if call <= 2 {
+				return generatorrpc.StopResult{}, responseLost
+			}
+			return generatorrpc.StopResult{Acknowledged: true}, nil
+		},
+	}
+	backend := newDistributedExecutionBackend([]string{"gen-a"}, time.Second, nil)
+	executionCtx, cancelExecution := context.WithCancel(context.Background())
+	test := &ManagedTest{
+		ID: "runner-stop-upgraded-to-abort", Status: "RUNNING", executionBackend: backend,
+		executionCtx: executionCtx, cancel: cancelExecution,
+		remoteClientsByTarget: map[string]generatorClient{"gen-a": client},
+	}
+	runner := &TestRunner{tests: map[string]*ManagedTest{test.ID: test}, execution: backend, hub: NewHub()}
+
+	if err := runner.StopTest(test.ID); !errors.Is(err, responseLost) {
+		t.Fatalf("StopTest error = %v, want %v", err, responseLost)
+	}
+	if err := runner.AbortTest(test.ID); !errors.Is(err, responseLost) {
+		t.Fatalf("AbortTest error = %v, want %v", err, responseLost)
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for len(client.stopModes()) < 3 {
+		if time.Now().After(deadline) {
+			t.Fatalf("stop RPC modes = %v, want retry", client.stopModes())
+		}
+		time.Sleep(time.Millisecond)
+	}
+	modes := client.stopModes()
+	if !modes[0] || modes[1] {
+		t.Fatalf("direct Stop/Abort modes = %v, want [true false ...]", modes)
+	}
+	for index, graceful := range modes[2:] {
+		if graceful {
+			t.Fatalf("retry mode[%d] = true in %v; force intent was downgraded", index+2, modes)
+		}
+	}
+	runner.mu.Lock()
+	runner.shuttingDown = true
+	runner.mu.Unlock()
 }
 
 func TestDistributedAdjustDurationRetriesCompensationForEveryAttemptedTarget(t *testing.T) {

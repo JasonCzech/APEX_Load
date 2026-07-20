@@ -31,7 +31,7 @@ The current controller can run in either local or distributed mode without chang
 - **Zero-lock metrics**: Buffered channels (cap 10,000) in hot path; metrics aggregated downstream
 - **Protocol plugins**: HTTP/1.1, HTTP/2, SOAP (+ WSDL import), Java-over-HTTP (bounded codec MVP), Java Vuser sidecar bridge (governed and disabled unless runner config enables it), WebSocket, gRPC, JMS (Solace, IBM MQ; real Solace AMQP adapter via `-tags jms_solace_real`), Kafka (produce/consume/request-reply; in-memory mock broker by default, real franz-go adapter via `-tags kafka_real`), database (SQL), network (DNS/TCP/UDP/FTP/SMTP/POP3/IMAP/LDAP), browser (replay + canary diagnostics) — compiled-in, not runtime-loadable
 - **JSON DSL**: Human-readable test scripts with template variables and data sources
-- **Vendor-neutral telemetry**: Prometheus scrape metrics, W3C `traceparent` propagation, and Dynatrace event webhooks. Full OpenTelemetry span instrumentation is not implemented yet.
+- **Vendor-neutral telemetry**: Prometheus scrape metrics, W3C `traceparent` propagation, Dynatrace event webhooks, and opt-in OTLP traces for controller HTTP requests, test lifecycle/orchestration, sampled engine actions, and controller↔generator gRPC. Metrics and logs are not exported through OpenTelemetry.
 - **Streaming percentiles**: T-digest for accurate p95/p99 computation without storing all samples
 
 ## Core Components
@@ -208,6 +208,9 @@ Controller runtime configuration:
 - `APEXLOAD_METRICS_TOKEN`: optional bearer token required for `GET /metrics` on either the API port or the dedicated metrics listener
 - `APEXLOAD_PPROF_ADDR`: optional unauthenticated Go pprof bind address for controller/generator runtime debugging. In production it must be an explicit loopback address (for example `127.0.0.1:6060`); use port forwarding for remote access
 - `APEXLOAD_PROMETHEUS_URL`: Prometheus base URL used by dashboard graph overlays; independent from the controller `/metrics` scrape endpoint
+- `APEXLOAD_OTEL_ENABLED`: explicit opt-in for controller/generator OpenTelemetry tracing (default `false`). Enabling it also requires `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`; see [OpenTelemetry tracing](docs/OPENTELEMETRY.md)
+- `OTEL_EXPORTER_OTLP_PROTOCOL` / `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`: OTLP transport, `http/protobuf` (default) or `grpc`; standard OTLP headers, TLS, timeout, compression, service/resource, and sampler variables are honored
+- `APEXLOAD_OTEL_ACTION_SAMPLE_RATIO`: independent sampled fraction for high-volume engine action spans (default `0.01`, range `0..1`)
 - `APEXLOAD_BROWSER_EXECUTABLE`: path to a system Chromium/Chrome for browser-protocol runs (set to `/usr/bin/google-chrome` in the generator image, where Playwright's managed glibc Chromium cannot run on musl)
 - `APEXLOAD_BROWSER_SANDBOX`: set `true` to drop `--no-sandbox` and use Chromium's own sandbox where the environment supports it (unprivileged user namespaces); default keeps `--no-sandbox` because hardened pod securityContexts cannot start the sandbox
 - `APEXLOAD_AZURE_KEY_VAULT_URL`: Azure Key Vault for `{{secret.*}}` resolution; `APEXLOAD_AZURE_KEY_VAULT_AUTH` selects `token` (static `APEXLOAD_AZURE_KEY_VAULT_TOKEN`), `azure_identity` (workload/managed identity via DefaultAzureCredential), or `auto` (default); `APEXLOAD_AZURE_KEY_VAULT_SCOPE` overrides the token audience for sovereign clouds
@@ -465,9 +468,11 @@ make test-cover
 
 ## Performance Targets
 
-These are design targets. The metrics hot path has a reproducible harness-overhead benchmark in
-[docs/BENCHMARK_HARNESS_OVERHEAD.md](docs/BENCHMARK_HARNESS_OVERHEAD.md); VUser density and ramp-up
-targets still require release-specific benchmark evidence before they are cited as achieved.
+These are design targets. A reproducible local component harness covers all four target areas and
+emits validated JSON/Markdown evidence as described in
+[docs/PERFORMANCE_BENCHMARK_EVIDENCE.md](docs/PERFORMANCE_BENCHMARK_EVIDENCE.md). Its comparisons are
+explicitly `not_evaluated`; complete, release-specific target-scope evidence is still required before
+any target is cited as achieved.
 
 | Metric | Target | Notes |
 |--------|--------|-------|
@@ -490,7 +495,7 @@ targets still require release-specific benchmark evidence before they are cited 
 - ✅ Generator-loss detection and controlled failure handling during distributed execution
 - ✅ Runtime telemetry SLA hardening baseline now includes visible drop counters, bounded live history, end-to-end freshness, sampled telemetry diagnostics for transaction hotspots, schema-versioned typed telemetry retention, distributed telemetry propagation, first-class correlation/dependency metadata, and distributed lag-stage breakdowns from generator capture through controller fan-out
 - ✅ Browser client metrics for web-app synthetic UX telemetry are implemented for the current browser contract; WebKit process attribution and broader benchmark publication remain evidence/hardening work.
-- 🟡 Messaging protocols are mixed maturity: Kafka and Azure Event Hubs have opt-in real adapters, Solace/Service Bus are build-tag gated, IBM MQ remains mock/stub-only, and deeper broker-native parity is tracked in [docs/MESSAGING_SUPPORT.md](docs/MESSAGING_SUPPORT.md).
+- 🟡 Messaging protocols are mixed maturity: Kafka and Azure Event Hubs have opt-in real adapters, Solace/Service Bus are build-tag gated, IBM MQ is mock-only with fail-fast real-mode validation, and deeper broker-native parity is tracked in [docs/MESSAGING_SUPPORT.md](docs/MESSAGING_SUPPORT.md).
 - ✅ GitHub Actions CI/CD gating: controller-native `apexctl ci run`, signed canonical action releases, JUnit/JSON evidence, and active immutable deployment workflows (see [docs/CICD_INTEGRATION.md](docs/CICD_INTEGRATION.md))
 - ✅ Evaluator trust pack: one-command demo seeding plus bounded k6 HTTP subset import/export (see [docs/EVALUATOR_TRUST_PACK.md](docs/EVALUATOR_TRUST_PACK.md))
 - ✅ Correlation rules engine + replay-failure detection, response-family rule packs, stale-literal evidence, and guided/batch repair (`/api/v1/correlations/diagnose`)
@@ -512,6 +517,7 @@ See [DEVELOPMENT.md](DEVELOPMENT.md) for coding conventions, testing policy, and
 - **Runtime telemetry SLA plan**: `docs/RUNTIME_TELEMETRY_SLA_PLAN.md` — Telemetry capture, streaming, and storage hardening roadmap
 - **Prometheus metrics catalog**: `docs/PROMETHEUS_METRICS.md` — Controller scrape series, labels, and telemetry troubleshooting
 - **Dynatrace webhook setup**: `docs/DYNATRACE_WEBHOOKS.md` — Events API webhook configuration and retry behavior
+- **OpenTelemetry tracing**: `docs/OPENTELEMETRY.md` — OTLP configuration, span coverage, sampling, propagation, and data-safety behavior
 - **Browser and mobile support**: `docs/BROWSER_AND_MOBILE_SUPPORT.md` — Current browser canary, mobile emulation, client metrics, and benchmark evidence guidance
 
 ## License

@@ -1,27 +1,118 @@
 import { describe, expect, it } from 'vitest'
 
-import { isValidDurationInput, parseDurationToSeconds, serializeDurationFieldValue, splitDurationInput } from './timeUtils'
+import { isValidDurationInput, parseDurationToNanoseconds, parseDurationToSeconds, serializeDurationFieldValue, splitDurationInput } from './timeUtils'
 
 describe('timeUtils', () => {
-  it('parses Go-style millisecond durations without treating ms as minutes', () => {
-    expect(parseDurationToSeconds('60ms')).toBe(1)
-    expect(parseDurationToSeconds('1500ms')).toBe(2)
-    expect(parseDurationToSeconds('1m30s')).toBe(90)
+  it.each([
+    ['+1s', 1],
+    ['.5s', 0.5],
+    ['1.s', 1],
+    ['60ms', 0.06],
+    ['1500ms', 1.5],
+    ['1m30s', 90],
+    ['1us', 0.000001],
+    ['2µs', 0.000002],
+    ['2μs', 0.000002],
+    ['3ns', 0.000000003],
+    ['1ms250us500ns', 0.0012505],
+    ['0.1ns1ns', 0.000000001],
+    ['9223372036854775807ns', 9_223_372_036.854776],
+  ])('accepts positive time.ParseDuration form %s', (input, seconds) => {
+    expect(isValidDurationInput(input)).toBe(true)
+    expect(parseDurationToSeconds(input)).toBe(seconds)
   })
 
-  it('validates full duration strings instead of partial matches', () => {
-    expect(isValidDurationInput('1h 30m')).toBe(true)
-    expect(isValidDurationInput('90m')).toBe(true)
-    expect(isValidDurationInput('example 1m')).toBe(false)
-    expect(isValidDurationInput('0s')).toBe(false)
+  it.each([
+    '',
+    ' ',
+    ' 1s',
+    '1s ',
+    '1 s',
+    '1h 30m',
+    '1S',
+    '1MS',
+    '1Us',
+    '1μS',
+    'example1m',
+    '0',
+    '+0',
+    '-0',
+    '0s',
+    '+0s',
+    '-1us',
+    '.s',
+    '1',
+    '1e3s',
+    '1xs',
+    '--1s',
+    '+-1s',
+    '0.1ns',
+    '9223372036854775808ns',
+    '2562048h',
+  ])('rejects non-Go or nonpositive duration form %j', (input) => {
+    expect(isValidDurationInput(input)).toBe(false)
+    expect(parseDurationToSeconds(input)).toBe(0)
+  })
+
+  it('only treats an actually empty field as optional', () => {
     expect(isValidDurationInput('', true)).toBe(true)
+    expect(isValidDurationInput(undefined, true)).toBe(true)
+    expect(isValidDurationInput(' ', true)).toBe(false)
   })
 
   it('splits and serializes duration field values', () => {
-    expect(splitDurationInput('1h30m')).toEqual({ value: 90, unit: 'm' })
-    expect(splitDurationInput('45s')).toEqual({ value: 45, unit: 's' })
+    expect(splitDurationInput('1h30m')).toEqual({ value: '90', unit: 'm' })
+    expect(splitDurationInput('+1.s')).toEqual({ value: '1', unit: 's' })
+    expect(splitDurationInput('45s')).toEqual({ value: '45', unit: 's' })
+    expect(splitDurationInput('1500ms')).toEqual({ value: '1.5', unit: 's' })
+    expect(splitDurationInput('1us')).toEqual({ value: '0.000001', unit: 's' })
+    expect(splitDurationInput('1ns')).toEqual({ value: '0.000000001', unit: 's' })
     expect(splitDurationInput('', 's')).toEqual({ value: '', unit: 's' })
     expect(serializeDurationFieldValue(5, 'm')).toBe('5m')
+    expect(serializeDurationFieldValue(0.000001, 's')).toBe('0.000001s')
+    expect(serializeDurationFieldValue(0.000000001, 's')).toBe('0.000000001s')
+    expect(serializeDurationFieldValue(0.00000025, 's')).toBe('0.00000025s')
+    expect(parseDurationToSeconds(serializeDurationFieldValue(0.000000001, 's'))).toBe(0.000000001)
     expect(serializeDurationFieldValue('', 'm')).toBe('')
+  })
+
+  it.each([
+    ['17280000000000001ns', '17280000.000000001', '17280000.000000001s'],
+    ['9223372036854775807ns', '9223372036.854775807', '9223372036.854775807s'],
+  ])('preserves exact nanoseconds while normalizing %s for the editor', (source, value, serialized) => {
+    const split = splitDurationInput(source)
+    expect(split).toEqual({ value, unit: 's' })
+    expect(serializeDurationFieldValue(split.value, split.unit)).toBe(serialized)
+    expect(isValidDurationInput(serialized)).toBe(true)
+    expect(parseDurationToNanoseconds(serialized)).toBe(BigInt(source.slice(0, -2)))
+  })
+
+  it('returns no exact value for invalid or nonpositive durations', () => {
+    expect(parseDurationToNanoseconds('0s')).toBeNull()
+    expect(parseDurationToNanoseconds('0.1ns')).toBeNull()
+    expect(parseDurationToNanoseconds('later')).toBeNull()
+  })
+
+  it('parses 400-digit fractions without Number overflow and honors the final significant digit', () => {
+    // 1 / 3.6e12 hours is exactly one nanosecond. These two 400-digit decimal
+    // fractions straddle that recurring-decimal boundary only at their last digit.
+    const fractionPrefix = `${'0'.repeat(12)}2${'7'.repeat(386)}`
+    const belowOneNanosecond = `0.${fractionPrefix}6h1ns`
+    const aboveOneNanosecond = `0.${fractionPrefix}8h1ns`
+
+    expect(fractionPrefix.length + 1).toBe(400)
+    expect(parseDurationToNanoseconds(belowOneNanosecond)).toBe(1n)
+    expect(parseDurationToNanoseconds(aboveOneNanosecond)).toBe(2n)
+    expect(isValidDurationInput(belowOneNanosecond)).toBe(true)
+    expect(isValidDurationInput(aboveOneNanosecond)).toBe(true)
+  })
+
+  it.each([
+    ['1.5ms', 1_500_000n],
+    ['1.9999999999ns', 1n],
+    ['0.0000000019s', 1n],
+    ['2.0000001s', 2_000_000_100n],
+  ])('truncates ordinary fractional duration %s exactly at nanoseconds', (input, nanoseconds) => {
+    expect(parseDurationToNanoseconds(input)).toBe(nanoseconds)
   })
 })

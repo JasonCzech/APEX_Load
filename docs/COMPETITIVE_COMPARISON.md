@@ -208,7 +208,7 @@ These overstatements existed in earlier docs and are now corrected:
 2. **Storage stack** — SQLite is the runtime default. Postgres is wired but unproven at scale. Redis is optional. No Azure Blob.
 3. **Browser parity** — browser VUsers are diagnostic canaries for *load execution* (not RealBrowser-class high-density browser load). The *recorder/replay* is now a first-class **DOM-aware** embedded recorder (Playwright-Go + CDP) with selector self-heal — the "proxy-only, no DOM capture" caveat no longer applies.
 4. **Scale targets** — 10k VUsers/pod and 50k total are design targets with no published benchmark artifacts.
-5. **OpenTelemetry** — only a W3C `traceparent` header is propagated; there is no span instrumentation or OTel exporter.
+5. **OpenTelemetry** — controller/generator binaries provide opt-in OTLP traces for API requests, test lifecycle/orchestration, sampled engine actions, and controller↔generator gRPC; W3C context continues into HTTP requests to the system under test. OTel metrics/log export and desktop OTLP export are not implemented.
 
 #### Prioritized Gaps (LoadRunner parity)
 
@@ -342,7 +342,7 @@ A comprehensive audit of APEX Load against enterprise performance testing platfo
 | Browser/SPA recording fidelity | Medium | DOM-aware embedded recorder (Playwright-Go + CDP) + replay self-heal delivered; high-density browser *load* execution remains canary-scoped (separate effort) |
 | PDF/Word report export | Medium | Executive/engineer PDF export emitted from archive report profiles; Word export deferred |
 | Vault / mTLS | Medium | Template refs + redaction exist; Vault/mTLS not started |
-| OpenTelemetry span instrumentation | Medium | `traceparent` header propagated; full span export not started |
+| OpenTelemetry signal expansion | Low | Opt-in OTLP traces cover control-plane and sampled action paths; metrics/log export and desktop OTLP export remain |
 | SAML | Medium | OIDC + trusted-header is the recommended path; SAML out of scope |
 | Hosted/managed control plane | Non-goal | Self-hosted first |
 

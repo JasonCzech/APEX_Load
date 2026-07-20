@@ -102,6 +102,37 @@ func TestMergeRuntimeSettingsReplacesHTTPAndWebRuntime(t *testing.T) {
 	}
 }
 
+func TestMergeRuntimeSettingsPromotesGroupLegacyAliasesOverRootSections(t *testing.T) {
+	rootHeadless := true
+	groupHeadless := false
+	base := &RuntimeSettingsOverride{
+		RunLogic:      &dsl.RunLogicConfig{Iterations: 2, AutoTransactions: "per_iteration", WorkloadModel: "closed"},
+		Log:           &dsl.LogConfig{Level: "standard", ExtendedOptions: []string{"advanced_trace"}},
+		BrowserConfig: &dsl.BrowserConfig{Engine: "chromium", DeviceProfile: "desktop_1080p", Headless: &rootHeadless},
+	}
+	iterations := 9
+	group := &RuntimeSettingsOverride{
+		Iterations:       &iterations,
+		LogLevel:         "extended",
+		AutoTransactions: "per_action",
+		Browser:          &RuntimeBrowserOverride{DeviceProfile: "pixel_8", Headless: &groupHeadless},
+	}
+
+	merged := mergeRuntimeSettings(base, group)
+	if merged.RunLogic == nil || merged.RunLogic.Iterations != 9 || merged.RunLogic.AutoTransactions != "per_action" || merged.RunLogic.WorkloadModel != "closed" {
+		t.Fatalf("run_logic = %#v, want group aliases promoted with root siblings", merged.RunLogic)
+	}
+	if merged.Log == nil || merged.Log.Level != "extended" || len(merged.Log.ExtendedOptions) != 1 || merged.LogLevel != "" {
+		t.Fatalf("log = %#v legacy=%q, want group level promoted with root options", merged.Log, merged.LogLevel)
+	}
+	if merged.BrowserConfig == nil || merged.BrowserConfig.Engine != "chromium" || merged.BrowserConfig.DeviceProfile != "pixel_8" || merged.BrowserConfig.Headless == nil || *merged.BrowserConfig.Headless {
+		t.Fatalf("browser_config = %#v, want group legacy device fields over root section", merged.BrowserConfig)
+	}
+	if base.RunLogic.Iterations != 2 || base.Log.Level != "standard" || base.BrowserConfig.DeviceProfile != "desktop_1080p" || !*base.BrowserConfig.Headless {
+		t.Fatalf("merge mutated root sections: %#v %#v %#v", base.RunLogic, base.Log, base.BrowserConfig)
+	}
+}
+
 func TestCloneRuntimeSettingsDeepClonesHTTPMapsAndSlices(t *testing.T) {
 	o := &RuntimeSettingsOverride{
 		HTTP: &dsl.HTTPConfig{

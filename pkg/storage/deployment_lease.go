@@ -243,8 +243,35 @@ func (s *SQLiteStore) saveTestStartIfNoDeploymentLease(test *TestRecord, executi
 			return errExecutionLeaseNotHeld
 		}
 	}
+	// A bound capacity reservation is part of launch authorization, not merely
+	// display metadata. Lock and revalidate it in this transaction before the
+	// full-row upsert can persist SHAKEOUT/INITIALIZING (and potentially restore a
+	// stale timeslot_id cleared by a concurrent reject).
+	slotID, err := validateCapacityReservationForTestStart(tx, s.db.dialect, test)
+	if err != nil {
+		return err
+	}
 	if err := s.saveTestWithExecutor(tx, test); err != nil {
 		return err
+	}
+	if slotID != "" {
+		result, err := tx.Exec(`UPDATE capacity_reservations SET bound_test_status = ?
+			WHERE id = ? AND approval_state = 'approved' AND bound_test_id = ?`, test.Status, slotID, test.ID)
+		if err != nil {
+			return err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected != 1 {
+			return fmt.Errorf("%w: timeslot %q changed before test %q start commit", ErrCapacityReservationStartInvalid, slotID, test.ID)
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(test.Status), "INITIALIZING") {
+		if err := reconcileQueuedScenarioScheduleOccurrenceForTest(tx, test.ID, scenarioScheduleOccurrenceStarted, time.Time{}, ""); err != nil {
+			return fmt.Errorf("reconcile queued scenario occurrence at test start: %w", err)
+		}
 	}
 	return tx.Commit()
 }

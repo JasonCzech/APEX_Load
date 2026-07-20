@@ -57,7 +57,7 @@ func TestValidateJMSRenewLockRequiresToken(t *testing.T) {
 func TestValidateJMSConsumeSubQueueEnum(t *testing.T) {
 	for _, sq := range []string{"none", "dead_letter", "transfer_dead_letter"} {
 		s := jmsAdvancedScript([]Action{{Name: "c", Type: "jms_consume", Target: "orders.in", Params: map[string]any{"sub_queue": sq}}})
-		if issuesContainSubstr(ValidateScriptIssues(s), "sub_queue") {
+		if issuesContainSubstr(ValidateScriptIssues(s), "sub_queue \""+sq+"\" is not supported") {
 			t.Fatalf("sub_queue %q wrongly rejected", sq)
 		}
 	}

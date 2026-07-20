@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
+	"reflect"
 	"sort"
 	"strings"
 	"time"
@@ -266,17 +267,168 @@ func ceilToNextQuarterHour(value time.Time) time.Time {
 	return floor.Add(15 * time.Minute)
 }
 
+func isProjectScopedLegacyContextID(value, base string) bool {
+	value = strings.TrimSpace(value)
+	if value == base {
+		return true
+	}
+	suffix, found := strings.CutPrefix(value, base+"-")
+	if !found || len(suffix) != 12 {
+		return false
+	}
+	for _, character := range suffix {
+		if !strings.ContainsRune("0123456789abcdef", character) {
+			return false
+		}
+	}
+	return true
+}
+
+func isLegacyTestReleaseContext(applicationID, releaseID string) bool {
+	return isProjectScopedLegacyContextID(applicationID, storage.LegacyApplicationID) &&
+		isProjectScopedLegacyContextID(releaseID, storage.LegacyReleaseID)
+}
+
+func matchesImplicitRevisionReleaseContext(requestedApplicationID, requestedReleaseID, sourceApplicationID, sourceReleaseID string) bool {
+	requestedApplicationID = strings.TrimSpace(requestedApplicationID)
+	requestedReleaseID = strings.TrimSpace(requestedReleaseID)
+	if !isLegacyTestReleaseContext(sourceApplicationID, sourceReleaseID) {
+		return false
+	}
+	if requestedApplicationID == "" && requestedReleaseID == "" {
+		return true
+	}
+	if requestedApplicationID == "" || requestedReleaseID == "" {
+		return false
+	}
+	applicationMatches := requestedApplicationID == strings.TrimSpace(sourceApplicationID) || requestedApplicationID == storage.LegacyApplicationID
+	releaseMatches := requestedReleaseID == strings.TrimSpace(sourceReleaseID) || requestedReleaseID == storage.LegacyReleaseID
+	return applicationMatches && releaseMatches
+}
+
+// revisionSourceTestLocked resolves and validates the immutable queued-run
+// snapshot used by the dashboard's "Create Revised Copy" workflow. Callers
+// hold tr.mu (or tr.mu.RLock for draft estimation), so the source cannot change
+// status between validation and request derivation.
+func (tr *TestRunner) revisionSourceTestLocked(req *CreateTestRequest) (*ManagedTest, error) {
+	if req == nil || strings.TrimSpace(req.RevisionSourceTestID) == "" {
+		return nil, nil
+	}
+	if strings.TrimSpace(req.ScriptID) != "" {
+		return nil, fmt.Errorf("queued-run revisions require canonical groups with source identities; script_id shorthand is not supported")
+	}
+	sourceID := strings.TrimSpace(req.RevisionSourceTestID)
+	source := tr.tests[sourceID]
+	if source == nil {
+		return nil, fmt.Errorf("revision source test not found: %s", req.RevisionSourceTestID)
+	}
+	if strings.ToUpper(strings.TrimSpace(source.Status)) != "QUEUED" {
+		return nil, fmt.Errorf("revision source test must be QUEUED, got %s", source.Status)
+	}
+	req.RevisionSourceTestID = source.ID
+
+	sourceProjectID := normalizeProjectID(source.ProjectID)
+	if strings.TrimSpace(req.ProjectID) == "" {
+		req.ProjectID = sourceProjectID
+	} else if normalizeProjectID(req.ProjectID) != sourceProjectID {
+		return nil, fmt.Errorf("revision source test and requested project must belong to one project")
+	}
+
+	if strings.TrimSpace(req.ScenarioID) == "" {
+		req.ScenarioID = strings.TrimSpace(source.ScenarioID)
+	} else if tr.resolveRefKeyLocked(strings.TrimSpace(req.ScenarioID)) != strings.TrimSpace(source.ScenarioID) {
+		return nil, fmt.Errorf("revision source test does not belong to the requested scenario")
+	} else {
+		// Persist the source's canonical scenario identity even when the client used
+		// a reference key. A revision is bound to the immutable queued snapshot and
+		// must not acquire a different live scenario identity during compilation.
+		req.ScenarioID = strings.TrimSpace(source.ScenarioID)
+	}
+	if isLegacyTestReleaseContext(source.ApplicationID, source.ReleaseID) {
+		// Standalone creates use an internal legacy hierarchy. API responses retain
+		// the stable public legacy IDs while SQLite scopes the durable rows per
+		// project, so a revision may legitimately submit either representation.
+		// Keep the context implicit and let release resolution derive the correct
+		// project-scoped fallback instead of treating the public IDs as explicit
+		// resources in the default project.
+		if !matchesImplicitRevisionReleaseContext(req.ApplicationID, req.ReleaseID, source.ApplicationID, source.ReleaseID) {
+			return nil, fmt.Errorf("revision source test does not belong to the requested application or release")
+		}
+		req.ApplicationID = ""
+		req.ReleaseID = ""
+	} else {
+		if strings.TrimSpace(req.ApplicationID) == "" {
+			req.ApplicationID = strings.TrimSpace(source.ApplicationID)
+		} else if strings.TrimSpace(req.ApplicationID) != strings.TrimSpace(source.ApplicationID) {
+			return nil, fmt.Errorf("revision source test does not belong to the requested application")
+		}
+		if strings.TrimSpace(req.ReleaseID) == "" {
+			req.ReleaseID = strings.TrimSpace(source.ReleaseID)
+		} else if strings.TrimSpace(req.ReleaseID) != strings.TrimSpace(source.ReleaseID) {
+			return nil, fmt.Errorf("revision source test does not belong to the requested release")
+		}
+	}
+	if req.FolderID == nil {
+		req.FolderID = cloneStringPtr(source.FolderID)
+	} else if stringPtrValue(req.FolderID) != stringPtrValue(source.FolderID) {
+		return nil, fmt.Errorf("revision source test does not belong to the requested folder")
+	}
+	if err := validateRevisionSourceGroupIndexes(req.Groups, source); err != nil {
+		return nil, err
+	}
+	return source, nil
+}
+
 func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, status string) (*ManagedTest, error) {
+	dataPoolsExplicit := req.DataPools != nil
+	revisionSource, err := tr.revisionSourceTestLocked(&req)
+	if err != nil {
+		return nil, err
+	}
 	scenarioProjectID := ""
-	if req.ScenarioID != "" {
+	if revisionSource != nil {
+		// The queued run is a complete execution snapshot. Do not depend on a fresh
+		// in-memory scenario-cache entry while revising it; supported scenario
+		// deletion already refuses linked tests, and the source snapshot supplies
+		// the canonical scenario/project identity needed here.
+		req.ScenarioID = strings.TrimSpace(revisionSource.ScenarioID)
+		if req.ScenarioID != "" {
+			scenarioProjectID = normalizeProjectID(revisionSource.ProjectID)
+		}
+		req = createTestRequestFromScenarioRevision(req, nil, revisionSource)
+	} else if req.ScenarioID != "" {
 		req.ScenarioID = tr.resolveRefKeyLocked(req.ScenarioID)
 		scenario, ok := tr.scenarios[req.ScenarioID]
 		if !ok {
 			return nil, fmt.Errorf("scenario not found: %s", req.ScenarioID)
 		}
 		scenarioProjectID = normalizeProjectID(scenario.ProjectID)
-		req = createTestRequestFromScenario(req, scenario)
+		req = createTestRequestFromScenarioRevision(req, scenario, revisionSource)
 	}
+	// Normalize after scenario/revision inheritance, but before general request
+	// validation, pool lookup, or group compilation. This keeps direct and plan
+	// requests on the same binding contract as scenario authoring and ensures the
+	// revision comparison below sees canonical defaults and whitespace.
+	allowLegacyDataPoolModes := req.allowLegacyDataPoolModes || (!dataPoolsExplicit && (req.ScenarioID != "" || revisionSource != nil))
+	var normalizedDataPools []storage.ScenarioDataPoolBinding
+	if allowLegacyDataPoolModes {
+		normalizedDataPools, err = normalizeLegacyDataPoolBindingIntent(req.DataPools)
+	} else {
+		normalizedDataPools, err = normalizeDataPoolBindingIntent(req.DataPools)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("invalid test data pool bindings: %w", err)
+	}
+	if allowLegacyDataPoolModes {
+		for index := range req.DataPools {
+			mode := strings.TrimSpace(req.DataPools[index].AccessMode)
+			if mode == "read_write" || mode == "consume" {
+				slog.Warn("canonicalizing persisted legacy data-pool access mode to read_only",
+					"test_id", id, "binding_alias", strings.TrimSpace(req.DataPools[index].Alias), "legacy_access_mode", mode)
+			}
+		}
+	}
+	req.DataPools = normalizedDataPools
 
 	// Pool-aware assignment: expand a fleet-pool selection into its member targets.
 	resolvedAssignment, err := tr.resolvePoolAssignmentLocked(req.Assignment)
@@ -305,23 +457,35 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 	for index := range groups {
 		groups[index].runtimeSecretScope = id
 	}
-	projectID, err := tr.resolveCreateTestProjectID(req.ProjectID, groups)
+	projectID, err := tr.resolveCreateTestProjectID(req.ProjectID, groups, revisionSource)
 	if err != nil {
 		return nil, err
 	}
 	if scenarioProjectID != "" && scenarioProjectID != projectID {
 		return nil, fmt.Errorf("scenario and test scripts must belong to one project")
 	}
-	if err := tr.validateDataPoolProjectsLocked(projectID, req.DataPools); err != nil {
-		return nil, err
+	if revisionSource != nil && normalizeProjectID(revisionSource.ProjectID) != projectID {
+		return nil, fmt.Errorf("revision source test and referenced test resources must belong to one project")
+	}
+	revisionDataPoolsChanged := revisionSource != nil && !sameRevisionDataPoolBindings(req.DataPools, revisionSource.DataPools)
+	var sharedDataSources []dsl.DataSource
+	if revisionSource != nil && !revisionDataPoolsChanged {
+		var snapshotAvailable bool
+		sharedDataSources, snapshotAvailable = revisionSharedDataSourceSnapshot(revisionSource)
+		if len(req.DataPools) > 0 && !snapshotAvailable && !allRevisionGroupsHaveRuntimeSnapshots(revisionSource, groups) {
+			return nil, fmt.Errorf("revision source test lacks an immutable shared data snapshot for newly added groups")
+		}
+	} else {
+		if err := tr.validateDataPoolProjectsLocked(projectID, req.DataPools); err != nil {
+			return nil, err
+		}
+		sharedDataSources, err = tr.buildSharedDataSourcesLocked(req.DataPools)
+		if err != nil {
+			return nil, err
+		}
 	}
 
-	sharedDataSources, err := tr.buildSharedDataSourcesLocked(req.DataPools)
-	if err != nil {
-		return nil, err
-	}
-
-	testGroups, engineGroups, totalVUsers, err := tr.compileManagedTestGroupsForModeWithDataSourcesLocked(groups, req.RuntimeSettings, sharedDataSources, scenarioMode)
+	testGroups, engineGroups, totalVUsers, err := tr.compileManagedTestGroupsForModeWithRevisionLocked(groups, req.RuntimeSettings, sharedDataSources, scenarioMode, revisionSource, revisionDataPoolsChanged)
 	if err != nil {
 		return nil, err
 	}
@@ -373,6 +537,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		ScenarioID:            req.ScenarioID,
 		ProjectID:             projectID,
 		FolderID:              req.FolderID,
+		DataPools:             cloneScenarioDataPoolBindings(req.DataPools),
 		Groups:                testGroups,
 		Assignment:            cloneGeneratorAssignmentSettings(req.Assignment),
 		CapacityAdvisory:      tr.estimateCapacityAdvisoryForAssignment(projectID, testGroups, totalVUsers, dur, req.ResourceBaseline, effectiveRuntimeSettings, req.Assignment),
@@ -757,49 +922,332 @@ func (tr *TestRunner) completeRuntimeOverrideSecretAttempt(attempt runtimeOverri
 }
 
 func createTestRequestFromScenario(req CreateTestRequest, scenario *StoredScenario) CreateTestRequest {
-	req.Name = firstNonEmpty(req.Name, scenario.Name)
-	req.Duration = firstNonEmpty(req.Duration, scenario.Duration)
-	req.ScenarioMode = firstNonEmpty(req.ScenarioMode, scenario.ScenarioMode)
-	if !req.scriptShakeoutProvided && !req.ScriptShakeout {
-		req.ScriptShakeout = scenario.ScriptShakeout
+	return createTestRequestFromScenarioRevision(req, scenario, nil)
+}
+
+// createTestRequestFromScenarioRevision derives a create request from either a
+// stored scenario or an immutable queued-run snapshot. A revision source takes
+// precedence for every value that was already materialized on that run,
+// especially masked runtime credentials; the live scenario remains a fallback
+// only for ordinary scenario creates.
+func createTestRequestFromScenarioRevision(req CreateTestRequest, scenario *StoredScenario, revisionSource *ManagedTest) CreateTestRequest {
+	if revisionSource != nil {
+		req.Name = firstNonEmpty(req.Name, revisionSource.Name)
+		req.Duration = firstNonEmpty(req.Duration, revisionSource.DurationStr)
+		req.ScenarioMode = firstNonEmpty(req.ScenarioMode, revisionSource.ScenarioMode)
+		if !req.scriptShakeoutProvided && !req.ScriptShakeout {
+			req.ScriptShakeout = revisionSource.ScriptShakeout
+		}
+		if !req.resourceBaselineProvided && !req.ResourceBaseline {
+			req.ResourceBaseline = revisionSource.ResourceBaseline
+		}
+		if req.StartDelay == "" {
+			req.StartDelay = revisionSource.StartDelay
+		}
+		if req.GoalConfig == nil {
+			req.GoalConfig = cloneGoalConfig(revisionSource.GoalConfig)
+		}
+		if req.Assignment == nil {
+			req.Assignment = cloneGeneratorAssignmentSettings(revisionSource.Assignment)
+		}
+		if req.DataPools == nil {
+			req.DataPools = cloneScenarioDataPoolBindings(revisionSource.DataPools)
+		}
+	} else if scenario != nil {
+		req.Name = firstNonEmpty(req.Name, scenario.Name)
+		req.Duration = firstNonEmpty(req.Duration, scenario.Duration)
+		req.ScenarioMode = firstNonEmpty(req.ScenarioMode, scenario.ScenarioMode)
+		if !req.scriptShakeoutProvided && !req.ScriptShakeout {
+			req.ScriptShakeout = scenario.ScriptShakeout
+		}
+		if !req.resourceBaselineProvided && !req.ResourceBaseline {
+			req.ResourceBaseline = scenario.ResourceBaseline
+		}
+		if req.StartDelay == "" {
+			req.StartDelay = scenario.StartDelay
+		}
+		if req.GoalConfig == nil {
+			req.GoalConfig = cloneGoalConfig(scenario.GoalConfig)
+		}
+		if req.Assignment == nil {
+			req.Assignment = cloneGeneratorAssignmentSettings(scenario.Assignment)
+		}
+		if req.DataPools == nil {
+			req.DataPools = cloneScenarioDataPoolBindings(scenario.DataPools)
+		}
 	}
-	if !req.resourceBaselineProvided && !req.ResourceBaseline {
-		req.ResourceBaseline = scenario.ResourceBaseline
-	}
-	if req.StartDelay == "" {
-		req.StartDelay = scenario.StartDelay
-	}
-	if req.GoalConfig == nil {
-		req.GoalConfig = cloneGoalConfig(scenario.GoalConfig)
+
+	var rootRuntime *RuntimeSettingsOverride
+	if revisionSource != nil {
+		rootRuntime = revisionSource.RuntimeSettings
+	} else if scenario != nil {
+		rootRuntime = scenario.RuntimeSettings
 	}
 	if req.RuntimeSettings == nil {
-		req.RuntimeSettings = cloneRuntimeSettings(scenario.RuntimeSettings)
+		req.RuntimeSettings = cloneRuntimeSettings(rootRuntime)
+	} else {
+		// Run-only editors submit a complete clone of a masked runtime profile so
+		// advanced siblings survive a one-field edit. A revised queued run must
+		// restore those masks from the source run, never from a mutable scenario.
+		req.RuntimeSettings = reconcileGroupRuntimeSecrets(req.RuntimeSettings, rootRuntime)
 	}
-	if req.Assignment == nil {
-		req.Assignment = cloneGeneratorAssignmentSettings(scenario.Assignment)
-	}
-	if len(req.DataPools) == 0 {
-		req.DataPools = append([]storage.ScenarioDataPoolBinding(nil), scenario.DataPools...)
-	}
+
 	if len(req.Groups) == 0 && req.ScriptID == "" {
-		req.Groups = make([]CreateGroupEntry, 0, len(scenario.Scripts))
-		for _, script := range scenario.Scripts {
-			req.Groups = append(req.Groups, CreateGroupEntry{
-				Name:            script.Name,
-				ScriptID:        script.ScriptID,
-				Role:            script.Role,
-				VUsers:          script.VUsers,
-				RampUp:          script.RampUp,
-				RampDown:        script.RampDown,
-				Stages:          cloneLoadStages(script.Stages),
-				Iterations:      script.Iterations,
-				InitStrategy:    script.Initialization,
-				RuntimeSettings: cloneRuntimeSettings(script.RuntimeSettings),
-				Assignment:      cloneGeneratorAssignmentSettings(script.Assignment),
-			})
+		switch {
+		case revisionSource != nil:
+			req.Groups = createGroupEntriesFromManagedTest(revisionSource)
+		case scenario != nil:
+			req.Groups = createGroupEntriesFromStoredScenario(scenario)
+		}
+	} else if len(req.Groups) > 0 {
+		// Reconcile masked credentials by stable group identity. Array position is
+		// not an identity: callers may reorder groups, and one script may legitimately
+		// appear more than once with distinct runtime credentials.
+		for i := range req.Groups {
+			if req.Groups[i].RuntimeSettings == nil {
+				continue
+			}
+			var prior *RuntimeSettingsOverride
+			if revisionSource != nil {
+				prior = existingManagedTestGroupRuntime(revisionSource, req.Groups[i])
+			} else {
+				prior = existingGroupRuntime(scenario, req.Groups[i])
+			}
+			req.Groups[i].RuntimeSettings = reconcileGroupRuntimeSecrets(req.Groups[i].RuntimeSettings, prior)
 		}
 	}
 	return req
+}
+
+func createGroupEntriesFromStoredScenario(scenario *StoredScenario) []CreateGroupEntry {
+	if scenario == nil {
+		return nil
+	}
+	groups := make([]CreateGroupEntry, 0, len(scenario.Scripts))
+	for _, script := range scenario.Scripts {
+		groups = append(groups, CreateGroupEntry{
+			Name:            script.Name,
+			ScriptID:        script.ScriptID,
+			Role:            script.Role,
+			VUsers:          script.VUsers,
+			RampUp:          script.RampUp,
+			RampDown:        script.RampDown,
+			Stages:          cloneLoadStages(script.Stages),
+			Iterations:      cloneIntPtr(script.Iterations),
+			InitStrategy:    script.Initialization,
+			RuntimeSettings: cloneRuntimeSettings(script.RuntimeSettings),
+			Assignment:      cloneGeneratorAssignmentSettings(script.Assignment),
+		})
+	}
+	return groups
+}
+
+func createGroupEntriesFromManagedTest(test *ManagedTest) []CreateGroupEntry {
+	if test == nil {
+		return nil
+	}
+	groups := make([]CreateGroupEntry, 0, len(test.Groups))
+	for index, group := range test.Groups {
+		sourceIndex := index
+		var iterationOverride *int
+		if group.IterationOverrideKnown {
+			iterationOverride = cloneIntPtr(group.IterationOverride)
+		}
+		groups = append(groups, CreateGroupEntry{
+			Name:                     group.Name,
+			ScriptID:                 group.ScriptID,
+			RevisionSourceGroupIndex: &sourceIndex,
+			Role:                     group.Role,
+			VUsers:                   group.VUsers,
+			RampUp:                   group.RampUp,
+			RampDown:                 group.RampDown,
+			Stages:                   cloneLoadStages(group.Stages),
+			Iterations:               iterationOverride,
+			InitStrategy:             group.Initialization,
+			RuntimeSettings:          cloneRuntimeSettings(group.RuntimeSettings),
+			Assignment:               cloneGeneratorAssignmentSettings(group.Assignment),
+		})
+	}
+	return groups
+}
+
+func existingManagedTestGroupRuntime(test *ManagedTest, group CreateGroupEntry) *RuntimeSettingsOverride {
+	if match := existingManagedTestGroup(test, group); match != nil {
+		return match.RuntimeSettings
+	}
+	return nil
+}
+
+func existingManagedTestGroup(test *ManagedTest, group CreateGroupEntry) *TestGroup {
+	if test == nil {
+		return nil
+	}
+	if group.RevisionNewGroup {
+		return nil
+	}
+	if group.RevisionSourceGroupIndex != nil {
+		index := *group.RevisionSourceGroupIndex
+		if index >= 0 && index < len(test.Groups) && test.Groups[index].ScriptID == group.ScriptID {
+			return &test.Groups[index]
+		}
+		return nil
+	}
+	groupName := strings.TrimSpace(group.Name)
+	for index := range test.Groups {
+		candidate := &test.Groups[index]
+		if candidate.ScriptID == group.ScriptID && strings.TrimSpace(candidate.Name) == groupName {
+			return candidate
+		}
+	}
+	var match *TestGroup
+	count := 0
+	for index := range test.Groups {
+		if test.Groups[index].ScriptID == group.ScriptID {
+			match = &test.Groups[index]
+			count++
+		}
+	}
+	if count == 1 {
+		return match
+	}
+	return nil
+}
+
+func validateRevisionSourceGroupIndexes(groups []CreateGroupEntry, source *ManagedTest) error {
+	if source == nil || len(groups) == 0 {
+		return nil
+	}
+	used := make(map[int]struct{}, len(groups))
+	for index, group := range groups {
+		if group.RevisionNewGroup {
+			if group.RevisionSourceGroupIndex != nil {
+				return fmt.Errorf("group[%d]: revision_new_group cannot be combined with revision_source_group_index", index)
+			}
+			continue
+		}
+		if group.RevisionSourceGroupIndex == nil {
+			return fmt.Errorf("group[%d]: exactly one of revision_source_group_index or revision_new_group is required", index)
+		}
+		sourceIndex := *group.RevisionSourceGroupIndex
+		if sourceIndex < 0 || sourceIndex >= len(source.Groups) {
+			return fmt.Errorf("group[%d]: revision_source_group_index %d is out of range", index, sourceIndex)
+		}
+		if source.Groups[sourceIndex].ScriptID != group.ScriptID {
+			return fmt.Errorf("group[%d]: revision source group %d belongs to script %q, not %q", index, sourceIndex, source.Groups[sourceIndex].ScriptID, group.ScriptID)
+		}
+		if _, duplicate := used[sourceIndex]; duplicate {
+			return fmt.Errorf("group[%d]: revision source group %d is referenced more than once", index, sourceIndex)
+		}
+		used[sourceIndex] = struct{}{}
+	}
+	return nil
+}
+
+func allRevisionGroupsHaveRuntimeSnapshots(test *ManagedTest, groups []CreateGroupEntry) bool {
+	if test == nil || len(groups) == 0 {
+		return false
+	}
+	for _, group := range groups {
+		match := existingManagedTestGroup(test, group)
+		if match == nil || match.script == nil {
+			return false
+		}
+	}
+	return true
+}
+
+func intPointersEqual(left, right *int) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
+}
+
+func sameRevisionDataPoolBindings(left, right []storage.ScenarioDataPoolBinding) bool {
+	leftByAlias, leftOK := revisionDataPoolIntentByAlias(left)
+	rightByAlias, rightOK := revisionDataPoolIntentByAlias(right)
+	if !leftOK || !rightOK || len(leftByAlias) != len(rightByAlias) {
+		return false
+	}
+	for aliasKey, leftIntent := range leftByAlias {
+		if rightIntent, found := rightByAlias[aliasKey]; !found || rightIntent != leftIntent {
+			return false
+		}
+	}
+	return true
+}
+
+type revisionDataPoolIntent struct {
+	PoolID            string
+	AccessMode        string
+	SelectionStrategy string
+}
+
+func revisionDataPoolIntentByAlias(bindings []storage.ScenarioDataPoolBinding) (map[string]revisionDataPoolIntent, bool) {
+	// A queued source may predate the read-only authoring contract. Its
+	// read_write/consume labels described behavior the engine never implemented;
+	// compare that historical intent as the read-only snapshot it actually was.
+	normalized, err := normalizeLegacyDataPoolBindingIntent(bindings)
+	if err != nil {
+		return nil, false
+	}
+	byAlias := make(map[string]revisionDataPoolIntent, len(normalized))
+	for _, binding := range normalized {
+		aliasKey := strings.ToLower(binding.Alias)
+		if _, duplicate := byAlias[aliasKey]; duplicate {
+			return nil, false
+		}
+		byAlias[aliasKey] = revisionDataPoolIntent{
+			PoolID:            binding.PoolID,
+			AccessMode:        binding.AccessMode,
+			SelectionStrategy: binding.SelectionStrategy,
+		}
+	}
+	return byAlias, true
+}
+
+func revisionSharedDataSourceSnapshot(test *ManagedTest) ([]dsl.DataSource, bool) {
+	if test == nil {
+		return nil, false
+	}
+	if len(test.DataPools) == 0 {
+		return nil, true
+	}
+	for index := range test.Groups {
+		if len(test.Groups[index].sharedDataSources) > 0 {
+			return cloneDataSources(test.Groups[index].sharedDataSources), true
+		}
+	}
+	return nil, false
+}
+
+func runtimeSettingsIterationValue(settings *RuntimeSettingsOverride) (int, bool) {
+	if settings == nil {
+		return 0, false
+	}
+	if settings.RunLogic != nil {
+		return settings.RunLogic.Iterations, true
+	}
+	if settings.Iterations != nil {
+		return *settings.Iterations, true
+	}
+	return 0, false
+}
+
+func setRuntimeSettingsIteration(settings *RuntimeSettingsOverride, iterations int) *RuntimeSettingsOverride {
+	result := cloneRuntimeSettings(settings)
+	if result == nil {
+		result = &RuntimeSettingsOverride{}
+	}
+	if result.RunLogic != nil {
+		result.RunLogic = cloneRunLogicConfig(result.RunLogic)
+		result.RunLogic.Iterations = iterations
+		result.Iterations = nil
+	} else {
+		value := iterations
+		result.Iterations = &value
+	}
+	return result
 }
 
 func validateScenarioRequest(req CreateTestRequest) (string, error) {
@@ -956,6 +1404,10 @@ func (tr *TestRunner) compileManagedTestGroupsWithDataSourcesLocked(groups []Cre
 }
 
 func (tr *TestRunner) compileManagedTestGroupsForModeWithDataSourcesLocked(groups []CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride, sharedDataSources []dsl.DataSource, scenarioMode string) ([]TestGroup, []engine.GroupConfig, int, error) {
+	return tr.compileManagedTestGroupsForModeWithRevisionLocked(groups, runtimeSettings, sharedDataSources, scenarioMode, nil, false)
+}
+
+func (tr *TestRunner) compileManagedTestGroupsForModeWithRevisionLocked(groups []CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride, sharedDataSources []dsl.DataSource, scenarioMode string, revisionSource *ManagedTest, revisionDataPoolsChanged bool) ([]TestGroup, []engine.GroupConfig, int, error) {
 	if len(groups) == 0 {
 		return nil, nil, 0, fmt.Errorf("at least one group is required")
 	}
@@ -968,7 +1420,28 @@ func (tr *TestRunner) compileManagedTestGroupsForModeWithDataSourcesLocked(group
 	groupNameIndexes := make(map[string]int, len(groups))
 
 	for i, group := range groups {
-		testGroup, engineGroup, err := tr.compileManagedTestGroupForModeLocked(i, len(groups), group, runtimeSettings, sharedDataSources, scenarioMode)
+		revisionGroup := existingManagedTestGroup(revisionSource, group)
+		runtimeSettingsUnchanged := revisionGroup != nil &&
+			reflect.DeepEqual(mergeRuntimeSettings(runtimeSettings, group.RuntimeSettings), mergeRuntimeSettings(revisionSource.RuntimeSettings, revisionGroup.RuntimeSettings))
+		iterationOverrideUnchanged := revisionGroup != nil && revisionGroup.IterationOverrideKnown &&
+			intPointersEqual(group.Iterations, revisionGroup.IterationOverride)
+		if revisionGroup != nil && !revisionGroup.IterationOverrideKnown {
+			// Rollout-era snapshots retained only the effective value, so nil and
+			// that same effective value are the only requests that can safely mean
+			// "leave this layer untouched". Any required recompile is ambiguous
+			// unless the caller supplies a genuinely new compact override.
+			iterationOverrideUnchanged = group.Iterations == nil || intPointersEqual(group.Iterations, revisionGroup.Iterations)
+		}
+		runtimeAlreadyApplied := revisionGroup != nil &&
+			revisionGroup.script != nil &&
+			!revisionDataPoolsChanged &&
+			runtimeSettingsUnchanged &&
+			iterationOverrideUnchanged
+		if revisionGroup != nil && !revisionGroup.IterationOverrideKnown && !runtimeAlreadyApplied &&
+			(group.Iterations == nil || intPointersEqual(group.Iterations, revisionGroup.Iterations)) {
+			return nil, nil, 0, fmt.Errorf("group[%d]: revision source lacks iteration-override provenance; create a fresh queued source before changing inherited runtime or data-pool settings", i)
+		}
+		testGroup, engineGroup, err := tr.compileManagedTestGroupForModeWithRevisionLocked(i, len(groups), group, runtimeSettings, sharedDataSources, scenarioMode, revisionGroup, runtimeAlreadyApplied)
 		if err != nil {
 			return nil, nil, 0, err
 		}
@@ -1000,7 +1473,32 @@ func (tr *TestRunner) compileManagedTestGroupLocked(index int, totalGroups int, 
 }
 
 func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroups int, group CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride, sharedDataSources []dsl.DataSource, scenarioMode string) (TestGroup, engine.GroupConfig, error) {
+	return tr.compileManagedTestGroupForModeWithRevisionLocked(index, totalGroups, group, runtimeSettings, sharedDataSources, scenarioMode, nil, false)
+}
+
+func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int, totalGroups int, group CreateGroupEntry, runtimeSettings *RuntimeSettingsOverride, sharedDataSources []dsl.DataSource, scenarioMode string, revisionGroup *TestGroup, runtimeAlreadyApplied bool) (TestGroup, engine.GroupConfig, error) {
 	script, ok := tr.scripts[group.ScriptID]
+	if revisionGroup != nil && revisionGroup.script != nil {
+		runtimeScript := revisionGroup.script
+		if !runtimeAlreadyApplied {
+			if revisionGroup.baseScript == nil {
+				return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: revision source lacks an immutable base script required for runtime or data-pool edits", index)
+			}
+			runtimeScript = revisionGroup.baseScript
+		}
+		clonedScript := cloneScriptForStoredGroup(runtimeScript)
+		if clonedScript != nil {
+			script = &StoredScript{
+				ID:        group.ScriptID,
+				Name:      firstNonEmpty(revisionGroup.ScriptName, clonedScript.Name),
+				Protocol:  firstNonEmpty(revisionGroup.Protocol, clonedScript.Protocol),
+				Version:   clonedScript.Version,
+				ProjectID: clonedScript.ProjectID,
+				Script:    clonedScript,
+			}
+			ok = true
+		}
+	}
 	if !ok {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: script not found: %s", index, group.ScriptID)
 	}
@@ -1048,8 +1546,27 @@ func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroup
 	if group.Iterations != nil && *group.Iterations < 1 {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: iterations must be greater than 0", index)
 	}
-	if group.RuntimeSettings != nil && group.RuntimeSettings.Iterations != nil && *group.RuntimeSettings.Iterations < 1 {
-		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: runtime_settings.iterations must be greater than 0", index)
+	if group.RuntimeSettings != nil {
+		if group.RuntimeSettings.RunLogic == nil && group.RuntimeSettings.Iterations != nil && *group.RuntimeSettings.Iterations < 1 {
+			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: runtime_settings.iterations must be greater than 0", index)
+		}
+		if group.RuntimeSettings.RunLogic != nil && group.RuntimeSettings.RunLogic.Iterations < 0 {
+			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: runtime_settings.run_logic.iterations must be zero or greater", index)
+		}
+		if group.RuntimeSettings.RunLogic != nil && group.RuntimeSettings.Iterations != nil && group.RuntimeSettings.RunLogic.Iterations != *group.RuntimeSettings.Iterations {
+			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: runtime_settings.iterations conflicts with runtime_settings.run_logic.iterations", index)
+		}
+		if group.Iterations != nil {
+			if runtimeIterations, present := runtimeSettingsIterationValue(group.RuntimeSettings); present && runtimeIterations != *group.Iterations {
+				return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: iterations conflicts with runtime_settings.run_logic.iterations", index)
+			}
+		}
+		// Canonical sections are authoritative. Remove the legacy alias once its
+		// value has been checked so later merges cannot retain two representations.
+		if group.RuntimeSettings.RunLogic != nil && group.RuntimeSettings.Iterations != nil {
+			group.RuntimeSettings = cloneRuntimeSettings(group.RuntimeSettings)
+			group.RuntimeSettings.Iterations = nil
+		}
 	}
 	assignment, err := normalizeGroupGeneratorAssignmentSettings(group.Assignment)
 	if err != nil {
@@ -1096,38 +1613,35 @@ func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroup
 	}
 
 	effectiveRuntimeSettings := mergeRuntimeSettings(runtimeSettings, group.RuntimeSettings)
-	if group.Iterations != nil && (group.RuntimeSettings == nil || group.RuntimeSettings.Iterations == nil) {
-		if effectiveRuntimeSettings == nil {
-			effectiveRuntimeSettings = &RuntimeSettingsOverride{}
-		}
-		iterations := *group.Iterations
-		effectiveRuntimeSettings.Iterations = &iterations
+	if group.Iterations != nil {
+		effectiveRuntimeSettings = setRuntimeSettingsIteration(effectiveRuntimeSettings, *group.Iterations)
 	}
-	effectiveIterations := group.Iterations
-	if effectiveRuntimeSettings != nil && effectiveRuntimeSettings.Iterations != nil {
-		iterations := *effectiveRuntimeSettings.Iterations
+	var effectiveIterations *int
+	if iterations, present := runtimeSettingsIterationValue(effectiveRuntimeSettings); present && iterations > 0 {
 		effectiveIterations = &iterations
 	}
 
 	testGroup := TestGroup{
-		Name:            name,
-		ScriptID:        group.ScriptID,
-		ScriptName:      script.Name,
-		Protocol:        script.Protocol,
-		Role:            role,
-		VUsers:          vusers,
-		RampUp:          rampUpValue,
-		RampDown:        rampDownValue,
-		Stages:          cloneLoadStages(group.Stages),
-		Iterations:      effectiveIterations,
-		RuntimeSettings: nil,
-		Assignment:      cloneGeneratorAssignmentSettings(assignment),
-		RunLogicGoals:   runLogicGoalSnapshot(script.Script),
-		Initialization:  initStrategy,
-		rampUpDur:       engineRampUp,
-		stageDriven:     stageDriven,
-		initialVUsers:   initialVUsers,
-		currentVUsers:   initialVUsers,
+		Name:                   name,
+		ScriptID:               group.ScriptID,
+		ScriptName:             script.Name,
+		Protocol:               script.Protocol,
+		Role:                   role,
+		VUsers:                 vusers,
+		RampUp:                 rampUpValue,
+		RampDown:               rampDownValue,
+		Stages:                 cloneLoadStages(group.Stages),
+		Iterations:             effectiveIterations,
+		IterationOverride:      cloneIntPtr(group.Iterations),
+		IterationOverrideKnown: true,
+		RuntimeSettings:        nil,
+		Assignment:             cloneGeneratorAssignmentSettings(assignment),
+		RunLogicGoals:          runLogicGoalSnapshot(script.Script),
+		Initialization:         initStrategy,
+		rampUpDur:              engineRampUp,
+		stageDriven:            stageDriven,
+		initialVUsers:          initialVUsers,
+		currentVUsers:          initialVUsers,
 	}
 
 	scriptCopy := *script.Script
@@ -1135,7 +1649,25 @@ func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroup
 	// directory. Override any script-supplied path before local or distributed
 	// execution so scripts cannot select arbitrary filesystem locations.
 	scriptCopy.Config.Browser.HARArtifactDir = strings.TrimSpace(tr.settings.ArchiveRetention.HARArtifactDir)
-	if len(sharedDataSources) > 0 {
+	var baseScriptSnapshot *dsl.Script
+	if revisionGroup != nil {
+		baseScriptSnapshot = cloneScriptForStoredGroup(revisionGroup.baseScript)
+	} else {
+		// Persist an authoring base independently of shared pool rows and runtime
+		// overrides. Resolve object-repository selectors now so a later revision
+		// never consults a mutable repository merely because pacing/logging changed.
+		baseCandidate := cloneScriptForStoredGroup(&scriptCopy)
+		if baseCandidate != nil {
+			if resolved, _, refIssues := resolveObjectRefs(tr.objectRepoStore, baseCandidate); resolved != nil && len(refIssues) == 0 {
+				baseScriptSnapshot = cloneScriptForStoredGroup(resolved)
+			} else if len(refIssues) == 0 {
+				baseScriptSnapshot = baseCandidate
+			} else {
+				slog.Warn("immutable revision base unavailable because object references require runtime resolution", "group", index, "issues", strings.Join(refIssues, "; "))
+			}
+		}
+	}
+	if !runtimeAlreadyApplied && len(sharedDataSources) > 0 {
 		scriptCopy.DataSources = append(cloneDataSources(scriptCopy.DataSources), sharedDataSources...)
 	}
 	runtimeScope := strings.TrimSpace(group.runtimeSecretScope)
@@ -1151,12 +1683,8 @@ func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroup
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: protect group runtime credentials: %w", index, err)
 	}
 	executionRuntimeSettings := mergeRuntimeSettings(protectedRootSettings, protectedGroupSettings)
-	if effectiveRuntimeSettings != nil && effectiveRuntimeSettings.Iterations != nil {
-		if executionRuntimeSettings == nil {
-			executionRuntimeSettings = &RuntimeSettingsOverride{}
-		}
-		iterations := *effectiveRuntimeSettings.Iterations
-		executionRuntimeSettings.Iterations = &iterations
+	if effectiveIterations != nil {
+		executionRuntimeSettings = setRuntimeSettingsIteration(executionRuntimeSettings, *effectiveIterations)
 	}
 	runtimeSecretValues := cloneRuntimeSecretValues(rootRuntimeSecretValues)
 	if runtimeSecretValues == nil && len(groupRuntimeSecretValues) > 0 {
@@ -1165,7 +1693,7 @@ func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroup
 	for secretName, secretValue := range groupRuntimeSecretValues {
 		runtimeSecretValues[secretName] = secretValue
 	}
-	if executionRuntimeSettings != nil {
+	if executionRuntimeSettings != nil && !runtimeAlreadyApplied {
 		if err := applyRuntimeOverrides(&scriptCopy, executionRuntimeSettings); err != nil {
 			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: apply runtime overrides: %w", index, err)
 		}
@@ -1176,14 +1704,16 @@ func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroup
 	// Resolve object-repository bindings into concrete selectors before the
 	// script is distributed — generators have no store, so an unresolved
 	// object_ref would be unrunnable on the generator.
-	if resolved, refWarnings, refIssues := resolveObjectRefs(tr.objectRepoStore, &scriptCopy); resolved != nil {
-		if len(refIssues) > 0 {
-			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %s", index, strings.Join(refIssues, "; "))
+	if !runtimeAlreadyApplied {
+		if resolved, refWarnings, refIssues := resolveObjectRefs(tr.objectRepoStore, &scriptCopy); resolved != nil {
+			if len(refIssues) > 0 {
+				return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %s", index, strings.Join(refIssues, "; "))
+			}
+			for _, w := range refWarnings {
+				slog.Warn("object_ref resolution degraded to inline locator", "group", index, "detail", w)
+			}
+			scriptCopy = *resolved
 		}
-		for _, w := range refWarnings {
-			slog.Warn("object_ref resolution degraded to inline locator", "group", index, "detail", w)
-		}
-		scriptCopy = *resolved
 	}
 	if len(scriptCopy.Actions) == 0 {
 		if issues := dsl.ValidateScriptIssues(&scriptCopy); len(issues) > 0 {
@@ -1191,9 +1721,19 @@ func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroup
 		}
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: script must have at least one action", index)
 	}
-	effectiveRuntimeSettings, err = tr.resolveEffectiveRuntimeSettings(script.ProjectID, effectiveRuntimeSettings)
-	if err != nil {
-		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: resolve redaction rules: %w", index, err)
+	if runtimeAlreadyApplied && revisionGroup != nil {
+		testGroup.Iterations = cloneIntPtr(revisionGroup.Iterations)
+		testGroup.IterationOverride = cloneIntPtr(revisionGroup.IterationOverride)
+		testGroup.IterationOverrideKnown = revisionGroup.IterationOverrideKnown
+		if effectiveRuntimeSettings == nil {
+			effectiveRuntimeSettings = &RuntimeSettingsOverride{}
+		}
+		effectiveRuntimeSettings.RedactionRules = cloneRedactionRules(revisionGroup.redactionRules)
+	} else {
+		effectiveRuntimeSettings, err = tr.resolveEffectiveRuntimeSettings(script.ProjectID, effectiveRuntimeSettings)
+		if err != nil {
+			return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: resolve redaction rules: %w", index, err)
+		}
 	}
 	redactionConfig, err := buildRuntimeRedactionConfig(effectiveRuntimeSettings)
 	if err != nil {
@@ -1208,6 +1748,8 @@ func (tr *TestRunner) compileManagedTestGroupForModeLocked(index int, totalGroup
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: prepare runtime credential redaction: %w", index, err)
 	}
 	testGroup.script = &scriptCopy
+	testGroup.baseScript = baseScriptSnapshot
+	testGroup.sharedDataSources = cloneDataSources(sharedDataSources)
 	testGroup.RuntimeSettings = cloneRuntimeSettings(protectedGroupSettings)
 	testGroup.redactionRules = cloneRedactionRules(nilIfNoRules(effectiveRuntimeSettings))
 	testGroup.runtimeSecretValues = cloneRuntimeSecretValues(runtimeSecretValues)
@@ -1232,6 +1774,15 @@ func (tr *TestRunner) buildSharedDataSourcesLocked(bindings []storage.ScenarioDa
 	if len(bindings) == 0 {
 		return nil, nil
 	}
+	// This is the final executable boundary and deliberately revalidates even
+	// though normal create paths canonicalize earlier. Persisted legacy records
+	// and future internal callers must not silently degrade read_write/consume
+	// into the current read-only in-memory CSV snapshot behavior.
+	normalized, err := normalizeDataPoolBindingIntent(bindings)
+	if err != nil {
+		return nil, fmt.Errorf("invalid executable data pool bindings: %w", err)
+	}
+	bindings = normalized
 	if tr.dataPoolStore == nil {
 		return nil, fmt.Errorf("data pool storage is not configured")
 	}
@@ -1473,12 +2024,20 @@ func deriveManagedTestName(requestName string, groups []TestGroup) string {
 	return fmt.Sprintf("Multi-group (%d groups)", len(groups))
 }
 
-func (tr *TestRunner) resolveCreateTestProjectID(requestProjectID string, groups []CreateGroupEntry) (string, error) {
+func (tr *TestRunner) resolveCreateTestProjectID(requestProjectID string, groups []CreateGroupEntry, revisionSource *ManagedTest) (string, error) {
 	projectID := strings.TrimSpace(requestProjectID)
 	if projectID != "" {
 		projectID = normalizeProjectID(projectID)
 	}
 	for _, group := range groups {
+		// A source-indexed revision group is bound to the queued run's immutable
+		// script snapshot. The library row may have been deleted or its ID may
+		// have been reused in another project; neither event may change the
+		// source-bound group's authorization or execution input. Explicitly new
+		// revision groups still fall through to the current library lookup.
+		if group.RevisionSourceGroupIndex != nil && existingManagedTestGroup(revisionSource, group) != nil {
+			continue
+		}
 		script, ok := tr.scripts[group.ScriptID]
 		if !ok {
 			continue

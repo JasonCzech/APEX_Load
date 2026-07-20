@@ -197,6 +197,24 @@ func TestExecutionEpochExpiryStopsLoadAndCannotBeRevived(t *testing.T) {
 	if ack.GetAccepted() {
 		t.Fatal("expired execution generation was revived")
 	}
+	// Assignment detachment is the safety-critical first phase of expiry. The
+	// generator deliberately keeps a second fence while the detached engine
+	// quiesces and its archive finalizes; a higher generation must not be accepted
+	// until that cleanup completes. Under full-suite contention this can outlive
+	// the assignments-map deletion observed above.
+	for {
+		service.mu.RLock()
+		pending := service.executionFencePending
+		fencing := service.executionEpochFencing
+		service.mu.RUnlock()
+		if pending == 0 && !fencing {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("execution epoch cleanup remained fenced: pending=%d fencing=%v", pending, fencing)
+		}
+		time.Sleep(time.Millisecond)
+	}
 	if ack := claimEpoch(t, service, 5, time.Second); !ack.GetAccepted() {
 		t.Fatalf("higher generation rejected after expiry: %s", ack.GetErrorMessage())
 	}

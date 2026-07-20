@@ -388,6 +388,26 @@ func resolveTestCreateProjectID(r *http.Request, store storage.Store) (string, i
 		}
 		return 0, ""
 	}
+
+	var revisionSource *storage.TestRecord
+	if sourceTestID := strings.TrimSpace(req.RevisionSourceTestID); sourceTestID != "" {
+		if store == nil {
+			return "", http.StatusServiceUnavailable, "test storage is not configured"
+		}
+		source, err := store.GetTest(sourceTestID)
+		if err != nil || source == nil {
+			return "", http.StatusNotFound, "revision source test not found"
+		}
+		if status, msg := mergeProjectID(source.ProjectID, "revision source test project does not match referenced test resources"); status != 0 {
+			return "", status, msg
+		}
+		revisionSource = source
+	}
+
+	// A revision is authorized from its immutable source before any client-
+	// supplied project/resource hint is considered. This prevents a deleted live
+	// source script from turning an otherwise valid source-scoped request into a
+	// 404 before project RBAC is evaluated.
 	if strings.TrimSpace(req.ProjectID) != "" {
 		if status, msg := mergeProjectID(req.ProjectID, "project_id does not match referenced test resources"); status != 0 {
 			return "", status, msg
@@ -404,7 +424,14 @@ func resolveTestCreateProjectID(r *http.Request, store storage.Store) (string, i
 		}
 	}
 
-	inferredProjectID, status, msg := resolveCreateTestScriptProjectID(req, store)
+	var inferredProjectID string
+	var status int
+	var msg string
+	if revisionSource != nil {
+		inferredProjectID, status, msg = resolveRevisionCreateTestScriptProjectID(req, revisionSource, store)
+	} else {
+		inferredProjectID, status, msg = resolveCreateTestScriptProjectID(req, store)
+	}
 	if status != 0 {
 		return "", status, msg
 	}
@@ -415,18 +442,30 @@ func resolveTestCreateProjectID(r *http.Request, store storage.Store) (string, i
 	}
 
 	if scenarioID := strings.TrimSpace(req.ScenarioID); scenarioID != "" {
-		scenarioReq := r.Clone(r.Context())
-		scenarioReq.SetPathValue("id", scenarioID)
-		scenarioProjectID, scenarioStatus, scenarioMsg := resolveScenarioProjectID(scenarioReq, store)
-		if scenarioStatus != 0 {
-			return "", scenarioStatus, scenarioMsg
-		}
-		if status, msg := mergeProjectID(scenarioProjectID, "scenario project does not match referenced test resources"); status != 0 {
-			return "", status, msg
+		if revisionSource != nil {
+			if scenarioID != strings.TrimSpace(revisionSource.ScenarioID) {
+				return "", http.StatusBadRequest, "revision source test does not belong to the requested scenario"
+			}
+			if status, msg := mergeProjectID(revisionSource.ProjectID, "scenario project does not match referenced test resources"); status != 0 {
+				return "", status, msg
+			}
+		} else {
+			scenarioReq := r.Clone(r.Context())
+			scenarioReq.SetPathValue("id", scenarioID)
+			scenarioProjectID, scenarioStatus, scenarioMsg := resolveScenarioProjectID(scenarioReq, store)
+			if scenarioStatus != 0 {
+				return "", scenarioStatus, scenarioMsg
+			}
+			if status, msg := mergeProjectID(scenarioProjectID, "scenario project does not match referenced test resources"); status != 0 {
+				return "", status, msg
+			}
 		}
 	}
 
-	if releaseID := strings.TrimSpace(req.ReleaseID); releaseID != "" {
+	implicitRevisionReleaseContext := revisionSource != nil && matchesImplicitRevisionReleaseContext(
+		req.ApplicationID, req.ReleaseID, revisionSource.ApplicationID, revisionSource.ReleaseID,
+	)
+	if releaseID := strings.TrimSpace(req.ReleaseID); releaseID != "" && !implicitRevisionReleaseContext {
 		release, err := store.GetRelease(releaseID)
 		if err != nil || release == nil {
 			return "", http.StatusNotFound, "release not found"
@@ -445,7 +484,7 @@ func resolveTestCreateProjectID(r *http.Request, store storage.Store) (string, i
 		}
 	}
 
-	if applicationID := strings.TrimSpace(req.ApplicationID); applicationID != "" {
+	if applicationID := strings.TrimSpace(req.ApplicationID); applicationID != "" && !implicitRevisionReleaseContext {
 		applicationReq := r.Clone(r.Context())
 		applicationReq.SetPathValue("id", applicationID)
 		applicationProjectID, applicationStatus, applicationMsg := resolveApplicationProjectID(applicationReq, store)
@@ -458,6 +497,53 @@ func resolveTestCreateProjectID(r *http.Request, store storage.Store) (string, i
 	}
 
 	return normalizeProjectID(resolvedProjectID), 0, ""
+}
+
+// resolveRevisionCreateTestScriptProjectID validates immutable source-group
+// identities against the durable queued-test snapshot. Indexed source groups do
+// not depend on the mutable script library and therefore remain authorizable
+// after their live script is deleted. Explicitly new groups still resolve the
+// live script so project isolation and deleted-script 404 behavior are retained.
+func resolveRevisionCreateTestScriptProjectID(req CreateTestRequest, source *storage.TestRecord, store storage.Store) (string, int, string) {
+	if strings.TrimSpace(req.ScriptID) != "" {
+		return "", http.StatusBadRequest, "queued-run revisions require canonical groups with source identities; script_id shorthand is not supported"
+	}
+	sourceGroups := decodeStoredGroups(source.Groups)
+	usedSourceGroups := make(map[int]struct{}, len(req.Groups))
+	newGroupProjectID := ""
+	for _, group := range req.Groups {
+		if group.RevisionNewGroup {
+			if group.RevisionSourceGroupIndex != nil {
+				return "", http.StatusBadRequest, "revision_new_group cannot be combined with revision_source_group_index"
+			}
+			script, err := store.GetScript(strings.TrimSpace(group.ScriptID))
+			if err != nil || script == nil {
+				return "", http.StatusNotFound, "script not found"
+			}
+			candidate := normalizeProjectID(script.ProjectID)
+			if newGroupProjectID == "" {
+				newGroupProjectID = candidate
+			} else if newGroupProjectID != candidate {
+				return "", http.StatusBadRequest, "test scripts span multiple projects"
+			}
+			continue
+		}
+		if group.RevisionSourceGroupIndex == nil {
+			return "", http.StatusBadRequest, "exactly one of revision_source_group_index or revision_new_group is required"
+		}
+		sourceIndex := *group.RevisionSourceGroupIndex
+		if sourceIndex < 0 || sourceIndex >= len(sourceGroups) {
+			return "", http.StatusBadRequest, "revision_source_group_index is out of range"
+		}
+		if strings.TrimSpace(sourceGroups[sourceIndex].ScriptID) != strings.TrimSpace(group.ScriptID) {
+			return "", http.StatusBadRequest, "revision source group script does not match"
+		}
+		if _, duplicate := usedSourceGroups[sourceIndex]; duplicate {
+			return "", http.StatusBadRequest, "revision source group is referenced more than once"
+		}
+		usedSourceGroups[sourceIndex] = struct{}{}
+	}
+	return newGroupProjectID, 0, ""
 }
 
 func resolveCreateTestScriptProjectID(req CreateTestRequest, store storage.Store) (string, int, string) {

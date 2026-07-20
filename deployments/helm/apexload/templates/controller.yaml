@@ -168,6 +168,13 @@ spec:
               value: ":8080"
             - name: APEXLOAD_PUBLIC_URL
               value: {{ default (printf "https://%s" .Values.ingress.host) .Values.controller.publicURL | quote }}
+{{- if .Values.tracing.headersSecretName }}
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.tracing.headersSecretName | quote }}
+                  key: {{ .Values.tracing.headersSecretKey | quote }}
+{{- end }}
 {{ if .Values.controller.ciOIDCAudience }}
             - name: APEXLOAD_CI_OIDC_AUDIENCE
               value: {{ .Values.controller.ciOIDCAudience | quote }}

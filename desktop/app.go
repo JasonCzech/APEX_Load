@@ -18,6 +18,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/api"
 	"github.com/jasonczech/apexload/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/telemetry"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -363,6 +364,9 @@ func (a *App) startup(ctx context.Context) {
 		ProxyAuthToken:     a.recorderProxyToken,
 		RecorderCACertPath: filepath.Join(recorderStatePath, "ca-cert.pem"),
 		RecorderCAKeyPath:  filepath.Join(recorderStatePath, "ca-key.pem"),
+		// The native desktop process intentionally remains correlation-only: it
+		// can generate/retain W3C IDs but never exports local operator activity.
+		TracingStatus: telemetry.Status{CorrelationOnly: true},
 	})
 	if !a.startAPIServer(server) {
 		a.lifecycleMu.Lock()

@@ -18,6 +18,11 @@ import (
 	"github.com/jasonczech/apexload/pkg/api/testexec"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/telemetry"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 )
 
 var (
@@ -187,7 +192,23 @@ func restoreTestStoppedByActor(test *ManagedTest, snapshot testActorAttributionS
 // optionally pinning every ownership claim to an immutable execution lease
 // term. Execution-plan goroutines use the pinned form so an old goroutine can
 // never adopt a later term after this process loses and reacquires leadership.
-func (tr *TestRunner) startTestWithOptionsAndExpectedTerm(id string, opts StartTestOptions, expectedTerm *executionLeaseTerm) error {
+func (tr *TestRunner) startTestWithOptionsAndExpectedTerm(id string, opts StartTestOptions, expectedTerm *executionLeaseTerm) (startErr error) {
+	parent := telemetry.Detach(opts.traceContext)
+	ctx, span := otel.Tracer("github.com/jasonczech/apexload/pkg/api").Start(
+		parent,
+		"apexload.test.start",
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(attribute.String("apexload.test.id", telemetry.BoundedIdentifier(id))),
+	)
+	opts.traceContext = ctx
+	defer func() {
+		tr.annotateTestLifecycleSpan(span, id, startErr)
+		span.End()
+	}()
+	return tr.startTestWithOptionsAndExpectedTermCore(id, opts, expectedTerm)
+}
+
+func (tr *TestRunner) startTestWithOptionsAndExpectedTermCore(id string, opts StartTestOptions, expectedTerm *executionLeaseTerm) error {
 	if err := tr.validateExpectedStartTerm(expectedTerm); err != nil {
 		return err
 	}
@@ -196,6 +217,11 @@ func (tr *TestRunner) startTestWithOptionsAndExpectedTerm(id string, opts StartT
 	}
 	tr.mu.Lock()
 	id = tr.resolveRefKeyLocked(id)
+	tr.mu.Unlock()
+	if err := tr.refreshTestCapacityBindingFromStore(id); err != nil {
+		return err
+	}
+	tr.mu.Lock()
 	blocked, err := tr.preflightStartBlocksLockedWithExpectedTerm(id, opts, expectedTerm)
 	tr.mu.Unlock()
 	if err != nil {
@@ -230,6 +256,9 @@ func (tr *TestRunner) startTestWithOptionsAndExpectedTerm(id string, opts StartT
 	if err := tr.validateCIRunPolicyForStart(id); err != nil {
 		return err
 	}
+	if err := tr.refreshTestCapacityBindingFromStore(id); err != nil {
+		return err
+	}
 
 	tr.mu.Lock()
 	if err := tr.validateExpectedStartTerm(expectedTerm); err != nil {
@@ -247,6 +276,31 @@ func (tr *TestRunner) startTestWithOptionsAndExpectedTerm(id string, opts StartT
 
 	go tr.runTest(test)
 	return nil
+}
+
+type startSecretRequirementError struct {
+	message   string
+	retryable bool
+	cause     error
+}
+
+func (e *startSecretRequirementError) Error() string {
+	if e == nil {
+		return "test secret requirements are not satisfied"
+	}
+	return e.message
+}
+
+func (e *startSecretRequirementError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.cause
+}
+
+func retryableStartSecretRequirement(err error) bool {
+	var requirementErr *startSecretRequirementError
+	return errors.As(err, &requirementErr) && requirementErr.retryable
 }
 
 // validateStartSecretRequirements keeps saved scripts independently
@@ -281,7 +335,10 @@ func (tr *TestRunner) validateStartSecretRequirements(id string) error {
 		}
 		names, err := engine.ReferencedSecretNames(group.Script)
 		if err != nil {
-			return fmt.Errorf("group[%d] %q: inspect project secret references", index, group.Name)
+			return &startSecretRequirementError{
+				message: fmt.Sprintf("group[%d] %q: inspect project secret references", index, group.Name),
+				cause:   err,
+			}
 		}
 		if len(names) == 0 {
 			continue
@@ -300,14 +357,21 @@ func (tr *TestRunner) validateStartSecretRequirements(id string) error {
 		}
 		_, missing, err := engine.ResolveSecretNames(resolutionCtx, names, resolver)
 		if err != nil {
-			return fmt.Errorf("group[%d] %q: project secret resolution failed: %w", index, group.Name, err)
+			return &startSecretRequirementError{
+				message:   fmt.Sprintf("group[%d] %q: project secret resolution failed: %v", index, group.Name, err),
+				retryable: true,
+				cause:     err,
+			}
 		}
 		if len(missing) > 0 {
 			groupName := strings.TrimSpace(group.Name)
 			if groupName == "" {
 				groupName = group.Script.Name
 			}
-			return fmt.Errorf("group %q: configure the following project secret(s) before starting the test: %s", groupName, strings.Join(missing, ", "))
+			return &startSecretRequirementError{
+				message:   fmt.Sprintf("group %q: configure the following project secret(s) before starting the test: %s", groupName, strings.Join(missing, ", ")),
+				retryable: true,
+			}
 		}
 	}
 	return nil
@@ -394,13 +458,98 @@ func (tr *TestRunner) markTestInitializingLockedWithExpectedTerm(test *ManagedTe
 	return nil
 }
 
+// startOptionsWithAuthorization reconstructs the explicit start-gate choices
+// that were durably recorded before a test entered the fair-share queue. The
+// capacity grant is intentionally bounded: the workload must be unchanged and
+// neither the recommended fleet nor the shortfall may be worse than what the
+// operator approved.
+func startOptionsWithAuthorization(test *ManagedTest, opts StartTestOptions) StartTestOptions {
+	if test == nil || test.StartAuthorization == nil {
+		return opts
+	}
+	if capacityStartAuthorizationAllows(test.StartAuthorization.CapacityShortfall, test.CapacityAdvisory) {
+		opts.OverrideCapacityShortfall = true
+	}
+	if scriptShakeoutStartAuthorizationAllows(test.StartAuthorization.ScriptShakeout) {
+		opts.OverrideScriptShakeoutError = true
+	}
+	return opts
+}
+
+func capacityStartAuthorizationAllows(authorization *CapacityShortfallStartAuthorization, advisory *CapacityAdvisory) bool {
+	if authorization == nil || advisory == nil || !advisory.RequiresOverride || authorization.ApprovedAt.IsZero() {
+		return false
+	}
+	return advisory.TotalVUsers == authorization.TotalVUsers &&
+		advisory.RecommendedGenerators <= authorization.RecommendedGenerators &&
+		advisory.ShortfallGenerators <= authorization.ShortfallGenerators
+}
+
+func scriptShakeoutStartAuthorizationAllows(authorization *ScriptShakeoutStartAuthorization) bool {
+	return authorization != nil && !authorization.ApprovedAt.IsZero() && strings.TrimSpace(authorization.ReviewEvidenceSHA256) != ""
+}
+
+// applyRequestedStartAuthorizations captures only choices made on the current
+// API/start attempt. Promotion reconstructs options from this snapshot but never
+// refreshes its approval time or expands its bounds on behalf of the operator.
+func applyRequestedStartAuthorizations(test *ManagedTest, opts StartTestOptions, approvedAt time.Time) {
+	if test == nil || (!opts.OverrideCapacityShortfall && !opts.OverrideScriptShakeoutError) {
+		return
+	}
+	authorization := cloneQueuedStartAuthorization(test.StartAuthorization)
+	if authorization == nil {
+		authorization = &QueuedStartAuthorization{}
+	}
+	subject, displayName := startAuthorizationActor(test, opts.actor)
+	approvedAt = approvedAt.UTC()
+	if opts.OverrideCapacityShortfall && test.CapacityAdvisory != nil && test.CapacityAdvisory.RequiresOverride {
+		advisory := test.CapacityAdvisory
+		authorization.CapacityShortfall = &CapacityShortfallStartAuthorization{
+			ApprovedAt:            approvedAt,
+			ApprovedBySubject:     subject,
+			ApprovedByDisplayName: displayName,
+			TotalVUsers:           advisory.TotalVUsers,
+			RecommendedGenerators: advisory.RecommendedGenerators,
+			AvailableGenerators:   advisory.AvailableGenerators,
+			ShortfallGenerators:   advisory.ShortfallGenerators,
+		}
+	}
+	if opts.OverrideScriptShakeoutError && test.ScriptShakeout {
+		authorization.ScriptShakeout = &ScriptShakeoutStartAuthorization{
+			ApprovedAt:            approvedAt,
+			ApprovedBySubject:     subject,
+			ApprovedByDisplayName: displayName,
+			ReviewEvidenceSHA256:  sha256String(strings.TrimSpace(test.Error)),
+		}
+	}
+	if authorization.CapacityShortfall == nil && authorization.ScriptShakeout == nil {
+		return
+	}
+	test.StartAuthorization = authorization
+}
+
+func startAuthorizationActor(test *ManagedTest, actor testCreationActor) (string, string) {
+	subject := strings.TrimSpace(actor.Subject)
+	displayName := strings.TrimSpace(actor.DisplayName)
+	if subject == "" && test != nil {
+		subject = strings.TrimSpace(test.StartedBySubject)
+		displayName = strings.TrimSpace(test.StartedByDisplayName)
+	}
+	if subject == "" && test != nil {
+		subject = strings.TrimSpace(test.CreatedBySubject)
+		displayName = strings.TrimSpace(test.CreatedByDisplayName)
+	}
+	return subject, displayName
+}
+
 // evaluateStartGatesLocked runs the capacity-advisory / governance / launch-window /
 // quota gates for a start attempt. It returns blocked=true (after transitioning the
 // test to PENDING) when a quota block applies, or an error when a gate rejects the
 // start outright. The caller must hold tr.mu and have already validated startability.
 func (tr *TestRunner) evaluateStartGatesLocked(id string, test *ManagedTest, opts StartTestOptions) (bool, error) {
 	tr.refreshCapacityAdvisoryLocked(test)
-	if err := buildStartGovernanceError(id, test.CapacityAdvisory, opts); err != nil {
+	effectiveOpts := startOptionsWithAuthorization(test, opts)
+	if err := buildStartGovernanceError(id, test.CapacityAdvisory, effectiveOpts); err != nil {
 		return false, err
 	}
 	if !opts.SkipLaunchWindowPreflight {
@@ -416,8 +565,11 @@ func (tr *TestRunner) evaluateStartGatesLocked(id string, test *ManagedTest, opt
 		return false, err
 	}
 	if blocked, reason := tr.evaluateQuotaBlockLocked(test, ""); blocked {
+		authorizationSnapshot := cloneQueuedStartAuthorization(test.StartAuthorization)
 		actorSnapshot, actorChanged := applyTestStartedByActor(test, opts.actor)
+		applyRequestedStartAuthorizations(test, opts, time.Now().UTC())
 		if err := tr.markTestPendingLocked(test, reason); err != nil {
+			test.StartAuthorization = authorizationSnapshot
 			if actorChanged {
 				restoreTestStartedByActor(test, actorSnapshot)
 			}
@@ -469,9 +621,6 @@ func (tr *TestRunner) beginScriptShakeoutIfNeeded(id string, opts StartTestOptio
 }
 
 func (tr *TestRunner) beginScriptShakeoutIfNeededWithExpectedTerm(id string, opts StartTestOptions, expectedTerm *executionLeaseTerm) (*ManagedTest, error) {
-	if opts.OverrideScriptShakeoutError {
-		return nil, nil
-	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
 	if err := tr.shutdownErrorLocked(); err != nil {
@@ -483,6 +632,9 @@ func (tr *TestRunner) beginScriptShakeoutIfNeededWithExpectedTerm(id string, opt
 		return nil, fmt.Errorf("test not found: %s", id)
 	}
 	if !test.ScriptShakeout {
+		return nil, nil
+	}
+	if startOptionsWithAuthorization(test, opts).OverrideScriptShakeoutError {
 		return nil, nil
 	}
 	if !testexec.IsStartableTestStatus(test.Status) {
@@ -609,12 +761,27 @@ func (tr *TestRunner) prepareTestStartLockedWithExpectedTerm(id string, opts Sta
 	previousExecutionCtx := test.executionCtx
 	previousCancel := test.cancel
 	previousBackend := test.executionBackend
+	previousStartAuthorization := cloneQueuedStartAuthorization(test.StartAuthorization)
 	actorSnapshot, actorChanged := applyTestStartedByActor(test, opts.actor)
+	applyRequestedStartAuthorizations(test, opts, time.Now().UTC())
 	if err := tr.markTestInitializingLockedWithExpectedTerm(test, expectedTerm); err != nil {
+		test.StartAuthorization = previousStartAuthorization
 		if actorChanged {
 			restoreTestStartedByActor(test, actorSnapshot)
 		}
 		return nil, err
+	}
+	if opts.traceContext != nil {
+		// The lifecycle is a child of the start span but must not inherit HTTP
+		// request cancellation or request-local values. Keep the previous context
+		// live until persistence commits so a failed transition can restore it.
+		initializingCancel := test.cancel
+		test.executionCtx, test.cancel = tr.executionOperationContext(telemetry.Detach(opts.traceContext))
+		if initializingCancel != nil {
+			// markTestInitializingLocked created this temporary context after the
+			// previous cancel function was snapshotted; it is safe to retire now.
+			initializingCancel()
+		}
 	}
 	if err := tr.saveManagedTestStartRecord(test); err != nil {
 		if test.cancel != nil {
@@ -628,6 +795,7 @@ func (tr *TestRunner) prepareTestStartLockedWithExpectedTerm(id string, opts Sta
 		test.executionCtx = previousExecutionCtx
 		test.cancel = previousCancel
 		test.executionBackend = previousBackend
+		test.StartAuthorization = previousStartAuthorization
 		if actorChanged {
 			restoreTestStartedByActor(test, actorSnapshot)
 		}
@@ -742,11 +910,11 @@ func (tr *TestRunner) lockedTestStatus(id string) (string, *ManagedTest, string,
 }
 
 func (tr *TestRunner) StopTest(id string) error {
-	return tr.stopTestWithContextAndCIReasonAndActor(context.Background(), id, true, "", testCreationActor{})
+	return tr.stopTestWithContextAndCIReasonAndActorMode(context.Background(), id, true, "", testCreationActor{}, false)
 }
 
 func (tr *TestRunner) StopTestAsActor(id string, actor testCreationActor) error {
-	return tr.stopTestWithContextAndCIReasonAndActor(context.Background(), id, true, "", actor)
+	return tr.stopTestWithContextAndCIReasonAndActorMode(context.Background(), id, true, "", actor, false)
 }
 
 func (tr *TestRunner) stopTest(id string, requireLeadership bool) error {
@@ -758,11 +926,11 @@ func (tr *TestRunner) stopTestWithContext(ctx context.Context, id string, requir
 }
 
 func (tr *TestRunner) AbortCIRun(id string, reason string) error {
-	return tr.stopTestWithContextAndCIReason(context.Background(), id, true, normalizeCIAbortReason(reason))
+	return tr.stopTestWithContextAndCIReasonAndActorMode(context.Background(), id, true, normalizeCIAbortReason(reason), testCreationActor{}, true)
 }
 
 func (tr *TestRunner) AbortCIRunAsActor(id string, reason string, actor testCreationActor) error {
-	return tr.stopTestWithContextAndCIReasonAndActor(context.Background(), id, true, normalizeCIAbortReason(reason), actor)
+	return tr.stopTestWithContextAndCIReasonAndActorMode(context.Background(), id, true, normalizeCIAbortReason(reason), actor, true)
 }
 
 func (tr *TestRunner) stopTestWithContextAndCIReason(ctx context.Context, id string, requireLeadership bool, abortReason string) error {
@@ -770,6 +938,14 @@ func (tr *TestRunner) stopTestWithContextAndCIReason(ctx context.Context, id str
 }
 
 func (tr *TestRunner) stopTestWithContextAndCIReasonAndActor(ctx context.Context, id string, requireLeadership bool, abortReason string, actor testCreationActor) error {
+	return tr.stopTestWithContextAndCIReasonAndActorMode(ctx, id, requireLeadership, abortReason, actor, false)
+}
+
+func (tr *TestRunner) stopTestWithContextAndCIReasonAndActorMode(ctx context.Context, id string, requireLeadership bool, abortReason string, actor testCreationActor, forceAbort bool) error {
+	return tr.stopTestWithContextAndCIReasonAndActorModeAttempt(ctx, id, requireLeadership, abortReason, actor, forceAbort, false)
+}
+
+func (tr *TestRunner) stopTestWithContextAndCIReasonAndActorModeAttempt(ctx context.Context, id string, requireLeadership bool, abortReason string, actor testCreationActor, forceAbort bool, retryAttempt bool) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -789,6 +965,12 @@ func (tr *TestRunner) stopTestWithContextAndCIReasonAndActor(ctx context.Context
 	}
 	if requireLeadership && !tr.isExecutionLeader() {
 		return errNotExecutionLeader
+	}
+	// If an earlier ambiguous Stop already owns the one retry worker, record this
+	// request before dispatch. Force is monotonic, and the version prevents an
+	// in-flight graceful success from retiring without observing the upgrade.
+	if !retryAttempt {
+		forceAbort = tr.upgradeExistingStopTeardownRetryIntent(id, forceAbort)
 	}
 
 	tr.mu.Lock()
@@ -879,6 +1061,9 @@ func (tr *TestRunner) stopTestWithContextAndCIReasonAndActor(ctx context.Context
 			slotID = strings.TrimSpace(*test.TimeslotID)
 		}
 		tr.mu.Unlock()
+		if err := tr.syncScenarioScheduleLifecycleForTest(test.ID); err != nil {
+			slog.Warn("aborted test transition could not refresh scenario occurrence cache", "test_id", test.ID, "error", err)
+		}
 		releaseErr := tr.releaseCapacityReservationForTerminalStatus(test.ID, "ABORTED")
 		if releaseErr != nil && slotID != "" {
 			tr.enqueueCapacityReservationReleaseRetry(test.ID, slotID)
@@ -914,31 +1099,60 @@ func (tr *TestRunner) stopTestWithContextAndCIReasonAndActor(ctx context.Context
 	cancel := test.cancel
 	tr.mu.Unlock()
 
+	// Force abort is irreversible once the durable STOPPING fence is committed:
+	// cancel local work before invoking even a legacy graceful-only backend so a
+	// backend waiting for executionCtx can unblock. From this point onward any
+	// teardown error remains fail-closed STOPPING and is retried; rolling back to
+	// RUNNING/PAUSED would advertise work that has already been hard-cancelled.
+	if forceAbort {
+		if multiEngine != nil {
+			multiEngine.Stop()
+		}
+		if cancel != nil {
+			cancel()
+		}
+	}
+
 	if multiEngine == nil {
 		var stopErr error
 		stopSupported := false
-		if stoppable, ok := backend.(contextStoppableExecutionBackend); ok {
-			stopSupported = true
-			stopErr = stoppable.StopTestContext(ctx, tr, test)
-		} else if stoppable, ok := backend.(stoppableExecutionBackend); ok {
-			stopSupported = true
-			if ctx.Done() == nil {
-				stopErr = stoppable.StopTest(tr, test)
-			} else if cancel == nil {
-				// A legacy stop has no cancellation contract. Bounded shutdown must
-				// not launch a call that can outlive the controller's deadline.
-				stopErr = fmt.Errorf("test backend does not support context-bounded stop")
+		if forceAbort {
+			if abortable, ok := backend.(contextAbortableExecutionBackend); ok {
+				stopSupported = true
+				stopErr = abortable.AbortTestContext(ctx, tr, test)
+			} else if abortable, ok := backend.(abortableExecutionBackend); ok {
+				stopSupported = true
+				if ctx.Done() == nil {
+					stopErr = abortable.AbortTest(tr, test)
+				} else if cancel == nil {
+					stopErr = fmt.Errorf("test backend does not support context-bounded abort")
+				}
 			}
-		} else if cancel == nil {
-			stopErr = fmt.Errorf("test backend does not support stop")
+		}
+		if !stopSupported {
+			if stoppable, ok := backend.(contextStoppableExecutionBackend); ok {
+				stopSupported = true
+				stopErr = stoppable.StopTestContext(ctx, tr, test)
+			} else if stoppable, ok := backend.(stoppableExecutionBackend); ok {
+				stopSupported = true
+				if ctx.Done() == nil {
+					stopErr = stoppable.StopTest(tr, test)
+				} else if cancel == nil {
+					// A legacy stop has no cancellation contract. Bounded shutdown must
+					// not launch a call that can outlive the controller's deadline.
+					stopErr = fmt.Errorf("test backend does not support context-bounded stop")
+				}
+			} else if cancel == nil {
+				stopErr = fmt.Errorf("test backend does not support stop")
+			}
 		}
 		if stopErr != nil {
-			if ctx.Err() != nil || distributedStopMayHaveApplied(stopErr) {
+			if forceAbort || ctx.Err() != nil || distributedStopMayHaveApplied(stopErr) {
 				if cancel != nil {
 					cancel()
 				}
-				if ctx.Err() == nil {
-					tr.enqueueStopTeardownRetry(test.ID)
+				if ctx.Err() == nil && !retryAttempt {
+					tr.enqueueStopTeardownRetry(test.ID, forceAbort)
 				}
 				tr.broadcastEvent("test_stopping", test)
 				if ctx.Err() != nil {
@@ -964,7 +1178,9 @@ func (tr *TestRunner) stopTestWithContextAndCIReasonAndActor(ctx context.Context
 							test.Error = "ci abort reason: " + abortReason
 						}
 						tr.mu.Unlock()
-						tr.enqueueStopTeardownRetry(test.ID)
+						if !retryAttempt {
+							tr.enqueueStopTeardownRetry(test.ID, forceAbort)
+						}
 						return errors.Join(stopErr, fmt.Errorf("persist stop rollback: %w", persistErr))
 					}
 				}
@@ -988,7 +1204,9 @@ func (tr *TestRunner) stopTestWithContextAndCIReasonAndActor(ctx context.Context
 						test.Error = "ci abort reason: " + abortReason
 					}
 					tr.mu.Unlock()
-					tr.enqueueStopTeardownRetry(test.ID)
+					if !retryAttempt {
+						tr.enqueueStopTeardownRetry(test.ID, forceAbort)
+					}
 					return errors.Join(stopErr, fmt.Errorf("persist stop rollback: %w", persistErr))
 				}
 			}
@@ -996,29 +1214,143 @@ func (tr *TestRunner) stopTestWithContextAndCIReasonAndActor(ctx context.Context
 			return stopErr
 		}
 	}
-	if cancel != nil {
+	if multiEngine != nil {
+		if !forceAbort {
+			// GracefulStop cancels only the engine's arrival/iteration loops, allowing
+			// in-flight actions and teardown to finish. Canceling executionCtx here
+			// would immediately hard-stop the same engine and erase that distinction.
+			multiEngine.GracefulStop()
+		}
+	} else if !forceAbort && cancel != nil {
 		cancel()
 	}
-	tr.broadcastEvent("test_stopping", test)
+	tr.mu.RLock()
+	stillStopping := test.Status == "STOPPING"
+	tr.mu.RUnlock()
+	if stillStopping {
+		tr.broadcastEvent("test_stopping", test)
+	}
 	return nil
 }
 
 const stopTeardownRetryTimeout = 5 * time.Second
 
-func (tr *TestRunner) enqueueStopTeardownRetry(testID string) {
-	tr.enqueueTerminalRetry("stop:"+testID, "backend stop teardown", func() error {
+type stopTeardownRetryIntent struct {
+	force   bool
+	version uint64
+}
+
+func (tr *TestRunner) enqueueStopTeardownRetry(testID string, forceAbort bool) {
+	if tr == nil || strings.TrimSpace(testID) == "" {
+		return
+	}
+	retryKey := "stop-teardown:" + testID
+	tr.terminalRetryMu.Lock()
+	if tr.stopTeardownRetries == nil {
+		tr.stopTeardownRetries = make(map[string]stopTeardownRetryIntent)
+	}
+	intent := tr.stopTeardownRetries[testID]
+	intent.force = intent.force || forceAbort
+	intent.version++
+	tr.stopTeardownRetries[testID] = intent
+	if tr.terminalRetrying == nil {
+		tr.terminalRetrying = make(map[string]struct{})
+	}
+	if _, running := tr.terminalRetrying[retryKey]; running {
+		tr.terminalRetryMu.Unlock()
+		return
+	}
+	tr.terminalRetrying[retryKey] = struct{}{}
+	tr.terminalRetryMu.Unlock()
+
+	go tr.runStopTeardownRetryWorker(testID, retryKey)
+}
+
+// upgradeExistingStopTeardownRetryIntent records a later request only when an
+// ambiguous teardown is already pending. It deliberately increments the
+// version even for the same mode: a worker whose call is in flight must recheck
+// the latest request before atomically retiring.
+func (tr *TestRunner) upgradeExistingStopTeardownRetryIntent(testID string, forceAbort bool) bool {
+	if tr == nil || strings.TrimSpace(testID) == "" {
+		return forceAbort
+	}
+	tr.terminalRetryMu.Lock()
+	defer tr.terminalRetryMu.Unlock()
+	intent, exists := tr.stopTeardownRetries[testID]
+	if !exists {
+		return forceAbort
+	}
+	intent.force = intent.force || forceAbort
+	intent.version++
+	tr.stopTeardownRetries[testID] = intent
+	return intent.force
+}
+
+func (tr *TestRunner) runStopTeardownRetryWorker(testID, retryKey string) {
+	delay := executionPlanRetryInitialDelay
+	for tr.executionPlanRetryAllowed() {
+		if !tr.waitExecutionPlanRetry(delay) {
+			break
+		}
+
+		tr.terminalRetryMu.Lock()
+		intent, exists := tr.stopTeardownRetries[testID]
+		if !exists {
+			delete(tr.terminalRetrying, retryKey)
+			tr.terminalRetryMu.Unlock()
+			return
+		}
+		tr.terminalRetryMu.Unlock()
+
 		ctx, cancel := context.WithTimeout(context.Background(), stopTeardownRetryTimeout)
-		defer cancel()
-		return tr.stopTestWithContext(ctx, testID, true)
-	})
+		err := tr.stopTestWithContextAndCIReasonAndActorModeAttempt(ctx, testID, true, "", testCreationActor{}, intent.force, true)
+		cancel()
+		tr.terminalRetryMu.Lock()
+		latest, stillPending := tr.stopTeardownRetries[testID]
+		if stillPending && latest.version != intent.version {
+			tr.terminalRetryMu.Unlock()
+			// A request arrived while this call was in flight. Its stronger mode
+			// must run even when the stale attempt succeeded or failed with an error
+			// that would ordinarily stop background retries.
+			delay = executionPlanRetryInitialDelay
+			continue
+		}
+		if err == nil {
+			if stillPending {
+				delete(tr.stopTeardownRetries, testID)
+			}
+			delete(tr.terminalRetrying, retryKey)
+			tr.terminalRetryMu.Unlock()
+			return
+		}
+		tr.terminalRetryMu.Unlock()
+
+		slog.Warn("terminal transition retry failed", "test_id", testID, "transition", stopTeardownTransition(intent.force), "error", err)
+		if !durableBackgroundRetryable(err) {
+			break
+		}
+		delay = min(delay*2, executionPlanRetryMaxDelay)
+	}
+
+	tr.terminalRetryMu.Lock()
+	delete(tr.stopTeardownRetries, testID)
+	delete(tr.terminalRetrying, retryKey)
+	tr.terminalRetryMu.Unlock()
+}
+
+func stopTeardownTransition(force bool) string {
+	if force {
+		return "backend force-abort teardown"
+	}
+	return "backend graceful-stop teardown"
 }
 
 func (tr *TestRunner) AbortTest(id string) error {
-	return tr.StopTest(id)
+	return tr.stopTestWithContextAndCIReasonAndActorMode(context.Background(), id, true, "", testCreationActor{}, true)
 }
 
 func (tr *TestRunner) AbortTestAsActor(id string, actor testCreationActor) error {
-	return tr.StopTestAsActor(id, actor)
+	return tr.stopTestWithContextAndCIReasonAndActorMode(context.Background(), id, true, "", actor, true)
 }
 
 func (tr *TestRunner) MarkTestAbortReason(id string, reason string) error {
@@ -1602,7 +1934,7 @@ func (tr *TestRunner) failClosedUncertainVUserScale(reservation *vuserScaleReser
 		cancel()
 	}
 	if stopErr != nil {
-		tr.enqueueStopTeardownRetry(test.ID)
+		tr.enqueueStopTeardownRetry(test.ID, false)
 	}
 	tr.broadcastEvent("test_stopping", test)
 	var persistWrapped error
@@ -2169,7 +2501,7 @@ func (tr *TestRunner) failClosedUncertainDurationAdjustment(test *ManagedTest, b
 		cancel()
 	}
 	if stopErr != nil {
-		tr.enqueueStopTeardownRetry(test.ID)
+		tr.enqueueStopTeardownRetry(test.ID, false)
 	}
 	tr.broadcastEvent("test_stopping", test)
 	var persistWrapped error
@@ -2470,7 +2802,7 @@ func (tr *TestRunner) failClosedUncertainPauseControl(test *ManagedTest, expecte
 		cancel()
 	}
 	if stopErr != nil {
-		tr.enqueueStopTeardownRetry(test.ID)
+		tr.enqueueStopTeardownRetry(test.ID, false)
 	}
 	tr.broadcastEvent("test_stopping", test)
 	var persistWrapped error
@@ -2492,15 +2824,85 @@ func (tr *TestRunner) runTest(test *ManagedTest) {
 	tr.mu.RLock()
 	current := tr.tests[test.ID]
 	startable := !tr.shuttingDown && current == test && test.Status == "INITIALIZING" && test.executionCtx != nil && test.executionCtx.Err() == nil
+	ctx := test.executionCtx
+	spanAttributes := testLifecycleSpanAttributes(test)
 	tr.mu.RUnlock()
 	if !startable || !tr.isExecutionLeader() {
 		return
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	backend := tr.resolveBackend(test)
 	if backend == nil {
 		backend = localExecutionBackend{}
 	}
+	spanName, spanScope := testExecutionSpanDescriptor(backend)
+	spanAttributes = append(spanAttributes, attribute.String("apexload.test.operation_scope", spanScope))
+	ctx, span := otel.Tracer("github.com/jasonczech/apexload/pkg/api").Start(
+		ctx,
+		spanName,
+		trace.WithSpanKind(trace.SpanKindInternal),
+		trace.WithAttributes(spanAttributes...),
+	)
+	defer func() {
+		tr.annotateTestLifecycleSpan(span, test.ID, nil)
+		span.End()
+	}()
+	tr.mu.Lock()
+	if tr.tests[test.ID] == test && test.executionCtx != nil {
+		test.executionCtx = ctx
+	}
+	tr.mu.Unlock()
 	backend.Run(tr, test)
+}
+
+func testExecutionSpanDescriptor(backend testExecutionBackend) (name, scope string) {
+	if _, distributed := backend.(*distributedExecutionBackend); distributed {
+		return "apexload.test.launch", "distributed_launch"
+	}
+	return "apexload.test.execute", "complete_execution"
+}
+
+func testLifecycleSpanAttributes(test *ManagedTest) []attribute.KeyValue {
+	if test == nil {
+		return nil
+	}
+	return []attribute.KeyValue{
+		attribute.String("apexload.test.id", telemetry.BoundedIdentifier(test.ID)),
+		attribute.String("apexload.project.id", telemetry.BoundedIdentifier(test.ProjectID)),
+		attribute.String("apexload.scenario.id", telemetry.BoundedIdentifier(test.ScenarioID)),
+		attribute.Int("apexload.test.vusers", test.TotalVUsers),
+	}
+}
+
+// annotateTestLifecycleSpan records stable outcome metadata only. Raw errors are
+// deliberately excluded because backend/secret-provider errors can contain
+// credentials or customer payloads.
+func (tr *TestRunner) annotateTestLifecycleSpan(span trace.Span, id string, operationErr error) {
+	if span == nil {
+		return
+	}
+	tr.mu.RLock()
+	resolved := tr.resolveRefKeyLocked(id)
+	test := tr.tests[resolved]
+	testStatus := ""
+	if test != nil {
+		testStatus = test.Status
+		span.SetAttributes(testLifecycleSpanAttributes(test)...)
+		span.SetAttributes(attribute.String("apexload.test.outcome", telemetry.BoundedIdentifier(strings.ToLower(testStatus))))
+	}
+	tr.mu.RUnlock()
+	if operationErr != nil {
+		span.SetAttributes(attribute.String("error.type", telemetry.BoundedIdentifier(fmt.Sprintf("%T", operationErr))))
+		span.SetStatus(codes.Error, "test lifecycle operation failed")
+		return
+	}
+	if testStatus == "FAILED" {
+		span.SetStatus(codes.Error, "test execution failed")
+		return
+	}
+	span.SetStatus(codes.Ok, "")
 }
 
 func (tr *TestRunner) runScenarioScheduledTestWithTerm(test *ManagedTest, leaseTerm executionLeaseTerm) {
@@ -2832,6 +3234,11 @@ func (tr *TestRunner) completeTestRunUnderArchiveFenceWithPendingPromotion(test 
 	}
 	terminalSnapshot := buildRunLiveStateSnapshotLocked(test, endTime)
 	tr.mu.Unlock()
+	if finalStatus == "FAILED" {
+		if err := tr.syncScenarioScheduleLifecycleForTest(test.ID); err != nil {
+			slog.Warn("terminal test transition could not refresh scenario occurrence cache", "test_id", test.ID, "error", err)
+		}
+	}
 	tr.cacheRunSnapshot(terminalSnapshot)
 	releaseErr := tr.releaseCapacityReservationForTerminalStatus(test.ID, finalStatus)
 	if releaseErr != nil && test.TimeslotID != nil {
@@ -2885,6 +3292,7 @@ func (tr *TestRunner) promotePendingTests() {
 // its original term here so an old goroutine cannot adopt leadership after the
 // same process reacquires a newer generation.
 func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) error {
+	deferredPending := make(map[string]struct{})
 	for {
 		if !tr.executionLeaseTermCurrent(leaseTerm) {
 			return errNotExecutionLeader
@@ -2894,7 +3302,7 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 			tr.mu.Unlock()
 			return nil
 		}
-		pending := tr.nextPromotablePendingTestLocked()
+		pending := tr.nextPromotablePendingTestExcludingLocked(deferredPending)
 		if pending == nil {
 			tr.mu.Unlock()
 			return nil
@@ -2907,6 +3315,25 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 				return terminalErr
 			}
 			continue
+		}
+		// The original start attempt can enter PENDING at the quota gate before
+		// static project secrets are checked. Resolve them at the promotion
+		// boundary so a queued run cannot bypass the ordinary StartTest preflight,
+		// including when a formerly valid secret was removed while it waited.
+		if secretErr := tr.validateStartSecretRequirements(pendingID); secretErr != nil {
+			message := "pending test promotion secret requirements are no longer satisfied: " + secretErr.Error()
+			if retryableStartSecretRequirement(secretErr) {
+				if deferErr := tr.deferPendingPromotionGateWithTerm(pendingID, message, leaseTerm); deferErr != nil {
+					return deferErr
+				}
+				deferredPending[pendingID] = struct{}{}
+			} else if terminalErr := tr.failPendingPromotionGateWithTerm(pendingID, message, leaseTerm); terminalErr != nil {
+				return terminalErr
+			}
+			continue
+		}
+		if err := tr.refreshTestCapacityBindingFromStore(pendingID); err != nil {
+			return err
 		}
 		tr.mu.Lock()
 		pending = tr.tests[pendingID]
@@ -2921,7 +3348,7 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 			slog.Warn("pending test promotion could not claim execution epoch", "test_id", pending.ID, "error", err)
 			return err
 		}
-		if pending.ScriptShakeout {
+		if pending.ScriptShakeout && !startOptionsWithAuthorization(pending, StartTestOptions{}).OverrideScriptShakeoutError {
 			previousStatus := pending.Status
 			previousPendingSince := cloneTimePtr(pending.PendingSince)
 			previousPendingReason := pending.PendingReason
@@ -3000,6 +3427,105 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 				continue
 			}
 		}
+		// Shakeout runs without tr.mu and may invoke user protocols for tens of
+		// seconds. Re-resolve secrets after it completes (and immediately before
+		// final admission) so rotation/removal during shakeout cannot pass on the
+		// strength of the earlier preflight. The resolver may perform remote I/O,
+		// so it must never run while holding the runner mutex.
+		tr.mu.Unlock()
+		if secretErr := tr.validateStartSecretRequirements(pendingID); secretErr != nil {
+			message := "pending test promotion secret requirements are no longer satisfied: " + secretErr.Error()
+			if retryableStartSecretRequirement(secretErr) {
+				if deferErr := tr.deferPendingPromotionGateWithTerm(pendingID, message, leaseTerm); deferErr != nil {
+					return deferErr
+				}
+				deferredPending[pendingID] = struct{}{}
+			} else if terminalErr := tr.failPendingPromotionGateWithTerm(pendingID, message, leaseTerm); terminalErr != nil {
+				return terminalErr
+			}
+			continue
+		}
+		if err := tr.refreshTestCapacityBindingFromStore(pendingID); err != nil {
+			return err
+		}
+		sourceScheduleID, sourceScheduleErr := tr.scenarioScheduleIDForTest(pendingID)
+		if sourceScheduleErr != nil {
+			return fmt.Errorf("resolve pending test source schedule: %w", sourceScheduleErr)
+		}
+		tr.mu.Lock()
+		pending = tr.tests[pendingID]
+		if pending == nil || pending.Status != "PENDING" {
+			tr.mu.Unlock()
+			continue
+		}
+		if !tr.executionLeaseTermCurrent(leaseTerm) {
+			tr.mu.Unlock()
+			return errNotExecutionLeader
+		}
+		if err := tr.claimTestExecutionFenceWithTerm(pending, leaseTerm); err != nil {
+			tr.mu.Unlock()
+			slog.Warn("pending test promotion lost execution leadership after secret revalidation", "test_id", pending.ID, "error", err)
+			return err
+		}
+		// Candidate selection above is deliberately optimistic: CI policy and an
+		// optional shakeout/secret check run without tr.mu and can take long enough
+		// for another test to consume the last global/project/VUser slot. The same
+		// delay can also move a scheduled run outside its launch window or invalidate
+		// its bound capacity timeslot. Re-run every time-sensitive gate while holding
+		// tr.mu immediately before INITIALIZING so the admission decision and the
+		// capacity-reserving state transition are one atomic controller operation.
+		if !tr.executionLeaseTermCurrent(leaseTerm) {
+			tr.mu.Unlock()
+			return errNotExecutionLeader
+		}
+		tr.refreshCapacityAdvisoryLocked(pending)
+		effectiveOpts := startOptionsWithAuthorization(pending, StartTestOptions{})
+		if err := buildStartGovernanceError(pending.ID, pending.CapacityAdvisory, effectiveOpts); err != nil {
+			tr.mu.Unlock()
+			message := "pending test promotion governance failed: " + err.Error()
+			var capacityErr *CapacityShortfallError
+			if errors.As(err, &capacityErr) {
+				message = pendingCapacityAuthorizationReasonPrefix + " " + err.Error()
+				if deferErr := tr.deferPendingPromotionGateWithTerm(pendingID, message, leaseTerm); deferErr != nil {
+					return deferErr
+				}
+				deferredPending[pendingID] = struct{}{}
+			} else if terminalErr := tr.failPendingPromotionGateWithTerm(pendingID, message, leaseTerm); terminalErr != nil {
+				return terminalErr
+			}
+			continue
+		}
+		if blocked, reason := tr.evaluateQuotaBlockLocked(pending, ""); blocked {
+			// Quota pressure is transient. Keep the row durably queued with the
+			// current reason; a later completion/reconciliation will retry it.
+			if pending.PendingReason != reason {
+				if err := tr.markTestPendingLocked(pending, reason); err != nil {
+					tr.mu.Unlock()
+					return err
+				}
+			}
+			tr.mu.Unlock()
+			continue
+		}
+		now := time.Now().UTC()
+		// A queued scenario occurrence is already represented by its parent
+		// recurring schedule in the projected launch window. Exclude that source
+		// schedule while revalidating the occurrence so it cannot conflict with
+		// itself after transient quota pressure clears.
+		if err := tr.launchStartWindowErrorLocked(pending, now, pending.ID, sourceScheduleID); err != nil {
+			tr.mu.Unlock()
+			if terminalErr := tr.failPendingPromotionGateWithTerm(pendingID, "pending test promotion launch window is no longer valid: "+err.Error(), leaseTerm); terminalErr != nil {
+				return terminalErr
+			}
+			continue
+		}
+		if err := tr.launchTimeslotRevalidationErrorLocked(pending, now); err != nil {
+			tr.mu.Unlock()
+			if terminalErr := tr.failPendingPromotionGateWithTerm(pendingID, "pending test promotion capacity reservation is no longer valid: "+err.Error(), leaseTerm); terminalErr != nil {
+				return terminalErr
+			}
+			continue
+		}
 		previousStatus := pending.Status
 		previousPendingSince := cloneTimePtr(pending.PendingSince)
 		previousPendingReason := pending.PendingReason
@@ -3033,12 +3559,67 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 			previousCancel()
 		}
 		tr.mu.Unlock()
+		if err := tr.syncScenarioScheduleLifecycleForTest(pending.ID); err != nil {
+			// The INITIALIZING row and its correlated occurrence/schedule fields
+			// committed atomically. A cache refresh failure must not strand the run;
+			// subsequent HA/read refreshes converge from the durable transaction.
+			slog.Warn("pending test promotion could not refresh scenario occurrence cache", "test_id", pending.ID, "error", err)
+		}
 		tr.recordSystemTestAudit("test.pending.promote", "success", pending, map[string]any{
 			"status": pending.Status,
 			"reason": "fair_share_capacity_available",
 		})
 		go tr.runTest(pending)
 	}
+}
+
+// failPendingPromotionGateWithTerm terminalizes a queue entry whose launch-time
+// governance is no longer satisfiable. Quota pressure is handled separately and
+// remains PENDING; launch-window and timeslot violations must not sit in the fair-
+// share queue until a later day and then execute a stale scheduled occurrence.
+func (tr *TestRunner) failPendingPromotionGateWithTerm(id, message string, leaseTerm executionLeaseTerm) error {
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return errNotExecutionLeader
+	}
+	tr.mu.Lock()
+	test := tr.tests[id]
+	if test == nil || test.Status != "PENDING" {
+		tr.mu.Unlock()
+		return nil
+	}
+	if err := tr.claimTestExecutionFenceWithTerm(test, leaseTerm); err != nil {
+		tr.mu.Unlock()
+		return err
+	}
+	tr.mu.Unlock()
+	return tr.completeTestRunWithPendingPromotion(test, "FAILED", time.Now().UTC(), strings.TrimSpace(message), nil, false)
+}
+
+const pendingSecretRequirementsReasonPrefix = "pending test promotion secret requirements are no longer satisfied:"
+const pendingCapacityAuthorizationReasonPrefix = "pending test promotion requires a new capacity-shortfall approval:"
+
+// deferPendingPromotionGateWithTerm retains a correctable admission failure in
+// the durable queue. Missing values and resolver outages can be repaired by an
+// operator/provider without rematerializing an immutable test snapshot; malformed
+// script references take the terminal path above instead.
+func (tr *TestRunner) deferPendingPromotionGateWithTerm(id, message string, leaseTerm executionLeaseTerm) error {
+	if !tr.executionLeaseTermCurrent(leaseTerm) {
+		return errNotExecutionLeader
+	}
+	reason := strings.TrimSpace(message)
+	tr.mu.Lock()
+	defer tr.mu.Unlock()
+	test := tr.tests[id]
+	if test == nil || test.Status != "PENDING" {
+		return nil
+	}
+	if err := tr.claimTestExecutionFenceWithTerm(test, leaseTerm); err != nil {
+		return err
+	}
+	if test.PendingReason == reason {
+		return nil
+	}
+	return tr.markTestPendingLocked(test, reason)
 }
 
 func (tr *TestRunner) recordSystemTestAudit(action string, status string, test *ManagedTest, details map[string]any) {
@@ -3063,9 +3644,16 @@ func (tr *TestRunner) recordSystemTestAudit(action string, status string, test *
 }
 
 func (tr *TestRunner) nextPromotablePendingTestLocked() *ManagedTest {
+	return tr.nextPromotablePendingTestExcludingLocked(nil)
+}
+
+func (tr *TestRunner) nextPromotablePendingTestExcludingLocked(excluded map[string]struct{}) *ManagedTest {
 	pending := make([]*ManagedTest, 0)
 	for _, test := range tr.tests {
 		if test.Status == "PENDING" {
+			if _, skip := excluded[test.ID]; skip {
+				continue
+			}
 			pending = append(pending, test)
 		}
 	}
@@ -3078,9 +3666,6 @@ func (tr *TestRunner) nextPromotablePendingTestLocked() *ManagedTest {
 			continue
 		}
 		tr.refreshCapacityAdvisoryLocked(test)
-		if buildStartGovernanceError(test.ID, test.CapacityAdvisory, StartTestOptions{}) != nil {
-			continue
-		}
 		if blocked, _ := tr.evaluateQuotaBlockLocked(test, ""); blocked {
 			continue
 		}

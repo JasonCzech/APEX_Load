@@ -42,6 +42,9 @@ func TestHasGoalConfigRecognizesThresholdsAndModes(t *testing.T) {
 	if hasGoalConfig(&GoalConfig{}) {
 		t.Fatal("empty config reported as populated")
 	}
+	if hasGoalConfig(&GoalConfig{SLABreachWindow: "30s"}) {
+		t.Fatal("an SLA window without a goal or guardrail reported as populated")
+	}
 	if !hasGoalConfig(&GoalConfig{StopOnSLABreach: true}) {
 		t.Fatal("StopOnSLABreach was not recognized as goal config")
 	}

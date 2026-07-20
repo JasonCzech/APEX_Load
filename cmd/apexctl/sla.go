@@ -78,7 +78,7 @@ func mergeGoalConfigs(base, override *api.GoalConfig) *api.GoalConfig {
 }
 
 func hasGoalConfig(goal *api.GoalConfig) bool {
-	return goal != nil && (goal.TargetAverageTPS != nil || goal.P95LatencyMs != nil || goal.MaxErrorPct != nil || goal.MaxAvgServerProcessingMs != nil || goal.MaxAvgTransferMs != nil || goal.MaxErrorCount != nil || goal.MinVUsers != nil || goal.MaxVUsers != nil || goal.StopOnSLABreach || goal.StopOnMaxErrors || goal.SLABreachWindow != "")
+	return goal != nil && (goal.TargetAverageTPS != nil || goal.P95LatencyMs != nil || goal.MaxErrorPct != nil || goal.MaxAvgServerProcessingMs != nil || goal.MaxAvgTransferMs != nil || goal.MaxErrorCount != nil || goal.MinVUsers != nil || goal.MaxVUsers != nil || goal.StopOnSLABreach || goal.StopOnMaxErrors)
 }
 
 func cloneGoalConfig(goal *api.GoalConfig) *api.GoalConfig {

@@ -11,7 +11,7 @@ default), a React dashboard, and a Prometheus/Dynatrace telemetry pipeline.
 - **Test Controller** (Go): Orchestrates tests, distributes VUsers across generators, aggregates metrics via gRPC streams.
 - **Assisted-Authoring Engine** (Go): Produces and repairs JSON DSL drafts from OpenAPI specs, HAR files, and recordings using a deterministic-local provider. The MCP server exposes these as agent tools; external LLM providers are governed by policy and not enabled by default.
 - **Dashboard** (React 18 + TypeScript + Recharts): Real-time WebSocket-fed monitoring.
-- **Telemetry**: Prometheus scrape + W3C `traceparent` propagation + Dynatrace event webhooks. Controller aggregates with t-digest for percentiles. (Full OpenTelemetry span instrumentation is not yet implemented.)
+- **Telemetry**: Prometheus scrape + W3C `traceparent` propagation + Dynatrace event webhooks + opt-in OTLP traces for controller HTTP, test lifecycle/orchestration, sampled engine actions, and controller↔generator gRPC. Controller aggregates with t-digest for percentiles. OpenTelemetry metrics/log export is not implemented.
 - **Storage**: SQLite by default (`apexload.db`); PostgreSQL is an optional enterprise backend (via pgx). Live state is in-memory with optional Redis/Valkey for HA. Archives are written to the local filesystem; S3/Azure Blob/GCS are optional enterprise backends.
 - **Deployment**: Kustomize manifests for local/kind (`deployments/k8s/local*`), production on-prem (`deployments/k8s/onprem`: gRPC mTLS+token, TLS ingress, dedicated metrics port, PSA restricted, scoped network policies), and production AKS (`deployments/k8s/aks`: workload identity, KEDA, ingress); Terraform IaC for the Azure stack (`deployments/azure/terraform`: AKS/ACR/PostgreSQL/Redis/Blob/Key Vault). Generator fleet scales via KEDA + `dns://` headless-service discovery. Azure App Service uses the launcher in `deployments/azure/appservice/` with PostgreSQL and static generator targets. A Helm chart for Kubernetes/AKS enterprise installs lives in `deployments/helm/apexload`. (No operator/CRDs yet.)
 
@@ -69,7 +69,7 @@ deployments/
 - `sync.Pool` for request/response buffers to reduce GC pressure
 - t-digest for streaming percentile computation
 - JSON DSL scripts — no proprietary language
-- Prometheus scrape metrics, W3C `traceparent` propagation, and Dynatrace event webhooks; full OpenTelemetry span instrumentation is not implemented yet
+- Prometheus scrape metrics, W3C `traceparent` propagation, Dynatrace event webhooks, and opt-in OTLP control-plane/action traces; OpenTelemetry metrics/log export remains out of scope
 - Real-time Network Latency monitoring via concurrent TCP dialer
 - "Soft Pause" execution gate (pauses between actions to preserve transaction integrity)
 - Manual timer-based duration management to support robust pause/resume

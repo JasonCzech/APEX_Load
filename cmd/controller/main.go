@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/api"
+	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/debugserver"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
@@ -20,6 +21,7 @@ import (
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
 	"github.com/jasonczech/apexload/pkg/runtimetuning"
 	"github.com/jasonczech/apexload/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/telemetry"
 )
 
 func main() {
@@ -30,8 +32,27 @@ func main() {
 	}
 }
 
-func runController() error {
+func runController() (runErr error) {
 	logRuntimeTuning(runtimetuning.ApplyFromCgroup(os.Getenv))
+	build := buildinfo.Get()
+	tracingConfig, err := telemetry.LoadConfig(os.Getenv, "apexload-controller", build.Version)
+	if err != nil {
+		return fmt.Errorf("configure OpenTelemetry tracing: %w", err)
+	}
+	tracingRuntime, err := telemetry.Configure(context.Background(), tracingConfig)
+	if err != nil {
+		return fmt.Errorf("initialize OpenTelemetry tracing: %w", err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := tracingRuntime.Shutdown(shutdownCtx); err != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("flush OpenTelemetry tracing: %w", err))
+		}
+	}()
+	if status := tracingRuntime.Status(); status.Ready {
+		slog.Info("OpenTelemetry tracing enabled", "service", status.ServiceName, "protocol", status.Protocol, "sampler", status.Sampler)
+	}
 
 	// Optional pprof debug server (disabled unless APEXLOAD_PPROF_ADDR is set).
 	if pprofSrv, err := debugserver.StartPprofFromEnv(os.Getenv); err != nil {
@@ -113,6 +134,7 @@ func runController() error {
 		KubeRestarter:           restarter,
 		HAExecutionLeadership:   haLeaderElection,
 		ActiveEndpointPublisher: activeEndpointPublisher,
+		TracingStatus:           tracingRuntime.Status(),
 	})
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -145,7 +167,7 @@ func runController() error {
 		}
 	}()
 
-	runErr := serveController(ctx, server, 30*time.Second)
+	runErr = serveController(ctx, server, 30*time.Second)
 	// A Serve failure is also a shutdown signal for the leadership, scheduler,
 	// and pod-watcher loops. Wait for them before the deferred storage close so
 	// none can continue using the database after cleanup.

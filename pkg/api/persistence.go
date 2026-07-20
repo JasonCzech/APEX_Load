@@ -611,6 +611,7 @@ func applyStoredManagedTestSnapshot(current, stored *ManagedTest) {
 	current.ScenarioID = stored.ScenarioID
 	current.ProjectID = stored.ProjectID
 	current.FolderID = cloneStringPtr(stored.FolderID)
+	current.DataPools = cloneScenarioDataPoolBindings(stored.DataPools)
 	current.TotalVUsers = stored.TotalVUsers
 	current.Duration = stored.Duration
 	current.DurationStr = stored.DurationStr
@@ -631,6 +632,7 @@ func applyStoredManagedTestSnapshot(current, stored *ManagedTest) {
 	current.StartedByDisplayName = stored.StartedByDisplayName
 	current.StoppedBySubject = stored.StoppedBySubject
 	current.StoppedByDisplayName = stored.StoppedByDisplayName
+	current.StartAuthorization = cloneQueuedStartAuthorization(stored.StartAuthorization)
 	current.ExecutionPlanApproval = cloneRunArchiveExecutionPlanApprovalSnapshot(stored.ExecutionPlanApproval)
 	current.Error = stored.Error
 }
@@ -697,6 +699,7 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		ScenarioID:            record.ScenarioID,
 		ProjectID:             record.ProjectID,
 		FolderID:              record.FolderID,
+		DataPools:             cloneScenarioDataPoolBindings(record.DataPools),
 		Groups:                decodeStoredGroups(record.Groups),
 		Assignment:            decodeStoredGeneratorAssignment(record.Assignment),
 		ScenarioMode:          normalizeScenarioMode(record.ScenarioMode),
@@ -724,6 +727,7 @@ func managedTestFromRecord(record *storage.TestRecord) *ManagedTest {
 		StartedByDisplayName:  record.StartedByDisplayName,
 		StoppedBySubject:      record.StoppedBySubject,
 		StoppedByDisplayName:  record.StoppedByDisplayName,
+		StartAuthorization:    decodeStoredStartAuthorization(record.StartAuthorization),
 		ExecutionPlanApproval: decodeStoredExecutionPlanApproval(record.ExecutionPlanApproval),
 		Error:                 record.Error,
 	}
@@ -816,6 +820,13 @@ func (tr *TestRunner) restoreManagedTestRuntime(test *ManagedTest) error {
 
 	entries := make([]CreateGroupEntry, 0, len(test.Groups))
 	for _, group := range test.Groups {
+		iterationOverride := group.IterationOverride
+		if !group.IterationOverrideKnown {
+			// Legacy rows have no layer provenance. A repair must preserve their
+			// effective execution, so pin that value as an explicit compact
+			// override instead of incorrectly treating it as inherited.
+			iterationOverride = group.Iterations
+		}
 		entries = append(entries, CreateGroupEntry{
 			Name:               group.Name,
 			ScriptID:           group.ScriptID,
@@ -824,7 +835,7 @@ func (tr *TestRunner) restoreManagedTestRuntime(test *ManagedTest) error {
 			RampUp:             group.RampUp,
 			RampDown:           group.RampDown,
 			Stages:             cloneLoadStages(group.Stages),
-			Iterations:         cloneIntPtr(group.Iterations),
+			Iterations:         cloneIntPtr(iterationOverride),
 			RuntimeSettings:    cloneRuntimeSettings(group.RuntimeSettings),
 			Assignment:         cloneGeneratorAssignmentSettings(group.Assignment),
 			InitStrategy:       group.Initialization,
@@ -1349,6 +1360,7 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		ScenarioID:            test.ScenarioID,
 		ProjectID:             normalizeProjectID(test.ProjectID),
 		FolderID:              test.FolderID,
+		DataPools:             cloneScenarioDataPoolBindings(test.DataPools),
 		ScenarioMode:          test.ScenarioMode,
 		ScriptShakeout:        test.ScriptShakeout,
 		ResourceBaseline:      test.ResourceBaseline,
@@ -1374,6 +1386,7 @@ func buildManagedTestRecord(test *ManagedTest) *storage.TestRecord {
 		StartedByDisplayName:  test.StartedByDisplayName,
 		StoppedBySubject:      test.StoppedBySubject,
 		StoppedByDisplayName:  test.StoppedByDisplayName,
+		StartAuthorization:    startAuthorizationForStorage(test.StartAuthorization),
 		ExecutionPlanApproval: test.ExecutionPlanApproval,
 		Groups:                encodeStoredGroups(test.Groups),
 		GoalConfig:            test.GoalConfig,

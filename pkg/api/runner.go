@@ -188,6 +188,9 @@ type TestRunner struct {
 	contentReloadMu       sync.Mutex
 	testReloadMu          sync.Mutex
 	haTestRefreshAt       time.Time
+	capacityBindingReadMu sync.Mutex
+	capacityBindingReadAt time.Time
+	capacityBindingReadCh chan struct{}
 	haScenarioRefreshMu   sync.Mutex
 	haScenarioRefreshAt   time.Time
 	activeStopMu          sync.Mutex
@@ -226,15 +229,19 @@ type TestRunner struct {
 	// execPlanRunStore persists sequential execution-plan run progress; seqMu
 	// guards the in-memory orchestration state (kept off tr.mu since advancing
 	// a plan calls CreateTest/StartTest, which take tr.mu).
-	execPlanRunStore   executionPlanRunPersistence
-	seqMu              sync.Mutex
-	seqPlanRuns        map[string]*seqPlanRunState
-	seqPlanByTest      map[string]string
-	seqPlanRetrying    map[string]struct{}
-	terminalRetryMu    sync.Mutex
-	terminalRetrying   map[string]struct{}
-	terminalObserverMu sync.RWMutex
-	terminalObserver   func(string)
+	execPlanRunStore executionPlanRunPersistence
+	seqMu            sync.Mutex
+	seqPlanRuns      map[string]*seqPlanRunState
+	seqPlanByTest    map[string]string
+	seqPlanRetrying  map[string]struct{}
+	terminalRetryMu  sync.Mutex
+	terminalRetrying map[string]struct{}
+	// stopTeardownRetries records the strongest pending teardown intent per
+	// test. Versioning lets the deduplicated worker detect a force-abort upgrade
+	// that arrives while a graceful attempt is in flight before it retires.
+	stopTeardownRetries map[string]stopTeardownRetryIntent
+	terminalObserverMu  sync.RWMutex
+	terminalObserver    func(string)
 	// archiveCommitGates serialize archive publication with deletion per test.
 	// Entries are reference-counted and removed after their last waiter exits.
 	archiveCommitMu    sync.Mutex
@@ -334,6 +341,7 @@ type ManagedTest struct {
 	ScenarioID            string                                   `json:"scenario_id,omitempty"`
 	ProjectID             string                                   `json:"project_id,omitempty"`
 	FolderID              *string                                  `json:"folder_id,omitempty"`
+	DataPools             []storage.ScenarioDataPoolBinding        `json:"data_pools,omitempty"`
 	Groups                []TestGroup                              `json:"groups"`
 	CapacityAdvisory      *CapacityAdvisory                        `json:"capacity_advisory,omitempty"`
 	RuntimeSettingsReview *RuntimeSettingsReview                   `json:"runtime_settings_review,omitempty"`
@@ -369,6 +377,7 @@ type ManagedTest struct {
 	StartedByDisplayName  string                                   `json:"started_by_display_name,omitempty"`
 	StoppedBySubject      string                                   `json:"stopped_by_subject,omitempty"`
 	StoppedByDisplayName  string                                   `json:"stopped_by_display_name,omitempty"`
+	StartAuthorization    *QueuedStartAuthorization                `json:"start_authorization,omitempty"`
 	ExecutionPlanApproval *RunArchiveExecutionPlanApprovalSnapshot `json:"execution_plan_approval,omitempty"`
 	VUserRamps            map[string]VUserRampStatus               `json:"vuser_ramps,omitempty"`
 	LiveMetrics           *LiveMetrics                             `json:"live_metrics,omitempty"`
@@ -480,26 +489,43 @@ type VUserRampStatus struct {
 }
 
 type TestGroup struct {
-	Name            string                       `json:"name"`
-	ScriptID        string                       `json:"script_id"`
-	ScriptName      string                       `json:"script_name"`
-	Protocol        string                       `json:"protocol"`
-	Role            string                       `json:"role,omitempty"`
-	VUsers          int                          `json:"vusers"`
-	RampUp          string                       `json:"ramp_up,omitempty"`
-	RampDown        string                       `json:"ramp_down,omitempty"`
-	Stages          []storage.LoadStage          `json:"stages,omitempty"`
-	Iterations      *int                         `json:"iterations,omitempty"`
-	RuntimeSettings *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
-	Assignment      *GeneratorAssignmentSettings `json:"assignment,omitempty"`
-	RunLogicGoals   *RunLogicGoalSnapshot        `json:"run_logic_goals,omitempty"`
-	Initialization  string                       `json:"initialization,omitempty"`
-	rampUpDur       time.Duration
-	stageDriven     bool
-	initialVUsers   int
-	currentVUsers   int
-	script          *dsl.Script
-	redactionRules  []engine.RedactionRule
+	Name       string              `json:"name"`
+	ScriptID   string              `json:"script_id"`
+	ScriptName string              `json:"script_name"`
+	Protocol   string              `json:"protocol"`
+	Role       string              `json:"role,omitempty"`
+	VUsers     int                 `json:"vusers"`
+	RampUp     string              `json:"ramp_up,omitempty"`
+	RampDown   string              `json:"ramp_down,omitempty"`
+	Stages     []storage.LoadStage `json:"stages,omitempty"`
+	// Iterations is the effective root+group value retained for API compatibility.
+	Iterations *int `json:"iterations,omitempty"`
+	// IterationOverride records group-owned intent supplied through the compact
+	// CreateGroupEntry.iterations field. Canonical group runtime settings retain
+	// their own provenance in RuntimeSettings. A known nil means this compact
+	// layer inherits root/group runtime settings; older snapshots omit the known
+	// marker because they persisted only the effective Iterations value.
+	IterationOverride      *int                         `json:"iteration_override,omitempty"`
+	IterationOverrideKnown bool                         `json:"iteration_override_known,omitempty"`
+	RuntimeSettings        *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	Assignment             *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	RunLogicGoals          *RunLogicGoalSnapshot        `json:"run_logic_goals,omitempty"`
+	Initialization         string                       `json:"initialization,omitempty"`
+	rampUpDur              time.Duration
+	stageDriven            bool
+	initialVUsers          int
+	currentVUsers          int
+	script                 *dsl.Script
+	// baseScript is the immutable executable input before test/group runtime
+	// overrides. It lets a revised queued copy apply intentional runtime edits
+	// without recompiling mutable script or data-pool resources. Older rows may
+	// lack it; their exact compiled script remains sufficient for a no-op copy.
+	baseScript *dsl.Script
+	// sharedDataSources is the exact shared-pool projection appended at creation.
+	// It is stored separately from baseScript so a revision can change only pool
+	// bindings without reloading mutable script code.
+	sharedDataSources []dsl.DataSource
+	redactionRules    []engine.RedactionRule
 	// runtimeSecretValues is an execution-only overlay. It is deliberately
 	// unexported so runtime override credentials cannot enter API JSON, stored
 	// group snapshots, archives, script caches, or assignment fingerprints.
@@ -1174,6 +1200,7 @@ func NewTestRunner(maxTests int, hub *Hub, store storage.Store, opts ...TestRunn
 		seqPlanByTest:         make(map[string]string),
 		seqPlanRetrying:       make(map[string]struct{}),
 		terminalRetrying:      make(map[string]struct{}),
+		stopTeardownRetries:   make(map[string]stopTeardownRetryIntent),
 		fleetStore:            store,
 		execution:             localExecutionBackend{},
 		notifier:              newNotificationDispatcher(nil),
@@ -1340,9 +1367,14 @@ type CreateTestRequest struct {
 	ApplicationID         string                         `json:"application_id,omitempty"`
 	ReleaseID             string                         `json:"release_id,omitempty"`
 	ScenarioID            string                         `json:"scenario_id,omitempty"`
-	ProjectID             string                         `json:"project_id,omitempty"`
-	FolderID              *string                        `json:"folder_id,omitempty"`
-	ScheduledStartAt      *time.Time                     `json:"scheduled_start_at,omitempty"`
+	// RevisionSourceTestID identifies the immutable queued-run snapshot used to
+	// reconcile masked runtime credentials while creating a revised copy. It is
+	// never persisted on the new run and is accepted only for a QUEUED source in
+	// the same project as every other referenced resource.
+	RevisionSourceTestID string     `json:"revision_source_test_id,omitempty"`
+	ProjectID            string     `json:"project_id,omitempty"`
+	FolderID             *string    `json:"folder_id,omitempty"`
+	ScheduledStartAt     *time.Time `json:"scheduled_start_at,omitempty"`
 	// TimeslotID, when set, binds the run to an approved capacity timeslot as part
 	// of creation; if the timeslot can't be bound the create fails (strict).
 	TimeslotID       *string                           `json:"timeslot_id,omitempty"`
@@ -1363,6 +1395,10 @@ type CreateTestRequest struct {
 	scriptShakeoutProvided   bool
 	resourceBaselineProvided bool
 	creationActor            testCreationActor
+	// allowLegacyDataPoolModes is set only by trusted materializers reading
+	// already-durable snapshots (currently execution plans). New API payloads
+	// must never set it and remain subject to the strict read-only contract.
+	allowLegacyDataPoolModes bool
 }
 
 type CreateScenarioRequest struct {
@@ -1441,16 +1477,23 @@ type RuntimeSettingsOverride struct {
 }
 
 type CreateGroupEntry struct {
-	Name            string                       `json:"name"`
-	ScriptID        string                       `json:"script_id"`
-	VUsers          int                          `json:"vusers"`
-	RampUp          string                       `json:"ramp_up,omitempty"`
-	RampDown        string                       `json:"ramp_down,omitempty"`
-	Stages          []storage.LoadStage          `json:"stages,omitempty"`
-	Iterations      *int                         `json:"iterations,omitempty"`
-	RuntimeSettings *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
-	Assignment      *GeneratorAssignmentSettings `json:"assignment,omitempty"`
-	InitStrategy    string                       `json:"initialization,omitempty"` // "at_runtime", "at_once"
+	Name     string `json:"name"`
+	ScriptID string `json:"script_id"`
+	// RevisionSourceGroupIndex is an immutable request-only identity for a group
+	// in RevisionSourceTestID. Display names are editable and therefore cannot
+	// safely reconcile masked credentials when one script appears more than once.
+	RevisionSourceGroupIndex *int `json:"revision_source_group_index,omitempty"`
+	// RevisionNewGroup disambiguates an intentionally added/replaced group from
+	// a source group whose immutable index was accidentally omitted.
+	RevisionNewGroup bool                         `json:"revision_new_group,omitempty"`
+	VUsers           int                          `json:"vusers"`
+	RampUp           string                       `json:"ramp_up,omitempty"`
+	RampDown         string                       `json:"ramp_down,omitempty"`
+	Stages           []storage.LoadStage          `json:"stages,omitempty"`
+	Iterations       *int                         `json:"iterations,omitempty"`
+	RuntimeSettings  *RuntimeSettingsOverride     `json:"runtime_settings,omitempty"`
+	Assignment       *GeneratorAssignmentSettings `json:"assignment,omitempty"`
+	InitStrategy     string                       `json:"initialization,omitempty"` // "at_runtime", "at_once"
 	// Role distinguishes load-bearing groups ("load", default) from experience
 	// canaries ("observer", alias "canary"): small browser groups that emit
 	// Web Vitals continuously, are pinned during goal-based scaling, and stay
@@ -1467,6 +1510,36 @@ type StartTestOptions struct {
 	OverrideScriptShakeoutError bool `json:"override_script_shakeout_failure,omitempty"`
 	SkipLaunchWindowPreflight   bool `json:"-"`
 	actor                       testCreationActor
+	// traceContext carries only a detached SpanContext from an inbound request.
+	// It never carries request cancellation, credentials, or arbitrary values.
+	traceContext context.Context
+}
+
+// QueuedStartAuthorization is the durable provenance for explicit start-gate
+// overrides that must survive a fair-share queue delay and HA failover. Capacity
+// approval is bounded to the workload/shortfall the operator actually reviewed;
+// a worse advisory requires a new explicit override instead of inheriting a
+// stale boolean forever.
+type QueuedStartAuthorization struct {
+	CapacityShortfall *CapacityShortfallStartAuthorization `json:"capacity_shortfall,omitempty"`
+	ScriptShakeout    *ScriptShakeoutStartAuthorization    `json:"script_shakeout,omitempty"`
+}
+
+type CapacityShortfallStartAuthorization struct {
+	ApprovedAt            time.Time `json:"approved_at"`
+	ApprovedBySubject     string    `json:"approved_by_subject,omitempty"`
+	ApprovedByDisplayName string    `json:"approved_by_display_name,omitempty"`
+	TotalVUsers           int       `json:"total_vusers"`
+	RecommendedGenerators int       `json:"recommended_generators"`
+	AvailableGenerators   int       `json:"available_generators"`
+	ShortfallGenerators   int       `json:"shortfall_generators"`
+}
+
+type ScriptShakeoutStartAuthorization struct {
+	ApprovedAt            time.Time `json:"approved_at"`
+	ApprovedBySubject     string    `json:"approved_by_subject,omitempty"`
+	ApprovedByDisplayName string    `json:"approved_by_display_name,omitempty"`
+	ReviewEvidenceSHA256  string    `json:"review_evidence_sha256,omitempty"`
 }
 
 type CapacityShortfallError struct {

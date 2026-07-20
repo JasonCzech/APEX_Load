@@ -5,6 +5,7 @@ import { LiveControlPreview, VUserGroupAction } from './testExecutionLiveControl
 import { formatTimeLong, isValidDurationInput } from '../utils/timeUtils'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import DurationField from './DurationField'
+import { clampVUsersForRole, maxVUsersForRole } from './observerGroupModel'
 
 interface Props {
   showControls: boolean
@@ -20,7 +21,7 @@ interface Props {
   vuserRampDuration: string
   onVuserRampDurationChange: (value: string) => void
   onScaleVUsers: (groupName: string) => void
-  onStopAllVUsers: () => void
+  onPauseAllVUsers: () => void
   durationInput: string
   onDurationInputChange: (value: string) => void
   onAdjustDuration: () => void
@@ -50,7 +51,7 @@ export default function TestExecutionLiveControls({
   vuserRampDuration,
   onVuserRampDurationChange,
   onScaleVUsers,
-  onStopAllVUsers,
+  onPauseAllVUsers,
   durationInput,
   onDurationInputChange,
   onAdjustDuration,
@@ -98,8 +99,8 @@ export default function TestExecutionLiveControls({
                 Pause
               </button>
             )}
-            <button type="button" className="btn btn-sm btn-secondary" onClick={onStopAllVUsers} disabled={!hasActiveVUsers || rampInputMissing || isStopping}>
-              Stop VUsers
+            <button type="button" className="btn btn-sm btn-secondary" onClick={onPauseAllVUsers} disabled={!hasActiveVUsers || rampInputMissing || isStopping}>
+              Pause VUsers
             </button>
             <button type="button" className="btn btn-sm btn-secondary" onClick={onStop} disabled={isStopping}>
               Stop Test
@@ -124,6 +125,7 @@ export default function TestExecutionLiveControls({
                 const isActiveRampTarget = activeRampTarget !== undefined && effectiveTargetVusers === activeRampTarget
                 const isNoChange = effectiveTargetVusers === currentVusers && activeRampTarget === undefined
                 const isApplyDisabled = isNoChange || isActiveRampTarget || rampInputMissing
+                const maxTargetVusers = maxVUsersForRole(group.role)
 
                 return (
                   <div key={group.name} className="vuser-control-row">
@@ -139,34 +141,42 @@ export default function TestExecutionLiveControls({
                       >
                         <option value="run">Run</option>
                         <option value="pause">Pause</option>
-                        <option value="stop">Stop</option>
                       </select>
                     </label>
                     <input
                       type="range"
                       className="vuser-slider"
                       min={0}
-                      max={Math.max(currentVusers * 3, targetVusers * 2, 100)}
+                      max={group.role === 'observer'
+                        ? maxTargetVusers
+                        : Math.min(maxTargetVusers, Math.max(currentVusers * 3, targetVusers * 2, 100))}
                       value={targetVusers}
                       disabled={groupAction !== 'run'}
                       aria-label={`${group.name} VUser target`}
-                      onChange={(e) => onVuserTargetChange(group.name, parseInt(e.target.value, 10))}
+                      onChange={(e) => onVuserTargetChange(
+                        group.name,
+                        clampVUsersForRole(parseInt(e.target.value, 10), group.role),
+                      )}
                     />
                     <input
                       type="number"
                       className="vuser-input"
                       min={0}
+                      max={maxTargetVusers}
                       value={targetVusers}
                       disabled={groupAction !== 'run'}
                       aria-label={`${group.name} VUser target value`}
-                      onChange={(e) => onVuserTargetChange(group.name, parseInt(e.target.value, 10) || 0)}
+                      onChange={(e) => onVuserTargetChange(
+                        group.name,
+                        clampVUsersForRole(parseInt(e.target.value, 10) || 0, group.role),
+                      )}
                     />
                     <button
                       className="btn btn-sm btn-accent"
                       onClick={() => onScaleVUsers(group.name)}
                       disabled={isApplyDisabled}
                     >
-                      {groupAction === 'run' ? 'Apply' : groupAction === 'pause' ? 'Pause' : 'Stop'}
+                      {groupAction === 'run' ? 'Apply' : 'Pause'}
                     </button>
                   </div>
                 )

@@ -57,7 +57,7 @@ export default function DurationField({
       ? 'Duration is required.'
       : 'Enter a positive duration.'
 
-  const emitValue = (nextValue: number | '', nextUnit: DurationUnit) => {
+  const emitValue = (nextValue: string, nextUnit: DurationUnit) => {
     onChange(serializeDurationFieldValue(nextValue, nextUnit))
   }
 
@@ -77,8 +77,8 @@ export default function DurationField({
           id={inputId}
           className={`duration-field-number ${inputClassName}`.trim()}
           type="number"
-          min={required ? 1 : 0}
-          step={1}
+          min={0}
+          step="any"
           value={parts.value}
           placeholder={placeholder}
           disabled={disabled}
@@ -86,8 +86,7 @@ export default function DurationField({
           aria-label={label || 'Duration value'}
           aria-invalid={Boolean(error)}
           onChange={(event) => {
-            const nextValue = event.target.value === '' ? '' : Number(event.target.value)
-            emitValue(nextValue, parts.unit)
+            emitValue(event.target.value, parts.unit)
           }}
         />
         <select

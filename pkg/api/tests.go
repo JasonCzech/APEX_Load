@@ -54,14 +54,18 @@ func (tr *TestRunner) getTestSnapshot(id string, includeHistory bool) (*ManagedT
 		return nil, false
 	}
 	if tr.leadership != nil {
-		tr.mu.RLock()
+		tr.mu.Lock()
 		current := tr.tests[record.ID]
 		if sameStoredTestIdentity(current, record) {
+			bindingChanged := applyStoredCapacityBindingLocked(current, record)
 			cloned := tr.cloneTestSnapshotLocked(current, includeHistory)
-			tr.mu.RUnlock()
+			tr.mu.Unlock()
+			if bindingChanged {
+				tr.broadcastCapacityBindingUpdated(cloned)
+			}
 			return cloned, true
 		}
-		tr.mu.RUnlock()
+		tr.mu.Unlock()
 	}
 	managed := managedTestFromRecord(record)
 	if err := tr.restoreManagedTestRuntimeAndRepair(managed); err != nil {
@@ -82,8 +86,10 @@ func (tr *TestRunner) getTestSnapshot(id string, includeHistory bool) (*ManagedT
 	tr.mu.Lock()
 	current := tr.tests[managed.ID]
 	canonical := managed
+	bindingChanged := false
 	if sameStoredTestIdentity(current, record) {
 		canonical = current
+		bindingChanged = applyStoredCapacityBindingLocked(current, record)
 	} else if current == nil || (current.cancel == nil && current.executionCtx == nil) {
 		if current != nil {
 			tr.removeRefKeyLocked(current.RefKey)
@@ -104,6 +110,9 @@ func (tr *TestRunner) getTestSnapshot(id string, includeHistory bool) (*ManagedT
 	// identity. Returning managed here is deliberately fail-closed across tenants.
 	cloned := tr.cloneTestSnapshotLocked(canonical, includeHistory)
 	tr.mu.Unlock()
+	if bindingChanged {
+		tr.broadcastCapacityBindingUpdated(cloned)
+	}
 	return cloned, true
 }
 
@@ -713,6 +722,7 @@ func (tr *TestRunner) refreshReadMetadataForTest(id string) {
 }
 
 func (tr *TestRunner) refreshReadMetadataForTestList() {
+	tr.refreshCapacityBindingsForHAListRead()
 	tr.mu.RLock()
 	needsRefresh := false
 	for _, test := range tr.tests {
@@ -767,6 +777,7 @@ func cloneManagedTestSummaryForReadLocked(test *ManagedTest) *ManagedTest {
 func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned := *test
 	cloned.FolderID = cloneStringPtr(test.FolderID)
+	cloned.DataPools = cloneScenarioDataPoolBindings(test.DataPools)
 	cloned.Groups = cloneArchiveTestGroups(test.Groups)
 	cloned.CapacityAdvisory = cloneCapacityAdvisory(test.CapacityAdvisory)
 	cloned.RuntimeSettingsReview = cloneRuntimeSettingsReview(test.RuntimeSettingsReview)
@@ -781,6 +792,7 @@ func cloneManagedTestFieldsLocked(test *ManagedTest) *ManagedTest {
 	cloned.BaselinePinnedAt = cloneTimePtr(test.BaselinePinnedAt)
 	cloned.StartedAt = cloneTimePtr(test.StartedAt)
 	cloned.EndedAt = cloneTimePtr(test.EndedAt)
+	cloned.StartAuthorization = cloneQueuedStartAuthorization(test.StartAuthorization)
 	cloned.ExecutionPlanApproval = cloneRunArchiveExecutionPlanApprovalSnapshot(test.ExecutionPlanApproval)
 	cloned.VUserRamps = cloneVUserRampStatusMap(test.VUserRamps)
 	cloned.LiveMetrics = cloneLiveMetrics(test.LiveMetrics)

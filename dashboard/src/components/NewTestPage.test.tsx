@@ -38,6 +38,25 @@ const projectMock = vi.hoisted(() => ({
   } | null,
 }))
 
+function scheduleWithDistinctWindowTimezones() {
+  return {
+    id: 'schedule-1',
+    scenario_id: 'scenario-1',
+    name: 'Regional Windows',
+    cron_expr: '0 9 * * 1-5',
+    timezone: 'America/New_York',
+    enabled: true,
+    revision: 4,
+    approval_policy: 'auto',
+    missed_run_policy: 'skip',
+    blackout_windows: [{ name: 'UTC freeze', days_of_week: [1], start_time: '00:00', end_time: '01:00', timezone: 'UTC' }],
+    maintenance_windows: [{ name: 'Berlin maintenance', days_of_week: [2], start_time: '02:00', end_time: '03:00', timezone: 'Europe/Berlin' }],
+    availability_windows: [{ name: 'Tokyo business hours', days_of_week: [3], start_time: '09:00', end_time: '17:00', timezone: 'Asia/Tokyo' }],
+    created_at: '2026-05-17T00:00:00Z',
+    updated_at: '2026-05-18T00:00:00Z',
+  }
+}
+
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
@@ -459,6 +478,85 @@ describe('NewTestPage', () => {
     }))
   })
 
+  it('preserves per-window timezones when an existing schedule is saved without window edits', async () => {
+    apiMock.listScenarioSchedules.mockResolvedValue({ schedules: [scheduleWithDistinctWindowTimezones()], count: 1 })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const schedulesButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Schedules')
+    await act(async () => schedulesButton?.click())
+    await flushPromises()
+
+    const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit')
+    await act(async () => editButton?.click())
+    const updateButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Update Schedule')
+    await act(async () => updateButton?.click())
+    await flushPromises()
+
+    expect(apiMock.updateScenarioSchedule).toHaveBeenCalledWith('scenario-1', 'schedule-1', expect.objectContaining({
+      timezone: 'America/New_York',
+      expected_revision: 4,
+      blackout_windows: [expect.objectContaining({ name: 'UTC freeze', timezone: 'UTC' })],
+      maintenance_windows: [expect.objectContaining({ name: 'Berlin maintenance', timezone: 'Europe/Berlin' })],
+      availability_windows: [expect.objectContaining({ name: 'Tokyo business hours', timezone: 'Asia/Tokyo' })],
+    }))
+  })
+
+  it('shows and edits a per-window timezone independently of the cron timezone', async () => {
+    apiMock.listScenarioSchedules.mockResolvedValue({ schedules: [scheduleWithDistinctWindowTimezones()], count: 1 })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const schedulesButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Schedules')
+    await act(async () => schedulesButton?.click())
+    await flushPromises()
+
+    const editButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Edit')
+    await act(async () => editButton?.click())
+    const maintenanceStart = container.querySelector<HTMLInputElement>('[aria-label="Maintenance windows window 1 start time"]')
+    const maintenanceTimezone = container.querySelector<HTMLSelectElement>('[aria-label="Maintenance windows window 1 timezone"]')
+    expect(maintenanceStart).toBeTruthy()
+    expect(maintenanceTimezone?.value).toBe('Europe/Berlin')
+    await act(async () => {
+      if (maintenanceStart) setInputValue(maintenanceStart, '02:30')
+      if (maintenanceTimezone) setSelectValue(maintenanceTimezone, 'Asia/Tokyo')
+    })
+    const updateButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Update Schedule')
+    await act(async () => updateButton?.click())
+    await flushPromises()
+
+    expect(apiMock.updateScenarioSchedule).toHaveBeenCalledWith('scenario-1', 'schedule-1', expect.objectContaining({
+      maintenance_windows: [expect.objectContaining({
+        name: 'Berlin maintenance',
+        start_time: '02:30',
+        end_time: '03:00',
+        timezone: 'Asia/Tokyo',
+      })],
+    }))
+  })
+
   it('sorts, filters, and expands launch scenarios from the scenario table', async () => {
     apiMock.listScenarios.mockResolvedValue({
       scenarios: [
@@ -766,7 +864,6 @@ describe('NewTestPage', () => {
         log_level: 'extended',
         auto_transactions: 'per_iteration',
         error_handling: {
-          continue_on_error: false,
           snapshot_on_error: true,
         },
       },
@@ -828,7 +925,7 @@ describe('NewTestPage', () => {
       scriptGroupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const modal = container.querySelector('.run-group-modal') as HTMLElement | null
+    const modal = document.querySelector('.run-group-modal') as HTMLElement | null
     expect(modal).toBeTruthy()
     if (!modal) return
     expect(modal.textContent).toContain('Saved changes apply only to the run created from this page')
@@ -908,6 +1005,168 @@ describe('NewTestPage', () => {
     expect(apiMock.startTest).not.toHaveBeenCalled()
   })
 
+  it('keeps staged group VUsers immutable at the peak stage target', async () => {
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [{
+        id: 'scenario-1',
+        name: 'Staged Checkout',
+        duration: '10m',
+        scenario_mode: 'vuser_driven',
+        scripts: [{
+          order: 1,
+          name: 'Checkout',
+          script_id: 'script-1',
+          script_name: 'Checkout Script',
+          protocol: 'http',
+          vusers: 20,
+          stages: [
+            { type: 'ramp_up', duration: '1m', target_vusers: 10 },
+            { type: 'hold', duration: '8m', target_vusers: 30 },
+            { type: 'ramp_down', duration: '1m', target_vusers: 0 },
+          ],
+        }],
+        script_count: 1,
+        created_at: '2026-05-12T20:00:00Z',
+        updated_at: '2026-05-12T20:00:00Z',
+        associated_releases: [],
+      }],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const scenarioRow = container.querySelector<HTMLTableRowElement>('.new-test-scenario-table-row')
+    await act(async () => scenarioRow?.click())
+    const groupRow = container.querySelector<HTMLTableRowElement>('.new-test-script-row')
+    await act(async () => groupRow?.click())
+
+    const modal = document.querySelector<HTMLElement>('.run-group-modal')
+    expect(modal).toBeTruthy()
+    if (!modal) return
+    const stagedVUsers = findControlByLabel<HTMLInputElement>(modal, 'Peak VUsers (stage-derived)', 'input')
+    expect(stagedVUsers?.value).toBe('30')
+    expect(stagedVUsers?.disabled).toBe(true)
+    expect(modal.textContent).toContain('fixed at its peak stage target of 30 VUsers')
+    expect(modal.textContent).toContain('Edit the scenario stages to change it')
+    expect(container.textContent).toContain('Scenario: group 1 VUsers must match its peak stage target of 30')
+    const holdButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Hold for Manual Start')
+    expect(holdButton?.disabled).toBe(true)
+  })
+
+  it('portals the run-group dialog and keeps its header outside the scrollable body', async () => {
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const scenarioRow = container.querySelector<HTMLTableRowElement>('.new-test-scenario-table-row')
+    await act(async () => scenarioRow?.click())
+    const groupRow = container.querySelector<HTMLTableRowElement>('.new-test-script-row')
+    await act(async () => groupRow?.click())
+
+    const modal = document.querySelector<HTMLElement>('.run-group-modal')
+    expect(modal).toBeTruthy()
+    if (!modal) return
+    expect(container.contains(modal)).toBe(false)
+    expect(modal.closest('.page')).toBeNull()
+    expect(modal.parentElement?.classList.contains('modal-overlay')).toBe(true)
+    expect(modal.parentElement?.parentElement).toBe(document.body)
+    expect(modal.firstElementChild?.classList.contains('modal-header')).toBe(true)
+    expect(modal.children.item(1)?.classList.contains('run-group-modal-body')).toBe(true)
+
+    const closeButton = Array.from(modal.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Close')
+    await act(async () => closeButton?.click())
+    expect(document.querySelector('.run-group-modal')).toBeNull()
+  })
+
+  it('blocks observer VUsers above ten with inline validation instead of a global diagnostic', async () => {
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [{
+        id: 'scenario-1',
+        name: 'Browser Canary',
+        duration: '10m',
+        scenario_mode: 'vuser_driven',
+        scripts: [{
+          order: 1,
+          name: 'Checkout Canary',
+          script_id: 'script-1',
+          script_name: 'Checkout Canary Script',
+          protocol: 'browser',
+          role: 'observer',
+          vusers: 10,
+        }],
+        script_count: 1,
+        created_at: '2026-05-12T20:00:00Z',
+        updated_at: '2026-05-12T20:00:00Z',
+        associated_releases: [],
+      }],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const scenarioRow = container.querySelector<HTMLTableRowElement>('.new-test-scenario-table-row')
+    await act(async () => scenarioRow?.click())
+    const groupRow = container.querySelector<HTMLTableRowElement>('.new-test-script-row')
+    await act(async () => groupRow?.click())
+
+    const modal = document.querySelector<HTMLElement>('.run-group-modal')
+    expect(modal).toBeTruthy()
+    if (!modal) return
+    const vusersInput = findControlByLabel<HTMLInputElement>(modal, 'VUsers', 'input')
+    const saveButton = Array.from(modal.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent === 'Save For This Run')
+    expect(vusersInput?.max).toBe('10')
+    expect(saveButton).toBeTruthy()
+    if (!vusersInput || !saveButton) return
+
+    await act(async () => setInputValue(vusersInput, '11'))
+
+    const inlineError = modal.querySelector<HTMLElement>('#new-test-group-vusers-error')
+    expect(vusersInput.getAttribute('aria-invalid')).toBe('true')
+    expect(vusersInput.getAttribute('aria-describedby')).toBe('new-test-group-vusers-error')
+    expect(inlineError?.getAttribute('role')).toBe('alert')
+    expect(inlineError?.textContent).toBe('Checkout Canary: observer canaries must use between 1 and 10 VUsers.')
+    expect(saveButton.disabled).toBe(true)
+    expect(container.querySelector('.new-test-error-diagnostic')).toBeNull()
+
+    await act(async () => saveButton.click())
+    expect(document.querySelector('.run-group-modal')).toBe(modal)
+    expect(container.querySelector('.new-test-error-diagnostic')).toBeNull()
+
+    await act(async () => setInputValue(vusersInput, '9'))
+    expect(modal.querySelector('#new-test-group-vusers-error')).toBeNull()
+    expect(vusersInput.getAttribute('aria-invalid')).toBe('false')
+    expect(saveButton.disabled).toBe(false)
+  })
+
   it('saves per-group host sharding as a run-only assignment override', async () => {
     apiMock.listScenarios.mockResolvedValue({
       scenarios: [
@@ -954,7 +1213,7 @@ describe('NewTestPage', () => {
       scriptGroupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const modal = container.querySelector('.run-group-modal') as HTMLElement | null
+    const modal = document.querySelector('.run-group-modal') as HTMLElement | null
     expect(modal).toBeTruthy()
     if (!modal) return
 
@@ -1011,6 +1270,11 @@ describe('NewTestPage', () => {
   })
 
   it('uses saved per-group placement as the New Test baseline and clears it with explicit auto for launch only', async () => {
+    apiMock.getSystemInventory.mockResolvedValue({
+      execution_mode: 'distributed',
+      controller: { id: 'controller-1', status: 'ready', address: ':8080', version: 'dev', execution_mode: 'distributed' },
+      generators: [],
+    })
     apiMock.listScenarios.mockResolvedValue({
       scenarios: [
         {
@@ -1065,7 +1329,8 @@ describe('NewTestPage', () => {
       scriptGroupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
-    const modal = container.querySelector('.run-group-modal') as HTMLElement | null
+    const modal = document.querySelector('.run-group-modal') as HTMLElement | null
+    expect(modal?.textContent).toContain('Automatic placement and capability rules remain available')
     expect(modal?.textContent).toContain('gen-a:9090')
     const autoRadio = Array.from(modal?.querySelectorAll('label') || []).find(label => label.textContent?.includes('Automatic placement'))?.querySelector('input') as HTMLInputElement | null
     expect(autoRadio).toBeTruthy()

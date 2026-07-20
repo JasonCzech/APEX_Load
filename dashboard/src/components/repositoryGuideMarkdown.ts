@@ -26,6 +26,14 @@ function isTableSeparator(line: string) {
   return /^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/.test(line)
 }
 
+function isTableStart(lines: string[], index: number) {
+  return lines[index]?.trim().startsWith('|') && index + 1 < lines.length && isTableSeparator(lines[index + 1])
+}
+
+function matchCodeFence(line: string) {
+  return line.match(/^```([^`]*)\s*$/)
+}
+
 export function parseMarkdown(source: string): MarkdownBlock[] {
   const lines = source.replace(/\r\n/g, '\n').split('\n')
   const blocks: MarkdownBlock[] = []
@@ -39,9 +47,9 @@ export function parseMarkdown(source: string): MarkdownBlock[] {
       continue
     }
 
-    const fenceMatch = line.match(/^```(\w*)\s*$/)
+    const fenceMatch = matchCodeFence(line)
     if (fenceMatch) {
-      const language = fenceMatch[1] || ''
+      const language = fenceMatch[1].trim().split(/\s+/, 1)[0] || ''
       const codeLines: string[] = []
       index += 1
       while (index < lines.length && !/^```\s*$/.test(lines[index])) {
@@ -62,7 +70,7 @@ export function parseMarkdown(source: string): MarkdownBlock[] {
       continue
     }
 
-    if (line.trim().startsWith('|') && index + 1 < lines.length && isTableSeparator(lines[index + 1])) {
+    if (isTableStart(lines, index)) {
       const headers = splitTableRow(line)
       const rows: string[][] = []
       index += 2
@@ -85,7 +93,7 @@ export function parseMarkdown(source: string): MarkdownBlock[] {
     }
 
     const paragraphLines: string[] = []
-    while (index < lines.length && lines[index].trim() && !/^(#{1,6})\s+/.test(lines[index]) && !/^```/.test(lines[index]) && !/^\s*[-*]\s+/.test(lines[index]) && !lines[index].trim().startsWith('|')) {
+    while (index < lines.length && lines[index].trim() && !/^(#{1,6})\s+/.test(lines[index]) && !matchCodeFence(lines[index]) && !/^\s*[-*]\s+/.test(lines[index]) && !isTableStart(lines, index)) {
       paragraphLines.push(lines[index].trim())
       index += 1
     }

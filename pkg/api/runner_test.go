@@ -1387,7 +1387,7 @@ func TestCompileManagedTestGroupLockedAppliesGroupRuntimeOverridesWithPrecedence
 		Actions: []dsl.Action{{Name: "runtime-step", Type: "GET", Target: "/orders"}},
 	})
 
-	groupIterations := 4
+	groupIterations := 9
 	groupRuntimeIterations := 9
 	topLevelIterations := 2
 	testGroup, engineGroup, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
@@ -1435,6 +1435,39 @@ func TestCompileManagedTestGroupLockedAppliesGroupRuntimeOverridesWithPrecedence
 	}
 	if stored.Script.Config.RunLogic.Iterations != 1 || stored.Script.Config.Log.Level != "standard" {
 		t.Fatalf("stored script config mutated: %#v", stored.Script.Config)
+	}
+}
+
+func TestCompileManagedTestGroupCanonicalIterationsStayConsistent(t *testing.T) {
+	runner := NewTestRunner(1, NewHub(), nil)
+	runner.StoreScript(&dsl.Script{
+		ID: "script-canonical-iterations", Name: "Canonical", Protocol: "http", Version: "1.0.0",
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.com"},
+		Actions: []dsl.Action{{Name: "step", Type: "GET", Target: "/"}},
+	})
+	iterations := 7
+	testGroup, engineGroup, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		ScriptID: "script-canonical-iterations", VUsers: 1, Iterations: &iterations,
+		RuntimeSettings: &RuntimeSettingsOverride{RunLogic: &dsl.RunLogicConfig{
+			Iterations: 7, MaxTransactions: 99, WorkloadModel: "closed",
+		}},
+	}, nil, nil)
+	if err != nil {
+		t.Fatalf("compile canonical iterations: %v", err)
+	}
+	if testGroup.Iterations == nil || *testGroup.Iterations != 7 || engineGroup.Script.Config.RunLogic.Iterations != 7 {
+		t.Fatalf("summary/runtime iterations diverged: summary=%v runtime=%d", testGroup.Iterations, engineGroup.Script.Config.RunLogic.Iterations)
+	}
+	if engineGroup.Script.Config.RunLogic.MaxTransactions != 99 {
+		t.Fatalf("canonical run-logic sibling was lost: %#v", engineGroup.Script.Config.RunLogic)
+	}
+
+	conflict := 6
+	if _, _, err := runner.compileManagedTestGroupLocked(0, 1, CreateGroupEntry{
+		ScriptID: "script-canonical-iterations", VUsers: 1, Iterations: &conflict,
+		RuntimeSettings: &RuntimeSettingsOverride{RunLogic: &dsl.RunLogicConfig{Iterations: 7}},
+	}, nil, nil); err == nil || !strings.Contains(err.Error(), "conflicts") {
+		t.Fatalf("conflicting canonical/group iterations error = %v", err)
 	}
 }
 
@@ -2455,7 +2488,7 @@ func TestNormalizeScenarioDataPoolBindingsAcceptsPopStrategy(t *testing.T) {
 	bindings, err := normalizeScenarioDataPoolBindings("scenario-1", []storage.ScenarioDataPoolBinding{{
 		PoolID:            "pool-1",
 		Alias:             "customers",
-		AccessMode:        "consume",
+		AccessMode:        "read_only",
 		SelectionStrategy: "pop",
 	}})
 	if err != nil {

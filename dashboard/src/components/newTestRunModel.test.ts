@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest'
 import {
   buildEffectiveScenarioGroups,
   buildGroupsForRunPayload,
+  buildGroupEditDraft,
+  buildGroupRuntimeTableValues,
   buildRunDefaultCards,
   buildRunLoadProfilePreview,
   buildRuntimeSettingsForRun,
@@ -13,6 +15,7 @@ import {
   groupOverrideKey,
   groupPlacementSummary,
   selectedGeneratorCapacity,
+  stagedGroupPeakVUsers,
   type GroupRunOverride,
 } from './newTestRunModel'
 import { type StoredScenario, type SystemInventoryGenerator } from '../types'
@@ -131,6 +134,60 @@ describe('newTestRunModel', () => {
     })
   })
 
+  it('preserves every advanced root runtime sibling when changing one run setting', () => {
+    const scenario = scenarioFixture()
+    scenario.runtime_settings = {
+      run_logic: { iterations: 3, auto_transactions: 'per_iteration', workload_model: 'closed', max_transactions: 500 },
+      log: { level: 'standard', on_error_only: true, extended_options: ['advanced_trace'] },
+      error_handling: { continue_on_error: true, snapshot_on_error: true, max_retries: 4, retry_delay_ms: 250, retry_backoff: 'exponential' },
+      http: { version: '2', request_timeout_ms: 45_000, tls: { min_version: '1.3' } },
+      web_runtime: { source_ips: ['10.0.0.1'], additional_attributes: { tenant: 'blue' } },
+      browser_config: { engine: 'chromium', client_metrics: true, viewport: { width: 1440, height: 900 } },
+      base_url: 'https://example.test',
+      env: { API_TOKEN: '[REDACTED]' },
+      redaction_rules: [{ pattern: 'customer-[0-9]+' }],
+    }
+
+    const payload = buildRuntimeSettingsForRun(scenario, {
+      runtime_settings: { iterations: 9, snapshot_on_error: false },
+    })
+
+    expect(payload).toMatchObject({
+      run_logic: { iterations: 9, auto_transactions: 'per_iteration', workload_model: 'closed', max_transactions: 500 },
+      log: { level: 'standard', on_error_only: true, extended_options: ['advanced_trace'] },
+      error_handling: { continue_on_error: true, snapshot_on_error: false, max_retries: 4, retry_delay_ms: 250, retry_backoff: 'exponential' },
+      http: { version: '2', request_timeout_ms: 45_000, tls: { min_version: '1.3' } },
+      web_runtime: { source_ips: ['10.0.0.1'], additional_attributes: { tenant: 'blue' } },
+      browser_config: { engine: 'chromium', client_metrics: true, viewport: { width: 1440, height: 900 } },
+      base_url: 'https://example.test',
+      env: { API_TOKEN: '[REDACTED]' },
+      redaction_rules: [{ pattern: 'customer-[0-9]+' }],
+    })
+    expect(payload?.iterations).toBeUndefined()
+    expect(scenario.runtime_settings.run_logic?.iterations).toBe(3)
+  })
+
+  it('reviews group runtime with backend precedence and canonical section aliases', () => {
+    const scenario = scenarioFixture()
+    scenario.runtime_settings = {
+      pacing: { type: 'fixed_delay', delay_ms: 100 },
+      run_logic: { iterations: 6, auto_transactions: 'per_iteration' },
+      log: { level: 'extended' },
+      browser_config: { device_profile: 'pixel_8', headless: false },
+    }
+    scenario.scripts[0].runtime_settings = { pacing: { type: 'fixed_delay', delay_ms: 500 } }
+    const runDefaults = { runtime_settings: { pacing: { type: 'fixed_delay', delay_ms: 200 } } }
+
+    expect(buildGroupRuntimeTableValues(scenario.scripts[0], scenario, runDefaults).pacing).toBe('Fixed delay · 500ms')
+    expect(buildGroupRuntimeTableValues(scenario.scripts[0], scenario, runDefaults, {
+      runtime_settings: { pacing: { type: 'fixed_delay', delay_ms: 750 } },
+    }).pacing).toBe('Fixed delay · 750ms')
+    const cards = buildRunDefaultCards(scenario, { runtime_settings: {} })
+    expect(cards.find(card => card.key === 'iterations')?.value).toBe('6')
+    expect(cards.find(card => card.key === 'auto_transactions')?.value).toBe('per_iteration')
+    expect(cards.find(card => card.key === 'log_level')?.value).toBe('extended')
+  })
+
   it('builds effective groups and create payloads from group overrides', () => {
     const scenario = scenarioFixture()
     const firstGroup = scenario.scripts[0]
@@ -177,6 +234,68 @@ describe('newTestRunModel', () => {
       script_id: 'script-2',
       role: 'observer',
     })
+  })
+
+  it('derives staged group VUsers from the immutable peak stage target', () => {
+    const scenario = scenarioFixture()
+    const group = scenario.scripts[0]
+    group.vusers = 30
+    group.stages = [
+      { type: 'ramp_up', duration: '1m', target_vusers: 10 },
+      { type: 'hold', duration: '5m', target_vusers: 30 },
+      { type: 'ramp_down', duration: '1m', target_vusers: 0 },
+    ]
+    const override = { vusers: 99, runtime_settings: { iterations: 4 } }
+    const overrides = { [groupOverrideKey(group)]: override }
+
+    expect(stagedGroupPeakVUsers(group)).toBe(30)
+    expect(buildEffectiveScenarioGroups(scenario, overrides)[0].vusers).toBe(30)
+    expect(buildGroupEditDraft(group, scenario, { runtime_settings: {} }, override).vusers).toBe('30')
+    expect(buildGroupsForRunPayload(scenario, overrides)?.[0]).toMatchObject({
+      vusers: 30,
+      stages: group.stages,
+      runtime_settings: { iterations: 4 },
+    })
+  })
+
+  it('merges a partial per-run group edit over the complete stored group runtime', () => {
+    const scenario = scenarioFixture()
+    scenario.scripts[0].runtime_settings = {
+      log: { level: 'extended', extended_options: ['data_returned'] },
+      error_handling: { continue_on_error: true, max_retries: 3, retry_backoff: 'fixed' },
+      http: { version: '2', tls: { min_version: '1.2' } },
+      browser_config: { engine: 'chromium', client_metrics: true },
+      env: { TOKEN: '[REDACTED]' },
+    }
+    const payload = buildGroupsForRunPayload(scenario, {
+      [groupOverrideKey(scenario.scripts[0])]: { runtime_settings: { iterations: 12 } },
+    })
+    expect(payload?.[0].runtime_settings).toMatchObject({
+      iterations: 12,
+      log: { level: 'extended', extended_options: ['data_returned'] },
+      error_handling: { continue_on_error: true, max_retries: 3, retry_backoff: 'fixed' },
+      http: { version: '2', tls: { min_version: '1.2' } },
+      browser_config: { engine: 'chromium', client_metrics: true },
+      env: { TOKEN: '[REDACTED]' },
+    })
+  })
+
+  it('round-trips weighted placement and generator-loss tolerance in the group edit draft', () => {
+    const scenario = scenarioFixture()
+    scenario.scripts[0].assignment = {
+      mode: 'region_weighted',
+      region_weights: { east: 70, west: 30 },
+      required_labels: { runtime: 'go' },
+      tolerate_generator_loss: true,
+    }
+    const draft = buildGroupEditDraft(scenario.scripts[0], scenario, { runtime_settings: {} })
+    expect(draft).toMatchObject({
+      assignmentMode: 'region_weighted',
+      regionWeights: { east: 70, west: 30 },
+      requiredLabels: { runtime: 'go' },
+      tolerateGeneratorLoss: true,
+    })
+    expect(formatGroupPlacement(undefined, scenario.scripts[0])).toContain('Region weighted')
   })
 
   it('models load profile timing including resource baseline windows', () => {

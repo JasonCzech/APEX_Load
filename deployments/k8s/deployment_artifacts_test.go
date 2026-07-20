@@ -425,6 +425,64 @@ func TestProductionDeploymentsSecureDistributedSecretDelivery(t *testing.T) {
 	}
 }
 
+func TestHelmTracingIsExplicitlyOptInAndAvailableToBothProcesses(t *testing.T) {
+	values := readTextFile(t, "../helm/apexload/values.yaml")
+	schema := readTextFile(t, "../helm/apexload/values.schema.json")
+	configMap := readTextFile(t, "../helm/apexload/templates/configmap.yaml")
+	controller := readTextFile(t, "../helm/apexload/templates/controller.yaml")
+	generator := readTextFile(t, "../helm/apexload/templates/generator.yaml")
+	readme := readTextFile(t, "../helm/apexload/README.md")
+	for _, check := range []string{"tracing:", "enabled: false", "protocol: http/protobuf", `actionSampleRatio: "0.01"`, `headersSecretName: ""`, "headersSecretKey: OTEL_EXPORTER_OTLP_HEADERS"} {
+		if !strings.Contains(values, check) {
+			t.Fatalf("Helm values missing tracing default %q", check)
+		}
+	}
+	for _, check := range []string{`"tracing"`, `"headersSecretName"`, `"headersSecretKey"`, `"http/protobuf"`, `"parentbased_traceidratio"`} {
+		if !strings.Contains(schema, check) {
+			t.Fatalf("Helm values schema missing tracing constraint %q", check)
+		}
+	}
+	for _, key := range []string{
+		"APEXLOAD_OTEL_ENABLED",
+		"OTEL_EXPORTER_OTLP_ENDPOINT",
+		"OTEL_EXPORTER_OTLP_PROTOCOL",
+		"OTEL_TRACES_SAMPLER",
+		"OTEL_TRACES_SAMPLER_ARG",
+		"APEXLOAD_OTEL_ACTION_SAMPLE_RATIO",
+		"OTEL_RESOURCE_ATTRIBUTES",
+	} {
+		if !strings.Contains(configMap, key) {
+			t.Fatalf("Helm ConfigMap missing tracing key %q", key)
+		}
+		if !strings.Contains(generator, "key: "+key) {
+			t.Fatalf("Helm generator does not project tracing key %q", key)
+		}
+	}
+	for _, check := range []string{"tracing.endpoint is required", "tracing.protocol must be http/protobuf or grpc", "tracing.headersSecretKey is required"} {
+		if !strings.Contains(configMap, check) {
+			t.Fatalf("Helm ConfigMap missing tracing validation %q", check)
+		}
+	}
+	if !strings.Contains(controller, "envFrom:") || !strings.Contains(controller, ".Values.dataPlatform.configMapName") {
+		t.Fatal("Helm controller must consume the tracing ConfigMap")
+	}
+	for workload, template := range map[string]string{"controller": controller, "generator": generator} {
+		for _, check := range []string{"OTEL_EXPORTER_OTLP_HEADERS", ".Values.tracing.headersSecretName", ".Values.tracing.headersSecretKey", "secretKeyRef:"} {
+			if !strings.Contains(template, check) {
+				t.Fatalf("Helm %s missing secret-backed collector header projection %q", workload, check)
+			}
+		}
+	}
+	if strings.Contains(configMap, "OTEL_EXPORTER_OTLP_HEADERS") {
+		t.Fatal("Helm ConfigMap must never contain collector authentication headers")
+	}
+	for _, check := range []string{"tracing.headersSecretName", "OTEL_EXPORTER_OTLP_HEADERS", "never copied into values or the shared ConfigMap"} {
+		if !strings.Contains(readme, check) {
+			t.Fatalf("Helm README missing secret-backed tracing guidance %q", check)
+		}
+	}
+}
+
 func TestLocalKubernetesUsesDNSFleetDiscovery(t *testing.T) {
 	controller := readTextFile(t, "local/controller-deployment.yaml")
 	for _, check := range []string{

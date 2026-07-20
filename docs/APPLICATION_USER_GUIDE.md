@@ -220,7 +220,7 @@ metrics over a WebSocket connection, so numbers update continuously without a re
 
 From the Command Center you can also **control** the run while it is in flight:
 
-- **Stop** (graceful) or **abort** (immediate).
+- **Stop** gracefully: finish the action currently in flight, skip later actions/think time, and run teardown. **Abort** force-cancels active work immediately. An active run remains **Stopping** until generator teardown and archive finalization complete; a queued run is cancelled immediately.
 - **Pause** and **resume** between actions.
 - **Extend or shorten** the remaining duration.
 - **Scale VUsers** for a group up or down — optionally over a ramp so the change is
@@ -291,7 +291,9 @@ Realistic load needs realistic, varied data.
 
 - **Data pools** are project-scoped, reusable sets of rows (for example, a list of
   test accounts). Bind a pool to a scenario and reference its columns from a script
-  with `{{data.pool.column}}`. Rows can be overridden per execution-plan entry.
+  with `{{data.pool.column}}`. Rows can be overridden per execution-plan entry. A
+  run receives an immutable, read-only snapshot of the selected rows; execution does
+  not update or consume rows in the shared pool.
 - **Project secrets** back the `{{secret.name}}` namespace. The UI shows only their
   metadata and status — never the values — and secret writes require an authorized
   human action. Manage them from **Settings → Shared Data Pools** and the project

@@ -250,7 +250,7 @@ type SAPGUIConfig struct {
 
 // JMSConfig holds broker, destination, and reliability settings for JMS scripts.
 type JMSConfig struct {
-	Provider        string            `json:"provider,omitempty"`                                          // "solace"
+	Provider        string            `json:"provider,omitempty"`                                          // "solace", "servicebus", or "ibmmq"
 	BrokerURL       string            `json:"broker_url,omitempty"`                                        // e.g. tcp://broker:55555
 	MessageVPN      string            `json:"message_vpn,omitempty"`                                       // Solace message VPN
 	Username        string            `json:"username,omitempty"`                                          // broker username
@@ -539,7 +539,7 @@ type HTTPConfig struct {
 	CookiesEnabled      *bool `json:"cookies_enabled,omitempty"` // default: true
 	ClearCookiesPerIter *bool `json:"clear_cookies_per_iteration,omitempty"`
 	CacheEnabled        *bool `json:"cache_enabled,omitempty"` // enable per-VUser HTTP response cache emulation
-	Traceparent         *bool `json:"traceparent,omitempty"`   // generate W3C traceparent headers (default: true)
+	Traceparent         *bool `json:"traceparent,omitempty"`   // propagate active W3C context, or synthesize a fallback header (default: true)
 	TraceparentSampled  *bool `json:"traceparent_sampled,omitempty"`
 }
 

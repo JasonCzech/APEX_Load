@@ -37,6 +37,17 @@ by policy. Production and HA controllers fail CI discovery/exchange closed when
 neither that value nor a valid `controller.publicURL`/`APEXLOAD_PUBLIC_URL` is
 available; a process-unique controller pod ID is never used as the audience.
 
+OpenTelemetry trace export is disabled by default. To enable it, set
+`tracing.enabled=true`, `tracing.endpoint`, and the desired protocol/sampling
+values. For an authenticated collector, create a Kubernetes Secret whose data
+contains the OpenTelemetry header string (for example under
+`OTEL_EXPORTER_OTLP_HEADERS`), then set `tracing.headersSecretName` and, if the
+key differs, `tracing.headersSecretKey`. The chart projects that key as
+`OTEL_EXPORTER_OTLP_HEADERS` into both controller and generator containers;
+the credential is never copied into values or the shared ConfigMap. See
+[OpenTelemetry tracing](../../../docs/OPENTELEMETRY.md) for configuration and
+data-handling details.
+
 Set `controller.ha.enabled=true` before setting more than one controller
 replica; the chart fails rendering otherwise. HA also requires PostgreSQL and
 Redis. In HA, CI run mutations use the selectorless

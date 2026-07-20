@@ -114,4 +114,88 @@ describe('CreateTestGroupsEditor', () => {
     })
     expect(roleSelect().value).toBe('observer')
   })
+
+  it('clears observer role when its browser script is replaced by a non-browser script', async () => {
+    const onUpdateGroup = vi.fn()
+    await act(async () => {
+      root.render(
+        <CreateTestGroupsEditor
+          scenarioMode="vuser_driven"
+          groups={[draftGroup({ scriptId: 'script-browser', role: 'observer' })]}
+          scripts={scripts}
+          onAddGroup={vi.fn()}
+          onUpdateGroup={onUpdateGroup}
+          onRemoveGroup={vi.fn()}
+        />,
+      )
+    })
+
+    const scriptSelect = Array.from(container.querySelectorAll('select')).find(select => (
+      Array.from(select.options).some(option => option.value === 'script-http')
+    ))
+    expect(scriptSelect).toBeDefined()
+    if (!scriptSelect) return
+    await act(async () => {
+      setSelectValue(scriptSelect, 'script-http')
+    })
+
+    expect(onUpdateGroup).toHaveBeenCalledWith(0, { scriptId: 'script-http', role: 'load' })
+  })
+
+  it('enforces the observer boundary while preserving the load-group maximum', async () => {
+    const onUpdateGroup = vi.fn()
+    await act(async () => {
+      root.render(
+        <CreateTestGroupsEditor
+          scenarioMode="vuser_driven"
+          groups={[draftGroup({ scriptId: 'script-browser', role: 'observer', vusers: 10 })]}
+          scripts={scripts}
+          onAddGroup={vi.fn()}
+          onUpdateGroup={onUpdateGroup}
+          onRemoveGroup={vi.fn()}
+        />,
+      )
+    })
+
+    const observerVusers = container.querySelector<HTMLInputElement>('input[type="number"]')
+    expect(observerVusers?.max).toBe('10')
+    expect(container.textContent).toContain('Observer canaries are capped at 10 VUsers.')
+    if (!observerVusers) return
+    await act(async () => {
+      setInputValue(observerVusers, '11')
+    })
+    expect(onUpdateGroup).toHaveBeenCalledWith(0, { vusers: 10 })
+
+    onUpdateGroup.mockClear()
+    await act(async () => {
+      root.render(
+        <CreateTestGroupsEditor
+          scenarioMode="vuser_driven"
+          groups={[draftGroup({ scriptId: 'script-browser', role: 'load', vusers: 1000000 })]}
+          scripts={scripts}
+          onAddGroup={vi.fn()}
+          onUpdateGroup={onUpdateGroup}
+          onRemoveGroup={vi.fn()}
+        />,
+      )
+    })
+    expect(container.querySelector<HTMLInputElement>('input[type="number"]')?.max).toBe('1000000')
+
+    await act(async () => {
+      setSelectValue(roleSelect(), 'observer')
+    })
+    expect(onUpdateGroup).toHaveBeenCalledWith(0, { role: 'observer', vusers: 10 })
+  })
 })
+
+function setSelectValue(select: HTMLSelectElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set
+  setter?.call(select, value)
+  select.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+  setter?.call(input, value)
+  input.dispatchEvent(new Event('change', { bubbles: true }))
+}

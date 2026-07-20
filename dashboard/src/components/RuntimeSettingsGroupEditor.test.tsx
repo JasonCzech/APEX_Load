@@ -18,8 +18,6 @@ const GROUP0_OVERRIDE: ScenarioRuntimeSettingsDraft = {
   pacing: { type: 'fixed_delay', delay_ms: 250 },
   log_level: 'extended',
   auto_transactions: '',
-  continue_on_error: false,
-  snapshot_on_error: false,
 }
 
 let container: HTMLDivElement
@@ -44,6 +42,21 @@ function setSelectValue(select: HTMLSelectElement, value: string) {
   const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!
   setter.call(select, value)
   select.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
+function setInputValue(input: HTMLInputElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!
+  setter.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}
+
+function findLabeledControl<T extends HTMLElement>(labelText: string, selector: string): T {
+  const label = Array.from(container.querySelectorAll('label')).find(candidate =>
+    Array.from(candidate.querySelectorAll('span')).some(span => (span.textContent || '').trim() === labelText),
+  )
+  const control = label?.querySelector(selector) as T | null
+  if (!control) throw new Error(`control not found for label: ${labelText}`)
+  return control
 }
 
 /** The runtime editor now organizes its forms into tabs; fields live behind their tab. */
@@ -159,8 +172,6 @@ describe('RuntimeSettingsGroupEditor', () => {
       browser: { device_profile: 'pixel_8' },
       log_level: '',
       auto_transactions: '',
-      continue_on_error: false,
-      snapshot_on_error: false,
     }
     act(() => {
       root.render(
@@ -191,7 +202,7 @@ describe('RuntimeSettingsGroupEditor', () => {
           groups={GROUPS}
           focusedIndex={0}
           onFocusChange={() => {}}
-          overrides={[{ http: { version: '2' }, log: { level: 'extended' }, log_level: '', auto_transactions: '', continue_on_error: false, snapshot_on_error: false }, undefined]}
+          overrides={[{ http: { version: '2' }, log: { level: 'extended' }, log_level: '', auto_transactions: '' }, undefined]}
           onChange={() => {}}
           onApplyToGroups={() => {}}
         />,
@@ -267,6 +278,7 @@ describe('RuntimeSettingsGroupEditor', () => {
   })
 
   it('renders the full error_handling retry controls under the Error Handling tab', () => {
+    const onChange = vi.fn()
     act(() => {
       root.render(
         <RuntimeSettingsGroupEditor
@@ -274,7 +286,7 @@ describe('RuntimeSettingsGroupEditor', () => {
           focusedIndex={0}
           onFocusChange={() => {}}
           overrides={[undefined, undefined]}
-          onChange={() => {}}
+          onChange={onChange}
           onApplyToGroups={() => {}}
         />,
       )
@@ -293,6 +305,9 @@ describe('RuntimeSettingsGroupEditor', () => {
       Array.from(s.options).some(o => o.value === 'exponential'),
     )
     expect(backoff).toBeTruthy()
+    expect(Array.from(backoff?.options || []).map(option => option.value)).toEqual(['', 'fixed', 'exponential'])
+    act(() => setSelectValue(backoff!, 'fixed'))
+    expect(onChange).toHaveBeenCalledWith(0, expect.objectContaining({ retry_backoff: 'fixed' }))
   })
 
   it('renders and edits the HTTP transport form under the HTTP Transport tab', () => {
@@ -349,7 +364,7 @@ describe('RuntimeSettingsGroupEditor', () => {
           groups={GROUPS}
           focusedIndex={0}
           onFocusChange={() => {}}
-          overrides={[{ log_level: 'extended', auto_transactions: '', continue_on_error: false, snapshot_on_error: false }, undefined]}
+          overrides={[{ log_level: 'extended', auto_transactions: '' }, undefined]}
           onChange={onChange}
           onApplyToGroups={() => {}}
         />,
@@ -379,7 +394,7 @@ describe('RuntimeSettingsGroupEditor', () => {
           // normal edit path writes it (not the legacy top-level field). A pacing
           // override is included so the draft is not emptied by the clear (which
           // would emit undefined) — letting us assert iterations specifically.
-          overrides={[{ run_logic: { iterations: 9 }, pacing: { type: 'fixed_delay', delay_ms: 250 }, log_level: '', auto_transactions: '', continue_on_error: false, snapshot_on_error: false }, undefined]}
+          overrides={[{ run_logic: { iterations: 9 }, pacing: { type: 'fixed_delay', delay_ms: 250 }, log_level: '', auto_transactions: '' }, undefined]}
           onChange={onChange}
           onApplyToGroups={() => {}}
         />,
@@ -395,6 +410,72 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(last.run_logic?.iterations).toBeUndefined()
     expect(last.run_logic?.global_iterations).toBeUndefined()
     expect(last.pacing).toBeTruthy() // unrelated override preserved
+  })
+
+  it('Clear Iterations materializes the inherited value when run_logic keeps siblings', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          scenarioDefault={{ run_logic: { iterations: 7 } }}
+          overrides={[{ run_logic: { iterations: 9, workload_model: 'open' }, log_level: '', auto_transactions: '' }, undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const clear = container.querySelector('button[aria-label="Clear Iterations override"]') as HTMLButtonElement
+    act(() => clear.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
+    expect(last.iterations).toBeUndefined()
+    expect(last.run_logic).toEqual({ iterations: 7, workload_model: 'open' })
+  })
+
+  it('Clear Auto-transactions materializes the inherited value when run_logic keeps siblings', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          scenarioDefault={{ run_logic: { auto_transactions: 'per_action' } }}
+          overrides={[{ run_logic: { auto_transactions: 'none', workload_model: 'open' }, log_level: '', auto_transactions: '' }, undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const clear = container.querySelector('button[aria-label="Clear Auto-transactions override"]') as HTMLButtonElement
+    act(() => clear.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
+    expect(last.auto_transactions).toBe('')
+    expect(last.run_logic).toEqual({ auto_transactions: 'per_action', workload_model: 'open' })
+  })
+
+  it('Clear Log level materializes the inherited value when log keeps siblings', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          scenarioDefault={{ log: { level: 'standard' } }}
+          overrides={[{ log: { level: 'extended', on_error_only: true }, log_level: '', auto_transactions: '' }, undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    const clear = container.querySelector('button[aria-label="Clear Log level override"]') as HTMLButtonElement
+    act(() => clear.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
+    expect(last.log_level).toBe('')
+    expect(last.log).toEqual({ level: 'standard', on_error_only: true })
   })
 
   it('editing the think-time distribution on an inheriting group keeps the inherited mean (not 0)', () => {
@@ -432,7 +513,7 @@ describe('RuntimeSettingsGroupEditor', () => {
           groups={GROUPS}
           focusedIndex={0}
           onFocusChange={() => {}}
-          overrides={[{ iterations: 5, log_level: '', auto_transactions: '', continue_on_error: false, snapshot_on_error: false }, undefined]}
+          overrides={[{ iterations: 5, log_level: '', auto_transactions: '' }, undefined]}
           onChange={onChange}
           onApplyToGroups={() => {}}
         />,
@@ -457,7 +538,7 @@ describe('RuntimeSettingsGroupEditor', () => {
           groups={GROUPS}
           focusedIndex={1}
           onFocusChange={() => {}}
-          overrides={[undefined, { browser: { device_profile: 'pixel_8' }, log_level: '', auto_transactions: '', continue_on_error: false, snapshot_on_error: false }]}
+          overrides={[undefined, { browser: { device_profile: 'pixel_8' }, log_level: '', auto_transactions: '' }]}
           onChange={onChange}
           onApplyToGroups={() => {}}
         />,
@@ -505,7 +586,7 @@ describe('RuntimeSettingsGroupEditor', () => {
           groups={GROUPS}
           focusedIndex={0}
           onFocusChange={() => {}}
-          overrides={[{ think_time: { type: 'gaussian', mean_ms: 500 }, log_level: '', auto_transactions: '', continue_on_error: false, snapshot_on_error: false }, undefined]}
+          overrides={[{ think_time: { type: 'gaussian', mean_ms: 500 }, log_level: '', auto_transactions: '' }, undefined]}
           onChange={onChange}
           onApplyToGroups={() => {}}
         />,
@@ -532,7 +613,7 @@ describe('RuntimeSettingsGroupEditor', () => {
           groups={GROUPS}
           focusedIndex={0}
           onFocusChange={() => {}}
-          overrides={[{ pacing: { type: 'random_delay', min_delay_ms: 100 }, log_level: '', auto_transactions: '', continue_on_error: false, snapshot_on_error: false }, undefined]}
+          overrides={[{ pacing: { type: 'random_delay', min_delay_ms: 100 }, log_level: '', auto_transactions: '' }, undefined]}
           onChange={() => {}}
           onApplyToGroups={() => {}}
         />,
@@ -612,8 +693,8 @@ describe('RuntimeSettingsGroupEditor', () => {
           groups={GROUPS}
           focusedIndex={0}
           onFocusChange={() => {}}
-          // Engine defaults are the lowest inherited layer; the scenario default
-          // overrides the request timeout on top of them.
+          // HTTP is a whole-section replacement. Once the scenario supplies an HTTP
+          // section, lower engine fields are no longer inherited.
           engineDefaults={{ base_url: '', http: { connect_timeout_ms: 30000, request_timeout_ms: 60000 } }}
           scenarioDefault={{ http: { request_timeout_ms: 45000 } }}
           overrides={[undefined, undefined]}
@@ -625,9 +706,9 @@ describe('RuntimeSettingsGroupEditor', () => {
     clickTab('HTTP Transport') // Timeouts sub-tab is active by default
     const placeholders = (sel: string) =>
       Array.from(container.querySelectorAll(sel)).map(i => (i as HTMLInputElement).placeholder)
-    // Connect timeout inherits the engine default; request timeout inherits the
-    // scenario override that sits above it — neither shows a bare "Inherit".
-    expect(placeholders('input[type="number"]')).toContain('30000')
+    // The scenario's section supplies request timeout; connect timeout no longer
+    // leaks through from the replaced engine section.
+    expect(placeholders('input[type="number"]')).not.toContain('30000')
     expect(placeholders('input[type="number"]')).toContain('45000')
 
     // Secret fields never echo an inherited value — they stay generic.
@@ -635,6 +716,438 @@ describe('RuntimeSettingsGroupEditor', () => {
     const secretPlaceholders = placeholders('input[type="password"]')
     expect(secretPlaceholders.length).toBeGreaterThan(0)
     expect(secretPlaceholders.every(p => p === 'Inherit')).toBe(true)
+  })
+
+  it('materializes the highest-precedence pacing replacement before changing its type', () => {
+    const onChange = vi.fn()
+    const groups: RuntimeEditorGroup[] = [{
+      name: 'Checkout',
+      scriptId: 's1',
+      protocol: 'http',
+      scriptConfig: {
+        base_url: '',
+        pacing: { type: 'random_delay', min_delay_ms: 20, tps: 11 },
+      },
+    }]
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={groups}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          engineDefaults={{ base_url: '', pacing: { type: 'random_delay', min_delay_ms: 10, max_delay_ms: 100, interval_ms: 500 } }}
+          scenarioDefault={{ pacing: { type: 'random_delay', max_delay_ms: 70 } }}
+          overrides={[undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('Iteration Pacing')
+    const pacing = findLabeledControl<HTMLSelectElement>('Pacing', 'select')
+    act(() => setSelectValue(pacing, 'random_delay'))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(last.pacing).toEqual({
+      type: 'random_delay',
+      max_delay_ms: 70,
+    })
+  })
+
+  it('materializes the highest-precedence think_time replacement and preserves false', () => {
+    const onChange = vi.fn()
+    const groups: RuntimeEditorGroup[] = [{
+      name: 'Checkout',
+      scriptId: 's1',
+      protocol: 'http',
+      scriptConfig: {
+        base_url: '',
+        think_time: { type: 'gaussian', mean_ms: 200, std_ms: 20, min_ms: 50 },
+      },
+    }]
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={groups}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          engineDefaults={{ base_url: '', think_time: { type: 'fixed', mean_ms: 100, multiplier: 1.5, limit_ms: 900, ignore: true } }}
+          scenarioDefault={{ think_time: { type: 'gaussian', mean_ms: 300, max_ms: 600, ignore: false } }}
+          overrides={[undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('Think Time')
+    const distribution = findLabeledControl<HTMLSelectElement>('Distribution', 'select')
+    act(() => setSelectValue(distribution, 'uniform'))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(last.think_time).toEqual({
+      type: 'uniform',
+      mean_ms: 300,
+      max_ms: 600,
+      ignore: false,
+    })
+  })
+
+  it('materializes the highest-precedence error_handling replacement and keeps false', () => {
+    const onChange = vi.fn()
+    const groups: RuntimeEditorGroup[] = [{
+      name: 'Checkout',
+      scriptId: 's1',
+      protocol: 'http',
+      scriptConfig: {
+        base_url: '',
+        error_handling: { max_retries: 2 },
+      },
+    }]
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={groups}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          engineDefaults={{
+            base_url: '',
+            error_handling: {
+              continue_on_error: true,
+              snapshot_on_error: true,
+              max_retries: 1,
+              retry_delay_ms: 100,
+              retry_backoff: 'fixed',
+            },
+          }}
+          scenarioDefault={{ error_handling: { continue_on_error: false, retry_delay_ms: 250 } }}
+          overrides={[undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('Error Handling')
+    const continueOnError = Array.from(container.querySelectorAll('label')).find(label =>
+      (label.textContent || '').includes('Continue on error'),
+    )?.querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(continueOnError.checked).toBe(false)
+    act(() => setInputValue(findLabeledControl<HTMLInputElement>('Max retries', 'input'), '3'))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(last).toEqual(expect.objectContaining({
+      continue_on_error: false,
+      max_retries: 3,
+      retry_delay_ms: 250,
+    }))
+    expect(last.snapshot_on_error).toBeUndefined()
+    expect(last.retry_backoff).toBeUndefined()
+  })
+
+  it('materializes the highest-precedence log replacement when toggling one option', () => {
+    const onChange = vi.fn()
+    const groups: RuntimeEditorGroup[] = [{
+      name: 'Checkout',
+      scriptId: 's1',
+      protocol: 'http',
+      scriptConfig: { base_url: '', log: { level: 'extended' } },
+    }]
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={groups}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          engineDefaults={{ base_url: '', log: { level: 'standard', on_error_only: true, extended_options: ['parameter_substitution'] } }}
+          scenarioDefault={{ log: { on_error_only: false } }}
+          overrides={[undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('Error Handling')
+    const advancedTrace = Array.from(container.querySelectorAll('label')).find(label =>
+      (label.textContent || '').includes('Advanced trace'),
+    )?.querySelector('input[type="checkbox"]') as HTMLInputElement
+    act(() => advancedTrace.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(last.log).toEqual({
+      on_error_only: false,
+      extended_options: ['advanced_trace'],
+    })
+  })
+
+  it('materializes the highest-precedence run_logic replacement before editing one limit', () => {
+    const onChange = vi.fn()
+    const groups: RuntimeEditorGroup[] = [{
+      name: 'Checkout',
+      scriptId: 's1',
+      protocol: 'http',
+      scriptConfig: {
+        base_url: '',
+        run_logic: { iterations: 2, workload_model: 'open' },
+      },
+    }]
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={groups}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          engineDefaults={{
+            base_url: '',
+            run_logic: {
+              iterations: 1,
+              global_iterations: 100,
+              max_transactions: 1000,
+              workload_model: 'closed',
+              auto_transactions: 'per_action',
+              block_scheduling: 'sequential',
+              action_sequence: ['login'],
+            },
+          }}
+          scenarioDefault={{ iterations: 3, run_logic: { global_iterations: 200, auto_transactions: 'none' } }}
+          overrides={[undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('Run Logic')
+    act(() => setInputValue(findLabeledControl<HTMLInputElement>('Max transactions', 'input'), '500'))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(last.run_logic).toEqual({
+      global_iterations: 200,
+      max_transactions: 500,
+      auto_transactions: 'none',
+    })
+    expect(last.iterations).toBeUndefined()
+  })
+
+  it('materializes only the highest-precedence HTTP replacement on the first edit', () => {
+    const onChange = vi.fn()
+    const groups: RuntimeEditorGroup[] = [{
+      name: 'Checkout',
+      scriptId: 's1',
+      protocol: 'http',
+      scriptConfig: {
+        base_url: '',
+        http: {
+          request_timeout_ms: 300,
+          tls: { client_cert_file: 'script.crt' },
+          proxy: { username: 'script-user' },
+          auth: { type: 'bearer' },
+        },
+      },
+    }]
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={groups}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          engineDefaults={{
+            base_url: '',
+            http: {
+              connect_timeout_ms: 100,
+              request_timeout_ms: 200,
+              keep_alive: true,
+              default_headers: { 'X-Engine': 'yes' },
+              tls: { min_version: '1.2', insecure_skip_verify: true, client_key_file: 'engine.key' },
+              proxy: { url: 'http://engine-proxy', password: 'engine-password', no_proxy: ['localhost'] },
+              auth: { type: 'basic', username: 'engine-user', password: 'engine-auth-password', token: 'engine-token' },
+            },
+          }}
+          scenarioDefault={{
+            http: {
+              idle_timeout_ms: 400,
+              keep_alive: false,
+              tls: { insecure_skip_verify: false, ca_cert_file: 'scenario-ca.crt' },
+              proxy: { url: 'http://scenario-proxy' },
+              auth: { token: 'scenario-token' },
+            },
+          }}
+          overrides={[undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('HTTP Transport')
+    clickTab('Connection')
+    const version = findLabeledControl<HTMLSelectElement>('HTTP version', 'select')
+    act(() => setSelectValue(version, '2'))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(last.http).toEqual({
+      idle_timeout_ms: 400,
+      version: '2',
+      keep_alive: false,
+      tls: {
+        insecure_skip_verify: false,
+        ca_cert_file: 'scenario-ca.crt',
+      },
+      proxy: {
+        url: 'http://scenario-proxy',
+      },
+      auth: {
+        token: 'scenario-token',
+      },
+    })
+  })
+
+  it('materializes only the highest-precedence browser_config replacement', () => {
+    const onChange = vi.fn()
+    const groups: RuntimeEditorGroup[] = [{
+      name: 'Experience',
+      scriptId: 's1',
+      protocol: 'browser',
+      scriptConfig: {
+        base_url: '',
+        browser: { engine: 'firefox', device_profile: 'pixel_8', viewport: { width: 1440 } },
+      },
+    }]
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={groups}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          engineDefaults={{
+            base_url: '',
+            browser: {
+              engine: 'chromium',
+              headless: true,
+              touch_mode: true,
+              orientation: 'landscape',
+              client_metrics: true,
+              cache_enabled: true,
+              viewport: { width: 1280, height: 720 },
+              review_policy: { allow_reviewed_javascript: true, allow_review_required: true },
+            },
+          }}
+          scenarioDefault={{
+            browser: { touch_mode: false },
+            browser_config: {
+              headless: false,
+              viewport: { height: 900 },
+              review_policy: { allow_reviewed_javascript: false },
+            },
+          }}
+          overrides={[undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('HTTP Transport')
+    clickTab('Browser emulation')
+    const reviewedJavaScript = Array.from(container.querySelectorAll('label')).find(label =>
+      (label.textContent || '').includes('Allow reviewed JavaScript'),
+    )?.querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(reviewedJavaScript.checked).toBe(false)
+    act(() => setInputValue(findLabeledControl<HTMLInputElement>('Slow-mo (ms)', 'input'), '55'))
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(last.browser_config).toEqual({
+      headless: false,
+      slow_mo_ms: 55,
+      viewport: { height: 900 },
+      review_policy: { allow_reviewed_javascript: false },
+    })
+    expect(last.browser).toBeUndefined()
+  })
+
+  it('does not resurrect inherited HTTP nested siblings inside an existing group section', () => {
+    const onChange = vi.fn()
+    const groups: RuntimeEditorGroup[] = [{
+      name: 'Checkout',
+      scriptId: 's1',
+      protocol: 'http',
+      scriptConfig: {
+        base_url: '',
+        http: {
+          tls: { min_version: '1.2', client_cert_file: 'inherited.crt' },
+          proxy: { username: 'inherited-user', password: 'inherited-password' },
+          auth: { type: 'basic', username: 'inherited-auth-user' },
+        },
+      },
+    }]
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={groups}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[{ log_level: '', auto_transactions: '', http: { idle_timeout_ms: 400 } }]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+
+    clickTab('HTTP Transport')
+    clickTab('TLS / SSL')
+    act(() => setInputValue(findLabeledControl<HTMLInputElement>('CA cert file', 'input'), 'group-ca.crt'))
+    expect(onChange.mock.calls[onChange.mock.calls.length - 1]?.[1].http).toEqual({
+      idle_timeout_ms: 400,
+      tls: { ca_cert_file: 'group-ca.crt' },
+    })
+
+    clickTab('Proxy')
+    act(() => setInputValue(findLabeledControl<HTMLInputElement>('Proxy URL', 'input'), 'http://group-proxy'))
+    expect(onChange.mock.calls[onChange.mock.calls.length - 1]?.[1].http).toEqual({
+      idle_timeout_ms: 400,
+      proxy: { url: 'http://group-proxy' },
+    })
+
+    clickTab('Authentication')
+    act(() => setInputValue(findLabeledControl<HTMLInputElement>('Auth token', 'input'), 'group-token'))
+    expect(onChange.mock.calls[onChange.mock.calls.length - 1]?.[1].http).toEqual({
+      idle_timeout_ms: 400,
+      auth: { token: 'group-token' },
+    })
+  })
+
+  it('does not resurrect inherited browser nested siblings inside an existing group section', () => {
+    const onChange = vi.fn()
+    const groups: RuntimeEditorGroup[] = [{
+      name: 'Experience',
+      scriptId: 's1',
+      protocol: 'browser',
+      scriptConfig: {
+        base_url: '',
+        browser: {
+          viewport: { width: 1440 },
+          review_policy: { allow_reviewed_javascript: false, allow_review_required: true },
+        },
+      },
+    }]
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={groups}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[{ log_level: '', auto_transactions: '', browser_config: { headless: false } }]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+
+    clickTab('HTTP Transport')
+    clickTab('Browser emulation')
+    act(() => setInputValue(findLabeledControl<HTMLInputElement>('Viewport height', 'input'), '900'))
+    expect(onChange.mock.calls[onChange.mock.calls.length - 1]?.[1].browser_config).toEqual({
+      headless: false,
+      viewport: { height: 900 },
+    })
+
+    const reviewedJavaScript = Array.from(container.querySelectorAll('label')).find(label =>
+      (label.textContent || '').includes('Allow reviewed JavaScript'),
+    )?.querySelector('input[type="checkbox"]') as HTMLInputElement
+    expect(reviewedJavaScript.checked).toBe(false)
+    act(() => reviewedJavaScript.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    expect(onChange.mock.calls[onChange.mock.calls.length - 1]?.[1].browser_config).toEqual({
+      headless: false,
+      review_policy: { allow_reviewed_javascript: true },
+    })
   })
 
   it('shows the Browser emulation sub-tab only for browser groups', () => {

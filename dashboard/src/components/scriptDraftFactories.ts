@@ -161,10 +161,39 @@ export function createIbmMqDraft(): ScriptDefinition {
       jms: {
         provider: 'ibmmq',
         broker_url: '',
-        message_vpn: '',
         client_id: '',
         destination: '',
         destination_type: 'queue',
+        reply_to: '',
+        acknowledgement: 'auto',
+        delivery_mode: 'persistent',
+        timeout_ms: 5000,
+        mock: true,
+      },
+    },
+    actions: [],
+  }
+}
+
+export function createServiceBusJmsDraft(): ScriptDefinition {
+  return {
+    name: '',
+    version: '1.0.0',
+    protocol: 'jms-servicebus',
+    config: {
+      base_url: '',
+      think_time: { type: 'fixed', mean_ms: 1000 },
+      pacing: { type: 'none' },
+      run_logic: { iterations: 0, auto_transactions: 'none' },
+      error_handling: { continue_on_error: false },
+      log: { level: 'standard' },
+      jms: {
+        provider: 'servicebus',
+        broker_url: '',
+        client_id: '',
+        destination: '',
+        destination_type: 'queue',
+        subscription: '',
         reply_to: '',
         acknowledgement: 'auto',
         delivery_mode: 'persistent',
@@ -368,6 +397,7 @@ function baseDraftForComponent(component: AuthoringComponent): ScriptDefinition 
     }
     if (normalized.startsWith('jms')) {
       if (normalized === 'jms-ibmmq') return createIbmMqDraft()
+      if (normalized === 'jms-servicebus') return createServiceBusJmsDraft()
       return createJmsDraft()
     }
   }

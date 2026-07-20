@@ -532,7 +532,13 @@ func mergeRuntimeSettings(base *RuntimeSettingsOverride, group *RuntimeSettingsO
 	}
 	if group.Iterations != nil {
 		iterations := *group.Iterations
-		merged.Iterations = &iterations
+		if group.RunLogic == nil && merged.RunLogic != nil {
+			merged.RunLogic = cloneRunLogicConfig(merged.RunLogic)
+			merged.RunLogic.Iterations = iterations
+			merged.Iterations = nil
+		} else {
+			merged.Iterations = &iterations
+		}
 	}
 	if group.Pacing != nil {
 		pacing := *group.Pacing
@@ -567,39 +573,70 @@ func mergeRuntimeSettings(base *RuntimeSettingsOverride, group *RuntimeSettingsO
 		merged.BrowserConfig = cloneViaJSON(group.BrowserConfig)
 	}
 	if group.Browser != nil {
-		browser := RuntimeBrowserOverride{}
-		if merged.Browser != nil {
-			browser = *merged.Browser
-			if merged.Browser.Headless != nil {
-				headless := *merged.Browser.Headless
+		if group.BrowserConfig == nil && merged.BrowserConfig != nil {
+			merged.BrowserConfig = cloneViaJSON(merged.BrowserConfig)
+			if group.Browser.Headless != nil {
+				headless := *group.Browser.Headless
+				merged.BrowserConfig.Headless = &headless
+			}
+			if group.Browser.DeviceProfile != "" {
+				merged.BrowserConfig.DeviceProfile = group.Browser.DeviceProfile
+			}
+			if group.Browser.TouchMode != nil {
+				touchMode := *group.Browser.TouchMode
+				merged.BrowserConfig.TouchMode = &touchMode
+			}
+			if group.Browser.Orientation != "" {
+				merged.BrowserConfig.Orientation = group.Browser.Orientation
+			}
+			merged.Browser = nil
+		} else {
+			browser := RuntimeBrowserOverride{}
+			if merged.Browser != nil {
+				browser = *merged.Browser
+				if merged.Browser.Headless != nil {
+					headless := *merged.Browser.Headless
+					browser.Headless = &headless
+				}
+				if merged.Browser.TouchMode != nil {
+					touchMode := *merged.Browser.TouchMode
+					browser.TouchMode = &touchMode
+				}
+			}
+			if group.Browser.Headless != nil {
+				headless := *group.Browser.Headless
 				browser.Headless = &headless
 			}
-			if merged.Browser.TouchMode != nil {
-				touchMode := *merged.Browser.TouchMode
+			if group.Browser.DeviceProfile != "" {
+				browser.DeviceProfile = group.Browser.DeviceProfile
+			}
+			if group.Browser.TouchMode != nil {
+				touchMode := *group.Browser.TouchMode
 				browser.TouchMode = &touchMode
 			}
+			if group.Browser.Orientation != "" {
+				browser.Orientation = group.Browser.Orientation
+			}
+			merged.Browser = &browser
 		}
-		if group.Browser.Headless != nil {
-			headless := *group.Browser.Headless
-			browser.Headless = &headless
-		}
-		if group.Browser.DeviceProfile != "" {
-			browser.DeviceProfile = group.Browser.DeviceProfile
-		}
-		if group.Browser.TouchMode != nil {
-			touchMode := *group.Browser.TouchMode
-			browser.TouchMode = &touchMode
-		}
-		if group.Browser.Orientation != "" {
-			browser.Orientation = group.Browser.Orientation
-		}
-		merged.Browser = &browser
 	}
 	if group.LogLevel != "" {
-		merged.LogLevel = group.LogLevel
+		if group.Log == nil && merged.Log != nil {
+			merged.Log = cloneLogConfig(merged.Log)
+			merged.Log.Level = group.LogLevel
+			merged.LogLevel = ""
+		} else {
+			merged.LogLevel = group.LogLevel
+		}
 	}
 	if group.AutoTransactions != "" {
-		merged.AutoTransactions = group.AutoTransactions
+		if group.RunLogic == nil && merged.RunLogic != nil {
+			merged.RunLogic = cloneRunLogicConfig(merged.RunLogic)
+			merged.RunLogic.AutoTransactions = group.AutoTransactions
+			merged.AutoTransactions = ""
+		} else {
+			merged.AutoTransactions = group.AutoTransactions
+		}
 	}
 	if group.BaseURL != "" {
 		merged.BaseURL = group.BaseURL

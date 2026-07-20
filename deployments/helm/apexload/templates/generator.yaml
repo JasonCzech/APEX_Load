@@ -140,6 +140,13 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.dataPlatform.secretName }}
                   key: APEXLOAD_GRPC_AUTH_TOKEN
+{{- if .Values.tracing.headersSecretName }}
+            - name: OTEL_EXPORTER_OTLP_HEADERS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.tracing.headersSecretName | quote }}
+                  key: {{ .Values.tracing.headersSecretKey | quote }}
+{{- end }}
             - name: APEXLOAD_AZURE_KEY_VAULT_URL
               valueFrom:
                 configMapKeyRef:
@@ -164,6 +171,41 @@ spec:
                   name: {{ .Values.dataPlatform.configMapName }}
                   key: APEXLOAD_AZURE_MESSAGING_ALLOWED_NAMESPACES
                   optional: true
+            - name: APEXLOAD_OTEL_ENABLED
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: APEXLOAD_OTEL_ENABLED
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: OTEL_EXPORTER_OTLP_ENDPOINT
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: OTEL_EXPORTER_OTLP_PROTOCOL
+            - name: OTEL_TRACES_SAMPLER
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: OTEL_TRACES_SAMPLER
+            - name: OTEL_TRACES_SAMPLER_ARG
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: OTEL_TRACES_SAMPLER_ARG
+            - name: APEXLOAD_OTEL_ACTION_SAMPLE_RATIO
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: APEXLOAD_OTEL_ACTION_SAMPLE_RATIO
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.dataPlatform.configMapName }}
+                  key: OTEL_RESOURCE_ATTRIBUTES
           volumeMounts:
             - name: tmp
               mountPath: /tmp

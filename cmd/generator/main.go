@@ -15,11 +15,13 @@ import (
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/brunoartifact"
+	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/debugserver"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
 	"github.com/jasonczech/apexload/pkg/runtimetuning"
+	"github.com/jasonczech/apexload/pkg/telemetry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
 	healthpb "google.golang.org/grpc/health/grpc_health_v1"
@@ -56,6 +58,27 @@ type healthStatusSetter interface {
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	logRuntimeTuning(runtimetuning.ApplyFromCgroup(os.Getenv))
+	build := buildinfo.Get()
+	tracingConfig, err := telemetry.LoadConfig(os.Getenv, "apexload-generator", build.Version)
+	if err != nil {
+		slog.Error("invalid OpenTelemetry tracing configuration", "err", err)
+		os.Exit(1)
+	}
+	tracingRuntime, err := telemetry.Configure(context.Background(), tracingConfig)
+	if err != nil {
+		slog.Error("failed to initialize OpenTelemetry tracing", "err", err)
+		os.Exit(1)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := tracingRuntime.Shutdown(shutdownCtx); err != nil {
+			slog.Error("failed to flush OpenTelemetry tracing", "err", err)
+		}
+	}()
+	if status := tracingRuntime.Status(); status.Ready {
+		slog.Info("OpenTelemetry tracing enabled", "service", status.ServiceName, "protocol", status.Protocol, "sampler", status.Sampler)
+	}
 
 	// Optional pprof debug server (disabled unless APEXLOAD_PPROF_ADDR is set).
 	if pprofSrv, err := debugserver.StartPprofFromEnv(os.Getenv); err != nil {

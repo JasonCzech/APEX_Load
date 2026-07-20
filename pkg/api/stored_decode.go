@@ -16,8 +16,10 @@ import (
 // current durable script as a compatibility fallback.
 type storedTestGroup struct {
 	TestGroup
-	RuntimeScript  *dsl.Script            `json:"runtime_script,omitempty"`
-	RedactionRules []engine.RedactionRule `json:"redaction_rules,omitempty"`
+	RuntimeScript     *dsl.Script            `json:"runtime_script,omitempty"`
+	BaseScript        *dsl.Script            `json:"base_script,omitempty"`
+	SharedDataSources []dsl.DataSource       `json:"shared_data_sources,omitempty"`
+	RedactionRules    []engine.RedactionRule `json:"redaction_rules,omitempty"`
 }
 
 func encodeStoredGroups(groups []TestGroup) any {
@@ -27,9 +29,11 @@ func encodeStoredGroups(groups []TestGroup) any {
 	stored := make([]storedTestGroup, 0, len(groups))
 	for _, group := range groups {
 		entry := storedTestGroup{
-			TestGroup:      group,
-			RuntimeScript:  cloneScriptForStoredGroup(group.script),
-			RedactionRules: cloneRedactionRules(group.redactionRules),
+			TestGroup:         group,
+			RuntimeScript:     cloneScriptForStoredGroup(group.script),
+			BaseScript:        cloneScriptForStoredGroup(group.baseScript),
+			SharedDataSources: cloneDataSources(group.sharedDataSources),
+			RedactionRules:    cloneRedactionRules(group.redactionRules),
 		}
 		stored = append(stored, entry)
 	}
@@ -67,6 +71,8 @@ func decodeStoredGroups(value any) []TestGroup {
 	for _, entry := range stored {
 		group := entry.TestGroup
 		group.script = cloneScriptForStoredGroup(entry.RuntimeScript)
+		group.baseScript = cloneScriptForStoredGroup(entry.BaseScript)
+		group.sharedDataSources = cloneDataSources(entry.SharedDataSources)
 		group.redactionRules = cloneRedactionRules(entry.RedactionRules)
 		groups = append(groups, group)
 	}
@@ -125,6 +131,47 @@ func decodeStoredGoalConfig(value any) *GoalConfig {
 		return nil
 	}
 	return cloneGoalConfig(&config)
+}
+
+func startAuthorizationForStorage(authorization *QueuedStartAuthorization) any {
+	if authorization == nil {
+		return nil
+	}
+	return cloneQueuedStartAuthorization(authorization)
+}
+
+func decodeStoredStartAuthorization(value any) *QueuedStartAuthorization {
+	if value == nil {
+		return nil
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var authorization QueuedStartAuthorization
+	if err := json.Unmarshal(data, &authorization); err != nil {
+		return nil
+	}
+	if authorization.CapacityShortfall == nil && authorization.ScriptShakeout == nil {
+		return nil
+	}
+	return cloneQueuedStartAuthorization(&authorization)
+}
+
+func cloneQueuedStartAuthorization(authorization *QueuedStartAuthorization) *QueuedStartAuthorization {
+	if authorization == nil {
+		return nil
+	}
+	cloned := *authorization
+	if authorization.CapacityShortfall != nil {
+		capacity := *authorization.CapacityShortfall
+		cloned.CapacityShortfall = &capacity
+	}
+	if authorization.ScriptShakeout != nil {
+		shakeout := *authorization.ScriptShakeout
+		cloned.ScriptShakeout = &shakeout
+	}
+	return &cloned
 }
 
 func decodeStoredExecutionPlanApproval(value any) *RunArchiveExecutionPlanApprovalSnapshot {

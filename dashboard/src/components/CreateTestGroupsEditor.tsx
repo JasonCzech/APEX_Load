@@ -1,6 +1,7 @@
 import { StoredScript, ScenarioDraftGroup, ScenarioMode, SystemInventoryGenerator } from '../types'
 import DurationField from './DurationField'
 import GroupPlacementEditor from './GroupPlacementEditor'
+import { clampVUsersForRole, maxVUsersForRole, OBSERVER_MAX_VUSERS } from './observerGroupModel'
 
 interface Props {
   scenarioMode: ScenarioMode
@@ -62,7 +63,14 @@ export default function CreateTestGroupsEditor({
               <span>Script</span>
               <select
                 value={group.scriptId}
-                onChange={(event) => onUpdateGroup(idx, { scriptId: event.target.value })}
+                onChange={(event) => {
+                  const scriptId = event.target.value
+                  const nextIsBrowser = isBrowserScript(scripts, scriptId)
+                  onUpdateGroup(idx, {
+                    scriptId,
+                    ...(group.role === 'observer' && !nextIsBrowser ? { role: 'load' as const } : {}),
+                  })
+                }}
                 required
               >
                 {scripts.length === 0 && <option value="">No scripts</option>}
@@ -78,9 +86,11 @@ export default function CreateTestGroupsEditor({
               <input
                 type="number"
                 value={group.vusers}
-                onChange={(event) => onUpdateGroup(idx, { vusers: Number(event.target.value) })}
+                onChange={(event) => onUpdateGroup(idx, {
+                  vusers: clampVUsersForRole(Number(event.target.value), group.role, 1),
+                })}
                 min={1}
-                max={100000}
+                max={maxVUsersForRole(group.role)}
                 required
               />
             </label>
@@ -124,7 +134,15 @@ export default function CreateTestGroupsEditor({
               <span>Role</span>
               <select
                 value={group.role || 'load'}
-                onChange={(event) => onUpdateGroup(idx, { role: event.target.value as ScenarioDraftGroup['role'] })}
+                onChange={(event) => {
+                  const role = event.target.value as ScenarioDraftGroup['role']
+                  onUpdateGroup(idx, {
+                    role,
+                    ...(role === 'observer' && group.vusers > OBSERVER_MAX_VUSERS
+                      ? { vusers: OBSERVER_MAX_VUSERS }
+                      : {}),
+                  })
+                }}
                 title="Observer canaries are small browser groups that continuously report Web Vitals and stay pinned during goal-based scaling."
               >
                 <option value="load">Load</option>
@@ -132,6 +150,7 @@ export default function CreateTestGroupsEditor({
                   Observer Canary{!isBrowserScript(scripts, group.scriptId) ? ' (browser scripts only)' : ''}
                 </option>
               </select>
+              {group.role === 'observer' && <small>Observer canaries are capped at {OBSERVER_MAX_VUSERS} VUsers.</small>}
             </label>
             <div className="group-placement-row">
               <GroupPlacementEditor
@@ -143,6 +162,7 @@ export default function CreateTestGroupsEditor({
                 availableLabels={availableLabels}
                 protocol={scripts.find(script => script.id === group.scriptId)?.protocol}
                 compact
+                scope="group"
               />
             </div>
             {groups.length > 1 && (

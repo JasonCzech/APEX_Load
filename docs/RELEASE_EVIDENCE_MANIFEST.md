@@ -20,6 +20,7 @@ This manifest links competitive claims to artifacts that can be reproduced for a
 | Evaluator one-pager | `docs/EVALUATOR_COMPETITIVE_ONE_PAGER.md` |
 | Browser benchmark artifact contract | `docs/BROWSER_BENCHMARK_ARTIFACTS.md` |
 | Harness overhead benchmark | `docs/BENCHMARK_HARNESS_OVERHEAD.md` |
+| Versioned local performance component evidence | `docs/PERFORMANCE_BENCHMARK_EVIDENCE.md` and `scripts/run-performance-evidence.sh` |
 | CI/CD integration | `docs/CICD_INTEGRATION.md` |
 | Competitive support matrix | `docs/COMPETITIVE_COMPARISON.md` |
 

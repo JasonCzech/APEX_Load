@@ -77,6 +77,7 @@ afterEach(() => setCachedDslActionCatalog(null))
 describe('dslProtocolFamily', () => {
   it('collapses jms provider protocols onto the jms family', () => {
     expect(dslProtocolFamily('jms-solace')).toBe('jms')
+    expect(dslProtocolFamily('jms-servicebus')).toBe('jms')
     expect(dslProtocolFamily('jms-ibmmq')).toBe('jms')
     expect(dslProtocolFamily('http')).toBe('http')
   })

@@ -1,8 +1,16 @@
-import { GeneratorAssignmentSettings, ScenarioDraft, ScenarioDraftGroup, StoredScript, TestSummary } from '../types'
+import {
+  GeneratorAssignmentSettings,
+  RuntimeSettingsOverride,
+  ScenarioDraft,
+  ScenarioDraftGroup,
+  ScenarioRuntimeSettingsDraft,
+  StoredScript,
+  TestSummary,
+} from '../types'
 
 export type ScenarioRuntimeSettings = ScenarioDraft['runtimeSettings']
 export type ScenarioDraftState = ScenarioDraft
-export type ScenarioDraftField = keyof Omit<ScenarioDraftState, 'groups' | 'goalConfig' | 'runtimeSettings'>
+export type ScenarioDraftField = keyof Omit<ScenarioDraftState, 'groups' | 'goalConfig' | 'runtimeSettings' | 'revisionContext'>
 export type ScenarioGoalConfigField = keyof ScenarioDraftState['goalConfig']
 export type ScenarioRuntimeSettingField = keyof ScenarioRuntimeSettings
 
@@ -31,6 +39,167 @@ function cloneGroupAssignment(assignment?: GeneratorAssignmentSettings) {
   return cloneGeneratorAssignment(assignment)
 }
 
+function cloneValue<T>(value: T | undefined): T | undefined {
+  return value === undefined ? undefined : structuredClone(value)
+}
+
+function compactBrowserFromCanonical(settings: ScenarioRuntimeSettingsDraft): ScenarioRuntimeSettingsDraft['browser'] {
+  const source = settings.browser_config !== undefined ? settings.browser_config : settings.browser
+  if (!source) return undefined
+  const browser = {
+    headless: source.headless,
+    device_profile: source.device_profile,
+    touch_mode: source.touch_mode,
+    orientation: source.orientation,
+  }
+  return Object.values(browser).some(value => value !== undefined && value !== '') ? browser : undefined
+}
+
+/** Hydrate compact controls from canonical sections, which win over legacy aliases. */
+function hydrateCanonicalRuntimeControls(settings: ScenarioRuntimeSettingsDraft): ScenarioRuntimeSettingsDraft {
+  const hasRunLogic = settings.run_logic !== undefined
+  const hasLog = settings.log !== undefined
+  const hasBrowserConfig = settings.browser_config !== undefined
+  return {
+    ...settings,
+    iterations: hasRunLogic ? settings.run_logic?.iterations : settings.iterations,
+    auto_transactions: hasRunLogic ? (settings.run_logic?.auto_transactions ?? '') : (settings.auto_transactions ?? ''),
+    log_level: hasLog ? (settings.log?.level ?? '') : (settings.log_level ?? ''),
+    browser: hasBrowserConfig ? compactBrowserFromCanonical(settings) : settings.browser,
+  }
+}
+
+function cloneRuntimeSettingsDraft(settings?: ScenarioRuntimeSettingsDraft): ScenarioRuntimeSettingsDraft {
+  return hydrateCanonicalRuntimeControls({
+    ...cloneValue(settings),
+    log_level: settings?.log_level ?? '',
+    auto_transactions: settings?.auto_transactions ?? '',
+  })
+}
+
+function buildRuntimeSettingsDraft(settings?: RuntimeSettingsOverride): ScenarioRuntimeSettingsDraft {
+  const errorHandling = settings?.error_handling
+  return hydrateCanonicalRuntimeControls({
+    iterations: settings?.iterations,
+    pacing: cloneValue(settings?.pacing),
+    think_time: cloneValue(settings?.think_time),
+    browser: cloneValue(settings?.browser),
+    log_level: settings?.log_level ?? '',
+    auto_transactions: settings?.auto_transactions ?? '',
+    // The section's presence is meaningful: an explicit false overrides a
+    // script-level true, while an absent section inherits the script/default.
+    continue_on_error: errorHandling === undefined ? undefined : (errorHandling.continue_on_error ?? false),
+    snapshot_on_error: errorHandling === undefined ? undefined : (errorHandling.snapshot_on_error ?? false),
+    max_retries: errorHandling?.max_retries,
+    retry_delay_ms: errorHandling?.retry_delay_ms,
+    retry_backoff: errorHandling?.retry_backoff,
+    log: cloneValue(settings?.log),
+    run_logic: cloneValue(settings?.run_logic),
+    http: cloneValue(settings?.http),
+    web_runtime: cloneValue(settings?.web_runtime),
+    browser_config: cloneValue(settings?.browser_config),
+    base_url: settings?.base_url,
+    env: cloneValue(settings?.env),
+    redaction_rules: cloneValue(settings?.redaction_rules),
+  })
+}
+
+function withoutUndefinedValues<T extends object>(value: T): T | undefined {
+  const entries = Object.entries(value).filter(([, fieldValue]) => fieldValue !== undefined && fieldValue !== '')
+  return entries.length > 0 ? Object.fromEntries(entries) as T : undefined
+}
+
+function updateRuntimeSetting(
+  settings: ScenarioRuntimeSettingsDraft,
+  field: ScenarioRuntimeSettingField,
+  value: ScenarioRuntimeSettings[ScenarioRuntimeSettingField],
+): ScenarioRuntimeSettingsDraft {
+  const next: ScenarioRuntimeSettingsDraft = { ...settings, [field]: value }
+  if (field === 'iterations' && settings.run_logic !== undefined) {
+    next.run_logic = withoutUndefinedValues({ ...settings.run_logic, iterations: value as number | undefined })
+  }
+  if (field === 'auto_transactions' && settings.run_logic !== undefined) {
+    next.run_logic = withoutUndefinedValues({
+      ...settings.run_logic,
+      auto_transactions: (value as string) || undefined,
+    })
+  }
+  if (field === 'log_level' && settings.log !== undefined) {
+    next.log = withoutUndefinedValues({ ...settings.log, level: (value as string) || undefined })
+  }
+  if (field === 'browser' && settings.browser_config !== undefined) {
+    const browser = value as ScenarioRuntimeSettingsDraft['browser']
+    next.browser_config = withoutUndefinedValues({
+      ...settings.browser_config,
+      headless: browser?.headless,
+      device_profile: browser?.device_profile,
+      touch_mode: browser?.touch_mode,
+      orientation: browser?.orientation,
+    })
+  }
+  return next
+}
+
+function cloneScenarioGroup(group: ScenarioDraftGroup): ScenarioDraftGroup {
+  const runtimeSettings = group.runtimeSettings ? cloneRuntimeSettingsDraft(group.runtimeSettings) : undefined
+  return {
+    ...group,
+    stages: cloneValue(group.stages),
+    iterations: runtimeSettings?.run_logic !== undefined ? runtimeSettings.run_logic.iterations : group.iterations,
+    runtimeSettings,
+    assignment: cloneGroupAssignment(group.assignment),
+  }
+}
+
+function updateScenarioGroup(group: ScenarioDraftGroup, patch: Partial<ScenarioDraftGroup>): ScenarioDraftGroup {
+  const replacesSourceScript = patch.scriptId !== undefined
+    && patch.scriptId !== group.scriptId
+    && group.revisionSourceGroupIndex !== undefined
+  if (replacesSourceScript) {
+    return {
+      ...group,
+      ...patch,
+      revisionSourceGroupIndex: undefined,
+      revisionNewGroup: true,
+      // Masked credentials and canonical runtime fields belong to the old
+      // source script identity. A replacement starts clean unless the same
+      // action explicitly supplies a new profile.
+      runtimeSettings: patch.runtimeSettings,
+      iterations: patch.iterations,
+      iterationPayloadSource: undefined,
+    }
+  }
+  if (!Object.prototype.hasOwnProperty.call(patch, 'iterations')) {
+    return { ...group, ...patch }
+  }
+
+  const iterations = patch.iterations
+  const runtimeSettings = group.runtimeSettings
+  const hasCanonicalRuntimeIteration = runtimeSettings?.run_logic?.iterations !== undefined
+  const hasLegacyRuntimeIteration = runtimeSettings?.run_logic === undefined && runtimeSettings?.iterations !== undefined
+  const runtimeOwnsIterations = group.iterationPayloadSource === 'runtime'
+    || hasCanonicalRuntimeIteration
+    || hasLegacyRuntimeIteration
+  if (!runtimeOwnsIterations) {
+    return { ...group, ...patch }
+  }
+
+  return {
+    ...group,
+    ...patch,
+    iterationPayloadSource: 'runtime',
+    runtimeSettings: {
+      log_level: runtimeSettings?.log_level ?? '',
+      auto_transactions: runtimeSettings?.auto_transactions ?? '',
+      ...runtimeSettings,
+      // Any edit promotes the legacy alias into the canonical section. Clearing
+      // removes both representations so a stale legacy value cannot survive.
+      iterations: undefined,
+      run_logic: withoutUndefinedValues({ ...runtimeSettings?.run_logic, iterations }),
+    },
+  }
+}
+
 export function buildDefaultScenarioGroup(scripts: StoredScript[]): ScenarioDraftGroup {
   return {
     name: '',
@@ -54,55 +223,56 @@ export function buildInitialScenarioDraft(initialScenario: ScenarioDraft | undef
     resourceBaseline: Boolean(initialScenario?.resourceBaseline),
     assignment: cloneGeneratorAssignment(initialScenario?.assignment),
     goalConfig: {
-      target_average_tps: initialScenario?.goalConfig?.target_average_tps,
-      p95_latency_ms: initialScenario?.goalConfig?.p95_latency_ms,
-      max_error_pct: initialScenario?.goalConfig?.max_error_pct,
-      max_avg_server_processing_ms: initialScenario?.goalConfig?.max_avg_server_processing_ms,
-      max_avg_transfer_ms: initialScenario?.goalConfig?.max_avg_transfer_ms,
-      max_error_count: initialScenario?.goalConfig?.max_error_count,
-      min_vusers: initialScenario?.goalConfig?.min_vusers,
-      max_vusers: initialScenario?.goalConfig?.max_vusers,
-      stop_on_sla_breach: initialScenario?.goalConfig?.stop_on_sla_breach || false,
-      stop_on_max_errors: initialScenario?.goalConfig?.stop_on_max_errors || false,
+      ...initialScenario?.goalConfig,
+      stop_on_sla_breach: initialScenario?.goalConfig?.stop_on_sla_breach ?? false,
+      stop_on_max_errors: initialScenario?.goalConfig?.stop_on_max_errors ?? false,
       sla_breach_window: initialScenario?.goalConfig?.sla_breach_window || '30s',
     },
-    runtimeSettings: {
-      iterations: initialScenario?.runtimeSettings?.iterations,
-      pacing: initialScenario?.runtimeSettings?.pacing ? { ...initialScenario.runtimeSettings.pacing } : undefined,
-      think_time: initialScenario?.runtimeSettings?.think_time ? { ...initialScenario.runtimeSettings.think_time } : undefined,
-      browser: initialScenario?.runtimeSettings?.browser ? { ...initialScenario.runtimeSettings.browser } : undefined,
-      log_level: initialScenario?.runtimeSettings?.log_level || '',
-      auto_transactions: initialScenario?.runtimeSettings?.auto_transactions || '',
-      continue_on_error: Boolean(initialScenario?.runtimeSettings?.continue_on_error),
-      snapshot_on_error: initialScenario?.runtimeSettings?.snapshot_on_error || false,
-      // Pass-through advanced sections (web_runtime carries IP spoofing / source_ips):
-      // preserve them so an API-set section survives a wizard edit instead of being dropped.
-      max_retries: initialScenario?.runtimeSettings?.max_retries,
-      retry_delay_ms: initialScenario?.runtimeSettings?.retry_delay_ms,
-      retry_backoff: initialScenario?.runtimeSettings?.retry_backoff,
-      log: initialScenario?.runtimeSettings?.log,
-      run_logic: initialScenario?.runtimeSettings?.run_logic,
-      http: initialScenario?.runtimeSettings?.http,
-      web_runtime: initialScenario?.runtimeSettings?.web_runtime,
-      browser_config: initialScenario?.runtimeSettings?.browser_config,
-    },
-    groups: initialScenario?.groups.length ? initialScenario.groups : [buildDefaultScenarioGroup(scripts)],
+    runtimeSettings: cloneRuntimeSettingsDraft(initialScenario?.runtimeSettings),
+    groups: initialScenario?.groups.length
+      ? initialScenario.groups.map(cloneScenarioGroup)
+      : [buildDefaultScenarioGroup(scripts)],
+    revisionContext: initialScenario?.revisionContext
+      ? {
+        ...initialScenario.revisionContext,
+        dataPools: initialScenario.revisionContext.dataPools.map(binding => ({ ...binding })),
+      }
+      : undefined,
   }
 }
 
 export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
   const groups = test.groups?.length
-    ? test.groups.map((group) => ({
-      name: group.name,
-      scriptId: group.script_id,
-      role: group.role,
-      vusers: group.vusers,
-      rampUp: group.ramp_up || '',
-      rampDown: group.ramp_down || '',
-      iterations: group.iterations,
-      initialization: group.initialization || 'at_runtime',
-      assignment: cloneGroupAssignment(group.assignment),
-    }))
+    ? test.groups.map((group, groupIndex) => {
+      const runtimeSettings = group.runtime_settings ? buildRuntimeSettingsDraft(group.runtime_settings) : undefined
+      const runtimeIteration = runtimeSettings?.run_logic !== undefined
+        ? runtimeSettings.run_logic.iterations
+        : runtimeSettings?.iterations
+      const explicitIteration = runtimeIteration !== undefined
+        ? runtimeIteration
+        : (group.iteration_override_known ? group.iteration_override : undefined)
+      const iterationPayloadSource = runtimeIteration !== undefined
+        ? 'runtime' as const
+        : (explicitIteration !== undefined && explicitIteration > 0 ? 'top_level' as const : undefined)
+      return {
+        name: group.name,
+        scriptId: group.script_id,
+        revisionSourceGroupIndex: groupIndex,
+        ...(group.role ? { role: group.role } : {}),
+        vusers: group.vusers,
+        rampUp: group.ramp_up || '',
+        rampDown: group.ramp_down || '',
+        ...(group.stages ? { stages: cloneValue(group.stages) } : {}),
+        // Never turn the effective summary value into a group override. New
+        // snapshots identify group-owned values explicitly; legacy snapshots
+        // remain unknown and the API fails closed if a root edit is ambiguous.
+        iterations: explicitIteration !== undefined && explicitIteration > 0 ? explicitIteration : undefined,
+        ...(iterationPayloadSource ? { iterationPayloadSource } : {}),
+        initialization: group.initialization || 'at_runtime',
+        ...(runtimeSettings ? { runtimeSettings } : {}),
+        assignment: cloneGroupAssignment(group.assignment),
+      }
+    })
     : [{
       name: '',
       scriptId: test.script_id || '',
@@ -122,39 +292,23 @@ export function buildScenarioDraftFromTest(test: TestSummary): ScenarioDraft {
     resourceBaseline: Boolean(test.resource_baseline),
     assignment: cloneGeneratorAssignment(test.assignment),
     goalConfig: {
-      target_average_tps: test.goal_config?.target_average_tps,
-      p95_latency_ms: test.goal_config?.p95_latency_ms,
-      max_error_pct: test.goal_config?.max_error_pct,
-      max_avg_server_processing_ms: test.goal_config?.max_avg_server_processing_ms,
-      max_avg_transfer_ms: test.goal_config?.max_avg_transfer_ms,
-      max_error_count: test.goal_config?.max_error_count,
-      min_vusers: test.goal_config?.min_vusers,
-      max_vusers: test.goal_config?.max_vusers,
-      stop_on_sla_breach: test.goal_config?.stop_on_sla_breach,
-      stop_on_max_errors: test.goal_config?.stop_on_max_errors,
+      ...test.goal_config,
       sla_breach_window: test.goal_config?.sla_breach_window || '',
     },
-    runtimeSettings: {
-      iterations: test.runtime_settings?.iterations,
-      pacing: test.runtime_settings?.pacing ? { ...test.runtime_settings.pacing } : undefined,
-      think_time: test.runtime_settings?.think_time ? { ...test.runtime_settings.think_time } : undefined,
-      browser: test.runtime_settings?.browser ? { ...test.runtime_settings.browser } : undefined,
-      log_level: test.runtime_settings?.log_level || '',
-      auto_transactions: test.runtime_settings?.auto_transactions || '',
-      continue_on_error: Boolean(test.runtime_settings?.error_handling?.continue_on_error),
-      snapshot_on_error: Boolean(test.runtime_settings?.error_handling?.snapshot_on_error),
-      // Pass-through advanced sections (web_runtime carries IP spoofing / source_ips):
-      // preserve them so reloading a test for edit keeps its configured values.
-      max_retries: test.runtime_settings?.error_handling?.max_retries,
-      retry_delay_ms: test.runtime_settings?.error_handling?.retry_delay_ms,
-      retry_backoff: test.runtime_settings?.error_handling?.retry_backoff,
-      log: test.runtime_settings?.log,
-      run_logic: test.runtime_settings?.run_logic,
-      http: test.runtime_settings?.http,
-      web_runtime: test.runtime_settings?.web_runtime,
-      browser_config: test.runtime_settings?.browser_config,
-    },
+    runtimeSettings: buildRuntimeSettingsDraft(test.runtime_settings),
     groups,
+    revisionContext: {
+      sourceTestId: test.id,
+      applicationId: test.application_id,
+      releaseId: test.release_id,
+      scenarioId: test.scenario_id,
+      projectId: test.project_id,
+      folderId: test.folder_id,
+      // Historical queued runs may retain access-mode labels whose write/consume
+      // semantics never existed. Revisions preserve the immutable row snapshot,
+      // but submit the only executable contract supported today.
+      dataPools: (test.data_pools || []).map(binding => ({ ...binding, access_mode: 'read_only' as const })),
+    },
   }
 }
 
@@ -176,22 +330,21 @@ export function scenarioDraftReducer(state: ScenarioDraftState, action: Scenario
     case 'setRuntimeSettingField':
       return {
         ...state,
-        runtimeSettings: {
-          ...state.runtimeSettings,
-          [action.field]: action.value,
-        },
+        runtimeSettings: updateRuntimeSetting(state.runtimeSettings, action.field, action.value),
       }
     case 'updateGroup':
       return {
         ...state,
         groups: state.groups.map((group, index) => (
-          index === action.index ? { ...group, ...action.patch } : group
+          index === action.index ? updateScenarioGroup(group, action.patch) : group
         )),
       }
     case 'addGroup':
       return {
         ...state,
-        groups: [...state.groups, action.group],
+        groups: [...state.groups, state.revisionContext
+          ? { ...action.group, revisionSourceGroupIndex: undefined, revisionNewGroup: true }
+          : action.group],
       }
     case 'removeGroup':
       if (state.groups.length <= 1) {

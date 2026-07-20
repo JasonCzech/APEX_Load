@@ -60,7 +60,7 @@ Known limits for the initial primitive:
 
 - Region buckets use requested assignment metadata, not finalized per-generator placement.
 - Archive bytes are computed from local archive paths visible to the controller.
-- Cadence capture is controller-local today; multi-controller deployments should run it from one active controller or pair it with an external scheduler until a durable usage-snapshot lease is added.
+- The automatic server cadence runs only on the admitted execution leader and reloads the latest durable global snapshot timestamp after leadership acquisition. It does not have a separate usage-specific transactional lease or unique time-bucket key, so manual/external captures may coexist and a production AKS failover exercise must still check cadence evidence for the deployment's required duplicate tolerance.
 
 ## Audit Extensions
 

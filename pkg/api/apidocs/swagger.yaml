@@ -1844,6 +1844,11 @@ paths:
                             type: string
                           ramp_up:
                             type: string
+                          revision_new_group:
+                            type: boolean
+                          revision_source_group_index:
+                            type: integer
+                            format: int64
                           role:
                             type: string
                           runtime_settings:
@@ -7922,6 +7927,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "409":
+          description: Conflict
           content:
             application/json:
               schema:
@@ -14441,6 +14452,12 @@ paths:
                                   type: object
                                   description: 'Go type: time.Duration'
                                   additionalProperties: true
+                                data_pools:
+                                  type: array
+                                  items:
+                                    type: object
+                                    description: 'Go type: storage.ScenarioDataPoolBinding'
+                                    additionalProperties: true
                                 duration:
                                   type: string
                                 duration_ns:
@@ -14537,6 +14554,10 @@ paths:
                                     type: object
                                     description: 'Go type: TestSparklinePoint'
                                     additionalProperties: true
+                                start_authorization:
+                                  type: object
+                                  description: 'Go type: QueuedStartAuthorization'
+                                  additionalProperties: true
                                 start_delay:
                                   type: string
                                 started_at:
@@ -20534,6 +20555,11 @@ paths:
                             type: string
                           ramp_up:
                             type: string
+                          revision_new_group:
+                            type: boolean
+                          revision_source_group_index:
+                            type: integer
+                            format: int64
                           role:
                             type: string
                           runtime_settings:
@@ -20618,6 +20644,8 @@ paths:
                       type: boolean
                     resource_baseline:
                       type: boolean
+                    revision_source_test_id:
+                      type: string
                     runtime_settings:
                       type: object
                       properties:
@@ -21037,6 +21065,12 @@ paths:
                         type: object
                         description: 'Go type: time.Duration'
                         additionalProperties: true
+                      data_pools:
+                        type: array
+                        items:
+                          type: object
+                          description: 'Go type: storage.ScenarioDataPoolBinding'
+                          additionalProperties: true
                       duration:
                         type: string
                       duration_ns:
@@ -21194,6 +21228,11 @@ paths:
                                   type: boolean
                             initialization:
                               type: string
+                            iteration_override:
+                              type: integer
+                              format: int64
+                            iteration_override_known:
+                              type: boolean
                             iterations:
                               type: integer
                               format: int64
@@ -22171,6 +22210,43 @@ paths:
                             tps:
                               type: number
                               format: double
+                      start_authorization:
+                        type: object
+                        properties:
+                          capacity_shortfall:
+                            type: object
+                            properties:
+                              approved_at:
+                                type: string
+                                format: date-time
+                              approved_by_display_name:
+                                type: string
+                              approved_by_subject:
+                                type: string
+                              available_generators:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              shortfall_generators:
+                                type: integer
+                                format: int64
+                              total_vusers:
+                                type: integer
+                                format: int64
+                          script_shakeout:
+                            type: object
+                            properties:
+                              approved_at:
+                                type: string
+                                format: date-time
+                              approved_by_display_name:
+                                type: string
+                              approved_by_subject:
+                                type: string
+                              review_evidence_sha256:
+                                type: string
                       start_delay:
                         type: string
                       started_at:
@@ -22615,6 +22691,12 @@ paths:
                         type: object
                         description: 'Go type: time.Duration'
                         additionalProperties: true
+                      data_pools:
+                        type: array
+                        items:
+                          type: object
+                          description: 'Go type: storage.ScenarioDataPoolBinding'
+                          additionalProperties: true
                       duration:
                         type: string
                       duration_ns:
@@ -22772,6 +22854,11 @@ paths:
                                   type: boolean
                             initialization:
                               type: string
+                            iteration_override:
+                              type: integer
+                              format: int64
+                            iteration_override_known:
+                              type: boolean
                             iterations:
                               type: integer
                               format: int64
@@ -23749,6 +23836,43 @@ paths:
                             tps:
                               type: number
                               format: double
+                      start_authorization:
+                        type: object
+                        properties:
+                          capacity_shortfall:
+                            type: object
+                            properties:
+                              approved_at:
+                                type: string
+                                format: date-time
+                              approved_by_display_name:
+                                type: string
+                              approved_by_subject:
+                                type: string
+                              available_generators:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              shortfall_generators:
+                                type: integer
+                                format: int64
+                              total_vusers:
+                                type: integer
+                                format: int64
+                          script_shakeout:
+                            type: object
+                            properties:
+                              approved_at:
+                                type: string
+                                format: date-time
+                              approved_by_display_name:
+                                type: string
+                              approved_by_subject:
+                                type: string
+                              review_evidence_sha256:
+                                type: string
                       start_delay:
                         type: string
                       started_at:
@@ -24197,6 +24321,12 @@ paths:
                         type: object
                         description: 'Go type: time.Duration'
                         additionalProperties: true
+                      data_pools:
+                        type: array
+                        items:
+                          type: object
+                          description: 'Go type: storage.ScenarioDataPoolBinding'
+                          additionalProperties: true
                       duration:
                         type: string
                       duration_ns:
@@ -24354,6 +24484,11 @@ paths:
                                   type: boolean
                             initialization:
                               type: string
+                            iteration_override:
+                              type: integer
+                              format: int64
+                            iteration_override_known:
+                              type: boolean
                             iterations:
                               type: integer
                               format: int64
@@ -25331,6 +25466,43 @@ paths:
                             tps:
                               type: number
                               format: double
+                      start_authorization:
+                        type: object
+                        properties:
+                          capacity_shortfall:
+                            type: object
+                            properties:
+                              approved_at:
+                                type: string
+                                format: date-time
+                              approved_by_display_name:
+                                type: string
+                              approved_by_subject:
+                                type: string
+                              available_generators:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              shortfall_generators:
+                                type: integer
+                                format: int64
+                              total_vusers:
+                                type: integer
+                                format: int64
+                          script_shakeout:
+                            type: object
+                            properties:
+                              approved_at:
+                                type: string
+                                format: date-time
+                              approved_by_display_name:
+                                type: string
+                              approved_by_subject:
+                                type: string
+                              review_evidence_sha256:
+                                type: string
                       start_delay:
                         type: string
                       started_at:
@@ -25785,6 +25957,12 @@ paths:
                         type: object
                         description: 'Go type: time.Duration'
                         additionalProperties: true
+                      data_pools:
+                        type: array
+                        items:
+                          type: object
+                          description: 'Go type: storage.ScenarioDataPoolBinding'
+                          additionalProperties: true
                       duration:
                         type: string
                       duration_ns:
@@ -25942,6 +26120,11 @@ paths:
                                   type: boolean
                             initialization:
                               type: string
+                            iteration_override:
+                              type: integer
+                              format: int64
+                            iteration_override_known:
+                              type: boolean
                             iterations:
                               type: integer
                               format: int64
@@ -26919,6 +27102,43 @@ paths:
                             tps:
                               type: number
                               format: double
+                      start_authorization:
+                        type: object
+                        properties:
+                          capacity_shortfall:
+                            type: object
+                            properties:
+                              approved_at:
+                                type: string
+                                format: date-time
+                              approved_by_display_name:
+                                type: string
+                              approved_by_subject:
+                                type: string
+                              available_generators:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              shortfall_generators:
+                                type: integer
+                                format: int64
+                              total_vusers:
+                                type: integer
+                                format: int64
+                          script_shakeout:
+                            type: object
+                            properties:
+                              approved_at:
+                                type: string
+                                format: date-time
+                              approved_by_display_name:
+                                type: string
+                              approved_by_subject:
+                                type: string
+                              review_evidence_sha256:
+                                type: string
                       start_delay:
                         type: string
                       started_at:
@@ -27373,6 +27593,12 @@ paths:
                         type: object
                         description: 'Go type: time.Duration'
                         additionalProperties: true
+                      data_pools:
+                        type: array
+                        items:
+                          type: object
+                          description: 'Go type: storage.ScenarioDataPoolBinding'
+                          additionalProperties: true
                       duration:
                         type: string
                       duration_ns:
@@ -27530,6 +27756,11 @@ paths:
                                   type: boolean
                             initialization:
                               type: string
+                            iteration_override:
+                              type: integer
+                              format: int64
+                            iteration_override_known:
+                              type: boolean
                             iterations:
                               type: integer
                               format: int64
@@ -28507,6 +28738,43 @@ paths:
                             tps:
                               type: number
                               format: double
+                      start_authorization:
+                        type: object
+                        properties:
+                          capacity_shortfall:
+                            type: object
+                            properties:
+                              approved_at:
+                                type: string
+                                format: date-time
+                              approved_by_display_name:
+                                type: string
+                              approved_by_subject:
+                                type: string
+                              available_generators:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              shortfall_generators:
+                                type: integer
+                                format: int64
+                              total_vusers:
+                                type: integer
+                                format: int64
+                          script_shakeout:
+                            type: object
+                            properties:
+                              approved_at:
+                                type: string
+                                format: date-time
+                              approved_by_display_name:
+                                type: string
+                              approved_by_subject:
+                                type: string
+                              review_evidence_sha256:
+                                type: string
                       start_delay:
                         type: string
                       started_at:
@@ -28961,6 +29229,12 @@ paths:
                         type: object
                         description: 'Go type: time.Duration'
                         additionalProperties: true
+                      data_pools:
+                        type: array
+                        items:
+                          type: object
+                          description: 'Go type: storage.ScenarioDataPoolBinding'
+                          additionalProperties: true
                       duration:
                         type: string
                       duration_ns:
@@ -29118,6 +29392,11 @@ paths:
                                   type: boolean
                             initialization:
                               type: string
+                            iteration_override:
+                              type: integer
+                              format: int64
+                            iteration_override_known:
+                              type: boolean
                             iterations:
                               type: integer
                               format: int64
@@ -30095,6 +30374,43 @@ paths:
                             tps:
                               type: number
                               format: double
+                      start_authorization:
+                        type: object
+                        properties:
+                          capacity_shortfall:
+                            type: object
+                            properties:
+                              approved_at:
+                                type: string
+                                format: date-time
+                              approved_by_display_name:
+                                type: string
+                              approved_by_subject:
+                                type: string
+                              available_generators:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              shortfall_generators:
+                                type: integer
+                                format: int64
+                              total_vusers:
+                                type: integer
+                                format: int64
+                          script_shakeout:
+                            type: object
+                            properties:
+                              approved_at:
+                                type: string
+                                format: date-time
+                              approved_by_display_name:
+                                type: string
+                              approved_by_subject:
+                                type: string
+                              review_evidence_sha256:
+                                type: string
                       start_delay:
                         type: string
                       started_at:
@@ -30549,6 +30865,12 @@ paths:
                         type: object
                         description: 'Go type: time.Duration'
                         additionalProperties: true
+                      data_pools:
+                        type: array
+                        items:
+                          type: object
+                          description: 'Go type: storage.ScenarioDataPoolBinding'
+                          additionalProperties: true
                       duration:
                         type: string
                       duration_ns:
@@ -30706,6 +31028,11 @@ paths:
                                   type: boolean
                             initialization:
                               type: string
+                            iteration_override:
+                              type: integer
+                              format: int64
+                            iteration_override_known:
+                              type: boolean
                             iterations:
                               type: integer
                               format: int64
@@ -31683,6 +32010,43 @@ paths:
                             tps:
                               type: number
                               format: double
+                      start_authorization:
+                        type: object
+                        properties:
+                          capacity_shortfall:
+                            type: object
+                            properties:
+                              approved_at:
+                                type: string
+                                format: date-time
+                              approved_by_display_name:
+                                type: string
+                              approved_by_subject:
+                                type: string
+                              available_generators:
+                                type: integer
+                                format: int64
+                              recommended_generators:
+                                type: integer
+                                format: int64
+                              shortfall_generators:
+                                type: integer
+                                format: int64
+                              total_vusers:
+                                type: integer
+                                format: int64
+                          script_shakeout:
+                            type: object
+                            properties:
+                              approved_at:
+                                type: string
+                                format: date-time
+                              approved_by_display_name:
+                                type: string
+                              approved_by_subject:
+                                type: string
+                              review_evidence_sha256:
+                                type: string
                       start_delay:
                         type: string
                       started_at:
@@ -33061,6 +33425,11 @@ paths:
                         type: string
                       ramp_up:
                         type: string
+                      revision_new_group:
+                        type: boolean
+                      revision_source_group_index:
+                        type: integer
+                        format: int64
                       role:
                         type: string
                       runtime_settings:
@@ -34139,6 +34508,11 @@ paths:
                         type: string
                       ramp_up:
                         type: string
+                      revision_new_group:
+                        type: boolean
+                      revision_source_group_index:
+                        type: integer
+                        format: int64
                       role:
                         type: string
                       runtime_settings:
@@ -36771,6 +37145,11 @@ paths:
                               type: string
                             ramp_up:
                               type: string
+                            revision_new_group:
+                              type: boolean
+                            revision_source_group_index:
+                              type: integer
+                              format: int64
                             role:
                               type: string
                             runtime_settings:
@@ -37098,6 +37477,11 @@ paths:
                         type: string
                       ramp_up:
                         type: string
+                      revision_new_group:
+                        type: boolean
+                      revision_source_group_index:
+                        type: integer
+                        format: int64
                       role:
                         type: string
                       runtime_settings:
@@ -47614,6 +47998,11 @@ paths:
                         type: string
                       ramp_up:
                         type: string
+                      revision_new_group:
+                        type: boolean
+                      revision_source_group_index:
+                        type: integer
+                        format: int64
                       role:
                         type: string
                       runtime_settings:
@@ -47705,6 +48094,8 @@ paths:
                   type: boolean
                 resource_baseline:
                   type: boolean
+                revision_source_test_id:
+                  type: string
                 runtime_settings:
                   type: object
                   properties:
@@ -48025,6 +48416,12 @@ paths:
                     type: object
                     description: 'Go type: time.Duration'
                     additionalProperties: true
+                  data_pools:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: storage.ScenarioDataPoolBinding'
+                      additionalProperties: true
                   duration:
                     type: string
                   duration_ns:
@@ -48182,6 +48579,11 @@ paths:
                               type: boolean
                         initialization:
                           type: string
+                        iteration_override:
+                          type: integer
+                          format: int64
+                        iteration_override_known:
+                          type: boolean
                         iterations:
                           type: integer
                           format: int64
@@ -49286,6 +49688,43 @@ paths:
                         tps:
                           type: number
                           format: double
+                  start_authorization:
+                    type: object
+                    properties:
+                      capacity_shortfall:
+                        type: object
+                        properties:
+                          approved_at:
+                            type: string
+                            format: date-time
+                          approved_by_display_name:
+                            type: string
+                          approved_by_subject:
+                            type: string
+                          available_generators:
+                            type: integer
+                            format: int64
+                          recommended_generators:
+                            type: integer
+                            format: int64
+                          shortfall_generators:
+                            type: integer
+                            format: int64
+                          total_vusers:
+                            type: integer
+                            format: int64
+                      script_shakeout:
+                        type: object
+                        properties:
+                          approved_at:
+                            type: string
+                            format: date-time
+                          approved_by_display_name:
+                            type: string
+                          approved_by_subject:
+                            type: string
+                          review_evidence_sha256:
+                            type: string
                   start_delay:
                     type: string
                   started_at:
@@ -49667,6 +50106,12 @@ paths:
                     type: object
                     description: 'Go type: time.Duration'
                     additionalProperties: true
+                  data_pools:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: storage.ScenarioDataPoolBinding'
+                      additionalProperties: true
                   duration:
                     type: string
                   duration_ns:
@@ -49824,6 +50269,11 @@ paths:
                               type: boolean
                         initialization:
                           type: string
+                        iteration_override:
+                          type: integer
+                          format: int64
+                        iteration_override_known:
+                          type: boolean
                         iterations:
                           type: integer
                           format: int64
@@ -50928,6 +51378,43 @@ paths:
                         tps:
                           type: number
                           format: double
+                  start_authorization:
+                    type: object
+                    properties:
+                      capacity_shortfall:
+                        type: object
+                        properties:
+                          approved_at:
+                            type: string
+                            format: date-time
+                          approved_by_display_name:
+                            type: string
+                          approved_by_subject:
+                            type: string
+                          available_generators:
+                            type: integer
+                            format: int64
+                          recommended_generators:
+                            type: integer
+                            format: int64
+                          shortfall_generators:
+                            type: integer
+                            format: int64
+                          total_vusers:
+                            type: integer
+                            format: int64
+                      script_shakeout:
+                        type: object
+                        properties:
+                          approved_at:
+                            type: string
+                            format: date-time
+                          approved_by_display_name:
+                            type: string
+                          approved_by_subject:
+                            type: string
+                          review_evidence_sha256:
+                            type: string
                   start_delay:
                     type: string
                   started_at:
@@ -52251,6 +52738,11 @@ paths:
                                   type: boolean
                             initialization:
                               type: string
+                            iteration_override:
+                              type: integer
+                              format: int64
+                            iteration_override_known:
+                              type: boolean
                             iterations:
                               type: integer
                               format: int64
@@ -53234,6 +53726,11 @@ paths:
                                   additionalProperties: true
                                 initialization:
                                   type: string
+                                iteration_override:
+                                  type: integer
+                                  format: int64
+                                iteration_override_known:
+                                  type: boolean
                                 iterations:
                                   type: integer
                                   format: int64
@@ -54930,6 +55427,12 @@ paths:
                     type: object
                     description: 'Go type: time.Duration'
                     additionalProperties: true
+                  data_pools:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: storage.ScenarioDataPoolBinding'
+                      additionalProperties: true
                   duration:
                     type: string
                   duration_ns:
@@ -55087,6 +55590,11 @@ paths:
                               type: boolean
                         initialization:
                           type: string
+                        iteration_override:
+                          type: integer
+                          format: int64
+                        iteration_override_known:
+                          type: boolean
                         iterations:
                           type: integer
                           format: int64
@@ -56191,6 +56699,43 @@ paths:
                         tps:
                           type: number
                           format: double
+                  start_authorization:
+                    type: object
+                    properties:
+                      capacity_shortfall:
+                        type: object
+                        properties:
+                          approved_at:
+                            type: string
+                            format: date-time
+                          approved_by_display_name:
+                            type: string
+                          approved_by_subject:
+                            type: string
+                          available_generators:
+                            type: integer
+                            format: int64
+                          recommended_generators:
+                            type: integer
+                            format: int64
+                          shortfall_generators:
+                            type: integer
+                            format: int64
+                          total_vusers:
+                            type: integer
+                            format: int64
+                      script_shakeout:
+                        type: object
+                        properties:
+                          approved_at:
+                            type: string
+                            format: date-time
+                          approved_by_display_name:
+                            type: string
+                          approved_by_subject:
+                            type: string
+                          review_evidence_sha256:
+                            type: string
                   start_delay:
                     type: string
                   started_at:
@@ -56523,6 +57068,12 @@ paths:
                     type: object
                     description: 'Go type: time.Duration'
                     additionalProperties: true
+                  data_pools:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: storage.ScenarioDataPoolBinding'
+                      additionalProperties: true
                   duration:
                     type: string
                   duration_ns:
@@ -56680,6 +57231,11 @@ paths:
                               type: boolean
                         initialization:
                           type: string
+                        iteration_override:
+                          type: integer
+                          format: int64
+                        iteration_override_known:
+                          type: boolean
                         iterations:
                           type: integer
                           format: int64
@@ -57784,6 +58340,43 @@ paths:
                         tps:
                           type: number
                           format: double
+                  start_authorization:
+                    type: object
+                    properties:
+                      capacity_shortfall:
+                        type: object
+                        properties:
+                          approved_at:
+                            type: string
+                            format: date-time
+                          approved_by_display_name:
+                            type: string
+                          approved_by_subject:
+                            type: string
+                          available_generators:
+                            type: integer
+                            format: int64
+                          recommended_generators:
+                            type: integer
+                            format: int64
+                          shortfall_generators:
+                            type: integer
+                            format: int64
+                          total_vusers:
+                            type: integer
+                            format: int64
+                      script_shakeout:
+                        type: object
+                        properties:
+                          approved_at:
+                            type: string
+                            format: date-time
+                          approved_by_display_name:
+                            type: string
+                          approved_by_subject:
+                            type: string
+                          review_evidence_sha256:
+                            type: string
                   start_delay:
                     type: string
                   started_at:
@@ -58333,6 +58926,11 @@ paths:
                                   type: boolean
                             initialization:
                               type: string
+                            iteration_override:
+                              type: integer
+                              format: int64
+                            iteration_override_known:
+                              type: boolean
                             iterations:
                               type: integer
                               format: int64
@@ -58779,6 +59377,11 @@ paths:
                                   type: boolean
                             initialization:
                               type: string
+                            iteration_override:
+                              type: integer
+                              format: int64
+                            iteration_override_known:
+                              type: boolean
                             iterations:
                               type: integer
                               format: int64
@@ -60803,6 +61406,11 @@ paths:
                         type: string
                       ramp_up:
                         type: string
+                      revision_new_group:
+                        type: boolean
+                      revision_source_group_index:
+                        type: integer
+                        format: int64
                       role:
                         type: string
                       runtime_settings:
@@ -60894,6 +61502,8 @@ paths:
                   type: boolean
                 resource_baseline:
                   type: boolean
+                revision_source_test_id:
+                  type: string
                 runtime_settings:
                   type: object
                   properties:
@@ -61247,6 +61857,11 @@ paths:
                               type: boolean
                         initialization:
                           type: string
+                        iteration_override:
+                          type: integer
+                          format: int64
+                        iteration_override_known:
+                          type: boolean
                         iterations:
                           type: integer
                           format: int64

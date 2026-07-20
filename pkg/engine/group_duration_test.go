@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,6 +20,24 @@ var (
 
 type scaleInitFailureProtocol struct{}
 
+type gracefulBoundaryTestState struct {
+	firstStarted  chan struct{}
+	firstReturned chan struct{}
+	releaseFirst  chan struct{}
+	actions       chan string
+	firstOnce     sync.Once
+	returnedOnce  sync.Once
+}
+
+type gracefulBoundaryTestProtocol struct {
+	state *gracefulBoundaryTestState
+}
+
+var (
+	gracefulBoundaryStateMu sync.Mutex
+	gracefulBoundaryState   *gracefulBoundaryTestState
+)
+
 func (*scaleInitFailureProtocol) Name() string { return "scale-init-failure-test" }
 func (*scaleInitFailureProtocol) Init(context.Context, map[string]any) error {
 	if rejectScaleInit.Load() {
@@ -33,8 +52,68 @@ func (*scaleInitFailureProtocol) Execute(_ context.Context, action *protocol.Act
 func (*scaleInitFailureProtocol) Teardown(context.Context) error    { return nil }
 func (*scaleInitFailureProtocol) HealthCheck(context.Context) error { return nil }
 
+func (*gracefulBoundaryTestProtocol) Name() string { return "graceful-boundary-test" }
+func (*gracefulBoundaryTestProtocol) Init(context.Context, map[string]any) error {
+	return nil
+}
+func (p *gracefulBoundaryTestProtocol) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
+	if p.state != nil && p.state.actions != nil {
+		p.state.actions <- action.Name
+	}
+	if p.state != nil && action.Name == "first" {
+		p.state.firstOnce.Do(func() { close(p.state.firstStarted) })
+		select {
+		case <-p.state.releaseFirst:
+			p.state.returnedOnce.Do(func() { close(p.state.firstReturned) })
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return &protocol.Result{ActionName: action.Name, Success: true, Duration: time.Millisecond}, nil
+}
+func (*gracefulBoundaryTestProtocol) Teardown(context.Context) error    { return nil }
+func (*gracefulBoundaryTestProtocol) HealthCheck(context.Context) error { return nil }
+
 func init() {
 	protocol.Register("scale-init-failure-test", func() protocol.Protocol { return &scaleInitFailureProtocol{} })
+	protocol.Register("graceful-boundary-test", func() protocol.Protocol {
+		gracefulBoundaryStateMu.Lock()
+		defer gracefulBoundaryStateMu.Unlock()
+		return &gracefulBoundaryTestProtocol{state: gracefulBoundaryState}
+	})
+}
+
+func installGracefulBoundaryState(t *testing.T) *gracefulBoundaryTestState {
+	t.Helper()
+	state := &gracefulBoundaryTestState{
+		firstStarted:  make(chan struct{}),
+		firstReturned: make(chan struct{}),
+		releaseFirst:  make(chan struct{}),
+		actions:       make(chan string, 16),
+	}
+	gracefulBoundaryStateMu.Lock()
+	gracefulBoundaryState = state
+	gracefulBoundaryStateMu.Unlock()
+	t.Cleanup(func() {
+		gracefulBoundaryStateMu.Lock()
+		if gracefulBoundaryState == state {
+			gracefulBoundaryState = nil
+		}
+		gracefulBoundaryStateMu.Unlock()
+	})
+	return state
+}
+
+func boundaryActionNames(state *gracefulBoundaryTestState) []string {
+	var names []string
+	for {
+		select {
+		case name := <-state.actions:
+			names = append(names, name)
+		default:
+			return names
+		}
+	}
 }
 
 func TestAdjustDurationRetainsCompletedPauseCompensation(t *testing.T) {
@@ -94,6 +173,275 @@ func TestGracefulStopBeforeRunIsLatched(t *testing.T) {
 	if result.TotalTransactions != 0 {
 		t.Fatalf("pre-run graceful stop emitted %d transactions", result.TotalTransactions)
 	}
+}
+
+func TestGracefulStopInterruptsPreBaselinePromptly(t *testing.T) {
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{{
+			Name:   "group",
+			Script: &dsl.Script{Name: "script", Protocol: "stub", Actions: []dsl.Action{{Name: "request", Type: "request", Target: "/"}}},
+			VUsers: 1,
+		}},
+		Duration:    time.Second,
+		PreBaseline: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, runErr := mge.Run(context.Background())
+		done <- runErr
+	}()
+	deadline := time.Now().Add(time.Second)
+	for {
+		mge.mu.Lock()
+		initialized := mge.softStop != nil
+		mge.mu.Unlock()
+		if initialized {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("engine did not initialize soft-stop control")
+		}
+		time.Sleep(time.Millisecond)
+	}
+
+	started := time.Now()
+	mge.GracefulStop()
+	select {
+	case runErr := <-done:
+		if !errors.Is(runErr, context.Canceled) {
+			t.Fatalf("Run error = %v, want soft-stop cancellation", runErr)
+		}
+		if elapsed := time.Since(started); elapsed > 500*time.Millisecond {
+			t.Fatalf("graceful stop took %s during pre-baseline", elapsed)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("graceful stop waited for the full pre-baseline window")
+	}
+}
+
+func TestGracefulStopFinishesCurrentActionAndStopsAtBoundary(t *testing.T) {
+	state := installGracefulBoundaryState(t)
+	script := &dsl.Script{
+		Name: "graceful-boundary", Protocol: "graceful-boundary-test",
+		Config: dsl.ScriptConfig{
+			RunLogic:  dsl.RunLogicConfig{Iterations: 1},
+			ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 5000},
+		},
+		Actions: []dsl.Action{
+			{Name: "first", Type: "request", Target: "/first", ThinkTimeAfter: true},
+			{Name: "second", Type: "request", Target: "/second"},
+		},
+	}
+	mge, err := NewMultiGroup(MultiGroupConfig{Groups: []GroupConfig{{Name: "group", Script: script, VUsers: 1}}, Duration: 10 * time.Second})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, runErr := mge.Run(context.Background())
+		done <- runErr
+	}()
+	select {
+	case <-state.firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first action did not start")
+	}
+
+	started := time.Now()
+	mge.GracefulStop()
+	select {
+	case <-state.firstReturned:
+		t.Fatal("graceful stop interrupted the in-flight action")
+	default:
+	}
+	close(state.releaseFirst)
+	select {
+	case runErr := <-done:
+		if runErr != nil {
+			t.Fatalf("Run: %v", runErr)
+		}
+		if elapsed := time.Since(started); elapsed > time.Second {
+			t.Fatalf("graceful stop waited through think time: %s", elapsed)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("graceful stop did not finish after the current action")
+	}
+	if got := boundaryActionNames(state); len(got) != 1 || got[0] != "first" {
+		t.Fatalf("executed actions = %v, want only the in-flight first action", got)
+	}
+}
+
+func TestGracefulStopWakesPausedVUserAtActionBoundary(t *testing.T) {
+	state := installGracefulBoundaryState(t)
+	script := &dsl.Script{
+		Name: "paused-graceful-boundary", Protocol: "graceful-boundary-test",
+		Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions: []dsl.Action{
+			{Name: "first", Type: "request", Target: "/first"},
+			{Name: "second", Type: "request", Target: "/second"},
+		},
+	}
+	mge, err := NewMultiGroup(MultiGroupConfig{Groups: []GroupConfig{{Name: "group", Script: script, VUsers: 1}}, Duration: 10 * time.Second})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, runErr := mge.Run(context.Background())
+		done <- runErr
+	}()
+	select {
+	case <-state.firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first action did not start")
+	}
+	if err := mge.Pause(); err != nil {
+		t.Fatalf("Pause: %v", err)
+	}
+	close(state.releaseFirst)
+	select {
+	case <-state.firstReturned:
+	case <-time.After(time.Second):
+		t.Fatal("first action did not return")
+	}
+	// The VUser is now held at the next action's pause gate. GracefulStop must
+	// wake that gate without requiring Resume and without starting action two.
+	mge.GracefulStop()
+	select {
+	case runErr := <-done:
+		if runErr != nil {
+			t.Fatalf("Run: %v", runErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("paused VUser was not released by graceful stop")
+	}
+	if got := boundaryActionNames(state); len(got) != 1 || got[0] != "first" {
+		t.Fatalf("executed actions = %v, want only first", got)
+	}
+}
+
+func TestSharedGoalExhaustionDoesNotTruncateReservedIteration(t *testing.T) {
+	state := installGracefulBoundaryState(t)
+	script := &dsl.Script{
+		Name: "reserved-goal-boundary", Protocol: "graceful-boundary-test",
+		Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1, GlobalIterations: 1}},
+		Actions: []dsl.Action{
+			{Name: "first", Type: "request", Target: "/first"},
+			{Name: "second", Type: "request", Target: "/second"},
+		},
+	}
+	mge, err := NewMultiGroup(MultiGroupConfig{Groups: []GroupConfig{{Name: "group", Script: script, VUsers: 2}}, Duration: 10 * time.Second})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, runErr := mge.Run(context.Background())
+		done <- runErr
+	}()
+	select {
+	case <-state.firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("reserved iteration did not start")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		mge.mu.Lock()
+		goalExhausted := mge.loopCtx != nil && mge.loopCtx.Err() != nil
+		mge.mu.Unlock()
+		if goalExhausted {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("second VUser did not trip shared goal exhaustion")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	close(state.releaseFirst)
+	select {
+	case runErr := <-done:
+		if runErr != nil {
+			t.Fatalf("Run: %v", runErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("reserved iteration did not complete")
+	}
+	if got := boundaryActionNames(state); len(got) != 2 || got[0] != "first" || got[1] != "second" {
+		t.Fatalf("executed actions = %v, want complete reserved iteration [first second]", got)
+	}
+}
+
+func TestGracefulStopSkipsPostBaselineButNaturalCompletionRetainsIt(t *testing.T) {
+	t.Run("explicit graceful stop", func(t *testing.T) {
+		state := installGracefulBoundaryState(t)
+		close(state.releaseFirst)
+		script := &dsl.Script{
+			Name: "post-baseline-stop", Protocol: "graceful-boundary-test",
+			Config:  dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+			Actions: []dsl.Action{{Name: "first", Type: "request", Target: "/first"}},
+		}
+		mge, err := NewMultiGroup(MultiGroupConfig{Groups: []GroupConfig{{Name: "group", Script: script, VUsers: 1}}, Duration: time.Second, PostBaseline: 5 * time.Second})
+		if err != nil {
+			t.Fatalf("NewMultiGroup: %v", err)
+		}
+		done := make(chan error, 1)
+		go func() {
+			_, runErr := mge.Run(context.Background())
+			done <- runErr
+		}()
+		select {
+		case <-state.firstReturned:
+		case <-time.After(time.Second):
+			t.Fatal("action did not finish")
+		}
+		deadline := time.Now().Add(time.Second)
+		for {
+			if len(mge.activeVUserCountByGroup()) == 0 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("VUser did not finish before post-baseline")
+			}
+			time.Sleep(time.Millisecond)
+		}
+		mge.GracefulStop()
+		select {
+		case runErr := <-done:
+			if runErr != nil {
+				t.Fatalf("Run: %v", runErr)
+			}
+		case <-time.After(time.Second):
+			t.Fatal("explicit graceful stop waited for post-baseline")
+		}
+	})
+
+	t.Run("natural completion", func(t *testing.T) {
+		mge, err := NewMultiGroup(MultiGroupConfig{
+			Groups: []GroupConfig{{
+				Name: "group",
+				Script: &dsl.Script{
+					Name: "natural-post-baseline", Protocol: "stub",
+					Config:  dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+					Actions: []dsl.Action{{Name: "request", Type: "request", Target: "/"}},
+				},
+				VUsers: 1,
+			}},
+			Duration: time.Second, PostBaseline: 80 * time.Millisecond,
+		})
+		if err != nil {
+			t.Fatalf("NewMultiGroup: %v", err)
+		}
+		started := time.Now()
+		if _, err := mge.Run(context.Background()); err != nil {
+			t.Fatalf("Run: %v", err)
+		}
+		if elapsed := time.Since(started); elapsed < 60*time.Millisecond {
+			t.Fatalf("natural completion skipped post-baseline: %s", elapsed)
+		}
+	})
 }
 
 func TestPauseBeforeRunIsLatched(t *testing.T) {

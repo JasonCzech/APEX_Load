@@ -25,6 +25,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/recorder"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
+	"github.com/jasonczech/apexload/pkg/telemetry"
 )
 
 //go:embed static
@@ -193,6 +194,9 @@ type Server struct {
 	// It defaults to the compile-time embedded StaticFS; tests override it so
 	// the readiness suite does not depend on a prior `npm run build`.
 	staticFS fs.FS
+	// tracing is the process startup result, not merely the presence of OTel
+	// libraries. Integration readiness must never advertise an inactive exporter.
+	tracing telemetry.Status
 }
 
 // ServerConfig configures API server startup behavior and integrations.
@@ -258,6 +262,9 @@ type ServerConfig struct {
 	// Kubernetes deployments; ordinary read traffic continues to use the
 	// all-replica Service.
 	ActiveEndpointPublisher ExecutionEndpointPublisher
+	// TracingStatus reports whether process-level OTLP export was successfully
+	// initialized. The zero value is the deliberately disabled default.
+	TracingStatus telemetry.Status
 }
 
 // NewServer wires the HTTP server, test runner, websocket hub, recorder, and routes.
@@ -419,6 +426,7 @@ func NewServer(cfg ServerConfig) *Server {
 		startupDone:             make(chan struct{}),
 		shutdownDone:            make(chan struct{}),
 		staticFS:                StaticFS,
+		tracing:                 cfg.TracingStatus,
 	}
 	if leadership != nil {
 		leadership.setOnLoss(func() {
@@ -498,7 +506,7 @@ func NewServer(cfg ServerConfig) *Server {
 	}
 	s.httpServer = &http.Server{
 		Addr:           cfg.Addr,
-		Handler:        securityHeadersMiddleware(handler),
+		Handler:        telemetry.HTTPMiddleware(securityHeadersMiddleware(handler)),
 		ReadTimeout:    15 * time.Second,
 		WriteTimeout:   60 * time.Second,
 		IdleTimeout:    120 * time.Second,

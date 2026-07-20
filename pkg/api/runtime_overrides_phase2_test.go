@@ -100,12 +100,17 @@ func TestMergeRuntimeSettingsReplacesLogAndRunLogicSections(t *testing.T) {
 	}
 }
 
-func TestMergeRuntimeSettingsInheritsBaseSectionWhenGroupAbsent(t *testing.T) {
-	base := &RuntimeSettingsOverride{Log: &dsl.LogConfig{Level: "extended"}}
-	group := &RuntimeSettingsOverride{LogLevel: "disabled"} // legacy-only, no section
+func TestMergeRuntimeSettingsPromotesGroupLegacyLogLevelOverBaseSection(t *testing.T) {
+	base := &RuntimeSettingsOverride{Log: &dsl.LogConfig{
+		Level: "extended", OnErrorOnly: true, ExtendedOptions: []string{"advanced_trace"},
+	}}
+	group := &RuntimeSettingsOverride{LogLevel: "disabled"}
 	merged := mergeRuntimeSettings(base, group)
-	if merged.Log == nil || merged.Log.Level != "extended" {
-		t.Fatalf("merged should inherit base log section: %#v", merged.Log)
+	if merged.Log == nil || merged.Log.Level != "disabled" || !merged.Log.OnErrorOnly || len(merged.Log.ExtendedOptions) != 1 {
+		t.Fatalf("merged group alias should replace the level and retain base section siblings: %#v", merged.Log)
+	}
+	if base.Log.Level != "extended" || !base.Log.OnErrorOnly || len(base.Log.ExtendedOptions) != 1 {
+		t.Fatalf("merge mutated base log section: %#v", base.Log)
 	}
 }
 

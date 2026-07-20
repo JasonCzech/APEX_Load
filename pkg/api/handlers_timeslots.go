@@ -271,6 +271,7 @@ func (s *Server) handleUpdateCapacityReservation(w http.ResponseWriter, r *http.
 	termsChanged := !existing.StartAt.Equal(req.StartAt) ||
 		!existing.EndAt.Equal(req.EndAt) ||
 		!reservationCapacityEqual(existing.RequestedCapacity, req.RequestedCapacity)
+	previousBoundTestID := strings.TrimSpace(trimPtr(existing.BoundTestID))
 
 	// Mutable fields only; identity, ownership, and creation time are preserved.
 	// Approval transitions otherwise go through the dedicated project-admin
@@ -290,8 +291,15 @@ func (s *Server) handleUpdateCapacityReservation(w http.ResponseWriter, r *http.
 	_, existing.ConflictSummary = s.summarizeReservationConflicts(existing.ProjectID, existing.ID, existing.StartAt, existing.EndAt)
 
 	if err := s.store.UpdateCapacityReservationDetails(existing, resetApproval); err != nil {
+		if errors.Is(err, storage.ErrCapacityReservationBoundActiveTest) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if resetApproval && previousBoundTestID != "" {
+		s.runner.clearLiveCapacityReservationBinding(previousBoundTestID, existing.ID)
 	}
 	if fresh, err := s.store.GetCapacityReservation(existing.ID); err == nil && fresh != nil {
 		existing = fresh
@@ -361,6 +369,7 @@ func (s *Server) transitionReservationApproval(w http.ResponseWriter, r *http.Re
 	if !ok {
 		return
 	}
+	previousBoundTestID := strings.TrimSpace(trimPtr(reservation.BoundTestID))
 	details := map[string]any{"approval_state": state}
 	approval := reservationApprovalRequest{}
 	// Guard approval against overbooking: approving a reservation whose reserved
@@ -484,12 +493,19 @@ func (s *Server) transitionReservationApproval(w http.ResponseWriter, r *http.Re
 		updated, err = s.store.UpdateCapacityReservationApprovalState(reservation.ID, fromStates, state, now)
 	}
 	if err != nil {
+		if errors.Is(err, storage.ErrCapacityReservationBoundActiveTest) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 	if !updated {
 		writeError(w, http.StatusConflict, "timeslot approval state changed concurrently; reload and retry")
 		return
+	}
+	if state != "approved" && previousBoundTestID != "" {
+		s.runner.clearLiveCapacityReservationBinding(previousBoundTestID, reservation.ID)
 	}
 	if fresh, err := s.store.GetCapacityReservation(reservation.ID); err == nil && fresh != nil {
 		reservation = fresh

@@ -107,6 +107,45 @@ func TestJMSSessionVerbsRequireServiceBusAdapter(t *testing.T) {
 	}
 }
 
+func TestServiceBusMockRejectsUnsupportedSendSemantics(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		action *protocol.Action
+		want   string
+	}{
+		{name: "publish session", action: &protocol.Action{Name: "publish", Type: "jms_publish", Params: map[string]any{"session_id": "session-1"}}, want: "params.session_id requires the real Azure Service Bus adapter"},
+		{name: "publish partition", action: &protocol.Action{Name: "publish", Type: "jms_publish", Params: map[string]any{"partition_key": "tenant-1"}}, want: "params.partition_key requires the real Azure Service Bus adapter"},
+		{name: "publish scheduled string", action: &protocol.Action{Name: "publish", Type: "jms_publish", Params: map[string]any{"scheduled_enqueue_ms": "100"}}, want: "params.scheduled_enqueue_ms requires the real Azure Service Bus adapter"},
+		{name: "request session", action: &protocol.Action{Name: "request", Type: "jms_request_reply", Params: map[string]any{"session_id": "session-1"}}, want: "params.session_id requires the real Azure Service Bus adapter"},
+		{name: "request partition", action: &protocol.Action{Name: "request", Type: "jms_request_reply", Params: map[string]any{"partition_key": "tenant-1"}}, want: "params.partition_key requires the real Azure Service Bus adapter"},
+		{name: "request scheduled", action: &protocol.Action{Name: "request", Type: "jms_request_reply", Params: map[string]any{"scheduled_enqueue_ms": 100}}, want: "params.scheduled_enqueue_ms requires the real Azure Service Bus adapter"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p := newMockJMS(t)
+			result, err := p.Execute(context.Background(), test.action)
+			if err != nil {
+				t.Fatalf("Execute returned transport error: %v", err)
+			}
+			if result.Success || result.StatusCode != 400 || !strings.Contains(result.ErrorMessage, test.want) {
+				t.Fatalf("result = %#v, want 400 containing %q", result, test.want)
+			}
+		})
+	}
+}
+
+func TestJMSRequestReplyRejectsIgnoredSelectorAtRuntime(t *testing.T) {
+	p := newMockJMS(t)
+	result, err := p.Execute(context.Background(), &protocol.Action{
+		Name: "request", Type: "jms_request_reply", Params: map[string]any{"selector": "priority > 5"},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned transport error: %v", err)
+	}
+	if result.Success || result.StatusCode != 400 || !strings.Contains(result.ErrorMessage, "selector is not supported by jms_request_reply") {
+		t.Fatalf("result = %#v, want request/reply selector rejection", result)
+	}
+}
+
 func TestParseSequenceNumbers(t *testing.T) {
 	cases := []struct {
 		name string
@@ -135,8 +174,21 @@ func TestParseSequenceNumbers(t *testing.T) {
 			}
 		})
 	}
-	if _, err := parseSequenceNumbers([]any{"not-a-number"}); err == nil {
-		t.Fatal("expected error for non-numeric array entry")
+	for name, value := range map[string]any{
+		"non-numeric array entry": []any{"not-a-number"},
+		"zero scalar":             float64(0),
+		"negative scalar":         int64(-1),
+		"zero int64 slice":        []int64{1, 0},
+		"negative CSV entry":      "1,-2",
+		"fractional entry":        []any{float64(1.5)},
+		"int64 overflow":          "9223372036854775808",
+		"unexpanded template":     "{{var.sequence_number}}",
+	} {
+		t.Run("invalid/"+name, func(t *testing.T) {
+			if _, err := parseSequenceNumbers(value); err == nil {
+				t.Fatalf("parseSequenceNumbers(%v) unexpectedly succeeded", value)
+			}
+		})
 	}
 }
 
@@ -150,8 +202,8 @@ func TestBuildMessagePopulatesServiceBusSendFields(t *testing.T) {
 			"message_id":           "dedup-1",
 			"session_id":           "sess-7",
 			"partition_key":        "pk-3",
-			"time_to_live_ms":      float64(60000),
-			"scheduled_enqueue_ms": float64(5000),
+			"time_to_live_ms":      "60000",
+			"scheduled_enqueue_ms": "5000",
 		},
 	}
 	msg := p.buildMessage(action, "orders.test")
@@ -166,5 +218,18 @@ func TestBuildMessagePopulatesServiceBusSendFields(t *testing.T) {
 	}
 	if msg.ScheduledEnqueueAt.IsZero() || msg.ScheduledEnqueueAt.Before(msg.CreatedAt) {
 		t.Fatalf("ScheduledEnqueueAt not set in the future: %v (created %v)", msg.ScheduledEnqueueAt, msg.CreatedAt)
+	}
+}
+
+func TestJMSDurationParamsUseInterpolatedNumericStrings(t *testing.T) {
+	p := newMockJMS(t)
+	action := &protocol.Action{Name: "consume", Type: "jms_consume", Params: map[string]any{"timeout_ms": "125"}}
+	if got := p.timeout(action); got != 125*time.Millisecond {
+		t.Fatalf("timeout from numeric string = %s, want 125ms", got)
+	}
+	if err := p.validateActionBounds(&protocol.Action{
+		Name: "publish", Type: "jms_publish", Params: map[string]any{"time_to_live_ms": "31536000001"},
+	}); err == nil || !strings.Contains(err.Error(), "time_to_live_ms") {
+		t.Fatalf("oversized numeric-string TTL error = %v", err)
 	}
 }

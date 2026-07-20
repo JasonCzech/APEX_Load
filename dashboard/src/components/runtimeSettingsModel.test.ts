@@ -160,4 +160,21 @@ describe('runtimeSettingsModel', () => {
     expect(back!.log).toEqual(override.log)
     expect(back!.run_logic).toEqual(override.run_logic)
   })
+
+  it('distinguishes inherited error handling from explicit false overrides', () => {
+    expect(runtimeDraftFromOverride({ error_handling: { max_retries: 2 } })).toEqual(expect.objectContaining({
+      continue_on_error: undefined,
+      snapshot_on_error: undefined,
+      max_retries: 2,
+    }))
+    expect(overrideFromRuntimeDraft({
+      log_level: '',
+      auto_transactions: '',
+      continue_on_error: false,
+      snapshot_on_error: false,
+    })).toEqual({
+      error_handling: { continue_on_error: false, snapshot_on_error: false },
+    })
+    expect(overrideFromRuntimeDraft({ log_level: '', auto_transactions: '' })).toBeUndefined()
+  })
 })

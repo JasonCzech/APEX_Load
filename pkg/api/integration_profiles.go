@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/telemetry"
 )
 
 type APMIntegrationProfilesResponse struct {
@@ -60,7 +62,7 @@ type ReportProfilesResponse struct {
 
 func (s *Server) handleListAPMIntegrationProfiles(w http.ResponseWriter, r *http.Request) {
 	settings := s.runner.GetSystemSettings()
-	profiles := buildAPMIntegrationProfiles(settings)
+	profiles := buildAPMIntegrationProfiles(settings, s.tracing)
 	configured := 0
 	for _, profile := range profiles {
 		if profile.Status == "configured" || profile.Status == "supported" {
@@ -80,7 +82,7 @@ func (s *Server) handleListAPMIntegrationProfiles(w http.ResponseWriter, r *http
 	})
 }
 
-func buildAPMIntegrationProfiles(settings SystemSettings) []APMIntegrationProfile {
+func buildAPMIntegrationProfiles(settings SystemSettings, tracing telemetry.Status) []APMIntegrationProfile {
 	dynatraceConfigured := false
 	for _, webhook := range settings.Notifications.Webhooks {
 		if webhook.Enabled && strings.EqualFold(webhook.Format, notificationFormatDynatrace) {
@@ -90,7 +92,16 @@ func buildAPMIntegrationProfiles(settings SystemSettings) []APMIntegrationProfil
 	}
 	statusFor := func(id string) string {
 		if id == "opentelemetry" {
-			return "supported"
+			if tracing.CorrelationOnly {
+				return "correlation_only"
+			}
+			if tracing.Enabled && tracing.Ready {
+				return "configured"
+			}
+			if tracing.Enabled {
+				return "unavailable"
+			}
+			return "available"
 		}
 		if id == "dynatrace" && dynatraceConfigured {
 			return "configured"
@@ -100,15 +111,27 @@ func buildAPMIntegrationProfiles(settings SystemSettings) []APMIntegrationProfil
 	baseCapabilities := []string{"trace_correlation", "dependency_tags", "run_lifecycle_events", "archived_external_metrics"}
 	baseSignals := []string{"transactions", "errors", "resource_samples", "interval_summaries", "server_telemetry"}
 	baseFields := []string{"traceparent", "trace_id", "span_id", "correlation_id"}
+	otelCapabilities := []string{"native_otlp_export", "w3c_trace_context", "http_server_spans", "test_start_spans", "local_execution_spans", "distributed_launch_spans", "action_spans", "grpc_client_server_spans"}
+	otelSignals := []string{"traces"}
+	otelRequiredSettings := []string{"APEXLOAD_OTEL_ENABLED=true", "OTEL_EXPORTER_OTLP_ENDPOINT or OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"}
+	otelSetupActions := []string{"Configure an OTLP collector endpoint and explicitly enable tracing on controller and generator processes.", "Choose OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf or grpc and an OTEL_TRACES_SAMPLER policy."}
+	if tracing.CorrelationOnly {
+		otelCapabilities = []string{"w3c_trace_context"}
+		otelSignals = []string{"correlation_headers"}
+		otelRequiredSettings = nil
+		otelSetupActions = []string{"Use the standalone controller and generator binaries for native OTLP span export; the desktop surface retains correlation headers only."}
+	}
 	profiles := []APMIntegrationProfile{
 		{
 			ID:                "opentelemetry",
 			Name:              "OpenTelemetry",
 			Status:            statusFor("opentelemetry"),
-			Capabilities:      append([]string{"native_otlp_correlation"}, baseCapabilities...),
-			SupportedSignals:  baseSignals,
+			Capabilities:      otelCapabilities,
+			SupportedSignals:  otelSignals,
 			CorrelationFields: baseFields,
-			Evidence:          []string{"pkg/api/archive.go", "docs/RUNTIME_TELEMETRY_SLA_PLAN.md"},
+			RequiredSettings:  otelRequiredSettings,
+			Evidence:          []string{"pkg/telemetry/tracing.go", "pkg/telemetry/http.go", "docs/OPENTELEMETRY.md"},
+			SetupActions:      otelSetupActions,
 		},
 		{
 			ID:                "dynatrace",

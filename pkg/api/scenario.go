@@ -448,11 +448,51 @@ func scenarioRuntimeCommitFingerprint(scenario *storage.Scenario, scripts []stor
 }
 
 func normalizeScenarioDataPoolBindings(scenarioID string, bindings []storage.ScenarioDataPoolBinding) ([]storage.ScenarioDataPoolBinding, error) {
-	out := make([]storage.ScenarioDataPoolBinding, 0, len(bindings))
-	seenAliases := map[string]struct{}{}
+	out, err := normalizeDataPoolBindingIntent(bindings)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now()
-	for _, binding := range bindings {
+	for index := range out {
+		binding := &out[index]
 		binding.ScenarioID = scenarioID
+		binding.ID = strings.TrimSpace(binding.ID)
+		if binding.ID == "" {
+			binding.ID = uuid.New().String()
+		}
+		if binding.CreatedAt.IsZero() {
+			binding.CreatedAt = now
+		}
+		binding.UpdatedAt = now
+	}
+	return out, nil
+}
+
+// normalizeDataPoolBindingIntent canonicalizes the executable portion of data
+// pool bindings without rewriting persistence-only identity/audit metadata. It
+// is shared by scenario authoring and test materialization so direct, scenario,
+// revision, and execution-plan requests all observe one contract.
+func normalizeDataPoolBindingIntent(bindings []storage.ScenarioDataPoolBinding) ([]storage.ScenarioDataPoolBinding, error) {
+	return normalizeDataPoolBindingIntentWithLegacy(bindings, false)
+}
+
+// normalizeLegacyDataPoolBindingIntent preserves compatibility for trusted,
+// already-persisted scenario/run/plan snapshots authored before access-mode
+// enforcement. Those modes historically executed as read-only in-memory CSV
+// snapshots, so canonicalizing them to read_only preserves actual behavior
+// without pretending durable consume/write semantics exist.
+func normalizeLegacyDataPoolBindingIntent(bindings []storage.ScenarioDataPoolBinding) ([]storage.ScenarioDataPoolBinding, error) {
+	return normalizeDataPoolBindingIntentWithLegacy(bindings, true)
+}
+
+func normalizeDataPoolBindingIntentWithLegacy(bindings []storage.ScenarioDataPoolBinding, allowLegacyModes bool) ([]storage.ScenarioDataPoolBinding, error) {
+	if bindings == nil {
+		return nil, nil
+	}
+	out := make([]storage.ScenarioDataPoolBinding, len(bindings))
+	seenAliases := make(map[string]struct{}, len(bindings))
+	for index, original := range bindings {
+		binding := original
 		binding.PoolID = strings.TrimSpace(binding.PoolID)
 		binding.Alias = strings.TrimSpace(binding.Alias)
 		binding.AccessMode = strings.TrimSpace(binding.AccessMode)
@@ -464,20 +504,24 @@ func normalizeScenarioDataPoolBindings(scenarioID string, bindings []storage.Sce
 			return nil, fmt.Errorf("data pool binding alias is required")
 		}
 		aliasKey := strings.ToLower(binding.Alias)
-		if _, ok := seenAliases[aliasKey]; ok {
+		if _, duplicate := seenAliases[aliasKey]; duplicate {
 			return nil, fmt.Errorf("duplicate data pool binding alias %q", binding.Alias)
 		}
 		seenAliases[aliasKey] = struct{}{}
-		if binding.ID == "" {
-			binding.ID = uuid.New().String()
-		}
+
 		if binding.AccessMode == "" {
 			binding.AccessMode = "read_only"
 		}
 		switch binding.AccessMode {
-		case "read_only", "read_write", "consume":
+		case "read_only":
+		case "read_write", "consume":
+			if allowLegacyModes {
+				binding.AccessMode = "read_only"
+			} else {
+				return nil, fmt.Errorf("unsupported data pool access mode %q for binding %q; only \"read_only\" is currently supported", binding.AccessMode, binding.Alias)
+			}
 		default:
-			return nil, fmt.Errorf("unsupported data pool access mode %q", binding.AccessMode)
+			return nil, fmt.Errorf("unsupported data pool access mode %q for binding %q; only \"read_only\" is currently supported", binding.AccessMode, binding.Alias)
 		}
 		if binding.SelectionStrategy == "" {
 			binding.SelectionStrategy = "sequential"
@@ -487,11 +531,7 @@ func normalizeScenarioDataPoolBindings(scenarioID string, bindings []storage.Sce
 		default:
 			return nil, fmt.Errorf("unsupported data pool selection strategy %q", binding.SelectionStrategy)
 		}
-		if binding.CreatedAt.IsZero() {
-			binding.CreatedAt = now
-		}
-		binding.UpdatedAt = now
-		out = append(out, binding)
+		out[index] = binding
 	}
 	return out, nil
 }

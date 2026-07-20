@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Area, AreaChart, CartesianGrid, Line, ReferenceArea, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Application, ApplicationRepository, CapacityTimeslot, DashboardAuthEffectiveAccessResource, DashboardScheduleDefaultsSettings, DraftCapacityEstimate, GeneratorAssignmentSettings, LaunchPreflightResponse, Release, RuntimeSettingsOverride, ScenarioSchedule, ScenarioScheduleOccurrence, ScenarioScheduleWindow, StoredScenario, SystemInventoryGenerator } from '../types'
 import { useApi } from '../hooks/useApi'
@@ -44,6 +45,7 @@ import {
   buildRunDefaultEditDraft,
   buildRunLoadProfilePreview,
   buildRuntimeSettingsForRun,
+  cloneRuntimeSettingsForRun,
   emptyGroupEditDraft,
   formatGroupPlacement,
   generatorCanRunGroup,
@@ -56,6 +58,12 @@ import {
   hasGroupOverrideValues,
   hasOwnKey,
   hasRuntimeSettingsValues,
+  mergeRuntimeSettingsForRun,
+  setRuntimeAutoTransactions,
+  setRuntimeBrowser,
+  setRuntimeIterations,
+  setRuntimeLogLevel,
+  stagedGroupPeakVUsers,
   type GroupEditDraft,
   type GroupRunOverride,
   type RunDefaultEditDraft,
@@ -69,6 +77,8 @@ import { useHasTopbarContributionProvider, useTopbarContribution } from '../hook
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { dialogBackdropProps } from './dialogBackdropProps'
+import { effectiveGroupVUsers, maxVUsersForRole, validateAggregateVUserDemand, validateGroupExecutionEnvelope } from './observerGroupModel'
+import { validateGeneratorAssignment } from './generatorAssignmentValidation'
 
 interface Props {
   activeApplication: Application | null
@@ -88,6 +98,7 @@ type ScheduleWindowDraft = {
   days_of_week: number[]
   start_time: string
   end_time: string
+  timezone?: string
 }
 
 type ScheduleDraft = {
@@ -157,7 +168,7 @@ function formatCount(value: number, singular: string, plural = `${singular}s`) {
 
 
 function totalScenarioVUsers(scenario?: StoredScenario | null) {
-  return scenario?.scripts.reduce((sum, script) => sum + (script.vusers || 0), 0) || 0
+  return scenario?.scripts.reduce((sum, script) => sum + effectiveGroupVUsers(script), 0) || 0
 }
 
 function totalGroupVUsers(groups: ScenarioScriptGroup[]) {
@@ -245,8 +256,9 @@ function buildDefaultScheduleDraft(
   }
 }
 
-// scheduleWindowsToPayload drops incomplete windows (no start/end), applies the
-// schedule timezone, and returns undefined when empty so the field is omitted.
+// scheduleWindowsToPayload drops incomplete windows (no start/end), preserves
+// an existing window timezone, and falls back to the schedule timezone for new
+// windows. It returns undefined when empty so the field is omitted.
 function scheduleWindowsToPayload(windows: ScheduleWindowDraft[], timezone: string) {
   const tz = timezone.trim() || 'UTC'
   const out = windows
@@ -256,7 +268,7 @@ function scheduleWindowsToPayload(windows: ScheduleWindowDraft[], timezone: stri
       days_of_week: w.days_of_week.length ? w.days_of_week : undefined,
       start_time: w.start_time,
       end_time: w.end_time,
-      timezone: tz,
+      timezone: w.timezone?.trim() || tz,
     }))
   return out.length ? out : undefined
 }
@@ -267,6 +279,7 @@ function scheduleWindowsToDraft(windows?: ScenarioScheduleWindow[]): ScheduleWin
     days_of_week: w.days_of_week || [],
     start_time: w.start_time || '',
     end_time: w.end_time || '',
+    timezone: w.timezone,
   }))
 }
 
@@ -275,16 +288,17 @@ const SCHEDULE_WEEKDAYS: { value: number; label: string }[] = [
   { value: 3, label: 'Wed' }, { value: 4, label: 'Thu' }, { value: 5, label: 'Fri' }, { value: 6, label: 'Sat' },
 ]
 
-function ScheduleWindowListEditor({ title, description, windows, onChange, disabled }: {
+function ScheduleWindowListEditor({ title, description, windows, fallbackTimezone, onChange, disabled }: {
   title: string
   description: string
   windows: ScheduleWindowDraft[]
+  fallbackTimezone: string
   onChange: (next: ScheduleWindowDraft[]) => void
   disabled?: boolean
 }) {
   const update = (i: number, patch: Partial<ScheduleWindowDraft>) => onChange(windows.map((w, idx) => (idx === i ? { ...w, ...patch } : w)))
   const remove = (i: number) => onChange(windows.filter((_, idx) => idx !== i))
-  const add = () => onChange([...windows, { name: '', days_of_week: [], start_time: '09:00', end_time: '17:00' }])
+  const add = () => onChange([...windows, { name: '', days_of_week: [], start_time: '09:00', end_time: '17:00', timezone: fallbackTimezone.trim() || 'UTC' }])
   const toggleDay = (i: number, day: number) => {
     const w = windows[i]
     const has = w.days_of_week.includes(day)
@@ -309,6 +323,15 @@ function ScheduleWindowListEditor({ title, description, windows, onChange, disab
             <input aria-label={`${title} window ${i + 1} start time`} type="time" className="settings-input schedule-window-time" value={w.start_time} disabled={disabled} onChange={e => update(i, { start_time: e.target.value })} />
             <span className="schedule-window-sep">to</span>
             <input aria-label={`${title} window ${i + 1} end time`} type="time" className="settings-input schedule-window-time" value={w.end_time} disabled={disabled} onChange={e => update(i, { end_time: e.target.value })} />
+            <select
+              aria-label={`${title} window ${i + 1} timezone`}
+              className="settings-input schedule-window-timezone"
+              value={w.timezone?.trim() || fallbackTimezone.trim() || 'UTC'}
+              disabled={disabled}
+              onChange={e => update(i, { timezone: e.target.value })}
+            >
+              {COMMON_TIMEZONES.map(tz => <option key={tz} value={tz}>{tz}</option>)}
+            </select>
             <button type="button" className="btn btn-ghost btn-sm" disabled={disabled} onClick={() => remove(i)} aria-label={`Remove ${title.toLowerCase()} window ${i + 1}`}>Remove</button>
           </div>
         ))}
@@ -330,6 +353,33 @@ function normalizeDraftText(value?: string) {
   return String(value || '').trim()
 }
 
+function pacingFromEdit(type: string, amount: string, baseline?: RuntimeSettingsOverride['pacing']): RuntimeSettingsOverride['pacing'] | undefined {
+  if (!type) return undefined
+  if (type === baseline?.type) {
+    const next = { ...baseline }
+    if (type === 'fixed_delay') next.delay_ms = amount ? Number(amount) : 0
+    else if (type === 'fixed_interval') next.interval_ms = amount ? Number(amount) : 0
+    else if (type === 'tps') next.tps = amount ? Number(amount) : 0
+    return next
+  }
+  if (type === 'none') return { type: 'none' }
+  if (type === 'fixed_interval') return { type, interval_ms: amount ? Number(amount) : 0 }
+  if (type === 'tps') return { type, tps: amount ? Number(amount) : 0 }
+  if (type === 'fixed_delay') return { type, delay_ms: amount ? Number(amount) : 0 }
+  // Random-delay/interval configurations have two bounds. Preserve a pre-existing
+  // full config above; a newly selected mode starts with engine-default bounds.
+  return { type }
+}
+
+function thinkTimeFromEdit(mean: string, ignore: boolean, baseline?: RuntimeSettingsOverride['think_time']): RuntimeSettingsOverride['think_time'] | undefined {
+  if (!mean.trim() && !ignore) return undefined
+  return {
+    ...(baseline || { type: 'fixed', mean_ms: 0 }),
+    mean_ms: mean.trim() ? Number(mean) : (baseline?.mean_ms ?? 0),
+    ignore,
+  }
+}
+
 function selectedTargetsChanged(left: string[], right: string[]) {
   const normalize = (values: string[]) => values.filter(Boolean).slice().sort().join('\u0000')
   return normalize(left) !== normalize(right)
@@ -346,38 +396,46 @@ function requiredLabelsChanged(left: Record<string, string>, right: Record<strin
 
 function assignmentFromGroupEditDraft(draft: GroupEditDraft): GeneratorAssignmentSettings {
   const requiredLabels = normalizeRequiredLabels(draft.requiredLabels)
+  const common = {
+    ...(requiredLabels ? { required_labels: requiredLabels } : {}),
+    ...(draft.tolerateGeneratorLoss !== undefined ? { tolerate_generator_loss: draft.tolerateGeneratorLoss } : {}),
+  }
   if (draft.assignmentMode === 'specific_hosts') {
     const selectedTargets = draft.selectedTargets.filter(Boolean)
     return {
       mode: 'specific_hosts',
       selected_targets: selectedTargets,
       ...(selectedTargets.length > 1 ? { shard_strategy: 'capacity_weighted' as const } : {}),
-      ...(requiredLabels ? { required_labels: requiredLabels } : {}),
+      ...common,
     }
+  }
+  if (draft.assignmentMode === 'region_weighted') {
+    return { mode: 'region_weighted', region_weights: { ...draft.regionWeights }, ...common }
+  }
+  if (draft.assignmentMode === 'load_zone_weighted') {
+    return { mode: 'load_zone_weighted', load_zone_weights: { ...draft.loadZoneWeights }, ...common }
   }
   return {
     mode: 'auto',
-    ...(requiredLabels ? { required_labels: requiredLabels } : {}),
+    ...common,
   }
 }
 
-function groupEditDraftPatchFromAssignment(assignment?: GeneratorAssignmentSettings): Pick<GroupEditDraft, 'assignmentMode' | 'selectedTargets' | 'requiredLabels'> {
+function groupEditDraftPatchFromAssignment(assignment?: GeneratorAssignmentSettings): Pick<GroupEditDraft, 'assignmentMode' | 'selectedTargets' | 'requiredLabels' | 'regionWeights' | 'loadZoneWeights' | 'tolerateGeneratorLoss'> {
   const requiredLabels = normalizeRequiredLabels(assignment?.required_labels) || {}
-  if (assignment?.mode === 'specific_hosts') {
-    return {
-      assignmentMode: 'specific_hosts',
-      selectedTargets: assignment.selected_targets || [],
-      requiredLabels,
-    }
+  const common = {
+    selectedTargets: assignment?.selected_targets || [],
+    requiredLabels,
+    regionWeights: { ...(assignment?.region_weights || {}) },
+    loadZoneWeights: { ...(assignment?.load_zone_weights || {}) },
+    tolerateGeneratorLoss: assignment?.tolerate_generator_loss,
   }
-  if (Object.keys(requiredLabels).length > 0) {
-    return {
-      assignmentMode: 'required_labels',
-      selectedTargets: [],
-      requiredLabels,
-    }
-  }
+  if (assignment?.mode === 'specific_hosts') return { ...common, assignmentMode: 'specific_hosts' }
+  if (assignment?.mode === 'region_weighted') return { ...common, assignmentMode: 'region_weighted' }
+  if (assignment?.mode === 'load_zone_weighted') return { ...common, assignmentMode: 'load_zone_weighted' }
+  if (Object.keys(requiredLabels).length > 0) return { ...common, assignmentMode: 'required_labels', selectedTargets: [] }
   return {
+    ...common,
     assignmentMode: 'auto',
     selectedTargets: [],
     requiredLabels: {},
@@ -413,7 +471,10 @@ function buildGroupEditChanges(draft: GroupEditDraft, baseline: GroupEditDraft):
     browser: browserDeviceProfileChanged || browserHeadlessChanged || browserTouchModeChanged || browserOrientationChanged,
     assignment: draft.assignmentMode !== baseline.assignmentMode
       || selectedTargetsChanged(draft.selectedTargets, baseline.selectedTargets)
-      || requiredLabelsChanged(draft.requiredLabels, baseline.requiredLabels),
+      || requiredLabelsChanged(draft.requiredLabels, baseline.requiredLabels)
+      || JSON.stringify(draft.regionWeights) !== JSON.stringify(baseline.regionWeights)
+      || JSON.stringify(draft.loadZoneWeights) !== JSON.stringify(baseline.loadZoneWeights)
+      || draft.tolerateGeneratorLoss !== baseline.tolerateGeneratorLoss,
   }
 }
 
@@ -724,6 +785,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     () => scenario?.scripts.find(group => groupOverrideKey(group) === editingGroupKey),
     [editingGroupKey, scenario],
   )
+  const editingGroupStagePeak = useMemo(
+    () => editingGroup ? stagedGroupPeakVUsers(editingGroup) : undefined,
+    [editingGroup],
+  )
   const groupEditBaseline = useMemo(
     () => editingGroup && scenario ? buildGroupEditDraft(editingGroup, scenario, runDefaultOverrides) : emptyGroupEditDraft(),
     [editingGroup, runDefaultOverrides, scenario],
@@ -736,6 +801,15 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     () => Object.values(groupEditChanges).some(Boolean),
     [groupEditChanges],
   )
+  const groupEditEnvelopeError = useMemo(() => {
+    if (!editingGroup) return ''
+    return validateGroupExecutionEnvelope({
+      role: editingGroup.role,
+      protocol: editingGroup.protocol,
+      vusers: editingGroupStagePeak ?? Number(groupEditDraft.vusers),
+      label: editingGroup.name || editingGroup.script_name || 'Script group',
+    }) || ''
+  }, [editingGroup, editingGroupStagePeak, groupEditDraft.vusers])
   const generatorByTarget = useMemo(() => new Map(generatorInventory.map(generator => [generator.target, generator])), [generatorInventory])
   const availableLabels = useMemo(() => {
     const labels = new Map<string, Set<string>>()
@@ -869,7 +943,24 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   }, [activeApplication, release, scenario])
   const canManageTests = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'), [effectiveAuthAccessResources])
   const canManageProjects = useMemo(() => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_projects'), [effectiveAuthAccessResources])
-  const canLaunch = readiness.every(item => item.ready) && !creating && canManageTests
+  const runSetupValidationError = useMemo(() => {
+    const rootAssignmentError = validateGeneratorAssignment(scenario?.assignment, 'scenario', 'Scenario assignment')
+    if (rootAssignmentError) return rootAssignmentError
+    const storedScenarioError = validateAggregateVUserDemand(scenario?.scripts || [], 'Scenario')
+    if (storedScenarioError) return storedScenarioError
+    const aggregateError = validateAggregateVUserDemand(effectiveScenarioGroups)
+    if (aggregateError) return aggregateError
+    for (let index = 0; index < effectiveScenarioGroups.length; index += 1) {
+      const group = effectiveScenarioGroups[index]
+      const label = group.name || group.script_name || `Group ${index + 1}`
+      const envelopeError = validateGroupExecutionEnvelope({ role: group.role, protocol: group.protocol, vusers: effectiveGroupVUsers(group), label })
+      if (envelopeError) return envelopeError
+      const assignmentError = validateGeneratorAssignment(group.assignment, 'group', label)
+      if (assignmentError) return assignmentError
+    }
+    return ''
+  }, [effectiveScenarioGroups, scenario?.assignment, scenario?.scripts])
+  const canLaunch = readiness.every(item => item.ready) && !creating && canManageTests && !runSetupValidationError
   const runCreatePayload = useMemo(() => {
     if (!scenario || !activeApplication) return null
     const runtimeSettings = buildRuntimeSettingsForRun(scenario, runDefaultOverrides)
@@ -1009,6 +1100,10 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       setError('Choose a release and scenario before creating a test.')
       return false
     }
+    if (runSetupValidationError) {
+      setError(runSetupValidationError)
+      return false
+    }
     if (intent === 'schedule' && !scheduledStartISO) {
       setError('Choose a scheduled start time before scheduling a run.')
       return false
@@ -1146,25 +1241,9 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
     } else if (key === 'auto_transactions') {
       setRuntimeOverride('auto_transactions', defaultEditDraft.value || null)
     } else if (key === 'pacing') {
-      if (!defaultEditDraft.pacingType) {
-        setRuntimeOverride('pacing', null)
-      } else if (defaultEditDraft.pacingType === 'none') {
-        setRuntimeOverride('pacing', { type: 'none' })
-      } else if (defaultEditDraft.pacingType === 'fixed_interval') {
-        setRuntimeOverride('pacing', { type: 'fixed_interval', interval_ms: defaultEditDraft.pacingAmount ? Number(defaultEditDraft.pacingAmount) : 0 })
-      } else if (defaultEditDraft.pacingType === 'tps') {
-        setRuntimeOverride('pacing', { type: 'tps', tps: defaultEditDraft.pacingAmount ? Number(defaultEditDraft.pacingAmount) : 0 })
-      } else {
-        setRuntimeOverride('pacing', { type: 'fixed_delay', delay_ms: defaultEditDraft.pacingAmount ? Number(defaultEditDraft.pacingAmount) : 0 })
-      }
+      setRuntimeOverride('pacing', pacingFromEdit(defaultEditDraft.pacingType, defaultEditDraft.pacingAmount, defaultEditDraft.pacingConfig) || null)
     } else if (key === 'think_time') {
-      if (defaultEditDraft.thinkIgnore) {
-        setRuntimeOverride('think_time', { type: 'fixed', mean_ms: defaultEditDraft.value ? Number(defaultEditDraft.value) : 0, ignore: true })
-      } else if (defaultEditDraft.value) {
-        setRuntimeOverride('think_time', { type: 'fixed', mean_ms: Number(defaultEditDraft.value), ignore: false })
-      } else {
-        setRuntimeOverride('think_time', null)
-      }
+      setRuntimeOverride('think_time', thinkTimeFromEdit(defaultEditDraft.value, defaultEditDraft.thinkIgnore, defaultEditDraft.thinkTimeConfig) || null)
     } else if (key === 'continue_on_error') {
       setRuntimeOverride('continue_on_error', defaultEditDraft.value === '' ? null : defaultEditDraft.value === 'true')
     } else if (key === 'snapshot_on_error') {
@@ -1235,11 +1314,13 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
               <option value="">Script default</option>
               <option value="none">None</option>
               <option value="fixed_delay">Fixed delay</option>
+              <option value="random_delay">Random delay (preserve bounds)</option>
               <option value="fixed_interval">Fixed interval</option>
+              <option value="random_interval">Random interval (preserve bounds)</option>
               <option value="tps">Target TPS</option>
             </select>
           </label>
-          {defaultEditDraft.pacingType && defaultEditDraft.pacingType !== 'none' && (
+          {['fixed_delay', 'fixed_interval', 'tps'].includes(defaultEditDraft.pacingType) && (
             <label>
               <span>{defaultEditDraft.pacingType === 'tps' ? 'Target TPS' : 'Milliseconds'}</span>
               <input className="settings-input" type="number" min="0" value={defaultEditDraft.pacingAmount} onChange={event => setDefaultEditDraft(prev => ({ ...prev, pacingAmount: event.target.value }))} placeholder="0" />
@@ -1306,13 +1387,19 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
   const saveGroupOverride = () => {
     if (!editingGroupKey || !editingGroup || !scenario) return
     if (!hasGroupEditChanges) return
-    const nextOverride: GroupRunOverride = {}
-    const vusers = Number(groupEditDraft.vusers)
-    if (!Number.isFinite(vusers) || vusers < 1) {
-      setError('VUsers must be greater than 0 for a script group override.')
-      return
-    }
-    if (groupEditChanges.vusers) nextOverride.vusers = vusers
+    const existingOverride = groupRunOverrides[editingGroupKey]
+    const nextOverride: GroupRunOverride = existingOverride
+      ? {
+          ...existingOverride,
+          runtime_settings: cloneRuntimeSettingsForRun(existingOverride.runtime_settings),
+          assignment: existingOverride.assignment ? { ...existingOverride.assignment } : undefined,
+        }
+      : {}
+    const stagedPeak = stagedGroupPeakVUsers(editingGroup)
+    const vusers = stagedPeak ?? Number(groupEditDraft.vusers)
+    if (groupEditEnvelopeError) return
+    if (stagedPeak !== undefined) delete nextOverride.vusers
+    else if (groupEditChanges.vusers) nextOverride.vusers = vusers
     const rampUp = groupEditDraft.ramp_up.trim()
     const rampDown = groupEditDraft.ramp_down.trim()
     if (groupEditChanges.ramp_up) nextOverride.ramp_up = rampUp
@@ -1321,54 +1408,80 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       nextOverride.initialization = groupEditDraft.initialization
     }
 
-    const runtimeSettings: RuntimeSettingsOverride = {}
+    const runtimeSettings = mergeRuntimeSettingsForRun(editingGroup.runtime_settings, existingOverride?.runtime_settings) || {}
+    const effectiveRootRuntime = buildRuntimeSettingsForRun(scenario, runDefaultOverrides)
+      || cloneRuntimeSettingsForRun(scenario.runtime_settings)
+      || {}
+    let runtimeChanged = false
     if (groupEditChanges.iterations) {
       const iterations = Number(groupEditDraft.iterations)
       if (!Number.isFinite(iterations) || iterations < 1) {
         setError('Iterations must be greater than 0 for a script group override.')
         return
       }
-      runtimeSettings.iterations = iterations
+      if (!runtimeSettings.run_logic && effectiveRootRuntime.run_logic) runtimeSettings.run_logic = { ...effectiveRootRuntime.run_logic }
+      setRuntimeIterations(runtimeSettings, iterations)
+      runtimeChanged = true
     }
-    if (groupEditChanges.log_level) runtimeSettings.log_level = groupEditDraft.log_level
-    if (groupEditChanges.auto_transactions) runtimeSettings.auto_transactions = groupEditDraft.auto_transactions
+    if (groupEditChanges.log_level) {
+      if (!runtimeSettings.log && effectiveRootRuntime.log) runtimeSettings.log = { ...effectiveRootRuntime.log }
+      setRuntimeLogLevel(runtimeSettings, groupEditDraft.log_level)
+      runtimeChanged = true
+    }
+    if (groupEditChanges.auto_transactions) {
+      if (!runtimeSettings.run_logic && effectiveRootRuntime.run_logic) runtimeSettings.run_logic = { ...effectiveRootRuntime.run_logic }
+      setRuntimeAutoTransactions(runtimeSettings, groupEditDraft.auto_transactions)
+      runtimeChanged = true
+    }
     if (groupEditChanges.pacing) {
-      if (groupEditDraft.pacingType === 'none') {
-        runtimeSettings.pacing = { type: 'none' }
-      } else if (groupEditDraft.pacingType === 'fixed_interval') {
-        runtimeSettings.pacing = { type: 'fixed_interval', interval_ms: groupEditDraft.pacingAmount ? Number(groupEditDraft.pacingAmount) : 0 }
-      } else if (groupEditDraft.pacingType === 'tps') {
-        runtimeSettings.pacing = { type: 'tps', tps: groupEditDraft.pacingAmount ? Number(groupEditDraft.pacingAmount) : 0 }
-      } else if (groupEditDraft.pacingType === 'fixed_delay') {
-        runtimeSettings.pacing = { type: 'fixed_delay', delay_ms: groupEditDraft.pacingAmount ? Number(groupEditDraft.pacingAmount) : 0 }
-      }
+      const pacing = pacingFromEdit(groupEditDraft.pacingType, groupEditDraft.pacingAmount, groupEditDraft.pacingConfig)
+      if (pacing) runtimeSettings.pacing = pacing
+      else delete runtimeSettings.pacing
+      runtimeChanged = true
     }
-    if (groupEditChanges.think_time && groupEditDraft.thinkIgnore) {
-      runtimeSettings.think_time = { type: 'fixed', mean_ms: groupEditDraft.thinkTimeMs ? Number(groupEditDraft.thinkTimeMs) : 0, ignore: true }
-    } else if (groupEditChanges.think_time && groupEditDraft.thinkTimeMs.trim()) {
-      runtimeSettings.think_time = { type: 'fixed', mean_ms: Number(groupEditDraft.thinkTimeMs), ignore: false }
+    if (groupEditChanges.think_time) {
+      const thinkTime = thinkTimeFromEdit(groupEditDraft.thinkTimeMs, groupEditDraft.thinkIgnore, groupEditDraft.thinkTimeConfig)
+      if (thinkTime) runtimeSettings.think_time = thinkTime
+      else delete runtimeSettings.think_time
+      runtimeChanged = true
     }
     if (groupEditChanges.error_handling) {
       runtimeSettings.error_handling = {
+        ...(runtimeSettings.error_handling || effectiveRootRuntime.error_handling || {}),
         continue_on_error: groupEditDraft.continue_on_error === 'true',
         snapshot_on_error: groupEditDraft.snapshot_on_error === 'true',
       }
+      runtimeChanged = true
     }
     if (groupEditChanges.browser) {
-      runtimeSettings.browser = {
-        ...(groupEditDraft.browser_device_profile ? { device_profile: groupEditDraft.browser_device_profile } : {}),
-        ...(groupEditDraft.browser_headless ? { headless: groupEditDraft.browser_headless === 'true' } : {}),
-        ...(groupEditDraft.browser_touch_mode ? { touch_mode: groupEditDraft.browser_touch_mode === 'true' } : {}),
-        ...(groupEditDraft.browser_orientation ? { orientation: groupEditDraft.browser_orientation } : {}),
+      if (!runtimeSettings.browser_config && effectiveRootRuntime.browser_config) {
+        runtimeSettings.browser_config = cloneRuntimeSettingsForRun({ browser_config: effectiveRootRuntime.browser_config })?.browser_config
       }
+      setRuntimeBrowser(runtimeSettings, {
+        device_profile: groupEditDraft.browser_device_profile || undefined,
+        headless: groupEditDraft.browser_headless ? groupEditDraft.browser_headless === 'true' : undefined,
+        touch_mode: groupEditDraft.browser_touch_mode ? groupEditDraft.browser_touch_mode === 'true' : undefined,
+        orientation: groupEditDraft.browser_orientation || undefined,
+      })
+      runtimeChanged = true
     }
-    if (hasRuntimeSettingsValues(runtimeSettings)) {
+    if ((runtimeChanged || existingOverride?.runtime_settings) && hasRuntimeSettingsValues(runtimeSettings)) {
       nextOverride.runtime_settings = runtimeSettings
+    } else if (runtimeChanged) {
+      delete nextOverride.runtime_settings
+    }
+    const nextAssignment = groupEditChanges.assignment
+      ? assignmentFromGroupEditDraft(groupEditDraft)
+      : existingOverride?.assignment || editingGroup.assignment
+    const assignmentError = validateGeneratorAssignment(nextAssignment, 'group', editingGroup.name || editingGroup.script_name || 'Script group')
+    if (assignmentError) {
+      setError(assignmentError)
+      return
     }
     if (groupEditChanges.assignment) {
-      const nextAssignment = assignmentFromGroupEditDraft(groupEditDraft)
+      const changedAssignment = nextAssignment as GeneratorAssignmentSettings
       if (groupEditDraft.assignmentMode === 'specific_hosts') {
-        const selectedTargets = nextAssignment.selected_targets || []
+        const selectedTargets = changedAssignment.selected_targets || []
         if (selectedTargets.length === 0) {
           setError('Select at least one load generator host for group placement.')
           return
@@ -1386,7 +1499,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
         setError('Select at least one required generator capability for this group.')
         return
       }
-      nextOverride.assignment = nextAssignment
+      nextOverride.assignment = changedAssignment
     }
 
     setGroupRunOverrides(prev => {
@@ -1749,6 +1862,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                   title="Blackout windows"
                   description="Runs never fire during these windows. Leave days unselected to apply every day."
                   windows={scheduleDraft.blackout_windows}
+                  fallbackTimezone={scheduleDraft.timezone}
                   disabled={!canManageTests}
                   onChange={next => setScheduleDraft(prev => ({ ...prev, blackout_windows: next }))}
                 />
@@ -1756,6 +1870,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                   title="Maintenance windows"
                   description="Shared maintenance windows that also block runs. Leave days unselected to apply every day."
                   windows={scheduleDraft.maintenance_windows}
+                  fallbackTimezone={scheduleDraft.timezone}
                   disabled={!canManageTests}
                   onChange={next => setScheduleDraft(prev => ({ ...prev, maintenance_windows: next }))}
                 />
@@ -1763,6 +1878,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                   title="Availability windows"
                   description="When set, runs fire only inside these windows. Leave days unselected to apply every day."
                   windows={scheduleDraft.availability_windows}
+                  fallbackTimezone={scheduleDraft.timezone}
                   disabled={!canManageTests}
                   onChange={next => setScheduleDraft(prev => ({ ...prev, availability_windows: next }))}
                 />
@@ -2442,7 +2558,8 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
 
           <section className="new-test-launch-card" aria-label="Hold for Manual Start or Schedule Run">
             <h3>Hold for Manual Start / Schedule Run</h3>
-            <div className="new-test-launch-actions">
+              <div className="new-test-launch-actions">
+                {runSetupValidationError && <div className="new-test-launch-feedback warning" role="alert">{runSetupValidationError}</div>}
               {immediatePreflightLoading && !immediatePreflight && (
                 <button className="btn btn-secondary" disabled>Checking Window</button>
               )}
@@ -2525,7 +2642,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
         </div>
       )}
 
-      {editingGroupKey && editingGroup && scenario && (
+      {editingGroupKey && editingGroup && scenario && createPortal(
         <div className="modal-overlay" {...dialogBackdropProps(() => setEditingGroupKey(null), 'Close run group editor')}>
           <div
             ref={runGroupDialogRef}
@@ -2538,20 +2655,36 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
               <h3 id="new-test-run-group-dialog-title">Edit {editingGroup.name || editingGroup.script_name || 'Script Group'}</h3>
               <button type="button" className="btn btn-secondary btn-sm" onClick={() => setEditingGroupKey(null)}>Close</button>
             </div>
-            <div className="new-test-default-editor">
+            <div className="new-test-default-editor run-group-modal-body">
               <p className="new-test-default-editor-note">Saved changes apply only to the run created from this page. The scenario default remains unchanged.</p>
               <div className="new-test-default-current">
                 <span>Scenario defaults</span>
-                <strong>{editingGroup.vusers} VUsers · {editingGroup.ramp_up || 'No ramp up'} / {editingGroup.ramp_down || 'No ramp down'}</strong>
+                <strong>{editingGroupStagePeak ?? editingGroup.vusers} VUsers · {editingGroup.ramp_up || 'No ramp up'} / {editingGroup.ramp_down || 'No ramp down'}</strong>
               </div>
               <div className="new-test-group-editor-sections">
                 <section>
                   <h4>Workload</h4>
                   <div className="new-test-default-editor-grid">
                     <label className={changedFieldClass(groupEditChanges.vusers)}>
-                      <span>VUsers <ChangedBadge changed={groupEditChanges.vusers} /></span>
-                      <input className="settings-input" type="number" min="1" value={groupEditDraft.vusers} onChange={event => setGroupEditDraft(prev => ({ ...prev, vusers: event.target.value }))} />
+                      <span>{editingGroupStagePeak === undefined ? 'VUsers' : 'Peak VUsers (stage-derived)'} <ChangedBadge changed={groupEditChanges.vusers} /></span>
+                      <input
+                        className="settings-input"
+                        type="number"
+                        min="1"
+                        max={maxVUsersForRole(editingGroup.role)}
+                        value={groupEditDraft.vusers}
+                        disabled={editingGroupStagePeak !== undefined}
+                        aria-invalid={Boolean(groupEditEnvelopeError)}
+                        aria-describedby={groupEditEnvelopeError ? 'new-test-group-vusers-error' : undefined}
+                        onChange={event => setGroupEditDraft(prev => ({ ...prev, vusers: event.target.value }))}
+                      />
                     </label>
+                    {groupEditEnvelopeError && (
+                      <p id="new-test-group-vusers-error" className="new-test-group-field-error" role="alert">{groupEditEnvelopeError}</p>
+                    )}
+                    {editingGroupStagePeak !== undefined && (
+                      <p className="new-test-inline-note">This staged group is fixed at its peak stage target of {editingGroupStagePeak} VUsers. Edit the scenario stages to change it.</p>
+                    )}
                     <label className={changedFieldClass(groupEditChanges.initialization)}>
                       <span>Initialization <ChangedBadge changed={groupEditChanges.initialization} /></span>
                       <select className="settings-input" value={groupEditDraft.initialization} onChange={event => setGroupEditDraft(prev => ({ ...prev, initialization: event.target.value as 'at_runtime' | 'at_once' }))}>
@@ -2574,9 +2707,11 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                   <p className="new-test-inline-note">Saved host placement applies only to this run. Multiple hosts split this group by available capacity.</p>
                   {generatorInventoryLoading ? (
                     <div className="new-test-empty compact">Loading generator inventory...</div>
-                  ) : generatorInventory.length === 0 ? (
-                    <div className="new-test-empty compact">{generatorInventoryError || 'No load generators are registered.'}</div>
                   ) : (
+                    <>
+                      {generatorInventory.length === 0 && (
+                        <div className="new-test-empty compact">{generatorInventoryError || 'No load generators are registered. Automatic placement and capability rules remain available.'}</div>
+                      )}
                     <GroupPlacementEditor
                       assignment={assignmentFromGroupEditDraft(groupEditDraft)}
                       onChange={assignment => setGroupEditDraft(prev => ({ ...prev, ...groupEditDraftPatchFromAssignment(assignment) }))}
@@ -2585,7 +2720,9 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                       protocol={editingGroup?.protocol}
                       compact
                       allowInherit={false}
+                      scope="group"
                     />
+                    </>
                   )}
                 </section>
                 <section>
@@ -2617,11 +2754,13 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                         <option value="">Script timing</option>
                         <option value="none">None</option>
                         <option value="fixed_delay">Fixed delay</option>
+                        <option value="random_delay">Random delay (preserve bounds)</option>
                         <option value="fixed_interval">Fixed interval</option>
+                        <option value="random_interval">Random interval (preserve bounds)</option>
                         <option value="tps">Target TPS</option>
                       </select>
                     </label>
-                    {groupEditDraft.pacingType && groupEditDraft.pacingType !== 'none' && (
+                    {['fixed_delay', 'fixed_interval', 'tps'].includes(groupEditDraft.pacingType) && (
                       <label className={changedFieldClass(groupEditChanges.pacing)}>
                         <span>{groupEditDraft.pacingType === 'tps' ? 'Target TPS' : 'Milliseconds'} <ChangedBadge changed={groupEditChanges.pacing} /></span>
                         <input className="settings-input" type="number" min="0" value={groupEditDraft.pacingAmount} onChange={event => setGroupEditDraft(prev => ({ ...prev, pacingAmount: event.target.value }))} />
@@ -2688,11 +2827,12 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
               <div className="modal-actions">
                 <button type="button" className="btn btn-secondary" onClick={() => setEditingGroupKey(null)}>Cancel</button>
                 <button type="button" className="btn btn-secondary" onClick={clearGroupOverride}>Use Scenario Defaults</button>
-                <button type="button" className="btn btn-primary" onClick={saveGroupOverride} disabled={!hasGroupEditChanges}>Save For This Run</button>
+                <button type="button" className="btn btn-primary" onClick={saveGroupOverride} disabled={!hasGroupEditChanges || Boolean(groupEditEnvelopeError)}>Save For This Run</button>
               </div>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {confirmDeleteScheduleId && (

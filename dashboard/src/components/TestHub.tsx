@@ -14,10 +14,13 @@ import { SortHeader } from './SortHeader'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
 import GroupPlacementEditor from './GroupPlacementEditor'
-import { isRuntimeFieldApplicable, overrideFromRuntimeDraft, runtimeDraftFromOverride } from './runtimeSettingsModel'
+import { overrideFromRuntimeDraft, runtimeDraftFromOverride } from './runtimeSettingsModel'
+import { applyEffectiveRuntimeSettingsToGroups } from './runtimeSettingsApply'
 import { adaptScenarioShapeDefaults, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, formatModelTimeLabel, getScenarioShapePreset, ScenarioModelPreview, ScenarioSeed, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, shapeStageStrategyFor, validateStageTimeline } from './scenarioWizardUtils'
 import { BaselineGroupOption, baselineGroupOptions, formatGoalSizingSummary, goalSizedGoalFields, goalSizedGroups, littlesLawVUsers } from './goalSizingUtils'
 import DurationField from './DurationField'
+import CreateTestGoalSettings from './CreateTestGoalSettings'
+import { hasGoalModeConfiguration, validateGoalConfig } from './goalConfigValidation'
 import PageViewToggle from './PageViewToggle'
 import ExecutionPlansPanel from './ExecutionPlansPanel'
 import { type NavPage } from './Sidebar'
@@ -30,6 +33,8 @@ import { clearScenarioBuilderDraft, hasScenarioBuilderProgress } from './scenari
 import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } from '../hooks/NavigationGuardProvider'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { dialogBackdropProps } from './dialogBackdropProps'
+import { clampVUsersForRole, maxVUsersForRole, OBSERVER_MAX_VUSERS, validateAggregateVUserDemand, validateGroupExecutionEnvelope } from './observerGroupModel'
+import { validateGeneratorAssignment } from './generatorAssignmentValidation'
 
 interface Props {
   applicationRepository?: ApplicationRepository | null
@@ -57,8 +62,8 @@ export interface ScenarioFormState {
   goal_p95_latency_ms?: number
   goal_max_error_pct?: number
   goal_config?: GoalConfig
-  continue_on_error: boolean
-  snapshot_on_error: boolean
+  continue_on_error?: boolean
+  snapshot_on_error?: boolean
   runtime_iterations?: number
   runtime_pacing_type: '' | 'none' | 'fixed_delay' | 'fixed_interval' | 'tps'
   runtime_pacing_delay_ms?: number
@@ -74,7 +79,7 @@ export interface ScenarioFormState {
   browser_orientation?: string
   browser_touch_mode?: '' | 'true' | 'false'
   browser_headless?: '' | 'true' | 'false'
-  assignment_mode: 'auto' | 'specific_hosts'
+  assignment_mode: NonNullable<GeneratorAssignmentSettings['mode']>
   assignment_targets: string[]
   assignment?: GeneratorAssignmentSettings
   data_pool_id?: string
@@ -85,7 +90,7 @@ export interface ScenarioFormState {
   data_pools?: ScenarioDataPoolBinding[]
 }
 
-interface ScenarioFormGroup {
+export interface ScenarioFormGroup {
   name: string
   script_id: string
   role?: 'load' | 'observer'
@@ -143,8 +148,6 @@ function emptyScenarioForm(scriptId = ''): ScenarioFormState {
     scenario_mode: 'vuser_driven',
     script_shakeout: false,
     resource_baseline: false,
-    continue_on_error: false,
-    snapshot_on_error: false,
     runtime_pacing_type: '',
     runtime_ignore_think_time: false,
     runtime_log_level: '',
@@ -192,6 +195,32 @@ function goalConfigFromForm(form: ScenarioFormState): GoalConfig {
   return goal
 }
 
+function scenarioFormWithGoalField<K extends keyof GoalConfig>(
+  form: ScenarioFormState,
+  field: K,
+  value: GoalConfig[K],
+): ScenarioFormState {
+  const goal: GoalConfig = { ...(form.goal_config || {}) }
+  if (value === undefined || value === null || value === '') {
+    delete goal[field]
+  } else {
+    goal[field] = value as never
+  }
+  const next: ScenarioFormState = {
+    ...form,
+    goal_config: Object.keys(goal).length > 0 ? goal : undefined,
+  }
+  const numberValue = value as number | undefined
+  switch (field) {
+    case 'target_average_tps': next.goal_target_average_tps = numberValue; break
+    case 'min_vusers': next.goal_min_vusers = numberValue; break
+    case 'max_vusers': next.goal_max_vusers = numberValue; break
+    case 'p95_latency_ms': next.goal_p95_latency_ms = numberValue; break
+    case 'max_error_pct': next.goal_max_error_pct = numberValue; break
+  }
+  return next
+}
+
 function maxStageVUsers(stages: LoadStageDraft[]) {
   return stages.reduce((max, stage) => Math.max(max, Number(stage.target_vusers) || 0), 0)
 }
@@ -205,13 +234,7 @@ function scenarioSeedFromTemplate(template: LoadModelTemplate): ScenarioSeed {
     script_shakeout: template.scenario.script_shakeout,
     resource_baseline: template.scenario.resource_baseline,
     groups: template.scenario.groups,
-    goal: goal ? {
-      target_average_tps: goal.target_average_tps,
-      min_vusers: goal.min_vusers,
-      max_vusers: goal.max_vusers,
-      p95_latency_ms: goal.p95_latency_ms,
-      max_error_pct: goal.max_error_pct,
-    } : undefined,
+    goal: goal ? { ...goal } : undefined,
     pacing: runtime?.pacing ? {
       type: runtime.pacing.type as ScenarioFormState['runtime_pacing_type'],
       delay_ms: runtime.pacing.delay_ms,
@@ -259,14 +282,9 @@ function scenarioSeedFromForm(form: ScenarioFormState): ScenarioSeed {
       ramp_up: group.ramp_up,
       ramp_down: group.ramp_down,
       stages: group.stages,
+      iterations: group.iterations,
     })),
-    goal: {
-      target_average_tps: form.goal_target_average_tps,
-      min_vusers: form.goal_min_vusers,
-      max_vusers: form.goal_max_vusers,
-      p95_latency_ms: form.goal_p95_latency_ms,
-      max_error_pct: form.goal_max_error_pct,
-    },
+    goal: goalConfigFromForm(form),
     pacing: {
       type: form.runtime_pacing_type,
       delay_ms: form.runtime_pacing_delay_ms,
@@ -292,6 +310,8 @@ function normalizeStageForPayload(stage: LoadStageDraft) {
 }
 
 function normalizeGroupForPayload(group: ScenarioFormGroup) {
+  const runtimeOwnsIterations = group.runtimeSettings?.run_logic !== undefined
+    || group.runtimeSettings?.iterations !== undefined
   return {
     name: group.name,
     scriptId: group.script_id,
@@ -300,10 +320,35 @@ function normalizeGroupForPayload(group: ScenarioFormGroup) {
     rampUp: group.ramp_up,
     rampDown: group.ramp_down,
     stages: group.stages.map(normalizeStageForPayload),
-    iterations: group.iterations,
+    // A runtime iteration override and the compact legacy field are alternate
+    // representations of the same setting. Never serialize both: the backend
+    // rejects mismatched values and the runtime editor promotes edits into
+    // run_logic.
+    iterations: runtimeOwnsIterations ? undefined : group.iterations,
     initialization: group.initialization,
     runtimeSettings: group.runtimeSettings,
     assignment: group.assignment,
+  }
+}
+
+function scenarioGroupRuntimeDraftFromStored(
+  group: StoredScenario['scripts'][number],
+): ScenarioRuntimeSettingsDraft | undefined {
+  const runtimeDraft = runtimeDraftFromOverride(group.runtime_settings)
+  const runtimeOwnsIterations = group.runtime_settings?.run_logic !== undefined
+    || group.runtime_settings?.iterations !== undefined
+
+  if (runtimeOwnsIterations || group.iterations === undefined) return runtimeDraft
+
+  // The compact stored field is a legacy representation of the runtime
+  // iteration override. Move it into the runtime draft so the runtime editor
+  // displays the actual saved value and can promote an edit to canonical
+  // run_logic without leaving a stale compact value behind.
+  return {
+    ...runtimeDraft,
+    iterations: group.iterations,
+    log_level: runtimeDraft?.log_level ?? '',
+    auto_transactions: runtimeDraft?.auto_transactions ?? '',
   }
 }
 
@@ -316,9 +361,9 @@ function scenarioFormGroupFromStored(group: StoredScenario['scripts'][number], f
     ramp_up: group.ramp_up || '',
     ramp_down: group.ramp_down || '',
     stages: group.stages ? [...group.stages] : [],
-    iterations: group.iterations,
+    iterations: undefined,
     initialization: group.initialization || 'at_runtime',
-    runtimeSettings: runtimeDraftFromOverride(group.runtime_settings),
+    runtimeSettings: scenarioGroupRuntimeDraftFromStored(group),
     assignment: cloneAssignment(group.assignment),
   }
 }
@@ -335,6 +380,34 @@ function ensureScenarioGroups(groups: ScenarioFormGroup[]): ScenarioFormGroup[] 
     stages: group.stages || [],
     initialization: group.initialization || 'at_runtime',
     assignment: group.assignment,
+  }))
+}
+
+/**
+ * Rebuilds the shape-controlled parts of a group without discarding advanced
+ * group configuration the operator already authored. Template-provided legacy
+ * iteration caps win when present; otherwise the existing cap is retained.
+ */
+export function reseedScenarioGroups(
+  seedGroups: ScenarioSeed['groups'],
+  previousGroups: ScenarioFormGroup[],
+): ScenarioFormGroup[] {
+  const groups = seedGroups && seedGroups.length > 0 ? seedGroups : [{ name: '', vusers: 10 }]
+  return ensureScenarioGroups(groups.map((group, index) => {
+    const previous = previousGroups[index]
+    return {
+      name: group.name || previous?.name || (index === 0 ? '' : `Group ${index + 1}`),
+      script_id: previous?.script_id || previousGroups[0]?.script_id || '',
+      role: previous?.role,
+      vusers: group.vusers || previous?.vusers || 10,
+      ramp_up: group.ramp_up || '',
+      ramp_down: group.ramp_down || '',
+      stages: group.stages ? structuredClone(group.stages) : [],
+      iterations: group.iterations ?? previous?.iterations,
+      initialization: previous?.initialization || 'at_runtime',
+      runtimeSettings: previous?.runtimeSettings ? structuredClone(previous.runtimeSettings) : undefined,
+      assignment: cloneAssignment(previous?.assignment),
+    }
   }))
 }
 
@@ -525,16 +598,43 @@ function thinkTimeFromForm(form: ScenarioFormState): RuntimeSettingsOverride['th
   return undefined
 }
 
-function runtimeSettingsFromForm(form: ScenarioFormState, includeBrowser: boolean): ScenarioRuntimeSettingsDraft {
+// Exported for framework-independent round-trip regression coverage.
+// eslint-disable-next-line react-refresh/only-export-components
+export function runtimeSettingsFromForm(form: ScenarioFormState, includeBrowser: boolean): ScenarioRuntimeSettingsDraft {
   const preserved = runtimeDraftFromOverride(form.runtime_settings)
+  const hasCanonicalRunLogic = form.runtime_settings?.run_logic !== undefined
+  const hasCanonicalLog = form.runtime_settings?.log !== undefined
+  const hasCanonicalBrowser = form.runtime_settings?.browser_config !== undefined
+  const runLogic = hasCanonicalRunLogic
+    ? {
+        ...preserved?.run_logic,
+        iterations: form.runtime_iterations,
+        auto_transactions: form.runtime_auto_transactions || undefined,
+      }
+    : preserved?.run_logic
+  const log = hasCanonicalLog
+    ? { ...preserved?.log, level: form.runtime_log_level || undefined }
+    : preserved?.log
+  const browserConfig = includeBrowser && hasCanonicalBrowser
+    ? {
+        ...preserved?.browser_config,
+        device_profile: form.browser_device_profile || undefined,
+        orientation: form.browser_orientation || undefined,
+        touch_mode: form.browser_touch_mode ? form.browser_touch_mode === 'true' : undefined,
+        headless: form.browser_headless ? form.browser_headless === 'true' : undefined,
+      }
+    : preserved?.browser_config
   return {
     ...preserved,
-    iterations: form.runtime_iterations,
+    iterations: hasCanonicalRunLogic ? undefined : form.runtime_iterations,
     pacing: pacingFromForm(form),
     think_time: thinkTimeFromForm(form),
-    browser: includeBrowser ? browserRuntimeFromForm(form) : preserved?.browser,
-    log_level: form.runtime_log_level,
-    auto_transactions: form.runtime_auto_transactions,
+    browser: includeBrowser ? (hasCanonicalBrowser ? undefined : browserRuntimeFromForm(form)) : preserved?.browser,
+    browser_config: browserConfig,
+    log_level: hasCanonicalLog ? '' : form.runtime_log_level,
+    log,
+    auto_transactions: hasCanonicalRunLogic ? '' : form.runtime_auto_transactions,
+    run_logic: runLogic,
     continue_on_error: form.continue_on_error,
     snapshot_on_error: form.snapshot_on_error,
   }
@@ -545,26 +645,34 @@ function booleanSelectValue(value?: boolean): '' | 'true' | 'false' {
   return value ? 'true' : 'false'
 }
 
-function assignmentFromForm(form: ScenarioFormState): GeneratorAssignmentSettings {
+export function assignmentFromForm(form: ScenarioFormState): GeneratorAssignmentSettings {
   const preserved = cloneAssignment(form.assignment)
+  const common = {
+    ...(preserved?.required_labels ? { required_labels: { ...preserved.required_labels } } : {}),
+    ...(preserved?.tolerate_generator_loss ? { tolerate_generator_loss: true } : {}),
+  }
   if (form.assignment_mode === 'specific_hosts') {
     return {
-      ...(preserved || {}),
+      ...common,
       mode: 'specific_hosts',
       selected_targets: [...form.assignment_targets],
     }
   }
-  if (preserved?.mode === 'region_weighted' || preserved?.mode === 'load_zone_weighted') {
-    return preserved
+  if (form.assignment_mode === 'region_weighted' && preserved?.region_weights) {
+    return { ...common, mode: 'region_weighted', region_weights: { ...preserved.region_weights } }
+  }
+  if (form.assignment_mode === 'load_zone_weighted' && preserved?.load_zone_weights) {
+    return { ...common, mode: 'load_zone_weighted', load_zone_weights: { ...preserved.load_zone_weights } }
   }
   return {
-    ...(preserved || {}),
+    ...common,
     mode: 'auto',
-    selected_targets: [],
   }
 }
 
-function scenarioFormStateFromStoredScenario(
+// Exported for framework-independent stored-scenario hydration regression coverage.
+// eslint-disable-next-line react-refresh/only-export-components
+export function scenarioFormStateFromStoredScenario(
   scenario: StoredScenario,
   fallbackScriptId: string,
   cloneDraft = false,
@@ -591,36 +699,39 @@ function scenarioFormStateFromStoredScenario(
     goal_p95_latency_ms: scenario.goal_config?.p95_latency_ms,
     goal_max_error_pct: scenario.goal_config?.max_error_pct,
     goal_config: scenario.goal_config ? { ...scenario.goal_config } : undefined,
-    continue_on_error: Boolean(scenario.runtime_settings?.error_handling?.continue_on_error),
-    snapshot_on_error: Boolean(scenario.runtime_settings?.error_handling?.snapshot_on_error),
-    runtime_iterations: runtimeSettings?.iterations,
+    continue_on_error: scenario.runtime_settings?.error_handling?.continue_on_error,
+    snapshot_on_error: scenario.runtime_settings?.error_handling?.snapshot_on_error,
+    runtime_iterations: runtimeSettings?.run_logic?.iterations ?? runtimeSettings?.iterations,
     runtime_pacing_type: (pacing?.type || '') as ScenarioFormState['runtime_pacing_type'],
     runtime_pacing_delay_ms: pacing?.delay_ms,
     runtime_pacing_interval_ms: pacing?.interval_ms,
     runtime_pacing_tps: pacing?.tps,
     runtime_think_time_ms: thinkTime?.mean_ms,
     runtime_ignore_think_time: Boolean(thinkTime?.ignore),
-    runtime_log_level: runtimeSettings?.log_level || '',
-    runtime_auto_transactions: runtimeSettings?.auto_transactions || '',
+    runtime_log_level: runtimeSettings?.log?.level ?? runtimeSettings?.log_level ?? '',
+    runtime_auto_transactions: runtimeSettings?.run_logic?.auto_transactions ?? runtimeSettings?.auto_transactions ?? '',
     runtime_settings: runtimeSettings,
-    browser_device_profile: scenario.runtime_settings?.browser?.device_profile || '',
-    browser_orientation: scenario.runtime_settings?.browser?.orientation || '',
-    browser_touch_mode: booleanSelectValue(scenario.runtime_settings?.browser?.touch_mode),
-    browser_headless: booleanSelectValue(scenario.runtime_settings?.browser?.headless),
-    assignment_mode: scenario.assignment?.mode === 'specific_hosts' ? 'specific_hosts' : 'auto',
+    browser_device_profile: runtimeSettings?.browser_config?.device_profile ?? runtimeSettings?.browser?.device_profile ?? '',
+    browser_orientation: runtimeSettings?.browser_config?.orientation ?? runtimeSettings?.browser?.orientation ?? '',
+    browser_touch_mode: booleanSelectValue(runtimeSettings?.browser_config?.touch_mode ?? runtimeSettings?.browser?.touch_mode),
+    browser_headless: booleanSelectValue(runtimeSettings?.browser_config?.headless ?? runtimeSettings?.browser?.headless),
+    assignment_mode: scenario.assignment?.mode || 'auto',
     assignment_targets: scenario.assignment?.selected_targets ? [...scenario.assignment.selected_targets] : [],
     assignment: cloneAssignment(scenario.assignment),
     data_pool_id: firstPool?.pool_id || '',
     data_pool_alias: firstPool?.alias || '',
-    data_pool_access_mode: firstPool?.access_mode || 'read_only',
+    // Shared pools are materialized as immutable per-run snapshots. Durable
+    // read/write and consume coordination is not implemented, so legacy values
+    // are migrated to the only executable mode when the scenario is edited.
+    data_pool_access_mode: 'read_only',
     data_pool_selection_strategy: firstPool?.selection_strategy || 'sequential',
     data_pools: scenario.data_pools?.map(binding => cloneDraft ? {
       pool_id: binding.pool_id,
       pool_name: binding.pool_name,
       alias: binding.alias,
-      access_mode: binding.access_mode,
+      access_mode: 'read_only',
       selection_strategy: binding.selection_strategy,
-    } : { ...binding }),
+    } : { ...binding, access_mode: 'read_only' }),
   }
 }
 
@@ -1231,6 +1342,35 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     }
     return ''
   }, [form.duration, formGroups])
+  const observerEnvelopeError = useMemo(() => {
+    for (let index = 0; index < formGroups.length; index += 1) {
+      const group = formGroups[index]
+      const script = findScriptById(scripts, group.script_id)
+      const peakVUsers = Math.max(Number(group.vusers) || 0, maxStageVUsers(group.stages))
+      const groupError = validateGroupExecutionEnvelope({
+        role: group.role,
+        protocol: script?.protocol,
+        vusers: peakVUsers,
+        label: group.name || `Group ${index + 1}`,
+      })
+      if (groupError) return groupError
+    }
+    return ''
+  }, [formGroups, scripts])
+  const aggregateEnvelopeError = useMemo(
+    () => validateAggregateVUserDemand(formGroups, 'Scenario') || '',
+    [formGroups],
+  )
+  const assignmentValidationError = useMemo(() => {
+    const rootError = validateGeneratorAssignment(assignmentFromForm(form), 'scenario', 'Scenario assignment')
+    if (rootError) return rootError
+    for (let index = 0; index < formGroups.length; index += 1) {
+      const group = formGroups[index]
+      const groupError = validateGeneratorAssignment(group.assignment, 'group', group.name || `Group ${index + 1}`)
+      if (groupError) return groupError
+    }
+    return ''
+  }, [form, formGroups])
   const showBrowserRuntimeSettings = formGroups.some(group => findScriptById(scripts, group.script_id)?.protocol === 'browser')
   const canManageTests = useMemo(
     () => isEffectiveOperationAllowed(effectiveAuthAccessResources, 'manage_tests'),
@@ -1305,12 +1445,12 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const showModelPreview = showForm && wizardStep !== 'start' && wizardStep !== 'scripts'
 
   const buildScenarioDraftPayload = useCallback((draftForm: ScenarioFormState = form) => {
-    const retainedPools = (draftForm.data_pools || []).map(binding => ({ ...binding }))
+    const retainedPools = (draftForm.data_pools || []).map(binding => ({ ...binding, access_mode: 'read_only' as const }))
     const dataPoolsPayload = draftForm.data_pool_id ? [{
       ...(retainedPools[0] || {}),
       pool_id: draftForm.data_pool_id,
       alias: (draftForm.data_pool_alias || dataPools.find(pool => pool.id === draftForm.data_pool_id)?.name || 'data').trim().toLowerCase().replace(/\s+/g, '_'),
-      access_mode: draftForm.data_pool_access_mode || 'read_only',
+      access_mode: 'read_only' as const,
       selection_strategy: draftForm.data_pool_selection_strategy || 'sequential',
     }, ...retainedPools.slice(1)] : []
 
@@ -1727,7 +1867,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
         pool_id: binding.pool_id,
         pool_name: binding.pool_name,
         alias: binding.alias,
-        access_mode: binding.access_mode,
+        access_mode: 'read_only',
         selection_strategy: binding.selection_strategy,
       })),
     }))
@@ -1760,8 +1900,8 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   }
 
   // Single form-seeding path shared by the starter-template button and the workload-shape
-  // catalog. Preserves any per-group script_id / initialization already chosen so switching
-  // shapes re-seeds the load model without discarding script selections.
+  // catalog. Shape-controlled fields are refreshed while authored per-group script,
+  // role, initialization, iteration, runtime, and placement settings are retained.
   const seedFormFromScenario = (seed: ScenarioSeed) => {
     setForm(prev => ({
       ...prev,
@@ -1769,23 +1909,13 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       scenario_mode: seed.scenario_mode || 'vuser_driven',
       script_shakeout: seed.script_shakeout ?? prev.script_shakeout,
       resource_baseline: seed.resource_baseline ?? prev.resource_baseline,
-      groups: ensureScenarioGroups(
-        ((seed.groups && seed.groups.length > 0) ? seed.groups : [{ name: '', vusers: 10 }]).map((group, index) => ({
-          name: group.name || prev.groups[index]?.name || (index === 0 ? '' : `Group ${index + 1}`),
-          script_id: prev.groups[index]?.script_id || prev.groups[0]?.script_id || '',
-          vusers: group.vusers || prev.groups[index]?.vusers || 10,
-          ramp_up: group.ramp_up || '',
-          ramp_down: group.ramp_down || '',
-          stages: group.stages || [],
-          initialization: prev.groups[index]?.initialization || 'at_runtime',
-          assignment: prev.groups[index]?.assignment,
-        })),
-      ),
+      groups: reseedScenarioGroups(seed.groups, prev.groups),
       goal_target_average_tps: seed.goal?.target_average_tps,
       goal_min_vusers: seed.goal?.min_vusers,
       goal_max_vusers: seed.goal?.max_vusers,
       goal_p95_latency_ms: seed.goal?.p95_latency_ms,
       goal_max_error_pct: seed.goal?.max_error_pct,
+      goal_config: seed.goal ? { ...seed.goal } : undefined,
       runtime_iterations: seed.iterations ?? prev.runtime_iterations,
       runtime_pacing_type: (seed.pacing?.type || prev.runtime_pacing_type || '') as ScenarioFormState['runtime_pacing_type'],
       runtime_pacing_delay_ms: seed.pacing?.delay_ms ?? prev.runtime_pacing_delay_ms,
@@ -2064,31 +2194,34 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const updateGroupRuntime = (index: number, next: ScenarioRuntimeSettingsDraft | undefined) => {
     setForm(prev => ({
       ...prev,
-      groups: prev.groups.map((group, groupIndex) => (groupIndex === index ? { ...group, runtimeSettings: next } : group)),
+      groups: prev.groups.map((group, groupIndex) => {
+        if (groupIndex !== index) return group
+        const runtimeOwnsIterations = next?.run_logic !== undefined || next?.iterations !== undefined
+        return {
+          ...group,
+          ...(runtimeOwnsIterations ? { iterations: undefined } : {}),
+          runtimeSettings: next,
+        }
+      }),
     }))
     setLoadModelValidation(null)
   }
 
-  // applyRuntimeToGroups copies a source group's runtime override onto the selected
-  // target groups (client-side, on the in-progress draft), dropping browser-only
-  // fields for groups whose script protocol cannot use them.
+  // Apply the source group's effective runtime (engine → source script → scenario →
+  // source group) to each target. Materializing before protocol filtering prevents
+  // an inheriting source from accidentally turning into the target script's defaults.
   const applyRuntimeToGroups = (sourceIndex: number, targetIndexes: number[]) => {
-    setForm(prev => {
-      const source = prev.groups[sourceIndex]?.runtimeSettings
-      return {
-        ...prev,
-        groups: prev.groups.map((group, groupIndex) => {
-          if (!targetIndexes.includes(groupIndex)) return group
-          if (!source) return { ...group, runtimeSettings: undefined }
-          const protocol = findScriptById(scripts, group.script_id)?.protocol
-          const copy: ScenarioRuntimeSettingsDraft = { ...source }
-          if (!isRuntimeFieldApplicable('browser', protocol)) {
-            copy.browser = undefined
-          }
-          return { ...group, runtimeSettings: copy }
-        }),
-      }
-    })
+    setForm(prev => ({
+      ...prev,
+      groups: applyEffectiveRuntimeSettingsToGroups(
+        prev.groups,
+        scripts,
+        engineDefaults,
+        runtimeSettingsFromForm(prev, true),
+        sourceIndex,
+        targetIndexes,
+      ),
+    }))
     setLoadModelValidation(null)
   }
 
@@ -2128,7 +2261,12 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const selectScriptFromLibrary = (script: StoredScript) => {
     if (scriptSelectionTargetIndex !== null && formGroups[scriptSelectionTargetIndex]) {
       const targetIndex = scriptSelectionTargetIndex
-      updateScenarioGroup(targetIndex, { script_id: script.id })
+      updateScenarioGroup(targetIndex, {
+        script_id: script.id,
+        ...(formGroups[targetIndex].role === 'observer' && script.protocol !== 'browser'
+          ? { role: 'load' as const }
+          : {}),
+      })
       setScriptSelectionTargetIndex(null)
       window.setTimeout(() => {
         scriptGroupRefs.current[targetIndex]?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
@@ -2250,6 +2388,18 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       setLoadModelValidationError(blockingStageTimelineMessage)
       return
     }
+    if (observerEnvelopeError) {
+      setLoadModelValidationError(observerEnvelopeError)
+      return
+    }
+    if (aggregateEnvelopeError) {
+      setLoadModelValidationError(aggregateEnvelopeError)
+      return
+    }
+    if (assignmentValidationError) {
+      setLoadModelValidationError(assignmentValidationError)
+      return
+    }
     setLoadModelValidationLoading(true)
     setLoadModelValidationError('')
     try {
@@ -2285,6 +2435,30 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
     if (blockingStageTimelineMessage) {
       setError(blockingStageTimelineMessage)
       return null
+    }
+    if (observerEnvelopeError) {
+      setError(observerEnvelopeError)
+      return null
+    }
+    if (aggregateEnvelopeError) {
+      setError(aggregateEnvelopeError)
+      return null
+    }
+    if (assignmentValidationError) {
+      setError(assignmentValidationError)
+      return null
+    }
+    if (form.scenario_mode === 'goal_oriented') {
+      const goalConfig = goalConfigFromForm(form)
+      if (!hasGoalModeConfiguration(goalConfig)) {
+        setError('Goal-oriented scenarios require at least one goal or guardrail setting')
+        return null
+      }
+      const goalConfigError = validateGoalConfig(goalConfig)
+      if (goalConfigError) {
+        setError(goalConfigError)
+        return null
+      }
     }
     const payload = buildScenarioDraftPayload()
     try {
@@ -2352,12 +2526,16 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   const availableTargets = assignmentRecommendation?.available_targets || []
   const recommendedTargets = assignmentRecommendation?.recommended_targets || []
   const availableLabels = assignmentRecommendation?.available_labels || {}
+  const rootAssignment = assignmentFromForm(form)
 
-  const toggleAssignmentTarget = (target: string, checked: boolean) => {
-    const current = new Set(form.assignment_targets)
-    if (checked) current.add(target)
-    else current.delete(target)
-    setForm({ ...form, assignment_mode: 'specific_hosts', assignment_targets: Array.from(current) })
+  const updateRootAssignment = (next?: GeneratorAssignmentSettings) => {
+    const assignment = cloneAssignment(next) || { mode: 'auto' as const }
+    setForm(previous => ({
+      ...previous,
+      assignment,
+      assignment_mode: assignment.mode || 'auto',
+      assignment_targets: [...(assignment.selected_targets || [])],
+    }))
   }
 
   const currentWizardIndex = scenarioWizardSteps.findIndex(step => step.id === wizardStep)
@@ -3081,7 +3259,21 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                       <select
                         className="settings-input"
                         value={group.role || 'load'}
-                        onChange={event => updateScenarioGroup(index, { role: event.target.value as ScenarioFormGroup['role'] })}
+                        onChange={event => {
+                          const role = event.target.value as ScenarioFormGroup['role']
+                          updateScenarioGroup(index, {
+                            role,
+                            ...(role === 'observer' ? {
+                              vusers: clampVUsersForRole(group.vusers, role, 1),
+                              stages: group.stages.map(stage => ({
+                                ...stage,
+                                ...(stage.target_vusers !== undefined
+                                  ? { target_vusers: clampVUsersForRole(stage.target_vusers, role) }
+                                  : {}),
+                              })),
+                            } : {}),
+                          })
+                        }}
                         title="Observer canaries are small browser groups that continuously report Web Vitals and stay pinned during goal-based scaling."
                       >
                         <option value="load">Load</option>
@@ -3089,6 +3281,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                           Observer Canary{selectedScript?.protocol !== 'browser' ? ' (browser scripts only)' : ''}
                         </option>
                       </select>
+                      {group.role === 'observer' && <small>Observer canaries are capped at {OBSERVER_MAX_VUSERS} VUsers.</small>}
                     </label>
                   </div>
                 </div>
@@ -3105,6 +3298,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
 
     if (wizardStep === 'run') {
       const activeGroupScript = findScriptById(scripts, activeStageGroup.script_id)
+      const activeGroupVUserMax = maxVUsersForRole(activeStageGroup.role)
       const activeGroupLabel = activeStageGroup.name || `Group ${activeGroupIndex + 1}`
 
       return (
@@ -3208,11 +3402,24 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                           className="scenario-vuser-slider"
                           type="range"
                           min={1}
-                          max={Math.max(100, Number(activeStageGroup.vusers) * 2 || 100)}
+                          max={activeStageGroup.role === 'observer'
+                            ? activeGroupVUserMax
+                            : Math.min(activeGroupVUserMax, Math.max(100, Number(activeStageGroup.vusers) * 2 || 100))}
                           value={activeStageGroup.vusers}
-                          onChange={event => updateScenarioGroup(activeGroupIndex, { vusers: Number(event.target.value) })}
+                          onChange={event => updateScenarioGroup(activeGroupIndex, {
+                            vusers: clampVUsersForRole(Number(event.target.value), activeStageGroup.role, 1),
+                          })}
                         />
-                        <input className="settings-input" type="number" min={1} value={activeStageGroup.vusers} onChange={event => updateScenarioGroup(activeGroupIndex, { vusers: Number(event.target.value) })} />
+                        <input
+                          className="settings-input"
+                          type="number"
+                          min={1}
+                          max={activeGroupVUserMax}
+                          value={activeStageGroup.vusers}
+                          onChange={event => updateScenarioGroup(activeGroupIndex, {
+                            vusers: clampVUsersForRole(Number(event.target.value), activeStageGroup.role, 1),
+                          })}
+                        />
                       </div>
                     </label>
                     <DurationField
@@ -3252,11 +3459,11 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                 <div><strong>Resource baseline windows</strong><span>Capture 5m pre/post resource evidence around the run.</span></div>
               </label>
               <label className={`scenario-option-card ${form.continue_on_error ? 'selected' : ''}`}>
-                <input type="checkbox" checked={form.continue_on_error} onChange={event => setForm({ ...form, continue_on_error: event.target.checked })} />
+                <input type="checkbox" checked={form.continue_on_error ?? false} onChange={event => setForm({ ...form, continue_on_error: event.target.checked })} />
                 <div><strong>Continue on action errors</strong><span>Keep collecting resilience evidence after request-level failures.</span></div>
               </label>
               <label className={`scenario-option-card ${form.snapshot_on_error ? 'selected' : ''}`}>
-                <input type="checkbox" checked={form.snapshot_on_error} onChange={event => setForm({ ...form, snapshot_on_error: event.target.checked })} />
+                <input type="checkbox" checked={form.snapshot_on_error ?? false} onChange={event => setForm({ ...form, snapshot_on_error: event.target.checked })} />
                 <div><strong>Snapshot on error</strong><span>Preserve request/response context for failed actions.</span></div>
               </label>
             </div>
@@ -3269,13 +3476,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                   <p>Persist target envelope settings with this scenario draft.</p>
                 </div>
               </div>
-              <div className="scenario-browser-grid">
-                <label><span>Target average TPS</span><input className="settings-input" type="number" min={0} value={form.goal_target_average_tps || ''} onChange={event => setForm({ ...form, goal_target_average_tps: Number(event.target.value) || undefined })} /></label>
-                <label><span>Min VUsers</span><input className="settings-input" type="number" min={0} value={form.goal_min_vusers || ''} onChange={event => setForm({ ...form, goal_min_vusers: Number(event.target.value) || undefined })} /></label>
-                <label><span>Max VUsers</span><input className="settings-input" type="number" min={0} value={form.goal_max_vusers || ''} onChange={event => setForm({ ...form, goal_max_vusers: Number(event.target.value) || undefined })} /></label>
-                <label><span>P95 latency ms</span><input className="settings-input" type="number" min={0} value={form.goal_p95_latency_ms || ''} onChange={event => setForm({ ...form, goal_p95_latency_ms: Number(event.target.value) || undefined })} /></label>
-                <label><span>Max error %</span><input className="settings-input" type="number" min={0} value={form.goal_max_error_pct || ''} onChange={event => setForm({ ...form, goal_max_error_pct: Number(event.target.value) || undefined })} /></label>
-              </div>
+              <CreateTestGoalSettings
+                goalConfig={goalConfigFromForm(form)}
+                onGoalConfigChange={(field, value) => setForm(previous => scenarioFormWithGoalField(previous, field, value))}
+              />
             </div>
           )}
           <div className="scenario-subpanel">
@@ -3324,7 +3528,19 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                       showValidation={false}
                       onChange={value => updateStage(index, { duration: value })}
                     />
-                    <input className="settings-input" type="number" min={0} value={stage.target_vusers ?? ''} onChange={event => updateStage(index, { target_vusers: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Target VUsers" />
+                    <input
+                      className="settings-input"
+                      type="number"
+                      min={0}
+                      max={activeGroupVUserMax}
+                      value={stage.target_vusers ?? ''}
+                      onChange={event => updateStage(index, {
+                        target_vusers: event.target.value === ''
+                          ? undefined
+                          : clampVUsersForRole(Number(event.target.value), activeStageGroup.role),
+                      })}
+                      placeholder="Target VUsers"
+                    />
                     <input className="settings-input" type="number" min={0} value={stage.target_tps ?? ''} onChange={event => updateStage(index, { target_tps: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="Target TPS" />
                     <div className="scenario-stage-row-actions">
                       <button type="button" className="btn btn-sm btn-ghost" onClick={() => duplicateStage(index)}>Duplicate</button>
@@ -3367,13 +3583,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             <div className="scenario-assignment-header">
               <div>
                 <h4>Controller / Generator Assignment</h4>
-                <p>Use scenario size to decide whether the controller should auto-place the run or restrict it to specific generator hostnames.</p>
+                <p>Use automatic placement, host pinning, capability labels, or weighted regions and load zones for the scenario default.</p>
               </div>
               {estimateLoading && <span className="scenario-assignment-status">Estimating...</span>}
-            </div>
-            <div className="scenario-assignment-switcher">
-              <button type="button" className={`mode-chip ${form.assignment_mode === 'auto' ? 'active' : ''}`} onClick={() => setForm({ ...form, assignment_mode: 'auto', assignment_targets: [] })}>Auto Assignment</button>
-              <button type="button" className={`mode-chip ${form.assignment_mode === 'specific_hosts' ? 'active' : ''}`} onClick={() => setForm({ ...form, assignment_mode: 'specific_hosts' })}>Specific Hostnames</button>
             </div>
             {draftEstimate?.footprint && (
               <div className="scenario-assignment-footprint">
@@ -3383,24 +3595,21 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               </div>
             )}
             {assignmentRecommendation?.summary && <p className="scenario-assignment-copy">{assignmentRecommendation.summary}</p>}
-            {form.assignment_mode === 'specific_hosts' ? (
-              availableTargets.length > 0 ? (
-                <div className="scenario-assignment-targets">
-                  {availableTargets.map((target) => {
-                    const checked = form.assignment_targets.includes(target)
-                    const recommended = recommendedTargets.includes(target)
-                    return (
-                      <label key={target} className={`scenario-assignment-target ${checked ? 'selected' : ''}`}>
-                        <input type="checkbox" checked={checked} onChange={(event) => toggleAssignmentTarget(target, event.target.checked)} />
-                        <div><strong>{target}</strong><span>{recommended ? 'Recommended for this scenario footprint' : 'Configured on the controller'}</span></div>
-                      </label>
-                    )
-                  })}
-                </div>
-              ) : <p className="scenario-assignment-copy secondary">No distributed generator hostnames are currently configured on this controller.</p>
-            ) : recommendedTargets.length > 0 ? (
+            <div className="scenario-root-placement-editor">
+              <GroupPlacementEditor
+                assignment={rootAssignment}
+                onChange={updateRootAssignment}
+                availableTargets={availableTargets}
+                recommendedTargets={recommendedTargets}
+                generatorInventory={generatorInventory}
+                availableLabels={availableLabels}
+                allowInherit={false}
+                scope="scenario"
+              />
+            </div>
+            {rootAssignment.mode === 'auto' && recommendedTargets.length > 0 ? (
               <div className="scenario-assignment-chip-row">{recommendedTargets.map(target => <span key={target} className="scenario-assignment-chip">{target}</span>)}</div>
-            ) : <p className="scenario-assignment-copy secondary">Auto-assignment will use the controller&apos;s configured generator inventory when distributed execution is enabled.</p>}
+            ) : null}
             {estimateError && <div className="settings-error-inline">{estimateError}</div>}
             {assignmentRecommendation?.warnings && assignmentRecommendation.warnings.length > 0 && (
               <div className="scenario-assignment-warnings">{assignmentRecommendation.warnings.map(warning => <p key={warning}>{warning}</p>)}</div>
@@ -3430,6 +3639,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                         availableLabels={availableLabels}
                         protocol={script?.protocol}
                         compact
+                        scope="group"
                       />
                     </div>
                   )
@@ -3464,11 +3674,10 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             </label>
             <label className="scenario-field">
               <span>Access Mode</span>
-              <select className="settings-input" value={form.data_pool_access_mode || 'read_only'} onChange={event => setForm({ ...form, data_pool_access_mode: event.target.value as 'read_only' | 'read_write' | 'consume' })} disabled={!form.data_pool_id}>
-                <option value="read_only">Read only</option>
-                <option value="read_write">Read/write</option>
-                <option value="consume">Consume rows</option>
+              <select className="settings-input" value="read_only" disabled>
+                <option value="read_only">Read-only run snapshot</option>
               </select>
+              <small>Rows are snapshotted when the run is created; the shared pool is never mutated by execution.</small>
             </label>
             <label className="scenario-field">
               <span>Selection Strategy</span>
@@ -3490,7 +3699,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             <h4>Review And Validate</h4>
             <p>Validate modeled demand, capacity, data fit, and generator placement before saving.</p>
           </div>
-          <button type="button" className="btn btn-secondary" onClick={validateLoadModel} disabled={loadModelValidationLoading || Boolean(blockingStageTimelineMessage)}>
+          <button type="button" className="btn btn-secondary" onClick={validateLoadModel} disabled={loadModelValidationLoading || Boolean(blockingStageTimelineMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError)}>
             {loadModelValidationLoading ? 'Validating...' : 'Validate Load Model'}
           </button>
         </div>
@@ -3621,6 +3830,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
           {renderSourceScenarioRunsPanel()}
 
           {blockingStageTimelineMessage && <div className="settings-error-inline">{blockingStageTimelineMessage}</div>}
+          {observerEnvelopeError && <div className="settings-error-inline">{observerEnvelopeError}</div>}
+          {aggregateEnvelopeError && <div className="settings-error-inline">{aggregateEnvelopeError}</div>}
+          {assignmentValidationError && <div className="settings-error-inline">{assignmentValidationError}</div>}
 
           <div className="scenario-builder-actions">
             <button className="btn btn-secondary" onClick={guardedOpenScenarioLibrary}>Cancel</button>
@@ -3657,9 +3869,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
               Next
             </button>
             {wizardStep === 'review' && onCreateTestFromScenario && (
-              <button className="btn btn-secondary" onClick={saveScenarioAndCreateTest} disabled={Boolean(blockingStageTimelineMessage)}>Save &amp; Create Test Run</button>
+              <button className="btn btn-secondary" onClick={saveScenarioAndCreateTest} disabled={Boolean(blockingStageTimelineMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError)}>Save &amp; Create Test Run</button>
             )}
-            <button className="btn btn-primary" onClick={saveScenario} disabled={Boolean(blockingStageTimelineMessage)}>Save Scenario</button>
+            <button className="btn btn-primary" onClick={saveScenario} disabled={Boolean(blockingStageTimelineMessage || observerEnvelopeError || aggregateEnvelopeError || assignmentValidationError)}>Save Scenario</button>
           </div>
 
         </div>

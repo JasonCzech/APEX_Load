@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"sort"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 const nativeProtocolSupportSchemaVersion = "apexload.native_protocol_support.v1"
@@ -51,6 +53,9 @@ func (s *Server) handleNativeProtocolSupportMatrix(w http.ResponseWriter, r *htt
 }
 
 func nativeProtocolSupportMatrix() []NativeProtocolSupportEntry {
+	solaceStatus, solacePosture := realAdapterSupport(dsl.SolaceJMSRealAdapterAvailable())
+	serviceBusStatus, serviceBusPosture := realAdapterSupport(dsl.ServiceBusJMSRealAdapterAvailable())
+	kafkaStatus, kafkaPosture := realAdapterSupport(dsl.KafkaRealAdapterAvailable())
 	entries := []NativeProtocolSupportEntry{
 		{
 			Protocol:            "websocket",
@@ -119,56 +124,86 @@ func nativeProtocolSupportMatrix() []NativeProtocolSupportEntry {
 		{
 			Protocol:            "jms-solace",
 			DisplayName:         "JMS Solace",
-			Status:              "supported",
-			ExecutionPosture:    "native_linux",
+			Status:              solaceStatus,
+			ExecutionPosture:    solacePosture,
 			AuthoringSurface:    "blank editor, starter template, component library",
 			RuntimeConfig:       []string{"broker URL", "VPN", "destination", "destination type", "reply-to", "acknowledgement", "delivery mode", "timeout", "mock mode"},
-			ActionEditor:        []string{"publish", "consume", "request/reply", "ack", "commit", "rollback", "properties", "correlation", "message assertions"},
-			Validation:          []string{"broker/destination readiness", "mock broker local replay", "destination policy review"},
+			ActionEditor:        []string{"publish", "consume", "request/reply", "ack/commit/rollback (mock only)", "properties", "correlation", "message assertions"},
+			Validation:          []string{"broker/destination readiness", "real-adapter build availability", "unsupported real settlement rejection", "mock broker local replay", "destination policy review"},
 			ReplayEvidence:      []string{"protocol evidence", "message envelope", "correlation evidence", "timeout/dead-letter diagnosis"},
 			ReportExport:        []string{"replay JSON", "debug session export", "archive transaction evidence"},
 			ImportSources:       []string{"JSON DSL", "sample templates"},
-			RemainingGaps:       []string{"IBM MQ remains review-only until a registered adapter exists"},
+			RemainingGaps:       []string{realAdapterAvailabilityGap("Solace JMS", "jms_solace_real", dsl.SolaceJMSRealAdapterAvailable()), "generic JMS acknowledgement and transaction actions are mock-only"},
 			RecommendedWorkflow: "Use mock replay for script shakeout, then attach broker credentials and export correlation/dead-letter evidence.",
 			Evidence:            []string{"pkg/protocol/jms/jms_test.go", "/api/v1/protocol-bundles/support-matrix"},
 		},
 		{
 			Protocol:            "jms-servicebus",
 			DisplayName:         "JMS Azure Service Bus",
-			Status:              "supported",
-			ExecutionPosture:    "native_linux",
+			Status:              serviceBusStatus,
+			ExecutionPosture:    serviceBusPosture,
 			AuthoringSurface:    "blank editor, starter template, component library",
 			RuntimeConfig:       []string{"connection string or namespace", "destination", "destination type", "subscription", "reply-to", "acknowledgement", "delivery mode", "timeout", "mock mode", "servicebus_max_clients"},
-			ActionEditor:        []string{"publish", "consume", "request/reply", "ack", "commit", "rollback", "properties", "correlation", "message assertions"},
-			Validation:          []string{"broker/destination readiness", "Service Bus topic subscription readiness", "mock broker local replay", "destination policy review"},
+			ActionEditor:        []string{"publish", "consume", "request/reply", "explicit peek-lock settlement", "ack/commit/rollback (mock only)", "properties", "correlation", "message assertions"},
+			Validation:          []string{"broker/destination readiness", "real-adapter build availability", "unsupported real settlement rejection", "Service Bus topic subscription readiness", "mock broker local replay", "destination policy review"},
 			ReplayEvidence:      []string{"protocol evidence", "message envelope", "correlation evidence", "timeout/dead-letter diagnosis"},
 			ReportExport:        []string{"replay JSON", "debug session export", "archive transaction evidence"},
 			ImportSources:       []string{"JSON DSL", "sample templates"},
-			RemainingGaps:       []string{"real Azure Service Bus adapter is opt-in via the jms_servicebus_real build tag; transactions and explicit ack actions remain no-ops with settle-on-receive behavior"},
+			RemainingGaps:       []string{realAdapterAvailabilityGap("Azure Service Bus JMS", "jms_servicebus_real", dsl.ServiceBusJMSRealAdapterAvailable()), "generic JMS acknowledgement and transaction actions are mock-only; use explicit peek-lock settlement for real Service Bus"},
 			RecommendedWorkflow: "Use mock replay for script shakeout, then build with -tags jms_servicebus_real and attach Service Bus connection settings for controlled comparison runs.",
 			Evidence:            []string{"pkg/protocol/jms/jms_test.go", "/api/v1/protocol-bundles/support-matrix"},
 		},
 		{
 			Protocol:            "kafka",
 			DisplayName:         "Apache Kafka",
-			Status:              "supported",
-			ExecutionPosture:    "native_linux",
+			Status:              kafkaStatus,
+			ExecutionPosture:    kafkaPosture,
 			AuthoringSurface:    "blank editor, starter template, AsyncAPI import",
 			RuntimeConfig:       []string{"brokers", "security protocol", "SASL mechanism/credentials", "TLS", "consumer group", "topic", "acks", "compression", "partition strategy", "timeout", "mock mode"},
-			ActionEditor:        []string{"produce", "consume", "request/reply", "commit", "seek", "key/partition", "headers", "offset/partition extractors", "message/offset/lag assertions"},
-			Validation:          []string{"broker/topic readiness", "security/acks/compression enum validation", "mock broker local replay"},
+			ActionEditor:        []string{"produce", "consume", "request/reply", "commit", "seek (mock only)", "key/partition", "headers", "offset/partition extractors", "message/offset/lag assertions"},
+			Validation:          []string{"broker/topic readiness", "real-adapter build availability", "real seek rejection", "security/acks/compression enum validation", "mock broker local replay"},
 			ReplayEvidence:      []string{"protocol evidence", "partition/offset evidence", "consumer lag", "correlation evidence", "timeout diagnosis"},
 			ReportExport:        []string{"replay JSON", "debug session export", "archive transaction evidence"},
 			ImportSources:       []string{"JSON DSL", "AsyncAPI 2.x/3.x"},
-			RemainingGaps:       []string{"real franz-go network adapter is opt-in via the kafka_real build tag (default build is mock replay only); Protobuf schema-registry payloads remain review-only while JSON Schema and Avro serde are executable with schema material"},
+			RemainingGaps:       []string{realAdapterAvailabilityGap("Kafka franz-go", "kafka_real", dsl.KafkaRealAdapterAvailable()), "kafka_seek is mock-only; Protobuf schema-registry payloads remain review-only while JSON Schema and Avro serde are executable with schema material"},
 			RecommendedWorkflow: "Author or import from AsyncAPI, shake out against the in-memory broker, then build with -tags kafka_real and attach real brokers/SASL for live execution.",
 			Evidence:            []string{"pkg/protocol/kafka/kafka_test.go", "/api/v1/scripts/import/asyncapi/support-matrix"},
+		},
+		{
+			Protocol:            "jms-ibmmq",
+			DisplayName:         "JMS IBM MQ",
+			Status:              "review_only",
+			ExecutionPosture:    "mock_only",
+			AuthoringSurface:    "blank editor, starter template, component library, enterprise archive import review",
+			RuntimeConfig:       []string{"broker URL", "destination", "destination type", "reply-to", "acknowledgement", "delivery mode", "timeout", "mock mode"},
+			ActionEditor:        []string{"publish", "consume", "request/reply", "ack/commit/rollback (mock only)", "properties", "correlation", "message assertions"},
+			Validation:          []string{"non-mock execution rejected because no MQI adapter is linked", "mock broker local replay", "destination policy review"},
+			ReplayEvidence:      []string{"mock protocol evidence", "message envelope", "correlation evidence"},
+			ReportExport:        []string{"replay JSON", "debug session export", "archive transaction evidence"},
+			ImportSources:       []string{"JSON DSL", "enterprise script archive review"},
+			RemainingGaps:       []string{"no native IBM MQ MQI adapter is registered; real broker execution is unavailable"},
+			RecommendedWorkflow: "Use mock replay only for script review; do not approve real IBM MQ execution until a governed MQI adapter and broker evidence are available.",
+			Evidence:            []string{"pkg/protocol/jms/jms_test.go", "docs/MESSAGING_SUPPORT.md"},
 		},
 	}
 	sort.SliceStable(entries, func(i, j int) bool {
 		return entries[i].Protocol < entries[j].Protocol
 	})
 	return entries
+}
+
+func realAdapterSupport(available bool) (status string, posture string) {
+	if available {
+		return "supported", "native_linux"
+	}
+	return "partial", "mock_only"
+}
+
+func realAdapterAvailabilityGap(displayName string, buildTag string, available bool) string {
+	if available {
+		return displayName + " adapter is compiled into this build; live broker evidence remains environment-specific"
+	}
+	return displayName + " adapter is not compiled into this build; use mock mode or rebuild with -tags " + buildTag
 }
 
 func nativeProtocolStatusCounts(entries []NativeProtocolSupportEntry) map[string]int {

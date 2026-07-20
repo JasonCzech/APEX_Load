@@ -652,6 +652,49 @@ func TestCapacityReservationEnlargingApprovedRequiresReapproval(t *testing.T) {
 	}
 }
 
+func TestCapacityReservationInvalidationRejectsActiveBoundTest(t *testing.T) {
+	server, store := newTimeslotServer(t)
+	start := time.Date(2026, 8, 1, 9, 0, 0, 0, time.UTC)
+	testID := "active-bound-test"
+	status := "INITIALIZING"
+	if err := store.SaveCapacityReservation(&storage.CapacityReservation{
+		ID: "ts-active", ProjectID: "proj-a",
+		StartAt: start, EndAt: start.Add(time.Hour),
+		ApprovalState: "approved", BoundTestID: &testID, BoundTestStatus: &status,
+	}); err != nil {
+		t.Fatalf("seed reservation: %v", err)
+	}
+	if err := store.SaveTest(&storage.TestRecord{
+		ID: testID, Name: "Active bound run", Status: status, ProjectID: "proj-a",
+		StartTime: start, Duration: int64(10 * time.Minute), TimeslotID: reservedStr("ts-active"), Groups: []any{},
+	}); err != nil {
+		t.Fatalf("seed active test: %v", err)
+	}
+
+	edit := timeslotRequest(t, server, http.MethodPut, "/api/v1/capacity/timeslots/ts-active", map[string]any{
+		"start_at": start, "end_at": start.Add(2 * time.Hour),
+	})
+	if edit.Code != http.StatusConflict {
+		t.Fatalf("invalidating edit = %d body=%s, want 409", edit.Code, edit.Body.String())
+	}
+	reject := timeslotRequest(t, server, http.MethodPost, "/api/v1/capacity/timeslots/ts-active/reject", nil)
+	if reject.Code != http.StatusConflict {
+		t.Fatalf("active-slot reject = %d body=%s, want 409", reject.Code, reject.Body.String())
+	}
+
+	reservation, err := store.GetCapacityReservation("ts-active")
+	if err != nil {
+		t.Fatalf("GetCapacityReservation: %v", err)
+	}
+	if reservation.ApprovalState != "approved" || reservation.BoundTestID == nil || *reservation.BoundTestID != testID {
+		t.Fatalf("reservation mutated despite conflicts: %+v", reservation)
+	}
+	storedTest, err := store.GetTest(testID)
+	if err != nil || storedTest.TimeslotID == nil || *storedTest.TimeslotID != reservation.ID {
+		t.Fatalf("test binding mutated despite conflicts: %+v, %v", storedTest, err)
+	}
+}
+
 func TestCapacityReservationUpdateDoesNotResurrectConcurrentReject(t *testing.T) {
 	server, store := newTimeslotServer(t)
 	start := time.Date(2026, 7, 1, 9, 0, 0, 0, time.UTC)

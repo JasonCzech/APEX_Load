@@ -14,7 +14,12 @@ export interface TestGroup {
   ramp_up?: string
   ramp_down?: string
   stages?: LoadStageDraft[]
+  /** Effective root+group value retained for display/backward compatibility. */
   iterations?: number
+  /** Group-owned iteration value; absent means this group inherits the root. */
+  iteration_override?: number
+  /** False/absent identifies a legacy snapshot whose inheritance provenance is unknown. */
+  iteration_override_known?: boolean
   runtime_settings?: RuntimeSettingsOverride
   initialization?: 'at_runtime' | 'at_once'
   assignment?: GeneratorAssignmentSettings
@@ -228,8 +233,10 @@ export interface ScenarioRuntimeSettingsDraft {
   browser?: RuntimeBrowserSettings
   log_level: string
   auto_transactions: string
-  continue_on_error: boolean
-  snapshot_on_error: boolean
+  /** Undefined inherits the script/default setting; false is an explicit override. */
+  continue_on_error?: boolean
+  /** Undefined inherits the script/default setting; false is an explicit override. */
+  snapshot_on_error?: boolean
   // Full error_handling retry fields (continue/snapshot above stay for back-compat).
   max_retries?: number
   retry_delay_ms?: number
@@ -251,7 +258,7 @@ export type ScenarioMode = 'vuser_driven' | 'goal_oriented'
 export type DurationUnit = 's' | 'm' | 'h'
 
 export interface DurationFieldValue {
-  value: number | ''
+  value: string
   unit: DurationUnit
 }
 
@@ -578,6 +585,7 @@ export interface TestSummary {
   scenario_id?: string
   project_id?: string
   folder_id?: string | null
+  data_pools?: ScenarioDataPoolBinding[]
   groups: TestGroup[]
   capacity_advisory?: CapacityAdvisory
   assignment?: GeneratorAssignmentSettings
@@ -1547,6 +1555,10 @@ export interface BrowserPlatformLiveMetrics extends BrowserLiveMetrics {
 export interface ScenarioDraftGroup {
   name: string
   scriptId: string
+  /** Immutable source-run group identity used only while creating a revised copy. */
+  revisionSourceGroupIndex?: number
+  /** Explicitly distinguishes a newly added/replaced group from a lost source identity. */
+  revisionNewGroup?: boolean
   /** "load" (default) or "observer" — browser experience canary, pinned during goal scaling. */
   role?: 'load' | 'observer'
   vusers: number
@@ -1554,10 +1566,22 @@ export interface ScenarioDraftGroup {
   rampDown: string
   stages?: LoadStageDraft[]
   iterations?: number
+  /** Keeps a displayed canonical runtime iteration from being duplicated as a compact override. */
+  iterationPayloadSource?: 'runtime' | 'top_level'
   initialization: 'at_runtime' | 'at_once'
   /** Per-group runtime overrides; merged over the scenario-wide runtime defaults. */
   runtimeSettings?: ScenarioRuntimeSettingsDraft
   assignment?: GeneratorAssignmentSettings
+}
+
+export interface ScenarioDraftRevisionContext {
+  sourceTestId: string
+  applicationId?: string
+  releaseId?: string
+  scenarioId?: string
+  projectId?: string
+  folderId?: string | null
+  dataPools: ScenarioDataPoolBinding[]
 }
 
 export interface ScenarioDraft {
@@ -1571,6 +1595,8 @@ export interface ScenarioDraft {
   goalConfig: GoalConfig
   groups: ScenarioDraftGroup[]
   runtimeSettings: ScenarioRuntimeSettingsDraft
+  /** Immutable source-run context carried only when a queued run is revised. */
+  revisionContext?: ScenarioDraftRevisionContext
 }
 
 export interface SharedDataPool {

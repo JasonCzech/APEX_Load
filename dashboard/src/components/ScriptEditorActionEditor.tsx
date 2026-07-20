@@ -135,6 +135,7 @@ export function ActionEditor({ action, index, parameters, onUpdate, onAddExtract
             <JmsActionFields
               action={action}
               index={index}
+              protocol={protocol}
               onAddHeader={onAddHeader}
               onAddMetadata={onAddMetadata}
               onAddAssertion={onAddAssertion}

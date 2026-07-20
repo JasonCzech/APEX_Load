@@ -15,6 +15,11 @@ import (
 
 const capacitySettingsFenceLockKey = "settings-reservations"
 
+// ErrCapacityReservationBoundActiveTest prevents an approval revocation from
+// silently stripping capacity from a run that has already crossed the atomic
+// SHAKEOUT/INITIALIZING boundary.
+var ErrCapacityReservationBoundActiveTest = errors.New("capacity reservation is bound to an active test")
+
 func acquireCapacitySettingsFence(tx *storeTx, updatedAt time.Time) error {
 	_, err := tx.Exec(`INSERT INTO capacity_approval_locks (lock_key, updated_at) VALUES (?, ?)
 		ON CONFLICT(lock_key) DO UPDATE SET updated_at=excluded.updated_at`, capacitySettingsFenceLockKey, updatedAt.UTC())
@@ -139,12 +144,37 @@ func (s *SQLiteStore) UpdateCapacityReservationDetails(reservation *CapacityRese
 			return err
 		}
 		defer tx.Rollback()
-		lockQuery := `SELECT bound_test_id FROM capacity_reservations WHERE id = ?`
+		// Invalidating an approved reservation is the same launch-authorization
+		// race as an explicit rejection. Serialize reservation -> test with the
+		// start transaction so an edit that wins first makes the stale start fail,
+		// while a start that wins first protects the now-active binding.
+		if s.db.dialect == storeDialectSQLite {
+			result, err := tx.Exec(`UPDATE capacity_reservations SET updated_at = updated_at WHERE id = ?`, reservation.ID)
+			if err != nil {
+				return err
+			}
+			affected, err := result.RowsAffected()
+			if err != nil {
+				return err
+			}
+			if affected == 0 {
+				return sql.ErrNoRows
+			}
+		}
+		lockQuery := `SELECT approval_state, bound_test_id, updated_at FROM capacity_reservations WHERE id = ?`
 		if s.db.dialect == storeDialectPostgres {
 			lockQuery += ` FOR UPDATE`
 		}
+		var currentApprovalState string
 		var previousBoundTestID *string
-		if err := tx.QueryRow(lockQuery, reservation.ID).Scan(&previousBoundTestID); err != nil {
+		var currentUpdatedAt time.Time
+		if err := tx.QueryRow(lockQuery, reservation.ID).Scan(&currentApprovalState, &previousBoundTestID, &currentUpdatedAt); err != nil {
+			return err
+		}
+		if currentApprovalState != "approved" || !currentUpdatedAt.Equal(expectedUpdatedAt) {
+			return fmt.Errorf("capacity reservation changed concurrently; reload and retry")
+		}
+		if err := rejectCapacityReservationActiveTestError(tx, s.db.dialect, reservation.ID, previousBoundTestID); err != nil {
 			return err
 		}
 		result, err := tx.Exec(`UPDATE capacity_reservations
@@ -258,18 +288,51 @@ func (s *SQLiteStore) UpdateCapacityReservationApprovalState(id string, fromStat
 		return false, err
 	}
 	defer tx.Rollback()
-	lockQuery := `SELECT bound_test_id FROM capacity_reservations WHERE id = ?`
+	// SQLite has no FOR UPDATE; take its database writer lock before the read so
+	// this decision serializes with launch transactions. PostgreSQL takes the
+	// reservation row lock explicitly below. Both paths then lock test rows only
+	// after the reservation, preserving reservation -> test order.
+	if s.db.dialect == storeDialectSQLite {
+		result, err := tx.Exec(`UPDATE capacity_reservations SET updated_at = updated_at WHERE id = ?`, id)
+		if err != nil {
+			return false, err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return false, err
+		}
+		if affected == 0 {
+			return false, nil
+		}
+	}
+	lockQuery := `SELECT approval_state, bound_test_id FROM capacity_reservations WHERE id = ?`
 	if s.db.dialect == storeDialectPostgres {
 		lockQuery += ` FOR UPDATE`
 	}
+	var approvalState string
 	var boundTestID *string
-	if err := tx.QueryRow(lockQuery, id).Scan(&boundTestID); err != nil {
+	if err := tx.QueryRow(lockQuery, id).Scan(&approvalState, &boundTestID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
 		return false, err
 	}
+	stateAllowed := false
+	for _, fromState := range fromStates {
+		if approvalState == fromState {
+			stateAllowed = true
+			break
+		}
+	}
+	if !stateAllowed {
+		return false, nil
+	}
 	clearBinding := strings.ToLower(strings.TrimSpace(toState)) != "approved"
+	if clearBinding {
+		if err := rejectCapacityReservationActiveTestError(tx, s.db.dialect, id, boundTestID); err != nil {
+			return false, err
+		}
+	}
 	query := `UPDATE capacity_reservations SET approval_state = ?, updated_at = ?`
 	if clearBinding {
 		query += `, bound_test_id = NULL, bound_test_status = NULL`
@@ -295,6 +358,34 @@ func (s *SQLiteStore) UpdateCapacityReservationApprovalState(id string, fromStat
 		return false, err
 	}
 	return true, nil
+}
+
+func rejectCapacityReservationActiveTestError(tx *storeTx, dialect storeDialect, reservationID string, boundTestID *string) error {
+	query := `SELECT id, COALESCE(status, '') FROM tests WHERE timeslot_id = ?`
+	args := []any{reservationID}
+	if boundTestID != nil && strings.TrimSpace(*boundTestID) != "" {
+		query += ` OR id = ?`
+		args = append(args, strings.TrimSpace(*boundTestID))
+	}
+	query += ` ORDER BY id`
+	if dialect == storeDialectPostgres {
+		query += ` FOR UPDATE`
+	}
+	rows, err := tx.Query(query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var testID, status string
+		if err := rows.Scan(&testID, &status); err != nil {
+			return err
+		}
+		if activeTestStatusForDeletion(status) {
+			return fmt.Errorf("%w: test %q is %s", ErrCapacityReservationBoundActiveTest, testID, status)
+		}
+	}
+	return rows.Err()
 }
 
 // ApproveCapacityReservationWithCapacityFence atomically evaluates a pending

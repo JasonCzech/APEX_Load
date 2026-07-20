@@ -28,6 +28,8 @@ kept for planning or audit context only.
 | [ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md](ENTERPRISE_DATA_PLATFORM_OPERATIONS_RUNBOOK.md) | Current | Enterprise storage/cache/archive operations |
 | [PROMETHEUS_METRICS.md](PROMETHEUS_METRICS.md) | Current | Prometheus scrape metrics |
 | [DYNATRACE_WEBHOOKS.md](DYNATRACE_WEBHOOKS.md) | Current | Dynatrace event webhook setup |
+| [OPENTELEMETRY.md](OPENTELEMETRY.md) | Current | Opt-in OTLP tracing, propagation, sampling, privacy, and deployment configuration |
+| [PERFORMANCE_BENCHMARK_EVIDENCE.md](PERFORMANCE_BENCHMARK_EVIDENCE.md) | Current | Versioned local performance evidence harness, target-scope caveats, and publication workflow |
 | [recording-agent.md](recording-agent.md) | Current | Local browser Recording Agent |
 | [deployments/README.md](../deployments/README.md) | Current | Deployment chooser |
 

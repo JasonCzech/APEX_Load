@@ -27,6 +27,18 @@ type contextStoppableExecutionBackend interface {
 	StopTestContext(ctx context.Context, tr *TestRunner, test *ManagedTest) error
 }
 
+// abortableExecutionBackend is the optional force-teardown counterpart to the
+// graceful StopTest contract. Backends that do not implement it retain the
+// legacy stop path plus execution-context cancellation; distributed execution
+// implements it so Abort can send graceful=false to every generator.
+type abortableExecutionBackend interface {
+	AbortTest(tr *TestRunner, test *ManagedTest) error
+}
+
+type contextAbortableExecutionBackend interface {
+	AbortTestContext(ctx context.Context, tr *TestRunner, test *ManagedTest) error
+}
+
 type scalableExecutionBackend interface {
 	ScaleVUsers(tr *TestRunner, test *ManagedTest, groupName string, targetVUsers int) error
 }

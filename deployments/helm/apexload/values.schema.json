@@ -109,6 +109,58 @@
         }
       }
     },
+    "tracing": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "endpoint": {
+          "type": "string",
+          "pattern": "^$|^https?://[^\\s]+$"
+        },
+        "protocol": { "enum": ["http/protobuf", "grpc"] },
+        "sampler": {
+          "enum": [
+            "always_on",
+            "always_off",
+            "traceidratio",
+            "parentbased_always_on",
+            "parentbased_always_off",
+            "parentbased_traceidratio"
+          ]
+        },
+        "samplerArg": {
+          "type": "string",
+          "pattern": "^(0(?:\\.[0-9]+)?|1(?:\\.0+)?)$"
+        },
+        "actionSampleRatio": {
+          "type": "string",
+          "pattern": "^(0(?:\\.[0-9]+)?|1(?:\\.0+)?)$"
+        },
+        "resourceAttributes": { "type": "string" },
+        "headersSecretName": {
+          "type": "string",
+          "maxLength": 253,
+          "pattern": "^$|^[a-z0-9](?:[-a-z0-9.]*[a-z0-9])?$"
+        },
+        "headersSecretKey": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 253,
+          "pattern": "^[A-Za-z0-9._-]+$"
+        }
+      },
+      "required": [
+        "enabled",
+        "endpoint",
+        "protocol",
+        "sampler",
+        "samplerArg",
+        "actionSampleRatio",
+        "resourceAttributes",
+        "headersSecretName",
+        "headersSecretKey"
+      ]
+    },
     "bruno": {
       "type": "object",
       "properties": {
