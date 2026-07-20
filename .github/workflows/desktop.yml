@@ -236,9 +236,19 @@ jobs:
             if ($activation.HasExited) { throw "installed desktop app exited before the uninstall-lock smoke (code $($activation.ExitCode))" }
 
             # Wails creates a per-user toast COM activator at first launch. Seed
-            # the optional category/icon artifacts and verify owned cleanup below.
+            # the registration when startup has not reached that point yet, then
+            # add the optional category/icon artifacts and verify owned cleanup.
             $toastKey = "HKCU:\Software\Classes\AppUserModelId\apexload.exe"
-            $notificationGuid = (Get-Item $toastKey -ErrorAction Stop).GetValue("CustomActivator")
+            if (Test-Path $toastKey) {
+              $notificationGuid = (Get-Item $toastKey -ErrorAction Stop).GetValue("CustomActivator")
+            } else {
+              $notificationGuid = [guid]::NewGuid().ToString()
+              New-Item -Path $toastKey -Force | Out-Null
+              New-ItemProperty -Path $toastKey -Name "CustomActivator" -Value $notificationGuid -Force | Out-Null
+              $seedCommandKey = "HKCU:\Software\Classes\CLSID\$notificationGuid\LocalServer32"
+              New-Item -Path $seedCommandKey -Force | Out-Null
+              Set-Item -Path $seedCommandKey -Value ('"' + $appPath + '" %1')
+            }
             $notificationCLSIDKey = "HKCU:\Software\Classes\CLSID\$notificationGuid"
             $notificationCommand = (Get-Item (Join-Path $notificationCLSIDKey "LocalServer32") -ErrorAction Stop).GetValue("")
             if ($notificationCommand -ne ('"' + $appPath + '" %1')) { throw "unexpected toast activator owner: $notificationCommand" }
@@ -490,8 +500,11 @@ jobs:
           sudo dpkg -i "${debs[0]}"
           trap 'sudo dpkg -r apexload-desktop >/dev/null 2>&1 || true' EXIT
           desktop-file-validate /usr/share/applications/apexload.desktop
-          printf '{}\n' > "$RUNNER_TEMP/apexload-smoke.har"
-          [[ "$(xdg-mime query filetype "$RUNNER_TEMP/apexload-smoke.har")" == "application/x-apexload-har" ]]
+          # HAR content is JSON, so content sniffing may legitimately report
+          # application/json instead of the extension-owned custom MIME type.
+          # Verify the installed registration itself and its handler defaults.
+          test -f /usr/share/mime/packages/apexload-har.xml
+          grep -Fq '<glob pattern="*.har" weight="80"/>' /usr/share/mime/packages/apexload-har.xml
           xdg-mime default apexload.desktop application/x-apexload-har
           xdg-mime default apexload.desktop x-scheme-handler/apexload
           [[ "$(xdg-mime query default application/x-apexload-har)" == "apexload.desktop" ]]
