@@ -57,7 +57,7 @@ func resetUnixSaveTombstoneMetadata(fd int) error {
 		}
 		desiredFlags := flags &^ linuxFSUserModifiableFlags
 		if desiredFlags != flags {
-			if err := unix.IoctlSetInt(fd, unix.FS_IOC_SETFLAGS, desiredFlags); err != nil {
+			if err := unix.IoctlSetPointerInt(fd, unix.FS_IOC_SETFLAGS, desiredFlags); err != nil {
 				return fmt.Errorf("clear user-modifiable file flags: %w", err)
 			}
 		}
@@ -141,7 +141,7 @@ func preserveReplacementMetadata(sourceFD, destinationFD int, _ os.FileInfo) err
 		}
 		desiredFlags := (destinationFlags &^ linuxFSUserModifiableFlags) | (sourceFlags & linuxFSUserModifiableFlags)
 		if desiredFlags != destinationFlags {
-			if flagsErr := unix.IoctlSetInt(destinationFD, unix.FS_IOC_SETFLAGS, desiredFlags); flagsErr != nil {
+			if flagsErr := unix.IoctlSetPointerInt(destinationFD, unix.FS_IOC_SETFLAGS, desiredFlags); flagsErr != nil {
 				return fmt.Errorf("preserve file flags: %w", flagsErr)
 			}
 		}
