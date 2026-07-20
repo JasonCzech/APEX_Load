@@ -13,16 +13,11 @@ type apiRouteAuthRule struct {
 	Requirement accessRequirement
 }
 
-var routeCatalogAuthRules = []apiRouteAuthRule{
+// legacyRouteCatalogAuthRules contains routes that have not yet moved to a
+// domain apiRouteCatalog. Migrated domains contribute their access requirements
+// directly from the canonical route specifications below.
+var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/auth/diagnostics", systemAdminAccess()),
-	routeAuth(http.MethodGet, "/api/v1/docs/swagger.yaml", viewerGlobalAccess()),
-	routeAuth(http.MethodGet, "/api/v1/docs/endpoint-catalog", viewerGlobalAccess()),
-	routeAuth(http.MethodGet, "/api/v1/system/settings", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),
-	routeAuth(http.MethodPut, "/api/v1/system/settings", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
-	routeAuth(http.MethodGet, "/api/v1/system/deployment-lease", systemAdminAccess()),
-	routeAuth(http.MethodPost, "/api/v1/system/deployment-lease/acquire", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, ServiceAccountScope: "deployments:manage", MaxBodyBytes: deploymentLeaseMaxBody}),
-	routeAuth(http.MethodPost, "/api/v1/system/deployment-lease/renew", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, ServiceAccountScope: "deployments:manage", MaxBodyBytes: deploymentLeaseMaxBody}),
-	routeAuth(http.MethodPost, "/api/v1/system/deployment-lease/release", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, ServiceAccountScope: "deployments:manage", MaxBodyBytes: deploymentLeaseMaxBody}),
 	routeAuth(http.MethodGet, "/api/v1/auth/service-accounts", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
 	routeAuth(http.MethodPost, "/api/v1/auth/service-accounts", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
 	routeAuth(http.MethodGet, "/api/v1/auth/users", accessRequirement{AuthenticatedOnly: true}),
@@ -42,48 +37,11 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/auth/effective-access/principal", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
 	routeAuth(http.MethodGet, "/api/v1/auth/audit-events", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
 	routeAuth(http.MethodGet, "/api/v1/auth/audit-events/export", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
-	routeAuth(http.MethodGet, "/api/v1/schedules/health", viewerGlobalAccess()),
-	routeAuth(http.MethodPost, "/api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}/resolve", projectAdminAccess(resolveScenarioProjectID)),
-	routeAuth(http.MethodGet, "/api/v1/run-calendar", viewerGlobalAccess()),
-
 	// Controller-native CI execution. ci_runner exists only on this bounded
 	// surface; API-key fallback must also carry the explicit run/read scope.
 	routeAuth(http.MethodPost, "/api/v1/ci/runs", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleCIRunner, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveCIRunCreateProjectID, ServiceAccountScope: "tests:run", MaxBodyBytes: 4 << 20}),
 	routeAuth(http.MethodGet, "/api/v1/ci/runs/{id}", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleCIRunner, RoleViewer, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestProjectID, ServiceAccountScope: "results:read"}),
 	routeAuth(http.MethodPost, "/api/v1/ci/runs/{id}/abort", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleCIRunner, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestProjectID, ServiceAccountScope: "tests:run"}),
-
-	// Execution plans (ordered cross-run orchestration).
-	routeAuth(http.MethodPost, "/api/v1/execution-plans", editorImportAccess(resolveExecutionPlanCreateProjectID, 262144)),
-	routeAuth(http.MethodGet, "/api/v1/execution-plans", viewerProjectAccess(resolveProjectIDFromQuery)),
-	routeAuth(http.MethodGet, "/api/v1/execution-plans/{id}", viewerProjectAccess(resolveExecutionPlanProjectID)),
-	routeAuth(http.MethodPut, "/api/v1/execution-plans/{id}", editorImportAccess(resolveExecutionPlanProjectID, 262144)),
-	routeAuth(http.MethodDelete, "/api/v1/execution-plans/{id}", editorProjectAccess(resolveExecutionPlanProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/execution-plans/{id}/runs", editorProjectAccess(resolveExecutionPlanProjectID)),
-	routeAuth(http.MethodGet, "/api/v1/execution-plans/{id}/runs", viewerProjectAccess(resolveExecutionPlanProjectID)),
-	routeAuth(http.MethodGet, "/api/v1/execution-plans/{id}/runs/{runId}", viewerProjectAccess(resolveExecutionPlanProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/execution-plans/{id}/schedules", editorProjectAccess(resolveExecutionPlanProjectID)),
-	routeAuth(http.MethodGet, "/api/v1/execution-plans/{id}/schedules", viewerProjectAccess(resolveExecutionPlanProjectID)),
-	routeAuth(http.MethodPut, "/api/v1/execution-plans/{id}/schedules/{schedule_id}", editorProjectAccess(resolveExecutionPlanProjectID)),
-	routeAuth(http.MethodDelete, "/api/v1/execution-plans/{id}/schedules/{schedule_id}", editorProjectAccess(resolveExecutionPlanProjectID)),
-	routeAuth(http.MethodGet, "/api/v1/execution-plans/{id}/schedules/{schedule_id}/occurrences", viewerProjectAccess(resolveExecutionPlanProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/execution-plans/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}/resolve", projectAdminAccess(resolveExecutionPlanProjectID)),
-	routeAuth(http.MethodGet, "/api/v1/execution-plans/{id}/approvals", viewerProjectAccess(resolveExecutionPlanProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/execution-plans/{id}/approvals/{approval_id}/approve", projectAdminAccess(resolveExecutionPlanProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/execution-plans/{id}/approvals/{approval_id}/reject", projectAdminAccess(resolveExecutionPlanProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/object-repositories", editorImportAccess(resolveObjectRepositoryCreateProjectID, 262144)),
-	routeAuth(http.MethodGet, "/api/v1/object-repositories", viewerProjectAccess(resolveProjectIDFromQuery)),
-	routeAuth(http.MethodPost, "/api/v1/object-repositories/from-script", editorProjectAccess(resolveObjectRepositoryFromScriptProjectID)),
-	routeAuth(http.MethodGet, "/api/v1/object-repositories/{id}", viewerProjectAccess(resolveObjectRepositoryProjectID)),
-	routeAuth(http.MethodPut, "/api/v1/object-repositories/{id}", editorImportAccess(resolveObjectRepositoryProjectID, 262144)),
-	routeAuth(http.MethodDelete, "/api/v1/object-repositories/{id}", editorProjectAccess(resolveObjectRepositoryProjectID)),
-
-	routeAuth(http.MethodPost, "/api/v1/correlation-rulesets", editorImportAccess(resolveCorrelationRulesetCreateProjectID, 262144)),
-	routeAuth(http.MethodGet, "/api/v1/correlation-rulesets", viewerProjectAccess(resolveProjectIDFromQuery)),
-	routeAuth(http.MethodPost, "/api/v1/correlation-rulesets/discover-from-script", editorProjectAccess(resolveCorrelationRulesetFromScriptProjectID)),
-	routeAuth(http.MethodGet, "/api/v1/correlation-rulesets/{id}", viewerProjectAccess(resolveCorrelationRulesetProjectID)),
-	routeAuth(http.MethodPut, "/api/v1/correlation-rulesets/{id}", editorImportAccess(resolveCorrelationRulesetProjectID, 262144)),
-	routeAuth(http.MethodDelete, "/api/v1/correlation-rulesets/{id}", editorProjectAccess(resolveCorrelationRulesetProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/correlation-rulesets/{id}/apply-to-script", editorProjectAccess(resolveCorrelationRulesetProjectID)),
 
 	// Monitoring collectors (restricted-network agent control plane) — project-admin infra.
 	routeAuth(http.MethodPost, "/api/v1/monitoring/collectors", accessRequirement{GlobalRoles: []string{RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleProjectAdmin}, ProjectLookup: resolveMonitoringCollectorCreateProjectID, MaxBodyBytes: 65536}),
@@ -95,25 +53,8 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/monitoring/collectors/{id}/metrics", viewerProjectAccess(resolveMonitoringCollectorProjectID)),
 
 	// Enterprise entitlements (read-only consumption vs limits).
-	routeAuth(http.MethodGet, "/api/v1/system/entitlements", viewerGlobalAccess()),
-	routeAuth(http.MethodGet, "/api/v1/system/entitlements/usage", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/projects/{id}/entitlements/usage", viewerProjectAccess(resolveProjectIDFromPath)),
 
-	// Capacity reservations (timeslots).
-	routeAuth(http.MethodPost, "/api/v1/capacity/timeslots", editorImportAccess(resolveTimeslotCreateProjectID, 65536)),
-	routeAuth(http.MethodGet, "/api/v1/capacity/timeslots", viewerProjectAccess(resolveProjectIDFromQuery)),
-	routeAuth(http.MethodPost, "/api/v1/capacity/timeslots/availability", accessRequirement{
-		GlobalRoles:   []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin},
-		ProjectRoles:  []string{RoleViewer, RoleEditor, RoleProjectAdmin},
-		ProjectLookup: resolveTimeslotCreateProjectID,
-		MaxBodyBytes:  65536,
-	}),
-	routeAuth(http.MethodGet, "/api/v1/capacity/timeslots/{id}", viewerProjectAccess(resolveTimeslotProjectID)),
-	routeAuth(http.MethodPut, "/api/v1/capacity/timeslots/{id}", editorImportAccess(resolveTimeslotProjectID, 65536)),
-	routeAuth(http.MethodDelete, "/api/v1/capacity/timeslots/{id}", projectAdminAccess(resolveTimeslotProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/capacity/timeslots/{id}/approve", projectAdminAccess(resolveTimeslotProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/capacity/timeslots/{id}/reject", projectAdminAccess(resolveTimeslotProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/capacity/timeslots/{id}/bind", editorImportAccess(resolveTimeslotProjectID, 65536)),
 	routeAuth(http.MethodPost, "/api/v1/tests/preflight", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestCreateProjectID}),
 	routeAuth(http.MethodPost, "/api/v1/scenarios/validate-load-model", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveScenarioCreateProjectID}),
 	routeAuth(http.MethodPost, "/api/v1/scenarios/size-from-goal", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveGoalSizingBaselineProjectID}),
@@ -121,19 +62,10 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/scenarios/load-models/templates", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/tests/{id}/report/annotations", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestProjectID}),
 	routeAuth(http.MethodPut, "/api/v1/tests/{id}/report/annotations", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveTestProjectID}),
-	routeAuth(http.MethodPost, "/api/v1/tests/archive/reports", accessRequirement{GlobalRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin, RoleSystemAdmin}, ProjectRoles: []string{RoleViewer, RoleEditor, RoleProjectAdmin}, ProjectLookup: resolveProjectIDFromQuery, MaxBodyBytes: 65536}),
 	routeAuth(http.MethodGet, "/api/v1/tests/{id}/notes", viewerProjectAccess(resolveTestProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/tests/{id}/notes", editorImportAccess(resolveTestProjectID, 262144)),
 	routeAuth(http.MethodPatch, "/api/v1/tests/{id}/notes/{note_id}", editorImportAccess(resolveTestProjectID, 262144)),
 	routeAuth(http.MethodDelete, "/api/v1/tests/{id}/notes/{note_id}", editorProjectAccess(resolveTestProjectID)),
-	routeAuth(http.MethodGet, "/api/v1/system/inventory", viewerGlobalAccess()),
-	routeAuth(http.MethodGet, "/api/v1/system/services", viewerGlobalAccess()),
-	routeAuth(http.MethodGet, "/api/v1/system/usage", viewerGlobalAccess()),
-	routeAuth(http.MethodGet, "/api/v1/system/usage/export", viewerGlobalAccess()),
-	routeAuth(http.MethodGet, "/api/v1/system/usage/snapshots", viewerGlobalAccess()),
-	routeAuth(http.MethodPost, "/api/v1/system/usage/snapshots", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
-	routeAuth(http.MethodGet, "/api/v1/system/parity-status", viewerGlobalAccess()),
-	routeAuth(http.MethodGet, "/api/v1/system/browser-benchmarks", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/desktop/status", viewerGlobalAccess()),
 	routeAuth(http.MethodPost, "/api/v1/desktop/browser-downloads", accessRequirement{AuthenticatedOnly: true, MaxBodyBytes: 4096}),
 	routeAuth(http.MethodGet, "/api/v1/runtime-settings/support-matrix", viewerGlobalAccess()),
@@ -199,32 +131,6 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/broker-config", editorImportAccess(resolveImportProjectIDFromForm, webAPIImportMaxBodyBytes)),
 	routeAuth(http.MethodGet, "/api/v1/scripts/import/broker-config/support-matrix", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/scripts/import/raml/support-matrix", viewerGlobalAccess()),
-	routeAuth(http.MethodGet, "/api/v1/fleet/alerts", viewerGlobalAccess()),
-	routeAuth(http.MethodPatch, "/api/v1/fleet/alerts/{id}/ack", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 65536}),
-	routeAuth(http.MethodGet, "/api/v1/fleet/capacity", viewerGlobalAccess()),
-	routeAuth(http.MethodGet, "/api/v1/fleet/load-zones", viewerGlobalAccess()),
-	routeAuth(http.MethodGet, "/api/v1/fleet/provisioner", viewerGlobalAccess()),
-
-	// Fleet management (pools, generator metadata, provisioning) — system-admin infra.
-	routeAuth(http.MethodPost, "/api/v1/fleet/pools", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 1048576}),
-	routeAuth(http.MethodGet, "/api/v1/fleet/pools", systemAdminAccess()),
-	routeAuth(http.MethodGet, "/api/v1/fleet/pools/{id}", systemAdminAccess()),
-	routeAuth(http.MethodPut, "/api/v1/fleet/pools/{id}", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 1048576}),
-	routeAuth(http.MethodDelete, "/api/v1/fleet/pools/{id}", systemAdminAccess()),
-	routeAuth(http.MethodGet, "/api/v1/fleet/generators", systemAdminAccess()),
-	routeAuth(http.MethodPatch, "/api/v1/fleet/generators/{id}", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 262144}),
-	routeAuth(http.MethodPost, "/api/v1/fleet/generators/{id}/cordon", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 65536}),
-	routeAuth(http.MethodPost, "/api/v1/fleet/generators/{id}/uncordon", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 65536}),
-	routeAuth(http.MethodPost, "/api/v1/fleet/generators/{id}/drain", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 65536}),
-	routeAuth(http.MethodPost, "/api/v1/fleet/generators/{id}/evacuate", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 65536}),
-	routeAuth(http.MethodPost, "/api/v1/fleet/provision-requests", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}, MaxBodyBytes: 262144}),
-	routeAuth(http.MethodGet, "/api/v1/fleet/provision-requests", systemAdminAccess()),
-	routeAuth(http.MethodGet, "/api/v1/fleet/provision-requests/{id}", systemAdminAccess()),
-	routeAuth(http.MethodPost, "/api/v1/fleet/provision-requests/{id}/cancel", systemAdminAccess()),
-	routeAuth(http.MethodPost, "/api/v1/fleet/provision-requests/{id}/retry", systemAdminAccess()),
-	routeAuth(http.MethodPatch, "/api/v1/system/generators/drain", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
-	routeAuth(http.MethodGet, "/api/v1/system/restarts/capabilities", systemAdminAccess()),
-	routeAuth(http.MethodPost, "/api/v1/system/restarts", systemAdminAccess()),
 	routeAuth(http.MethodGet, "/api/v1/integrations/apm/profiles", viewerGlobalAccess()),
 	routeAuth(http.MethodPost, "/api/v1/integrations/dynatrace/dry-run", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/integrations/github/config", accessRequirement{AuthenticatedOnly: true}),
@@ -252,8 +158,6 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/results/imports", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/library/capabilities", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/ai/authoring/contract", viewerGlobalAccess()),
-	routeAuth(http.MethodPost, "/api/v1/archives/retention/plan", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
-	routeAuth(http.MethodPost, "/api/v1/archives/retention/apply", accessRequirement{GlobalRoles: []string{RoleSystemAdmin}}),
 
 	// Service-account lifecycle (system-admin only).
 	routeAuth(http.MethodPatch, "/api/v1/auth/service-accounts/{id}", systemAdminAccess()),
@@ -398,6 +302,11 @@ var routeCatalogAuthRules = []apiRouteAuthRule{
 	// Capacity estimate (write-level, project-scoped).
 	routeAuth(http.MethodPost, "/api/v1/tests/estimate", editorProjectAccess(resolveTestCreateProjectID)),
 }
+
+var routeCatalogAuthRules = func() []apiRouteAuthRule {
+	rules := authRulesForAPIRouteCatalogs(modularAPIRouteCatalogs...)
+	return append(rules, legacyRouteCatalogAuthRules...)
+}()
 
 func routeAuth(method string, path string, requirement accessRequirement) apiRouteAuthRule {
 	requirement = withRouteServiceAccountScope(method, path, requirement)

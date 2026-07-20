@@ -158,6 +158,33 @@ describe('useScriptApi import wrappers', () => {
     expect(request).toHaveBeenCalledWith('/replay/sessions/debug-1/stop', expect.objectContaining({ method: 'POST' }))
   })
 
+  it('preserves stored and draft script-debug start payloads', async () => {
+    const storedPayload = {
+      group_name: 'checkout-debug',
+      variables: { tenant: 'north' },
+      start_paused: true,
+    }
+    const script = {
+      name: 'Draft Debug',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://example.test' },
+      actions: [],
+    }
+
+    await api.startScriptDebugSession('script-1', storedPayload)
+    await api.startDraftScriptDebugSession({ ...storedPayload, script })
+
+    expect(request).toHaveBeenCalledWith('/scripts/script-1/debug/sessions', {
+      method: 'POST',
+      body: JSON.stringify(storedPayload),
+    })
+    expect(request).toHaveBeenCalledWith('/scripts/debug/sessions', {
+      method: 'POST',
+      body: JSON.stringify({ ...storedPayload, script }),
+    })
+  })
+
   it('exports script debugger sessions from canonical replay routes', async () => {
     const text = vi.fn().mockResolvedValue('debug log')
     ;(apiFetch as Mock).mockResolvedValueOnce({ ok: true, text })

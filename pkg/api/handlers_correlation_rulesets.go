@@ -11,7 +11,6 @@ import (
 	"errors"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
@@ -30,11 +29,12 @@ func validateCorrelationRuleset(ruleset *storage.CorrelationRuleset) (int, strin
 }
 
 func (s *Server) loadCorrelationRuleset(w http.ResponseWriter, r *http.Request) (*storage.CorrelationRuleset, bool) {
-	if s.store == nil {
+	service := s.correlationRulesetDomainService()
+	if !service.StorageConfigured() {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return nil, false
 	}
-	ruleset, err := s.store.GetCorrelationRuleset(r.PathValue("id"))
+	ruleset, err := service.GetRuleset(r.PathValue("id"))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "correlation ruleset not found")
@@ -47,7 +47,8 @@ func (s *Server) loadCorrelationRuleset(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleCreateCorrelationRuleset(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+	service := s.correlationRulesetDomainService()
+	if !service.StorageConfigured() {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
@@ -61,7 +62,7 @@ func (s *Server) handleCreateCorrelationRuleset(w http.ResponseWriter, r *http.R
 	}
 	ruleset.ID = "correlation-ruleset-" + uuid.New().String()
 	ruleset.ProjectID = normalizeProjectID(ruleset.ProjectID)
-	if err := s.store.SaveCorrelationRuleset(&ruleset); err != nil {
+	if err := service.SaveRuleset(&ruleset); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -72,13 +73,14 @@ func (s *Server) handleCreateCorrelationRuleset(w http.ResponseWriter, r *http.R
 }
 
 func (s *Server) handleListCorrelationRulesets(w http.ResponseWriter, r *http.Request) {
+	service := s.correlationRulesetDomainService()
 	limit, offset := parseLimitOffsetQuery(r, defaultCorrelationRulesetListLimit)
-	if s.store == nil {
+	if !service.StorageConfigured() {
 		writeJSON(w, http.StatusOK, map[string]any{"correlation_rulesets": []*storage.CorrelationRuleset{}, "count": 0, "limit": limit, "offset": offset})
 		return
 	}
 	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
-	rulesets, err := s.store.ListCorrelationRulesets(projectID, limit, offset)
+	rulesets, err := service.ListRulesets(projectID, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -98,6 +100,7 @@ func (s *Server) handleGetCorrelationRuleset(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleUpdateCorrelationRuleset(w http.ResponseWriter, r *http.Request) {
+	service := s.correlationRulesetDomainService()
 	existing, ok := s.loadCorrelationRuleset(w, r)
 	if !ok {
 		return
@@ -115,15 +118,12 @@ func (s *Server) handleUpdateCorrelationRuleset(w http.ResponseWriter, r *http.R
 		writeError(w, status, msg)
 		return
 	}
-	updater, supported := s.store.(interface {
-		UpdateCorrelationRulesetIfUnchanged(ruleset *storage.CorrelationRuleset, expectedUpdatedAt time.Time) (bool, error)
-	})
-	if !supported {
-		writeError(w, http.StatusNotImplemented, "optimistic correlation ruleset updates are not supported by this storage backend")
-		return
-	}
-	updated, err := updater.UpdateCorrelationRulesetIfUnchanged(&req, existing.UpdatedAt)
+	updated, err := service.UpdateRulesetIfUnchanged(&req, existing.UpdatedAt)
 	if err != nil {
+		if errors.Is(err, errCorrelationRulesetOptimisticUpdateUnsupported) {
+			writeError(w, http.StatusNotImplemented, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -136,16 +136,14 @@ func (s *Server) handleUpdateCorrelationRuleset(w http.ResponseWriter, r *http.R
 }
 
 func (s *Server) handleDeleteCorrelationRuleset(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+	service := s.correlationRulesetDomainService()
+	if !service.StorageConfigured() {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
 	id := r.PathValue("id")
-	projectID := ""
-	if ruleset, err := s.store.GetCorrelationRuleset(id); err == nil && ruleset != nil {
-		projectID = ruleset.ProjectID
-	}
-	if err := s.store.DeleteCorrelationRuleset(id); err != nil {
+	projectID, err := service.DeleteRuleset(id)
+	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -157,7 +155,8 @@ func (s *Server) handleDeleteCorrelationRuleset(w http.ResponseWriter, r *http.R
 // script's stored recorded baseline and persists the discovered correlations as
 // a new project-scoped, reusable ruleset.
 func (s *Server) handleDiscoverCorrelationRulesetFromScript(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+	service := s.correlationRulesetDomainService()
+	if !service.StorageConfigured() {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
@@ -173,7 +172,7 @@ func (s *Server) handleDiscoverCorrelationRulesetFromScript(w http.ResponseWrite
 		writeError(w, http.StatusBadRequest, "script_id is required")
 		return
 	}
-	stored, ok := s.runner.GetScript(scriptID)
+	stored, ok := service.GetScript(scriptID)
 	if !ok || stored == nil {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
@@ -181,7 +180,7 @@ func (s *Server) handleDiscoverCorrelationRulesetFromScript(w http.ResponseWrite
 	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
 		return
 	}
-	record, err := s.store.GetScriptRecording(scriptID)
+	record, err := service.GetScriptRecording(scriptID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load recorded baseline")
 		return
@@ -224,7 +223,7 @@ func (s *Server) handleDiscoverCorrelationRulesetFromScript(w http.ResponseWrite
 		Source:    "script:" + scriptID,
 		Rules:     rules,
 	}
-	if err := s.store.SaveCorrelationRuleset(ruleset); err != nil {
+	if err := service.SaveRuleset(ruleset); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -239,6 +238,7 @@ func (s *Server) handleDiscoverCorrelationRulesetFromScript(w http.ResponseWrite
 // (suggested extractors + value-templating diffs). With apply=true the change is
 // written into a new version of the script.
 func (s *Server) handleApplyCorrelationRulesetToScript(w http.ResponseWriter, r *http.Request) {
+	service := s.correlationRulesetDomainService()
 	ruleset, ok := s.loadCorrelationRuleset(w, r)
 	if !ok {
 		return
@@ -255,7 +255,7 @@ func (s *Server) handleApplyCorrelationRulesetToScript(w http.ResponseWriter, r 
 		writeError(w, http.StatusBadRequest, "script_id is required")
 		return
 	}
-	stored, ok := s.runner.GetScript(scriptID)
+	stored, ok := service.GetScript(scriptID)
 	if !ok || stored == nil || stored.Script == nil {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
@@ -268,7 +268,7 @@ func (s *Server) handleApplyCorrelationRulesetToScript(w http.ResponseWriter, r 
 		writeError(w, http.StatusForbidden, "the target script belongs to a different project than the ruleset")
 		return
 	}
-	record, err := s.store.GetScriptRecording(scriptID)
+	record, err := service.GetScriptRecording(scriptID)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to load recorded baseline")
 		return
@@ -304,7 +304,7 @@ func (s *Server) handleApplyCorrelationRulesetToScript(w http.ResponseWriter, r 
 
 	applied := false
 	if req.Apply && len(matched) > 0 {
-		_, ok, err := s.runner.UpdateScriptDurableInProject(scriptID, clone, ruleset.ProjectID)
+		ok, err := service.UpdateScript(scriptID, clone, ruleset.ProjectID)
 		if err != nil {
 			if errors.Is(err, errScriptConcurrentChange) {
 				writeError(w, http.StatusConflict, err.Error())

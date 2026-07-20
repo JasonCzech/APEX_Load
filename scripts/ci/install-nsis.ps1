@@ -19,7 +19,22 @@ if (-not $archivePath) {
     throw "NSIS_RELEASE_BASE_URL must use https"
   }
   $downloadUrl = "$($baseUrl.TrimEnd('/'))/$archiveName"
-  Invoke-WebRequest -Uri $downloadUrl -OutFile $downloadedArchive -MaximumRedirection 10
+  for ($attempt = 1; $attempt -le 3; $attempt++) {
+    & curl.exe --fail --location --silent --show-error --retry 3 --retry-all-errors `
+      --output $downloadedArchive $downloadUrl
+    if ($LASTEXITCODE -ne 0) {
+      throw "NSIS archive download failed with curl exit code $LASTEXITCODE"
+    }
+    $downloadedSha256 = (Get-FileHash -LiteralPath $downloadedArchive -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($downloadedSha256 -eq $nsisArchiveSha256) {
+      break
+    }
+    Remove-Item -LiteralPath $downloadedArchive -Force
+    if ($attempt -eq 3) {
+      throw "NSIS archive checksum mismatch after $attempt download attempts (last hash: $downloadedSha256)"
+    }
+    Start-Sleep -Seconds (2 * $attempt)
+  }
   $archivePath = $downloadedArchive
 }
 

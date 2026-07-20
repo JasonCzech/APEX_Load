@@ -54,6 +54,20 @@ func TestGenerateOpenAPIYAMLIsDeterministicAcrossRepeatedAnalysis(t *testing.T) 
 	}
 }
 
+func TestGenerateOpenAPIYAMLAcceptsRoutingPackageDirectory(t *testing.T) {
+	fromFile, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML file anchor: %v", err)
+	}
+	fromDirectory, err := GenerateOpenAPIYAML(".")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML directory anchor: %v", err)
+	}
+	if !bytes.Equal(fromDirectory, fromFile) {
+		t.Fatal("directory-anchored route discovery differs from server.go-anchored discovery")
+	}
+}
+
 // TestEndpointCatalogJSONIsFresh enforces that docs/api-endpoint-catalog.json is
 // regenerated with the OpenAPI spec after route changes.
 func TestEndpointCatalogJSONIsFresh(t *testing.T) {

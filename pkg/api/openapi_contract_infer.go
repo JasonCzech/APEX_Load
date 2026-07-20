@@ -13,7 +13,6 @@ import (
 	"go/token"
 	"io/fs"
 	"net/http"
-	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -54,7 +53,10 @@ func newHandlerContractAnalysis() *handlerContractAnalysis {
 }
 
 func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[string]inferredRouteContract, error) {
-	dir := filepath.Dir(serverGoPath)
+	dir, err := controllerRouteSourceDirectory(serverGoPath)
+	if err != nil {
+		return nil, err
+	}
 	packages, err := parser.ParseDir(token.NewFileSet(), dir, func(info fs.FileInfo) bool {
 		name := info.Name()
 		return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")

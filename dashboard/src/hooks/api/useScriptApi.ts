@@ -2,30 +2,32 @@ import { useCallback, useMemo } from 'react'
 
 import {
   AuthoringComponent,
-  BrowserReplayStartRequest,
-  BrowserReplayStartResponse,
-  BrowserReplaySessionResponse,
   AuthoringHealth,
   AuthoringCorrelationPreviewRequest,
   AuthoringCorrelationPreviewResponse,
   AuthoringSession,
-  BrowserReplayNetworkEntry,
-  ScriptDebugBreakpoint,
-  ScriptDebugSessionResponse,
-  type ScriptDebugStepMode,
-  ScriptDebugStartRequest,
-  ScriptDebugStartResponse,
-  GeneratorAssignmentSettings,
-  GoalConfig,
-  RuntimeSettingsOverride,
-  ScenarioDataPoolBinding,
-  ScenarioMode,
-  SharedDataPool,
-  SharedDataPoolRow,
-  StoredScenario,
-  StoredScript,
   TestSummary,
 } from '../../types'
+import type { GoalConfig, ScenarioMode } from '../../types/goals'
+import type { StoredScenario, StoredScript } from '../../types/storedContent'
+import type { GeneratorAssignmentSettings } from '../../types/testConfiguration'
+import type { RuntimeSettingsOverride } from '../../types/runtimeSettings'
+import type {
+  ScenarioDataPoolBinding,
+  SharedDataPool,
+  SharedDataPoolRow,
+} from '../../types/dataPools'
+import type {
+  BrowserReplayNetworkEntry,
+  BrowserReplaySessionResponse,
+  BrowserReplayStartRequest,
+  BrowserReplayStartResponse,
+  ScriptDebugBreakpoint,
+  ScriptDebugSessionResponse,
+  ScriptDebugStartRequest,
+  ScriptDebugStartResponse,
+  ScriptDebugStepMode,
+} from '../../types/replay'
 import { type AuthoringTemplate } from '../../types'
 import { type CorrelationDiagnoseResponse, type CorrelationStep, type ScriptDefinition, type ScriptExportResponse, type ScriptReplayResponse, type ScriptValidationResponse } from '../../types/scripts'
 import { type CloneScriptDraftResponse, type DiscardImportSecretSessionRequest, type MigrateImportSecretsRequest, type MigrateImportSecretsResponse, type ScriptSecretStatus } from '../../types/secrets'
@@ -39,7 +41,27 @@ export interface ScriptRecordingStatus {
   captured_at?: string
 }
 import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type ApplySecretBindingsRequest, type ApplySecretBindingsResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type JsonRequestBody } from '../../types/generated/openapi'
 import { ApiError, apiFetch, request } from '../apiClient'
+
+type StoredScriptDebugStartRequestBody = JsonRequestBody<'handleStartScriptDebugScript'>
+type DraftScriptDebugStartRequestBody = JsonRequestBody<'handleStartScriptDebugDraftScript'>
+type ScriptDebugStepRequestBody = JsonRequestBody<'handleStepScriptDebugSession'>
+type ScriptDebugBreakpointsRequestBody = JsonRequestBody<'handleUpdateScriptDebugBreakpoints'>
+type ScriptDebugOptionsRequestBody = JsonRequestBody<'handleUpdateScriptDebugOptions'>
+
+// The public authoring types intentionally retain a few forward-compatible
+// domain fields. This adapter keeps those call signatures stable while using
+// the generated transport keys and scalar contracts at the serialization edge.
+type CompatibleDebugStartRequest<Transport extends object, Domain extends object> = {
+  [Key in keyof Transport]?: Key extends keyof Domain ? Domain[Key] : Transport[Key]
+}
+
+type StoredScriptDebugStartBody = CompatibleDebugStartRequest<StoredScriptDebugStartRequestBody, ScriptDebugStartRequest>
+type DraftScriptDebugStartBody = CompatibleDebugStartRequest<
+  DraftScriptDebugStartRequestBody,
+  ScriptDebugStartRequest & { script: ScriptDefinition }
+>
 
 type ScriptListResponse = {
   scripts: StoredScript[]
@@ -424,14 +446,18 @@ export function useScriptApi() {
   )
 
   const startScriptDebugSession = useCallback(
-    (id: string, payload?: ScriptDebugStartRequest) =>
-      request<ScriptDebugStartResponse>(`/scripts/${id}/debug/sessions`, { method: 'POST', body: JSON.stringify(payload || {}) }),
+    (id: string, payload?: ScriptDebugStartRequest) => {
+      const body: StoredScriptDebugStartBody = payload || {}
+      return request<ScriptDebugStartResponse>(`/scripts/${id}/debug/sessions`, { method: 'POST', body: JSON.stringify(body) })
+    },
     [],
   )
 
   const startDraftScriptDebugSession = useCallback(
-    (payload: ScriptDebugStartRequest & { script: ScriptDefinition }) =>
-      request<ScriptDebugStartResponse>('/scripts/debug/sessions', { method: 'POST', body: JSON.stringify(payload) }),
+    (payload: ScriptDebugStartRequest & { script: ScriptDefinition }) => {
+      const body: DraftScriptDebugStartBody = payload
+      return request<ScriptDebugStartResponse>('/scripts/debug/sessions', { method: 'POST', body: JSON.stringify(body) })
+    },
     [],
   )
 
@@ -482,20 +508,32 @@ export function useScriptApi() {
   )
 
   const stepScriptDebugSession = useCallback(
-    (sessionId: string, mode: ScriptDebugStepMode = 'into') =>
-      request<ScriptDebugSessionResponse>(`/replay/sessions/${sessionId}/step`, { method: 'POST', body: JSON.stringify({ mode }) }),
+    (sessionId: string, mode: ScriptDebugStepMode = 'into') => {
+      const body: ScriptDebugStepRequestBody = { mode }
+      return request<ScriptDebugSessionResponse>(`/replay/sessions/${sessionId}/step`, { method: 'POST', body: JSON.stringify(body) })
+    },
     [],
   )
 
   const updateScriptDebugBreakpoints = useCallback(
-    (sessionId: string, breakpoints: ScriptDebugBreakpoint[]) =>
-      request<ScriptDebugSessionResponse>(`/replay/sessions/${sessionId}/breakpoints`, { method: 'PATCH', body: JSON.stringify({ breakpoints }) }),
+    (sessionId: string, breakpoints: ScriptDebugBreakpoint[]) => {
+      const transportBreakpoints: ScriptDebugBreakpointsRequestBody['breakpoints'] = breakpoints.map(breakpoint => ({
+        ...breakpoint,
+        phase: breakpoint.phase as ScriptDebugBreakpointsRequestBody['breakpoints'][number]['phase'],
+      }))
+      const body: ScriptDebugBreakpointsRequestBody = { breakpoints: transportBreakpoints }
+      return request<ScriptDebugSessionResponse>(`/replay/sessions/${sessionId}/breakpoints`, { method: 'PATCH', body: JSON.stringify(body) })
+    },
     [],
   )
 
   const updateScriptDebugOptions = useCallback(
-    (sessionId: string, options: { break_on_failure?: boolean }) =>
-      request<ScriptDebugSessionResponse>(`/replay/sessions/${sessionId}/options`, { method: 'PATCH', body: JSON.stringify(options) }),
+    (sessionId: string, options: { break_on_failure?: boolean }) => {
+      // Existing callers may send an empty object; retain that behavior while
+      // deriving the accepted field and value type from the generated body.
+      const body: Partial<ScriptDebugOptionsRequestBody> = options
+      return request<ScriptDebugSessionResponse>(`/replay/sessions/${sessionId}/options`, { method: 'PATCH', body: JSON.stringify(body) })
+    },
     [],
   )
 

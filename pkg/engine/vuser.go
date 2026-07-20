@@ -195,7 +195,11 @@ func (vu *VUser) Run(ctx context.Context) {
 	if vu.HardStopCtx != nil {
 		iterCtx = vu.HardStopCtx
 	}
-	boundaryCtx := ctx
+	// Once an execution-goal reservation is claimed, action-boundary checks
+	// must use the hard-stop context too. Using the soft loop context here lets
+	// another VUser's failed reservation cancel a reserved iteration between
+	// actions, producing fewer completed transactions than the global goal.
+	boundaryCtx := iterCtx
 	if vu.ActionBoundaryCtx != nil {
 		boundaryCtx = vu.ActionBoundaryCtx
 	}
