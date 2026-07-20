@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc && vite build --outDir ../pkg/api/static --emptyOutDir",
     "bundle:check": "node ./scripts/run-bundle-budget.mjs",
+    "contracts:generate": "cd .. && go run ./cmd/openapits -in docs/swagger.yaml -out dashboard/src/types/generated/openapi.ts",
+    "contracts:check": "cd .. && go run ./cmd/openapits -in docs/swagger.yaml -out dashboard/src/types/generated/openapi.ts -check",
     "e2e": "playwright test",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit --pretty false",

@@ -57,11 +57,12 @@ func (s *Server) handleGetRunArchiveManifest(w http.ResponseWriter, r *http.Requ
 // result, not a server error.
 func (s *Server) handleVerifyRunArchive(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	if _, ok := s.runner.GetTest(id); !ok {
+	archives := s.archiveDomainService()
+	if _, ok := archives.GetTest(id); !ok {
 		writeError(w, http.StatusNotFound, "test not found")
 		return
 	}
-	record, ok := s.runner.GetRunArchiveContext(r.Context(), id)
+	record, ok := archives.GetRunArchiveContext(r.Context(), id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "archive not found")
 		return
@@ -72,7 +73,7 @@ func (s *Server) handleVerifyRunArchive(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	defer lease.Release()
-	manifest, err := s.runner.GetRunArchiveManifest(id)
+	manifest, err := archives.GetRunArchiveManifest(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -85,12 +86,13 @@ func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request
 	prepCtx, cancelPrep := context.WithTimeout(r.Context(), configuredArchiveMaterializationTimeout())
 	defer cancelPrep()
 	id := r.PathValue("id")
-	test, ok := s.runner.GetTest(id)
+	archives := s.archiveDomainService()
+	test, ok := archives.GetTest(id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "test not found")
 		return
 	}
-	record, ok := s.runner.GetRunArchiveContext(r.Context(), id)
+	record, ok := archives.GetRunArchiveContext(r.Context(), id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "archive not found")
 		return
@@ -101,7 +103,7 @@ func (s *Server) handleDownloadRunArchive(w http.ResponseWriter, r *http.Request
 		return
 	}
 	defer lease.Release()
-	manifest, err := s.runner.GetRunArchiveManifest(id)
+	manifest, err := archives.GetRunArchiveManifest(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -127,12 +129,13 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 	defer cancelPrep()
 	id := r.PathValue("id")
 	name := r.PathValue("name")
-	test, ok := s.runner.GetTest(id)
+	archives := s.archiveDomainService()
+	test, ok := archives.GetTest(id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "test not found")
 		return
 	}
-	record, ok := s.runner.GetRunArchiveContext(r.Context(), id)
+	record, ok := archives.GetRunArchiveContext(r.Context(), id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "archive not found")
 		return
@@ -143,7 +146,7 @@ func (s *Server) handleDownloadRunArchiveArtifact(w http.ResponseWriter, r *http
 		return
 	}
 	defer lease.Release()
-	manifest, err := s.runner.GetRunArchiveManifest(id)
+	manifest, err := archives.GetRunArchiveManifest(id)
 	if err != nil {
 		writeError(w, http.StatusNotFound, err.Error())
 		return
@@ -220,12 +223,13 @@ func (s *Server) handleDownloadRunArchiveBrowserDiagnostics(w http.ResponseWrite
 	prepCtx, cancelPrep := context.WithTimeout(r.Context(), configuredArchiveMaterializationTimeout())
 	defer cancelPrep()
 	id := r.PathValue("id")
-	test, ok := s.runner.GetTest(id)
+	archives := s.archiveDomainService()
+	test, ok := archives.GetTest(id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "test not found")
 		return
 	}
-	record, ok := s.runner.GetRunArchiveContext(r.Context(), id)
+	record, ok := archives.GetRunArchiveContext(r.Context(), id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "archive not found")
 		return
@@ -469,7 +473,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())
 			return
 		}
-		manifest, manifestErr := s.runner.GetTestManifest(testID)
+		manifest, manifestErr := s.archiveDomainService().GetTestManifest(testID)
 		if manifestErr != nil {
 			manifest = nil
 		}
@@ -507,7 +511,7 @@ func (s *Server) handleGetRunArchiveReport(w http.ResponseWriter, r *http.Reques
 			writeError(w, http.StatusInternalServerError, "failed to load report commentary: "+err.Error())
 			return
 		}
-		manifest, manifestErr := s.runner.GetTestManifest(testID)
+		manifest, manifestErr := s.archiveDomainService().GetTestManifest(testID)
 		if manifestErr != nil {
 			manifest = nil
 		}
@@ -553,6 +557,7 @@ func (s *Server) handleGetRunArchiveReportsBatch(w http.ResponseWriter, r *http.
 	errorsByID := make(map[string]string)
 	seen := make(map[string]struct{}, len(req.IDs))
 	var reportBytes int64
+	archives := s.archiveDomainService()
 	for _, rawID := range req.IDs {
 		id := strings.TrimSpace(rawID)
 		if id == "" {
@@ -562,7 +567,7 @@ func (s *Server) handleGetRunArchiveReportsBatch(w http.ResponseWriter, r *http.
 			continue
 		}
 		seen[id] = struct{}{}
-		test, ok := s.runner.GetTest(id)
+		test, ok := archives.GetTest(id)
 		if !ok {
 			errorsByID[id] = "test not found"
 			continue
@@ -571,7 +576,7 @@ func (s *Server) handleGetRunArchiveReportsBatch(w http.ResponseWriter, r *http.
 			errorsByID[id] = "test not found"
 			continue
 		}
-		record, ok := s.runner.GetRunArchiveContext(r.Context(), id)
+		record, ok := archives.GetRunArchiveContext(r.Context(), id)
 		if !ok {
 			errorsByID[id] = "archive not found"
 			continue
@@ -624,7 +629,8 @@ func (s *Server) handleGetRunArchiveAnalysis(w http.ResponseWriter, r *http.Requ
 	}
 	currentID := r.PathValue("id")
 	currentName := currentID
-	currentTest, currentTestOK := s.runner.GetTest(currentID)
+	archives := s.archiveDomainService()
+	currentTest, currentTestOK := archives.GetTest(currentID)
 	if currentTestOK {
 		currentName = currentTest.Name
 	}
@@ -636,12 +642,12 @@ func (s *Server) handleGetRunArchiveAnalysis(w http.ResponseWriter, r *http.Requ
 
 	var baselineRun *archiveAnalysisRun
 	if baselineID := strings.TrimSpace(r.URL.Query().Get("baseline_id")); baselineID != "" {
-		baselineTest, ok := s.runner.GetTest(baselineID)
+		baselineTest, ok := archives.GetTest(baselineID)
 		if !ok || !currentTestOK || !testsShareProject(currentTest, baselineTest) {
 			writeError(w, http.StatusNotFound, "baseline test not found")
 			return
 		}
-		baselineRecord, ok := s.runner.GetRunArchiveContext(r.Context(), baselineID)
+		baselineRecord, ok := archives.GetRunArchiveContext(r.Context(), baselineID)
 		if !ok {
 			writeError(w, http.StatusNotFound, "baseline archive not found")
 			return
@@ -690,13 +696,14 @@ func (s *Server) handleGetRunArchiveComparison(w http.ResponseWriter, r *http.Re
 		return
 	}
 	currentID := r.PathValue("id")
-	currentTest, currentOK := s.runner.GetTest(currentID)
-	baselineTest, baselineOK := s.runner.GetTest(baselineID)
+	archives := s.archiveDomainService()
+	currentTest, currentOK := archives.GetTest(currentID)
+	baselineTest, baselineOK := archives.GetTest(baselineID)
 	if !currentOK || !baselineOK || !testsShareProject(currentTest, baselineTest) {
 		writeError(w, http.StatusNotFound, "baseline test not found")
 		return
 	}
-	baselineRecord, ok := s.runner.GetRunArchiveContext(r.Context(), baselineID)
+	baselineRecord, ok := archives.GetRunArchiveContext(r.Context(), baselineID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "baseline archive not found")
 		return
@@ -808,7 +815,8 @@ func parseArchiveComparisonIDs(raw string) ([]string, bool) {
 }
 
 func (s *Server) archiveComparisonRunsFromRecords(ctx context.Context, baselineID string, baselineRecord *storage.RunArchiveRecord, comparisonIDs []string, action string) ([]archiveComparisonRunWithStart, error) {
-	baselineTest, ok := s.runner.GetTest(baselineID)
+	archives := s.archiveDomainService()
+	baselineTest, ok := archives.GetTest(baselineID)
 	if !ok {
 		return nil, fmt.Errorf("baseline test not found")
 	}
@@ -820,11 +828,11 @@ func (s *Server) archiveComparisonRunsFromRecords(ctx context.Context, baselineI
 	runs = append(runs, baselineRun)
 
 	for _, id := range comparisonIDs {
-		test, ok := s.runner.GetTest(id)
+		test, ok := archives.GetTest(id)
 		if !ok || !testsShareProject(baselineTest, test) {
 			return nil, fmt.Errorf("comparison test not found: %s", id)
 		}
-		record, ok := s.runner.GetRunArchiveContext(ctx, id)
+		record, ok := archives.GetRunArchiveContext(ctx, id)
 		if !ok {
 			return nil, fmt.Errorf("comparison archive not found: %s", id)
 		}
@@ -964,7 +972,7 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 	// The generator-assignment manifest powers Appendix C. It is best-effort:
 	// a failure (e.g. an archived run whose live state is gone) must not block
 	// the report, so the renderer degrades to an "unavailable" note on nil.
-	manifest, manifestErr := s.runner.GetTestManifest(r.PathValue("id"))
+	manifest, manifestErr := s.archiveDomainService().GetTestManifest(r.PathValue("id"))
 	if manifestErr != nil {
 		manifest = nil
 	}
@@ -980,11 +988,12 @@ func (s *Server) handleGetTestHTMLReport(w http.ResponseWriter, r *http.Request)
 
 func (s *Server) requireRunArchive(w http.ResponseWriter, r *http.Request) (*storage.RunArchiveRecord, *archiveMaterializationLease, bool) {
 	id := r.PathValue("id")
-	if _, ok := s.runner.GetTest(id); !ok {
+	archives := s.archiveDomainService()
+	if _, ok := archives.GetTest(id); !ok {
 		writeError(w, http.StatusNotFound, "test not found")
 		return nil, nil, false
 	}
-	record, ok := s.runner.GetRunArchiveContext(r.Context(), id)
+	record, ok := archives.GetRunArchiveContext(r.Context(), id)
 	if !ok {
 		writeError(w, http.StatusNotFound, "archive not found")
 		return nil, nil, false

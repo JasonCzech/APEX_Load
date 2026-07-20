@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/jasonczech/apexload/api/proto"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
@@ -24,209 +23,8 @@ const (
 	maxExecutionFenceWorkers       = 16
 )
 
-// ClaimExecutionEpoch installs or renews the generator-side execution fence.
-// A higher generation and its exact controller owner are durable across
-// generator restarts. A replacement process may reconstruct the volatile
-// expiry for that exact term once; an ordinarily expired or displaced live
-// session can never be revived.
-func (s *Service) ClaimExecutionEpoch(ctx context.Context, claim *pb.ExecutionEpochClaim) (*pb.ExecutionEpochAck, error) {
-	if claim == nil || claim.GetExecutionGeneration() == 0 {
-		return nil, status.Error(codes.InvalidArgument, "execution_generation must be positive")
-	}
-	if err := ctx.Err(); err != nil {
-		return nil, status.FromContextError(err).Err()
-	}
-	ttlMs := claim.GetLeaseTtlMilliseconds()
-	if ttlMs <= 0 {
-		return nil, status.Error(codes.InvalidArgument, "lease_ttl_milliseconds must be positive")
-	}
-	if ttlMs > maxExecutionEpochTTL.Milliseconds() {
-		return nil, status.Errorf(codes.InvalidArgument, "lease_ttl_milliseconds exceeds maximum %d", maxExecutionEpochTTL.Milliseconds())
-	}
-	generation := claim.GetExecutionGeneration()
-	leaseOwner := strings.TrimSpace(claim.GetExecutionLeaseOwnerId())
-	if err := validateExecutionLeaseOwner(generation, leaseOwner, true); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "execution_lease_owner_id: %v", err)
-	}
-	now := time.Now()
-	expiresAt := now.Add(time.Duration(ttlMs) * time.Millisecond)
-
-	s.mu.Lock()
-	if s.draining {
-		s.mu.Unlock()
-		return nil, status.Error(codes.Unavailable, "generator is draining")
-	}
-	if s.executionEpochStateErr != nil || s.executionEpochState == nil {
-		err := s.executionEpochStateErr
-		if err == nil {
-			err = errors.New("durable execution epoch state is unavailable")
-		}
-		s.mu.Unlock()
-		return nil, status.Errorf(codes.FailedPrecondition, "durable execution epoch state: %v", err)
-	}
-	current := s.executionGeneration
-	if generation < current {
-		existingExpiry := s.executionExpiresAt
-		s.mu.Unlock()
-		return &pb.ExecutionEpochAck{
-			Accepted:          false,
-			CurrentGeneration: current,
-			ExpiresAtUnixMs:   existingExpiry.UnixMilli(),
-			ErrorMessage:      fmt.Sprintf("execution generation %d has been fenced by generation %d", generation, current),
-		}, nil
-	}
-	if generation == current && current > 0 && s.executionLeaseOwner != "" && leaseOwner != s.executionLeaseOwner {
-		existingExpiry := s.executionExpiresAt
-		s.mu.Unlock()
-		return &pb.ExecutionEpochAck{
-			Accepted:          false,
-			CurrentGeneration: current,
-			ExpiresAtUnixMs:   existingExpiry.UnixMilli(),
-			ErrorMessage:      "execution generation belongs to a different controller lease owner",
-		}, nil
-	}
-	revalidatingRestart := generation == current && current > 0 && s.executionRestartRevalidation && (s.executionExpiresAt.IsZero() || !now.Before(s.executionExpiresAt))
-	if generation == current && current > 0 && !revalidatingRestart && (s.executionExpiresAt.IsZero() || !now.Before(s.executionExpiresAt)) {
-		existingExpiry := s.executionExpiresAt
-		s.mu.Unlock()
-		return &pb.ExecutionEpochAck{
-			Accepted:          false,
-			CurrentGeneration: current,
-			ExpiresAtUnixMs:   existingExpiry.UnixMilli(),
-			ErrorMessage:      "execution generation has expired; a higher generation is required",
-		}, nil
-	}
-	// Version-1 state did not persist the exact owner. Bind it durably on the
-	// first replacement-process revalidation before restoring a volatile lease
-	// expiry. Once bound, a different controller owner can never claim this
-	// generation, including after another process restart.
-	if revalidatingRestart && s.executionLeaseOwner == "" {
-		if err := ctx.Err(); err != nil {
-			s.mu.Unlock()
-			return nil, status.FromContextError(err).Err()
-		}
-		if err := s.executionEpochState.persist(generation, leaseOwner); err != nil {
-			s.executionEpochStateErr = err
-			s.notifyReadinessChangedLocked()
-			s.mu.Unlock()
-			return nil, status.Errorf(codes.FailedPrecondition, "persist execution generation %d owner: %v", generation, err)
-		}
-		s.executionLeaseOwner = leaseOwner
-	}
-	if generation > current {
-		if err := ctx.Err(); err != nil {
-			s.mu.Unlock()
-			return nil, status.FromContextError(err).Err()
-		}
-		if err := s.executionEpochState.persist(generation, leaseOwner); err != nil {
-			s.executionEpochStateErr = err
-			s.notifyReadinessChangedLocked()
-			s.mu.Unlock()
-			return nil, status.Errorf(codes.FailedPrecondition, "persist execution generation %d: %v", generation, err)
-		}
-		s.executionGeneration = generation
-		s.executionLeaseOwner = leaseOwner
-		for _, subscriber := range s.subscribers {
-			if subscriber != nil && subscriber.generation < generation {
-				subscriber.fence()
-			}
-		}
-		// Persistence is the point of no return for a higher fence. If the RPC
-		// was canceled during fsync, retain the durable high-water but do not
-		// install an active session; stop all displaced work independently of the
-		// canceled request before requiring an even higher generation.
-		if err := ctx.Err(); err != nil {
-			s.executionExpiresAt = time.Time{}
-			lowerTestIDs := s.testIDsBeforeGenerationLocked(generation)
-			s.executionEpochFencing = len(lowerTestIDs) > 0
-			s.mu.Unlock()
-			stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			_ = s.forceStopFencedTests(stopCtx, lowerTestIDs, generation-1)
-			cancel()
-			return nil, status.FromContextError(err).Err()
-		}
-	}
-	if err := ctx.Err(); err != nil {
-		s.mu.Unlock()
-		return nil, status.FromContextError(err).Err()
-	}
-	// Renewals for one generation can arrive out of order across the keeper and
-	// active-test connections. A delayed claim based on an older controller
-	// lease deadline must not shorten a newer, already-safe expiry and stop live
-	// load prematurely. Every installed expiry was independently capped by the
-	// same controller generation's local lease deadline, so retaining the later
-	// one does not weaken fencing.
-	if generation == current && s.executionExpiresAt.After(expiresAt) {
-		expiresAt = s.executionExpiresAt
-	}
-	s.executionExpiresAt = expiresAt
-	s.executionRestartRevalidation = false
-	s.resetExecutionEpochTimerLocked(generation, expiresAt)
-	lowerTestIDs := s.testIDsBeforeGenerationLocked(generation)
-	if len(lowerTestIDs) > 0 {
-		s.executionEpochFencing = true
-	}
-	s.mu.Unlock()
-
-	// Persisting a higher generation is a point of no return. Once the durable
-	// high-water advances, finish canceling displaced load even if the caller
-	// disconnects or its RPC deadline elapses; otherwise stale work could remain
-	// live until the new session expires. The independent timeout keeps this
-	// post-commit cleanup bounded.
-	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
-	cleanupErr := s.forceStopFencedTests(cleanupCtx, lowerTestIDs, generation-1)
-	cleanupCancel()
-	if cleanupErr != nil {
-		return &pb.ExecutionEpochAck{
-			Accepted:          false,
-			CurrentGeneration: generation,
-			ExpiresAtUnixMs:   expiresAt.UnixMilli(),
-			ErrorMessage:      cleanupErr.Error(),
-		}, nil
-	}
-
-	s.mu.Lock()
-	if s.executionGeneration == generation && s.executionFencePending == 0 && len(s.testIDsBeforeGenerationLocked(generation)) == 0 {
-		s.executionEpochFencing = false
-	}
-	accepted := s.executionGeneration == generation && !s.executionEpochFencing && time.Now().Before(s.executionExpiresAt)
-	current = s.executionGeneration
-	currentExpiry := s.executionExpiresAt
-	s.mu.Unlock()
-	if err := ctx.Err(); err != nil {
-		return nil, status.FromContextError(err).Err()
-	}
-	ack := &pb.ExecutionEpochAck{
-		Accepted:          accepted,
-		CurrentGeneration: current,
-		ExpiresAtUnixMs:   currentExpiry.UnixMilli(),
-	}
-	if !accepted {
-		ack.ErrorMessage = "execution generation changed or fencing did not complete"
-	}
-	return ack, nil
-}
-
 func (s *Service) validateMutationGenerationLocked(generation uint64) error {
-	if s.executionEpochStateErr != nil || s.executionEpochState == nil {
-		return status.Error(codes.FailedPrecondition, "durable execution epoch state is unavailable")
-	}
-	if generation == 0 {
-		if s.executionGeneration != 0 {
-			return status.Errorf(codes.FailedPrecondition, "legacy generation 0 is fenced by execution generation %d", s.executionGeneration)
-		}
-		return nil
-	}
-	if generation != s.executionGeneration {
-		return status.Errorf(codes.FailedPrecondition, "execution generation %d is not active; current generation is %d", generation, s.executionGeneration)
-	}
-	if s.executionExpiresAt.IsZero() || !time.Now().Before(s.executionExpiresAt) {
-		return status.Error(codes.FailedPrecondition, "execution generation session has expired")
-	}
-	if s.executionEpochFencing {
-		return status.Error(codes.Unavailable, "previous execution generation is still being fenced")
-	}
-	return nil
+	return s.executionEpochManager.validateMutationLocked(generation, time.Now())
 }
 
 func (s *Service) testIDsBeforeGenerationLocked(generation uint64) []string {
@@ -240,46 +38,31 @@ func (s *Service) testIDsBeforeGenerationLocked(generation uint64) []string {
 }
 
 func (s *Service) resetExecutionEpochTimerLocked(generation uint64, expiresAt time.Time) {
-	if s.executionEpochTimer != nil {
-		s.executionEpochTimer.Stop()
-	}
-	delay := time.Until(expiresAt)
-	if delay < 0 {
-		delay = 0
-	}
-	s.executionEpochTimer = time.AfterFunc(delay, func() {
-		s.expireExecutionEpoch(generation, expiresAt)
-	})
+	s.executionEpochManager.resetTimerLocked(s, generation, expiresAt)
 }
 
 func (s *Service) expireExecutionEpoch(generation uint64, expiresAt time.Time) {
-	s.mu.Lock()
-	if s.executionGeneration != generation || !s.executionExpiresAt.Equal(expiresAt) || time.Now().Before(s.executionExpiresAt) {
+	s.expireExecutionEpochToken(generation, expiresAt, 0, false)
+}
+
+func (s *Service) expireExecutionEpochToken(generation uint64, expiresAt time.Time, token uint64, requireToken bool) {
+	for {
+		s.mu.Lock()
+		wait, testIDs, accepted := s.executionEpochManager.planExpiryLocked(s, generation, expiresAt, token, requireToken, time.Now())
 		s.mu.Unlock()
+		if wait != nil {
+			<-wait
+			continue
+		}
+		if !accepted {
+			return
+		}
+		s.metricsBroker.fenceGeneration(generation)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		_ = s.forceStopFencedTests(ctx, testIDs, generation)
+		cancel()
 		return
 	}
-	for _, subscriber := range s.subscribers {
-		if subscriber != nil && subscriber.generation == generation {
-			subscriber.fence()
-		}
-	}
-	testIDs := make([]string, 0)
-	for testID, assignment := range s.assignments {
-		// Generation zero is legacy unfenced work. Once any positive generation
-		// has been claimed it is lower-generation work too, and must not survive
-		// the positive session's expiry if an earlier fencing attempt was cut short.
-		if assignment.executionGeneration <= generation {
-			testIDs = append(testIDs, testID)
-		}
-	}
-	if len(testIDs) > 0 {
-		s.executionEpochFencing = true
-	}
-	s.mu.Unlock()
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	_ = s.forceStopFencedTests(ctx, testIDs, generation)
-	cancel()
 }
 
 func (s *Service) forceStopFencedTests(ctx context.Context, testIDs []string, maximumGeneration uint64) error {
@@ -379,19 +162,17 @@ func (s *Service) detachFencedTests(testIDs []string, maximumGeneration uint64) 
 		for _, execution := range executionMap {
 			executions = append(executions, execution)
 		}
-		writer := s.archiveWriters[testID]
-		delete(s.archiveWriters, testID)
+		writer := s.archiveManager.takeWriter(testID)
 		// Keep the epoch fenced until this exact detached test has both quiesced and
 		// completed archive finalization. A retry cannot infer safety from the now
 		// empty assignments map because the detached engine may still be running.
-		s.executionFencePending++
-		s.executionEpochFencing = true
+		s.executionEpochManager.beginDetachedFencesLocked(1)
 		stops = append(stops, detachedFencedTest{
 			testID:           testID,
 			assignment:       assignment,
 			executions:       executions,
 			writer:           writer,
-			trackedFinalizer: writer != nil && s.addFinalizer(),
+			trackedFinalizer: writer != nil && s.archiveManager.addFinalizer(),
 		})
 	}
 	s.mu.Unlock()
@@ -408,7 +189,7 @@ func (s *Service) finishDetachedFencedTest(ctx context.Context, stop detachedFen
 		}
 		if stop.trackedFinalizer {
 			go func() {
-				defer s.finalizerWG.Done()
+				defer s.archiveManager.finalizerDone()
 				finish()
 			}()
 		} else {
@@ -417,7 +198,7 @@ func (s *Service) finishDetachedFencedTest(ctx context.Context, stop detachedFen
 		return err
 	}
 	if stop.trackedFinalizer {
-		defer s.finalizerWG.Done()
+		defer s.archiveManager.finalizerDone()
 	}
 	defer s.completeDetachedExecutionFence()
 	s.captureStoppedExecutionMetrics(&stop.assignment, stop.executions)
@@ -433,12 +214,7 @@ func (s *Service) finishDetachedFencedTest(ctx context.Context, stop detachedFen
 
 func (s *Service) completeDetachedExecutionFence() {
 	s.mu.Lock()
-	if s.executionFencePending > 0 {
-		s.executionFencePending--
-	}
-	if s.executionFencePending == 0 && len(s.testIDsBeforeGenerationLocked(s.executionGeneration)) == 0 {
-		s.executionEpochFencing = false
-	}
+	s.executionEpochManager.completeDetachedFenceLocked(s)
 	s.mu.Unlock()
 }
 

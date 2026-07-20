@@ -13,6 +13,8 @@ RUN actual="$(node -p "require('./dashboard/node_modules/playwright-core-go/pack
 	&& test "${actual}" = "${PLAYWRIGHT_DRIVER_VERSION}" \
 	|| { echo "locked playwright-core driver ${actual} does not match ${PLAYWRIGHT_DRIVER_VERSION}" >&2; exit 1; }
 COPY docs/API_USER_GUIDE.md ./docs/API_USER_GUIDE.md
+COPY docs/APPLICATION_USER_GUIDE.md ./docs/APPLICATION_USER_GUIDE.md
+COPY docs/ADMIN_USER_GUIDE.md ./docs/ADMIN_USER_GUIDE.md
 COPY dashboard/ ./dashboard/
 # The dashboard build deliberately writes to /src/pkg/api/static, matching the
 # go:embed path used by the controller. Building it here makes image contents

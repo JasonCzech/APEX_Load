@@ -392,7 +392,11 @@ func TestExecutionEpochFenceArchivesAsFailedEvidence(t *testing.T) {
 	if ack := claimEpoch(t, service, 1, time.Second); !ack.GetAccepted() {
 		t.Fatalf("initial claim rejected: %s", ack.GetErrorMessage())
 	}
-	writer, err := newArchiveRecorderInNamespace(service.archiveNamespace, "fenced-evidence", "Fenced Evidence")
+	namespace, namespaceErr := service.archiveManager.namespaceSnapshot()
+	if namespaceErr != nil {
+		t.Fatal(namespaceErr)
+	}
+	writer, err := newArchiveRecorderInNamespace(namespace, "fenced-evidence", "Fenced Evidence")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +411,7 @@ func TestExecutionEpochFenceArchivesAsFailedEvidence(t *testing.T) {
 	service.executions["fenced-evidence"] = map[string]*groupExecution{
 		"group": {groupName: "group", executionGeneration: 1, cancel: func() {}, done: done},
 	}
-	service.archiveWriters["fenced-evidence"] = writer
+	service.archiveManager.setWriterForTest("fenced-evidence", writer)
 	service.mu.Unlock()
 
 	if err := service.forceStopFencedTests(context.Background(), []string{"fenced-evidence"}, 1); err != nil {

@@ -209,6 +209,7 @@ func (s *Server) handleScenarioResults(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleScenarioSchedulePreview(w http.ResponseWriter, r *http.Request) {
+	schedules := s.schedulingDomainService()
 	var req CreateScenarioScheduleRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -219,7 +220,10 @@ func (s *Server) handleScenarioSchedulePreview(w http.ResponseWriter, r *http.Re
 			count = n
 		}
 	}
-	preview, err := s.runner.PreviewScenarioScheduleRuns(r.PathValue("id"), req, count)
+	// Keep the transport result type explicit so generated OpenAPI schemas remain
+	// independent of the concrete scheduling-service adapter implementation.
+	var preview *ScenarioSchedulePreview
+	preview, err := schedules.PreviewScenarioScheduleRuns(r.PathValue("id"), req, count)
 	if err != nil {
 		status := http.StatusBadRequest
 		if err.Error() == "scenario not found: "+r.PathValue("id") {
@@ -232,6 +236,7 @@ func (s *Server) handleScenarioSchedulePreview(w http.ResponseWriter, r *http.Re
 }
 
 func (s *Server) handleCreateScenarioSchedule(w http.ResponseWriter, r *http.Request) {
+	schedules := s.schedulingDomainService()
 	var req CreateScenarioScheduleRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -240,7 +245,8 @@ func (s *Server) handleCreateScenarioSchedule(w http.ResponseWriter, r *http.Req
 	req.OwnerSubject = actorSubject
 	req.OwnerDisplayName = actorDisplayName
 	req.RBACReviewSource = "api"
-	schedule, err := s.runner.CreateScenarioSchedule(r.PathValue("id"), req)
+	var schedule *storage.ScenarioSchedule
+	schedule, err := schedules.CreateScenarioSchedule(r.PathValue("id"), req)
 	if err != nil {
 		status := http.StatusBadRequest
 		if err.Error() == "scenario not found: "+r.PathValue("id") {
@@ -249,16 +255,13 @@ func (s *Server) handleCreateScenarioSchedule(w http.ResponseWriter, r *http.Req
 		writeError(w, status, err.Error())
 		return
 	}
-	projectID := ""
-	if scenario, ok := s.runner.GetScenario(r.PathValue("id")); ok {
-		projectID = scenario.ProjectID
-	}
+	projectID := schedules.ScenarioProjectID(r.PathValue("id"))
 	s.recordAuditEvent(r, "scenario.schedule.create", "success", "scenario_schedule", schedule.ID, projectID, scenarioScheduleAuditDetails(schedule))
 	writeJSON(w, http.StatusCreated, schedule)
 }
 
 func (s *Server) handleListScenarioSchedules(w http.ResponseWriter, r *http.Request) {
-	schedules, ok := s.runner.ListScenarioSchedules(r.PathValue("id"))
+	schedules, ok := s.schedulingDomainService().ListScenarioSchedules(r.PathValue("id"))
 	if !ok {
 		writeError(w, http.StatusNotFound, "scenario not found")
 		return
@@ -267,6 +270,7 @@ func (s *Server) handleListScenarioSchedules(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleUpdateScenarioSchedule(w http.ResponseWriter, r *http.Request) {
+	schedules := s.schedulingDomainService()
 	var req CreateScenarioScheduleRequest
 	if !decodeJSONBody(w, r, &req) {
 		return
@@ -285,7 +289,8 @@ func (s *Server) handleUpdateScenarioSchedule(w http.ResponseWriter, r *http.Req
 	req.OwnerSubject = actorSubject
 	req.OwnerDisplayName = actorDisplayName
 	req.RBACReviewSource = "api"
-	schedule, ok, err := s.runner.UpdateScenarioSchedule(r.PathValue("id"), r.PathValue("schedule_id"), req)
+	var schedule *storage.ScenarioSchedule
+	schedule, ok, err := schedules.UpdateScenarioSchedule(r.PathValue("id"), r.PathValue("schedule_id"), req)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, errScheduleConcurrentChange) {
@@ -298,20 +303,15 @@ func (s *Server) handleUpdateScenarioSchedule(w http.ResponseWriter, r *http.Req
 		writeError(w, http.StatusNotFound, "scenario schedule not found")
 		return
 	}
-	projectID := ""
-	if scenario, ok := s.runner.GetScenario(r.PathValue("id")); ok {
-		projectID = scenario.ProjectID
-	}
+	projectID := schedules.ScenarioProjectID(r.PathValue("id"))
 	s.recordAuditEvent(r, "scenario.schedule.update", "success", "scenario_schedule", schedule.ID, projectID, scenarioScheduleAuditDetails(schedule))
 	writeJSON(w, http.StatusOK, schedule)
 }
 
 func (s *Server) handleDeleteScenarioSchedule(w http.ResponseWriter, r *http.Request) {
-	projectID := ""
-	if scenario, ok := s.runner.GetScenario(r.PathValue("id")); ok {
-		projectID = scenario.ProjectID
-	}
-	deleted, err := s.runner.DeleteScenarioSchedule(r.PathValue("id"), r.PathValue("schedule_id"))
+	schedules := s.schedulingDomainService()
+	projectID := schedules.ScenarioProjectID(r.PathValue("id"))
+	deleted, err := schedules.DeleteScenarioSchedule(r.PathValue("id"), r.PathValue("schedule_id"))
 	if err != nil {
 		if errors.Is(err, errScheduleHasActiveOccurrence) {
 			writeError(w, http.StatusConflict, err.Error())
@@ -337,7 +337,7 @@ func (s *Server) handleListScenarioScheduleOccurrences(w http.ResponseWriter, r 
 	if limit > maxScheduleHistoryListLimit {
 		limit = maxScheduleHistoryListLimit
 	}
-	occurrences, ok, err := s.runner.ListScenarioScheduleOccurrencesPage(r.PathValue("id"), r.PathValue("schedule_id"), limit, offset)
+	occurrences, ok, err := s.schedulingDomainService().ListScenarioScheduleOccurrencesPage(r.PathValue("id"), r.PathValue("schedule_id"), limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -354,7 +354,7 @@ func (s *Server) handleListScenarioScheduleApprovals(w http.ResponseWriter, r *h
 	if limit > maxScheduleHistoryListLimit {
 		limit = maxScheduleHistoryListLimit
 	}
-	approvals, ok, err := s.runner.ListScenarioScheduleApprovalsPage(r.PathValue("id"), r.PathValue("schedule_id"), limit, offset)
+	approvals, ok, err := s.schedulingDomainService().ListScenarioScheduleApprovalsPage(r.PathValue("id"), r.PathValue("schedule_id"), limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -367,11 +367,9 @@ func (s *Server) handleListScenarioScheduleApprovals(w http.ResponseWriter, r *h
 }
 
 func (s *Server) handleDeleteScenarioScheduleOccurrence(w http.ResponseWriter, r *http.Request) {
-	projectID := ""
-	if scenario, ok := s.runner.GetScenario(r.PathValue("id")); ok {
-		projectID = scenario.ProjectID
-	}
-	deleted, err := s.runner.DeleteScenarioScheduleOccurrence(r.PathValue("id"), r.PathValue("schedule_id"), r.PathValue("occurrence_id"))
+	schedules := s.schedulingDomainService()
+	projectID := schedules.ScenarioProjectID(r.PathValue("id"))
+	deleted, err := schedules.DeleteScenarioScheduleOccurrence(r.PathValue("id"), r.PathValue("schedule_id"), r.PathValue("occurrence_id"))
 	if err != nil {
 		if errors.Is(err, errScheduleHasActiveOccurrence) {
 			writeError(w, http.StatusConflict, err.Error())
@@ -389,45 +387,7 @@ func (s *Server) handleDeleteScenarioScheduleOccurrence(w http.ResponseWriter, r
 }
 
 func (s *Server) handleScenarioScheduleHealth(w http.ResponseWriter, r *http.Request) {
-	now := time.Now().UTC()
-	health := s.runner.ScenarioScheduleHealth(now)
-	health.IsLeader = s.runner.isExecutionLeader()
-	if s.scheduler != nil {
-		health.Sweeps = s.scheduler.healthSnapshot()
-	}
-	if store := s.runner.execPlanScheduleStore; store != nil {
-		schedules, err := store.ListAllExecutionPlanSchedules()
-		if err != nil {
-			health.StorageError = firstNonEmpty(health.StorageError, "execution-plan schedules unavailable: "+err.Error())
-		} else {
-			for _, schedule := range schedules {
-				if schedule == nil {
-					continue
-				}
-				health.ExecutionPlanTotal++
-				if schedule.Enabled {
-					health.ExecutionPlanEnabled++
-				}
-				if schedule.NextRunAt != nil && !schedule.NextRunAt.After(now) {
-					health.ExecutionPlanDue++
-				}
-				if schedule.NextRequiredAction == "operator_decision_required" || schedule.LastError != "" {
-					health.ExecutionPlanBlocked++
-				}
-			}
-		}
-	}
-	s.runner.mu.RLock()
-	for _, test := range s.runner.tests {
-		if test == nil || test.Status != "SCHEDULED" {
-			continue
-		}
-		health.OneTimeScheduled++
-		if test.ScheduledStartAt != nil && !test.ScheduledStartAt.After(now) {
-			health.OneTimeDue++
-		}
-	}
-	s.runner.mu.RUnlock()
+	health := s.schedulingDomainService().Health(time.Now().UTC())
 	writeJSON(w, http.StatusOK, health)
 }
 
@@ -440,6 +400,7 @@ func (s *Server) handleRejectScenarioScheduleApproval(w http.ResponseWriter, r *
 }
 
 func (s *Server) handleResolveScenarioScheduleApproval(w http.ResponseWriter, r *http.Request, approved bool) {
+	schedules := s.schedulingDomainService()
 	var req struct {
 		Reason string `json:"reason,omitempty"`
 	}
@@ -447,7 +408,7 @@ func (s *Server) handleResolveScenarioScheduleApproval(w http.ResponseWriter, r 
 		return
 	}
 	_, actorSubject, _ := s.resolveAuditActor(r)
-	approval, schedule, ok, err := s.runner.ResolveScenarioScheduleApproval(r.PathValue("id"), r.PathValue("schedule_id"), r.PathValue("approval_id"), approved, actorSubject, req.Reason)
+	approval, schedule, ok, err := schedules.ResolveScenarioScheduleApproval(r.PathValue("id"), r.PathValue("schedule_id"), r.PathValue("approval_id"), approved, actorSubject, req.Reason)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

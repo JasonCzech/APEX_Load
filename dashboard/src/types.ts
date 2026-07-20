@@ -1,66 +1,271 @@
-import { type BrowserConfig, type ErrorHandlingConfig, type HTTPConfig, type LogConfig, type PacingConfig, type ReplayPreflight, type RunLogicConfig, type ScriptActionDefinition, type ScriptDefinition, type ThinkTimeConfig, type WebRuntimeConfig } from './types/scripts'
+// Compatibility barrel for dashboard domain contracts. New API/domain code
+// should import from ./types/<domain>; existing consumers can migrate without a
+// flag day while these re-exports preserve their public type names.
+import type { ScriptActionDefinition, ScriptDefinition } from './types/scripts'
 import type { LibraryImportResultItem, LibraryRemote } from './types/library'
+import type { DashboardAuditEvent } from './types/auth'
+import type {
+  SystemInventoryGenerator,
+} from './types/system'
+import type {
+  BrowserReplayConsoleEntry,
+  BrowserReplayDomSummary,
+  BrowserReplayNetworkEntry,
+  BrowserReplaySnapshot,
+  ProtocolEvidence,
+} from './types/replay'
+import type { ClientMetrics } from './types/metrics'
+import type { ScenarioDataPoolBinding } from './types/dataPools'
+import type {
+  RedactionRule,
+  RuntimeSettingsOverride,
+  RuntimeSettingsReview,
+  ScenarioRuntimeSettingsDraft,
+} from './types/runtimeSettings'
+import type { LoadStageDraft } from './types/loadModels'
+import type {
+  AssignmentRecommendation,
+  GeneratorAssignmentSettings,
+  GeneratorShardSummary,
+  ScenarioFootprint,
+  TestGroup,
+} from './types/testConfiguration'
+import type { GoalConfig, GoalStatus, GoalTargetStatus, ScenarioMode } from './types/goals'
+import type { AuthoringHealth } from './types/authoring'
 
 export type { ReplayPreflight, ReplayPreflightCheck } from './types/scripts'
-
-export interface TestGroup {
-  name: string
-  script_id: string
-  script_name: string
-  protocol: string
-  /** "load" (default) or "observer" — small browser experience canaries pinned during goal scaling. */
-  role?: 'load' | 'observer'
-  vusers: number
-  ramp_up?: string
-  ramp_down?: string
-  stages?: LoadStageDraft[]
-  /** Effective root+group value retained for display/backward compatibility. */
-  iterations?: number
-  /** Group-owned iteration value; absent means this group inherits the root. */
-  iteration_override?: number
-  /** False/absent identifies a legacy snapshot whose inheritance provenance is unknown. */
-  iteration_override_known?: boolean
-  runtime_settings?: RuntimeSettingsOverride
-  initialization?: 'at_runtime' | 'at_once'
-  assignment?: GeneratorAssignmentSettings
-}
-
-export interface GeneratorAssignmentSettings {
-  mode?: 'auto' | 'specific_hosts' | 'region_weighted' | 'load_zone_weighted'
-  selected_targets?: string[]
-  region_weights?: Record<string, number>
-  load_zone_weights?: Record<string, number>
-  shard_strategy?: 'capacity_weighted'
-  required_labels?: Record<string, string>
-  tolerate_generator_loss?: boolean
-}
-
-export interface GeneratorShardSummary {
-  group: string
-  target: string
-  vusers: number
-  shard_strategy?: 'capacity_weighted'
-}
-
-export interface ScenarioFootprint {
-  total_vusers: number
-  duration: string
-  complexity_score: number
-  estimated_cpu_cores: number
-  estimated_memory_mb: number
-  estimated_network_mbps: number
-}
-
-export interface AssignmentRecommendation {
-  mode: 'auto' | 'specific_hosts' | 'region_weighted' | 'load_zone_weighted'
-  available_targets?: string[]
-  recommended_targets?: string[]
-  available_regions?: string[]
-  available_labels?: Record<string, string[]>
-  region_weights?: Record<string, number>
-  summary?: string
-  warnings?: string[]
-}
+export type {
+  DashboardAccessReviewResponse,
+  DashboardAccessReviewServiceAccount,
+  DashboardAccessReviewUser,
+  DashboardAuthenticatedUser,
+  DashboardAuditEvent,
+  DashboardAuditEventFilter,
+  DashboardAuditEventListResponse,
+  DashboardAuthAccessMatrix,
+  DashboardAuthAccessOperation,
+  DashboardAuthAccessResource,
+  DashboardAuthDiagnostics,
+  DashboardAuthDiagnosticsCheck,
+  DashboardAuthEffectiveAccess,
+  DashboardAuthEffectiveAccessOperation,
+  DashboardAuthEffectiveAccessResource,
+  DashboardAuthPolicy,
+  DashboardAuthRoleCatalog,
+  DashboardAuthRoleDefinition,
+  DashboardAuthSettings,
+  DashboardAuthStatus,
+  DashboardCreateServiceAccountRequest,
+  DashboardCreateServiceAccountResponse,
+  DashboardCreateUserBindingRequest,
+  DashboardCreateUserRequest,
+  DashboardOnboardUserRequest,
+  DashboardServiceAccount,
+  DashboardServiceAccountListResponse,
+  DashboardUpdateServiceAccountRequest,
+  DashboardUpdateUserRequest,
+  DashboardUser,
+  DashboardUserActivityResponse,
+  DashboardUserListResponse,
+  DashboardUserRoleBinding,
+  DashboardUserRoleScopeType,
+  DashboardUserUsageBucket,
+} from './types/auth'
+export type {
+  GitHubAppInstallation,
+  GitHubBranch,
+  GitHubConfigResponse,
+  GitHubConnectionResponse,
+  GitHubContentEntry,
+  GitHubContentsResponse,
+  GitHubDiagnosticsResponse,
+  GitHubPushResponse,
+  GitHubRepo,
+  GitHubScriptStatus,
+  GitHubSyncJob,
+} from './types/github'
+export type {
+  CapacityReservation,
+  CapacityTimeslot,
+  CapacityTimeslotAvailabilityResponse,
+  CapacityTimeslotListResponse,
+  CapacityTimeslotRequest,
+} from './types/capacity'
+export type {
+  FleetAlert,
+  FleetAlertsResponse,
+  FleetCapacityResponse,
+  FleetGeneratorMetadata,
+  FleetGeneratorMetadataListResponse,
+  FleetPool,
+  FleetPoolListResponse,
+  FleetPoolMember,
+  FleetProjectSlotAccounting,
+  FleetProvisioningEvent,
+  FleetProvisioningRequest,
+  FleetProvisioningRequestListResponse,
+  ProvisionerInfo,
+} from './types/fleet'
+export type {
+  BrowserBenchmarkAcceptance,
+  BrowserBenchmarkDensityEnvelope,
+  BrowserBenchmarkEvidenceResponse,
+  BrowserBenchmarkProfile,
+  CompetitiveParityArea,
+  DeploymentIdentity,
+  HealthResponse,
+  ParityStatusArea,
+  ParityStatusResponse,
+  SystemInventoryController,
+  SystemInventoryGenerator,
+  SystemInventoryResponse,
+  SystemReadinessCheck,
+  SystemReadinessResponse,
+  SystemRestartCapabilities,
+  SystemRestartRequest,
+  SystemRestartResult,
+  SystemServiceEntry,
+  SystemServicesResponse,
+  UsageAccountingBucket,
+  UsageAccountingResponse,
+  UsageAccountingSnapshot,
+  UsageAccountingSnapshotsResponse,
+  VersionResponse,
+} from './types/system'
+export type {
+  DashboardArchiveRetentionPolicy,
+  DashboardArchiveRetentionSettings,
+  DashboardCapacityAvailabilitySettings,
+  DashboardCapacityGeneratorSettings,
+  DashboardCapacityPlanningSettings,
+  DashboardClientAppSettings,
+  DashboardClientDownloadsSettings,
+  DashboardGeneralSettings,
+  DashboardGitHubSettings,
+  DashboardGrafanaSettings,
+  DashboardNotificationsSettings,
+  DashboardNotificationWebhook,
+  DashboardPrometheusSettings,
+  DashboardScheduleDefaultsSettings,
+  DashboardScriptImportSettings,
+  DashboardSystemSettings,
+  DashboardThresholdSettings,
+} from './types/settings'
+export type {
+  RunCalendarCapacity,
+  RunCalendarCapacityDay,
+  RunCalendarEvent,
+  RunCalendarRange,
+  RunCalendarResponse,
+  RunCalendarTopology,
+  RunCalendarUser,
+  RunCalendarWorkload,
+  ScenarioSchedule,
+  ScenarioScheduleApproval,
+  ScenarioScheduleGovernance,
+  ScenarioScheduleHealth,
+  ScenarioScheduleOccurrence,
+  ScenarioScheduleWindow,
+} from './types/scheduling'
+export type {
+  BrowserReplayConsoleEntry,
+  BrowserReplayDomSummary,
+  BrowserReplayEvent,
+  BrowserReplayNetworkEntry,
+  BrowserReplayReport,
+  BrowserReplaySession,
+  BrowserReplaySessionResponse,
+  BrowserReplaySnapshot,
+  BrowserReplayStartRequest,
+  BrowserReplayStartResponse,
+  ConditionEvidence,
+  ProtocolEvidence,
+  ReplayArtifactManifest,
+  ReplayDiagnosis,
+  ReplayDiagnosisSummary,
+  ReplayRepairSuggestion,
+  ReplayRuntimeProfile,
+  ScriptDebugAction,
+  ScriptDebugBreakpoint,
+  ScriptDebugLogEntry,
+  ScriptDebugLogLevel,
+  ScriptDebugSession,
+  ScriptDebugSessionResponse,
+  ScriptDebugStartRequest,
+  ScriptDebugStartResponse,
+  ScriptDebugStepMode,
+} from './types/replay'
+export type {
+  ExecutionPlan,
+  ExecutionPlanApproval,
+  ExecutionPlanApprovalListResponse,
+  ExecutionPlanEntry,
+  ExecutionPlanListResponse,
+  ExecutionPlanRun,
+  ExecutionPlanRunEntry,
+  ExecutionPlanRunListResponse,
+  ExecutionPlanRunResponse,
+  ExecutionPlanRunResult,
+  ExecutionPlanSchedule,
+  ExecutionPlanScheduleListResponse,
+  ExecutionPlanScheduleOccurrence,
+  ExecutionPlanScheduleOccurrenceListResponse,
+  ExecutionPlanScheduleRequest,
+  ScheduleOccurrenceResolutionRequest,
+} from './types/executionPlans'
+export type {
+  CollectorMetricPack,
+  CollectorMetricSnapshot,
+  MonitoringCollector,
+  MonitoringCollectorListResponse,
+  MonitoringCollectorTokenResponse,
+} from './types/monitoring'
+export type {
+  EntitlementBundleConsumption,
+  EntitlementLimitView,
+  EntitlementsProtocolBundle,
+  EntitlementsResponse,
+  EntitlementsUsageResponse,
+  ProjectEntitlementView,
+  ProjectEntitlementsUsageResponse,
+} from './types/entitlements'
+export type {
+  ObjectRepository,
+  ObjectRepositoryListResponse,
+  RepositoryObject,
+  RepositoryObjectCandidate,
+} from './types/objectRepository'
+export type {
+  CorrelationRule,
+  CorrelationRuleset,
+  CorrelationRulesetApplyResponse,
+  CorrelationRulesetListResponse,
+} from './types/correlationRulesets'
+export type { ClientMetrics } from './types/metrics'
+export type {
+  ScenarioDataPoolBinding,
+  SharedDataPool,
+  SharedDataPoolRow,
+} from './types/dataPools'
+export type {
+  RedactionRule,
+  RuntimeBrowserSettings,
+  RuntimeSettingsFinding,
+  RuntimeSettingsOverride,
+  RuntimeSettingsReview,
+  ScenarioRuntimeSettingsDraft,
+} from './types/runtimeSettings'
+export type { LoadStageDraft } from './types/loadModels'
+export type {
+  AssignmentRecommendation,
+  GeneratorAssignmentSettings,
+  GeneratorShardSummary,
+  ScenarioFootprint,
+  TestGroup,
+} from './types/testConfiguration'
+export type { GoalConfig, GoalStatus, GoalTargetStatus, ScenarioMode } from './types/goals'
+export type { AuthoringHealth, AuthoringHealthInput } from './types/authoring'
+export type { ReleaseRef, ScenarioRef, StoredScenario, StoredScript } from './types/storedContent'
 
 export interface Project {
   id: string
@@ -98,12 +303,6 @@ export interface RepositoryCategory {
   sort_order?: number
   created_at: string
   updated_at: string
-}
-
-export interface RedactionRule {
-  name?: string
-  pattern: string
-  replacement?: string
 }
 
 export interface ProjectSettings {
@@ -160,17 +359,6 @@ export interface Release {
   archived_at?: string
 }
 
-export interface ReleaseRef {
-  id: string
-  name: string
-  application_id: string
-}
-
-export interface ScenarioRef {
-  id: string
-  name: string
-}
-
 export interface Folder {
   id: string
   project_id: string
@@ -180,80 +368,6 @@ export interface Folder {
   created_at: string
   updated_at: string
 }
-
-export type RuntimeBrowserSettings = Pick<BrowserConfig, 'headless' | 'device_profile' | 'touch_mode' | 'orientation'>
-
-export interface RuntimeSettingsOverride {
-  iterations?: number
-  pacing?: PacingConfig
-  think_time?: ThinkTimeConfig
-  browser?: RuntimeBrowserSettings
-  log_level?: string
-  auto_transactions?: string
-  error_handling?: ErrorHandlingConfig
-  log?: LogConfig
-  run_logic?: RunLogicConfig
-  http?: HTTPConfig
-  web_runtime?: WebRuntimeConfig
-  browser_config?: BrowserConfig
-  base_url?: string
-  env?: Record<string, string>
-  redaction_rules?: RedactionRule[]
-}
-
-export interface RuntimeSettingsFinding {
-  id: string
-  scope: string
-  group?: string
-  script_id?: string
-  script_name?: string
-  protocol?: string
-  area?: string
-  concept?: string
-  status: string
-  severity: string
-  summary: string
-  recommended_action?: string
-  evidence?: string[]
-}
-
-export interface RuntimeSettingsReview {
-  status: string
-  summary?: string
-  status_counts?: Record<string, number>
-  findings?: RuntimeSettingsFinding[]
-  blocking_findings?: RuntimeSettingsFinding[]
-  warnings?: string[]
-}
-
-export interface ScenarioRuntimeSettingsDraft {
-  iterations?: number
-  pacing?: PacingConfig
-  think_time?: ThinkTimeConfig
-  browser?: RuntimeBrowserSettings
-  log_level: string
-  auto_transactions: string
-  /** Undefined inherits the script/default setting; false is an explicit override. */
-  continue_on_error?: boolean
-  /** Undefined inherits the script/default setting; false is an explicit override. */
-  snapshot_on_error?: boolean
-  // Full error_handling retry fields (continue/snapshot above stay for back-compat).
-  max_retries?: number
-  retry_delay_ms?: number
-  retry_backoff?: string
-  // Pass-through preservation of the full advanced sections: round-tripped so an
-  // API-set section is never dropped on a UI edit (dedicated section editors land next).
-  log?: LogConfig
-  run_logic?: RunLogicConfig
-  http?: HTTPConfig
-  web_runtime?: WebRuntimeConfig
-  browser_config?: BrowserConfig
-  base_url?: string
-  env?: Record<string, string>
-  redaction_rules?: RedactionRule[]
-}
-
-export type ScenarioMode = 'vuser_driven' | 'goal_oriented'
 
 export type DurationUnit = 's' | 'm' | 'h'
 
@@ -269,59 +383,6 @@ export interface StageTimelineValidationResult {
   totalSeconds: number
   scenarioDurationSeconds: number
   message?: string
-}
-
-export interface GoalConfig {
-  target_average_tps?: number
-  p95_latency_ms?: number
-  max_error_pct?: number
-  max_avg_server_processing_ms?: number
-  max_avg_transfer_ms?: number
-  max_error_count?: number
-  min_vusers?: number
-  max_vusers?: number
-  /** Web Vitals experience thresholds, evaluated against browser canary metrics. */
-  max_lcp_ms?: number
-  max_inp_ms?: number
-  max_cls?: number
-  /** Streaming-ingestion thresholds for Event Hubs, Kafka, and JMS scenarios. */
-  max_throttled_requests?: number
-  max_end_to_end_latency_ms?: number
-  max_partition_skew_pct?: number
-  max_redelivery_rate_pct?: number
-  max_dead_letter_rate_pct?: number
-  stop_on_sla_breach?: boolean
-  stop_on_max_errors?: boolean
-  sla_breach_window?: string
-}
-
-export interface GoalStatus {
-  mode: 'goal_oriented'
-  current_tps: number
-  current_total_vusers: number
-  target_average_tps?: number
-  max_error_count?: number
-  min_vusers?: number
-  max_vusers?: number
-  suggested_total_vusers?: number
-  last_scale_direction?: 'up' | 'down'
-  last_scale_reason?: string
-  last_scale_at?: string
-  latency_breached?: boolean
-  error_breached?: boolean
-  server_processing_breached?: boolean
-  transfer_breached?: boolean
-  error_count_breached?: boolean
-  breach_active?: boolean
-  breach_duration_sec?: number
-  stop_triggered?: boolean
-  stop_reason?: string
-}
-
-export interface GoalTargetStatus {
-  group: string
-  target_tps: number
-  updated_at?: string
 }
 
 export interface RunComparisonBaseline {
@@ -365,13 +426,6 @@ export interface RunArchiveExecutionSettingsSnapshot {
       configured_available_generators: number
     }
   }
-}
-
-export interface ProvisionerInfo {
-  name: string
-  can_provision: boolean
-  supported_regions?: string[]
-  description: string
 }
 
 export interface ReleaseTrendDeltas {
@@ -482,16 +536,6 @@ export interface LoadComparisonResponse {
 
 export interface LoadComparisonRequestOptions {
   testIds?: string[]
-}
-
-export interface CapacityReservation {
-  project_id: string
-  reserved_generators: number
-  // pool_id scopes the reservation to one fleet pool's envelope (empty = global).
-  pool_id?: string
-  // Optional timeslot window (RFC3339). Omit both for an always-active reservation.
-  starts_at?: string
-  ends_at?: string
 }
 
 export interface RunArchiveProvenance {
@@ -939,35 +983,6 @@ export interface IntervalSummaryRecord {
   browser?: BrowserLiveMetrics
   browser_by_device?: Record<string, BrowserDeviceLiveMetrics>
   latency?: NetworkLatency
-}
-
-export interface ClientMetrics {
-  device_profile?: string
-  device_platform?: string
-  device_tier?: string
-  browser_engine?: string
-  action_duration_ms?: number
-  fcp_ms?: number
-  lcp_ms?: number
-  cls_score?: number
-  inp_ms?: number
-  ttfb_ms?: number
-  dom_content_loaded_ms?: number
-  dom_complete_ms?: number
-  load_event_ms?: number
-  blocking_resource_count?: number
-  total_resource_count?: number
-  resource_transfer_kb?: number
-  js_heap_used_mb?: number
-  js_heap_total_mb?: number
-  browser_process_cpu_pct?: number
-  browser_process_mem_mb?: number
-  layout_count?: number
-  recalc_style_count?: number
-  script_duration_ms?: number
-  layout_duration_ms?: number
-  task_duration_ms?: number
-  long_task_count?: number
 }
 
 export interface ServerTelemetry {
@@ -1599,254 +1614,6 @@ export interface ScenarioDraft {
   revisionContext?: ScenarioDraftRevisionContext
 }
 
-export interface SharedDataPool {
-  id: string
-  name: string
-  description?: string
-  schema?: Record<string, string>
-  project_id?: string
-  created_at: string
-  updated_at: string
-  archived_at?: string
-}
-
-export interface SharedDataPoolRow {
-  id: string
-  pool_id: string
-  data: Record<string, string>
-  status?: string
-  version: number
-  created_at: string
-  updated_at: string
-}
-
-export interface ScenarioDataPoolBinding {
-  id?: string
-  scenario_id?: string
-  pool_id: string
-  pool_name?: string
-  alias: string
-  access_mode: 'read_only' | 'read_write' | 'consume'
-  selection_strategy: 'sequential' | 'random' | 'unique'
-  created_at?: string
-  updated_at?: string
-}
-
-export interface ScenarioSchedule {
-  id: string
-  scenario_id: string
-  project_id?: string
-  name: string
-  cron_expr: string
-  timezone?: string
-  release_id?: string
-  timeslot_id?: string
-  run_name_template?: string
-  enabled: boolean
-  revision?: number
-  approval_policy?: 'auto' | 'manual_review' | 'high_cost' | 'off_hours' | 'production' | 'quota_burst' | string
-  missed_run_policy?: 'skip' | 'catch_up_once' | 'catch_up_all' | 'require_operator_decision' | string
-  conflict_summary?: string
-  last_occurrence?: ScenarioScheduleOccurrence
-  next_required_action?: string
-  pending_approval_id?: string
-  owner_subject?: string
-  owner_display_name?: string
-  governance?: ScenarioScheduleGovernance
-  blackout_windows?: ScenarioScheduleWindow[]
-  maintenance_windows?: ScenarioScheduleWindow[]
-  availability_windows?: ScenarioScheduleWindow[]
-  // Optional absolute date-range pause; either bound may be omitted for an
-  // open-ended pause. Stored/served as RFC3339 UTC instants.
-  disabled_from?: string
-  disabled_until?: string
-  last_run_test_id?: string
-  last_run_at?: string
-  next_run_at?: string
-  last_error?: string
-  created_at: string
-  updated_at: string
-}
-
-export interface ScenarioScheduleGovernance {
-  rbac_review?: {
-    decision?: string
-    reviewed_at?: string
-    reviewed_by?: string
-    required_roles?: string[]
-    review_source?: string
-  }
-  quota_review?: {
-    decision?: string
-    project_max_concurrent_tests?: number
-    project_max_vusers?: number
-    estimated_peak_vusers?: number
-    findings?: string[]
-  }
-  policy_version?: string
-}
-
-export interface ScenarioScheduleWindow {
-  name?: string
-  days_of_week?: number[]
-  start_time: string
-  end_time: string
-  timezone?: string
-}
-
-export interface ScenarioScheduleOccurrence {
-  id: string
-  schedule_id: string
-  scenario_id: string
-  project_id?: string
-  schedule_revision: number
-	 revision?: number
-  planned_at: string
-  materialized_at?: string
-  status: 'planned' | 'materialized' | 'queued' | 'blocked' | 'skipped' | 'failed' | 'approved' | 'completed' | string
-  reason_code?: string
-  test_id?: string
-  approval_id?: string
-  conflict_summary?: string
-  created_at: string
-  updated_at: string
-}
-
-export interface ScenarioScheduleApproval {
-  id: string
-  schedule_id: string
-  scenario_id: string
-  project_id?: string
-  schedule_revision: number
-  policy: string
-  status: 'pending' | 'approved' | 'rejected' | string
-  requested_by?: string
-  requested_at?: string
-  resolved_by?: string
-  resolved_at?: string
-  decision_reason?: string
-  required_role?: string
-  created_at: string
-  updated_at: string
-}
-
-export interface ScenarioScheduleHealth {
-  total: number
-  enabled: number
-  due: number
-  blocked: number
-  failed: number
-  pending_approval: number
-  queued?: number
-  materialized?: number
-  skipped?: number
-  completed?: number
-  status_counts?: Record<string, number>
-  is_leader?: boolean
-  storage_error?: string
-  sweeps?: Record<string, { last_sweep_at?: string; last_successful_at?: string; last_error?: string }>
-  execution_plan_total?: number
-  execution_plan_enabled?: number
-  execution_plan_due?: number
-  execution_plan_blocked?: number
-  one_time_scheduled?: number
-  one_time_due?: number
-}
-
-export interface RunCalendarRange {
-  from: string
-  to: string
-  requested_from: string
-  requested_to: string
-  history_floor?: string
-  future_ceiling: string
-  history_clamped?: boolean
-  future_clamped?: boolean
-  retention_enforced?: boolean
-}
-
-export interface RunCalendarUser {
-  display_name?: string
-  subject?: string
-  attribution?: 'started_by' | 'created_by' | 'schedule_owner' | string
-  owner_subject?: string
-  owner_display_name?: string
-  created_by_subject?: string
-  created_by_display_name?: string
-  started_by_subject?: string
-  started_by_display_name?: string
-}
-
-export interface RunCalendarWorkload {
-  total_vusers?: number
-  duration?: string
-  groups?: TestGroup[]
-}
-
-export interface RunCalendarTopology {
-  source?: 'live' | 'archive' | 'planned' | 'legacy' | string
-  controller?: SystemInventoryController
-  controller_env?: Record<string, string>
-  generator_shards?: GeneratorShardSummary[]
-  generator_inventory?: SystemInventoryGenerator[]
-  summary?: string
-}
-
-export interface RunCalendarEvent {
-  id: string
-  source: 'cron' | 'ad_hoc' | 'execution_plan' | string
-  run_type: 'scheduled' | 'ad_hoc' | 'execution_plan' | string
-  title: string
-  status: string
-  start_at: string
-  end_at?: string
-  projected?: boolean
-  occurrence_status?: string
-  reason_code?: string
-  conflict_summary?: string
-  test_id?: string
-  test_ref_key?: string
-  schedule_id?: string
-  schedule_name?: string
-  cron_expr?: string
-  timezone?: string
-  scenario_id?: string
-  scenario_name?: string
-  plan_id?: string
-  application_id?: string
-  release_id?: string
-  project_id?: string
-  workload: RunCalendarWorkload
-  user: RunCalendarUser
-  topology: RunCalendarTopology
-}
-
-export interface RunCalendarCapacityDay {
-  date: string
-  configured_generators: number
-  available_generators: number
-  peak_reserved_generators: number
-  reservation_count: number
-  pressure_pct: number
-  pressure: 'clear' | 'tight' | 'over' | string
-}
-
-export interface RunCalendarCapacity {
-  project_id?: string
-  days: RunCalendarCapacityDay[]
-}
-
-export interface RunCalendarResponse {
-  generated_at: string
-  range: RunCalendarRange
-  events: RunCalendarEvent[]
-  count: number
-  status_counts?: Record<string, number>
-  source_counts?: Record<string, number>
-  truncated?: boolean
-  capacity?: RunCalendarCapacity
-}
-
 export type TestStatus =
   | 'QUEUED'
   | 'RESERVED'
@@ -2187,24 +1954,6 @@ export interface GroupLiveMetrics {
   p99_ms: number
 }
 
-export interface StoredScript {
-  id: string
-  ref_key?: string
-  name: string
-  protocol: string
-  version: string
-  project_id?: string
-  folder_id?: string | null
-  created_at: string
-  scenario_count?: number
-  associated_scenarios?: ScenarioRef[]
-  associated_releases?: ReleaseRef[]
-  scenario_run_releases?: ReleaseRef[]
-  last_run_at?: string
-  authoring_health?: AuthoringHealth
-  script?: ScriptDefinition
-}
-
 export interface AuthoringTemplate {
   id: string
   name: string
@@ -2287,59 +2036,6 @@ export interface AuthoringCorrelationPreviewResponse {
   authoring_health: AuthoringHealth
 }
 
-export interface AuthoringHealth {
-  score: number
-  status: 'healthy' | 'needs_review' | 'blocked' | string
-  inputs: AuthoringHealthInput[]
-}
-
-export interface AuthoringHealthInput {
-  key: string
-  status: 'pass' | 'info' | 'warning' | 'blocker' | string
-  count?: number
-  summary: string
-}
-
-export interface StoredScenario {
-  id: string
-  ref_key?: string
-  name: string
-  duration: string
-  start_delay?: string
-  scenario_mode?: ScenarioMode
-  script_shakeout?: boolean
-  resource_baseline?: boolean
-  assignment?: GeneratorAssignmentSettings
-  goal_config?: GoalConfig
-  runtime_settings?: RuntimeSettingsOverride
-  scripts: Array<{
-    order: number
-    name?: string
-    script_id: string
-    script_name?: string
-    protocol?: string
-    role?: 'load' | 'observer'
-    vusers: number
-    ramp_up?: string
-    ramp_down?: string
-    stages?: LoadStageDraft[]
-    iterations?: number
-    runtime_settings?: RuntimeSettingsOverride
-    initialization?: 'at_runtime' | 'at_once'
-    assignment?: GeneratorAssignmentSettings
-  }>
-  schedules?: ScenarioSchedule[]
-  data_pools?: ScenarioDataPoolBinding[]
-  created_at: string
-  updated_at: string
-  script_count: number
-  result_count?: number
-  associated_releases?: ReleaseRef[]
-  last_run_test_id?: string
-  last_run_at?: string
-  last_run_ended_at?: string
-}
-
 export interface WSMessage {
   type: string
   test_id?: string
@@ -2361,346 +2057,6 @@ export interface WSMessage {
   event?: unknown
   report?: unknown
   session?: unknown
-}
-
-export interface BrowserReplayConsoleEntry {
-  level?: string
-  text?: string
-  source?: string
-  timestamp?: string
-}
-
-export interface BrowserReplayNetworkEntry {
-  url?: string
-  method?: string
-  status_code?: number
-  resource_type?: string
-  duration_ms?: number
-  bytes_received?: number
-}
-
-export interface BrowserReplayDomSummary {
-  title?: string
-  ready_state?: string
-  visible_text?: string[]
-}
-
-export interface ReplayRuntimeProfile {
-  name?: string
-  capture_mode?: string
-  log_level?: string
-  ignore_think_time?: boolean
-  browser_engine?: string
-  device_profile?: string
-  headless?: boolean
-  failure_policy?: string
-  experience_canary?: boolean
-  har_capture_policy?: string
-}
-
-export interface ReplayArtifactManifest {
-  replay_id?: string
-  script_hash?: string
-  script_revision?: string
-  created_at?: string
-  runtime_profile?: ReplayRuntimeProfile
-  data_sources?: string[]
-  seed_variables?: string[]
-  screenshots?: number
-  network_entries?: number
-  console_entries?: number
-  snapshots?: number
-  html_captured?: boolean
-  browser_evidence?: boolean
-  protocol_artifacts?: Record<string, number>
-}
-
-export interface ProtocolEvidence {
-  protocol?: string
-  operation?: string
-  target?: string
-  status?: string
-  timings?: Record<string, unknown>
-  messages?: Record<string, unknown>
-  metadata?: Record<string, unknown>
-  rows?: Record<string, unknown>
-  records?: Record<string, unknown>
-  transcript?: unknown[]
-  [key: string]: unknown
-}
-
-export interface ReplayDiagnosis {
-  category: string
-  severity: string
-  cause: string
-  evidence?: string
-  action?: string
-  signals?: string[]
-  frame_context?: string
-  suggested_locator?: string
-}
-
-export interface ReplayRepairSuggestion {
-  id: string
-  title: string
-  description: string
-  draft_patch_type: string
-  action?: string
-  confidence?: number
-  fields?: Record<string, string>
-}
-
-export interface ReplayDiagnosisSummary {
-  failure_count: number
-  categories?: Record<string, number>
-  first_failure_event_id?: string
-  first_failure_action?: string
-  first_failure_cause?: string
-}
-
-export interface BrowserReplaySnapshot {
-  request_method?: string
-  request_url?: string
-  request_headers?: Record<string, string>
-  request_body?: string
-  response_status?: number
-  response_headers?: Record<string, string>
-  response_body?: string
-  page_url?: string
-  page_title?: string
-  html?: string
-  screenshot_base64?: string
-  console_entries?: BrowserReplayConsoleEntry[]
-  network_entries?: BrowserReplayNetworkEntry[]
-  dom_summary?: BrowserReplayDomSummary
-  client_metrics?: ClientMetrics
-}
-
-export interface BrowserReplayEvent {
-  event_id?: string
-  action_index?: number
-  event_index?: number
-  phase: string
-  action_name: string
-  action_type: string
-  source_profile?: string
-  source_step_id?: string
-  source_step_index?: number
-  source_action?: string
-  source_action_name?: string
-  source_transaction?: string
-  method?: string
-  target: string
-  selector?: string
-  value?: string
-  headers?: Record<string, string>
-  body?: string
-  status_code?: number
-  success: boolean
-  error_message?: string
-  started_at: string
-  completed_at: string
-  duration_ms: number
-  extractions?: Record<string, string>
-  page_url?: string
-  page_title?: string
-  html?: string
-  screenshot_base64?: string
-  console_entries?: BrowserReplayConsoleEntry[]
-  network_entries?: BrowserReplayNetworkEntry[]
-  dom_summary?: BrowserReplayDomSummary
-  client_metrics?: ClientMetrics
-  snapshot?: BrowserReplaySnapshot
-  protocol_evidence?: ProtocolEvidence
-  diagnosis?: ReplayDiagnosis
-  repair_suggestions?: ReplayRepairSuggestion[]
-  // Sub-request / sub-step identity for leaves of a container action
-  // (http_sequence / control_if / control_loop). Absent for a plain action.
-  parent_action_name?: string
-  request_index?: number
-  request_count?: number
-  step_path?: string[]
-  iteration?: number
-  iteration_path?: number[]
-}
-
-export interface BrowserReplayReport {
-  replay_session_id?: string
-  script_hash?: string
-  script_revision?: string
-  runtime_profile?: ReplayRuntimeProfile
-  artifact_manifest?: ReplayArtifactManifest
-  diagnosis_summary?: ReplayDiagnosisSummary
-  repair_suggestions?: ReplayRepairSuggestion[]
-  group: string
-  protocol: string
-  started_at: string
-  completed_at: string
-  success: boolean
-  error?: string
-  events: BrowserReplayEvent[]
-  final_variables?: Record<string, string>
-}
-
-export interface BrowserReplaySession {
-  id: string
-  mode?: string
-  script_id?: string
-  project_id?: string
-  status: 'queued' | 'running' | 'paused' | 'completed' | 'failed' | 'stopped'
-  group: string
-  protocol: string
-  runtime_profile?: ReplayRuntimeProfile
-  preflight?: ReplayPreflight
-  started_at?: string
-  completed_at?: string
-  current_event_index: number
-  current_event?: BrowserReplayEvent
-  events?: BrowserReplayEvent[]
-  report?: BrowserReplayReport
-  error?: string
-}
-
-export interface BrowserReplayStartRequest {
-  group_name?: string
-  project_id?: string
-  replay_session_id?: string
-  variables?: Record<string, string>
-  start_paused?: boolean
-  breakpoints?: number[]
-  log_level?: ScriptDebugLogLevel
-  browser?: BrowserConfig
-  ignore_think_time?: boolean
-  script?: ScriptDefinition
-}
-
-export interface BrowserReplayStartResponse {
-  script_id: string
-  replay_session_id: string
-  session: BrowserReplaySession
-  preflight?: ReplayPreflight
-  warnings?: string[]
-}
-
-export interface BrowserReplaySessionResponse {
-  session: BrowserReplaySession
-  preflight?: ReplayPreflight
-  warnings?: string[]
-}
-
-export type ScriptDebugLogLevel = 'error' | 'warn' | 'info' | 'debug' | 'trace'
-
-export interface ScriptDebugBreakpoint {
-  phase: 'init' | 'action' | 'teardown' | string
-  action_index: number
-  // Optional sub-request / sub-step targeting within a container action. Absent
-  // = whole-action breakpoint (stops once at the first executed leaf).
-  request_index?: number
-  step_path?: string[]
-}
-
-export interface ScriptDebugLogEntry {
-  id: string
-  timestamp: string
-  level: ScriptDebugLogLevel
-  category: string
-  message: string
-  raw?: string
-  phase?: string
-  action_index?: number
-  action_name?: string
-}
-
-export interface ScriptDebugAction {
-  event_id?: string
-  phase: string
-  action_index: number
-  event_index: number
-  action_name: string
-  action_type: string
-  method?: string
-  target?: string
-  selector?: string
-  source_step_id?: string
-  // Sub-request / sub-step identity when paused inside a container action.
-  parent_action_name?: string
-  request_index?: number
-  request_count?: number
-  step_path?: string[]
-  iteration?: number
-  iteration_path?: number[]
-}
-
-// ConditionEvidence captures the evaluated operands and outcome of a control_if /
-// control_loop predicate so the debugger can show why a branch was taken.
-export interface ConditionEvidence {
-  expr?: string
-  left?: string
-  op?: string
-  right?: string
-  result: boolean
-  branch?: string
-}
-
-// Step modes accepted by POST /script-debug/sessions/{id}/step.
-export type ScriptDebugStepMode = 'into' | 'over' | 'loop_end'
-
-export interface ScriptDebugSession {
-  id: string
-  mode?: string
-  script_id?: string
-  project_id?: string
-  status: BrowserReplaySession['status']
-  group: string
-  protocol: string
-  log_level: ScriptDebugLogLevel
-  runtime_profile?: ReplayRuntimeProfile
-  preflight?: ReplayPreflight
-  started_at?: string
-  completed_at?: string
-  current_event_index: number
-  current_action?: ScriptDebugAction
-  current_event?: BrowserReplayEvent
-  breakpoints?: ScriptDebugBreakpoint[]
-  break_on_failure?: boolean
-  events?: BrowserReplayEvent[]
-  logs?: ScriptDebugLogEntry[]
-  raw_output?: string[]
-  report?: BrowserReplayReport
-  error?: string
-  // Condition evidence keyed by `${phase}#${action_index}#${step_path.join('/')}`.
-  condition_evidence?: Record<string, ConditionEvidence>
-}
-
-export interface ScriptDebugStartRequest {
-  group_name?: string
-  project_id?: string
-  replay_session_id?: string
-  replay_profile?: string
-  runtime_profile?: ReplayRuntimeProfile
-  variables?: Record<string, string>
-  start_paused?: boolean
-  breakpoints?: ScriptDebugBreakpoint[]
-  break_on_failure?: boolean
-  log_level?: ScriptDebugLogLevel
-  browser?: BrowserConfig
-  ignore_think_time?: boolean
-  script?: ScriptDefinition
-}
-
-export interface ScriptDebugStartResponse {
-  script_id: string
-  replay_session_id: string
-  debug_session_id: string
-  session: ScriptDebugSession
-  preflight?: ReplayPreflight
-  warnings?: string[]
-}
-
-export interface ScriptDebugSessionResponse {
-  session: ScriptDebugSession
-  preflight?: ReplayPreflight
-  warnings?: string[]
 }
 
 export interface MetricsHistoryPoint {
@@ -2757,309 +2113,6 @@ export interface MetricsHistoryPoint {
   // break (rather than interpolate) across missing intervals.
   isGapBoundary?: number
   [key: string]: string | number | number[] | undefined
-}
-
-export interface VersionResponse {
-  version: string
-  display_version?: string
-  commit?: string
-  revision?: string
-  build_time?: string
-  go_version?: string
-  environment: string
-  deployment?: DeploymentIdentity
-}
-
-export interface DeploymentIdentity {
-  kind: 'desktop' | 'kubernetes' | 'docker' | 'server' | string
-  label: string
-  bind_scope: 'loopback' | 'wide' | string
-  auth_enforced: boolean
-  desktop_available: boolean
-  client_downloads_enabled: boolean
-}
-
-export interface HealthResponse {
-  status: string
-  version: string
-  display_version?: string
-  commit?: string
-  revision?: string
-  environment?: string
-  build_time?: string
-  ws_clients: number
-  test_count: number
-  capacity_availability?: {
-    source: 'configured' | 'configured_plus_live'
-    configured_available_generators: number
-    effective_available_generators: number
-    live_available_generators?: number
-    warnings?: string[]
-  }
-}
-
-export interface SystemInventoryController {
-  id: string
-  status: string
-  address: string
-  version: string
-  execution_mode: 'local' | 'distributed'
-}
-
-export interface SystemInventoryGenerator {
-  target: string
-  generator_id: string
-  pod_name?: string
-  restartable?: boolean
-  restart_blocked_reason?: string
-  region?: string
-  fleet_pool_id?: string
-  pool_name?: string
-  status: 'connected' | 'healthy' | 'ready' | 'unreachable' | string
-  version?: string
-  supported_protocols?: string[]
-  labels?: Record<string, string>
-  compatibility_state?: string
-  compatibility_issues?: string[]
-  drain_state?: 'active' | 'cordoned' | 'draining' | string
-  capacity_state?: 'available' | 'constrained' | 'saturated' | 'unavailable' | 'unknown' | string
-  health_score?: number
-  available_capacity: number
-  active_vusers: number
-  cpu_percent: number
-  memory_bytes: number
-  goroutine_count: number
-  cpu_limit_cores: number
-  memory_limit_bytes: number
-  max_vusers: number
-  cpu_user_pct?: number
-  cpu_system_pct?: number
-  cpu_iowait_pct?: number
-  cpu_steal_pct?: number
-  thread_count?: number
-  open_fd_count?: number
-  heap_alloc_mb?: number
-  heap_in_use_mb?: number
-  gc_count_delta?: number
-  gc_pause_ms?: number
-  container_cpu_usage_pct?: number
-  container_cpu_throttled_periods_delta?: number
-  container_cpu_throttled_seconds_rate?: number
-  container_memory_working_set_mb?: number
-  container_memory_usage_pct?: number
-  container_memory_fail_count_delta?: number
-  container_oom_kill_count_delta?: number
-  net_drop_in_per_sec?: number
-  net_drop_out_per_sec?: number
-  net_error_in_per_sec?: number
-  net_error_out_per_sec?: number
-  tcp_retransmits_per_sec?: number
-  tcp_established?: number
-  tcp_time_wait?: number
-  disk_io_time_pct?: number
-}
-
-export interface SystemInventoryResponse {
-  execution_mode: 'local' | 'distributed'
-  controller: SystemInventoryController
-  generators: SystemInventoryGenerator[]
-}
-
-export interface SystemRestartCapabilities {
-  enabled: boolean
-  disabled_reason?: string
-  execution_mode: 'local' | 'distributed' | string
-  namespace?: string
-  controller_deployment?: string
-  generator_stateful_set?: string
-  allow_force: boolean
-  supports: {
-    controller_workload: boolean
-    generator_workload: boolean
-    generator_pod: boolean
-  }
-}
-
-export interface SystemRestartRequest {
-  target_type: 'controller' | 'generator'
-  scope: 'pod' | 'workload'
-  target: string
-  reason: string
-  confirmation: string
-  force?: boolean
-}
-
-export interface SystemRestartResult {
-  status: 'success' | 'blocked' | 'failed' | 'disabled' | 'not_found' | string
-  message: string
-  target_type?: 'controller' | 'generator' | string
-  scope?: 'pod' | 'workload' | string
-  target?: string
-  namespace?: string
-  workload?: string
-  pod_name?: string
-  active_vusers?: number
-  active_run_count?: number
-  reachable?: boolean
-  forced?: boolean
-  warnings?: string[]
-  disabled_reason?: string
-}
-
-export interface SystemServiceEntry {
-  id: string
-  name: string
-  kind: 'backend' | 'frontend' | string
-  status: string
-  address?: string
-  url?: string
-  version?: string
-  source: string
-  metadata?: Record<string, unknown>
-}
-
-export interface SystemServicesResponse {
-  generated_at: string
-  services: SystemServiceEntry[]
-}
-
-export interface FleetAlert {
-  id: string
-  type: string
-  target: string
-  region?: string
-  severity: 'warning' | 'danger' | string
-  summary: string
-  acknowledged?: boolean
-  acknowledged_at?: string
-  acknowledged_by_subject?: string
-  acknowledged_by_display_name?: string
-  acknowledgement_note?: string
-}
-
-export interface FleetAlertsResponse {
-  alerts: FleetAlert[]
-  count: number
-  unacknowledged_count: number
-}
-
-export interface FleetCapacityResponse {
-  project_id?: string
-  region?: string
-  protocol?: string
-  total_generators: number
-  eligible_generators: number
-  active_slots: number
-  available_slots: number
-  project_active_slots?: number
-  project_pending_slots?: number
-  reserved_generators?: number
-  reserved_slots?: number
-  max_slots: number
-  compatible_features?: string[]
-  rejection_reasons?: string[]
-  project_slots?: FleetProjectSlotAccounting[]
-}
-
-export interface FleetProjectSlotAccounting {
-  project_id: string
-  active_slots: number
-  pending_slots: number
-  running_tests: number
-  pending_tests: number
-  reserved_generators?: number
-  reserved_slots?: number
-  fair_share_tier: string
-}
-
-export interface ParityStatusArea {
-  id: string
-  name: string
-  status: 'complete' | 'partial' | 'blocked' | string
-  summary: string
-  evidence?: string[]
-  remaining?: string[]
-  release_gate: boolean
-  blocking_gate?: boolean
-}
-
-export interface CompetitiveParityArea {
-  id: string
-  name: string
-  status: 'supported' | 'partial' | 'gap' | 'blocked' | string
-  competitors?: string[]
-  summary: string
-  evidence?: string[]
-  remaining?: string[]
-  decision?: string
-  evidence_level?: string
-}
-
-export interface BrowserBenchmarkAcceptance {
-  launch_p50_target_ms: number
-  action_overhead_target_ms: number
-  rss_per_vuser_target_mb?: number
-  rss_attribution: string
-  required_raw_run_count: number
-  required_benchmark_command: string
-}
-
-export interface BrowserBenchmarkDensityEnvelope {
-  recommended_canary_vusers_per_generator: number
-  maximum_claimed_vusers_per_generator: number
-  pairing_model: string
-  claim_rule: string
-}
-
-export interface BrowserBenchmarkProfile {
-  id: string
-  name: string
-  browser_engine: string
-  device_profile: string
-  device_class: string
-  platform: string
-  status: string
-  evidence_level: string
-  artifact_path: string
-  acceptance: BrowserBenchmarkAcceptance
-  density_envelope: BrowserBenchmarkDensityEnvelope
-  benchmark_commands: string[]
-  evidence: string[]
-  release_gate: boolean
-  high_density_claim_allowed: boolean
-  notes?: string[]
-}
-
-export interface BrowserBenchmarkEvidenceResponse {
-  generated_at: string
-  claim_policy: string
-  hardware_profile: {
-    id: string
-    name: string
-    cpu_cores: number
-    memory_gb: number
-    runtime: string
-    description: string
-  }
-  profiles: BrowserBenchmarkProfile[]
-  environment_matrix: Array<{
-    id: string
-    browser_engine: string
-    device_profiles: string[]
-    validation_command: string
-    ci_expectation: string
-    evidence: string[]
-  }>
-  commands: string[]
-  evidence: string[]
-}
-
-export interface ParityStatusResponse {
-  generated_at: string
-  overall: 'complete' | 'partial' | 'blocked' | string
-  areas: ParityStatusArea[]
-  competitive_parity?: CompetitiveParityArea[]
-  browser_benchmarks?: BrowserBenchmarkProfile[]
 }
 
 export interface APMIntegrationProfile {
@@ -3172,482 +2225,6 @@ export interface ExternalResultImportsResponse {
   count: number
   limit: number
   offset: number
-}
-
-export interface DashboardThresholdSettings {
-  max_error_rate_pct?: number
-  max_p99_latency_ms?: number
-  max_avg_server_processing_ms?: number
-  max_avg_transfer_ms?: number
-  max_telemetry_sample_age_ms?: number
-  max_telemetry_generator_lag_ms?: number
-  max_telemetry_transport_lag_ms?: number
-  max_telemetry_controller_fanout_ms?: number
-  max_telemetry_browser_render_lag_ms?: number
-  fleet_constrained_available_slots?: number
-  fleet_saturated_available_slots?: number
-}
-
-export interface DashboardGeneralSettings {
-  api_endpoint: string
-  max_concurrent_tests: number
-  metrics_interval_seconds: number
-  usage_snapshot_interval_seconds?: number
-}
-
-export interface SystemReadinessCheck {
-  name: string
-  status: 'ready' | 'degraded' | 'not_ready' | string
-  message: string
-  details?: Record<string, unknown>
-}
-
-export interface SystemReadinessResponse {
-  status: 'ready' | 'degraded' | 'not_ready' | string
-  generated_at: string
-  checks: SystemReadinessCheck[]
-}
-
-export interface UsageAccountingBucket {
-  key?: string
-  run_count: number
-  group_count?: number
-  total_vusers: number
-  duration_seconds: number
-  vuser_seconds: number
-  archive_bytes?: number
-  status_counts?: Record<string, number>
-}
-
-export interface UsageAccountingResponse {
-  generated_at: string
-  project_id?: string
-  totals: UsageAccountingBucket
-  by_project?: UsageAccountingBucket[]
-  by_protocol?: UsageAccountingBucket[]
-  by_region?: UsageAccountingBucket[]
-  by_user?: UsageAccountingBucket[]
-  notes?: string[]
-}
-
-export interface UsageAccountingSnapshot {
-  id: string
-  project_id?: string
-  generated_at: string
-  created_at: string
-  usage: UsageAccountingResponse
-}
-
-export interface UsageAccountingSnapshotsResponse {
-  snapshots: UsageAccountingSnapshot[]
-  count: number
-  limit: number
-  offset: number
-}
-
-export interface DashboardCapacityGeneratorSettings {
-  cpu_cores: number
-  memory_mb: number
-  network_mbps: number
-  max_vusers: number
-}
-
-export interface DashboardCapacityAvailabilitySettings {
-  source: 'configured' | 'configured_plus_live'
-  configured_available_generators: number
-}
-
-export interface DashboardCapacityPlanningSettings {
-  headroom_pct: number
-  generator: DashboardCapacityGeneratorSettings
-  availability: DashboardCapacityAvailabilitySettings
-  reservations?: CapacityReservation[]
-}
-
-export interface DashboardArchiveRetentionPolicy {
-  name?: string
-  project_id?: string
-  release_id?: string
-  run_status?: string
-  run_type?: string
-  artifact_type?: string
-  compliance_class?: string
-  reason?: string
-  retention_days: number
-}
-
-export interface DashboardArchiveRetentionSettings {
-  enabled: boolean
-  default_retention_days: number
-  policies?: DashboardArchiveRetentionPolicy[]
-}
-
-export interface DashboardScheduleDefaultsSettings {
-  approval_policy?: 'auto' | 'manual_review' | 'manual' | 'high_cost' | 'off_hours' | 'production' | 'quota_burst' | string
-  missed_run_policy?: 'skip' | 'catch_up_once' | 'catch_up_all' | 'require_operator_decision' | string
-  blackout_start_time?: string
-  blackout_end_time?: string
-  availability_start_time?: string
-  availability_end_time?: string
-}
-
-export interface DashboardAuthSettings {
-  mode: 'dev' | 'disabled' | 'trusted_headers' | 'oidc'
-  provider_name?: string
-  login_url?: string
-  logout_url?: string
-  issuer_url?: string
-  client_id?: string
-  client_secret_env_var?: string
-  redirect_url?: string
-  scopes?: string[]
-  roles_claim?: string
-  project_roles_claim?: string
-  domain_roles_claim?: string
-  application_repository_roles_claim?: string
-  session_secret_env_var?: string
-  user_header: string
-  name_header: string
-  email_header: string
-  roles_header: string
-  project_roles_header: string
-  domain_roles_header?: string
-  application_repository_roles_header?: string
-}
-
-export interface DashboardNotificationWebhook {
-  name?: string
-  enabled: boolean
-  url: string
-  format: 'slack' | 'teams' | 'dynatrace'
-  events?: string[]
-  api_token?: string
-  has_api_token?: boolean
-  entity_selector?: string
-  timeout_minutes?: number
-}
-
-export interface DashboardNotificationsSettings {
-  webhooks: DashboardNotificationWebhook[]
-}
-
-export interface DashboardAuthenticatedUser {
-  id?: string
-  subject: string
-  display_name?: string
-  email?: string
-  global_roles?: string[]
-  project_roles?: Record<string, string[]>
-  domain_roles?: Record<string, string[]>
-  application_repository_roles?: Record<string, string[]>
-  scopes?: string[]
-}
-
-export interface DashboardAuthStatus {
-  enabled: boolean
-  mode: DashboardAuthSettings['mode']
-  provider_name?: string
-  login_url?: string
-  logout_url?: string
-  logout_csrf_token?: string
-  authenticated: boolean
-  session_status?: 'active' | 'expired' | 'invalid' | 'missing' | 'unavailable' | string
-  session_expires_at?: string
-  session_ttl_seconds?: number
-  user?: DashboardAuthenticatedUser
-  dev_view_mode?: 'admin' | 'user'
-  simulated?: boolean
-}
-
-export interface DashboardAuthDiagnosticsCheck {
-  id: string
-  label: string
-  status: 'pass' | 'warn' | 'fail' | 'info' | string
-  summary: string
-  detail?: string
-}
-
-export interface DashboardAuthDiagnostics {
-  enabled: boolean
-  mode: DashboardAuthSettings['mode']
-  provider_name?: string
-  provider_model: string
-  ready: boolean
-  summary: string
-  checks: DashboardAuthDiagnosticsCheck[]
-}
-
-export interface DashboardAuthRoleDefinition {
-  id: string
-  name: string
-  scope: string
-  description: string
-  capabilities?: string[]
-}
-
-export interface DashboardAuthRoleCatalog {
-  provider_model: string
-  roles: DashboardAuthRoleDefinition[]
-}
-
-export interface DashboardAuthAccessOperation {
-  id: string
-  label: string
-  global_roles?: string[]
-  project_roles?: string[]
-  domain_roles?: string[]
-  application_repository_roles?: string[]
-}
-
-export interface DashboardAuthAccessResource {
-  id: string
-  name: string
-  description: string
-  operations: DashboardAuthAccessOperation[]
-}
-
-export interface DashboardAuthAccessMatrix {
-  version: string
-  resources: DashboardAuthAccessResource[]
-}
-
-// DashboardAuthPolicy is the union of the role catalog and the access matrix, served by
-// GET /auth/policy so the dashboard fetches the static RBAC policy in one request.
-export interface DashboardAuthPolicy {
-  provider_model: string
-  version: string
-  roles: DashboardAuthRoleDefinition[]
-  resources: DashboardAuthAccessResource[]
-}
-
-export interface DashboardAuthEffectiveAccessOperation {
-  id: string
-  label: string
-  allowed: boolean
-  grant_source?: string
-}
-
-export interface DashboardAuthEffectiveAccessResource {
-  id: string
-  name: string
-  description: string
-  operations: DashboardAuthEffectiveAccessOperation[]
-}
-
-export interface DashboardAuthEffectiveAccess {
-  enabled: boolean
-  authenticated: boolean
-  project_id?: string
-  domain_id?: string
-  application_repository_id?: string
-  resources: DashboardAuthEffectiveAccessResource[]
-  dev_view_mode?: 'admin' | 'user'
-  simulated?: boolean
-  // Simulator-only fields (admin "what can principal X do in scope Y" view).
-  principal_type?: 'user' | 'service_account'
-  principal_id?: string
-  principal_name?: string
-  scopes_narrow_api_access?: boolean
-}
-
-export interface DashboardServiceAccount {
-  id: string
-  name: string
-  description?: string
-  owner_id?: string
-  contact_email?: string
-  active: boolean
-  global_roles?: string[]
-  project_roles?: Record<string, string[]>
-  domain_roles?: Record<string, string[]>
-  application_repository_roles?: Record<string, string[]>
-  scopes?: string[]
-  last_used_at?: string
-  expires_at?: string
-  key_rotated_at?: string
-  rotation_interval_days?: number
-  rotation_due_at?: string
-  created_at: string
-  updated_at: string
-}
-
-export interface DashboardServiceAccountListResponse {
-  service_accounts: DashboardServiceAccount[]
-  count: number
-}
-
-export type DashboardUserRoleScopeType = 'global' | 'domain' | 'project' | 'application_repository'
-
-export interface DashboardUserRoleBinding {
-  id: string
-  user_id: string
-  scope_type: DashboardUserRoleScopeType
-  scope_id?: string
-  role: string
-  created_at: string
-  updated_at: string
-}
-
-export interface DashboardUser {
-  id: string
-  subject: string
-  email?: string
-  display_name?: string
-  active: boolean
-  created_at: string
-  updated_at: string
-  last_seen_at?: string
-  disabled_at?: string
-  bindings?: DashboardUserRoleBinding[]
-}
-
-export interface DashboardUserListResponse {
-  users: DashboardUser[]
-  count: number
-  total?: number
-  limit?: number
-  offset?: number
-  has_more?: boolean
-}
-
-export interface DashboardAccessReviewUser {
-  id: string
-  subject: string
-  display_name?: string
-  active: boolean
-  flags: string[]
-  global_roles?: string[]
-  last_seen_at?: string
-}
-
-export interface DashboardAccessReviewServiceAccount {
-  id: string
-  name: string
-  active: boolean
-  flags: string[]
-  scopes?: string[]
-  last_used_at?: string
-  expires_at?: string
-  rotation_due_at?: string
-}
-
-export interface DashboardAccessReviewResponse {
-  generated_at: string
-  stale_after_days: number
-  expiring_within_days: number
-  users: DashboardAccessReviewUser[]
-  service_accounts: DashboardAccessReviewServiceAccount[]
-  summary: Record<string, number>
-  recent_denials?: number
-  recent_denial_window_hours?: number
-}
-
-export interface DashboardCreateUserRequest {
-  subject: string
-  email?: string
-  display_name?: string
-  active?: boolean
-}
-
-export interface DashboardUpdateUserRequest {
-  subject?: string
-  email?: string
-  display_name?: string
-  active?: boolean
-}
-
-export interface DashboardCreateUserBindingRequest {
-  scope_type: DashboardUserRoleScopeType
-  scope_id?: string
-  role: string
-}
-
-export interface DashboardOnboardUserRequest extends DashboardCreateUserRequest {
-  bindings: DashboardCreateUserBindingRequest[]
-}
-
-export type DashboardUserUsageBucket = UsageAccountingBucket
-
-export interface DashboardUserActivityResponse {
-  events: DashboardAuditEvent[]
-  usage: UsageAccountingResponse
-  count: number
-  limit?: number
-  offset?: number
-}
-
-export interface DashboardCreateServiceAccountRequest {
-  name: string
-  description?: string
-  owner_id?: string
-  contact_email?: string
-  global_roles?: string[]
-  project_roles?: Record<string, string[]>
-  domain_roles?: Record<string, string[]>
-  application_repository_roles?: Record<string, string[]>
-  scopes?: string[]
-  expires_at?: string
-  rotation_interval_days?: number
-}
-
-export interface DashboardCreateServiceAccountResponse {
-  service_account: DashboardServiceAccount
-  api_key: string
-}
-
-// A partial update: every field is optional, and a present field replaces the stored value.
-// The backend rejects empty role/scope arrays (use active:false to disable a key), and the
-// API key material is never touched by this PATCH.
-export interface DashboardUpdateServiceAccountRequest {
-  name?: string
-  description?: string
-  owner_id?: string
-  contact_email?: string
-  active?: boolean
-  global_roles?: string[]
-  project_roles?: Record<string, string[]>
-  domain_roles?: Record<string, string[]>
-  application_repository_roles?: Record<string, string[]>
-  scopes?: string[]
-  expires_at?: string
-  rotation_interval_days?: number
-}
-
-export interface DashboardAuditEvent {
-  id: string
-  action: string
-  actor_type: string
-  actor_subject: string
-  actor_display_name?: string
-  domain_id?: string
-  project_id?: string
-  resource_type: string
-  resource_id?: string
-  status: string
-  details?: Record<string, unknown>
-  created_at: string
-}
-
-export interface DashboardAuditEventListResponse {
-  events: DashboardAuditEvent[]
-  count: number
-  limit?: number
-  offset?: number
-}
-
-export interface DashboardAuditEventFilter {
-  limit?: number
-  offset?: number
-  action?: string
-  actor_type?: string
-  actor_subject?: string
-  domain_id?: string
-  project_id?: string
-  resource_type?: string
-  resource_id?: string
-  status?: string
-  created_after?: string
-  created_before?: string
 }
 
 export interface ArchivePruneCandidate {
@@ -3780,14 +2357,6 @@ export interface LoadModelTemplateGroup {
   start_delay?: string
 }
 
-export interface LoadStageDraft {
-  name?: string
-  type: 'ramp_up' | 'hold' | 'ramp_down' | string
-  duration: string
-  target_vusers?: number
-  target_tps?: number
-}
-
 export interface LoadModelTemplate {
   id: string
   name: string
@@ -3908,71 +2477,6 @@ export interface DraftCapacityEstimate {
   footprint?: ScenarioFootprint
   assignment_recommendation?: AssignmentRecommendation
   capacity_advisory?: CapacityAdvisory
-}
-
-export interface DashboardGitHubSettings {
-  enabled: boolean
-  client_id: string
-  client_secret_env_var: string
-  app_id: number
-  app_slug: string
-  app_private_key_env_var: string
-  app_private_key_file: string
-  webhook_secret_env_var: string
-  pat_env_var: string
-  automation_mode: string
-  checks_enabled: boolean
-  api_base_url: string
-  web_base_url: string
-  ca_cert_file: string
-  tls_insecure_skip_verify: boolean
-  scopes: string[]
-  default_repo: string
-  default_branch: string
-  path_template: string
-}
-
-export interface DashboardPrometheusSettings {
-  enabled: boolean
-  base_url: string
-  timeout_seconds: number
-  bearer_token_env_var?: string
-  allow_label_values: boolean
-}
-
-export interface DashboardGrafanaSettings {
-  enabled: boolean
-  base_url: string
-  service_account_token_env_var: string
-  timeout_seconds: number
-}
-
-export interface DashboardClientAppSettings {
-  availability: 'enabled' | 'disabled' | string
-}
-
-export interface DashboardClientDownloadsSettings {
-  enabled: boolean
-}
-
-export interface DashboardScriptImportSettings {
-  allow_source_secret_migration: boolean
-}
-
-export interface DashboardSystemSettings {
-  general: DashboardGeneralSettings
-  thresholds: DashboardThresholdSettings
-  capacity_planning: DashboardCapacityPlanningSettings
-  archive_retention: DashboardArchiveRetentionSettings
-  schedule_defaults: DashboardScheduleDefaultsSettings
-  notifications: DashboardNotificationsSettings
-  auth: DashboardAuthSettings
-  github: DashboardGitHubSettings
-  prometheus: DashboardPrometheusSettings
-  grafana?: DashboardGrafanaSettings
-  client_app: DashboardClientAppSettings
-  client_downloads: DashboardClientDownloadsSettings
-  script_imports: DashboardScriptImportSettings
 }
 
 export interface PrometheusPoint {
@@ -4139,587 +2643,9 @@ export interface ImportedDashboardImportReview {
   has_blockers: boolean
 }
 
-// --- GitHub script sync (per-user connection + browse/import/push) ---
-
-export interface GitHubConfigResponse {
-  enabled: boolean
-  oauth_configured: boolean
-  app_configured?: boolean
-  webhook_configured?: boolean
-  pat_configured?: boolean
-  encryption_available: boolean
-  app_id?: number
-  app_slug?: string
-  app_private_key_env_var?: string
-  app_private_key_file?: string
-  webhook_secret_env_var?: string
-  pat_env_var?: string
-  automation_mode?: string
-  checks_enabled?: boolean
-  api_base_url: string
-  web_base_url: string
-  scopes: string[]
-  default_repo: string
-  default_branch: string
-  path_template: string
-  tls_insecure_skip_verify: boolean
-}
-
-export interface GitHubConnectionResponse {
-  connected: boolean
-  login?: string
-  github_user_id?: string
-  scopes?: string
-  connected_at?: string
-  expires_at?: string
-}
-
-export interface GitHubRepo {
-  name: string
-  full_name: string
-  owner: string
-  private: boolean
-  default_branch: string
-  html_url: string
-}
-
-export interface GitHubBranch {
-  name: string
-  commit_sha: string
-}
-
-export interface GitHubContentEntry {
-  type: string
-  name: string
-  path: string
-  sha: string
-  size: number
-}
-
-export interface GitHubContentsResponse {
-  type: 'dir' | 'file'
-  path?: string
-  name?: string
-  sha?: string
-  size?: number
-  html_url?: string
-  entries?: GitHubContentEntry[]
-}
-
-export interface GitHubPushResponse {
-  pushed: boolean
-  strategy: string
-  owner: string
-  repo: string
-  branch: string
-  path: string
-  commit_sha: string
-  file_sha: string
-  remote_blob_sha?: string
-  remote_commit_sha?: string
-  auth_mode?: string
-  html_url: string
-  pull_request_url?: string
-  pull_request_number?: number
-}
-
-export interface GitHubScriptStatus {
-  linked: boolean
-  status: string
-  owner?: string
-  repo?: string
-  branch?: string
-  path?: string
-  last_commit_sha?: string
-  remote_blob_sha?: string
-  remote_commit_sha?: string
-  synced_at?: string
-  local_drift?: boolean
-  remote_drift?: boolean
-  remote_missing?: boolean
-  remote_checked?: boolean
-  html_url?: string
-}
-
-export interface GitHubDiagnosticsResponse {
-  enabled: boolean
-  oauth_configured: boolean
-  app_configured: boolean
-  webhook_configured: boolean
-  pat_configured: boolean
-  encryption_available: boolean
-  automation_mode: string
-  checks_enabled: boolean
-  reachable?: boolean
-  ghes_version?: string
-  known_installations?: number
-  reachability_error?: string
-}
-
-export interface GitHubAppInstallation {
-  installation_id?: number
-  account_login?: string
-  account_type?: string
-  repository_selection?: string
-  html_url?: string
-}
-
-export interface GitHubSyncJob {
-  id?: string
-  project_id?: string
-  kind?: string
-  status?: string
-  owner?: string
-  repo?: string
-  branch?: string
-  path?: string
-  total?: number
-  processed?: number
-  created?: number
-  updated?: number
-  conflicts?: number
-  errors?: number
-  summary_json?: string
-  created_at?: string
-  updated_at?: string
-  completed_at?: string
-}
-
 // ---------------------------------------------------------------------------
 // LRE API-parity families (capacity timeslots, fleet management, execution
 // plans, monitoring collectors, entitlements). These mirror the backend JSON
 // shapes. CapacityTimeslot is intentionally distinct from the settings-embedded
 // CapacityReservation type above (forward-booking reservation vs static pool).
 // ---------------------------------------------------------------------------
-
-export interface CapacityTimeslotRequest {
-  generators?: number
-  vusers?: number
-  protocol?: string
-  load_zone?: string
-  // pool_id scopes the reservation to a specific fleet pool's capacity envelope
-  // (empty = global).
-  pool_id?: string
-}
-export interface CapacityTimeslot {
-  id: string
-  project_id: string
-  scenario_id?: string
-  start_at: string
-  end_at: string
-  timezone?: string
-  requested_capacity?: CapacityTimeslotRequest
-  approval_state: string // pending | approved | rejected
-  approval_id?: string
-  bound_test_id?: string
-  bound_test_status?: string
-  conflict_summary?: string
-  created_at: string
-  updated_at: string
-}
-export interface CapacityTimeslotListResponse {
-  timeslots: CapacityTimeslot[]
-  count: number
-  limit?: number
-  offset?: number
-}
-export interface CapacityTimeslotAvailabilityResponse {
-  available: boolean
-  conflicts: CapacityTimeslot[]
-  count: number
-  summary?: string
-}
-
-export interface FleetPoolMember {
-  id: string
-  pool_id: string
-  generator_id: string
-  target: string
-  status: string
-  joined_at: string
-}
-export interface FleetPool {
-  id: string
-  name: string
-  description?: string
-  cloud_provider: string // kubernetes | aws | azure | gcp | static
-  region?: string
-  min_size?: number
-  max_size?: number
-  desired_size?: number
-  status: string // active | suspended | error
-  tags?: Record<string, string>
-  created_at: string
-  updated_at: string
-  members?: FleetPoolMember[]
-}
-export interface FleetPoolListResponse {
-  fleet_pools: FleetPool[]
-  count: number
-  limit?: number
-  offset?: number
-}
-export interface FleetGeneratorMetadata {
-  generator_id: string
-  target?: string
-  fleet_pool_id?: string | null
-  region?: string
-  provider_id?: string
-  provider_status?: string
-  cordoned?: boolean
-  tags?: Record<string, string>
-  created_at: string
-  updated_at: string
-}
-export interface FleetGeneratorMetadataListResponse {
-  generators: FleetGeneratorMetadata[]
-  count: number
-  limit?: number
-  offset?: number
-}
-export interface FleetProvisioningEvent {
-  id: string
-  request_id: string
-  event_type: string
-  message?: string
-  timestamp: string
-}
-export interface FleetProvisioningRequest {
-  id: string
-  fleet_pool_id: string
-  project_id?: string
-  status: string // pending | accepted | scaling | waiting_ready | provisioning | success | failed | not_configured | cancelled | timed_out
-  desired_count: number
-  reason?: string
-  requested_by_subject?: string
-  events?: FleetProvisioningEvent[]
-  created_at: string
-  updated_at: string
-  completed_at?: string
-}
-export interface FleetProvisioningRequestListResponse {
-  provisioning_requests: FleetProvisioningRequest[]
-  count: number
-  limit?: number
-  offset?: number
-}
-
-export interface ExecutionPlanEntry {
-  order: number
-  scenario_id: string
-  scenario_name?: string
-  enabled?: boolean
-  runtime_overrides?: unknown
-  failure_policy?: string // halt | skip
-  data_pools?: ScenarioDataPoolBinding[] // per-entry override of the scenario's pools
-  timeslot_id?: string // per-entry capacity timeslot (falls back to the plan-level one)
-}
-export interface ExecutionPlan {
-  id: string
-  project_id?: string
-  name: string
-  description?: string
-  entries: ExecutionPlanEntry[]
-  run_mode: string // parallel | sequential
-  timeslot_id?: string
-  status?: string
-  created_at: string
-  updated_at: string
-}
-export interface ExecutionPlanListResponse {
-  execution_plans: ExecutionPlan[]
-  count: number
-  limit?: number
-  offset?: number
-}
-export interface ExecutionPlanRunResult {
-  order: number
-  scenario_id: string
-  test_id?: string
-  status: string // created | failed | skipped
-  detail?: string
-}
-export interface ExecutionPlanRunResponse {
-  execution_plan_id: string
-  run_mode: string
-  run_id?: string // sequential runs only — the persisted plan-run id
-  status?: string // sequential runs only — running | completed | halted | failed
-  created_count?: number // parallel runs only
-  failed_count?: number // parallel runs only
-  results: ExecutionPlanRunResult[]
-  materialized_at: string
-}
-
-export interface ExecutionPlanRunEntry {
-  order: number
-  scenario_id: string
-  scenario_name?: string
-  test_id?: string
-  status: string // pending | running | complete | failed | skipped
-  detail?: string
-}
-export interface ExecutionPlanRun {
-  id: string
-  plan_id: string
-  project_id?: string
-  run_mode: string
-  status: string // running | completed | halted | failed
-  entries: ExecutionPlanRunEntry[]
-  created_at: string
-  updated_at: string
-  completed_at?: string
-}
-export interface ExecutionPlanRunListResponse {
-  runs: ExecutionPlanRun[]
-  count: number
-  limit?: number
-  offset?: number
-}
-
-// Recurring schedule that materializes execution-plan runs on a cron cadence.
-export interface ExecutionPlanSchedule {
-  id: string
-  plan_id: string
-  project_id?: string
-  revision?: number
-  name: string
-  cron_expr: string
-  timezone?: string
-  run_name_template?: string
-  enabled: boolean
-  missed_run_policy?: string // skip | catch_up_once | catch_up_all
-  conflict_summary?: string
-  next_required_action?: string
-  last_run_run_id?: string
-  last_run_at?: string
-  next_run_at?: string
-  disabled_from?: string
-  disabled_until?: string
-  last_error?: string
-  created_at: string
-  updated_at: string
-}
-export interface ExecutionPlanScheduleRequest {
-  name: string
-  cron_expr: string
-  timezone?: string
-  run_name_template?: string
-  enabled?: boolean
-  missed_run_policy?: string
-  disabled_from?: string
-  disabled_until?: string
-	 expected_revision?: number
-}
-export interface ExecutionPlanScheduleListResponse {
-  schedules: ExecutionPlanSchedule[]
-  count: number
-}
-export interface ExecutionPlanScheduleOccurrence {
-  id: string
-  schedule_id: string
-  plan_id: string
-  project_id?: string
-  schedule_revision?: number
-	 revision?: number
-  planned_at: string
-  materialized_at?: string
-  status: string // materializing | materialized | blocked | failed
-  reason_code?: string
-  run_id?: string
-  conflict_summary?: string
-  created_at: string
-  updated_at: string
-}
-export interface ScheduleOccurrenceResolutionRequest {
-	 action: 'retry' | 'catch_up' | 'skip'
-	 reason?: string
-	 expected_revision?: number
-}
-export interface ExecutionPlanScheduleOccurrenceListResponse {
-  occurrences: ExecutionPlanScheduleOccurrence[]
-  count: number
-}
-// Quota/governance gate on an execution-plan run (project-admin approval).
-export interface ExecutionPlanApproval {
-  id: string
-  plan_id: string
-  project_id?: string
-  policy: string // quota_burst
-  status: string // pending | approved | rejected
-  requested_by?: string
-  requested_at: string
-  resolved_by?: string
-  resolved_at?: string
-  decision_reason?: string
-  required_role?: string
-  run_id?: string // set once the approval is consumed by a run
-  created_at: string
-  updated_at: string
-}
-export interface ExecutionPlanApprovalListResponse {
-  approvals: ExecutionPlanApproval[]
-  count: number
-}
-
-export interface RepositoryObjectCandidate {
-  kind: string
-  value: string
-  confidence: number
-  reason?: string
-}
-export interface RepositoryObject {
-  logical_name: string
-  description?: string
-  css?: string
-  xpath?: string
-  role?: string
-  text?: string
-  attributes?: Record<string, string>
-  ordinal?: string
-  regex?: string
-  frame_context?: string
-  window_context?: string
-  candidates?: RepositoryObjectCandidate[]
-  best_confidence?: number
-  source_script_id?: string
-}
-export interface ObjectRepository {
-  id: string
-  project_id?: string
-  name: string
-  description?: string
-  source?: string
-  objects: RepositoryObject[]
-  // When set, replay self-heal promotes a healed locator to the object's primary
-  // automatically instead of appending it for manual promotion.
-  auto_promote_on_heal?: boolean
-  created_at: string
-  updated_at: string
-}
-export interface ObjectRepositoryListResponse {
-  object_repositories: ObjectRepository[]
-  count: number
-  limit?: number
-  offset?: number
-}
-
-// Learned correlation rule (the persistent form of a discovered correlation).
-export interface CorrelationRule {
-  name: string
-  rule_id?: string
-  source: string
-  extract_type: string
-  expression: string
-  sample_value?: string
-  confidence?: number
-}
-export interface CorrelationRuleset {
-  id: string
-  project_id?: string
-  name: string
-  description?: string
-  source?: string
-  rules: CorrelationRule[]
-  created_at: string
-  updated_at: string
-}
-export interface CorrelationRulesetListResponse {
-  correlation_rulesets: CorrelationRuleset[]
-  count: number
-  limit?: number
-  offset?: number
-}
-export interface CorrelationRulesetApplyResponse {
-  ruleset_id: string
-  script_id: string
-  matched_rules: number
-  applied: boolean
-  diffs?: Array<{ kind: string; path?: string; before?: string; after?: string }>
-}
-
-export interface MonitoringCollector {
-  id: string
-  project_id: string
-  name: string
-  description?: string
-  health: string // healthy | degraded | unreachable
-  last_seen_at?: string
-  allowed_metric_packs: string[]
-  created_at: string
-  updated_at: string
-}
-export interface MonitoringCollectorListResponse {
-  collectors: MonitoringCollector[]
-  count: number
-  limit?: number
-  offset?: number
-}
-export interface MonitoringCollectorTokenResponse {
-  collector: MonitoringCollector
-  token: string
-}
-export interface CollectorMetricPack {
-  pack: string
-  timestamp: string
-  samples: Record<string, number>
-}
-export interface CollectorMetricSnapshot {
-  collector_id: string
-  project_id?: string
-  health: string
-  received_at?: string
-  age_seconds?: number
-  stale: boolean
-  pending?: boolean
-  packs: CollectorMetricPack[]
-}
-
-export interface EntitlementsProtocolBundle {
-  id: string
-  display_name: string
-  protocols?: string[]
-  default?: string
-  governance?: string
-}
-export interface EntitlementsResponse {
-  edition: string
-  limits: { max_concurrent_tests: number }
-  protocol_bundles: { count: number; bundles: EntitlementsProtocolBundle[] }
-}
-export interface EntitlementLimitView {
-  key: string
-  label: string
-  scope: string // global | project
-  used: number
-  limit: number // 0 = unlimited (not enforced)
-  remaining: number
-  utilization: number
-  unlimited: boolean
-}
-export interface EntitlementBundleConsumption {
-  id: string
-  display_name: string
-  protocols: string[]
-  run_count: number
-  total_vusers: number
-  vuser_seconds: number
-}
-export interface ProjectEntitlementView {
-  project_id: string
-  name?: string
-  limits: EntitlementLimitView[]
-}
-export interface EntitlementsUsageResponse {
-  concurrent_tests: { used: number; limit: number }
-  service_accounts: number
-  projects: number
-  limits?: EntitlementLimitView[]
-  protocol_bundles?: EntitlementBundleConsumption[]
-  by_project?: ProjectEntitlementView[]
-}
-export interface ProjectEntitlementsUsageResponse {
-  project_id: string
-  name?: string
-  limits: EntitlementLimitView[]
-  protocol_bundles: EntitlementBundleConsumption[]
-}
