@@ -1,12 +1,14 @@
 package api
 
 // OpenAPI/Swagger generation. docs/swagger.yaml is generated from the controller
-// routing layer (pkg/api/server.go) by cmd/swaggergen — do NOT hand-edit it.
-// Method/path/handler are extracted from the s.mux.Handle(...) registrations via
-// go/ast; the required roles are resolved by reusing the real runtime authorization
-// logic (accessRequirementForRequest), so the spec cannot drift from enforcement.
+// routing package, anchored at pkg/api/server.go, by cmd/swaggergen — do NOT
+// hand-edit it. Method/path/handler metadata is extracted from both legacy
+// s.mux.Handle(...) registrations and modular apiRouteSpec constructors via go/ast;
+// the required roles are resolved by reusing the real runtime authorization logic
+// (accessRequirementForRequest), so the spec cannot drift from enforcement.
 //
 //go:generate go run ../../cmd/swaggergen -server server.go -out ../../docs/swagger.yaml -catalog-out ../../docs/api-endpoint-catalog.json -embed-out apidocs/swagger.yaml -catalog-embed-out apidocs/api-endpoint-catalog.json
+//go:generate go run ../../cmd/openapits -in ../../docs/swagger.yaml -out ../../dashboard/src/types/generated/openapi.ts
 
 import (
 	"bytes"
@@ -16,6 +18,8 @@ import (
 	"go/parser"
 	"go/token"
 	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -147,11 +151,13 @@ type inferredRouteContract struct {
 
 // discoveredRoute is one controller route extracted from the routing source.
 type discoveredRoute struct {
-	Method        string
-	Path          string
-	Handler       string // e.g. "handleGetTest" ("" if not a plain s.handleXxx handler)
-	ActionArg     string // first string literal arg when the handler is a factory call
-	Authenticated bool   // the registration chain includes an auth middleware
+	Method          string
+	Path            string
+	Handler         string // e.g. "handleGetTest" ("" if not a plain s.handleXxx handler)
+	ActionArg       string // first string literal arg when the handler is a factory call
+	Authenticated   bool   // the registration chain includes an auth middleware
+	GenericAuth     bool   // the registration uses the standard auth middleware
+	Unauthenticated bool   // no HTTP authentication middleware wraps the handler
 }
 
 type routeDoc struct {
@@ -271,42 +277,182 @@ func GenerateEndpointCatalogJSON(serverGoPath string) ([]byte, error) {
 	return append(data, '\n'), nil
 }
 
-// discoverControllerRoutes walks every `<x>.Handle("METHOD /path", handler)`
-// registration in the given source file and returns the resolved routes.
+// discoverControllerRoutes walks every route registration in the package
+// containing serverGoPath. The file remains an anchor for backward-compatible
+// generator invocations and catalog metadata, but route declarations may live in
+// any non-test Go source file in that package.
 func discoverControllerRoutes(serverGoPath string) ([]discoveredRoute, error) {
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, serverGoPath, nil, 0)
+	anchorInfo, err := os.Stat(serverGoPath)
 	if err != nil {
-		return nil, fmt.Errorf("parse %s: %w", serverGoPath, err)
+		return nil, fmt.Errorf("stat route source %s: %w", serverGoPath, err)
 	}
+	legacyRouteFile := serverGoPath
+	if anchorInfo.IsDir() {
+		legacyRouteFile = filepath.Join(serverGoPath, "server.go")
+	}
+	legacyRouteFile = filepath.Clean(legacyRouteFile)
 
+	sourceFiles, err := controllerRouteSourceFiles(serverGoPath)
+	if err != nil {
+		return nil, err
+	}
+	fset := token.NewFileSet()
 	var routes []discoveredRoute
-	ast.Inspect(file, func(n ast.Node) bool {
-		call, ok := n.(*ast.CallExpr)
-		if !ok {
-			return true
+	for _, sourceFile := range sourceFiles {
+		isLegacyRouteFile := filepath.Clean(sourceFile) == legacyRouteFile
+		source, readErr := os.ReadFile(sourceFile)
+		if readErr != nil {
+			return nil, fmt.Errorf("read %s: %w", sourceFile, readErr)
 		}
-		sel, ok := call.Fun.(*ast.SelectorExpr)
-		if !ok || (sel.Sel.Name != "Handle" && sel.Sel.Name != "HandleFunc") || len(call.Args) < 2 {
-			return true
+		if !isLegacyRouteFile &&
+			!bytes.Contains(source, []byte("newAuthenticatedAPIRoute(")) &&
+			!bytes.Contains(source, []byte("newPublicAPIRoute(")) {
+			continue
 		}
-		pattern, ok := stringLiteral(call.Args[0])
-		if !ok {
-			return true
+		file, parseErr := parser.ParseFile(fset, sourceFile, source, 0)
+		if parseErr != nil {
+			return nil, fmt.Errorf("parse %s: %w", sourceFile, parseErr)
 		}
-		method, path, ok := splitMethodPath(pattern)
-		if !ok || !documentedRoute(method, path) {
+		ast.Inspect(file, func(n ast.Node) bool {
+			call, ok := n.(*ast.CallExpr)
+			if !ok {
+				return true
+			}
+			// Direct registrations remain temporarily anchored in server.go. New
+			// package-level route files use apiRouteSpec, which avoids confusing
+			// the controller API with the separate browser-recording bridge mux.
+			if isLegacyRouteFile {
+				if route, ok := discoveredMuxRoute(call); ok {
+					routes = append(routes, route)
+					return true
+				}
+			}
+			if route, ok := discoveredRouteSpec(call); ok {
+				routes = append(routes, route)
+			}
 			return true
-		}
-		handler, actionArg := findHandlerFunc(call.Args[1])
-		authenticated := chainRequiresAuth(call.Args[1]) || inHandlerAuthenticatedRoute(method, path, handler)
-		routes = append(routes, discoveredRoute{
-			Method: method, Path: path, Handler: handler, ActionArg: actionArg,
-			Authenticated: authenticated,
 		})
-		return true
-	})
+	}
 	return routes, nil
+}
+
+func controllerRouteSourceFiles(anchorPath string) ([]string, error) {
+	dir, err := controllerRouteSourceDirectory(anchorPath)
+	if err != nil {
+		return nil, err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil, fmt.Errorf("read route source directory %s: %w", dir, err)
+	}
+	files := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		files = append(files, filepath.Join(dir, name))
+	}
+	if len(files) == 0 {
+		return nil, fmt.Errorf("no Go route sources found in %s", dir)
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func controllerRouteSourceDirectory(anchorPath string) (string, error) {
+	info, err := os.Stat(anchorPath)
+	if err != nil {
+		return "", fmt.Errorf("stat route source %s: %w", anchorPath, err)
+	}
+	if info.IsDir() {
+		return anchorPath, nil
+	}
+	return filepath.Dir(anchorPath), nil
+}
+
+func discoveredMuxRoute(call *ast.CallExpr) (discoveredRoute, bool) {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || (sel.Sel.Name != "Handle" && sel.Sel.Name != "HandleFunc") || len(call.Args) < 2 {
+		return discoveredRoute{}, false
+	}
+	muxSelector, ok := sel.X.(*ast.SelectorExpr)
+	if !ok || muxSelector.Sel.Name != "mux" {
+		return discoveredRoute{}, false
+	}
+	receiver, ok := muxSelector.X.(*ast.Ident)
+	if !ok || receiver.Name != "s" {
+		return discoveredRoute{}, false
+	}
+	pattern, ok := stringLiteral(call.Args[0])
+	if !ok {
+		return discoveredRoute{}, false
+	}
+	method, path, ok := splitMethodPath(pattern)
+	if !ok || !documentedRoute(method, path) {
+		return discoveredRoute{}, false
+	}
+	handler, actionArg := findHandlerFunc(call.Args[1])
+	hasAuthMiddleware := chainRequiresAuth(call.Args[1])
+	return discoveredRoute{
+		Method:          method,
+		Path:            path,
+		Handler:         handler,
+		ActionArg:       actionArg,
+		Authenticated:   hasAuthMiddleware || inHandlerAuthenticatedRoute(method, path, handler),
+		GenericAuth:     chainUsesGenericAuth(call.Args[1]),
+		Unauthenticated: !hasAuthMiddleware,
+	}, true
+}
+
+func discoveredRouteSpec(call *ast.CallExpr) (discoveredRoute, bool) {
+	constructor, ok := call.Fun.(*ast.Ident)
+	if !ok || (constructor.Name != "newAuthenticatedAPIRoute" && constructor.Name != "newPublicAPIRoute") || len(call.Args) < 3 {
+		return discoveredRoute{}, false
+	}
+	method, ok := httpMethodExpression(call.Args[0])
+	if !ok {
+		return discoveredRoute{}, false
+	}
+	path, ok := stringLiteral(call.Args[1])
+	if !ok || !documentedRoute(method, path) {
+		return discoveredRoute{}, false
+	}
+	handler, ok := stringLiteral(call.Args[2])
+	if !ok {
+		return discoveredRoute{}, false
+	}
+	hasAuthMiddleware := constructor.Name == "newAuthenticatedAPIRoute"
+	return discoveredRoute{
+		Method:          method,
+		Path:            path,
+		Handler:         handler,
+		Authenticated:   hasAuthMiddleware || inHandlerAuthenticatedRoute(method, path, handler),
+		GenericAuth:     hasAuthMiddleware,
+		Unauthenticated: !hasAuthMiddleware,
+	}, true
+}
+
+func httpMethodExpression(expr ast.Expr) (string, bool) {
+	if method, ok := stringLiteral(expr); ok && httpRouteMethods[method] {
+		return method, true
+	}
+	selector, ok := expr.(*ast.SelectorExpr)
+	if !ok {
+		return "", false
+	}
+	packageName, ok := selector.X.(*ast.Ident)
+	if !ok || packageName.Name != "http" {
+		return "", false
+	}
+	methods := map[string]string{
+		"MethodGet": http.MethodGet, "MethodPost": http.MethodPost,
+		"MethodPut": http.MethodPut, "MethodPatch": http.MethodPatch,
+		"MethodDelete": http.MethodDelete, "MethodHead": http.MethodHead,
+		"MethodOptions": http.MethodOptions,
+	}
+	method, ok := methods[selector.Sel.Name]
+	return method, ok
 }
 
 // buildPaths renders the discovered routes into the OpenAPI paths object, keeping
@@ -505,14 +651,18 @@ func buildRouteDocs(routes []discoveredRoute) []routeDoc {
 	return docs
 }
 
-// routeRolesText resolves the access requirement using the real runtime authorization
-// logic so the documented roles cannot drift from enforcement.
+// routeRolesText resolves access from the canonical registry first, preserving
+// the pre-migration presentation of derived scopes, then falls back to runtime
+// authorization logic for legacy routes.
 func routeRolesText(method, path string) string {
 	if method == http.MethodPost && strings.HasSuffix(path, "/monitoring/collectors/{id}/heartbeat") {
 		return "Collector token via Bearer or X-APEXLoad-API-Key"
 	}
 	if method == http.MethodGet && path == "/metrics" {
 		return "Public when no metrics token is configured; otherwise requires the metrics Bearer token"
+	}
+	if requirement, ok := documentedAccessRequirementFromAPIRouteCatalogs(method, path); ok {
+		return renderAccessRoles(requirement)
 	}
 	concrete := pathParamRe.ReplaceAllString(path, "x")
 	req, err := http.NewRequest(method, "http://localhost"+concrete, nil)
@@ -644,6 +794,28 @@ func chainRequiresAuth(expr ast.Expr) bool {
 			return true
 		}
 		if ident.Name == "auth" || strings.HasSuffix(ident.Name, "Auth") {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
+}
+
+// chainUsesGenericAuth reports whether the route uses the controller's standard
+// auth middleware rather than a specialized project/session wrapper.
+func chainUsesGenericAuth(expr ast.Expr) bool {
+	found := false
+	ast.Inspect(expr, func(n ast.Node) bool {
+		if found {
+			return false
+		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		ident, ok := call.Fun.(*ast.Ident)
+		if ok && ident.Name == "auth" {
 			found = true
 			return false
 		}

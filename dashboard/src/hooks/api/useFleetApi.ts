@@ -8,7 +8,7 @@ import {
   FleetProvisioningRequest,
   FleetProvisioningRequestListResponse,
   ProvisionerInfo,
-} from '../../types'
+} from '../../types/fleet'
 import { request } from '../apiClient'
 
 function buildQuery(params: Record<string, string | number | undefined>) {

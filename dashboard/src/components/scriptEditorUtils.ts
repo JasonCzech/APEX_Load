@@ -10,13 +10,13 @@ import {
   type ScriptActionDefinition,
   type ScriptDataSource,
   type ScriptDefinition,
-  type ScriptImportMetadata,
   type ScriptParameterDefinition,
 } from '../types/scripts'
 import {
   type RecorderCorrelation,
   type SampleCorrelation,
 } from '../types/scriptImports'
+import type { ImportCorrelationSuggestion } from './scriptEditorImportModel'
 
 type Action = ScriptActionDefinition
 type DataSourceConfig = ScriptDataSource
@@ -25,37 +25,6 @@ type ConsoleEntry = BrowserReplayConsoleEntry
 type NetworkEntry = BrowserReplayNetworkEntry
 type ReplayActionEvent = BrowserReplayEvent
 export type ReplayStartPayload = BrowserReplayStartRequest & { script: ScriptDefinition }
-
-type ImportCorrelationSuggestion = {
-  name: string
-  source: string
-  expression: string
-  sample_value?: string
-  found_at: string
-  used_at: string[]
-}
-
-type ImportRuntimeSettingParity = {
-  id: string
-  area: string
-  concept: string
-  status: string
-  runtime_files: string[]
-}
-
-type ImportRuntimeSettingReadiness = {
-  score_pct: number
-  blocked: boolean
-  summary: string
-  blocking_statuses: string[]
-  blocking_settings: ImportRuntimeSettingParity[]
-}
-
-type ImportParameterFileSection = {
-	file: string
-	name: string
-	values: Record<string, string>
-}
 
 export const EMPTY_SCRIPT: ScriptDefinition = {
   name: '', version: '1.0.0', protocol: 'http',
@@ -141,36 +110,6 @@ export const EMPTY_SOAP_ACTION: Action = {
   soap: { action: '', operation: '', body_mode: 'raw_xml' },
 }
 
-export function getImportSummary(metadata?: ScriptImportMetadata | null) {
-  const preserved = metadata?.preserved || {}
-  const correlationSuggestions = Array.isArray(preserved.correlation_suggestions)
-    ? preserved.correlation_suggestions
-      .map(normalizeImportCorrelationSuggestion)
-      .filter((suggestion): suggestion is ImportCorrelationSuggestion => suggestion !== null)
-    : []
-  const runtimeSettingsParity = Array.isArray(preserved.runtime_settings_parity)
-    ? preserved.runtime_settings_parity
-      .map(normalizeImportRuntimeSettingParity)
-      .filter((entry): entry is ImportRuntimeSettingParity => entry !== null)
-    : []
-  const parameterFiles = normalizeStringArray(preserved.parameter_files)
-  const parameterFileSections = normalizeImportParameterFileSections(preserved.parameter_file_sections)
-  const runtimeSettingStatusCounts = normalizeRuntimeSettingStatusCounts(preserved.runtime_settings_status_counts)
-  const runtimeSettingReadiness = normalizeImportRuntimeSettingReadiness(preserved.runtime_settings_migration_readiness)
-
-  return {
-    runtimeFiles: Object.keys(preserved.runtime_files || {}),
-    parameterFiles,
-    parameterFileSections,
-    projectSections: Object.keys(preserved.project_settings || {}),
-    unsupportedFunctions: Array.isArray(preserved.unsupported_functions) ? preserved.unsupported_functions : [],
-    correlationSuggestions,
-    runtimeSettingsParity,
-    runtimeSettingStatusCounts,
-    runtimeSettingReadiness,
-  }
-}
-
 export function attachImportCorrelationSuggestions(
   script: ScriptDefinition,
   source: string,
@@ -239,145 +178,6 @@ function buildImportCorrelationSuggestion(correlation: SampleCorrelation | Recor
     sample_value: normalizeOptionalString(correlation.sample_value),
     found_at: foundAt,
     used_at: normalizeIndexedLocations('Request', correlation.used_in_seqs),
-  }
-}
-
-function normalizeImportRuntimeSettingParity(value: unknown): ImportRuntimeSettingParity | null {
-  if (!value || typeof value !== 'object') {
-    return null
-  }
-
-  const entry = value as Record<string, unknown>
-  const id = normalizeString(entry.id)
-  const area = normalizeString(entry.area)
-  const concept = normalizeString(entry.concept)
-  const status = normalizeString(entry.status)
-  if (!id || !area || !concept || !status) {
-    return null
-  }
-
-  return {
-    id,
-    area,
-    concept,
-    status,
-    runtime_files: normalizeStringArray(entry.runtime_files),
-  }
-}
-
-function normalizeImportRuntimeSettingReadiness(value: unknown): ImportRuntimeSettingReadiness | null {
-  if (!value || typeof value !== 'object') {
-    return null
-  }
-
-  const readiness = value as Record<string, unknown>
-  const scorePct = typeof readiness.score_pct === 'number' ? readiness.score_pct : 0
-  const blocked = readiness.blocked === true
-  const summary = normalizeString(readiness.summary) || ''
-
-  return {
-    score_pct: scorePct,
-    blocked,
-    summary,
-    blocking_statuses: normalizeStringArray(readiness.blocking_statuses),
-    blocking_settings: Array.isArray(readiness.blocking_settings)
-      ? readiness.blocking_settings
-        .map(normalizeImportRuntimeSettingParity)
-        .filter((entry): entry is ImportRuntimeSettingParity => entry !== null)
-      : [],
-  }
-}
-
-function normalizeImportParameterFileSections(value: unknown): ImportParameterFileSection[] {
-  if (!value || typeof value !== 'object') {
-    return []
-  }
-
-  const sections: ImportParameterFileSection[] = []
-  for (const [fileName, rawFileSections] of Object.entries(value as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))) {
-    if (!rawFileSections || typeof rawFileSections !== 'object') {
-      continue
-    }
-    for (const [sectionName, rawSectionValues] of Object.entries(rawFileSections as Record<string, unknown>).sort(([left], [right]) => left.localeCompare(right))) {
-      const values = normalizeStringRecord(rawSectionValues)
-      if (!sectionName.trim() && Object.keys(values).length === 0) {
-        continue
-      }
-      sections.push({
-        file: fileName,
-        name: sectionName,
-        values,
-      })
-    }
-  }
-
-  return sections
-}
-
-function normalizeRuntimeSettingStatusCounts(value: unknown): Record<string, number> {
-  if (!value || typeof value !== 'object') {
-    return {}
-  }
-
-  const counts: Record<string, number> = {}
-  for (const [key, rawCount] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof rawCount === 'number' && Number.isFinite(rawCount)) {
-      counts[key] = rawCount
-    }
-  }
-  return counts
-}
-
-function normalizeStringArray(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return []
-  }
-  return value
-    .map(item => normalizeString(item))
-    .filter((item): item is string => item.length > 0)
-}
-
-function normalizeStringRecord(value: unknown): Record<string, string> {
-  if (!value || typeof value !== 'object') {
-    return {}
-  }
-
-  const normalized: Record<string, string> = {}
-  for (const [key, rawValue] of Object.entries(value as Record<string, unknown>)) {
-    const normalizedKey = normalizeString(key)
-    const normalizedValue = normalizeString(rawValue)
-    if (normalizedKey && normalizedValue) {
-      normalized[normalizedKey] = normalizedValue
-    }
-  }
-  return normalized
-}
-
-function normalizeImportCorrelationSuggestion(value: unknown): ImportCorrelationSuggestion | null {
-  if (!value || typeof value !== 'object') {
-    return null
-  }
-
-  const candidate = value as Record<string, unknown>
-  const name = normalizeString(candidate.name)
-  const source = normalizeString(candidate.source)
-  const expression = normalizeString(candidate.expression)
-  const foundAt = normalizeString(candidate.found_at)
-  const usedAt = Array.isArray(candidate.used_at)
-    ? candidate.used_at.map(normalizeString).filter(Boolean)
-    : []
-
-  if (!name || !source || !expression || !foundAt) {
-    return null
-  }
-
-  return {
-    name,
-    source,
-    expression,
-    sample_value: normalizeOptionalString(candidate.sample_value),
-    found_at: foundAt,
-    used_at: usedAt,
   }
 }
 

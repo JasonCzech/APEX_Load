@@ -561,9 +561,13 @@ apexload_protocol_preserve_current:
   ReadRegStr $0 HKCU "Software\Classes\AppUserModelId\${PRODUCT_EXECUTABLE}" "CustomActivator"
   StrCmp $0 "" apexload_notifications_done
   StrLen $1 $0
-  StrCmp $1 38 0 apexload_notifications_done
+  # Windows/Wails versions may persist either a bare 36-character GUID or
+  # the equivalent 38-character brace-wrapped form.
+  StrCmp $1 36 apexload_notifications_validate_start
+  StrCmp $1 38 apexload_notifications_validate_start apexload_notifications_done
   # The GUID is also used in a temp filename. Reject path separators/ADS syntax
   # before using registry-controlled text as a path component.
+apexload_notifications_validate_start:
   StrCpy $2 0
 apexload_notifications_validate_guid:
   IntCmp $2 $1 apexload_notifications_guid_valid
@@ -578,11 +582,11 @@ apexload_notifications_guid_valid:
   StrCpy $9 "$\"$INSTDIR\${PRODUCT_EXECUTABLE}$\" %1"
   ReadRegStr $4 HKCU "Software\Classes\CLSID\$0\LocalServer32" ""
   StrCmp $4 $9 0 apexload_notifications_done
-  DeleteRegValue HKCU "Software\Classes\CLSID\$0\LocalServer32" ""
-  DeleteRegKey /ifempty HKCU "Software\Classes\CLSID\$0\LocalServer32"
-  DeleteRegKey /ifempty HKCU "Software\Classes\CLSID\$0"
-  DeleteRegValue HKCU "Software\Classes\AppUserModelId\${PRODUCT_EXECUTABLE}" "CustomActivator"
-  DeleteRegKey /ifempty HKCU "Software\Classes\AppUserModelId\${PRODUCT_EXECUTABLE}"
+  # The matching LocalServer32 command proves both Wails registration trees
+  # belong to this executable. Remove their complete owned metadata; deleting
+  # only the command/value leaves Wails' sibling values behind.
+  DeleteRegKey HKCU "Software\Classes\CLSID\$0"
+  DeleteRegKey HKCU "Software\Classes\AppUserModelId\${PRODUCT_EXECUTABLE}"
   DeleteRegKey HKCU "SOFTWARE\${PRODUCT_EXECUTABLE}\NotificationCategories"
   DeleteRegKey /ifempty HKCU "SOFTWARE\${PRODUCT_EXECUTABLE}"
   Delete "$TEMP\${PRODUCT_EXECUTABLE}$0.png"

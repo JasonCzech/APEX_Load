@@ -139,8 +139,11 @@ func runController() (runErr error) {
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	if err := server.StartScheduler(ctx); err != nil {
+		return fmt.Errorf("start scenario scheduler: %w", err)
+	}
 	var background sync.WaitGroup
-	background.Add(3)
+	background.Add(2)
 	go func() {
 		defer background.Done()
 		if waitForControllerListener(ctx, server, 25*time.Millisecond) {
@@ -151,26 +154,11 @@ func runController() (runErr error) {
 		defer background.Done()
 		server.RunGeneratorPodTerminationWatcher(ctx, 5*time.Second)
 	}()
-	go func() {
-		defer background.Done()
-		ticker := time.NewTicker(30 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-				if err := server.RunDueSchedules(); err != nil {
-					slog.Error("scheduled test evaluator failed", "err", err)
-				}
-			}
-		}
-	}()
 
 	runErr = serveController(ctx, server, 30*time.Second)
-	// A Serve failure is also a shutdown signal for the leadership, scheduler,
-	// and pod-watcher loops. Wait for them before the deferred storage close so
-	// none can continue using the database after cleanup.
+	// A Serve failure is also a shutdown signal for the leadership and
+	// pod-watcher loops. Server.Shutdown has already bounded the scheduler-owned
+	// worker; wait for the remaining process workers before closing storage.
 	stop()
 	workersDone := make(chan struct{})
 	go func() {

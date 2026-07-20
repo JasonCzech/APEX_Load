@@ -7,11 +7,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
 import { type StoredScenario } from '../types'
-import TestHub, {
+import TestHub from './TestHub'
+import {
   reseedScenarioGroups,
   runtimeSettingsFromForm,
   scenarioFormStateFromStoredScenario,
-} from './TestHub'
+} from './scenarioFormModel'
 import { applyEffectiveRuntimeSettingsToGroups, copyRuntimeSettingsForProtocol } from './runtimeSettingsApply'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true

@@ -1,4 +1,4 @@
-import { type StoredScenario, type StoredScript } from '../types'
+import type { StoredScenario, StoredScript } from './storedContent'
 import { type ReplayPreflight, type ScriptDataSource, type SourceReview, type ScriptDefinition } from './scripts'
 
 export interface SupportMatrix {

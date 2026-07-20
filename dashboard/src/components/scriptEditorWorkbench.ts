@@ -3,9 +3,17 @@
 // unit-tested in scriptEditorWorkbench.test.ts.
 import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import type { ProtocolEvidence } from '../types'
-import { escapeRegExp } from './scriptEditorHelpers'
-import type { ScriptCodeMatchRange } from './scriptCodeDecorations'
 import { httpSequenceRequests } from './scriptActionHelpers'
+
+// Compatibility exports for callers that still treat the workbench module as
+// the Script JSON utility entry point. New code should import from
+// scriptEditorJsonModel directly.
+export {
+  findParameterReferencesInJson,
+  formatScriptJson,
+  parseScriptJsonDraft,
+} from './scriptEditorJsonModel'
+export type { JsonDraftParseResult } from './scriptEditorJsonModel'
 
 export type ScriptActionPhase = 'init' | 'action' | 'teardown'
 
@@ -16,10 +24,6 @@ export type ScriptPhaseActionRow = {
   globalIndex: number
   action: ScriptActionDefinition
 }
-
-export type JsonDraftParseResult =
-  | { ok: true; script: ScriptDefinition }
-  | { ok: false; message: string }
 
 export type DebuggerResizeKind = 'rail' | 'vars' | 'bottom'
 
@@ -132,39 +136,9 @@ export function readCenterTabsState(storageKey: string): CenterTabsState {
   }
 }
 
-export function findParameterReferencesInJson(text: string, parameterName: string): ScriptCodeMatchRange[] {
-  const name = parameterName.trim()
-  if (!name) return []
-  const ranges: ScriptCodeMatchRange[] = []
-  const pattern = new RegExp(`\\{\\{\\s*param\\.${escapeRegExp(name)}\\s*\\}\\}`, 'g')
-  let match = pattern.exec(text)
-  while (match) {
-    ranges.push({ from: match.index, to: match.index + match[0].length })
-    match = pattern.exec(text)
-  }
-  return ranges
-}
-
 export function clampDebuggerPaneSize(kind: DebuggerResizeKind, value: number) {
   const limits = DEBUGGER_LAYOUT_LIMITS[kind]
   return Math.min(limits.max, Math.max(limits.min, Math.round(value)))
-}
-
-export function formatScriptJson(script: ScriptDefinition) {
-  return JSON.stringify({ script }, null, 2)
-}
-
-export function parseScriptJsonDraft(text: string): JsonDraftParseResult {
-  if (!text.trim()) {
-    return { ok: false, message: 'Script JSON is empty.' }
-  }
-  try {
-    const parsed = JSON.parse(text) as ScriptDefinition | { script?: ScriptDefinition }
-    const script = 'script' in parsed && parsed.script ? parsed.script : parsed as ScriptDefinition
-    return { ok: true, script }
-  } catch (error) {
-    return { ok: false, message: error instanceof Error ? `Script JSON is invalid: ${error.message}` : 'Script JSON is invalid.' }
-  }
 }
 
 export function codePathForDebugRow(row?: { phase: string; actionIndex: number } | null) {

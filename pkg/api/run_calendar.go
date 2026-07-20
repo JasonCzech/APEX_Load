@@ -139,6 +139,7 @@ type runCalendarSnapshot struct {
 }
 
 func (s *Server) handleGetRunCalendar(w http.ResponseWriter, r *http.Request) {
+	schedules := s.schedulingDomainService()
 	now := time.Now().UTC()
 	requestedFrom, requestedTo, ok := parseRunCalendarRange(w, r, now)
 	if !ok {
@@ -154,12 +155,13 @@ func (s *Server) handleGetRunCalendar(w http.ResponseWriter, r *http.Request) {
 			limit = n
 		}
 	}
-	settings := s.runner.GetSystemSettings().ArchiveRetention
+	settings := schedules.ArchiveRetentionSettings()
 	from, to, calendarRange := clampRunCalendarRange(requestedFrom, requestedTo, now, settings)
 	inventory := s.systemInventory(r.Context())
-	response := s.runner.BuildRunCalendar(from, to, projectID, now, inventory, calendarRange, limit)
+	var response RunCalendarResponse
+	response = schedules.BuildRunCalendar(from, to, projectID, now, inventory, calendarRange, limit)
 	if strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("capacity")), "true") {
-		response.Capacity = s.runner.buildRunCalendarCapacity(from, to, projectID, strings.TrimSpace(r.URL.Query().Get("tz")))
+		response.Capacity = schedules.BuildRunCalendarCapacity(from, to, projectID, strings.TrimSpace(r.URL.Query().Get("tz")))
 	}
 	writeJSON(w, http.StatusOK, response)
 }
