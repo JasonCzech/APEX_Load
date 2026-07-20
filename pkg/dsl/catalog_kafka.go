@@ -1,10 +1,10 @@
 package dsl
 
 // kafkaActionSpecs declares the kafka protocol action types. Topic/reply-to
-// fallbacks depend on config.kafka, so those rules stay in
-// validateKafkaScriptIssues; specs carry membership and field metadata.
+// fallbacks depend on config.kafka, so each spec carries the shared
+// configuration-aware residual callback with its membership and field metadata.
 func kafkaActionSpecs() []ActionSpec {
-	return []ActionSpec{
+	specs := []ActionSpec{
 		{
 			Type:      "kafka_produce",
 			Protocols: []string{"kafka"},
@@ -71,4 +71,8 @@ func kafkaActionSpecs() []ActionSpec {
 			Summary:   "Aborts the open producer transaction, discarding buffered records.",
 		},
 	}
+	for i := range specs {
+		specs[i].validateInScript = validateKafkaCatalogActionIssues
+	}
+	return specs
 }

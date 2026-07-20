@@ -21,28 +21,19 @@ import (
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/config"
-	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/jasonczech/apexload/pkg/storage"
-	apptelemetry "github.com/jasonczech/apexload/pkg/telemetry"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 )
 
-type cachedScript struct {
-	content  []byte
-	hash     string
-	protocol string
-	lastUsed uint64
-}
-
 type assignedTest struct {
 	testID                 string
+	lifecycle              assignmentLifecycleState
 	executionGeneration    uint64
 	vuserCount             int32
 	paused                 bool
@@ -65,20 +56,6 @@ type assignedTest struct {
 
 const defaultAssignmentStageTTL = 2 * time.Minute
 
-const defaultMaxMetricsSubscribers = 4096
-
-const metricsSubscriberQueueCapacity = 16
-
-type terminalBatchKey struct {
-	testID     string
-	generation uint64
-}
-
-type terminalMetricsTombstone struct {
-	batch       *pb.MetricsBatch
-	completedAt time.Time
-}
-
 type stopCompletion struct {
 	generation uint64
 	done       chan struct{}
@@ -90,110 +67,6 @@ const (
 	defaultMaxHeartbeatStreams      = 256
 	defaultMaxArchiveFinalizers     = 4
 )
-
-type metricsSubscriber struct {
-	generation uint64
-	testID     string
-	mu         sync.Mutex
-	queue      []*pb.MetricsBatch
-	terminal   map[terminalBatchKey]struct{}
-	wake       chan struct{}
-	fenced     chan struct{}
-	fenceOnce  sync.Once
-	overflowed atomic.Bool
-}
-
-func (s *metricsSubscriber) enqueue(batch *pb.MetricsBatch) int64 {
-	if s == nil || batch == nil {
-		return 0
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	terminal := isGeneratorTerminalLifecycle(batch.GetLifecycleState())
-	key := terminalBatchKey{testID: batch.GetTestId(), generation: batch.GetExecutionGeneration()}
-	if terminal {
-		if s.terminal == nil {
-			s.terminal = make(map[terminalBatchKey]struct{})
-		}
-		s.terminal[key] = struct{}{}
-		// Coalesce a repeated terminal event for the same generation. Tombstone
-		// replay makes retries routine and terminal state is immutable.
-		for index, queued := range s.queue {
-			if queued.GetTestId() == batch.GetTestId() && queued.GetExecutionGeneration() == batch.GetExecutionGeneration() && isGeneratorTerminalLifecycle(queued.GetLifecycleState()) {
-				s.queue[index] = batch
-				s.signalLocked()
-				return 0
-			}
-		}
-		if len(s.queue) >= metricsSubscriberQueueCapacity {
-			for index, queued := range s.queue {
-				if isGeneratorTerminalLifecycle(queued.GetLifecycleState()) {
-					continue
-				}
-				copy(s.queue[index:], s.queue[index+1:])
-				s.queue[len(s.queue)-1] = nil
-				s.queue = s.queue[:len(s.queue)-1]
-				s.queue = append(s.queue, batch)
-				s.signalLocked()
-				return 1
-			}
-			// Every terminal batch has already been retained as a service tombstone.
-			// Fence a subscriber that cannot keep up with a terminal-only backlog;
-			// reconnecting replays the complete retained state without allowing this
-			// per-stream queue to grow without bound.
-			s.overflowed.Store(true)
-			s.fence()
-			return 1
-		}
-		s.queue = append(s.queue, batch)
-		s.signalLocked()
-		return 0
-	}
-	if _, terminalSeen := s.terminal[key]; terminalSeen {
-		// A terminal lifecycle is immutable for a test generation. A delayed
-		// nonterminal publisher must never make a live stream regress after that
-		// terminal event has been retained and enqueued.
-		return 0
-	}
-	if len(s.queue) >= metricsSubscriberQueueCapacity {
-		return 1
-	}
-	s.queue = append(s.queue, batch)
-	s.signalLocked()
-	return 0
-}
-
-func (s *metricsSubscriber) signalLocked() {
-	select {
-	case s.wake <- struct{}{}:
-	default:
-	}
-}
-
-func (s *metricsSubscriber) pop() *pb.MetricsBatch {
-	if s == nil {
-		return nil
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if len(s.queue) == 0 {
-		return nil
-	}
-	batch := s.queue[0]
-	s.queue[0] = nil
-	s.queue = s.queue[1:]
-	if len(s.queue) > 0 {
-		s.signalLocked()
-	}
-	return batch
-}
-
-func (s *metricsSubscriber) fence() {
-	if s == nil {
-		return
-	}
-	s.fenceOnce.Do(func() { close(s.fenced) })
-}
 
 type ServiceOption func(*Service)
 
@@ -714,92 +587,41 @@ func (b *transactionBuffer) DrainWindow() ([]TransactionMetric, *transactionWind
 type Service struct {
 	pb.UnimplementedGeneratorControlServer
 
-	mu                          sync.RWMutex
-	adjustMu                    sync.Mutex
-	generatorID                 string
-	maxVUsers                   int32
-	maxAssignedTests            int
-	maxAssignedGroups           int
-	maxExecutions               int
-	maxArchiveWriters           int
-	maxArchiveTransfers         int
-	maxArchiveUnaryTransfers    int
-	maxHeartbeatStreams         int
-	activeArchiveTransfers      int
-	activeArchiveUnaryTransfers int
-	activeHeartbeatStreams      int
-	podResources                podResourceCapacity
-	scripts                     map[string]cachedScript
-	assignments                 map[string]assignedTest
-	executions                  map[string]map[string]*groupExecution
-	archiveWriters              map[string]*archiveRecorder
-	archiveFinalizerSlots       chan struct{}
-	archiveRecords              map[string]*storage.RunArchiveRecord
-	archiveIdentities           map[string]os.FileInfo
-	archiveLeases               map[string]int
-	archiveDeleting             map[string]struct{}
-	stoppingTests               map[string]struct{}
-	stoppingGenerations         map[string]uint64
-	stopCompletions             map[string]*stopCompletion
-	terminalBatches             map[terminalBatchKey]terminalMetricsTombstone
-	metricsPublishMu            sync.Mutex
-	lifecyclePublishHook        func(*pb.MetricsBatch)
-	scriptCacheMax              int
-	scriptCacheBytes            int64
-	scriptCacheLimit            int64
-	archiveRecordMax            int
-	archiveTTL                  time.Duration
-	archiveNamespace            *generatorArchiveNamespace
-	archiveNamespaceErr         error
-	scriptUseCounter            uint64
-	resCollector                *engine.ResourceCollector
-	resCollectorMu              sync.Mutex // serializes resCollector.Collect (mutates delta state)
-	executionEnabled            bool
-	draining                    bool
-	publishInterval             time.Duration
-	completionTimers            map[string]*time.Timer
-	completionTokens            map[string]uint64
-	nextCompletionToken         uint64
-	stageTimers                 map[string]*time.Timer
-	stageTokens                 map[string]uint64
-	nextStageToken              uint64
-	assignmentStageTTL          time.Duration
-	subscribers                 map[int]*metricsSubscriber
-	subscriberIDsByTest         map[string]map[int]struct{}
-	unscopedSubscriberIDs       map[int]struct{}
-	maxMetricsSubscribers       int
-	nextSubID                   int
-	executionGeneration         uint64
-	executionExpiresAt          time.Time
-	executionEpochTimer         *time.Timer
-	executionEpochFencing       bool
-	executionFencePending       int
-	executionEpochState         *executionEpochStateStore
-	executionEpochStateErr      error
-	executionEpochStatePath     string
-	executionLeaseOwner         string
-	// executionRestartRevalidation is set only while reconstructing a service
-	// from a positive durable high-water. It permits one exact lease-owner claim
-	// to restore the volatile expiry lost with the process. Ordinary timer expiry
-	// never sets it, so an expired live session remains non-revivable.
-	executionRestartRevalidation bool
-	readinessChanged             chan struct{}
-	droppedBatches               atomic.Int64
-	shutdown                     chan struct{}
-	shutdownOnce                 sync.Once
-	finalizerWG                  sync.WaitGroup
-	finalizerMu                  sync.Mutex
-	finalizerClosing             bool
-}
+	mu                     sync.RWMutex
+	adjustMu               sync.Mutex
+	generatorID            string
+	maxVUsers              int32
+	maxAssignedTests       int
+	maxAssignedGroups      int
+	maxExecutions          int
+	maxHeartbeatStreams    int
+	activeHeartbeatStreams int
+	podResources           podResourceCapacity
+	scriptCache            *scriptCacheManager
+	assignments            map[string]assignedTest
+	executions             map[string]map[string]*groupExecution
+	stoppingTests          map[string]struct{}
+	stoppingGenerations    map[string]uint64
+	stopCompletions        map[string]*stopCompletion
+	resCollector           *engine.ResourceCollector
+	resCollectorMu         sync.Mutex // serializes resCollector.Collect (mutates delta state)
+	executionEnabled       bool
+	draining               bool
+	publishInterval        time.Duration
+	completionTimers       map[string]*time.Timer
+	completionTokens       map[string]uint64
+	nextCompletionToken    uint64
+	stageTimers            map[string]*time.Timer
+	stageTokens            map[string]uint64
+	*executionEpochManager
+	shutdown     chan struct{}
+	shutdownOnce sync.Once
 
-func (s *Service) addFinalizer() bool {
-	s.finalizerMu.Lock()
-	defer s.finalizerMu.Unlock()
-	if s.finalizerClosing {
-		return false
-	}
-	s.finalizerWG.Add(1)
-	return true
+	// The legacy stopping map fields above alias coordinator-owned maps during
+	// this incremental migration, preserving internal characterization seams.
+	lifecycleCoordinator *assignmentLifecycleCoordinator
+	metricsBroker        *metricsBroker
+	archiveManager       *archiveManager
 }
 
 func (s *Service) SetDraining(draining bool) {
@@ -831,17 +653,11 @@ func (s *Service) ReadinessError() error {
 	if s.draining {
 		return errors.New("generator is draining")
 	}
-	if s.executionEpochStateErr != nil {
-		return fmt.Errorf("durable execution epoch state: %w", s.executionEpochStateErr)
+	if err := s.executionEpochManager.readinessErrorLocked(); err != nil {
+		return err
 	}
-	if s.executionEpochState == nil {
-		return errors.New("durable execution epoch state is unavailable")
-	}
-	if s.archiveNamespaceErr != nil {
-		return fmt.Errorf("generator archive namespace: %w", s.archiveNamespaceErr)
-	}
-	if s.archiveNamespace == nil || s.archiveNamespace.root == nil {
-		return errors.New("generator archive namespace is unavailable")
+	if err := s.archiveManager.readinessError(); err != nil {
+		return fmt.Errorf("generator archive namespace: %w", err)
 	}
 	return nil
 }
@@ -854,16 +670,12 @@ func (s *Service) ReadinessChanges() <-chan struct{} {
 	if s == nil {
 		return nil
 	}
-	return s.readinessChanged
+	return s.executionEpochManager.changes()
 }
 
 func (s *Service) notifyReadinessChangedLocked() {
-	if s == nil || s.readinessChanged == nil {
-		return
-	}
-	select {
-	case s.readinessChanged <- struct{}{}:
-	default:
+	if s != nil {
+		s.executionEpochManager.notifyReadinessChanged()
 	}
 }
 
@@ -878,16 +690,16 @@ func WithExecution() ServiceOption {
 // recovery window.
 func WithAssignmentStageTTL(ttl time.Duration) ServiceOption {
 	return func(s *Service) {
-		if ttl > 0 {
-			s.assignmentStageTTL = ttl
+		if s.lifecycleCoordinator != nil {
+			s.lifecycleCoordinator.configureStageTTL(ttl)
 		}
 	}
 }
 
 func WithGeneratorMetricsSubscriberLimit(limit int) ServiceOption {
 	return func(s *Service) {
-		if limit > 0 {
-			s.maxMetricsSubscribers = limit
+		if s.metricsBroker != nil {
+			s.metricsBroker.configureSubscriberLimit(limit)
 		}
 	}
 }
@@ -897,11 +709,8 @@ func WithGeneratorMetricsSubscriberLimit(limit int) ServiceOption {
 // deployments and deterministic admission tests.
 func WithGeneratorControlStreamLimits(archiveTransfers, archiveUnaryTransfers, heartbeatStreams int) ServiceOption {
 	return func(s *Service) {
-		if archiveTransfers > 0 {
-			s.maxArchiveTransfers = archiveTransfers
-		}
-		if archiveUnaryTransfers > 0 {
-			s.maxArchiveUnaryTransfers = archiveUnaryTransfers
+		if s.archiveManager != nil {
+			s.archiveManager.configureTransferLimits(archiveTransfers, archiveUnaryTransfers)
 		}
 		if heartbeatStreams > 0 {
 			s.maxHeartbeatStreams = heartbeatStreams
@@ -929,52 +738,38 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 		maxVUsers = int(maxGeneratorVUsers)
 	}
 
-	archiveNamespace, archiveNamespaceErr := prepareGeneratorArchiveNamespace(generatorID, true)
+	lifecycleCoordinator := newAssignmentLifecycleCoordinator()
+	executionEpochManager := newExecutionEpochManager()
+	archiveRecordMax := configuredGeneratorArchiveMax()
+	archiveTTL := configuredGeneratorArchiveTTL()
+	archiveManager := newArchiveManager(generatorID, archiveRecordMax, archiveTTL, 1024, defaultMaxArchiveTransfers, defaultMaxArchiveUnaryTransfers)
 	service := &Service{
-		generatorID:              generatorID,
-		maxVUsers:                int32(maxVUsers),
-		maxAssignedTests:         1024,
-		maxAssignedGroups:        4096,
-		maxExecutions:            4096,
-		maxArchiveWriters:        1024,
-		maxArchiveTransfers:      defaultMaxArchiveTransfers,
-		maxArchiveUnaryTransfers: defaultMaxArchiveUnaryTransfers,
-		maxHeartbeatStreams:      defaultMaxHeartbeatStreams,
-		podResources:             detectPodResourceCapacity(int32(maxVUsers)),
-		scripts:                  make(map[string]cachedScript),
-		assignments:              make(map[string]assignedTest),
-		executions:               make(map[string]map[string]*groupExecution),
-		archiveWriters:           make(map[string]*archiveRecorder),
-		archiveFinalizerSlots:    make(chan struct{}, defaultMaxArchiveFinalizers),
-		archiveRecords:           make(map[string]*storage.RunArchiveRecord),
-		archiveIdentities:        make(map[string]os.FileInfo),
-		archiveLeases:            make(map[string]int),
-		archiveDeleting:          make(map[string]struct{}),
-		stoppingTests:            make(map[string]struct{}),
-		stoppingGenerations:      make(map[string]uint64),
-		stopCompletions:          make(map[string]*stopCompletion),
-		terminalBatches:          make(map[terminalBatchKey]terminalMetricsTombstone),
-		scriptCacheMax:           configuredGeneratorScriptCacheMax(),
-		scriptCacheLimit:         configuredGeneratorScriptCacheMaxBytes(),
-		archiveRecordMax:         configuredGeneratorArchiveMax(),
-		archiveTTL:               configuredGeneratorArchiveTTL(),
-		archiveNamespace:         archiveNamespace,
-		archiveNamespaceErr:      archiveNamespaceErr,
-		resCollector:             engine.NewResourceCollector(),
-		publishInterval:          time.Second,
-		completionTimers:         make(map[string]*time.Timer),
-		completionTokens:         make(map[string]uint64),
-		stageTimers:              make(map[string]*time.Timer),
-		stageTokens:              make(map[string]uint64),
-		assignmentStageTTL:       defaultAssignmentStageTTL,
-		subscribers:              make(map[int]*metricsSubscriber),
-		subscriberIDsByTest:      make(map[string]map[int]struct{}),
-		unscopedSubscriberIDs:    make(map[int]struct{}),
-		maxMetricsSubscribers:    defaultMaxMetricsSubscribers,
-		readinessChanged:         make(chan struct{}, 1),
-		shutdown:                 make(chan struct{}),
+		generatorID:           generatorID,
+		maxVUsers:             int32(maxVUsers),
+		maxAssignedTests:      1024,
+		maxAssignedGroups:     4096,
+		maxExecutions:         4096,
+		maxHeartbeatStreams:   defaultMaxHeartbeatStreams,
+		podResources:          detectPodResourceCapacity(int32(maxVUsers)),
+		scriptCache:           newScriptCacheManager(configuredGeneratorScriptCacheMax(), configuredGeneratorScriptCacheMaxBytes()),
+		assignments:           make(map[string]assignedTest),
+		executions:            make(map[string]map[string]*groupExecution),
+		lifecycleCoordinator:  lifecycleCoordinator,
+		stoppingTests:         lifecycleCoordinator.stoppingTests,
+		stoppingGenerations:   lifecycleCoordinator.stoppingGenerations,
+		stopCompletions:       lifecycleCoordinator.stopCompletions,
+		resCollector:          engine.NewResourceCollector(),
+		publishInterval:       time.Second,
+		completionTimers:      make(map[string]*time.Timer),
+		completionTokens:      make(map[string]uint64),
+		stageTimers:           lifecycleCoordinator.stageTimers,
+		stageTokens:           lifecycleCoordinator.stageTokens,
+		executionEpochManager: executionEpochManager,
+		shutdown:              make(chan struct{}),
+		metricsBroker:         newMetricsBroker(defaultMaxMetricsSubscribers, archiveRecordMax, archiveTTL),
+		archiveManager:        archiveManager,
 	}
-	if archiveNamespaceErr != nil {
+	if _, archiveNamespaceErr := archiveManager.namespaceSnapshot(); archiveNamespaceErr != nil {
 		slog.Error("initialize generator archive namespace", "generator_id", generatorID, "error", archiveNamespaceErr)
 	}
 	for _, opt := range opts {
@@ -982,6 +777,8 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 			opt(service)
 		}
 	}
+	archiveRecordMax, archiveTTL = service.archiveManager.retention()
+	service.metricsBroker.configureTerminalRetention(archiveRecordMax, archiveTTL)
 	service.initializeExecutionEpochState()
 	if service.executionEpochStateErr != nil {
 		slog.Error("initialize durable generator execution epoch", "generator_id", generatorID, "error", service.executionEpochStateErr)
@@ -998,6 +795,18 @@ func (s *Service) Shutdown(ctx context.Context) error {
 		ctx = context.Background()
 	}
 	s.SetDraining(true)
+	var failures []error
+	epochQuiesced := true
+	if err := s.executionEpochManager.waitForPersistence(ctx, s); err != nil {
+		epochQuiesced = false
+		failures = append(failures, fmt.Errorf("wait for execution epoch persistence: %w", err))
+	}
+	if err := s.waitForAllPendingStages(ctx); err != nil {
+		failures = append(failures, fmt.Errorf("wait for pending generator assignments: %w", err))
+	}
+	if err := s.waitForAllPendingControls(ctx); err != nil {
+		failures = append(failures, fmt.Errorf("wait for pending generator controls: %w", err))
+	}
 	s.mu.RLock()
 	testIDs := make([]string, 0, len(s.assignments))
 	for testID := range s.assignments {
@@ -1005,32 +814,29 @@ func (s *Service) Shutdown(ctx context.Context) error {
 	}
 	s.mu.RUnlock()
 	sort.Strings(testIDs)
-	var failures []error
 	// Detach and cancel the whole fleet before waiting for any one engine. A
 	// protocol that is slow to honor cancellation must not leave later tests
 	// generating load until the process-level timeout expires.
 	if err := s.forceStopTests(ctx, testIDs, ^uint64(0), "FAILED", "generator shut down before test completion"); err != nil {
 		failures = append(failures, fmt.Errorf("stop active generator tests: %w", err))
 	}
-	s.finalizerMu.Lock()
-	s.finalizerClosing = true
-	s.finalizerMu.Unlock()
+	s.archiveManager.beginShutdown()
 	s.shutdownOnce.Do(func() { close(s.shutdown) })
 	s.mu.Lock()
-	if s.executionEpochTimer != nil {
-		s.executionEpochTimer.Stop()
-		s.executionEpochTimer = nil
+	s.executionEpochManager.stopTimerLocked()
+	var epochState *executionEpochStateStore
+	if epochQuiesced {
+		epochState = s.executionEpochManager.stateForCloseLocked()
 	}
 	s.mu.Unlock()
-	done := make(chan struct{})
-	go func() { s.finalizerWG.Wait(); close(done) }()
+	done := s.archiveManager.finalizersDone()
 	select {
 	case <-done:
 	case <-ctx.Done():
 		failures = append(failures, fmt.Errorf("wait for generator finalizers: %w", ctx.Err()))
 	}
-	if s.executionEpochState != nil {
-		if err := s.executionEpochState.close(); err != nil {
+	if epochState != nil {
+		if err := epochState.close(); err != nil {
 			failures = append(failures, fmt.Errorf("close execution epoch state: %w", err))
 		}
 	}
@@ -1084,1103 +890,6 @@ func (s *Service) DistributeScript(ctx context.Context, payload *pb.ScriptPayloa
 	return &pb.ScriptAck{Cached: true, ContentHash: payload.GetContentHash()}, nil
 }
 
-func (s *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssignment) (*pb.AssignmentAck, error) {
-	if assignment == nil {
-		return nil, status.Error(codes.InvalidArgument, "assignment is required")
-	}
-	if assignment.GetTestId() == "" {
-		return nil, status.Error(codes.InvalidArgument, "test_id is required")
-	}
-	if err := validateArchiveTestID(assignment.GetTestId()); err != nil {
-		return nil, status.Errorf(codes.InvalidArgument, "invalid test_id: %v", err)
-	}
-	if assignment.GetGroupName() == "" {
-		return nil, status.Error(codes.InvalidArgument, "group_name is required")
-	}
-	if assignment.GetScriptId() == "" {
-		return nil, status.Error(codes.InvalidArgument, "script_id is required")
-	}
-	if err := validateAssignmentMetadataBounds(assignment); err != nil {
-		return nil, err
-	}
-	if len(assignment.GetSecretBundle()) > 0 && !TransportSecurityFromEnv().AllowsSecretDelivery() {
-		return nil, status.Error(codes.FailedPrecondition, "secret-bearing assignments require authenticated TLS (mTLS or verified TLS plus generator auth token)")
-	}
-	if assignment.GetVuserCount() < 0 {
-		return nil, status.Error(codes.InvalidArgument, "vuser_count must not be negative")
-	}
-	targetDuration, err := validatedAssignmentDuration(assignment.GetTargetDuration(), assignment.GetTargetDurationSeconds(), "target_duration", true)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	requestedDurationOffset, err := validatedAssignmentDuration(assignment.GetDurationOffset(), 0, "duration_offset", true)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	if requestedDurationOffset > 0 {
-		if targetDuration <= 0 {
-			return nil, status.Error(codes.InvalidArgument, "duration_offset requires a positive target_duration")
-		}
-		if targetDuration > time.Duration(1<<63-1)-requestedDurationOffset {
-			return nil, status.Error(codes.InvalidArgument, "target_duration plus duration_offset overflows the runtime duration")
-		}
-	}
-	logicalTargetDuration := targetDuration + requestedDurationOffset
-	rampUp, err := validatedAssignmentDuration(assignment.GetRampUp(), int64(assignment.GetRampUpSeconds()), "ramp_up", true)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	rampDown, err := validatedAssignmentDuration(assignment.GetRampDown(), 0, "ramp_down", true)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	preBaseline, err := validatedAssignmentDuration(assignment.GetPreBaseline(), 0, "pre_baseline", true)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	postBaseline, err := validatedAssignmentDuration(assignment.GetPostBaseline(), 0, "post_baseline", true)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	initStrategy := strings.ToLower(strings.TrimSpace(assignment.GetInitStrategy()))
-	if initStrategy == "" {
-		initStrategy = "at_runtime"
-	}
-	if initStrategy != "at_runtime" && initStrategy != "at_once" {
-		return nil, status.Error(codes.InvalidArgument, "init_strategy must be at_runtime or at_once")
-	}
-	shardCount := assignment.GetShardCount()
-	if shardCount == 0 {
-		if assignment.GetShardOrdinal() != 0 {
-			return nil, status.Error(codes.InvalidArgument, "shard_ordinal requires a positive shard_count")
-		}
-		shardCount = 1
-	}
-	if assignment.GetShardOrdinal() >= shardCount {
-		return nil, status.Error(codes.InvalidArgument, "shard_ordinal must be smaller than shard_count")
-	}
-	maxInt := uint64(^uint(0) >> 1)
-	namespaceSize := uint64(maxGeneratorVUsers)
-	if assignment.GetVuserIdOffset() > maxInt || namespaceSize-1 > maxInt-assignment.GetVuserIdOffset() {
-		return nil, status.Error(codes.InvalidArgument, "vuser_id_offset namespace overflows runtime int")
-	}
-	if ctx != nil {
-		if err := ctx.Err(); err != nil {
-			return nil, status.FromContextError(err).Err()
-		}
-	}
-	ancillaryBytes := int64(proto.Size(assignment) - len(assignment.GetScriptContent()))
-	ancillaryLimit := generatorRPCAssignmentAncillaryLimit(s.scriptCacheLimit)
-	secretEnvelopeBytes := int64(proto.Size(&pb.WorkAssignment{
-		SecretBundle:   assignment.GetSecretBundle(),
-		SecretBundleId: assignment.GetSecretBundleId(),
-	}))
-	if ancillaryLimit <= int64(^uint64(0)>>1)-secretEnvelopeBytes {
-		ancillaryLimit += secretEnvelopeBytes
-	}
-	if ancillaryBytes > ancillaryLimit {
-		s.mu.RLock()
-		availableCapacity := s.availableCapacityLocked()
-		s.mu.RUnlock()
-		message := fmt.Sprintf("assignment data and metadata are %d bytes and exceed limit %d", ancillaryBytes, ancillaryLimit)
-		if len(assignment.GetSecretBundle()) > 0 {
-			// The protobuf size includes the write-only secret envelope. Do not
-			// turn an admission error into an aggregate credential-length oracle.
-			message = "assignment data and metadata exceed the runtime limit"
-		}
-		return &pb.AssignmentAck{
-			Accepted:          false,
-			ErrorMessage:      message,
-			AvailableCapacity: availableCapacity,
-		}, nil
-	}
-	assignmentFingerprint := workAssignmentFingerprint(assignment)
-	// Expire eligible completed archives before deciding whether this test ID is
-	// reusable. A retained archive is immutable evidence; starting a new run in
-	// the same namespace would truncate files underneath an in-flight download.
-	s.sweepArchivedRecords(time.Now())
-
-	// Lifecycle state mutation and publication share the same ordering lock as
-	// periodic and terminal metrics. This prevents a detached STAGED publisher
-	// from being overtaken by a later commit or terminal publication.
-	var lifecycleBatch *pb.MetricsBatch
-	s.metricsPublishMu.Lock()
-	defer s.metricsPublishMu.Unlock()
-	s.mu.Lock()
-	defer func() {
-		s.mu.Unlock()
-		if lifecycleBatch != nil {
-			s.publishLifecycleTransitionLocked(lifecycleBatch)
-		}
-	}()
-	if ctx != nil {
-		if err := ctx.Err(); err != nil {
-			return nil, status.FromContextError(err).Err()
-		}
-	}
-	if err := s.validateMutationGenerationLocked(assignment.GetExecutionGeneration()); err != nil {
-		return nil, err
-	}
-	if assignment.GetExecutionGeneration() > 0 && strings.TrimSpace(assignment.GetExpectedScriptHash()) == "" {
-		return nil, status.Error(codes.InvalidArgument, "expected_script_hash is required for fenced assignments")
-	}
-
-	if s.draining {
-		return &pb.AssignmentAck{
-			Accepted:          false,
-			ErrorMessage:      "generator is draining",
-			AvailableCapacity: s.availableCapacityLocked(),
-		}, nil
-	}
-	if _, deleting := s.archiveDeleting[assignment.GetTestId()]; deleting {
-		return &pb.AssignmentAck{Accepted: false, ErrorMessage: "test id archive is being retired", AvailableCapacity: s.availableCapacityLocked()}, nil
-	}
-	if _, stopping := s.stoppingTests[assignment.GetTestId()]; stopping {
-		return &pb.AssignmentAck{Accepted: false, ErrorMessage: "test id is stopping", AvailableCapacity: s.availableCapacityLocked()}, nil
-	}
-	if _, active := s.assignments[assignment.GetTestId()]; !active && s.archiveRecords[assignment.GetTestId()] != nil {
-		return &pb.AssignmentAck{
-			Accepted:          false,
-			ErrorMessage:      "test id already has a retained completed archive",
-			AvailableCapacity: s.availableCapacityLocked(),
-		}, nil
-	}
-
-	// AssignWork may be retried after an ambiguous transport failure. Treat an
-	// identical test/group assignment as an idempotent success instead of
-	// accounting the same VUsers twice. Resizing an existing group remains an
-	// explicit AdjustVUsers operation.
-	if current, ok := s.assignments[assignment.GetTestId()]; ok {
-		if current.executionGeneration != assignment.GetExecutionGeneration() {
-			return nil, status.Errorf(codes.FailedPrecondition, "test belongs to execution generation %d", current.executionGeneration)
-		}
-		if existing, groupExists := current.groups[assignment.GetGroupName()]; groupExists {
-			existingFingerprint, fingerprintExists := current.groupAssignments[assignment.GetGroupName()]
-			existingSecretBundleID := current.groupSecretBundleIDs[assignment.GetGroupName()]
-			if existing == assignment.GetVuserCount() &&
-				fingerprintExists &&
-				existingFingerprint == assignmentFingerprint &&
-				existingSecretBundleID == assignment.GetSecretBundleId() {
-				return &pb.AssignmentAck{
-					Accepted:          true,
-					AvailableCapacity: s.availableCapacityLocked(),
-				}, nil
-			}
-			return &pb.AssignmentAck{
-				Accepted:          false,
-				ErrorMessage:      "group is already assigned; use AdjustVUsers to resize it",
-				AvailableCapacity: s.availableCapacityLocked(),
-			}, nil
-		}
-		// A running test may gain a group during controller-driven evacuation.
-		// Execution-enabled services stage that group independently: the existing
-		// executions stay committed and running until CommitWork releases only the
-		// new execution. Non-executing test services retain the legacy aggregate
-		// staged bit because they have no per-group execution state.
-	}
-	if err := s.assignmentObjectAdmissionErrorLocked(assignment); err != nil {
-		return nil, status.Error(codes.ResourceExhausted, err.Error())
-	}
-
-	if len(assignment.GetScriptContent()) > 0 {
-		if err := verifyExpectedScriptHash(assignment.GetExpectedScriptHash(), assignment.GetScriptContent()); err != nil {
-			return &pb.AssignmentAck{
-				Accepted:          false,
-				ErrorMessage:      err.Error(),
-				AvailableCapacity: s.availableCapacityLocked(),
-			}, nil
-		}
-		if err := s.cacheScriptLocked(assignment.GetScriptId(), assignment.GetScriptContent(), assignment.GetExpectedScriptHash()); err != nil {
-			return &pb.AssignmentAck{
-				Accepted:          false,
-				ErrorMessage:      "cache inline script: " + err.Error(),
-				AvailableCapacity: s.availableCapacityLocked(),
-			}, nil
-		}
-	}
-
-	cached, ok := s.touchScriptLocked(assignment.GetScriptId())
-	if !ok {
-		return &pb.AssignmentAck{
-			Accepted:          false,
-			ErrorMessage:      "script is not cached and no inline script content was provided",
-			AvailableCapacity: s.availableCapacityLocked(),
-		}, nil
-	}
-	if err := verifyExpectedScriptHash(assignment.GetExpectedScriptHash(), cached.content); err != nil {
-		return &pb.AssignmentAck{
-			Accepted:          false,
-			ErrorMessage:      err.Error(),
-			AvailableCapacity: s.availableCapacityLocked(),
-		}, nil
-	}
-	if instance, getErr := protocol.Get(cached.protocol); getErr == nil {
-		if provider, ok := instance.(protocol.RuntimeCapabilityProvider); ok {
-			capabilities := provider.RuntimeCapabilities()
-			if capabilities.MaxVUsers > 0 && int64(assignment.GetVuserCount())+s.activeProtocolVUsersLocked(cached.protocol) > capabilities.MaxVUsers {
-				return &pb.AssignmentAck{
-					Accepted:          false,
-					ErrorMessage:      fmt.Sprintf("insufficient %s runtime capacity: maximum %d", cached.protocol, capabilities.MaxVUsers),
-					AvailableCapacity: s.availableCapacityLocked(),
-				}, nil
-			}
-		}
-	}
-
-	projected := s.activeVUsers64Locked() + int64(assignment.GetVuserCount())
-	if projected > int64(s.maxVUsers) {
-		return &pb.AssignmentAck{
-			Accepted:          false,
-			ErrorMessage:      "insufficient generator capacity",
-			AvailableCapacity: s.availableCapacityLocked(),
-		}, nil
-	}
-	if ctx != nil {
-		if err := ctx.Err(); err != nil {
-			return nil, status.FromContextError(err).Err()
-		}
-	}
-
-	current := s.assignments[assignment.GetTestId()]
-	previousCommitted := current.committed
-	previousPaused := current.paused
-	previousDuration := current.duration
-	previousDurationSeconds := current.durationSeconds
-	lateCommittedGroup := previousCommitted && s.executionEnabled
-	executionDuration := targetDuration
-	executionDurationOffset := requestedDurationOffset
-	current.testID = assignment.GetTestId()
-	current.executionGeneration = assignment.GetExecutionGeneration()
-	current.committed = previousCommitted && s.executionEnabled
-	// A fresh evacuation target has no local pause history. The controller's
-	// staged assignment is authoritative when it says the logical run is already
-	// paused. False intentionally does not clear an existing assignment's pause
-	// state, preserving compatibility with older controllers adding a group to a
-	// generator that already participates in the run.
-	current.paused = current.paused || assignment.GetStartPaused()
-	if current.groups == nil {
-		current.groups = make(map[string]int32)
-	}
-	if current.activeGroups == nil {
-		current.activeGroups = make(map[string]int32)
-	}
-	if current.groupStats == nil {
-		current.groupStats = make(map[string]GeneratorStats)
-	}
-	if current.groupTelemetry == nil {
-		current.groupTelemetry = make(map[string]MetricsTelemetry)
-	}
-	if current.groupTransactions == nil {
-		current.groupTransactions = make(map[string][]TransactionMetric)
-	}
-	if current.groupAssignments == nil {
-		current.groupAssignments = make(map[string][sha256.Size]byte)
-	}
-	if current.groupSecretBundleIDs == nil {
-		current.groupSecretBundleIDs = make(map[string]string)
-	}
-	if current.groupScripts == nil {
-		current.groupScripts = make(map[string]string)
-	}
-	existingDuration := assignedTestDuration(current)
-	if lateCommittedGroup {
-		if executionDuration <= 0 {
-			executionDuration = existingDuration
-		}
-		if existingDuration > 0 && executionDuration > existingDuration {
-			return &pb.AssignmentAck{
-				Accepted:          false,
-				ErrorMessage:      "late group remaining duration exceeds the test target duration",
-				AvailableCapacity: s.availableCapacityLocked(),
-			}, nil
-		}
-		if requestedDurationOffset > 0 {
-			if existingDuration > 0 && logicalTargetDuration != existingDuration {
-				return &pb.AssignmentAck{
-					Accepted:          false,
-					ErrorMessage:      "late group duration offset does not align with the test target duration",
-					AvailableCapacity: s.availableCapacityLocked(),
-				}, nil
-			}
-		} else if existingDuration > executionDuration {
-			executionDurationOffset = existingDuration - executionDuration
-		}
-	} else if existingDuration == 0 && logicalTargetDuration > 0 {
-		current.duration = logicalTargetDuration
-		current.durationSeconds = compatibilityDurationSeconds(logicalTargetDuration)
-	} else if logicalTargetDuration > 0 && existingDuration != logicalTargetDuration {
-		return &pb.AssignmentAck{
-			Accepted:          false,
-			ErrorMessage:      "all groups in a test must use the same target duration",
-			AvailableCapacity: s.availableCapacityLocked(),
-		}, nil
-	}
-	current.groups[assignment.GetGroupName()] += assignment.GetVuserCount()
-	current.activeGroups[assignment.GetGroupName()] += assignment.GetVuserCount()
-	current.groupAssignments[assignment.GetGroupName()] = assignmentFingerprint
-	current.groupSecretBundleIDs[assignment.GetGroupName()] = assignment.GetSecretBundleId()
-	current.groupScripts[assignment.GetGroupName()] = assignment.GetScriptId()
-	current.vuserCount += assignment.GetVuserCount()
-	s.assignments[assignment.GetTestId()] = current
-	if s.executionEnabled {
-		if err := s.startExecutionLocked(ctx, assignment, executionDuration, executionDurationOffset, rampUp, rampDown, preBaseline, postBaseline, initStrategy, shardCount); err != nil {
-			current.committed = previousCommitted
-			current.paused = previousPaused
-			current.duration = previousDuration
-			current.durationSeconds = previousDurationSeconds
-			current.groups[assignment.GetGroupName()] -= assignment.GetVuserCount()
-			current.activeGroups[assignment.GetGroupName()] -= assignment.GetVuserCount()
-			current.vuserCount -= assignment.GetVuserCount()
-			if current.groups[assignment.GetGroupName()] <= 0 {
-				delete(current.groups, assignment.GetGroupName())
-			}
-			if current.activeGroups[assignment.GetGroupName()] <= 0 {
-				delete(current.activeGroups, assignment.GetGroupName())
-			}
-			delete(current.groupAssignments, assignment.GetGroupName())
-			delete(current.groupSecretBundleIDs, assignment.GetGroupName())
-			delete(current.groupScripts, assignment.GetGroupName())
-			if current.vuserCount <= 0 {
-				delete(s.assignments, assignment.GetTestId())
-			} else {
-				s.assignments[assignment.GetTestId()] = current
-			}
-			return &pb.AssignmentAck{
-				Accepted:          false,
-				ErrorMessage:      err.Error(),
-				AvailableCapacity: s.availableCapacityLocked(),
-			}, nil
-		}
-	} else {
-		if assignedTestDuration(current) > 0 && s.archiveWriters[assignment.GetTestId()] == nil {
-			testName := assignment.GetScriptId()
-			if cached, ok := s.touchScriptLocked(assignment.GetScriptId()); ok {
-				var script dsl.Script
-				if json.Unmarshal(cached.content, &script) == nil && strings.TrimSpace(script.Name) != "" {
-					testName = script.Name
-				}
-			}
-			var writer *archiveRecorder
-			archiveErr := s.archiveNamespaceErr
-			if archiveErr == nil {
-				writer, archiveErr = newArchiveRecorderInNamespace(s.archiveNamespace, assignment.GetTestId(), testName)
-			}
-			if archiveErr != nil {
-				current.committed = previousCommitted
-				current.paused = previousPaused
-				current.duration = previousDuration
-				current.durationSeconds = previousDurationSeconds
-				current.groups[assignment.GetGroupName()] -= assignment.GetVuserCount()
-				current.activeGroups[assignment.GetGroupName()] -= assignment.GetVuserCount()
-				current.vuserCount -= assignment.GetVuserCount()
-				delete(current.groupAssignments, assignment.GetGroupName())
-				delete(current.groupSecretBundleIDs, assignment.GetGroupName())
-				delete(current.groupScripts, assignment.GetGroupName())
-				if current.groups[assignment.GetGroupName()] <= 0 {
-					delete(current.groups, assignment.GetGroupName())
-				}
-				if current.activeGroups[assignment.GetGroupName()] <= 0 {
-					delete(current.activeGroups, assignment.GetGroupName())
-				}
-				if current.vuserCount <= 0 {
-					delete(s.assignments, assignment.GetTestId())
-				} else {
-					s.assignments[assignment.GetTestId()] = current
-				}
-				return &pb.AssignmentAck{Accepted: false, ErrorMessage: archiveErr.Error(), AvailableCapacity: s.availableCapacityLocked()}, nil
-			}
-			s.archiveWriters[assignment.GetTestId()] = writer
-		}
-	}
-	if writer := s.archiveWriters[assignment.GetTestId()]; writer != nil {
-		writer.bindExecution(assignment.GetExecutionGeneration(), assignment.GetGroupName())
-	}
-	s.scheduleStageExpiryLocked(current.testID)
-	lifecycleBatch = s.metricsBatchLocked(current.testID)
-
-	return &pb.AssignmentAck{
-		Accepted:          true,
-		AvailableCapacity: s.availableCapacityLocked(),
-	}, nil
-}
-
-// CommitWork atomically releases every staged group for one test on this
-// generator. AssignWork performs all validation, capacity reservation, asset
-// loading, and engine construction; no protocol action can run before this
-// explicit commit boundary.
-func (s *Service) CommitWork(ctx context.Context, request *pb.WorkCommitRequest) (*pb.WorkCommitAck, error) {
-	if request == nil || strings.TrimSpace(request.GetTestId()) == "" {
-		return nil, status.Error(codes.InvalidArgument, "test_id is required")
-	}
-	if ctx != nil {
-		if err := ctx.Err(); err != nil {
-			return nil, status.FromContextError(err).Err()
-		}
-	}
-
-	type pendingExecution struct {
-		groupName string
-		exec      *groupExecution
-		ctx       context.Context
-	}
-	pending := make([]pendingExecution, 0)
-
-	var lifecycleBatch *pb.MetricsBatch
-	s.metricsPublishMu.Lock()
-	defer s.metricsPublishMu.Unlock()
-	s.mu.Lock()
-	defer func() {
-		s.mu.Unlock()
-		if lifecycleBatch != nil {
-			s.publishLifecycleTransitionLocked(lifecycleBatch)
-		}
-	}()
-	if ctx != nil {
-		if err := ctx.Err(); err != nil {
-			return nil, status.FromContextError(err).Err()
-		}
-	}
-	if err := s.validateMutationGenerationLocked(request.GetExecutionGeneration()); err != nil {
-		return nil, err
-	}
-	if s.draining {
-		return &pb.WorkCommitAck{Accepted: false, ErrorMessage: "generator is draining"}, nil
-	}
-	if _, stopping := s.stoppingTests[request.GetTestId()]; stopping {
-		return nil, status.Error(codes.FailedPrecondition, "test assignment is stopping")
-	}
-	assignment, ok := s.assignments[request.GetTestId()]
-	if !ok {
-		return nil, status.Error(codes.NotFound, "test assignment not found")
-	}
-	if assignment.executionGeneration != request.GetExecutionGeneration() {
-		return nil, status.Errorf(codes.FailedPrecondition, "test belongs to execution generation %d", assignment.executionGeneration)
-	}
-	if s.executionEnabled {
-		executions := s.executions[request.GetTestId()]
-		if len(executions) != len(assignment.groups) || len(executions) == 0 {
-			return nil, status.Error(codes.FailedPrecondition, "not all assigned groups are staged")
-		}
-		groupNames := make([]string, 0, len(executions))
-		for groupName := range executions {
-			groupNames = append(groupNames, groupName)
-		}
-		sort.Strings(groupNames)
-		for _, groupName := range groupNames {
-			exec := executions[groupName]
-			if exec == nil || exec.engine == nil {
-				return nil, status.Errorf(codes.FailedPrecondition, "group %q is not in a committable staged state", groupName)
-			}
-		}
-		if assignment.committed {
-			allStarted := true
-			for _, groupName := range groupNames {
-				if !executions[groupName].started.Load() {
-					allStarted = false
-					break
-				}
-			}
-			if allStarted {
-				return &pb.WorkCommitAck{Accepted: true}, nil
-			}
-		}
-		startAt := time.Now()
-		if request.GetStartAtUnixNano() != 0 {
-			startAt = time.Unix(0, request.GetStartAtUnixNano())
-			now := time.Now()
-			if !startAt.After(now) {
-				return &pb.WorkCommitAck{Accepted: false, ErrorMessage: "coordinated start barrier has already elapsed"}, nil
-			}
-			maxLead := s.assignmentStageTTL
-			if maxLead <= 0 {
-				maxLead = defaultAssignmentStageTTL
-			}
-			if startAt.Sub(now) > maxLead {
-				return &pb.WorkCommitAck{Accepted: false, ErrorMessage: "coordinated start barrier is too far in the future"}, nil
-			}
-		}
-		pending = make([]pendingExecution, 0, len(groupNames))
-		for _, groupName := range groupNames {
-			exec := executions[groupName]
-			if exec.started.Load() {
-				continue
-			}
-			// The run can outlive CommitWork by hours. Retain only the immutable
-			// server SpanContext, never RPC cancellation, auth metadata, or values.
-			execCtx, cancel := context.WithCancel(apptelemetry.Detach(ctx))
-			exec.cancel = cancel
-			exec.startAt = startAt
-			exec.started.Store(true)
-			pending = append(pending, pendingExecution{groupName: groupName, exec: exec, ctx: execCtx})
-		}
-		for _, item := range pending {
-			item := item
-			go func() {
-				if !waitForCoordinatedExecutionStart(item.ctx, item.exec.startAt) {
-					close(item.exec.publisherDone)
-					return
-				}
-				s.runExecutionPublisher(item.ctx, request.GetTestId(), item.groupName, item.exec)
-			}()
-			go func() {
-				if !waitForCoordinatedExecutionStart(item.ctx, item.exec.startAt) {
-					s.completeExecutionCallbacks(request.GetTestId(), item.groupName, item.exec, nil)
-					return
-				}
-				_, runErr := item.exec.engine.Run(item.ctx)
-				s.completeExecutionCallbacks(request.GetTestId(), item.groupName, item.exec, runErr)
-			}()
-		}
-		if assignment.committed && len(pending) == 0 {
-			return &pb.WorkCommitAck{Accepted: true}, nil
-		}
-	} else if assignment.committed {
-		return &pb.WorkCommitAck{Accepted: true}, nil
-	}
-	assignment.committed = true
-	s.assignments[request.GetTestId()] = assignment
-	if !s.hasStagedExecutionLocked(request.GetTestId()) {
-		s.stopStageTimerLocked(request.GetTestId())
-	}
-	if !s.executionEnabled && assignedTestDuration(assignment) > 0 {
-		s.scheduleCompletionLocked(assignment.testID, assignedTestDuration(assignment))
-	}
-	lifecycleBatch = s.metricsBatchLocked(request.GetTestId())
-	return &pb.WorkCommitAck{Accepted: true}, nil
-}
-
-func waitForCoordinatedExecutionStart(ctx context.Context, startAt time.Time) bool {
-	delay := time.Until(startAt)
-	if delay <= 0 {
-		return ctx == nil || ctx.Err() == nil
-	}
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return true
-	case <-ctx.Done():
-		return false
-	}
-}
-
-// assignmentObjectAdmissionErrorLocked applies hard state-object limits before
-// script-cache mutation, map insertion, archive creation, or goroutine startup.
-// This is deliberately independent of VUser capacity: zero-VUser assignments
-// still allocate test/group/execution/writer state. The caller must hold s.mu,
-// which makes admission and the following reservations atomic with cleanup.
-func (s *Service) assignmentObjectAdmissionErrorLocked(assignment *pb.WorkAssignment) error {
-	_, testExists := s.assignments[assignment.GetTestId()]
-	if !testExists && len(s.assignments) >= s.maxAssignedTests {
-		return fmt.Errorf("generator active test limit exceeded (%d)", s.maxAssignedTests)
-	}
-	groupCount := 0
-	for _, assigned := range s.assignments {
-		groupCount += len(assigned.groups)
-	}
-	if groupCount >= s.maxAssignedGroups {
-		return fmt.Errorf("generator active group limit exceeded (%d)", s.maxAssignedGroups)
-	}
-
-	if s.executionEnabled {
-		executionCount := 0
-		for _, groups := range s.executions {
-			executionCount += len(groups)
-		}
-		if executionCount >= s.maxExecutions {
-			return fmt.Errorf("generator active execution limit exceeded (%d)", s.maxExecutions)
-		}
-		if s.archiveWriters[assignment.GetTestId()] == nil && len(s.archiveWriters) >= s.maxArchiveWriters {
-			return fmt.Errorf("generator active archive writer limit exceeded (%d)", s.maxArchiveWriters)
-		}
-		return nil
-	}
-
-	effectiveDuration, _ := validatedAssignmentDuration(assignment.GetTargetDuration(), assignment.GetTargetDurationSeconds(), "target_duration", true)
-	if existing, ok := s.assignments[assignment.GetTestId()]; ok && assignedTestDuration(existing) > effectiveDuration {
-		effectiveDuration = assignedTestDuration(existing)
-	}
-	if effectiveDuration > 0 && s.archiveWriters[assignment.GetTestId()] == nil && len(s.archiveWriters) >= s.maxArchiveWriters {
-		return fmt.Errorf("generator active archive writer limit exceeded (%d)", s.maxArchiveWriters)
-	}
-	return nil
-}
-
-func (s *Service) AdjustVUsers(ctx context.Context, request *pb.VUserAdjustment) (*pb.AdjustmentAck, error) {
-	if request.GetTestId() == "" {
-		return nil, status.Error(codes.InvalidArgument, "test_id is required")
-	}
-	if request.GetGroupName() == "" {
-		return nil, status.Error(codes.InvalidArgument, "group_name is required")
-	}
-	if request.GetTargetVusers() < 0 {
-		return nil, status.Error(codes.InvalidArgument, "target_vusers must be non-negative")
-	}
-	if ctx != nil {
-		if err := ctx.Err(); err != nil {
-			return nil, status.FromContextError(err).Err()
-		}
-	}
-
-	// Scaling the concrete engine happens outside s.mu and may block until the
-	// engine is ready. Serialize the complete reserve/scale/commit sequence so a
-	// slower earlier request cannot finish after a newer request and leave engine
-	// state behind the recorded assignment.
-	s.adjustMu.Lock()
-	defer s.adjustMu.Unlock()
-	if ctx != nil {
-		if err := ctx.Err(); err != nil {
-			return nil, status.FromContextError(err).Err()
-		}
-	}
-
-	s.mu.Lock()
-	if err := s.validateMutationGenerationLocked(request.GetExecutionGeneration()); err != nil {
-		s.mu.Unlock()
-		return nil, err
-	}
-	assignment, ok := s.assignments[request.GetTestId()]
-	if !ok {
-		s.mu.Unlock()
-		return nil, status.Error(codes.NotFound, "test assignment not found")
-	}
-	if _, stopping := s.stoppingTests[request.GetTestId()]; stopping {
-		s.mu.Unlock()
-		return nil, status.Error(codes.FailedPrecondition, "test assignment is stopping")
-	}
-	if assignment.executionGeneration != request.GetExecutionGeneration() {
-		s.mu.Unlock()
-		return nil, status.Errorf(codes.FailedPrecondition, "test belongs to execution generation %d", assignment.executionGeneration)
-	}
-	if !assignment.committed {
-		s.mu.Unlock()
-		return nil, status.Error(codes.FailedPrecondition, "test assignment is staged but not committed")
-	}
-	currentGroupVUsers, ok := assignment.groups[request.GetGroupName()]
-	if !ok {
-		s.mu.Unlock()
-		return nil, status.Error(codes.NotFound, "group assignment not found")
-	}
-	if s.draining && request.GetTargetVusers() > currentGroupVUsers {
-		s.mu.Unlock()
-		return nil, status.Error(codes.Unavailable, "generator is draining and cannot increase vusers")
-	}
-
-	updatedTotal64 := int64(assignment.vuserCount) - int64(currentGroupVUsers) + int64(request.GetTargetVusers())
-	projected := s.activeVUsers64Locked() - int64(assignment.vuserCount) + updatedTotal64
-	if updatedTotal64 < 0 || updatedTotal64 > maxGeneratorVUsers || projected > int64(s.maxVUsers) {
-		s.mu.Unlock()
-		return nil, status.Error(codes.ResourceExhausted, "insufficient generator capacity")
-	}
-	updatedTotal := int32(updatedTotal64)
-	var execEngine *engine.MultiGroupEngine
-	if s.executionEnabled {
-		if execs, ok := s.executions[request.GetTestId()]; ok {
-			exec := execs[request.GetGroupName()]
-			if exec != nil {
-				if !exec.started.Load() {
-					s.mu.Unlock()
-					return nil, status.Error(codes.FailedPrecondition, "group assignment is staged but not committed")
-				}
-				execEngine = exec.engine
-			}
-		}
-	}
-
-	// Reserve the requested capacity before releasing s.mu. Concurrent
-	// AssignWork/AdjustVUsers calls then see the reservation and cannot all pass
-	// the same stale capacity check. The reservation is rolled back if the engine
-	// cannot be scaled.
-	assignment.groups[request.GetGroupName()] = request.GetTargetVusers()
-	assignment.activeGroups[request.GetGroupName()] = request.GetTargetVusers()
-	assignment.vuserCount = updatedTotal
-	s.assignments[request.GetTestId()] = assignment
-	s.mu.Unlock()
-
-	rollbackReservation := func() bool {
-		restored := false
-		s.mu.Lock()
-		current, exists := s.assignments[request.GetTestId()]
-		if exists && current.executionGeneration == request.GetExecutionGeneration() {
-			if reserved, groupExists := current.groups[request.GetGroupName()]; groupExists && reserved == request.GetTargetVusers() {
-				current.groups[request.GetGroupName()] = currentGroupVUsers
-				current.activeGroups[request.GetGroupName()] = currentGroupVUsers
-				current.vuserCount = current.vuserCount - request.GetTargetVusers() + currentGroupVUsers
-				s.assignments[request.GetTestId()] = current
-				restored = true
-			}
-		}
-		s.mu.Unlock()
-		return restored
-	}
-
-	if execEngine != nil {
-		if ctx == nil {
-			<-execEngine.Ready()
-		} else {
-			select {
-			case <-ctx.Done():
-				rollbackReservation()
-				return nil, status.FromContextError(ctx.Err()).Err()
-			case <-execEngine.Ready():
-			}
-			if err := ctx.Err(); err != nil {
-				rollbackReservation()
-				return nil, status.FromContextError(err).Err()
-			}
-		}
-		if err := execEngine.ScaleVUsers(request.GetGroupName(), int(request.GetTargetVusers())); err != nil {
-			rollbackReservation()
-			return nil, status.Errorf(codes.FailedPrecondition, "scale running group: %v", err)
-		}
-	}
-
-	s.mu.Lock()
-	var commitErr error
-	if ctx != nil && ctx.Err() != nil {
-		commitErr = status.FromContextError(ctx.Err()).Err()
-	} else if err := s.validateMutationGenerationLocked(request.GetExecutionGeneration()); err != nil {
-		commitErr = err
-	} else if assignment, ok = s.assignments[request.GetTestId()]; !ok {
-		commitErr = status.Error(codes.NotFound, "test assignment not found")
-	} else if assignment.executionGeneration != request.GetExecutionGeneration() {
-		commitErr = status.Errorf(codes.FailedPrecondition, "test belongs to execution generation %d", assignment.executionGeneration)
-	} else if _, stopping := s.stoppingTests[request.GetTestId()]; stopping {
-		commitErr = status.Error(codes.FailedPrecondition, "test assignment is stopping")
-	} else if reservedVUsers, groupExists := assignment.groups[request.GetGroupName()]; !groupExists {
-		commitErr = status.Error(codes.NotFound, "group assignment not found")
-	} else if reservedVUsers != request.GetTargetVusers() {
-		commitErr = status.Error(codes.Aborted, "group assignment changed while scaling")
-	}
-	var batch *pb.MetricsBatch
-	if commitErr == nil {
-		batch = s.metricsBatchLocked(request.GetTestId())
-	}
-	s.mu.Unlock()
-	if commitErr != nil {
-		// The engine operation and the in-memory capacity reservation form one
-		// control-plane mutation. If the request is canceled or fenced after the
-		// concrete engine scaled, restore both sides before reporting rejection.
-		// A detached/canceled engine may reject the rollback; that is harmless once
-		// the reservation is gone, but a still-current assignment must retain the
-		// applied reservation so service and engine state never silently diverge.
-		if execEngine != nil {
-			if rollbackErr := execEngine.ScaleVUsers(request.GetGroupName(), int(currentGroupVUsers)); rollbackErr != nil {
-				s.mu.RLock()
-				current, exists := s.assignments[request.GetTestId()]
-				reservationCurrent := exists && current.executionGeneration == request.GetExecutionGeneration() && current.groups[request.GetGroupName()] == request.GetTargetVusers()
-				s.mu.RUnlock()
-				if reservationCurrent {
-					return nil, status.Errorf(codes.Internal, "%v; rollback running group: %v", commitErr, rollbackErr)
-				}
-				return nil, commitErr
-			}
-		}
-		rollbackReservation()
-		return nil, commitErr
-	}
-
-	s.broadcastMetrics(batch)
-	return &pb.AdjustmentAck{
-		Accepted:      true,
-		CurrentVusers: assignment.vuserCount,
-	}, nil
-}
-
-func (s *Service) AdjustDuration(ctx context.Context, request *pb.DurationAdjustment) (*pb.DurationAck, error) {
-	if request == nil {
-		return nil, status.Error(codes.InvalidArgument, "duration adjustment is required")
-	}
-	if request.GetTestId() == "" {
-		return nil, status.Error(codes.InvalidArgument, "test_id is required")
-	}
-	duration, err := validatedAssignmentDuration(request.GetTargetDuration(), request.GetTargetDurationSeconds(), "target_duration", false)
-	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
-	}
-	if ctx != nil {
-		if err := ctx.Err(); err != nil {
-			return nil, status.FromContextError(err).Err()
-		}
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if ctx != nil {
-		if err := ctx.Err(); err != nil {
-			return nil, status.FromContextError(err).Err()
-		}
-	}
-	if err := s.validateMutationGenerationLocked(request.GetExecutionGeneration()); err != nil {
-		return nil, err
-	}
-
-	assignment, ok := s.assignments[request.GetTestId()]
-	if !ok {
-		return nil, status.Error(codes.NotFound, "test assignment not found")
-	}
-	if _, stopping := s.stoppingTests[request.GetTestId()]; stopping {
-		return nil, status.Error(codes.FailedPrecondition, "test assignment is stopping")
-	}
-	if assignment.executionGeneration != request.GetExecutionGeneration() {
-		return nil, status.Errorf(codes.FailedPrecondition, "test belongs to execution generation %d", assignment.executionGeneration)
-	}
-	if !assignment.committed {
-		return nil, status.Error(codes.FailedPrecondition, "test assignment is staged but not committed")
-	}
-	if s.draining && duration > assignedTestDuration(assignment) {
-		return nil, status.Error(codes.Unavailable, "generator is draining and cannot extend test duration")
-	}
-	if s.executionEnabled {
-		if execs, ok := s.executions[request.GetTestId()]; ok {
-			type durationParticipant struct {
-				engine   *engine.MultiGroupEngine
-				previous time.Duration
-				target   time.Duration
-			}
-			groupNames := make([]string, 0, len(execs))
-			for groupName := range execs {
-				groupNames = append(groupNames, groupName)
-			}
-			sort.Strings(groupNames)
-			participants := make([]durationParticipant, 0, len(execs))
-			for _, groupName := range groupNames {
-				exec := execs[groupName]
-				if exec != nil && exec.engine != nil {
-					if !exec.started.Load() {
-						return nil, status.Error(codes.FailedPrecondition, "test has staged groups that are not committed")
-					}
-					target := duration - exec.durationOffset
-					if target <= 0 {
-						// The replacement began after the newly shortened logical
-						// deadline. A positive, already-elapsed local target makes the
-						// engine terminate immediately without violating its duration
-						// invariant.
-						target = time.Nanosecond
-					}
-					participants = append(participants, durationParticipant{engine: exec.engine, previous: exec.engine.GetBaseTargetDuration(), target: target})
-				}
-			}
-			for index, participant := range participants {
-				if err := participant.engine.AdjustDuration(participant.target); err != nil {
-					rollbackErrors := make([]error, 0, index)
-					for rollbackIndex := index - 1; rollbackIndex >= 0; rollbackIndex-- {
-						prior := participants[rollbackIndex]
-						if rollbackErr := prior.engine.AdjustDuration(prior.previous); rollbackErr != nil {
-							rollbackErrors = append(rollbackErrors, rollbackErr)
-						}
-					}
-					if rollbackErr := errors.Join(rollbackErrors...); rollbackErr != nil {
-						return nil, status.Errorf(codes.Internal, "adjust running duration: %v; rollback failed: %v", err, rollbackErr)
-					}
-					return nil, status.Errorf(codes.FailedPrecondition, "adjust running duration: %v", err)
-				}
-			}
-		}
-	}
-	assignment.duration = duration
-	assignment.durationSeconds = compatibilityDurationSeconds(duration)
-	s.assignments[request.GetTestId()] = assignment
-	if !s.executionEnabled {
-		s.scheduleCompletionLocked(assignment.testID, duration)
-	}
-
-	return &pb.DurationAck{
-		Accepted:               true,
-		CurrentDurationSeconds: assignment.durationSeconds,
-		CurrentDuration:        durationpb.New(duration),
-	}, nil
-}
-
-func (s *Service) SetPaused(ctx context.Context, request *pb.PauseRequest) (*pb.PauseAck, error) {
-	operationID := strings.TrimSpace(request.GetOperationId())
-	if operationID == "" {
-		return nil, status.Error(codes.InvalidArgument, "operation_id is required")
-	}
-	if err := validateGeneratorFieldBytes(operationID, "operation_id", maxGeneratorOperationIDBytes); err != nil {
-		return nil, err
-	}
-	if request.GetOperationSequence() == 0 {
-		return nil, status.Error(codes.InvalidArgument, "operation_sequence is required")
-	}
-	appliedOperationID, appliedSequence, err := s.setPausedWithOperation(ctx, request.GetTestId(), request.GetPause(), request.GetExecutionGeneration(), operationID, request.GetOperationSequence())
-	if err != nil {
-		return nil, err
-	}
-	return &pb.PauseAck{
-		Accepted:                 true,
-		CurrentPaused:            request.GetPause(),
-		AppliedOperationId:       appliedOperationID,
-		AppliedOperationSequence: appliedSequence,
-	}, nil
-}
-
-func (s *Service) StopTest(ctx context.Context, request *pb.StopRequest) (*pb.StopAck, error) {
-	return s.stopTest(ctx, request, false, false, 0)
-}
-
-func (s *Service) stopTest(ctx context.Context, request *pb.StopRequest, bypassExecutionFence bool, enforceMaximumGeneration bool, maximumGeneration uint64) (*pb.StopAck, error) {
-	if request.GetTestId() == "" {
-		return nil, status.Error(codes.InvalidArgument, "test_id is required")
-	}
-	if ctx != nil {
-		if err := ctx.Err(); err != nil {
-			return nil, status.FromContextError(err).Err()
-		}
-	}
-
-	s.mu.Lock()
-	if ctx != nil {
-		if err := ctx.Err(); err != nil {
-			s.mu.Unlock()
-			return nil, status.FromContextError(err).Err()
-		}
-	}
-	if !bypassExecutionFence {
-		if err := s.validateMutationGenerationLocked(request.GetExecutionGeneration()); err != nil {
-			s.mu.Unlock()
-			return nil, err
-		}
-	}
-
-	assignment, ok := s.assignments[request.GetTestId()]
-	if ok && bypassExecutionFence && enforceMaximumGeneration && assignment.executionGeneration > maximumGeneration {
-		s.mu.Unlock()
-		// The lower-generation assignment identified by the fencing snapshot is
-		// already gone. Treat that cleanup as complete without stopping a newer
-		// assignment that reused the same test ID.
-		return &pb.StopAck{Acknowledged: true}, nil
-	}
-	if ok && !bypassExecutionFence && assignment.executionGeneration != request.GetExecutionGeneration() {
-		s.mu.Unlock()
-		return nil, status.Errorf(codes.FailedPrecondition, "test belongs to execution generation %d", assignment.executionGeneration)
-	}
-	if !ok {
-		_, stopping := s.stoppingTests[request.GetTestId()]
-		stoppingGeneration, trackedGeneration := s.stoppingGenerations[request.GetTestId()]
-		completion := s.stopCompletions[request.GetTestId()]
-		if trackedGeneration && !bypassExecutionFence && stoppingGeneration != request.GetExecutionGeneration() {
-			s.mu.Unlock()
-			return nil, status.Errorf(codes.FailedPrecondition, "test belongs to execution generation %d", stoppingGeneration)
-		}
-		if trackedGeneration && bypassExecutionFence && enforceMaximumGeneration && stoppingGeneration > maximumGeneration {
-			s.mu.Unlock()
-			return &pb.StopAck{Acknowledged: true}, nil
-		}
-		if terminalGeneration, terminal := s.terminalGenerationLocked(request.GetTestId()); terminal {
-			if !bypassExecutionFence && terminalGeneration != request.GetExecutionGeneration() {
-				s.mu.Unlock()
-				return nil, status.Errorf(codes.FailedPrecondition, "test belongs to execution generation %d", terminalGeneration)
-			}
-			s.mu.Unlock()
-			return &pb.StopAck{Acknowledged: true}, nil
-		}
-		s.mu.Unlock()
-		if !stopping || completion == nil {
-			return &pb.StopAck{Acknowledged: false}, nil
-		}
-		if ctx == nil {
-			ctx = context.Background()
-		}
-		select {
-		case <-completion.done:
-			return &pb.StopAck{Acknowledged: true}, nil
-		case <-ctx.Done():
-			return nil, status.FromContextError(ctx.Err()).Err()
-		}
-	}
-	s.markStoppingLocked(request.GetTestId(), assignment.executionGeneration)
-	if request.GetGraceful() && assignment.committed {
-		execs := s.executions[request.GetTestId()]
-		if len(execs) > 0 {
-			// A committed run can temporarily contain newly staged evacuation
-			// groups. They have no goroutine to complete a graceful stop and must be
-			// discarded before the already-running groups drain, otherwise the final
-			// callback leaves the assignment and its capacity reserved forever.
-			running := make([]*groupExecution, 0, len(execs))
-			staged := make([]*groupExecution, 0)
-			stagedNames := make([]string, 0)
-			for groupName, exec := range execs {
-				if exec != nil && exec.started.Load() {
-					running = append(running, exec)
-					continue
-				}
-				staged = append(staged, exec)
-				stagedNames = append(stagedNames, groupName)
-			}
-			if len(running) > 0 {
-				for _, groupName := range stagedNames {
-					delete(execs, groupName)
-					if assignment.activeGroups != nil {
-						assignment.activeGroups[groupName] = 0
-					}
-				}
-				s.assignments[request.GetTestId()] = assignment
-				s.stopStageTimerLocked(request.GetTestId())
-				// Copy pointers while holding s.mu. finishExecution mutates the
-				// nested map, so iterating the aliased map after unlocking is a data
-				// race and can panic.
-				s.mu.Unlock()
-				for _, exec := range staged {
-					stopGroupExecution(exec)
-				}
-				for _, exec := range running {
-					if !exec.startAt.IsZero() && time.Now().Before(exec.startAt) && exec.cancel != nil {
-						exec.cancel()
-					} else {
-						exec.engine.GracefulStop()
-					}
-				}
-				return &pb.StopAck{
-					Acknowledged:  true,
-					PendingVusers: assignment.vuserCount,
-				}, nil
-			}
-		}
-	}
-	delete(s.assignments, request.GetTestId())
-	s.stopCompletionTimerLocked(request.GetTestId())
-	s.stopStageTimerLocked(request.GetTestId())
-	execs := s.executions[request.GetTestId()]
-	delete(s.executions, request.GetTestId())
-	writer := s.archiveWriters[request.GetTestId()]
-	delete(s.archiveWriters, request.GetTestId())
-	trackedFinalizer := writer != nil && s.addFinalizer()
-	s.mu.Unlock()
-
-	executions := make([]*groupExecution, 0, len(execs))
-	for _, exec := range execs {
-		executions = append(executions, exec)
-		stopGroupExecution(exec)
-	}
-	if err := waitForGeneratorExecutions(ctx, executions); err != nil {
-		if !trackedFinalizer {
-			go func() {
-				_ = waitForGeneratorExecutions(context.Background(), executions)
-				s.captureStoppedExecutionMetrics(&assignment, executions)
-				s.finishStoppedTest(request.GetTestId(), assignment, writer)
-			}()
-			return nil, status.Errorf(codes.DeadlineExceeded, "wait for stopped execution: %v", err)
-		}
-		go func() {
-			defer s.finalizerWG.Done()
-			_ = waitForGeneratorExecutions(context.Background(), executions)
-			s.captureStoppedExecutionMetrics(&assignment, executions)
-			s.finishStoppedTest(request.GetTestId(), assignment, writer)
-		}()
-		return nil, status.Errorf(codes.DeadlineExceeded, "wait for stopped execution: %v", err)
-	}
-	if trackedFinalizer {
-		defer s.finalizerWG.Done()
-	}
-	s.captureStoppedExecutionMetrics(&assignment, executions)
-	_, finalError := s.finishStoppedTest(request.GetTestId(), assignment, writer)
-	if finalError != "" {
-		return nil, status.Error(codes.Internal, finalError)
-	}
-	return &pb.StopAck{Acknowledged: true, PendingVusers: assignment.vuserCount}, nil
-}
-
 func waitForGeneratorExecutions(ctx context.Context, executions []*groupExecution) error {
 	if ctx == nil {
 		ctx = context.Background()
@@ -2222,6 +931,7 @@ func (s *Service) finishStoppedTest(testID string, assignment assignedTest, writ
 
 func (s *Service) finishStoppedTestWithState(testID string, assignment assignedTest, writer *archiveRecorder, finalState string, finalError string) (string, string) {
 	defer s.completeStoppingTest(testID, assignment.executionGeneration)
+	assignment = s.lifecycleCoordinator.finish(assignment)
 	finalState = strings.ToUpper(strings.TrimSpace(finalState))
 	if finalState == "" {
 		finalState = "FAILED"
@@ -2329,30 +1039,7 @@ const (
 )
 
 func (s *Service) beginArchiveTransfer(unary bool) (func(), error) {
-	s.mu.Lock()
-	if s.activeArchiveTransfers >= s.maxArchiveTransfers || (unary && s.activeArchiveUnaryTransfers >= s.maxArchiveUnaryTransfers) {
-		s.mu.Unlock()
-		return nil, status.Error(codes.ResourceExhausted, "generator archive transfer concurrency limit exceeded")
-	}
-	s.activeArchiveTransfers++
-	if unary {
-		s.activeArchiveUnaryTransfers++
-	}
-	s.mu.Unlock()
-
-	var once sync.Once
-	return func() {
-		once.Do(func() {
-			s.mu.Lock()
-			if s.activeArchiveTransfers > 0 {
-				s.activeArchiveTransfers--
-			}
-			if unary && s.activeArchiveUnaryTransfers > 0 {
-				s.activeArchiveUnaryTransfers--
-			}
-			s.mu.Unlock()
-		})
-	}, nil
+	return s.archiveManager.beginTransfer(unary)
 }
 
 func (s *Service) beginHeartbeatStream() (func(), error) {
@@ -2635,7 +1322,7 @@ func (s *Service) activeProtocolVUsersLocked(protocolName string) int64 {
 	var total int64
 	for _, assignment := range s.assignments {
 		for groupName, scriptID := range assignment.groupScripts {
-			if cached, ok := s.scripts[scriptID]; ok && strings.EqualFold(cached.protocol, protocolName) {
+			if cached, ok := s.scriptCache.get(scriptID); ok && strings.EqualFold(cached.protocol, protocolName) {
 				total += int64(assignment.groups[groupName])
 			}
 		}
@@ -2683,99 +1370,18 @@ func (s *Service) activeVUsers64Locked() int64 {
 }
 
 func (s *Service) availableCapacityLocked() int32 {
-	available := s.maxVUsers - s.activeVUsersLocked()
-	if available < 0 {
+	reserved := int64(0)
+	if s.lifecycleCoordinator != nil {
+		reserved = s.lifecycleCoordinator.pendingVUsersLocked()
+	}
+	available := int64(s.maxVUsers) - s.activeVUsers64Locked() - reserved
+	if available <= 0 {
 		return 0
 	}
-	return available
-}
-
-func (s *Service) setPaused(ctx context.Context, testID string, paused bool, executionGeneration uint64) error {
-	_, _, err := s.setPausedWithOperation(ctx, testID, paused, executionGeneration, "", 0)
-	return err
-}
-
-func (s *Service) setPausedWithOperation(ctx context.Context, testID string, paused bool, executionGeneration uint64, operationID string, operationSequence uint64) (string, uint64, error) {
-	if testID == "" {
-		return "", 0, status.Error(codes.InvalidArgument, "test_id is required")
+	if available > int64(s.maxVUsers) {
+		return s.maxVUsers
 	}
-	if ctx != nil {
-		if err := ctx.Err(); err != nil {
-			return "", 0, status.FromContextError(err).Err()
-		}
-	}
-
-	var lifecycleBatch *pb.MetricsBatch
-	s.metricsPublishMu.Lock()
-	defer s.metricsPublishMu.Unlock()
-	s.mu.Lock()
-	defer func() {
-		s.mu.Unlock()
-		if lifecycleBatch != nil {
-			s.publishLifecycleTransitionLocked(lifecycleBatch)
-		}
-	}()
-	if ctx != nil {
-		if err := ctx.Err(); err != nil {
-			return "", 0, status.FromContextError(err).Err()
-		}
-	}
-	if err := s.validateMutationGenerationLocked(executionGeneration); err != nil {
-		return "", 0, err
-	}
-
-	assignment, ok := s.assignments[testID]
-	if !ok {
-		return "", 0, status.Error(codes.NotFound, "test assignment not found")
-	}
-	if _, stopping := s.stoppingTests[testID]; stopping {
-		return "", 0, status.Error(codes.FailedPrecondition, "test assignment is stopping")
-	}
-	if assignment.executionGeneration != executionGeneration {
-		return "", 0, status.Errorf(codes.FailedPrecondition, "test belongs to execution generation %d", assignment.executionGeneration)
-	}
-	if !assignment.committed {
-		return "", 0, status.Error(codes.FailedPrecondition, "test assignment is staged but not committed")
-	}
-	if operationID != "" {
-		if operationSequence < assignment.pauseOperationSequence {
-			return "", 0, status.Errorf(codes.FailedPrecondition, "pause operation sequence %d is stale; current sequence is %d", operationSequence, assignment.pauseOperationSequence)
-		}
-		if operationSequence == assignment.pauseOperationSequence {
-			if assignment.pauseOperationID != operationID || assignment.paused != paused {
-				return "", 0, status.Error(codes.FailedPrecondition, "pause operation sequence was already used for a different operation")
-			}
-			return operationID, operationSequence, nil
-		}
-	}
-	if s.executionEnabled {
-		if execs, ok := s.executions[testID]; ok {
-			for _, exec := range execs {
-				if exec != nil && !exec.started.Load() {
-					return "", 0, status.Error(codes.FailedPrecondition, "test has staged groups that are not committed")
-				}
-			}
-			for _, exec := range execs {
-				var err error
-				if paused {
-					err = exec.engine.Pause()
-				} else {
-					err = exec.engine.Resume()
-				}
-				if err != nil {
-					return "", 0, status.Errorf(codes.FailedPrecondition, "update running pause state: %v", err)
-				}
-			}
-		}
-	}
-	assignment.paused = paused
-	if operationID != "" {
-		assignment.pauseOperationID = operationID
-		assignment.pauseOperationSequence = operationSequence
-	}
-	s.assignments[testID] = assignment
-	lifecycleBatch = s.metricsBatchLocked(testID)
-	return operationID, operationSequence, nil
+	return int32(available)
 }
 
 func (s *Service) FailTest(testID string, message string) {
@@ -2787,9 +1393,8 @@ func (s *Service) FailTest(testID string, message string) {
 	}
 	execs := s.executions[testID]
 	delete(s.executions, testID)
-	writer := s.archiveWriters[testID]
-	delete(s.archiveWriters, testID)
-	trackedFinalizer := writer != nil && s.addFinalizer()
+	writer := s.archiveManager.takeWriter(testID)
+	trackedFinalizer := writer != nil && s.archiveManager.addFinalizer()
 	s.stopCompletionTimerLocked(testID)
 	s.stopStageTimerLocked(testID)
 	s.mu.Unlock()
@@ -2806,7 +1411,7 @@ func (s *Service) FailTest(testID string, message string) {
 	}
 	if !ok {
 		if trackedFinalizer {
-			s.finalizerWG.Done()
+			s.archiveManager.finalizerDone()
 		}
 		return
 	}
@@ -2823,7 +1428,7 @@ func (s *Service) FailTest(testID string, message string) {
 			return
 		}
 		go func() {
-			defer s.finalizerWG.Done()
+			defer s.archiveManager.finalizerDone()
 			_ = waitForGeneratorExecutions(context.Background(), executions)
 			s.captureStoppedExecutionMetrics(&assignment, executions)
 			s.finishFailedTest(testID, assignment, writer, message)
@@ -2831,7 +1436,7 @@ func (s *Service) FailTest(testID string, message string) {
 		return
 	}
 	if trackedFinalizer {
-		defer s.finalizerWG.Done()
+		defer s.archiveManager.finalizerDone()
 	}
 	s.captureStoppedExecutionMetrics(&assignment, executions)
 	s.finishFailedTest(testID, assignment, writer, message)
@@ -2854,40 +1459,22 @@ func (s *Service) hasStagedExecutionLocked(testID string) bool {
 }
 
 func (s *Service) scheduleStageExpiryLocked(testID string) {
-	if strings.TrimSpace(testID) == "" || s.assignmentStageTTL <= 0 || !s.hasStagedExecutionLocked(testID) {
-		return
-	}
-	s.stopStageTimerLocked(testID)
-	s.nextStageToken++
-	if s.nextStageToken == 0 {
-		s.nextStageToken++
-	}
-	token := s.nextStageToken
-	s.stageTokens[testID] = token
-	s.stageTimers[testID] = time.AfterFunc(s.assignmentStageTTL, func() {
-		s.expireStagedAssignment(testID, token)
-	})
+	s.lifecycleCoordinator.scheduleStageExpiryLocked(s, testID)
 }
 
 func (s *Service) stopStageTimerLocked(testID string) {
-	delete(s.stageTokens, testID)
-	timer := s.stageTimers[testID]
-	delete(s.stageTimers, testID)
-	if timer != nil {
-		timer.Stop()
-	}
+	s.lifecycleCoordinator.stopStageTimerLocked(testID)
 }
 
 func (s *Service) expireStagedAssignment(testID string, token uint64) {
 	s.mu.Lock()
-	if s.stageTokens[testID] != token || !s.hasStagedExecutionLocked(testID) {
+	if !s.lifecycleCoordinator.claimStageExpiryLocked(s, testID, token) {
 		s.mu.Unlock()
 		return
 	}
 	// Claim teardown before releasing the lock so a concurrent CommitWork cannot
 	// release staged traffic after the expiry decision.
 	s.markStoppingLocked(testID, s.assignments[testID].executionGeneration)
-	s.stopStageTimerLocked(testID)
 	s.mu.Unlock()
 	s.FailTest(testID, "staged assignment expired before commit")
 }
@@ -2914,8 +1501,8 @@ func (s *Service) publishMetricsWithAggregates(testID string, groupName string, 
 	if groupName == "" {
 		return status.Error(codes.InvalidArgument, "group_name is required")
 	}
-	s.metricsPublishMu.Lock()
-	defer s.metricsPublishMu.Unlock()
+	s.metricsBroker.lockPublication()
+	defer s.metricsBroker.unlockPublication()
 
 	s.mu.Lock()
 	assignment, ok := s.assignments[testID]
@@ -2962,7 +1549,7 @@ func (s *Service) publishMetricsWithAggregates(testID string, groupName string, 
 	assignment.groupAggregates[groupName] = aggregates
 	s.assignments[testID] = assignment
 	batch := s.metricsBatchLocked(testID)
-	writer := s.archiveWriters[testID]
+	writer := s.archiveManager.writer(testID)
 	s.mu.Unlock()
 
 	s.recordMetricsBatch(testID, writer, batch)
@@ -3024,124 +1611,47 @@ func (s *Service) registerSubscriber(executionGeneration uint64) (int, *metricsS
 }
 
 func (s *Service) registerScopedSubscriber(executionGeneration uint64, testID string) (int, *metricsSubscriber, []*pb.MetricsBatch, error) {
+	s.metricsBroker.lockPublication()
+	defer s.metricsBroker.unlockPublication()
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.pruneTerminalBatchesLocked(time.Now())
 	if err := s.validateMutationGenerationLocked(executionGeneration); err != nil {
+		s.mu.Unlock()
 		return 0, nil, nil, err
 	}
-	if len(s.subscribers) >= s.maxMetricsSubscribers {
-		return 0, nil, nil, status.Errorf(codes.ResourceExhausted, "metrics subscriber limit exceeded (%d)", s.maxMetricsSubscribers)
-	}
-
-	id := s.nextSubID
-	s.nextSubID++
-	subscriber := &metricsSubscriber{
-		generation: executionGeneration,
-		testID:     testID,
-		queue:      make([]*pb.MetricsBatch, 0, metricsSubscriberQueueCapacity),
-		wake:       make(chan struct{}, 1),
-		fenced:     make(chan struct{}),
-	}
-	s.subscribers[id] = subscriber
-	if testID == "" {
-		s.unscopedSubscriberIDs[id] = struct{}{}
-	} else {
-		if s.subscriberIDsByTest[testID] == nil {
-			s.subscriberIDsByTest[testID] = make(map[int]struct{})
-		}
-		s.subscriberIDsByTest[testID][id] = struct{}{}
-	}
-
-	initial := make([]*pb.MetricsBatch, 0, len(s.assignments))
+	live := make([]*pb.MetricsBatch, 0, len(s.assignments))
 	for assignmentTestID, assignment := range s.assignments {
 		if assignment.executionGeneration == executionGeneration && (testID == "" || assignmentTestID == testID) {
-			initial = append(initial, s.metricsBatchLocked(assignmentTestID))
+			live = append(live, s.metricsBatchLocked(assignmentTestID))
 		}
 	}
-	for key, tombstone := range s.terminalBatches {
-		if key.generation == executionGeneration && (testID == "" || key.testID == testID) && tombstone.batch != nil {
-			initial = append(initial, proto.Clone(tombstone.batch).(*pb.MetricsBatch))
-		}
-	}
-	sort.Slice(initial, func(i, j int) bool {
-		if initial[i].GetTimestampUnixMs() == initial[j].GetTimestampUnixMs() {
-			return initial[i].GetTestId() < initial[j].GetTestId()
-		}
-		return initial[i].GetTimestampUnixMs() < initial[j].GetTimestampUnixMs()
-	})
-
-	return id, subscriber, initial, nil
+	s.mu.Unlock()
+	return s.metricsBroker.registerLocked(executionGeneration, testID, live, time.Now())
 }
 
 func (s *Service) unregisterSubscriber(id int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	subscriber, ok := s.subscribers[id]
-	if !ok {
-		return
-	}
-	delete(s.subscribers, id)
-	if subscriber.testID == "" {
-		delete(s.unscopedSubscriberIDs, id)
-	} else if ids := s.subscriberIDsByTest[subscriber.testID]; ids != nil {
-		delete(ids, id)
-		if len(ids) == 0 {
-			delete(s.subscriberIDsByTest, subscriber.testID)
-		}
-	}
+	s.metricsBroker.unregister(id)
 }
 
 func (s *Service) broadcastMetrics(batch *pb.MetricsBatch) {
-	s.metricsPublishMu.Lock()
-	defer s.metricsPublishMu.Unlock()
-	s.broadcastMetricsLocked(batch)
+	s.metricsBroker.publish(batch, s.metricsBatchIsCurrent)
 }
 
 // publishLifecycleTransitionLocked publishes a control-plane lifecycle
-// transition while metricsPublishMu is held by the state mutation that created
-// it. The hook is intentionally unexported and exists only to make competing
-// transition/terminal paths deterministic in regression tests.
+// transition while the broker publication lock is held by the state mutation
+// that created it.
 func (s *Service) publishLifecycleTransitionLocked(batch *pb.MetricsBatch) {
-	if s.lifecyclePublishHook != nil {
-		s.lifecyclePublishHook(batch)
-	}
-	s.broadcastMetricsLocked(batch)
+	s.metricsBroker.publishLifecycleLocked(batch, s.metricsBatchIsCurrent)
 }
 
 func (s *Service) broadcastMetricsLocked(batch *pb.MetricsBatch) {
-	if batch == nil {
-		return
-	}
+	s.metricsBroker.publishLocked(batch, s.metricsBatchIsCurrent)
+}
 
+func (s *Service) metricsBatchIsCurrent(batch *pb.MetricsBatch) bool {
 	s.mu.RLock()
-	if !s.metricsBatchIsCurrentLocked(batch) {
-		s.mu.RUnlock()
-		return
-	}
-	testIDs := s.subscriberIDsByTest[batch.GetTestId()]
-	subscribers := make([]*metricsSubscriber, 0, len(testIDs)+len(s.unscopedSubscriberIDs))
-	for id := range testIDs {
-		if subscriber := s.subscribers[id]; subscriber != nil {
-			subscribers = append(subscribers, subscriber)
-		}
-	}
-	for id := range s.unscopedSubscriberIDs {
-		if subscriber := s.subscribers[id]; subscriber != nil {
-			subscribers = append(subscribers, subscriber)
-		}
-	}
+	current := s.metricsBatchIsCurrentLocked(batch)
 	s.mu.RUnlock()
-
-	for _, subscriber := range subscribers {
-		if subscriber == nil || subscriber.generation != batch.GetExecutionGeneration() || (subscriber.testID != "" && subscriber.testID != batch.GetTestId()) {
-			continue
-		}
-		if dropped := subscriber.enqueue(batch); dropped > 0 {
-			s.droppedBatches.Add(dropped)
-		}
-	}
+	return current
 }
 
 // metricsBatchIsCurrentLocked rejects delayed nonterminal snapshots. Terminal
@@ -3153,7 +1663,7 @@ func (s *Service) metricsBatchIsCurrentLocked(batch *pb.MetricsBatch) bool {
 		return batch != nil
 	}
 	key := terminalBatchKey{testID: batch.GetTestId(), generation: batch.GetExecutionGeneration()}
-	if tombstone := s.terminalBatches[key]; tombstone.batch != nil {
+	if s.metricsBroker.hasTerminal(key) {
 		return false
 	}
 
@@ -3182,72 +1692,15 @@ func (s *Service) metricsBatchIsCurrentLocked(batch *pb.MetricsBatch) bool {
 }
 
 func (s *Service) publishTerminalMetrics(batch *pb.MetricsBatch) {
-	if batch == nil || !isGeneratorTerminalLifecycle(batch.GetLifecycleState()) {
-		return
-	}
-	s.metricsPublishMu.Lock()
-	defer s.metricsPublishMu.Unlock()
-	clone := proto.Clone(batch).(*pb.MetricsBatch)
-	key := terminalBatchKey{testID: clone.GetTestId(), generation: clone.GetExecutionGeneration()}
-	completedAt := time.UnixMilli(clone.GetTimestampUnixMs())
-	if clone.GetTimestampUnixMs() <= 0 {
-		completedAt = time.Now()
-	}
-	s.mu.Lock()
-	s.terminalBatches[key] = terminalMetricsTombstone{batch: clone, completedAt: completedAt}
-	s.pruneTerminalBatchesLocked(time.Now())
-	s.mu.Unlock()
-	s.broadcastMetricsLocked(clone)
-}
-
-func (s *Service) pruneTerminalBatchesLocked(now time.Time) {
-	if s.archiveTTL > 0 {
-		for key, tombstone := range s.terminalBatches {
-			if !tombstone.completedAt.IsZero() && now.Sub(tombstone.completedAt) > s.archiveTTL {
-				delete(s.terminalBatches, key)
-			}
-		}
-	}
-	limit := s.archiveRecordMax
-	if limit <= 0 {
-		limit = defaultGeneratorArchiveMax
-	}
-	for len(s.terminalBatches) > limit {
-		var oldestKey terminalBatchKey
-		var oldestAt time.Time
-		found := false
-		for key, tombstone := range s.terminalBatches {
-			if !found || tombstone.completedAt.Before(oldestAt) || (tombstone.completedAt.Equal(oldestAt) && (key.testID < oldestKey.testID || key.testID == oldestKey.testID && key.generation < oldestKey.generation)) {
-				oldestKey = key
-				oldestAt = tombstone.completedAt
-				found = true
-			}
-		}
-		if !found {
-			break
-		}
-		delete(s.terminalBatches, oldestKey)
-	}
+	s.metricsBroker.publishTerminal(batch)
 }
 
 func (s *Service) terminalGenerationLocked(testID string) (uint64, bool) {
-	var generation uint64
-	found := false
-	for key := range s.terminalBatches {
-		if key.testID == testID && (!found || key.generation > generation) {
-			generation = key.generation
-			found = true
-		}
-	}
-	return generation, found
+	return s.metricsBroker.terminalGeneration(testID)
 }
 
 func (s *Service) deleteTerminalBatchesForTestLocked(testID string) {
-	for key := range s.terminalBatches {
-		if key.testID == testID {
-			delete(s.terminalBatches, key)
-		}
-	}
+	s.metricsBroker.deleteTerminalsForTest(testID)
 }
 
 func (s *Service) metricsBatchLocked(testID string) *pb.MetricsBatch {
@@ -3492,178 +1945,16 @@ func (s *Service) completeAssignmentMatchingTimer(testID string, token uint64, r
 	delete(s.executions, testID)
 	s.stopCompletionTimerLocked(testID)
 	s.stopStageTimerLocked(testID)
-	writer := s.archiveWriters[testID]
-	delete(s.archiveWriters, testID)
-	tracked := ok && writer != nil && s.addFinalizer()
+	writer := s.archiveManager.takeWriter(testID)
+	tracked := ok && writer != nil && s.archiveManager.addFinalizer()
 	s.mu.Unlock()
 	if !ok {
 		return
 	}
 	if tracked {
-		defer s.finalizerWG.Done()
+		defer s.archiveManager.finalizerDone()
 	}
 	s.finishStoppedTest(testID, assignment, writer)
-}
-
-func (s *Service) startExecutionLocked(ctx context.Context, assignment *pb.WorkAssignment, executionDuration time.Duration, durationOffset time.Duration, rampUp time.Duration, rampDown time.Duration, preBaseline time.Duration, postBaseline time.Duration, initStrategy string, shardCount uint32) (err error) {
-	if !s.executionEnabled {
-		return nil
-	}
-	if ctx != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return status.FromContextError(ctxErr).Err()
-		}
-	}
-	if assignment.GetGroupName() == "" {
-		return status.Error(codes.InvalidArgument, "group_name is required")
-	}
-	createdExecutionMap := false
-	if _, ok := s.executions[assignment.GetTestId()]; !ok {
-		s.executions[assignment.GetTestId()] = make(map[string]*groupExecution)
-		createdExecutionMap = true
-	}
-	createdWriter := false
-	defer func() {
-		if err == nil {
-			return
-		}
-		if createdWriter {
-			writer := s.archiveWriters[assignment.GetTestId()]
-			delete(s.archiveWriters, assignment.GetTestId())
-			if discardErr := writer.Discard(); discardErr != nil {
-				slog.Warn("discard failed execution archive", "test_id", assignment.GetTestId(), "error", discardErr)
-			}
-		}
-		if createdExecutionMap && len(s.executions[assignment.GetTestId()]) == 0 {
-			delete(s.executions, assignment.GetTestId())
-		}
-	}()
-	if s.executions[assignment.GetTestId()][assignment.GetGroupName()] != nil {
-		return nil
-	}
-	rawScript := assignment.GetScriptContent()
-	if len(rawScript) == 0 {
-		cached, ok := s.touchScriptLocked(assignment.GetScriptId())
-		if !ok {
-			return status.Error(codes.NotFound, "script is not cached")
-		}
-		rawScript = cached.content
-	}
-	var script dsl.Script
-	if err := json.Unmarshal(rawScript, &script); err != nil {
-		return status.Errorf(codes.InvalidArgument, "decode script: %v", err)
-	}
-	if instance, getErr := protocol.Get(strings.ToLower(strings.TrimSpace(script.Protocol))); getErr == nil {
-		if provider, ok := instance.(protocol.RuntimeCapabilityProvider); ok && !provider.RuntimeCapabilities().Available {
-			return status.Errorf(codes.FailedPrecondition, "%s runtime is unavailable on this generator", script.Protocol)
-		}
-	}
-	if issues := dsl.ValidateScriptIssues(&script); len(issues) > 0 {
-		const maxValidationMessageBytes = 16 << 10
-		message := strings.Join(issues, "; ")
-		if len(message) > maxValidationMessageBytes {
-			message = boundedtext.TruncateUTF8(message, maxValidationMessageBytes-len("...[truncated]")) + "...[truncated]"
-		}
-		return status.Errorf(codes.InvalidArgument, "validate script: %s", message)
-	}
-	referencedSecrets, err := engine.ReferencedSecretNames(&script)
-	if err != nil {
-		return status.Error(codes.InvalidArgument, "inspect script secret references")
-	}
-	if err := validateAssignmentSecretReferences(referencedSecrets, assignment.GetSecretBundle()); err != nil {
-		return status.Error(codes.InvalidArgument, err.Error())
-	}
-	runLogic := script.Config.RunLogic
-	if shardCount > 1 && (runLogic.GlobalIterations > 0 || runLogic.MaxTransactions > 0) {
-		return status.Error(codes.InvalidArgument, "global iteration/transaction goals require a single shard because no cross-generator goal coordinator is available")
-	}
-	if durationOffset > 0 && (runLogic.Iterations > 0 || runLogic.GlobalIterations > 0 || runLogic.MaxTransactions > 0) {
-		return status.Error(codes.InvalidArgument, "bounded iteration/transaction goals cannot resume from a duration offset without a progress checkpoint")
-	}
-	if ctx != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return status.FromContextError(ctxErr).Err()
-		}
-	}
-	duration := executionDuration
-	if duration <= 0 {
-		duration = assignedTestDuration(s.assignments[assignment.GetTestId()])
-	}
-	if duration <= 0 {
-		duration = time.Second
-	}
-	stagedDataFiles, err := assignmentDataFiles(assignment, &script, s.scriptCacheLimit)
-	if err != nil {
-		return status.Errorf(codes.InvalidArgument, "validate staged data files: %v", err)
-	}
-	redactionConfig, err := engine.NewRedactionConfig(redactionRulesFromProto(assignment.GetRedactionRules()))
-	if err != nil {
-		return status.Errorf(codes.InvalidArgument, "build redaction config: %v", err)
-	}
-	redactionConfig, err = engine.WithSecretValueRedactionChecked(redactionConfig, secretBundleValues(assignment.GetSecretBundle()))
-	if err != nil {
-		return status.Errorf(codes.InvalidArgument, "prepare runtime secret redaction: %v", err)
-	}
-	results := &transactionBuffer{lastDrainAt: time.Now()}
-	writer := s.archiveWriters[assignment.GetTestId()]
-	if writer == nil {
-		var archiveWriter *archiveRecorder
-		archiveErr := s.archiveNamespaceErr
-		if archiveErr == nil {
-			archiveWriter, archiveErr = newArchiveRecorderInNamespace(s.archiveNamespace, assignment.GetTestId(), script.Name)
-		}
-		if archiveErr != nil {
-			return status.Errorf(codes.Internal, "initialize archive recorder: %v", archiveErr)
-		}
-		writer = archiveWriter
-		s.archiveWriters[assignment.GetTestId()] = writer
-		createdWriter = true
-	}
-	mge, err := engine.NewMultiGroup(engine.MultiGroupConfig{
-		Groups: []engine.GroupConfig{{
-			Name:            assignment.GetGroupName(),
-			Script:          &script,
-			VUsers:          int(assignment.GetVuserCount()),
-			RampUp:          rampUp,
-			RampDown:        rampDown,
-			AllowZeroVUsers: assignment.GetVuserCount() == 0,
-			InitStrategy:    initStrategy,
-			DataShard: engine.DataShardConfig{
-				Ordinal: assignment.GetShardOrdinal(),
-				Count:   shardCount,
-			},
-			StagedDataFiles: stagedDataFiles,
-			VUserIDOffset:   int(assignment.GetVuserIdOffset()),
-			VUserIDSpan:     int(maxGeneratorVUsers),
-			ResultSink:      combineSinks(results, writer),
-			RedactionConfig: redactionConfig,
-			SecretResolver:  secretBundleResolver(assignment.GetSecretBundle()),
-		}},
-		Duration:     duration,
-		PreBaseline:  preBaseline,
-		PostBaseline: postBaseline,
-		StartPaused:  s.assignments[assignment.GetTestId()].paused,
-	})
-	if err != nil {
-		return status.Errorf(codes.InvalidArgument, "build execution engine: %v", err)
-	}
-	if ctx != nil {
-		if ctxErr := ctx.Err(); ctxErr != nil {
-			return status.FromContextError(ctxErr).Err()
-		}
-	}
-	exec := &groupExecution{
-		groupName:           assignment.GetGroupName(),
-		executionGeneration: assignment.GetExecutionGeneration(),
-		engine:              mge,
-		durationOffset:      durationOffset,
-		redactionConfig:     redactionConfig,
-		results:             results,
-		publisherDone:       make(chan struct{}),
-		done:                make(chan struct{}),
-	}
-	s.executions[assignment.GetTestId()][assignment.GetGroupName()] = exec
-	return nil
 }
 
 func (s *Service) completeExecutionCallbacks(testID string, groupName string, exec *groupExecution, err error) {
@@ -3765,7 +2056,7 @@ func (s *Service) collectExecutionMetrics(exec *groupExecution) (executionMetric
 		}
 		mergeSnapshotSideChannelAggregates(&aggregates, snapshot)
 	}
-	telemetry.DroppedSubscriberBatches = s.droppedBatches.Load()
+	telemetry.DroppedSubscriberBatches = s.metricsBroker.droppedCount()
 	metrics := executionMetricsSnapshot{stats: stats, transactions: transactions, telemetry: telemetry, aggregates: aggregates}
 	exec.metricsMu.Lock()
 	if exec.lastMetrics != nil && !metricsAggregateSetHasEvidence(metrics.aggregates) {
@@ -3908,9 +2199,8 @@ func (s *Service) finishExecutionMatching(testID string, groupName string, expec
 	delete(s.assignments, testID)
 	s.stopCompletionTimerLocked(testID)
 	s.stopStageTimerLocked(testID)
-	writer := s.archiveWriters[testID]
-	delete(s.archiveWriters, testID)
-	tracked := writer != nil && s.addFinalizer()
+	writer := s.archiveManager.takeWriter(testID)
+	tracked := writer != nil && s.archiveManager.addFinalizer()
 	s.mu.Unlock()
 	for _, cancel := range siblingCancels {
 		cancel()
@@ -3922,7 +2212,7 @@ func (s *Service) finishExecutionMatching(testID string, groupName string, expec
 		finalState = "FAILED"
 	}
 	if tracked {
-		defer s.finalizerWG.Done()
+		defer s.archiveManager.finalizerDone()
 	}
 	s.finishStoppedTestWithState(testID, assignment, writer, finalState, finalError)
 }
@@ -3939,13 +2229,11 @@ func scrubGeneratorTerminalError(message string, config *engine.RedactionConfig)
 }
 
 func (s *Service) markStoppingLocked(testID string, generation uint64) *stopCompletion {
-	s.stoppingTests[testID] = struct{}{}
-	s.stoppingGenerations[testID] = generation
-	if completion := s.stopCompletions[testID]; completion != nil {
-		return completion
+	assignment, assigned := s.assignments[testID]
+	assignment, completion := s.lifecycleCoordinator.beginStopping(testID, generation, assignment)
+	if assigned {
+		s.assignments[testID] = assignment
 	}
-	completion := &stopCompletion{generation: generation, done: make(chan struct{})}
-	s.stopCompletions[testID] = completion
 	return completion
 }
 
@@ -3954,26 +2242,12 @@ func (s *Service) markStoppingLocked(testID string, generation uint64) *stopComp
 // treating an empty assignments map as proof that detached goroutines are done.
 func (s *Service) completeStoppingTest(testID string, generation uint64) {
 	s.mu.Lock()
-	if trackedGeneration, ok := s.stoppingGenerations[testID]; !ok || trackedGeneration != generation {
-		s.mu.Unlock()
-		return
-	}
-	delete(s.stoppingTests, testID)
-	delete(s.stoppingGenerations, testID)
-	completion := s.stopCompletions[testID]
-	if completion != nil && completion.generation == generation {
-		delete(s.stopCompletions, testID)
-		close(completion.done)
-	}
+	s.lifecycleCoordinator.completeStopping(testID, generation)
 	s.mu.Unlock()
 }
 
 func (s *Service) takeArchiveWriter(testID string) *archiveRecorder {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	writer := s.archiveWriters[testID]
-	delete(s.archiveWriters, testID)
-	return writer
+	return s.archiveManager.takeWriter(testID)
 }
 
 func (s *Service) storeArchiveRecord(record *storage.RunArchiveRecord) {
@@ -3984,7 +2258,7 @@ func (s *Service) finalizeArchiveWriter(writer *archiveRecorder, status string, 
 	if writer == nil {
 		return nil
 	}
-	release := s.acquireArchiveFinalizerSlot()
+	release := s.archiveManager.acquireFinalizerSlot()
 	defer release()
 	record, err := writer.Finalize(status, completedAt, errText)
 	if err == nil && record != nil {
@@ -3998,17 +2272,6 @@ func (s *Service) finalizeArchiveWriter(writer *archiveRecorder, status string, 
 		}
 	}
 	return err
-}
-
-func (s *Service) acquireArchiveFinalizerSlot() func() {
-	if s == nil || s.archiveFinalizerSlots == nil {
-		return func() {}
-	}
-	s.archiveFinalizerSlots <- struct{}{}
-	var once sync.Once
-	return func() {
-		once.Do(func() { <-s.archiveFinalizerSlots })
-	}
 }
 
 func redactionRulesFromProto(rules []*pb.RedactionRule) []engine.RedactionRule {

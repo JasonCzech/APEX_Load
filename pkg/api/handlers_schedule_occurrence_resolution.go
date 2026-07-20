@@ -13,7 +13,7 @@ func (s *Server) handleResolveScenarioScheduleOccurrence(w http.ResponseWriter, 
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	occurrence, schedule, found, err := s.runner.ResolveScenarioScheduleOccurrence(
+	occurrence, schedule, found, err := s.schedulingDomainService().ResolveScenarioScheduleOccurrence(
 		r.PathValue("id"), r.PathValue("schedule_id"), r.PathValue("occurrence_id"), req,
 	)
 	if err != nil {
@@ -44,7 +44,7 @@ func (s *Server) handleResolveExecutionPlanScheduleOccurrence(w http.ResponseWri
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	occurrence, schedule, found, err := s.runner.ResolveExecutionPlanScheduleOccurrence(
+	occurrence, schedule, found, err := s.executionPlanDomainService().ResolveScheduleOccurrence(
 		r.PathValue("id"), r.PathValue("schedule_id"), r.PathValue("occurrence_id"), req,
 	)
 	if err != nil {

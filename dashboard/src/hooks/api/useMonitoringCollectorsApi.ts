@@ -1,11 +1,11 @@
 import { useCallback, useMemo } from 'react'
 
-import {
+import type {
   CollectorMetricSnapshot,
   MonitoringCollector,
   MonitoringCollectorListResponse,
   MonitoringCollectorTokenResponse,
-} from '../../types'
+} from '../../types/monitoring'
 import { request } from '../apiClient'
 
 function buildQuery(params: Record<string, string | number | undefined>) {

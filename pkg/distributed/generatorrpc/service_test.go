@@ -79,7 +79,7 @@ func TestBroadcastMetricsCountsSubscriberDrops(t *testing.T) {
 
 	service.broadcastMetrics(&pb.MetricsBatch{TestId: "dropped", ExecutionGeneration: 0})
 
-	if got := service.droppedBatches.Load(); got != 1 {
+	if got := service.metricsBroker.droppedCount(); got != 1 {
 		t.Fatalf("dropped batches = %d, want 1", got)
 	}
 }

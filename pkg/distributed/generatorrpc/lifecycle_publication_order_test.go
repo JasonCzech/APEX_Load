@@ -23,13 +23,13 @@ func TestAssignAndCommitLifecyclePublicationsStayOrderedWhenAssignIsDelayed(t *t
 
 	stagedPublishEntered := make(chan struct{})
 	releaseStagedPublish := make(chan struct{})
-	service.lifecyclePublishHook = func(batch *pb.MetricsBatch) {
+	service.metricsBroker.setLifecycleHook(func(batch *pb.MetricsBatch) {
 		if batch.GetLifecycleState() != "STAGED" {
 			return
 		}
 		close(stagedPublishEntered)
 		<-releaseStagedPublish
-	}
+	})
 
 	assignDone := make(chan error, 1)
 	go func() {
@@ -83,7 +83,7 @@ func TestAssignAndCommitLifecyclePublicationsStayOrderedWhenAssignIsDelayed(t *t
 		t.Fatalf("unexpected extra lifecycle batch: %#v", extra)
 	}
 
-	service.lifecyclePublishHook = nil
+	service.metricsBroker.setLifecycleHook(nil)
 	if ack, stopErr := service.StopTest(context.Background(), &pb.StopRequest{TestId: "run"}); stopErr != nil || !ack.GetAcknowledged() {
 		t.Fatalf("StopTest cleanup = (%#v, %v)", ack, stopErr)
 	}
@@ -111,13 +111,13 @@ func TestDelayedRunningPublicationCannotFollowCompetingTerminal(t *testing.T) {
 
 	runningPublishEntered := make(chan struct{})
 	releaseRunningPublish := make(chan struct{})
-	service.lifecyclePublishHook = func(batch *pb.MetricsBatch) {
+	service.metricsBroker.setLifecycleHook(func(batch *pb.MetricsBatch) {
 		if batch.GetLifecycleState() != "RUNNING" {
 			return
 		}
 		close(runningPublishEntered)
 		<-releaseRunningPublish
-	}
+	})
 	commitDone := make(chan error, 1)
 	go func() {
 		ack, commitErr := service.CommitWork(context.Background(), &pb.WorkCommitRequest{TestId: "run"})
