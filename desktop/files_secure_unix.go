@@ -262,7 +262,7 @@ func acquireTempAt(dirFD int, dir *os.File) (string, int, error) {
 		var stat unix.Stat_t
 		fstatErr := unix.Fstat(fd, &stat)
 		reusable := statErr == nil && fstatErr == nil && info.Mode().IsRegular() && info.Size() == 0 &&
-			unixSaveFileModeIsPrivateRegular(uint32(stat.Mode)) && stat.Uid == uint32(os.Geteuid()) && uint64(stat.Nlink) == 1
+			unixSaveFileModeIsPrivateRegular(stat.Mode) && stat.Uid == uint32(os.Geteuid()) && stat.Nlink == 1
 		if reusable {
 			reusable = verifyRegularFileIdentityAt(dirFD, name, info) == nil
 		}
@@ -333,7 +333,7 @@ func scrubRegularFileIdentityAt(dirFD int, name string, expected os.FileInfo) er
 	// other hard link. It is likewise unsafe to scrub a displaced file owned by
 	// another user: the save may have been authorized by directory permissions,
 	// but that does not authorize destruction of the prior inode.
-	if uint64(stat.Nlink) != 1 {
+	if stat.Nlink != 1 {
 		return fmt.Errorf("refusing to scrub a displaced file with multiple hard links")
 	}
 	if stat.Uid != uint32(os.Geteuid()) {
@@ -357,8 +357,8 @@ func scrubRegularFileIdentityAt(dirFD int, name string, expected os.FileInfo) er
 	if err := unix.Fstat(fd, &stat); err != nil {
 		return err
 	}
-	if !unixSaveFileModeIsPrivateRegular(uint32(stat.Mode)) || stat.Uid != uint32(os.Geteuid()) ||
-		uint64(stat.Nlink) != 1 || stat.Size != 0 {
+	if !unixSaveFileModeIsPrivateRegular(stat.Mode) || stat.Uid != uint32(os.Geteuid()) ||
+		stat.Nlink != 1 || stat.Size != 0 {
 		return fmt.Errorf("recovery tombstone metadata did not normalize safely")
 	}
 	if err := unixSaveTombstoneMetadataClean(fd); err != nil {
@@ -367,8 +367,9 @@ func scrubRegularFileIdentityAt(dirFD int, name string, expected os.FileInfo) er
 	return nil
 }
 
-func unixSaveFileModeIsPrivateRegular(mode uint32) bool {
-	return mode&(uint32(unix.S_IFMT)|0o7777) == uint32(unix.S_IFREG)|0o600
+func unixSaveFileModeIsPrivateRegular[T ~uint16 | ~uint32](mode T) bool {
+	normalized := uint32(mode)
+	return normalized&(uint32(unix.S_IFMT)|0o7777) == uint32(unix.S_IFREG)|0o600
 }
 
 func verifyRegularFileIdentityAt(dirFD int, name string, expected os.FileInfo) error {
