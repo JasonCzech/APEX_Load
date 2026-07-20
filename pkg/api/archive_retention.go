@@ -150,8 +150,8 @@ func archiveRetentionPolicyMatches(policy ArchiveRetentionPolicy, test *ManagedT
 
 func (s *Server) handlePlanArchiveRetention(w http.ResponseWriter, r *http.Request) {
 	now := time.Now().UTC()
-	settings := s.runner.GetSystemSettings().ArchiveRetention
-	candidates := planArchiveRetentionPrune(now, settings, s.runner.listOperationalTestSnapshots())
+	settings, tests := s.archiveDomainService().RetentionInputs()
+	candidates := planArchiveRetentionPrune(now, settings, tests)
 	harCandidates := planHARArtifactRetention(now, settings)
 	writeJSON(w, http.StatusOK, ArchiveRetentionPlanResponse{
 		GeneratedAt:   now,
@@ -170,8 +170,9 @@ func (s *Server) handleApplyArchiveRetention(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	now := time.Now().UTC()
-	settings := s.runner.GetSystemSettings().ArchiveRetention
-	candidates := planArchiveRetentionPrune(now, settings, s.runner.listOperationalTestSnapshots())
+	archives := s.archiveDomainService()
+	settings, tests := archives.RetentionInputs()
+	candidates := planArchiveRetentionPrune(now, settings, tests)
 	results := make([]ArchiveRetentionResult, 0, len(candidates))
 	summary := ArchiveRetentionRunSummary{CandidateCount: len(candidates)}
 	for _, candidate := range candidates {
@@ -182,18 +183,13 @@ func (s *Server) handleApplyArchiveRetention(w http.ResponseWriter, r *http.Requ
 			ComplianceClass: candidate.ComplianceClass,
 			Reason:          candidate.Reason,
 		}
-		record, ok := s.runner.GetRunArchive(candidate.TestID)
-		if !ok && s.store != nil {
-			persisted, err := s.store.GetRunArchive(candidate.TestID)
-			if err == nil && persisted != nil {
-				record, ok = persisted, true
-			} else if err != nil && !errors.Is(err, sql.ErrNoRows) {
-				result.Status = "failed"
-				result.Error = "load durable archive record: " + err.Error()
-				summary.FailedCount++
-				results = append(results, result)
-				continue
-			}
+		record, ok, err := archives.GetRetentionArchive(candidate.TestID)
+		if err != nil {
+			result.Status = "failed"
+			result.Error = "load durable archive record: " + err.Error()
+			summary.FailedCount++
+			results = append(results, result)
+			continue
 		}
 		if !ok && candidate.ArchivePath != "" {
 			record = &storage.RunArchiveRecord{TestID: candidate.TestID, ArchivePath: candidate.ArchivePath}

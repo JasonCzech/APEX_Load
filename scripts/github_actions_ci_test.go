@@ -804,6 +804,8 @@ func TestContainerBuildIsSelfContainedAndProfiled(t *testing.T) {
 		"AS dashboard-builder",
 		"npm --prefix dashboard ci --ignore-scripts",
 		"COPY docs/API_USER_GUIDE.md ./docs/API_USER_GUIDE.md",
+		"COPY docs/APPLICATION_USER_GUIDE.md ./docs/APPLICATION_USER_GUIDE.md",
+		"COPY docs/ADMIN_USER_GUIDE.md ./docs/ADMIN_USER_GUIDE.md",
 		"APEXLOAD_UX_VERSION=\"${VERSION}\" APEXLOAD_UX_BUILD_TIME=\"${BUILD_TIME}\"",
 		"node_modules/playwright-core-go/package.json",
 		"COPY --from=dashboard-builder /src/dashboard/node_modules/playwright-core-go/ /opt/playwright-driver/package/",

@@ -64,3 +64,14 @@ func validateGRPCMethodAction(index int, action Action) []string {
 	}
 	return issues
 }
+
+func validateGRPCActionIssues(index int, action Action) []string {
+	spec, ok := protocolActionSpec("grpc", action.Type)
+	if !ok {
+		return []string{fmt.Sprintf("actions[%d] %q: unsupported grpc action type %q", index, action.Name, action.Type)}
+	}
+	if spec.Validate == nil {
+		return nil
+	}
+	return spec.Validate(index, action)
+}

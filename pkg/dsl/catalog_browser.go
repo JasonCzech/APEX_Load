@@ -376,6 +376,85 @@ func browserActionSpecs() []ActionSpec {
 	}
 }
 
+func validateBrowserActionIssues(index int, action Action) []string {
+	if action.Type == "rendezvous" {
+		return validateRendezvousActionIssues(index, action)
+	}
+	spec, ok := protocolActionSpec("browser", action.Type)
+	if !ok {
+		return []string{fmt.Sprintf("actions[%d] %q: unsupported browser action type %q", index, action.Name, action.Type)}
+	}
+	var issues []string
+	if spec.Validate != nil {
+		issues = append(issues, spec.Validate(index, action)...)
+	}
+	return append(issues, validateBrowserActionTimingIssues(fmt.Sprintf("actions[%d] %q", index, action.Name), action)...)
+}
+
+func validateBrowserActionTimingIssues(label string, action Action) []string {
+	var issues []string
+	if action.WaitFor != nil {
+		if action.WaitFor.TimeoutMs < 0 {
+			issues = append(issues, fmt.Sprintf("%s: wait_for.timeout_ms must be zero or greater", label))
+		} else if action.WaitFor.TimeoutMs > MaxConfiguredProtocolTimeoutMS {
+			issues = append(issues, fmt.Sprintf("%s: wait_for.timeout_ms must not exceed %d", label, MaxConfiguredProtocolTimeoutMS))
+		}
+	}
+	for _, key := range []string{"timeout_ms", "duration_ms", "wait_ms"} {
+		if value, present := actionParamIntValue(action.Params, key); present && value > MaxConfiguredProtocolTimeoutMS {
+			issues = append(issues, fmt.Sprintf("%s: params.%s must not exceed %d", label, key, MaxConfiguredProtocolTimeoutMS))
+		}
+	}
+	return issues
+}
+
+func validateBrowserSyncPolicyIssues(label string, sync *BrowserSyncPolicy) []string {
+	if sync == nil {
+		return nil
+	}
+	var issues []string
+	syncType := strings.ToLower(strings.TrimSpace(sync.Type))
+	if syncType == "" {
+		syncType = "network_idle"
+	}
+	if !isAllowedValue(syncType, "network_idle", "networkidle", "dom_stable", "element_visible", "visible", "duration", "sleep", "load", "domcontentloaded") {
+		issues = append(issues, fmt.Sprintf("%s: sync.type %q is not supported", label, sync.Type))
+	}
+	if sync.TimeoutMs < 0 {
+		issues = append(issues, fmt.Sprintf("%s: sync.timeout_ms must be zero or greater", label))
+	} else if sync.TimeoutMs > MaxConfiguredProtocolTimeoutMS {
+		issues = append(issues, fmt.Sprintf("%s: sync.timeout_ms must not exceed %d", label, MaxConfiguredProtocolTimeoutMS))
+	}
+	if sync.StableMs < 0 {
+		issues = append(issues, fmt.Sprintf("%s: sync.stable_ms must be zero or greater", label))
+	} else if sync.StableMs > MaxConfiguredProtocolTimeoutMS {
+		issues = append(issues, fmt.Sprintf("%s: sync.stable_ms must not exceed %d", label, MaxConfiguredProtocolTimeoutMS))
+	}
+	if (syncType == "element_visible" || syncType == "visible") && strings.TrimSpace(sync.Value) == "" {
+		issues = append(issues, fmt.Sprintf("%s: sync.value is required for element_visible", label))
+	}
+	if (syncType == "duration" || syncType == "sleep") && strings.TrimSpace(sync.Value) == "" {
+		issues = append(issues, fmt.Sprintf("%s: sync.value is required for duration", label))
+	}
+	return issues
+}
+
+func validateRendezvousActionIssues(index int, action Action) []string {
+	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
+	var issues []string
+	if count, ok := actionParamIntValue(action.Params, "count"); ok && count <= 0 {
+		issues = append(issues, fmt.Sprintf("%s: rendezvous count must be greater than zero", label))
+	}
+	if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok {
+		if timeoutMs < 0 {
+			issues = append(issues, fmt.Sprintf("%s: rendezvous timeout_ms must be zero or greater", label))
+		} else if timeoutMs > MaxConfiguredProtocolTimeoutMS {
+			issues = append(issues, fmt.Sprintf("%s: rendezvous timeout_ms must not exceed %d", label, MaxConfiguredProtocolTimeoutMS))
+		}
+	}
+	return issues
+}
+
 func browserHandleDialogChecks(label string, action Action) []string {
 	raw, _ := actionParamStringValue(action.Params, "action")
 	value := strings.ToLower(strings.TrimSpace(raw))

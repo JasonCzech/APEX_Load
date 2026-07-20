@@ -43,20 +43,26 @@ type desktopBrowserBootstrap struct {
 const maxDesktopBrowserCapabilities = 32
 
 type Server struct {
-	httpServer       *http.Server
-	hub              *Hub
-	runner           *TestRunner
-	scheduler        *scenarioScheduler
-	browserReplay    *BrowserReplayManager
-	scriptDebug      *ScriptDebugManager
-	browserRecording *BrowserRecordingManager
-	browserInstall   *browserInstallState
-	recorder         *recorder.Recorder
-	store            storage.Store
-	cache            CacheBackend
-	controllerID     string
-	haExecution      bool
-	authoringMu      sync.Mutex
+	httpServer                *http.Server
+	hub                       *Hub
+	runner                    *TestRunner
+	settingsService           systemSettingsService
+	archiveService            archiveService
+	schedulingService         schedulingService
+	executionPlanService      executionPlanService
+	objectRepositoryService   objectRepositoryService
+	correlationRulesetService correlationRulesetService
+	scheduler                 *scenarioScheduler
+	browserReplay             *BrowserReplayManager
+	scriptDebug               *ScriptDebugManager
+	browserRecording          *BrowserRecordingManager
+	browserInstall            *browserInstallState
+	recorder                  *recorder.Recorder
+	store                     storage.Store
+	cache                     CacheBackend
+	controllerID              string
+	haExecution               bool
+	authoringMu               sync.Mutex
 	// authoringMutationMu serializes session edits, deletion, correlation
 	// write-back, and approval within one controller. The storage CAS used by
 	// those handlers extends the same fence across HA replicas.
@@ -368,10 +374,17 @@ func NewServer(cfg ServerConfig) *Server {
 	browserRecording := NewBrowserRecordingManager(hub)
 	browserRecording.SetHARArtifactDir(runner.GetSystemSettings().ArchiveRetention.HARArtifactDir)
 
+	scheduler := newScenarioScheduler(runner)
 	s := &Server{
 		hub:                         hub,
 		runner:                      runner,
-		scheduler:                   newScenarioScheduler(runner),
+		settingsService:             newTestRunnerSystemSettingsService(runner),
+		archiveService:              newTestRunnerArchiveService(runner, cfg.Store),
+		schedulingService:           newTestRunnerSchedulingService(runner, scheduler),
+		executionPlanService:        newTestRunnerExecutionPlanService(runner, cfg.Store),
+		objectRepositoryService:     newTestRunnerObjectRepositoryService(runner, cfg.Store),
+		correlationRulesetService:   newTestRunnerCorrelationRulesetService(runner, cfg.Store),
+		scheduler:                   scheduler,
 		browserReplay:               NewBrowserReplayManager(hub),
 		scriptDebug:                 NewScriptDebugManager(hub),
 		browserRecording:            browserRecording,
@@ -520,6 +533,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	cors := corsMiddleware(allowedOrigins)
 	log := loggingMiddleware
 	auth := authMiddleware(func() AuthSettings { return s.runner.GetSystemSettings().Auth }, s.store, s.cache, withAuthAuditRecorder(s))
+	standardRouteMiddleware := apiRouteMiddlewareStack{cors: cors, log: log, auth: auth}
 	ciAuth := s.ciAuthMiddleware(auth)
 	recorderViewAuth := projectScopedAuthMiddleware(
 		func() AuthSettings { return s.runner.GetSystemSettings().Auth },
@@ -704,22 +718,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("PATCH /api/v1/tests/{id}/move", cors(log(auth(http.HandlerFunc(s.handleMoveTest)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/metrics", cors(log(auth(http.HandlerFunc(s.handleGetMetrics)))))
 	s.mux.Handle("GET /api/v1/tests/{id}/errors/evidence", cors(log(auth(http.HandlerFunc(s.handleGetLiveErrorEvidence)))))
-	s.mux.Handle("GET /api/v1/tests/{id}/archive", cors(log(auth(http.HandlerFunc(s.handleDownloadRunArchive)))))
-	s.mux.Handle("GET /api/v1/tests/{id}/archive/manifest", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveManifest)))))
-	s.mux.Handle("GET /api/v1/tests/{id}/archive/verify", cors(log(auth(http.HandlerFunc(s.handleVerifyRunArchive)))))
-	s.mux.Handle("GET /api/v1/tests/{id}/archive/files/{name}", cors(log(auth(http.HandlerFunc(s.handleDownloadRunArchiveArtifact)))))
-	s.mux.Handle("GET /api/v1/tests/{id}/archive/browser-diagnostics", cors(log(auth(http.HandlerFunc(s.handleDownloadRunArchiveBrowserDiagnostics)))))
-	s.mux.Handle("GET /api/v1/tests/{id}/archive/transactions", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveTransactions)))))
-	s.mux.Handle("GET /api/v1/tests/{id}/archive/resources", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveResources)))))
-	s.mux.Handle("GET /api/v1/tests/{id}/archive/summaries", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveSummaries)))))
-	s.mux.Handle("GET /api/v1/tests/{id}/archive/report", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveReport)))))
-	s.mux.Handle("POST /api/v1/tests/archive/reports", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveReportsBatch)))))
-	s.mux.Handle("GET /api/v1/tests/{id}/archive/analysis", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveAnalysis)))))
-	s.mux.Handle("GET /api/v1/tests/{id}/archive/root-cause", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveRootCause)))))
-	s.mux.Handle("GET /api/v1/tests/{id}/archive/ai-root-cause", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveAIRootCause)))))
-	s.mux.Handle("GET /api/v1/tests/{id}/archive/comparison", cors(log(auth(http.HandlerFunc(s.handleGetRunArchiveComparison)))))
-	s.mux.Handle("POST /api/v1/archives/retention/plan", cors(log(auth(http.HandlerFunc(s.handlePlanArchiveRetention)))))
-	s.mux.Handle("POST /api/v1/archives/retention/apply", cors(log(auth(http.HandlerFunc(s.handleApplyArchiveRetention)))))
+	s.registerAPIRouteCatalog(runArchiveAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(archiveRetentionAPIRouteCatalog, standardRouteMiddleware)
 
 	// Reusable scenario definitions.
 	s.mux.Handle("POST /api/v1/scenarios", cors(log(auth(http.HandlerFunc(s.handleCreateScenario)))))
@@ -731,19 +731,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("DELETE /api/v1/scenarios/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteScenario)))))
 	s.mux.Handle("GET /api/v1/scenarios/load-models/support-matrix", cors(log(auth(http.HandlerFunc(s.handleLoadModelSupportMatrix)))))
 	s.mux.Handle("GET /api/v1/scenarios/load-models/templates", cors(log(auth(http.HandlerFunc(s.handleLoadModelTemplates)))))
-	s.mux.Handle("POST /api/v1/scenarios/{id}/schedules/preview", cors(log(auth(http.HandlerFunc(s.handleScenarioSchedulePreview)))))
-	s.mux.Handle("POST /api/v1/scenarios/{id}/schedules", cors(log(auth(http.HandlerFunc(s.handleCreateScenarioSchedule)))))
-	s.mux.Handle("GET /api/v1/scenarios/{id}/schedules", cors(log(auth(http.HandlerFunc(s.handleListScenarioSchedules)))))
-	s.mux.Handle("PUT /api/v1/scenarios/{id}/schedules/{schedule_id}", cors(log(auth(http.HandlerFunc(s.handleUpdateScenarioSchedule)))))
-	s.mux.Handle("DELETE /api/v1/scenarios/{id}/schedules/{schedule_id}", cors(log(auth(http.HandlerFunc(s.handleDeleteScenarioSchedule)))))
-	s.mux.Handle("GET /api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences", cors(log(auth(http.HandlerFunc(s.handleListScenarioScheduleOccurrences)))))
-	s.mux.Handle("POST /api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}/resolve", cors(log(auth(http.HandlerFunc(s.handleResolveScenarioScheduleOccurrence)))))
-	s.mux.Handle("DELETE /api/v1/scenarios/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}", cors(log(auth(http.HandlerFunc(s.handleDeleteScenarioScheduleOccurrence)))))
-	s.mux.Handle("GET /api/v1/scenarios/{id}/schedules/{schedule_id}/approvals", cors(log(auth(http.HandlerFunc(s.handleListScenarioScheduleApprovals)))))
-	s.mux.Handle("POST /api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/approve", cors(log(auth(http.HandlerFunc(s.handleApproveScenarioScheduleApproval)))))
-	s.mux.Handle("POST /api/v1/scenarios/{id}/schedules/{schedule_id}/approvals/{approval_id}/reject", cors(log(auth(http.HandlerFunc(s.handleRejectScenarioScheduleApproval)))))
-	s.mux.Handle("GET /api/v1/schedules/health", cors(log(auth(http.HandlerFunc(s.handleScenarioScheduleHealth)))))
-	s.mux.Handle("GET /api/v1/run-calendar", cors(log(auth(http.HandlerFunc(s.handleGetRunCalendar)))))
+	s.registerAPIRouteCatalog(scenarioSchedulingAPIRouteCatalog, standardRouteMiddleware)
 	s.mux.Handle("GET /api/v1/scenarios/{id}/results", cors(log(auth(http.HandlerFunc(s.handleScenarioResults)))))
 	s.mux.Handle("GET /api/v1/scenarios/{id}/runtime-settings/report", cors(log(auth(http.HandlerFunc(s.handleGetScenarioRuntimeSettingsReport)))))
 	s.mux.Handle("POST /api/v1/scenarios/{id}/runtime/apply-to-groups", cors(log(auth(http.HandlerFunc(s.handleApplyScenarioRuntimeToGroups)))))
@@ -762,49 +750,14 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("DELETE /api/v1/data-pools/{id}/rows/{row_id}", cors(log(auth(http.HandlerFunc(s.handleDeleteDataPoolRow)))))
 
 	// Capacity reservations (timeslots) — forward-booking of future capacity windows.
-	s.mux.Handle("POST /api/v1/capacity/timeslots", cors(log(auth(http.HandlerFunc(s.handleCreateCapacityReservation)))))
-	s.mux.Handle("GET /api/v1/capacity/timeslots", cors(log(auth(http.HandlerFunc(s.handleListCapacityReservations)))))
-	s.mux.Handle("POST /api/v1/capacity/timeslots/availability", cors(log(auth(http.HandlerFunc(s.handleCheckCapacityAvailability)))))
-	s.mux.Handle("GET /api/v1/capacity/timeslots/{id}", cors(log(auth(http.HandlerFunc(s.handleGetCapacityReservation)))))
-	s.mux.Handle("PUT /api/v1/capacity/timeslots/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateCapacityReservation)))))
-	s.mux.Handle("DELETE /api/v1/capacity/timeslots/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteCapacityReservation)))))
-	s.mux.Handle("POST /api/v1/capacity/timeslots/{id}/approve", cors(log(auth(http.HandlerFunc(s.handleApproveCapacityReservation)))))
-	s.mux.Handle("POST /api/v1/capacity/timeslots/{id}/reject", cors(log(auth(http.HandlerFunc(s.handleRejectCapacityReservation)))))
-	s.mux.Handle("POST /api/v1/capacity/timeslots/{id}/bind", cors(log(auth(http.HandlerFunc(s.handleBindCapacityTimeslot)))))
+	s.registerAPIRouteCatalog(capacityAPIRouteCatalog, standardRouteMiddleware)
 
 	// Execution plans — ordered cross-run orchestration (LRE test-set analog).
-	s.mux.Handle("POST /api/v1/execution-plans", cors(log(auth(http.HandlerFunc(s.handleCreateExecutionPlan)))))
-	s.mux.Handle("GET /api/v1/execution-plans", cors(log(auth(http.HandlerFunc(s.handleListExecutionPlans)))))
-	s.mux.Handle("GET /api/v1/execution-plans/{id}", cors(log(auth(http.HandlerFunc(s.handleGetExecutionPlan)))))
-	s.mux.Handle("PUT /api/v1/execution-plans/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateExecutionPlan)))))
-	s.mux.Handle("DELETE /api/v1/execution-plans/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteExecutionPlan)))))
-	s.mux.Handle("POST /api/v1/execution-plans/{id}/runs", cors(log(auth(http.HandlerFunc(s.handleMaterializeAndRunExecutionPlan)))))
-	s.mux.Handle("GET /api/v1/execution-plans/{id}/runs", cors(log(auth(http.HandlerFunc(s.handleListExecutionPlanRuns)))))
-	s.mux.Handle("GET /api/v1/execution-plans/{id}/runs/{runId}", cors(log(auth(http.HandlerFunc(s.handleGetExecutionPlanRun)))))
-	s.mux.Handle("POST /api/v1/execution-plans/{id}/schedules", cors(log(auth(http.HandlerFunc(s.handleCreateExecutionPlanSchedule)))))
-	s.mux.Handle("GET /api/v1/execution-plans/{id}/schedules", cors(log(auth(http.HandlerFunc(s.handleListExecutionPlanSchedules)))))
-	s.mux.Handle("PUT /api/v1/execution-plans/{id}/schedules/{schedule_id}", cors(log(auth(http.HandlerFunc(s.handleUpdateExecutionPlanSchedule)))))
-	s.mux.Handle("DELETE /api/v1/execution-plans/{id}/schedules/{schedule_id}", cors(log(auth(http.HandlerFunc(s.handleDeleteExecutionPlanSchedule)))))
-	s.mux.Handle("GET /api/v1/execution-plans/{id}/schedules/{schedule_id}/occurrences", cors(log(auth(http.HandlerFunc(s.handleListExecutionPlanScheduleOccurrences)))))
-	s.mux.Handle("POST /api/v1/execution-plans/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}/resolve", cors(log(auth(http.HandlerFunc(s.handleResolveExecutionPlanScheduleOccurrence)))))
-	s.mux.Handle("GET /api/v1/execution-plans/{id}/approvals", cors(log(auth(http.HandlerFunc(s.handleListExecutionPlanApprovals)))))
-	s.mux.Handle("POST /api/v1/execution-plans/{id}/approvals/{approval_id}/approve", cors(log(auth(http.HandlerFunc(s.handleApproveExecutionPlanApproval)))))
-	s.mux.Handle("POST /api/v1/execution-plans/{id}/approvals/{approval_id}/reject", cors(log(auth(http.HandlerFunc(s.handleRejectExecutionPlanApproval)))))
-	s.mux.Handle("POST /api/v1/object-repositories", cors(log(auth(http.HandlerFunc(s.handleCreateObjectRepository)))))
-	s.mux.Handle("GET /api/v1/object-repositories", cors(log(auth(http.HandlerFunc(s.handleListObjectRepositories)))))
-	s.mux.Handle("POST /api/v1/object-repositories/from-script", cors(log(auth(http.HandlerFunc(s.handleObjectRepositoryFromScript)))))
-	s.mux.Handle("GET /api/v1/object-repositories/{id}", cors(log(auth(http.HandlerFunc(s.handleGetObjectRepository)))))
-	s.mux.Handle("PUT /api/v1/object-repositories/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateObjectRepository)))))
-	s.mux.Handle("DELETE /api/v1/object-repositories/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteObjectRepository)))))
+	s.registerAPIRouteCatalog(executionPlanAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(objectRepositoryAPIRouteCatalog, standardRouteMiddleware)
 
 	// Correlation rulesets — learned, reusable correlation rule catalogs.
-	s.mux.Handle("POST /api/v1/correlation-rulesets", cors(log(auth(http.HandlerFunc(s.handleCreateCorrelationRuleset)))))
-	s.mux.Handle("GET /api/v1/correlation-rulesets", cors(log(auth(http.HandlerFunc(s.handleListCorrelationRulesets)))))
-	s.mux.Handle("POST /api/v1/correlation-rulesets/discover-from-script", cors(log(auth(http.HandlerFunc(s.handleDiscoverCorrelationRulesetFromScript)))))
-	s.mux.Handle("GET /api/v1/correlation-rulesets/{id}", cors(log(auth(http.HandlerFunc(s.handleGetCorrelationRuleset)))))
-	s.mux.Handle("PUT /api/v1/correlation-rulesets/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateCorrelationRuleset)))))
-	s.mux.Handle("DELETE /api/v1/correlation-rulesets/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteCorrelationRuleset)))))
-	s.mux.Handle("POST /api/v1/correlation-rulesets/{id}/apply-to-script", cors(log(auth(http.HandlerFunc(s.handleApplyCorrelationRulesetToScript)))))
+	s.registerAPIRouteCatalog(correlationRulesetAPIRouteCatalog, standardRouteMiddleware)
 
 	// Monitoring collectors — restricted-network agent control plane.
 	s.mux.Handle("POST /api/v1/monitoring/collectors", cors(log(auth(http.HandlerFunc(s.handleCreateMonitoringCollector)))))
@@ -818,8 +771,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/monitoring/collectors/{id}/metrics", cors(log(auth(http.HandlerFunc(s.handleGetCollectorMetrics)))))
 
 	// Enterprise entitlements — read-only consumption vs limits.
-	s.mux.Handle("GET /api/v1/system/entitlements", cors(log(auth(http.HandlerFunc(s.handleGetEntitlements)))))
-	s.mux.Handle("GET /api/v1/system/entitlements/usage", cors(log(auth(http.HandlerFunc(s.handleGetEntitlementsUsage)))))
+	s.registerAPIRouteCatalog(systemEntitlementsAPIRouteCatalog, standardRouteMiddleware)
 	s.mux.Handle("GET /api/v1/projects/{id}/entitlements/usage", cors(log(auth(http.HandlerFunc(s.handleGetProjectEntitlementsUsage)))))
 
 	// Script CRUD, validation, import, and export endpoints.
@@ -1024,12 +976,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("DELETE /api/v1/auth/service-accounts/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteServiceAccount)))))
 	s.mux.Handle("GET /api/v1/auth/audit-events", cors(log(auth(http.HandlerFunc(s.handleListAuditEvents)))))
 	s.mux.Handle("GET /api/v1/auth/audit-events/export", cors(log(auth(http.HandlerFunc(s.handleExportAuditEvents)))))
-	s.mux.Handle("GET /api/v1/docs/swagger.yaml", cors(log(auth(http.HandlerFunc(s.handleGetAPIDocsSwagger)))))
-	s.mux.Handle("GET /api/v1/docs/endpoint-catalog", cors(log(auth(http.HandlerFunc(s.handleGetAPIDocsEndpointCatalog)))))
-	s.mux.Handle("GET /api/v1/system/health", cors(log(http.HandlerFunc(s.handleHealthCheck))))
-	s.mux.Handle("GET /api/v1/system/version", cors(log(http.HandlerFunc(s.handleSystemVersion))))
-	s.mux.Handle("GET /api/v1/system/readiness", cors(log(http.HandlerFunc(s.handleSystemReadiness))))
-	s.mux.Handle("GET /api/v1/system/execution-readiness", cors(log(http.HandlerFunc(s.handleExecutionReadiness))))
+	s.registerAPIRouteCatalog(documentationAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(systemFoundationAPIRouteCatalog, standardRouteMiddleware)
 	s.mux.Handle("GET /api/v1/downloads/recording-agent/latest", cors(log(auth(http.HandlerFunc(s.handleDownloadRecordingAgent)))))
 	s.mux.Handle("GET /api/v1/downloads/recording-agent/latest/checksum", cors(log(auth(http.HandlerFunc(s.handleRecordingAgentChecksum)))))
 	s.mux.Handle("GET /api/v1/downloads/desktop/latest", cors(log(auth(http.HandlerFunc(s.handleDownloadDesktopApp)))))
@@ -1040,18 +988,8 @@ func (s *Server) routes(allowedOrigins []string) {
 	if s.metricsAddr == "" {
 		s.mux.Handle("GET /metrics", log(http.HandlerFunc(s.handlePrometheusMetricsWithAuth)))
 	}
-	s.mux.Handle("GET /api/v1/system/inventory", cors(log(auth(http.HandlerFunc(s.handleGetSystemInventory)))))
-	s.mux.Handle("GET /api/v1/system/services", cors(log(auth(http.HandlerFunc(s.handleGetSystemServices)))))
-	s.mux.Handle("GET /api/v1/system/usage", cors(log(auth(http.HandlerFunc(s.handleGetUsageAccounting)))))
-	s.mux.Handle("GET /api/v1/system/usage/export", cors(log(auth(http.HandlerFunc(s.handleExportUsageAccounting)))))
-	s.mux.Handle("GET /api/v1/system/usage/snapshots", cors(log(auth(http.HandlerFunc(s.handleListUsageAccountingSnapshots)))))
-	s.mux.Handle("POST /api/v1/system/usage/snapshots", cors(log(auth(http.HandlerFunc(s.handleCreateUsageAccountingSnapshot)))))
-	s.mux.Handle("GET /api/v1/system/parity-status", cors(log(auth(http.HandlerFunc(s.handleGetParityStatus)))))
-	s.mux.Handle("GET /api/v1/system/deployment-lease", cors(log(auth(http.HandlerFunc(s.handleGetDeploymentLease)))))
-	s.mux.Handle("POST /api/v1/system/deployment-lease/acquire", cors(log(auth(http.HandlerFunc(s.handleAcquireDeploymentLease)))))
-	s.mux.Handle("POST /api/v1/system/deployment-lease/renew", cors(log(auth(http.HandlerFunc(s.handleRenewDeploymentLease)))))
-	s.mux.Handle("POST /api/v1/system/deployment-lease/release", cors(log(auth(http.HandlerFunc(s.handleReleaseDeploymentLease)))))
-	s.mux.Handle("GET /api/v1/system/browser-benchmarks", cors(log(auth(http.HandlerFunc(s.handleGetBrowserBenchmarkEvidence)))))
+	s.registerAPIRouteCatalog(systemObservabilityAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(systemAdministrationAPIRouteCatalog, standardRouteMiddleware)
 	s.mux.Handle("GET /api/v1/desktop/status", cors(log(auth(http.HandlerFunc(s.handleDesktopStatus)))))
 	s.mux.Handle("GET /api/v1/runtime-settings/support-matrix", cors(log(auth(http.HandlerFunc(s.handleRuntimeSettingsSupportMatrix)))))
 	s.mux.Handle("GET /api/v1/protocol-bundles/support-matrix", cors(log(auth(http.HandlerFunc(s.handleProtocolBundleSupportMatrix)))))
@@ -1120,34 +1058,9 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("POST /api/v1/remotes/{id}/runs/{remote_test_id}/resume", cors(log(auth(s.handleRemoteRunAction("resume")))))
 	s.mux.Handle("POST /api/v1/results/import", cors(log(auth(http.HandlerFunc(s.handleImportExternalResults)))))
 	s.mux.Handle("GET /api/v1/results/imports", cors(log(auth(http.HandlerFunc(s.handleListExternalResultImports)))))
-	s.mux.Handle("GET /api/v1/fleet/alerts", cors(log(auth(http.HandlerFunc(s.handleGetFleetAlerts)))))
-	s.mux.Handle("PATCH /api/v1/fleet/alerts/{id}/ack", cors(log(auth(http.HandlerFunc(s.handleAckFleetAlert)))))
-	s.mux.Handle("GET /api/v1/fleet/capacity", cors(log(auth(http.HandlerFunc(s.handleGetFleetCapacity)))))
-	s.mux.Handle("GET /api/v1/fleet/load-zones", cors(log(auth(http.HandlerFunc(s.handleGetFleetLoadZones)))))
-	s.mux.Handle("GET /api/v1/fleet/provisioner", cors(log(auth(http.HandlerFunc(s.handleGetFleetProvisioner)))))
+	s.registerAPIRouteCatalog(fleetObservabilityAPIRouteCatalog, standardRouteMiddleware)
 	// Fleet management: pools, generator metadata, and cloud provisioning.
-	s.mux.Handle("POST /api/v1/fleet/pools", cors(log(auth(http.HandlerFunc(s.handleCreateFleetPool)))))
-	s.mux.Handle("GET /api/v1/fleet/pools", cors(log(auth(http.HandlerFunc(s.handleListFleetPools)))))
-	s.mux.Handle("GET /api/v1/fleet/pools/{id}", cors(log(auth(http.HandlerFunc(s.handleGetFleetPool)))))
-	s.mux.Handle("PUT /api/v1/fleet/pools/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateFleetPool)))))
-	s.mux.Handle("DELETE /api/v1/fleet/pools/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteFleetPool)))))
-	s.mux.Handle("GET /api/v1/fleet/generators", cors(log(auth(http.HandlerFunc(s.handleListGeneratorMetadata)))))
-	s.mux.Handle("PATCH /api/v1/fleet/generators/{id}", cors(log(auth(http.HandlerFunc(s.handlePatchGeneratorMetadata)))))
-	s.mux.Handle("POST /api/v1/fleet/generators/{id}/cordon", cors(log(auth(http.HandlerFunc(s.handleCordonGenerator)))))
-	s.mux.Handle("POST /api/v1/fleet/generators/{id}/uncordon", cors(log(auth(http.HandlerFunc(s.handleUncordonGenerator)))))
-	s.mux.Handle("POST /api/v1/fleet/generators/{id}/drain", cors(log(auth(http.HandlerFunc(s.handleDrainGenerator)))))
-	s.mux.Handle("POST /api/v1/fleet/generators/{id}/evacuate", cors(log(auth(http.HandlerFunc(s.handleEvacuateGenerator)))))
-	s.mux.Handle("POST /api/v1/fleet/provision-requests", cors(log(auth(http.HandlerFunc(s.handleCreateProvisioningRequest)))))
-	s.mux.Handle("GET /api/v1/fleet/provision-requests", cors(log(auth(http.HandlerFunc(s.handleListProvisioningRequests)))))
-	s.mux.Handle("GET /api/v1/fleet/provision-requests/{id}", cors(log(auth(http.HandlerFunc(s.handleGetProvisioningRequest)))))
-	s.mux.Handle("POST /api/v1/fleet/provision-requests/{id}/cancel", cors(log(auth(http.HandlerFunc(s.handleCancelProvisioningRequest)))))
-	s.mux.Handle("POST /api/v1/fleet/provision-requests/{id}/retry", cors(log(auth(http.HandlerFunc(s.handleRetryProvisioningRequest)))))
-	s.mux.Handle("PATCH /api/v1/system/generators/drain", cors(log(auth(http.HandlerFunc(s.handleSetGeneratorDrainState)))))
-	s.mux.Handle("GET /api/v1/system/restarts/capabilities", cors(log(auth(http.HandlerFunc(s.handleGetSystemRestartCapabilities)))))
-	s.mux.Handle("POST /api/v1/system/restarts", cors(log(auth(http.HandlerFunc(s.handleSystemRestart)))))
-	s.mux.Handle("GET /api/v1/system/settings", cors(log(auth(http.HandlerFunc(s.handleGetSystemSettings)))))
-	s.mux.Handle("PUT /api/v1/system/settings", cors(log(auth(http.HandlerFunc(s.handleUpdateSystemSettings)))))
-
+	s.registerAPIRouteCatalog(fleetAdministrationAPIRouteCatalog, standardRouteMiddleware)
 	// WebSocket — no CORS wrapper (handled by upgrade check)
 	s.mux.Handle("GET /api/v1/ws", log(auth(http.HandlerFunc(s.handleWebSocket))))
 	s.mux.Handle("GET /api/v1/tests/{id}/stream", log(auth(http.HandlerFunc(s.handleTestStream))))
@@ -1780,6 +1693,13 @@ func (s *Server) shutdownRequested() bool {
 }
 
 func (s *Server) shutdown(ctx context.Context) error {
+	var shutdownErr error
+	// Request evaluator cancellation before marking the runner as shutting down,
+	// but do not let a slow in-flight sweep delay listener closure. The bounded
+	// scheduler wait happens below before dependent components are torn down.
+	if s.scheduler != nil {
+		s.scheduler.stop()
+	}
 	if s.runner != nil {
 		s.runner.beginShutdown()
 	}
@@ -1788,7 +1708,6 @@ func (s *Server) shutdown(ctx context.Context) error {
 	// Stop accepting new requests first. WebSocket connections are hijacked and
 	// are closed by the hub below; ordinary in-flight handlers get the caller's
 	// bounded drain window.
-	var shutdownErr error
 	httpDone := make(chan error, 1)
 	if s.httpServer != nil {
 		go func() { httpDone <- s.httpServer.Shutdown(ctx) }()
@@ -1811,6 +1730,9 @@ func (s *Server) shutdown(ctx context.Context) error {
 		if shutdownErr == nil {
 			shutdownErr = ctx.Err()
 		}
+	}
+	if err := s.ShutdownScheduler(ctx); err != nil {
+		shutdownErr = errors.Join(shutdownErr, err)
 	}
 
 	// With listeners drained and load stopped, tear down background components.
@@ -2162,6 +2084,24 @@ func (s *Server) RunDueSchedules() error {
 		return nil
 	}
 	return s.scheduler.RunDueSchedules()
+}
+
+// StartScheduler starts the Server-owned scheduling service worker. The direct
+// RunDueSchedules method remains available for deterministic tests and callers
+// that intentionally drive single sweeps.
+func (s *Server) StartScheduler(ctx context.Context) error {
+	if s == nil || s.scheduler == nil {
+		return nil
+	}
+	return s.scheduler.Start(ctx)
+}
+
+// ShutdownScheduler performs a bounded worker stop using the caller's context.
+func (s *Server) ShutdownScheduler(ctx context.Context) error {
+	if s == nil || s.scheduler == nil {
+		return nil
+	}
+	return s.scheduler.Shutdown(ctx)
 }
 
 // RunExecutionLeadership renews the HA execution lease until ctx is cancelled.

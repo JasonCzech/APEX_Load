@@ -59,15 +59,26 @@ type scenarioScheduler struct {
 	leaseTTL time.Duration
 	// oneTimeCursor rotates bounded one-time batches after failures. Without it,
 	// a stable lexical first page of blocked jobs can starve every later due job.
-	oneTimeCursor string
-	healthMu      sync.RWMutex
-	sweepHealth   map[string]SchedulerSweepHealth
+	oneTimeCursor  string
+	healthMu       sync.RWMutex
+	sweepHealth    map[string]SchedulerSweepHealth
+	workerMu       sync.Mutex
+	workerStarted  bool
+	workerStopping bool
+	workerCancel   context.CancelFunc
+	workerDone     chan struct{}
+	sweepInterval  time.Duration
+	// runSweep is an injectable worker seam. Direct RunDueSchedules callers and
+	// production workers use the method below; lifecycle tests replace only this
+	// callback so they can prove bounded shutdown without storage fixtures.
+	runSweep func() error
 }
 
 const (
-	maxScheduleCatchUpAllPerSweep     = 25
-	maxScheduledOccurrencesPerSweep   = 256
-	maxOneTimeScheduledStartsPerSweep = 256
+	maxScheduleCatchUpAllPerSweep         = 25
+	maxScheduledOccurrencesPerSweep       = 256
+	maxOneTimeScheduledStartsPerSweep     = 256
+	defaultScenarioSchedulerSweepInterval = 30 * time.Second
 )
 
 const (
@@ -130,7 +141,115 @@ type SchedulerSweepHealth struct {
 }
 
 func newScenarioScheduler(runner *TestRunner) *scenarioScheduler {
-	return &scenarioScheduler{runner: runner, now: time.Now, ownerID: uuid.New().String(), leaseTTL: 30 * time.Second, sweepHealth: make(map[string]SchedulerSweepHealth)}
+	return &scenarioScheduler{
+		runner:        runner,
+		now:           time.Now,
+		ownerID:       uuid.New().String(),
+		leaseTTL:      30 * time.Second,
+		sweepHealth:   make(map[string]SchedulerSweepHealth),
+		sweepInterval: defaultScenarioSchedulerSweepInterval,
+	}
+}
+
+var errScenarioSchedulerStopped = errors.New("scenario scheduler is stopped")
+
+// Start owns the periodic schedule evaluator for the lifetime of ctx. It is
+// intentionally idempotent so composition roots can safely converge on one
+// owner during migration. A scheduler cannot be resurrected after Shutdown.
+func (s *scenarioScheduler) Start(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	s.workerMu.Lock()
+	if s.workerStopping {
+		s.workerMu.Unlock()
+		return errScenarioSchedulerStopped
+	}
+	if s.workerStarted {
+		s.workerMu.Unlock()
+		return nil
+	}
+	workerCtx, cancel := context.WithCancel(ctx)
+	done := make(chan struct{})
+	interval := s.sweepInterval
+	if interval <= 0 {
+		interval = defaultScenarioSchedulerSweepInterval
+	}
+	runSweep := s.runSweep
+	if runSweep == nil {
+		runSweep = s.RunDueSchedules
+	}
+	s.workerStarted = true
+	s.workerCancel = cancel
+	s.workerDone = done
+	s.workerMu.Unlock()
+
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-workerCtx.Done():
+				return
+			case <-ticker.C:
+				if err := runSweep(); err != nil {
+					slog.Error("scheduled test evaluator failed", "err", err)
+				}
+				// Prefer cancellation after a sweep completes. Without this check a
+				// queued tick could win the next select and begin another sweep while
+				// Shutdown is already waiting.
+				if workerCtx.Err() != nil {
+					return
+				}
+			}
+		}
+	}()
+	return nil
+}
+
+// Shutdown cancels the periodic evaluator and bounds the wait using ctx. A
+// schedule sweep may be in durable storage or execution work that is not
+// cancellable; callers receive ctx.Err instead of waiting indefinitely, and a
+// later call can still observe the worker's eventual completion.
+func (s *scenarioScheduler) Shutdown(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	done := s.stop()
+	if done == nil {
+		return nil
+	}
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// stop requests worker cancellation without waiting. Server shutdown uses this
+// before draining HTTP so a slow in-flight sweep cannot delay listener closure;
+// Shutdown remains the sole bounded wait operation.
+func (s *scenarioScheduler) stop() <-chan struct{} {
+	if s == nil {
+		return nil
+	}
+	s.workerMu.Lock()
+	s.workerStopping = true
+	cancel := s.workerCancel
+	done := s.workerDone
+	s.workerMu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	return done
 }
 
 func (s *scenarioScheduler) RunDueSchedules() (runErr error) {

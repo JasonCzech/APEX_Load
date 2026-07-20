@@ -1,54 +1,29 @@
 import { useCallback, useMemo } from 'react'
 
 import {
-  GitHubBranch,
+  GitHubProjectPolicy,
+} from '../../types'
+import type {
   GitHubAppInstallation,
+  GitHubBranch,
   GitHubConfigResponse,
   GitHubConnectionResponse,
   GitHubContentsResponse,
   GitHubDiagnosticsResponse,
-  GitHubProjectPolicy,
+  GitHubImportRequest,
+  GitHubPushRequest,
   GitHubPushResponse,
   GitHubRepo,
   GitHubScriptStatus,
   GitHubSyncJob,
-} from '../../types'
+  GitHubSyncJobRequest,
+} from '../../types/github'
 import { ScriptImportResult } from '../../types/scriptImports'
 import { BASE, request } from '../apiClient'
 
 const GITHUB_BASE = '/integrations/github'
 
-export type GitHubPushRequest = {
-  owner: string
-  repo: string
-  branch?: string
-  path?: string
-  message?: string
-  strategy?: 'commit' | 'pr'
-  pr_branch?: string
-  pr_title?: string
-  pr_body?: string
-}
-
-export type GitHubImportRequest = {
-  project_id: string
-  owner: string
-  repo: string
-  path: string
-  ref?: string
-  name?: string
-}
-
-export type GitHubSyncJobRequest = {
-  project_id: string
-  kind: 'import' | 'push'
-  owner?: string
-  repo?: string
-  branch?: string
-  path?: string
-  script_ids?: string[]
-  strategy?: 'commit' | 'pr'
-}
+export type { GitHubImportRequest, GitHubPushRequest, GitHubSyncJobRequest } from '../../types/github'
 
 export function useGitHubApi() {
   const getConfig = useCallback(

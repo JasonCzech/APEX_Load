@@ -5,6 +5,17 @@ import (
 	"strings"
 )
 
+func validateWebSocketActionIssues(index int, action Action) []string {
+	spec, ok := protocolActionSpec("websocket", action.Type)
+	if !ok {
+		return []string{fmt.Sprintf("actions[%d] %q: unsupported websocket action type %q", index, action.Name, action.Type)}
+	}
+	if spec.Validate == nil {
+		return nil
+	}
+	return spec.Validate(index, action)
+}
+
 // websocketActionSpecs declares the websocket protocol action types.
 func websocketActionSpecs() []ActionSpec {
 	return []ActionSpec{
