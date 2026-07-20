@@ -7,9 +7,9 @@ import (
 
 // databaseActionSpecs declares the database protocol action types. The
 // database validator lowercases the incoming type before catalog lookup, so
-// aliases are registered in lowercase. The shared max_rows rule applies to
-// every database action (supported or not) and stays in
-// validateDatabaseActionIssues.
+// aliases are registered in lowercase. Action membership, residual SQL rules,
+// and shared action bounds remain beside the catalog so generated authoring
+// metadata and runtime validation evolve together.
 func databaseActionSpecs() []ActionSpec {
 	sqlFields := []FieldSpec{
 		{Name: "target", Kind: FieldKindString, Doc: "SQL statement; target or body is required."},
@@ -78,4 +78,20 @@ func validateDatabaseSQLAction(index int, action Action) []string {
 		return []string{fmt.Sprintf("actions[%d] %q: database action requires target or body SQL", index, action.Name)}
 	}
 	return nil
+}
+
+func validateDatabaseActionIssues(index int, action Action) []string {
+	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
+	var issues []string
+	actionType := strings.ToLower(strings.TrimSpace(action.Type))
+	spec, ok := protocolActionSpec("database", actionType)
+	if !ok {
+		issues = append(issues, fmt.Sprintf("%s: unsupported database action type %q", label, action.Type))
+	} else if spec.Validate != nil {
+		issues = append(issues, spec.Validate(index, action)...)
+	}
+	if maxRows, ok := actionParamIntValue(action.Params, "max_rows"); ok && maxRows < 0 {
+		issues = append(issues, fmt.Sprintf("%s: max_rows must be zero or greater", label))
+	}
+	return issues
 }

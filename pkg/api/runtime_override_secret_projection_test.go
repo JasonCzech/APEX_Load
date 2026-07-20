@@ -1064,17 +1064,20 @@ func TestStartupSchedulesRuntimeCredentialRecoveryForLeaseExpiry(t *testing.T) {
 		secrets.mu.Lock()
 		remaining := len(secrets.values)
 		secrets.mu.Unlock()
-		if remaining == 0 {
+		attempts, listErr := records.ListRuntimeSecretProvisioningAttempts()
+		if listErr != nil {
+			t.Fatalf("list future recovery journals: %v", listErr)
+		}
+		// Recovery removes the provider value before it deletes the durable
+		// journal. Observe the complete operation instead of racing that final
+		// persistence step under a shuffled/race-enabled suite.
+		if remaining == 0 && len(attempts) == 0 {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("future provisioning lease expired without recovery")
+			t.Fatalf("future provisioning lease expired without complete recovery: values=%d journals=%#v", remaining, attempts)
 		}
 		time.Sleep(10 * time.Millisecond)
-	}
-	attempts, err := records.ListRuntimeSecretProvisioningAttempts()
-	if err != nil || len(attempts) != 0 {
-		t.Fatalf("future recovery journals = %#v, %v", attempts, err)
 	}
 }
 

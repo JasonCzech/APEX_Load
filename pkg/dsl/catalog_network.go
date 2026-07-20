@@ -3,13 +3,16 @@ package dsl
 import (
 	"fmt"
 	"strings"
+	"time"
+
+	networkprotocol "github.com/jasonczech/apexload/pkg/protocol/network"
 )
 
 // networkActionSpecs declares the network protocol action types (DNS, raw
 // sockets, FTP, SMTP, POP3, IMAP, LDAP). The network validator lowercases
 // the incoming type before catalog lookup, so aliases are registered in
-// lowercase. The shared timeout_ms / read_bytes / max_entries rules apply to
-// every network action and stay in validateNetworkActionIssues.
+// lowercase. The shared timeout_ms / read_bytes / max_entries rules remain in
+// this catalog module with the per-action declarations.
 func networkActionSpecs() []ActionSpec {
 	mailboxFields := []FieldSpec{
 		{Name: "target", Kind: FieldKindString, Doc: "Command or recipient; one of target, value, or body is required."},
@@ -160,4 +163,30 @@ func networkCommandValidator(canonicalType string) func(int, Action) []string {
 		}
 		return nil
 	}
+}
+
+func validateNetworkActionIssues(index int, action Action) []string {
+	label := fmt.Sprintf("actions[%d] %q", index, action.Name)
+	var issues []string
+	actionType := strings.ToLower(strings.TrimSpace(action.Type))
+	spec, ok := protocolActionSpec("network", actionType)
+	if !ok {
+		issues = append(issues, fmt.Sprintf("%s: unsupported network action type %q", label, action.Type))
+	} else if spec.Validate != nil {
+		issues = append(issues, spec.Validate(index, action)...)
+	}
+	if timeoutMs, ok := actionParamIntValue(action.Params, "timeout_ms"); ok {
+		if timeoutMs < 0 {
+			issues = append(issues, fmt.Sprintf("%s: timeout_ms must be zero or greater", label))
+		} else if timeoutMs > int(networkprotocol.MaxConfiguredTimeout/time.Millisecond) {
+			issues = append(issues, fmt.Sprintf("%s: timeout_ms must not exceed %d", label, networkprotocol.MaxConfiguredTimeout/time.Millisecond))
+		}
+	}
+	if readBytes, ok := actionParamIntValue(action.Params, "read_bytes"); ok && readBytes < 0 {
+		issues = append(issues, fmt.Sprintf("%s: read_bytes must be zero or greater", label))
+	}
+	if maxEntries, ok := actionParamIntValue(action.Params, "max_entries"); ok && maxEntries < 0 {
+		issues = append(issues, fmt.Sprintf("%s: max_entries must be zero or greater", label))
+	}
+	return issues
 }

@@ -31,7 +31,7 @@ func TestSecureSavePreservesLinuxExtendedAttributes(t *testing.T) {
 	}
 	flags, flagsSupported, flagsErr := readLinuxFileFlags(int(file.Fd()))
 	if flagsErr == nil && flagsSupported {
-		flagsErr = unix.IoctlSetInt(int(file.Fd()), unix.FS_IOC_SETFLAGS, flags|linuxFSNoDumpFlag)
+		flagsErr = unix.IoctlSetPointerInt(int(file.Fd()), unix.FS_IOC_SETFLAGS, flags|linuxFSNoDumpFlag)
 		flagsPreserved = flagsErr == nil
 	}
 	if closeErr := file.Close(); closeErr != nil {

@@ -3,7 +3,6 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -182,29 +181,21 @@ type registeredRoute struct {
 func registeredServerRoutes(t *testing.T) []registeredRoute {
 	t.Helper()
 
-	data, err := os.ReadFile("server.go")
+	discovered, err := discoverControllerRoutes("server.go")
 	if err != nil {
-		t.Fatalf("read server.go: %v", err)
+		t.Fatalf("discover controller routes: %v", err)
 	}
 
-	routePattern := regexp.MustCompile(`s\.mux\.Handle\("([A-Z]+) ([^"]+)"`)
-	var routes []registeredRoute
-	for _, line := range strings.Split(string(data), "\n") {
-		if !strings.Contains(line, "s.mux.Handle(") {
-			continue
-		}
-		matches := routePattern.FindStringSubmatch(line)
-		if len(matches) != 3 {
-			continue
-		}
-		samplePath, pathValues := sampleRegisteredRoutePath(matches[2])
+	routes := make([]registeredRoute, 0, len(discovered))
+	for _, route := range discovered {
+		samplePath, pathValues := sampleRegisteredRoutePath(route.Path)
 		routes = append(routes, registeredRoute{
-			Method:          matches[1],
-			Path:            matches[2],
+			Method:          route.Method,
+			Path:            route.Path,
 			SamplePath:      samplePath,
 			PathValues:      pathValues,
-			GenericAuth:     routeUsesGenericAuthMiddleware(line),
-			Unauthenticated: routeHasNoAuthMiddleware(line),
+			GenericAuth:     route.GenericAuth,
+			Unauthenticated: route.Unauthenticated,
 		})
 	}
 	if len(routes) == 0 {
@@ -223,16 +214,4 @@ func sampleRegisteredRoutePath(path string) (string, map[string]string) {
 		return value
 	})
 	return samplePath, pathValues
-}
-
-func routeUsesGenericAuthMiddleware(line string) bool {
-	return strings.Contains(line, "log(auth(")
-}
-
-// routeHasNoAuthMiddleware reports whether a mux.Handle line wires the handler with
-// no auth middleware at all — the handler sits directly inside log(...) with no auth
-// wrapper (cors(log(http.HandlerFunc(...)))). Routes guarded by a custom per-resource
-// auth wrapper read log(<wrapper>(http.HandlerFunc(...))) and are not matched.
-func routeHasNoAuthMiddleware(line string) bool {
-	return strings.Contains(line, "log(http.HandlerFunc(")
 }

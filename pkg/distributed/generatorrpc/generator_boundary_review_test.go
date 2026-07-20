@@ -479,9 +479,7 @@ func TestArchiveWriteFailureIsStickyAndFailsActiveAssignment(t *testing.T) {
 		t.Fatalf("CommitWork = (%#v, %v)", commit, err)
 	}
 
-	service.mu.RLock()
-	writer := service.archiveWriters["run"]
-	service.mu.RUnlock()
+	writer := service.archiveManager.writer("run")
 	if writer == nil {
 		t.Fatal("assignment did not create an archive writer")
 	}
@@ -663,11 +661,11 @@ func TestArchiveRegistrationFailureRemovesFinalizedUntrackedRun(t *testing.T) {
 
 func TestArchiveFinalizerConcurrencyIsBounded(t *testing.T) {
 	service := NewService("archive-finalizer-limit", 10)
-	service.archiveFinalizerSlots = make(chan struct{}, 1)
-	releaseFirst := service.acquireArchiveFinalizerSlot()
+	service.archiveManager.setFinalizerSlotsForTest(make(chan struct{}, 1))
+	releaseFirst := service.archiveManager.acquireFinalizerSlot()
 	acquiredSecond := make(chan func(), 1)
 	go func() {
-		acquiredSecond <- service.acquireArchiveFinalizerSlot()
+		acquiredSecond <- service.archiveManager.acquireFinalizerSlot()
 	}()
 
 	select {

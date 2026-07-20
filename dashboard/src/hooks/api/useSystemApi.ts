@@ -3,43 +3,48 @@ import { useCallback, useMemo } from 'react'
 import { type ScriptConfig } from '../../types/scripts'
 
 import {
+  ArchiveRetentionPlanResponse,
+  APMIntegrationProfilesResponse,
+  ExternalResultImportsResponse,
+  ImportedDashboard,
+  ImportedDashboardGraphsResponse,
+  ImportedDashboardImportReview,
+  InfrastructureMonitorPacksResponse,
+  PrometheusGraphsResponse,
+  ReleaseSLAGovernanceResponse,
+  ReportProfilesResponse,
+} from '../../types'
+import type {
+  DashboardAccessReviewResponse,
+  DashboardAuditEventFilter,
+  DashboardAuditEventListResponse,
   DashboardAuthAccessMatrix,
-  DashboardAuthPolicy,
   DashboardAuthDiagnostics,
   DashboardAuthEffectiveAccess,
+  DashboardAuthPolicy,
   DashboardAuthRoleCatalog,
-  ArchiveRetentionPlanResponse,
-  DashboardAuditEventListResponse,
-  DashboardAuditEventFilter,
   DashboardCreateServiceAccountRequest,
   DashboardCreateServiceAccountResponse,
   DashboardCreateUserBindingRequest,
   DashboardCreateUserRequest,
   DashboardOnboardUserRequest,
   DashboardServiceAccountListResponse,
-  DashboardSystemSettings,
   DashboardUpdateServiceAccountRequest,
   DashboardUpdateUserRequest,
   DashboardUser,
   DashboardUserActivityResponse,
   DashboardUserListResponse,
-  DashboardAccessReviewResponse,
-  APMIntegrationProfilesResponse,
-  BrowserBenchmarkEvidenceResponse,
-  ExternalResultImportsResponse,
+} from '../../types/auth'
+import type {
   FleetAlert,
   FleetAlertsResponse,
   FleetCapacityResponse,
   ProvisionerInfo,
+} from '../../types/fleet'
+import type {
+  BrowserBenchmarkEvidenceResponse,
   HealthResponse,
-  ImportedDashboard,
-  ImportedDashboardGraphsResponse,
-  ImportedDashboardImportReview,
-  InfrastructureMonitorPacksResponse,
   ParityStatusResponse,
-  PrometheusGraphsResponse,
-  ReleaseSLAGovernanceResponse,
-  ReportProfilesResponse,
   SystemInventoryResponse,
   SystemReadinessResponse,
   SystemRestartCapabilities,
@@ -50,7 +55,8 @@ import {
   UsageAccountingSnapshot,
   UsageAccountingSnapshotsResponse,
   VersionResponse,
-} from '../../types'
+} from '../../types/system'
+import type { DashboardSystemSettings } from '../../types/settings'
 import { apiFetch, request } from '../apiClient'
 
 function buildQuery(params: Record<string, string | number | undefined>) {

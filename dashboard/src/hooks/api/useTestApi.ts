@@ -3,11 +3,8 @@ import { useCallback, useMemo } from 'react'
 import {
   ArchivePage,
   DraftCapacityEstimate,
-  GeneratorAssignmentSettings,
-  GoalConfig,
   GoalSizingReport,
   GoalSizingRequest,
-  GoalTargetStatus,
   IntervalSummaryRecord,
   LaunchPreflightResponse,
   LoadModelSupportMatrixResponse,
@@ -23,19 +20,22 @@ import {
   RunArchiveIntegrityReport,
   RunArchiveManifest,
   RunArchiveReport,
-  RunCalendarResponse,
-  RuntimeSettingsOverride,
-  ScenarioSchedule,
-  ScenarioScheduleOccurrence,
-  ScenarioScheduleApproval,
-  ScenarioScheduleHealth,
   ScenarioDataPoolBinding,
-  ScenarioMode,
   TestNote,
   TestRunManifest,
   TestSummary,
   TransactionEvent,
 } from '../../types'
+import type { GoalConfig, GoalTargetStatus, ScenarioMode } from '../../types/goals'
+import type { GeneratorAssignmentSettings } from '../../types/testConfiguration'
+import type { RuntimeSettingsOverride } from '../../types/runtimeSettings'
+import type {
+  RunCalendarResponse,
+  ScenarioSchedule,
+  ScenarioScheduleApproval,
+  ScenarioScheduleHealth,
+  ScenarioScheduleOccurrence,
+} from '../../types/scheduling'
 import { apiFetch, request } from '../apiClient'
 
 type ArchiveTransactionsParams = {

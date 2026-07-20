@@ -338,6 +338,17 @@ function TopbarContributionHarness() {
   )
 }
 
+function AppShellScriptEditorHarness({ initialScript }: { initialScript: ScriptDefinition }) {
+  const contribution = useActiveTopbarContribution()
+  return (
+    <>
+      <span data-testid="app-shell-active-contribution">{contribution?.id || 'none'}</span>
+      <TopbarContributionHarness />
+      <ScriptEditor initialScript={initialScript} />
+    </>
+  )
+}
+
 function debugSessionResponse(report: {
   group: string
   protocol: string
@@ -1016,6 +1027,33 @@ describe('ScriptEditor', () => {
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Side Panel Checkout Flow',
     }), 'project-1', undefined)
+  })
+
+  it('does not re-register its topbar contribution when the app shell consumes it', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const templateScript: ScriptDefinition = {
+      ...initialScript,
+      name: 'HTTP API Smoke',
+    }
+
+    try {
+      await act(async () => {
+        root.render(
+          <TopbarContributionProvider>
+            <AppShellScriptEditorHarness initialScript={templateScript} />
+          </TopbarContributionProvider>,
+        )
+      })
+      await flushReact()
+
+      const maximumDepthWarnings = consoleError.mock.calls
+        .map(arguments_ => arguments_.map(String).join(' '))
+        .filter(message => message.includes('Maximum update depth exceeded'))
+      expect(maximumDepthWarnings).toEqual([])
+      expect(container.querySelector('[data-testid="app-shell-active-contribution"]')?.textContent).toBe('script-editor')
+    } finally {
+      consoleError.mockRestore()
+    }
   })
 
   it('keeps source mapping in the outline instead of duplicating imported metadata in the page header', async () => {

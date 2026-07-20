@@ -1,6 +1,8 @@
 // Command swaggergen regenerates docs/swagger.yaml, docs/api-endpoint-catalog.json,
 // and the embedded copies served by the controller docs API from the controller
-// routing layer. It is invoked via `go generate ./pkg/api` (see pkg/api/openapi_gen.go);
+// routing package. The -server path anchors package discovery; modular route
+// registries may live in other files beside it. It is invoked via
+// `go generate ./pkg/api` (see pkg/api/openapi_gen.go);
 // freshness is test-enforced in pkg/api, mirroring the DSL schema/reference generation
 // in pkg/dsl.
 //
@@ -19,7 +21,7 @@ import (
 )
 
 func main() {
-	server := flag.String("server", "pkg/api/server.go", "path to the controller routing source (server.go)")
+	server := flag.String("server", "pkg/api/server.go", "path to server.go (or its package directory) used to discover controller routes")
 	out := flag.String("out", "docs/swagger.yaml", "output path for the generated OpenAPI spec")
 	catalogOut := flag.String("catalog-out", "docs/api-endpoint-catalog.json", "output path for the generated endpoint catalog JSON; empty disables catalog generation")
 	embedOut := flag.String("embed-out", "", "optional output path for an embedded copy of the generated OpenAPI spec")

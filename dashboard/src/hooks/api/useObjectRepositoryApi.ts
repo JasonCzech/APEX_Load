@@ -1,9 +1,9 @@
 import { useCallback, useMemo } from 'react'
 
-import {
+import type {
   ObjectRepository,
   ObjectRepositoryListResponse,
-} from '../../types'
+} from '../../types/objectRepository'
 import { request } from '../apiClient'
 
 function buildQuery(params: Record<string, string | number | undefined>) {

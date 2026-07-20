@@ -6,7 +6,7 @@ Comment=Enterprise performance testing platform
 Exec=apexload %U
 Icon=apexload
 Terminal=false
-Categories=Development;Network;
+Categories=Development;
 StartupNotify=true
 StartupWMClass=apexload
 # Register the apexload:// deep-link scheme and the vendor-specific HAR type.
