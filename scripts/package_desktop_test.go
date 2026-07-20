@@ -637,12 +637,26 @@ func TestSemverToDebianVersionPreservesUpgradeOrdering(t *testing.T) {
 }
 
 func TestDesktopPlatformIntegrationMetadata(t *testing.T) {
+	workflow, err := os.ReadFile("../.github/workflows/desktop.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(workflow), `grep -Fq '<glob pattern="*.har" weight="80"/>' /usr/share/mime/packages/apexload-har.xml`) {
+		t.Fatal("desktop workflow must verify the installed HAR MIME glob registration")
+	}
+	if !strings.Contains(string(workflow), `$notificationGuid = [guid]::NewGuid().ToString()`) {
+		t.Fatal("desktop workflow must deterministically seed a canonical toast activator when Wails startup has not registered one")
+	}
+
 	desktopEntry, err := os.ReadFile("../desktop/build/linux/apexload.desktop")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(string(desktopEntry), "MimeType=x-scheme-handler/apexload;application/x-apexload-har;") {
 		t.Fatal("Linux desktop entry does not register both deep links and HAR files")
+	}
+	if !strings.Contains(string(desktopEntry), "Categories=Development;") {
+		t.Fatal("Linux desktop entry must declare one main freedesktop category")
 	}
 	mimeDefinition, err := os.ReadFile("../desktop/build/linux/apexload-har.xml")
 	if err != nil {
@@ -706,6 +720,10 @@ func TestDesktopPlatformIntegrationMetadata(t *testing.T) {
 		"Call apexload.ensureSingleInstallLocation",
 		"Call apexload.ensureWebView2Runtime",
 		"apexload.unassociateNotifications",
+		"StrCmp $1 36 apexload_notifications_validate_start",
+		"StrCmp $1 38 apexload_notifications_validate_start apexload_notifications_done",
+		`DeleteRegKey HKCU "Software\Classes\CLSID\$0"`,
+		`DeleteRegKey HKCU "Software\Classes\AppUserModelId\${PRODUCT_EXECUTABLE}"`,
 		`Software\Classes\AppUserModelId\${PRODUCT_EXECUTABLE}`,
 		`Software\Classes\CLSID\$0\LocalServer32`,
 		`$TEMP\${PRODUCT_EXECUTABLE}$0.png`,
