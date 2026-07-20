@@ -5,6 +5,17 @@ import (
 	"strings"
 )
 
+func validateSAPGUIActionIssues(index int, action Action) []string {
+	spec, ok := protocolActionSpec("sap_gui", action.Type)
+	if !ok {
+		return []string{fmt.Sprintf("actions[%d] %q: unsupported SAP GUI action type %q", index, action.Name, action.Type)}
+	}
+	if spec.Validate != nil {
+		return spec.Validate(index, action)
+	}
+	return nil
+}
+
 func sapGUIActionSpecs() []ActionSpec {
 	controlKinds := []string{"text", "combo", "checkbox", "radio", "button", "grid", "table", "tree", "menu", "shell", "unknown"}
 	return []ActionSpec{

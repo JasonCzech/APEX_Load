@@ -36,7 +36,7 @@ func TestExecutionRejectsScriptThatExceedsRuntimeLimits(t *testing.T) {
 	}
 	service.mu.RLock()
 	defer service.mu.RUnlock()
-	if len(service.assignments) != 0 || len(service.executions) != 0 || len(service.archiveWriters) != 0 {
-		t.Fatalf("rejected execution leaked state: assignments=%d executions=%d writers=%d", len(service.assignments), len(service.executions), len(service.archiveWriters))
+	if len(service.assignments) != 0 || len(service.executions) != 0 || service.archiveManager.writerCount() != 0 {
+		t.Fatalf("rejected execution leaked state: assignments=%d executions=%d writers=%d", len(service.assignments), len(service.executions), service.archiveManager.writerCount())
 	}
 }

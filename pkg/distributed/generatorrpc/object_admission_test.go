@@ -25,8 +25,8 @@ func TestAssignWorkBoundsZeroVUserTestObjects(t *testing.T) {
 	}
 	service.mu.RLock()
 	defer service.mu.RUnlock()
-	if len(service.assignments) != 2 || len(service.executions) != 0 || len(service.archiveWriters) != 0 {
-		t.Fatalf("state after rejection: assignments=%d executions=%d writers=%d", len(service.assignments), len(service.executions), len(service.archiveWriters))
+	if len(service.assignments) != 2 || len(service.executions) != 0 || service.archiveManager.writerCount() != 0 {
+		t.Fatalf("state after rejection: assignments=%d executions=%d writers=%d", len(service.assignments), len(service.executions), service.archiveManager.writerCount())
 	}
 }
 
@@ -57,19 +57,21 @@ func TestAssignWorkChecksExecutionAndWriterLimitsBeforeMutation(t *testing.T) {
 		if ack != nil || status.Code(err) != codes.ResourceExhausted {
 			t.Fatalf("execution overflow = (%#v, %v), want ResourceExhausted", ack, err)
 		}
-		if len(service.assignments) != 0 || len(service.scripts) != 0 {
-			t.Fatalf("execution rejection mutated assignments/scripts: %d/%d", len(service.assignments), len(service.scripts))
+		cacheEntries, _ := service.scriptCache.snapshot()
+		if len(service.assignments) != 0 || len(cacheEntries) != 0 {
+			t.Fatalf("execution rejection mutated assignments/scripts: %d/%d", len(service.assignments), len(cacheEntries))
 		}
 	})
 	t.Run("writer", func(t *testing.T) {
 		service := NewService("writer-object-cap", 10, WithExecution(), WithGeneratorObjectLimits(10, 10, 10, 1))
-		service.archiveWriters["existing"] = nil
+		service.archiveManager.setWriterForTest("existing", nil)
 		ack, err := service.AssignWork(context.Background(), zeroVUserAssignment("overflow", "group"))
 		if ack != nil || status.Code(err) != codes.ResourceExhausted {
 			t.Fatalf("writer overflow = (%#v, %v), want ResourceExhausted", ack, err)
 		}
-		if len(service.assignments) != 0 || len(service.scripts) != 0 {
-			t.Fatalf("writer rejection mutated assignments/scripts: %d/%d", len(service.assignments), len(service.scripts))
+		cacheEntries, _ := service.scriptCache.snapshot()
+		if len(service.assignments) != 0 || len(cacheEntries) != 0 {
+			t.Fatalf("writer rejection mutated assignments/scripts: %d/%d", len(service.assignments), len(cacheEntries))
 		}
 	})
 }

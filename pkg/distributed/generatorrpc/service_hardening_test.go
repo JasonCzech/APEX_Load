@@ -372,7 +372,8 @@ func TestCanceledGeneratorMutationsDoNotCommit(t *testing.T) {
 	}
 	service.mu.RLock()
 	assignment := service.assignments["run"]
-	_, cached := service.scripts["late"]
+	cacheEntries, _ := service.scriptCache.snapshot()
+	_, cached := cacheEntries["late"]
 	_, lateAssigned := service.assignments["late"]
 	service.mu.RUnlock()
 	if cached || lateAssigned || assignment.vuserCount != 3 || assignment.durationSeconds != 60 {

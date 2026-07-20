@@ -1099,7 +1099,7 @@ func (s *Server) handleHealthCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetSystemSettings(w http.ResponseWriter, r *http.Request) {
-	settings := s.runner.GetSystemSettings()
+	settings := s.systemSettingsDomainService().Get()
 	writeJSON(w, http.StatusOK, redactedSystemSettingsResponse(settings))
 }
 
@@ -1114,47 +1114,31 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusBadRequest, "invalid request body: "+err.Error())
 		return
 	}
-	// A settings PUT is a read-modify-write operation because omitted sections
-	// and write-only secrets are preserved. Refresh without throttling first so a
-	// stale HA replica cannot overwrite a newer shared snapshot.
-	s.runner.refreshSystemSettingsFromStore(true)
-	currentSettings, expectedSettingsRevision := s.runner.systemSettingsSnapshot()
-	// A PUT that omits the prometheus section must not wipe it — inherit the
-	// currently-stored value. When the section IS present, settings.Prometheus
-	// carries the admin's explicit choice (including an explicit disable), which
-	// the faithful normalizer in UpdateSystemSettings now preserves.
-	if !rawJSONHasKey(string(body), "prometheus") {
-		settings.Prometheus = currentSettings.Prometheus
-	}
-	if !rawJSONHasKey(string(body), "client_app") {
-		settings.ClientApp = currentSettings.ClientApp
-	}
-	if !rawJSONHasKey(string(body), "client_downloads") {
-		settings.ClientDownloads = currentSettings.ClientDownloads
-	}
-	if !rawJSONHasKey(string(body), "script_imports") {
-		settings.ScriptImports = currentSettings.ScriptImports
-	}
-
-	settings = preserveWriteOnlySystemSettingsSecrets(settings, currentSettings)
-	policyChanged := currentSettings.ScriptImports.AllowSourceSecretMigration != settings.ScriptImports.AllowSourceSecretMigration
 	policyAuditOperationID := ""
-	if policyChanged {
-		policyAuditOperationID, err = s.beginRequiredAuditOperation(r, "system.settings.update", "system_settings", "global", "", map[string]any{
-			"allow_source_secret_migration":          settings.ScriptImports.AllowSourceSecretMigration,
+	result, err := s.systemSettingsDomainService().Update(settings, body, func(plan systemSettingsUpdatePlan) error {
+		if !plan.PolicyChanged {
+			return nil
+		}
+		operationID, auditErr := s.beginRequiredAuditOperation(r, "system.settings.update", "system_settings", "global", "", map[string]any{
+			"allow_source_secret_migration":          plan.Candidate.ScriptImports.AllowSourceSecretMigration,
 			"source_secret_migration_policy_changed": true,
 		})
-		if err != nil {
-			writeError(w, http.StatusServiceUnavailable, "system settings audit is unavailable; the migration policy was not changed")
-			return
+		if auditErr != nil {
+			return auditErr
 		}
+		policyAuditOperationID = operationID
+		return nil
+	})
+	var preCommitErr *systemSettingsBeforeCommitError
+	if errors.As(err, &preCommitErr) {
+		writeError(w, http.StatusServiceUnavailable, "system settings audit is unavailable; the migration policy was not changed")
+		return
 	}
-	updated, err := s.runner.updateSystemSettings(settings, expectedSettingsRevision, true)
 	if err != nil {
 		if policyAuditOperationID != "" {
 			outcome := "update_failed"
 			auditDetails := map[string]any{
-				"allow_source_secret_migration":          settings.ScriptImports.AllowSourceSecretMigration,
+				"allow_source_secret_migration":          result.Candidate.ScriptImports.AllowSourceSecretMigration,
 				"source_secret_migration_policy_changed": true,
 			}
 			if errors.Is(err, errSystemSettingsConflict) {
@@ -1176,9 +1160,9 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	auditDetails := map[string]any{
-		"auth_mode":                              updated.Auth.Mode,
-		"allow_source_secret_migration":          updated.ScriptImports.AllowSourceSecretMigration,
-		"source_secret_migration_policy_changed": currentSettings.ScriptImports.AllowSourceSecretMigration != updated.ScriptImports.AllowSourceSecretMigration,
+		"auth_mode":                              result.Updated.Auth.Mode,
+		"allow_source_secret_migration":          result.Updated.ScriptImports.AllowSourceSecretMigration,
+		"source_secret_migration_policy_changed": result.Previous.ScriptImports.AllowSourceSecretMigration != result.Updated.ScriptImports.AllowSourceSecretMigration,
 	}
 	if policyAuditOperationID != "" {
 		if auditErr := s.completeRequiredAuditOperation(r, policyAuditOperationID, "system.settings.update", "success", "updated", "system_settings", "global", "", auditDetails); auditErr != nil {
@@ -1189,7 +1173,7 @@ func (s *Server) handleUpdateSystemSettings(w http.ResponseWriter, r *http.Reque
 		s.recordAuditEvent(r, "system.settings.update", "success", "system_settings", "global", "", auditDetails)
 	}
 
-	writeJSON(w, http.StatusOK, redactedSystemSettingsResponse(updated))
+	writeJSON(w, http.StatusOK, redactedSystemSettingsResponse(result.Updated))
 }
 
 func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, type MouseEvent as ReactMouseEvent } from 'react'
 import type { ScriptActionDefinition, ScriptAssertionDefinition, ScriptParameterDefinition, ScriptValidationResponse } from '../types/scripts'
-import type { ActionEditorParameterDraft, ActionEditorSelectionState } from './ScriptEditor'
+import type { ActionEditorParameterDraft } from './scriptEditorState'
+import type { ActionEditorSelectionState } from './scriptEditorJsonModel'
 import { sanitizeVarName } from './scriptEditorUtils'
 import { asString, httpSequenceRequests, isControlAction, isReviewGatedJavaScriptAction, actionRequiresReview, actionSelectorFallbackCount } from './scriptActionHelpers'
 import { appendActionStep, moveActionStep, removeActionStep, updateActionStepField, actionTransactionName, setActionTransactionName } from './scriptEditorWorkbench'
