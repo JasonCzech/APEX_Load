@@ -3,10 +3,10 @@ package dsl
 // eventHubsActionSpecs declares the native Azure Event Hubs action types. The
 // protocol is producer-first: eventhubs_produce is the primary action and
 // eventhubs_consume is a lightweight read-only observer probe. Event hub /
-// partition fallbacks depend on config.eventhubs, so those rules stay in
-// validateEventHubsScriptIssues.
+// partition fallbacks depend on config.eventhubs, so each spec carries the
+// shared configuration-aware residual callback.
 func eventHubsActionSpecs() []ActionSpec {
-	return []ActionSpec{
+	specs := []ActionSpec{
 		{
 			Type:      "eventhubs_produce",
 			Protocols: []string{"eventhubs"},
@@ -34,4 +34,8 @@ func eventHubsActionSpecs() []ActionSpec {
 			},
 		},
 	}
+	for i := range specs {
+		specs[i].validateInScript = validateEventHubsCatalogActionIssues
+	}
+	return specs
 }

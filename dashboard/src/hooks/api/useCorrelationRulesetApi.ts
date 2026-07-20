@@ -1,10 +1,10 @@
 import { useCallback, useMemo } from 'react'
 
-import {
+import type {
   CorrelationRuleset,
   CorrelationRulesetApplyResponse,
   CorrelationRulesetListResponse,
-} from '../../types'
+} from '../../types/correlationRulesets'
 import { request } from '../apiClient'
 
 function buildQuery(params: Record<string, string | number | undefined>) {

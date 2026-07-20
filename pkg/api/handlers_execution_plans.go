@@ -9,7 +9,6 @@ package api
 
 import (
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -34,83 +33,13 @@ func validExecutionRunMode(mode string) bool {
 	return mode == "parallel" || mode == "sequential"
 }
 
-func (s *Server) validateExecutionPlan(plan *storage.ExecutionPlan) (int, string) {
-	if plan == nil {
-		return http.StatusBadRequest, "execution plan is required"
-	}
-	if strings.TrimSpace(plan.Name) == "" {
-		return http.StatusBadRequest, "execution plan name is required"
-	}
-	if len(plan.Entries) > maxExecutionPlanEntries {
-		return http.StatusBadRequest, fmt.Sprintf("execution plan contains %d entries; limit is %d", len(plan.Entries), maxExecutionPlanEntries)
-	}
-	if plan.RunMode != "" && !validExecutionRunMode(plan.RunMode) {
-		return http.StatusBadRequest, "run_mode must be parallel or sequential"
-	}
-	planProject := normalizeProjectID(plan.ProjectID)
-	for entryIndex := range plan.Entries {
-		entry := &plan.Entries[entryIndex]
-		if strings.TrimSpace(entry.ScenarioID) == "" {
-			return http.StatusBadRequest, "every execution plan entry requires a scenario_id"
-		}
-		if entry.FailurePolicy != "" && entry.FailurePolicy != "halt" && entry.FailurePolicy != "skip" {
-			return http.StatusBadRequest, "entry failure_policy must be halt or skip"
-		}
-		if len(entry.RuntimeOverrides) > 0 {
-			if len(entry.RuntimeOverrides) > maxExecutionPlanRuntimeOverrideBytes {
-				return http.StatusBadRequest, fmt.Sprintf("entry runtime_overrides exceeds the %d-byte limit", maxExecutionPlanRuntimeOverrideBytes)
-			}
-			var runtimeOverrides *RuntimeSettingsOverride
-			if err := json.Unmarshal(entry.RuntimeOverrides, &runtimeOverrides); err != nil {
-				return http.StatusBadRequest, "entry runtime_overrides must be a valid runtime settings object"
-			}
-		}
-		if len(entry.DataPools) > maxExecutionPlanDataPoolsPerEntry {
-			return http.StatusBadRequest, fmt.Sprintf("execution plan entry contains %d data pools; limit is %d", len(entry.DataPools), maxExecutionPlanDataPoolsPerEntry)
-		}
-		normalizedDataPools, err := normalizeDataPoolBindingIntent(entry.DataPools)
-		if err != nil {
-			return http.StatusBadRequest, fmt.Sprintf("invalid execution plan entry data pools: %v", err)
-		}
-		entry.DataPools = normalizedDataPools
-		// Cross-tenant guards use durable ownership, not the controller's
-		// eventually-consistent HA cache. Unknown scenarios remain valid draft
-		// references and fail per-entry at materialization, but an existing
-		// scenario or data pool can never be attached across projects.
-		if s.store != nil {
-			_, scripts, err := s.store.GetScenario(entry.ScenarioID)
-			switch {
-			case err == nil:
-				scenarioProject, status, message := resolveProjectIDFromScenarioScripts(scripts, s.store)
-				if status != 0 {
-					return status, message
-				}
-				if normalizeProjectID(scenarioProject) != planProject {
-					return http.StatusBadRequest, "an execution plan entry references a scenario in a different project"
-				}
-			case errors.Is(err, sql.ErrNoRows):
-				// Draft plans may intentionally name a scenario that will be created later.
-			case err != nil:
-				return http.StatusInternalServerError, "failed to validate execution plan scenario ownership"
-			}
-			if err := s.validateScenarioDataPoolProjects(planProject, entry.DataPools); err != nil {
-				return http.StatusBadRequest, err.Error()
-			}
-		} else if s.runner != nil {
-			if scenario, ok := s.runner.GetScenario(entry.ScenarioID); ok && normalizeProjectID(scenario.ProjectID) != planProject {
-				return http.StatusBadRequest, "an execution plan entry references a scenario in a different project"
-			}
-		}
-	}
-	return 0, ""
-}
-
 func (s *Server) handleCreateExecutionPlan(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+	service := s.executionPlanDomainService()
+	if !service.StorageConfigured() {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
-	leaseTerm, err := s.runner.captureExecutionLeaseTerm()
+	fence, err := service.CaptureMutationFence()
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "execution leader is unavailable")
 		return
@@ -119,7 +48,7 @@ func (s *Server) handleCreateExecutionPlan(w http.ResponseWriter, r *http.Reques
 	if !decodeJSONBody(w, r, &plan) {
 		return
 	}
-	if status, msg := s.validateExecutionPlan(&plan); status != 0 {
+	if status, msg := service.Validate(&plan); status != 0 {
 		writeError(w, status, msg)
 		return
 	}
@@ -129,7 +58,7 @@ func (s *Server) handleCreateExecutionPlan(w http.ResponseWriter, r *http.Reques
 		plan.RunMode = "parallel"
 	}
 	plan.Status = "draft"
-	if err := s.runner.createExecutionPlanWithTerm(&plan, leaseTerm); err != nil {
+	if err := service.Create(&plan, fence); err != nil {
 		if errors.Is(err, errNotExecutionLeader) {
 			writeError(w, http.StatusServiceUnavailable, "execution leader is unavailable")
 			return
@@ -144,13 +73,14 @@ func (s *Server) handleCreateExecutionPlan(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleListExecutionPlans(w http.ResponseWriter, r *http.Request) {
+	service := s.executionPlanDomainService()
 	limit, offset := parseLimitOffsetQuery(r, defaultExecutionPlanListLimit)
-	if s.store == nil {
+	if !service.StorageConfigured() {
 		writeJSON(w, http.StatusOK, map[string]any{"execution_plans": []*storage.ExecutionPlan{}, "count": 0, "limit": limit, "offset": offset})
 		return
 	}
 	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
-	plans, err := s.store.ListExecutionPlans(projectID, limit, offset)
+	plans, err := service.List(projectID, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -162,7 +92,7 @@ func (s *Server) handleListExecutionPlans(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleGetExecutionPlan(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+	if !s.executionPlanDomainService().StorageConfigured() {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
@@ -174,11 +104,12 @@ func (s *Server) handleGetExecutionPlan(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleUpdateExecutionPlan(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+	service := s.executionPlanDomainService()
+	if !service.StorageConfigured() {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
-	leaseTerm, err := s.runner.captureExecutionLeaseTerm()
+	fence, err := service.CaptureMutationFence()
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "execution leader is unavailable")
 		return
@@ -199,7 +130,7 @@ func (s *Server) handleUpdateExecutionPlan(w http.ResponseWriter, r *http.Reques
 	req.ID = existing.ID
 	req.ProjectID = existing.ProjectID
 	req.CreatedAt = existing.CreatedAt
-	if status, msg := s.validateExecutionPlan(&req); status != 0 {
+	if status, msg := service.Validate(&req); status != 0 {
 		writeError(w, status, msg)
 		return
 	}
@@ -209,7 +140,7 @@ func (s *Server) handleUpdateExecutionPlan(w http.ResponseWriter, r *http.Reques
 	if req.Status == "" {
 		req.Status = existing.Status
 	}
-	if err := s.runner.updateExecutionPlanWithTerm(&req, expectedRevision, leaseTerm); err != nil {
+	if err := service.Update(&req, expectedRevision, fence); err != nil {
 		if errors.Is(err, errNotExecutionLeader) {
 			writeError(w, http.StatusServiceUnavailable, "execution leader is unavailable")
 			return
@@ -226,21 +157,18 @@ func (s *Server) handleUpdateExecutionPlan(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleDeleteExecutionPlan(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+	service := s.executionPlanDomainService()
+	if !service.StorageConfigured() {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
-	leaseTerm, err := s.runner.captureExecutionLeaseTerm()
+	fence, err := service.CaptureMutationFence()
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, "execution leader is unavailable")
 		return
 	}
 	id := r.PathValue("id")
-	projectID := ""
-	if plan, err := s.store.GetExecutionPlan(id); err == nil && plan != nil {
-		projectID = plan.ProjectID
-	}
-	result, err := s.runner.deleteExecutionPlanWithTerm(id, leaseTerm)
+	result, projectID, err := service.Delete(id, fence)
 	if err != nil {
 		if errors.Is(err, errNotExecutionLeader) {
 			writeError(w, http.StatusServiceUnavailable, "execution leader is unavailable")
@@ -820,7 +748,8 @@ func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *
 	if !s.requireExecutionLeader(w) {
 		return
 	}
-	if s.store == nil {
+	service := s.executionPlanDomainService()
+	if !service.StorageConfigured() {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
@@ -834,7 +763,7 @@ func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *
 		attribSubject = actorSubject
 	}
 
-	result, err := s.runner.MaterializeAndRunExecutionPlan(plan, attribSubject, actorDisplayName, testCreationActor{
+	result, err := service.MaterializeAndRun(plan, attribSubject, actorDisplayName, testCreationActor{
 		Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName,
 	})
 	if err != nil {
@@ -887,12 +816,13 @@ func (s *Server) handleMaterializeAndRunExecutionPlan(w http.ResponseWriter, r *
 }
 
 func (s *Server) handleListExecutionPlanRuns(w http.ResponseWriter, r *http.Request) {
+	service := s.executionPlanDomainService()
 	limit, offset := parseLimitOffsetQuery(r, defaultExecutionPlanListLimit)
-	if s.store == nil {
+	if !service.StorageConfigured() {
 		writeJSON(w, http.StatusOK, map[string]any{"runs": []*storage.ExecutionPlanRun{}, "count": 0, "limit": limit, "offset": offset})
 		return
 	}
-	runs, err := s.store.ListExecutionPlanRuns(r.PathValue("id"), limit, offset)
+	runs, err := service.ListRuns(r.PathValue("id"), limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -904,11 +834,12 @@ func (s *Server) handleListExecutionPlanRuns(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) handleGetExecutionPlanRun(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+	service := s.executionPlanDomainService()
+	if !service.StorageConfigured() {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
-	run, err := s.store.GetExecutionPlanRun(r.PathValue("runId"))
+	run, err := service.GetRun(r.PathValue("runId"))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "execution plan run not found")
@@ -922,7 +853,9 @@ func (s *Server) handleGetExecutionPlanRun(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusNotFound, "execution plan run not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, run)
+	// Keep the historical operation-specific OpenAPI response placeholder for
+	// this storage-owned transport while preserving the exact runtime JSON.
+	writeJSON(w, http.StatusOK, any(run))
 }
 
 func executionEntryLabel(entry storage.ExecutionPlanEntry) string {
@@ -933,7 +866,7 @@ func executionEntryLabel(entry storage.ExecutionPlanEntry) string {
 }
 
 func (s *Server) loadExecutionPlan(w http.ResponseWriter, r *http.Request) (*storage.ExecutionPlan, bool) {
-	plan, err := s.store.GetExecutionPlan(r.PathValue("id"))
+	plan, err := s.executionPlanDomainService().Get(r.PathValue("id"))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "execution plan not found")

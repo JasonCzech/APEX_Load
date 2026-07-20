@@ -2,10 +2,10 @@ package dsl
 
 // jmsActionSpecs declares the JMS action types shared by the jms-* protocols
 // (Solace, IBM MQ, Azure Service Bus). Destination/reply-to fallbacks depend
-// on config.jms, so those rules stay in validateJMSScriptIssues; specs carry
-// membership and field metadata.
+// on config.jms, so each spec carries the shared configuration-aware residual
+// callback in addition to membership and field metadata.
 func jmsActionSpecs() []ActionSpec {
-	return []ActionSpec{
+	specs := []ActionSpec{
 		{
 			Type:      "jms_publish",
 			Protocols: []string{"jms"},
@@ -184,4 +184,8 @@ func jmsActionSpecs() []ActionSpec {
 			},
 		},
 	}
+	for i := range specs {
+		specs[i].validateInScript = validateJMSCatalogActionIssues
+	}
+	return specs
 }

@@ -36,10 +36,11 @@ func TestGeneratorScriptCacheIsLRUBoundedAndPinsActiveScripts(t *testing.T) {
 		t.Fatal(err)
 	}
 	service.mu.RLock()
-	_, hasPinned := service.scripts["script-1"]
-	_, hasEvicted := service.scripts["script-2"]
-	_, hasNewest := service.scripts["script-3"]
-	cacheSize := len(service.scripts)
+	cacheEntries, _ := service.scriptCache.snapshot()
+	_, hasPinned := cacheEntries["script-1"]
+	_, hasEvicted := cacheEntries["script-2"]
+	_, hasNewest := cacheEntries["script-3"]
+	cacheSize := len(cacheEntries)
 	service.mu.RUnlock()
 	if !hasPinned || hasEvicted || !hasNewest || cacheSize != 2 {
 		t.Fatalf("cache after eviction: pinned=%v evicted=%v newest=%v size=%d", hasPinned, hasEvicted, hasNewest, cacheSize)
@@ -52,7 +53,8 @@ func TestGeneratorScriptCacheIsLRUBoundedAndPinsActiveScripts(t *testing.T) {
 		t.Fatalf("full pinned cache error = %v, want ResourceExhausted", err)
 	}
 	service.mu.RLock()
-	cacheSize = len(service.scripts)
+	cacheEntries, _ = service.scriptCache.snapshot()
+	cacheSize = len(cacheEntries)
 	service.mu.RUnlock()
 	if cacheSize != 2 {
 		t.Fatalf("pinned cache grew past cap: %d", cacheSize)
@@ -72,9 +74,9 @@ func TestGeneratorScriptCacheIsByteBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 	service.mu.RLock()
-	_, firstRetained := service.scripts["first"]
-	_, secondRetained := service.scripts["second"]
-	bytesRetained := service.scriptCacheBytes
+	cacheEntries, bytesRetained := service.scriptCache.snapshot()
+	_, firstRetained := cacheEntries["first"]
+	_, secondRetained := cacheEntries["second"]
 	service.mu.RUnlock()
 	if firstRetained || !secondRetained || bytesRetained != 3 {
 		t.Fatalf("byte-bounded cache: first=%v second=%v bytes=%d", firstRetained, secondRetained, bytesRetained)
@@ -104,7 +106,8 @@ func TestAssignWorkRejectsInlineScriptWhenPinnedCacheCannotStoreMissingID(t *tes
 		t.Fatalf("inline missing-ID assignment ack = %+v, want cache rejection", ack)
 	}
 	service.mu.RLock()
-	_, cached := service.scripts["inline-missing"]
+	cacheEntries, _ := service.scriptCache.snapshot()
+	_, cached := cacheEntries["inline-missing"]
 	_, assigned := service.assignments["run-missing"]
 	service.mu.RUnlock()
 	if cached || assigned {
@@ -137,7 +140,8 @@ func TestAssignWorkRejectsInlineReplacementWhenPinnedCacheWouldLeaveStaleID(t *t
 		t.Fatalf("inline stale-ID replacement ack = %+v, want cache rejection", ack)
 	}
 	service.mu.RLock()
-	cached := service.scripts["shared"]
+	cacheEntries, _ := service.scriptCache.snapshot()
+	cached := cacheEntries["shared"]
 	_, assigned := service.assignments["run-replacement"]
 	service.mu.RUnlock()
 	if string(cached.content) != "old" || assigned {
@@ -160,10 +164,8 @@ func TestGeneratorArchiveRecordsAndDirectoriesAreCapped(t *testing.T) {
 			CompletedAt: base.Add(time.Duration(index) * time.Minute),
 		})
 	}
-	service.mu.RLock()
-	_, oldestRetained := service.archiveRecords["run-1"]
-	recordCount := len(service.archiveRecords)
-	service.mu.RUnlock()
+	oldestRetained := service.archiveManager.record("run-1") != nil
+	recordCount := service.archiveManager.recordCount()
 	if oldestRetained || recordCount != 2 {
 		t.Fatalf("archive records: oldest retained=%v count=%d", oldestRetained, recordCount)
 	}
@@ -209,9 +211,7 @@ func TestGeneratorArchiveTTLAndStartupOrphanSweep(t *testing.T) {
 		t.Fatal(err)
 	}
 	service.storeArchiveRecord(&storage.RunArchiveRecord{TestID: "record-expired", ArchivePath: expiredPath, CompletedAt: now.Add(-2 * time.Hour)})
-	service.mu.RLock()
-	_, retained := service.archiveRecords["record-expired"]
-	service.mu.RUnlock()
+	retained := service.archiveManager.record("record-expired") != nil
 	if retained {
 		t.Fatal("expired archive record remained in memory")
 	}
@@ -243,9 +243,7 @@ func TestGeneratorArchiveLeaseDefersCapCleanupUntilReadCompletes(t *testing.T) {
 		t.Fatal(err)
 	}
 	newPath := store("run-new", base.Add(time.Minute))
-	service.mu.RLock()
-	duringLeaseCount := len(service.archiveRecords)
-	service.mu.RUnlock()
+	duringLeaseCount := service.archiveManager.recordCount()
 	if duringLeaseCount != 2 {
 		t.Fatalf("leased temporary overage count = %d, want 2", duringLeaseCount)
 	}
@@ -257,11 +255,9 @@ func TestGeneratorArchiveLeaseDefersCapCleanupUntilReadCompletes(t *testing.T) {
 	}
 
 	release()
-	service.mu.RLock()
-	_, oldRetained := service.archiveRecords["run-old"]
-	_, newRetained := service.archiveRecords["run-new"]
-	afterLeaseCount := len(service.archiveRecords)
-	service.mu.RUnlock()
+	oldRetained := service.archiveManager.record("run-old") != nil
+	newRetained := service.archiveManager.record("run-new") != nil
+	afterLeaseCount := service.archiveManager.recordCount()
 	if oldRetained || !newRetained || afterLeaseCount != 1 {
 		t.Fatalf("post-lease records: old=%v new=%v count=%d", oldRetained, newRetained, afterLeaseCount)
 	}
@@ -321,9 +317,7 @@ func TestGeneratorRehydratesCompletedArchivesAfterRestart(t *testing.T) {
 	}
 
 	service := NewService(generatorID, 10, WithGeneratorStateLimits(10, 10, 24*time.Hour))
-	service.mu.RLock()
-	rehydrated := service.archiveRecords["completed-run"]
-	service.mu.RUnlock()
+	rehydrated := service.archiveManager.record("completed-run")
 	if rehydrated == nil || rehydrated.CompletedAt.IsZero() {
 		t.Fatalf("completed archive was not rehydrated: %+v", rehydrated)
 	}
@@ -675,7 +669,11 @@ func TestTerminalPathsReserveTestIDUntilArchiveFinalized(t *testing.T) {
 			t.Setenv("APEXLOAD_ARCHIVE_DIR", root)
 			service := NewService("terminal-reservation-"+strings.ReplaceAll(tt.name, " ", "-"), 10)
 			testID := "run-terminal"
-			writer, err := newArchiveRecorderInNamespace(service.archiveNamespace, testID, tt.name)
+			namespace, namespaceErr := service.archiveManager.namespaceSnapshot()
+			if namespaceErr != nil {
+				t.Fatal(namespaceErr)
+			}
+			writer, err := newArchiveRecorderInNamespace(namespace, testID, tt.name)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -684,7 +682,7 @@ func TestTerminalPathsReserveTestIDUntilArchiveFinalized(t *testing.T) {
 				testID: testID,
 				groups: map[string]int32{"group": 1},
 			}
-			service.archiveWriters[testID] = writer
+			service.archiveManager.setWriterForTest(testID, writer)
 			if tt.preReserved {
 				service.stoppingTests[testID] = struct{}{}
 			}
@@ -735,13 +733,17 @@ func TestDuplicateStopDoesNotClearFinalizerReservation(t *testing.T) {
 	t.Setenv("APEXLOAD_ARCHIVE_DIR", t.TempDir())
 	service := NewService("duplicate-stop-reservation", 10)
 	const testID = "run-stop"
-	writer, err := newArchiveRecorderInNamespace(service.archiveNamespace, testID, "Stop")
+	namespace, namespaceErr := service.archiveManager.namespaceSnapshot()
+	if namespaceErr != nil {
+		t.Fatal(namespaceErr)
+	}
+	writer, err := newArchiveRecorderInNamespace(namespace, testID, "Stop")
 	if err != nil {
 		t.Fatal(err)
 	}
 	service.mu.Lock()
 	service.assignments[testID] = assignedTest{testID: testID, vuserCount: 1, groups: map[string]int32{"group": 1}}
-	service.archiveWriters[testID] = writer
+	service.archiveManager.setWriterForTest(testID, writer)
 	service.mu.Unlock()
 
 	writer.mu.Lock()

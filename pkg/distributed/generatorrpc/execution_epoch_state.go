@@ -36,20 +36,24 @@ type executionEpochStateStore struct {
 }
 
 func (s *Service) initializeExecutionEpochState() {
-	state, generation, leaseOwner, err := openExecutionEpochState(s)
+	s.executionEpochManager.initialize(s)
+}
+
+func (manager *executionEpochManager) initialize(service *Service) {
+	state, generation, leaseOwner, err := openExecutionEpochState(service)
 	if err != nil {
-		s.executionEpochStateErr = err
-		s.notifyReadinessChangedLocked()
+		manager.executionEpochStateErr = err
+		manager.notifyReadinessChanged()
 		return
 	}
-	s.executionEpochState = state
-	s.executionGeneration = generation
-	s.executionLeaseOwner = leaseOwner
+	manager.executionEpochState = state
+	manager.executionGeneration = generation
+	manager.executionLeaseOwner = leaseOwner
 	// A durable high-water loaded without an in-memory expiry means this is a
 	// replacement process, not an ordinarily expired live service. Permit one
 	// exact-owner revalidation; the flag is consumed as soon as a lease session
 	// is installed and is never restored by normal expiry.
-	s.executionRestartRevalidation = generation > 0
+	manager.executionRestartRevalidation = generation > 0
 }
 
 func openExecutionEpochState(service *Service) (*executionEpochStateStore, uint64, string, error) {
@@ -71,14 +75,15 @@ func openExecutionEpochState(service *Service) (*executionEpochStateStore, uint6
 	if isProductionEnvironment(os.Getenv("APEXLOAD_ENV")) {
 		return nil, 0, "", fmt.Errorf("%s is required in production and must be backed by storage that survives generator replacement", executionEpochStateDirEnv)
 	}
-	if service.archiveNamespaceErr != nil {
-		return nil, 0, "", fmt.Errorf("default execution state directory: %w", service.archiveNamespaceErr)
+	archiveNamespace, archiveNamespaceErr := service.archiveManager.namespaceSnapshot()
+	if archiveNamespaceErr != nil {
+		return nil, 0, "", fmt.Errorf("default execution state directory: %w", archiveNamespaceErr)
 	}
-	if service.archiveNamespace == nil || service.archiveNamespace.root == nil {
+	if archiveNamespace == nil || archiveNamespace.root == nil {
 		return nil, 0, "", errors.New("default execution state directory is unavailable")
 	}
 	return loadExecutionEpochState(&executionEpochStateStore{
-		root: service.archiveNamespace.root,
+		root: archiveNamespace.root,
 		name: ".execution-epoch.json",
 	})
 }

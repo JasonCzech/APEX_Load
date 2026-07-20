@@ -6,7 +6,6 @@ import {
   applyAuthoringComponentToScript,
   applyMigrationAssistantSuggestion,
   applyScriptRepairSuggestion,
-  buildImportedDraftDiffSummary,
   buildMigrationAssistantSuggestions,
   buildProtocolStarterTemplates,
   buildScriptRepairSuggestions,
@@ -15,6 +14,7 @@ import {
   groupIssuesByPhaseAction,
   normalizeImportedActionNames,
 } from './scriptAuthoringAssist'
+import { buildImportedDraftDiffSummary } from './scriptEditorImportModel'
 
 const importedScript: ScriptDefinition = {
   name: 'Imported Checkout',

@@ -52,7 +52,7 @@ func TestTerminalMetricsEvictNonterminalWhenSubscriberQueueIsFull(t *testing.T) 
 
 	terminal := service.metricsBatchForState("run", 0, 12, false, map[string]int32{"buyers": 12}, "COMPLETE", "")
 	service.publishTerminalMetrics(terminal)
-	if got := service.droppedBatches.Load(); got != 1 {
+	if got := service.metricsBroker.droppedCount(); got != 1 {
 		t.Fatalf("evicted nonterminal batches = %d, want 1", got)
 	}
 
@@ -124,9 +124,7 @@ func TestStreamMetricsReturnsResourceExhaustedForTerminalBacklog(t *testing.T) {
 
 	deadline := time.Now().Add(time.Second)
 	for {
-		service.mu.RLock()
-		registered := len(service.subscribers) == 1
-		service.mu.RUnlock()
+		registered := service.metricsBroker.subscriberCount() == 1
 		if registered {
 			break
 		}
@@ -218,9 +216,7 @@ func TestDuplicateForcedStopWaitsForQuiescenceAndRetainsFinalEvidence(t *testing
 		t.Fatalf("duplicate stop after terminal tombstone = (%#v, %v)", ack, err)
 	}
 
-	service.mu.RLock()
-	tombstone := service.terminalBatches[terminalBatchKey{testID: "run", generation: 0}].batch
-	service.mu.RUnlock()
+	tombstone := service.metricsBroker.terminalBatch(terminalBatchKey{testID: "run", generation: 0})
 	if tombstone == nil || tombstone.GetFleetMetrics().GetCount() != 1 || len(tombstone.GetTransactionMetrics()) != 1 {
 		t.Fatalf("forced-stop terminal evidence = %#v", tombstone)
 	}
@@ -328,7 +324,11 @@ func TestTerminalTombstoneRecoversFromFinalizedArchiveAfterRestart(t *testing.T)
 	if ack, err := first.ClaimExecutionEpoch(context.Background(), claim); err != nil || !ack.GetAccepted() {
 		t.Fatalf("claim first execution epoch = (%#v, %v)", ack, err)
 	}
-	writer, err := newArchiveRecorderInNamespace(first.archiveNamespace, testID, "Restart run")
+	namespace, namespaceErr := first.archiveManager.namespaceSnapshot()
+	if namespaceErr != nil {
+		t.Fatal(namespaceErr)
+	}
+	writer, err := newArchiveRecorderInNamespace(namespace, testID, "Restart run")
 	if err != nil {
 		t.Fatalf("new archive recorder: %v", err)
 	}

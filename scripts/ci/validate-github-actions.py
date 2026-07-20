@@ -420,9 +420,9 @@ def check_client_package_fork_policy(
             errors.append(f".github/workflows/desktop.yml: missing required job {job_id!r}")
             continue
         start, block = job
-        if not any(line.strip() == CI_FULL_PR_GUARD for line in block):
+        if any(line.strip() == CI_FULL_PR_GUARD for line in block):
             errors.append(
-                f".github/workflows/desktop.yml:{start + 1}: job {job_id!r} must skip fork pull requests"
+                f".github/workflows/desktop.yml:{start + 1}: credential-free job {job_id!r} must validate fork pull requests"
             )
 
 
