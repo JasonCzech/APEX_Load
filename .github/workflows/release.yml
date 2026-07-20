@@ -28,7 +28,7 @@ jobs:
       commit: ${{ steps.verified.outputs.commit }}
     steps:
       - name: Checkout trusted verification tooling from protected main
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: refs/heads/main
           fetch-depth: 0
@@ -109,7 +109,7 @@ jobs:
       source-epoch: ${{ steps.metadata.outputs.source-epoch }}
     steps:
       - name: Checkout release source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.verify-tag.outputs.commit }}
           fetch-depth: 0
@@ -142,7 +142,7 @@ jobs:
     environment: registry-release
     steps:
       - name: Checkout the protected action release
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           persist-credentials: false
@@ -375,7 +375,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout release source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           persist-credentials: false
@@ -466,7 +466,7 @@ jobs:
             default_runner: '["windows-2025"]'
     steps:
       - name: Checkout release source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           persist-credentials: false
@@ -855,7 +855,7 @@ jobs:
         profile: [standard, enterprise]
     steps:
       - name: Checkout release source
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           persist-credentials: false
@@ -1179,7 +1179,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout release tooling
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           persist-credentials: false
@@ -1268,7 +1268,7 @@ jobs:
       packages: write
     steps:
       - name: Checkout release verification tooling
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           fetch-depth: 0
@@ -1484,7 +1484,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout release publication tooling
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           fetch-depth: 0
@@ -1544,7 +1544,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout stable release commit
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ needs.metadata.outputs.commit }}
           fetch-depth: 0

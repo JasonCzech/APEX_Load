@@ -57,7 +57,7 @@ jobs:
           [[ "$TARGET_ENVIRONMENT" == staging || "$TARGET_ENVIRONMENT" == production ]]
 
       - name: Checkout immutable protected-main plan revision
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
@@ -253,7 +253,7 @@ jobs:
           [[ "$PLAN_RUN_ID" =~ ^[1-9][0-9]*$ && "$PLAN_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
 
       - name: Checkout immutable protected-main handoff verifier
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
@@ -335,7 +335,7 @@ jobs:
           printf 'source-commit=%s\n' "$source_commit" >> "$GITHUB_OUTPUT"
 
       - name: Checkout the exact planned infrastructure revision
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           ref: ${{ steps.handoff.outputs.source-commit }}
           fetch-depth: 0
