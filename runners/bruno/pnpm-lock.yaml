@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
+  axios: 1.18.0
   form-data: 4.0.6
   uuid: 11.1.1
   ws: 8.21.1
@@ -518,7 +519,7 @@ packages:
     resolution: {integrity: sha512-BlpjvRWiOi52k8bCeoSCTe5jKQQdSqAN18x07WR8sZghzGW6tvtuepz+72pPvImI2vCn2F5HiyLvOVAVjoha+g==}
     engines: {node: '>=16'}
     peerDependencies:
-      axios: '>=1.6.0'
+      axios: 1.18.0
 
   aws4@1.13.2:
     resolution: {integrity: sha512-lHe62zvbTB5eEABUVi/AwVh0ZKY9rMMDhmm+eeyuuUQbQ3+J+fONVQOZyj+DdrvD4BY33uYniyRJ4UJIaSKAfw==}
@@ -526,11 +527,8 @@ packages:
   axios-ntlm@1.4.6:
     resolution: {integrity: sha512-4nR5cbVEBfPMTFkd77FEDpDuaR205JKibmrkaQyNwGcCx0szWNpRZaL0jZyMx4+mVY2PXHjRHuJafv9Oipl0Kg==}
 
-  axios@1.16.0:
-    resolution: {integrity: sha512-6hp5CwvTPlN2A31g5dxnwAX0orzM7pmCRDLnZSX772mv8WDqICwFjowHuPs04Mc8deIld1+ejhtaMn5vp6b+1w==}
-
-  axios@1.18.1:
-    resolution: {integrity: sha512-3nTvFlvpn9Zu/RkHUqtc7/+al4UpRW5az71ap5zccp6e8RAYEzhMTecX8Dz1wWDYrPpUoB1HAQEGEAEvUr7S9g==}
+  axios@1.18.0:
+    resolution: {integrity: sha512-E32NzpYKp++W7XRe52rHiXV2ehxmh3wbdgO7MHeFM+vqxLBYHzt0ElkiImtOBxtOmyp0yoC8C6uESVV84Y2/hw==}
 
   b4a@1.8.1:
     resolution: {integrity: sha512-aiqre1Nr0B/6DgE2N5vwTc+2/oQZ4Wh1t4NznYY4E00y8LCt6NqdRv81so00oo27D8MVKTpUa/MwUUtBLXCoDw==}
@@ -2090,8 +2088,8 @@ snapshots:
       '@usebruno/js': 0.49.0(debug@4.4.3)
       '@usebruno/lang': 0.37.1
       '@usebruno/requests': 0.18.0
-      aws4-axios: 3.4.0(axios@1.16.0(debug@4.4.3))
-      axios: 1.16.0(debug@4.4.3)
+      aws4-axios: 3.4.0(axios@1.18.0)
+      axios: 1.18.0(debug@4.4.3)
       axios-ntlm: 1.4.6(debug@4.4.3)
       chai: 4.5.0
       chalk: 3.0.0
@@ -2146,7 +2144,7 @@ snapshots:
       ajv: 8.20.0
       ajv-formats: 2.1.1(ajv@8.20.0)
       atob: 2.1.2
-      axios: 1.16.0(debug@4.4.3)
+      axios: 1.18.0(debug@4.4.3)
       btoa: 1.2.1
       chai: 4.5.0
       chai-string: 1.6.0(chai@4.5.0)
@@ -2169,6 +2167,7 @@ snapshots:
     transitivePeerDependencies:
       - debug
       - encoding
+      - supports-color
 
   '@usebruno/lang@0.37.0':
     dependencies:
@@ -2192,7 +2191,7 @@ snapshots:
       '@grpc/grpc-js': 1.14.4
       '@grpc/proto-loader': 0.7.15
       '@types/qs': 6.15.1
-      axios: 1.16.0(debug@4.4.3)
+      axios: 1.18.0(debug@4.4.3)
       debug: 4.4.3
       google-protobuf: 4.0.2
       grpc-js-reflection-client: 1.4.0(@grpc/grpc-js@1.14.4)
@@ -2260,17 +2259,17 @@ snapshots:
 
   atob@2.1.2: {}
 
-  aws4-axios@3.4.0(axios@1.16.0(debug@4.4.3)):
+  aws4-axios@3.4.0(axios@1.18.0):
     dependencies:
       '@aws-sdk/client-sts': 3.1087.0
       aws4: 1.13.2
-      axios: 1.16.0(debug@4.4.3)
+      axios: 1.18.0(debug@4.4.3)
 
   aws4@1.13.2: {}
 
   axios-ntlm@1.4.6(debug@4.4.3):
     dependencies:
-      axios: 1.18.1(debug@4.4.3)
+      axios: 1.18.0(debug@4.4.3)
       des.js: 1.1.0
       dev-null: 0.1.1
       js-md4: 0.3.2
@@ -2278,15 +2277,7 @@ snapshots:
       - debug
       - supports-color
 
-  axios@1.16.0(debug@4.4.3):
-    dependencies:
-      follow-redirects: 1.16.0(debug@4.4.3)
-      form-data: 4.0.6
-      proxy-from-env: 2.1.0
-    transitivePeerDependencies:
-      - debug
-
-  axios@1.18.1(debug@4.4.3):
+  axios@1.18.0(debug@4.4.3):
     dependencies:
       follow-redirects: 1.16.0(debug@4.4.3)
       form-data: 4.0.6

@@ -13,6 +13,12 @@ const { downloadBlobMock, saveApiResourceViaBridgeMock, startDesktopBrowserDownl
   saveApiResourceViaBridgeMock: vi.fn(),
   startDesktopBrowserDownloadMock: vi.fn(),
 }))
+
+const blobLike = expect.objectContaining({
+  arrayBuffer: expect.any(Function),
+  size: expect.any(Number),
+  type: expect.any(String),
+})
 vi.mock('../utils/fileUtils', async importOriginal => {
   const original = await importOriginal<typeof import('../utils/fileUtils')>()
   return { ...original, downloadBlob: downloadBlobMock }
@@ -73,7 +79,7 @@ describe('DesktopApiResourceLink', () => {
 
     const init = fetchMock.mock.calls[0][1] as RequestInit
     expect((init.headers as Headers).get('X-APEXLoad-Desktop-Token')).toBe('launch-secret')
-    expect(downloadBlobMock).toHaveBeenCalledWith(expect.any(Blob), 'server-report.json')
+    expect(downloadBlobMock).toHaveBeenCalledWith(blobLike, 'server-report.json')
   })
 
   it('streams Wails downloads through the native API save bridge', async () => {
@@ -170,7 +176,7 @@ describe('DesktopApiResourceLink', () => {
     const frame = document.body.querySelector('iframe[title="run-report.html"]') as HTMLIFrameElement | null
     expect(frame?.getAttribute('src')).toBe('blob:report-preview')
     expect(frame?.getAttribute('sandbox')).toBe('allow-scripts')
-    expect(createObjectURL).toHaveBeenCalledWith(expect.any(Blob))
+    expect(createObjectURL).toHaveBeenCalledWith(blobLike)
     expect(windowOpen).not.toHaveBeenCalled()
 
     const close = Array.from(document.body.querySelectorAll('button')).find(button => button.textContent === 'Close')
