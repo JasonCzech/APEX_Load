@@ -58,6 +58,11 @@ type ActionSpec struct {
 	// Validate holds residual per-type rules. Issues are labelled with the
 	// "actions[<index>]" prefix convention used across validate.go.
 	Validate func(index int, action Action) []string `json:"-"`
+	// validateInScript holds residual rules that need the owning script's
+	// protocol configuration. Keeping this callback on the same catalog entry
+	// as membership and field metadata prevents messaging semantics from
+	// becoming a second, independently maintained action catalog.
+	validateInScript func(path string, action Action, script *Script) []string
 }
 
 // EngineAction reports whether the spec describes an engine-level action
@@ -160,6 +165,18 @@ func protocolActionSpec(family, actionType string) (*ActionSpec, bool) {
 		}
 	}
 	return nil, false
+}
+
+// validateCatalogActionInScript dispatches configuration-dependent residual
+// validation through the same ActionSpec that establishes protocol membership.
+// The boolean distinguishes an action without a catalog entry/callback from a
+// valid action whose callback reports no issues.
+func validateCatalogActionInScript(family, path string, action Action, script *Script) ([]string, bool) {
+	spec, ok := protocolActionSpec(family, action.Type)
+	if !ok || spec.validateInScript == nil {
+		return nil, false
+	}
+	return spec.validateInScript(path, action, script), true
 }
 
 // AllActionSpecs returns every catalog spec sorted by canonical type.

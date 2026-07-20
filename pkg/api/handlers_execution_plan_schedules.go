@@ -3,6 +3,8 @@ package api
 import (
 	"errors"
 	"net/http"
+
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func (s *Server) handleCreateExecutionPlanSchedule(w http.ResponseWriter, r *http.Request) {
@@ -12,7 +14,8 @@ func (s *Server) handleCreateExecutionPlanSchedule(w http.ResponseWriter, r *htt
 	}
 	planID := r.PathValue("id")
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
-	schedule, err := s.runner.CreateExecutionPlanSchedule(planID, req, testCreationActor{
+	var schedule *storage.ExecutionPlanSchedule
+	schedule, err := s.executionPlanDomainService().CreateSchedule(planID, req, testCreationActor{
 		Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName,
 	})
 	if err != nil {
@@ -32,7 +35,7 @@ func (s *Server) handleCreateExecutionPlanSchedule(w http.ResponseWriter, r *htt
 }
 
 func (s *Server) handleListExecutionPlanSchedules(w http.ResponseWriter, r *http.Request) {
-	schedules, err := s.runner.ListExecutionPlanSchedulesForPlan(r.PathValue("id"))
+	schedules, err := s.executionPlanDomainService().ListSchedules(r.PathValue("id"))
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -58,7 +61,8 @@ func (s *Server) handleUpdateExecutionPlanSchedule(w http.ResponseWriter, r *htt
 	planID := r.PathValue("id")
 	scheduleID := r.PathValue("schedule_id")
 	actorType, actorSubject, actorDisplayName := s.resolveAuditActor(r)
-	schedule, ok, err := s.runner.UpdateExecutionPlanSchedule(planID, scheduleID, req, testCreationActor{
+	var schedule *storage.ExecutionPlanSchedule
+	schedule, ok, err := s.executionPlanDomainService().UpdateSchedule(planID, scheduleID, req, testCreationActor{
 		Type: actorType, Subject: actorSubject, DisplayName: actorDisplayName,
 	})
 	if err != nil {
@@ -86,7 +90,7 @@ func (s *Server) handleUpdateExecutionPlanSchedule(w http.ResponseWriter, r *htt
 func (s *Server) handleDeleteExecutionPlanSchedule(w http.ResponseWriter, r *http.Request) {
 	planID := r.PathValue("id")
 	scheduleID := r.PathValue("schedule_id")
-	ok, err := s.runner.DeleteExecutionPlanScheduleForPlan(planID, scheduleID)
+	ok, err := s.executionPlanDomainService().DeleteSchedule(planID, scheduleID)
 	if err != nil {
 		status := http.StatusBadRequest
 		if errors.Is(err, errNotExecutionLeader) {
@@ -114,7 +118,7 @@ func (s *Server) handleListExecutionPlanScheduleOccurrences(w http.ResponseWrite
 	if limit > maxScheduleHistoryListLimit {
 		limit = maxScheduleHistoryListLimit
 	}
-	occurrences, ok, err := s.runner.ListExecutionPlanScheduleOccurrencesPageForPlan(planID, scheduleID, limit, offset)
+	occurrences, ok, err := s.executionPlanDomainService().ListScheduleOccurrences(planID, scheduleID, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return

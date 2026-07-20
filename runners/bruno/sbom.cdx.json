@@ -710,14 +710,8 @@
     {
       "type": "library",
       "name": "axios",
-      "version": "1.16.0",
-      "purl": "pkg:npm/axios@1.16.0"
-    },
-    {
-      "type": "library",
-      "name": "axios",
-      "version": "1.18.1",
-      "purl": "pkg:npm/axios@1.18.1"
+      "version": "1.18.0",
+      "purl": "pkg:npm/axios@1.18.0"
     },
     {
       "type": "library",

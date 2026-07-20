@@ -784,9 +784,11 @@ func (tr *TestRunner) forgetRunSnapshotWriteStateLocked(testID string) {
 
 func (tr *TestRunner) broadcastMetrics(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts, done chan struct{}) time.Time {
 	groupVUsers := make(map[string]int)
+	tr.mu.RLock()
 	for _, g := range test.Groups {
 		groupVUsers[g.Name] = g.VUsers
 	}
+	tr.mu.RUnlock()
 
 	intervalSec := tr.GetSystemSettings().General.MetricsIntervalSeconds
 	interval, ok := checkedDuration(intervalSec, time.Second)

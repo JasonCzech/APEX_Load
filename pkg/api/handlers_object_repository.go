@@ -12,7 +12,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -35,11 +34,12 @@ func validateObjectRepository(repo *storage.ObjectRepository) (int, string) {
 }
 
 func (s *Server) loadObjectRepository(w http.ResponseWriter, r *http.Request) (*storage.ObjectRepository, bool) {
-	if s.store == nil {
+	service := s.objectRepositoryDomainService()
+	if !service.StorageConfigured() {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return nil, false
 	}
-	repo, err := s.store.GetObjectRepository(r.PathValue("id"))
+	repo, err := service.GetRepository(r.PathValue("id"))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "object repository not found")
@@ -52,7 +52,8 @@ func (s *Server) loadObjectRepository(w http.ResponseWriter, r *http.Request) (*
 }
 
 func (s *Server) handleCreateObjectRepository(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+	service := s.objectRepositoryDomainService()
+	if !service.StorageConfigured() {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
@@ -66,7 +67,7 @@ func (s *Server) handleCreateObjectRepository(w http.ResponseWriter, r *http.Req
 	}
 	repo.ID = "object-repo-" + uuid.New().String()
 	repo.ProjectID = normalizeProjectID(repo.ProjectID)
-	if err := s.store.SaveObjectRepository(&repo); err != nil {
+	if err := service.SaveRepository(&repo); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -77,13 +78,14 @@ func (s *Server) handleCreateObjectRepository(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleListObjectRepositories(w http.ResponseWriter, r *http.Request) {
+	service := s.objectRepositoryDomainService()
 	limit, offset := parseLimitOffsetQuery(r, defaultObjectRepositoryListLimit)
-	if s.store == nil {
+	if !service.StorageConfigured() {
 		writeJSON(w, http.StatusOK, map[string]any{"object_repositories": []*storage.ObjectRepository{}, "count": 0, "limit": limit, "offset": offset})
 		return
 	}
 	projectID := strings.TrimSpace(r.URL.Query().Get("project_id"))
-	repos, err := s.store.ListObjectRepositories(projectID, limit, offset)
+	repos, err := service.ListRepositories(projectID, limit, offset)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
@@ -103,6 +105,7 @@ func (s *Server) handleGetObjectRepository(w http.ResponseWriter, r *http.Reques
 }
 
 func (s *Server) handleUpdateObjectRepository(w http.ResponseWriter, r *http.Request) {
+	service := s.objectRepositoryDomainService()
 	existing, ok := s.loadObjectRepository(w, r)
 	if !ok {
 		return
@@ -139,15 +142,12 @@ func (s *Server) handleUpdateObjectRepository(w http.ResponseWriter, r *http.Req
 		writeError(w, status, msg)
 		return
 	}
-	updater, supported := s.store.(interface {
-		UpdateObjectRepositoryIfUnchanged(repo *storage.ObjectRepository, expectedUpdatedAt time.Time) (bool, error)
-	})
-	if !supported {
-		writeError(w, http.StatusNotImplemented, "optimistic object repository updates are not supported by this storage backend")
-		return
-	}
-	updated, err := updater.UpdateObjectRepositoryIfUnchanged(&req, existing.UpdatedAt)
+	updated, err := service.UpdateRepositoryIfUnchanged(&req, existing.UpdatedAt)
 	if err != nil {
+		if errors.Is(err, errObjectRepositoryOptimisticUpdateUnsupported) {
+			writeError(w, http.StatusNotImplemented, err.Error())
+			return
+		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -160,12 +160,13 @@ func (s *Server) handleUpdateObjectRepository(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleDeleteObjectRepository(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+	service := s.objectRepositoryDomainService()
+	if !service.StorageConfigured() {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
 	id := r.PathValue("id")
-	repo, err := s.store.GetObjectRepository(id)
+	repo, err := service.GetRepository(id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			writeError(w, http.StatusNotFound, "object repository not found")
@@ -188,15 +189,7 @@ func (s *Server) handleDeleteObjectRepository(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) deleteObjectRepositoryIfUnreferenced(repo *storage.ObjectRepository) (bool, error) {
-	if repo == nil {
-		return false, nil
-	}
-	if guarded, ok := s.store.(interface {
-		DeleteObjectRepositoryIfUnreferencedAndUnchanged(string, time.Time) (bool, error)
-	}); ok {
-		return guarded.DeleteObjectRepositoryIfUnreferencedAndUnchanged(repo.ID, repo.UpdatedAt)
-	}
-	return false, errors.New("guarded object repository deletion is not supported by this storage backend")
+	return s.objectRepositoryDomainService().DeleteRepositoryIfUnreferenced(repo)
 }
 
 // handleObjectRepositoryFromScript seeds a new repository from a script's
@@ -205,7 +198,8 @@ func (s *Server) deleteObjectRepositoryIfUnreferenced(repo *storage.ObjectReposi
 // (selector.MetadataCandidatesKey) so the repository inherits the recorded /
 // TruClient object-repository fidelity.
 func (s *Server) handleObjectRepositoryFromScript(w http.ResponseWriter, r *http.Request) {
-	if s.store == nil {
+	service := s.objectRepositoryDomainService()
+	if !service.StorageConfigured() {
 		writeError(w, http.StatusServiceUnavailable, "storage is not configured")
 		return
 	}
@@ -222,7 +216,7 @@ func (s *Server) handleObjectRepositoryFromScript(w http.ResponseWriter, r *http
 		writeError(w, http.StatusBadRequest, "script_id is required")
 		return
 	}
-	stored, ok := s.runner.GetScript(scriptID)
+	stored, ok := service.GetScript(scriptID)
 	if !ok || stored == nil || stored.Script == nil {
 		writeError(w, http.StatusNotFound, "script not found")
 		return
@@ -246,7 +240,7 @@ func (s *Server) handleObjectRepositoryFromScript(w http.ResponseWriter, r *http
 		Source:    "script:" + scriptID,
 		Objects:   objects,
 	}
-	if err := s.store.SaveObjectRepository(repo); err != nil {
+	if err := service.SaveRepository(repo); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -255,7 +249,7 @@ func (s *Server) handleObjectRepositoryFromScript(w http.ResponseWriter, r *http
 	if req.BindScript {
 		bindCopy := cloneScriptDefinition(stored.Script)
 		if bound := bindScriptToObjectRepository(bindCopy, repo); bound > 0 {
-			_, ok, err := s.runner.UpdateScriptDurableInProject(scriptID, bindCopy, repo.ProjectID)
+			ok, err := service.UpdateScript(scriptID, bindCopy, repo.ProjectID)
 			if err != nil {
 				cleaned, cleanupErr := s.deleteObjectRepositoryIfUnreferenced(repo)
 				if cleanupErr == nil && !cleaned {

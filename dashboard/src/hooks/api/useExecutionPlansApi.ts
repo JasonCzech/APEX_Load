@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react'
 
-import {
+import type {
   ExecutionPlan,
   ExecutionPlanApproval,
   ExecutionPlanApprovalListResponse,
@@ -12,8 +12,8 @@ import {
   ExecutionPlanScheduleListResponse,
   ExecutionPlanScheduleOccurrenceListResponse,
   ExecutionPlanScheduleRequest,
-	ScheduleOccurrenceResolutionRequest,
-} from '../../types'
+  ScheduleOccurrenceResolutionRequest,
+} from '../../types/executionPlans'
 import { request } from '../apiClient'
 
 function buildQuery(params: Record<string, string | number | undefined>) {

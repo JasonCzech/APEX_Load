@@ -1,10 +1,10 @@
 import { useCallback, useMemo } from 'react'
 
-import {
+import type {
   EntitlementsResponse,
   EntitlementsUsageResponse,
   ProjectEntitlementsUsageResponse,
-} from '../../types'
+} from '../../types/entitlements'
 import { request } from '../apiClient'
 
 export function useEntitlementsApi() {
