@@ -32,7 +32,7 @@ func TestValidateScriptIssues_Parameters(t *testing.T) {
 	assertIssue(t, issues, "parameters[5] \"password\": same_line_as references unknown parameter \"missing\"")
 }
 
-func TestValidateScriptIssuesRejectsUnboundParameterColumnAndHeaderAsData(t *testing.T) {
+func TestValidateScriptIssuesRejectsHeaderAsData(t *testing.T) {
 	script := &Script{
 		Name: "soap", Protocol: "http", Config: ScriptConfig{BaseURL: "https://example.test"},
 		DataSources: []DataSource{{Name: "users", Type: "dat", InlineData: "UserName,Password\nalice,secret", Columns: []string{"UserName", "Password"}, FirstRowHeader: false}},
@@ -41,7 +41,6 @@ func TestValidateScriptIssuesRejectsUnboundParameterColumnAndHeaderAsData(t *tes
 	}
 	issues := ValidateScriptIssues(script)
 	assertIssueContains(t, issues, `first record matches declared columns while first_row_header is false`)
-	assertIssueContains(t, issues, `column "Version" is not declared by data_source "users"`)
 }
 
 func TestValidateScriptIssues_ParametersAllowsSupportedValues(t *testing.T) {

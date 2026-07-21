@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 describe('app shell layout', () => {
-  it('keeps the sticky page banner full width across app pages', async () => {
+  it('keeps page feedback in flow and the topbar full width across app pages', async () => {
     // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
     const { readFileSync } = await import('node:fs')
     const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
@@ -9,7 +9,8 @@ describe('app shell layout', () => {
 
     expect(cssRule(appCss, '.main-topbar')).toContain('margin: -20px -36px 24px;')
     expect(cssRule(appCss, '.main-topbar')).toContain('padding: 10px 36px;')
-    expect(cssRule(appCss, '.main-topbar-feedback')).toContain('margin: -20px 0 20px;')
+    expect(cssRule(appCss, '.main-topbar-feedback')).toContain('position: relative;')
+    expect(cssRule(appCss, '.main-topbar-feedback')).toContain('margin: 0 0 20px;')
     expect(cssRule(appCss, '.main-topbar-feedback')).toContain('padding: 8px 0;')
     expect(appCss).not.toContain(':has(.command-center-page) > .main-topbar')
     expect(appCss).not.toContain('margin: -20px 0 24px;')

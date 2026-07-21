@@ -1090,10 +1090,6 @@ func validateParameterIssues(script *Script) []string {
 	}
 
 	seen := make(map[string]struct{}, len(script.Parameters))
-	dataSources := make(map[string]DataSource, len(script.DataSources))
-	for _, source := range script.DataSources {
-		dataSources[strings.ToLower(strings.TrimSpace(source.Name))] = source
-	}
 	for i, param := range script.Parameters {
 		label := fmt.Sprintf("parameters[%d]", i)
 		name := strings.TrimSpace(param.Name)
@@ -1163,14 +1159,6 @@ func validateParameterIssues(script *Script) []string {
 			if strings.TrimSpace(param.Column) == "" {
 				issues = append(issues, fmt.Sprintf("%s %q: column is required for file parameters", label, name))
 			}
-			if sourceName, column := strings.ToLower(strings.TrimSpace(param.DataSource)), strings.TrimSpace(param.Column); sourceName != "" && column != "" {
-				source, ok := dataSources[sourceName]
-				if !ok {
-					issues = append(issues, fmt.Sprintf("%s %q: data_source %q does not exist", label, name, param.DataSource))
-				} else if (len(source.Columns) > 0 || (source.FirstRowHeader && strings.TrimSpace(source.InlineData) != "")) && !dataSourceDeclaresColumn(source, column) {
-					issues = append(issues, fmt.Sprintf("%s %q: column %q is not declared by data_source %q", label, name, param.Column, param.DataSource))
-				}
-			}
 		case "list":
 			if len(param.Values) == 0 && strings.TrimSpace(param.DataSource) == "" {
 				issues = append(issues, fmt.Sprintf("%s %q: values or data_source is required for list parameters", label, name))
@@ -1204,24 +1192,6 @@ func validateParameterIssues(script *Script) []string {
 	}
 
 	return issues
-}
-
-func dataSourceDeclaresColumn(source DataSource, column string) bool {
-	columns := source.Columns
-	if source.FirstRowHeader && strings.TrimSpace(source.InlineData) != "" {
-		first := strings.SplitN(strings.ReplaceAll(source.InlineData, "\r\n", "\n"), "\n", 2)[0]
-		delimiter := ","
-		if source.Delimiter == "\t" || strings.EqualFold(source.Delimiter, "tab") {
-			delimiter = "\t"
-		}
-		columns = strings.Split(first, delimiter)
-	}
-	for _, candidate := range columns {
-		if strings.EqualFold(strings.TrimSpace(candidate), strings.TrimSpace(column)) {
-			return true
-		}
-	}
-	return false
 }
 
 func validateParameterTimezone(issues *[]string, label, name, timezone string) {
