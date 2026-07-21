@@ -48,12 +48,29 @@ func newRunningControlTestServer(t *testing.T) (*Server, *ManagedTest) {
 		t.Fatalf("StartTest returned error: %v", err)
 	}
 	waitForTestStatus(t, server.runner, testRun.ID, "RUNNING")
+	waitForControlTestLoadReady(t, server.runner, testRun.ID)
 
 	t.Cleanup(func() {
 		cleanupControlTestRun(t, server, testRun.ID)
 	})
 
 	return server, testRun
+}
+
+func waitForControlTestLoadReady(t *testing.T, runner *TestRunner, testID string) {
+	t.Helper()
+	deadline := time.Now().Add(30 * time.Second)
+	for time.Now().Before(deadline) {
+		runner.mu.RLock()
+		test := runner.tests[testID]
+		ready := runner.testLoadReadyLocked(test, time.Now().UTC())
+		runner.mu.RUnlock()
+		if ready {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for test %s load window to become ready", testID)
 }
 
 func newRunningGoalControlTestServer(t *testing.T) (*Server, *ManagedTest) {
