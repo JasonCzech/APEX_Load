@@ -20,6 +20,18 @@ func unresolvedSecretAction() dsl.Action {
 	}
 }
 
+func TestExecuteFailsClosedBeforeSendingUnresolvedParameter(t *testing.T) {
+	proto := &captureProtocol{}
+	vu := newControlFlowVUser(proto, nil, nil)
+	resolved := vu.resolveAction(dsl.Action{Name: "soap", Type: "POST", Target: "/soap", Body: `<user>{{param.username}}</user>`})
+	if _, err := vu.executeWithRetry(context.Background(), resolved, dsl.ErrorHandlingConfig{}); err == nil || !strings.Contains(err.Error(), "unresolved {{param.*}}") {
+		t.Fatalf("execute error = %v, want unresolved parameter refusal", err)
+	}
+	if len(proto.names) != 0 {
+		t.Fatalf("protocol calls = %d, want zero", len(proto.names))
+	}
+}
+
 func TestCachingSecretResolverSingleflightsConcurrentResolution(t *testing.T) {
 	var calls atomic.Int64
 	release := make(chan struct{})

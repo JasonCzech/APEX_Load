@@ -318,15 +318,26 @@ func TestConvertFindSaveCountExtractorNeverFails(t *testing.T) {
 	}
 }
 
-func TestConvertExtractorEmptyBoundariesSaveWholeBody(t *testing.T) {
+func TestConvertExtractorEmptyBoundariesPrunesUnusedWholeBody(t *testing.T) {
 	ext, _ := convertSingleExtractor(t, `web_reg_save_param("get_body","LB=","RB=","Search=Body","NotFound=Warning",LAST);`)
-	if ext == nil {
-		t.Fatal("extractor not converted")
+	if ext != nil {
+		t.Fatalf("extractor = %+v, want unused whole-body capture pruned", ext)
 	}
-	if ext.Type != "regex" || ext.Expression != "(?s)^(.*)$" {
-		t.Errorf("extractor = %+v, want whole-body regex", ext)
+}
+
+func TestPruneUnusedWholeBodyExtractorsRetainsReferencedAndTargeted(t *testing.T) {
+	script := &dsl.Script{Actions: []dsl.Action{
+		{Name: "source", Extractors: []dsl.Extractor{
+			{Name: "unused", Type: "regex", Expression: "(?s)^(.*)$"},
+			{Name: "used", Type: "regex", Expression: "(?s)^(.*)$"},
+			{Name: "token", Type: "regex", Expression: `token=(.+)`},
+		}},
+		{Name: "consumer", Body: `{{var.used}}`},
+	}}
+	if removed := pruneUnusedWholeBodyExtractors(script); removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
 	}
-	if ext.OnMiss != "empty" {
-		t.Errorf("NotFound=Warning should map to on_miss empty, got %q", ext.OnMiss)
+	if got := script.Actions[0].Extractors; len(got) != 2 || got[0].Name != "used" || got[1].Name != "token" {
+		t.Fatalf("extractors = %#v, want referenced whole-body and targeted extractors", got)
 	}
 }

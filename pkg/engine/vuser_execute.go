@@ -244,6 +244,9 @@ func (vu *VUser) safeProtoExecute(ctx context.Context, action *protocol.Action) 
 }
 
 func (vu *VUser) safeProtoExecuteStream(ctx context.Context, action *protocol.Action, emit func(*protocol.Result) error) (result *protocol.Result, err error) {
+	if actionContainsUnresolvedParameter(action) {
+		return nil, fmt.Errorf("refusing to execute action %q with an unresolved {{param.*}} reference", action.Name)
+	}
 	defer func() {
 		if r := recover(); r != nil {
 			result = nil
@@ -266,6 +269,22 @@ func (vu *VUser) safeProtoExecuteStream(ctx context.Context, action *protocol.Ac
 		return streaming.ExecuteStream(ctx, action, emit)
 	}
 	return vu.Proto.Execute(ctx, action)
+}
+
+func actionContainsUnresolvedParameter(action *protocol.Action) bool {
+	if action == nil {
+		return false
+	}
+	for _, value := range []string{
+		action.Target, action.Selector, action.Value, string(action.Body),
+		action.RedactedTarget, action.RedactedSelector, action.RedactedValue, string(action.RedactedBody),
+	} {
+		if strings.Contains(strings.ToLower(value), "{{param.") {
+			return true
+		}
+	}
+	encoded, err := json.Marshal(action)
+	return err != nil || strings.Contains(strings.ToLower(string(encoded)), "{{param.")
 }
 
 // executeWithRetry wraps a single action execution with retry logic.

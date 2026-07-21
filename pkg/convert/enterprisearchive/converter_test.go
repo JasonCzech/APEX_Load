@@ -1706,8 +1706,8 @@ UpdateValueOn=Each Occurrence
 	if len(result.Script.DataSources) != 1 || result.Script.DataSources[0].Name != "users" {
 		t.Fatalf("data sources = %#v, want one mapped users data source", result.Script.DataSources)
 	}
-	if result.Script.DataSources[0].Path != "Users.dat" {
-		t.Fatalf("data source path = %q, want original Users.dat filename", result.Script.DataSources[0].Path)
+	if result.Script.DataSources[0].Path != "" || result.Script.DataSources[0].FileName != "Users.dat" {
+		t.Fatalf("data source path/file_name = %q/%q, want inline data with Users.dat provenance", result.Script.DataSources[0].Path, result.Script.DataSources[0].FileName)
 	}
 	payload, err := json.Marshal(result.Script.Metadata.Import)
 	if err != nil {
@@ -2467,15 +2467,18 @@ Type="Table"
 	if len(result.Script.DataSources) != 2 {
 		t.Fatalf("data sources = %#v, want two .dat sources", result.Script.DataSources)
 	}
-	dataSourcePaths := map[string]string{}
+	dataSourceFiles := map[string]string{}
 	for _, source := range result.Script.DataSources {
-		dataSourcePaths[source.Name] = source.Path
+		if source.Path != "" {
+			t.Fatalf("data source = %#v, archive-backed inline data must not expose an executable path", source)
+		}
+		dataSourceFiles[source.Name] = source.FileName
 		if !source.FirstRowHeader {
 			t.Fatalf("data source = %#v, want header inference for quoted .dat imports", source)
 		}
 	}
-	if dataSourcePaths["username"] != "UserName.dat" || dataSourcePaths["acme_iao"] != "ACME_IAO.dat" {
-		t.Fatalf("data source paths = %#v, want original .dat filenames", dataSourcePaths)
+	if dataSourceFiles["username"] != "UserName.dat" || dataSourceFiles["acme_iao"] != "ACME_IAO.dat" {
+		t.Fatalf("data source file names = %#v, want original .dat provenance", dataSourceFiles)
 	}
 }
 

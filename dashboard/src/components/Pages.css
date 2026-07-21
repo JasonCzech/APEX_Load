@@ -7436,6 +7436,16 @@
   margin-top: -14px;
 }
 
+.page-error-banner {
+  margin: 16px 0;
+  padding: 12px 16px;
+  border: 1px solid var(--danger-border, var(--danger));
+  border-radius: 8px;
+  background: var(--danger-bg, color-mix(in srgb, var(--danger) 12%, var(--bg-secondary)));
+  color: var(--danger-text, var(--danger));
+  font-weight: 600;
+}
+
 .new-test-error-diagnostic {
   margin-top: -8px;
   margin-bottom: 4px;

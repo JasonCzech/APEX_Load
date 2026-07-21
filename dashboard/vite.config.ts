@@ -81,6 +81,8 @@ export default defineConfig({
       '/api': {
         target: process.env.APEXLOAD_API_PROXY || 'http://localhost:8080',
         ws: true,
+		changeOrigin: true,
+		rewriteWsOrigin: true,
       },
     },
   },

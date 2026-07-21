@@ -576,7 +576,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const replaySecretStatusKnownRef = useRef(true)
   const refreshScriptSecretStatus = useCallback(async () => {
     const requestId = ++scriptSecretStatusRequestRef.current
-    if (!scriptId || !projectId || typeof api.getScriptSecretStatus !== 'function') {
+    if (!scriptId || typeof api.getScriptSecretStatus !== 'function') {
       setScriptSecretStatus(null)
       return
     }
@@ -590,7 +590,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         setScriptSecretStatus(null)
       }
     }
-  }, [api, projectId, scriptId])
+  }, [api, scriptId])
   useEffect(() => {
     void refreshScriptSecretStatus()
     return () => {
@@ -2726,11 +2726,12 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     || buildLocalReplayPreflight(currentDraftScript, replayConfiguredVariables)
   const requiredProjectSecretNames = Array.from(new Set([
     ...(unreconciledReplayPreflight.required_secrets || []),
-    ...(!jsonDirty && scriptSecretStatus && scriptSecretStatus.project_id === projectId
+    ...(!jsonDirty && scriptSecretStatus
       ? scriptSecretStatus.required || []
       : []),
   ])).sort()
   const requiredProjectSecretNamesKey = requiredProjectSecretNames.join('\u0000')
+	const secretScopeProjectId = currentDraftScript.project_id || projectId
   const preflightWithAllRequiredSecrets: ReplayPreflight = {
     ...unreconciledReplayPreflight,
     required_secrets: requiredProjectSecretNames,
@@ -2741,21 +2742,21 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     const requiredNames = requiredProjectSecretNamesKey === ''
       ? []
       : requiredProjectSecretNamesKey.split('\u0000')
-    if (!projectId || requiredNames.length === 0 || typeof api.getProjectSecretStatuses !== 'function') {
+    if (!secretScopeProjectId || requiredNames.length === 0 || typeof api.getProjectSecretStatuses !== 'function') {
       setProjectSecretProbe(null)
       return
     }
     setProjectSecretProbe({
-      projectId,
+      projectId: secretScopeProjectId,
       namesKey: requiredProjectSecretNamesKey,
       statuses: [],
       state: 'loading',
     })
-    void api.getProjectSecretStatuses(projectId, requiredNames)
+    void api.getProjectSecretStatuses(secretScopeProjectId, requiredNames)
       .then(response => {
-        if (projectSecretProbeRequestRef.current !== requestId || response.project_id !== projectId) return
+		if (projectSecretProbeRequestRef.current !== requestId || response.project_id !== secretScopeProjectId) return
         setProjectSecretProbe({
-          projectId,
+          projectId: secretScopeProjectId,
           namesKey: requiredProjectSecretNamesKey,
           statuses: response.secrets || [],
           state: 'ready',
@@ -2764,7 +2765,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       .catch(() => {
         if (projectSecretProbeRequestRef.current === requestId) {
           setProjectSecretProbe({
-            projectId,
+            projectId: secretScopeProjectId,
             namesKey: requiredProjectSecretNamesKey,
             statuses: [],
             state: 'unavailable',
@@ -2774,14 +2775,14 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     return () => {
       if (projectSecretProbeRequestRef.current === requestId) projectSecretProbeRequestRef.current += 1
     }
-  }, [api, projectId, projectSecretProbeRetryGeneration, requiredProjectSecretNamesKey])
+  }, [api, secretScopeProjectId, projectSecretProbeRetryGeneration, requiredProjectSecretNamesKey])
 
   const projectProbeIsCurrent = projectSecretProbe !== null
-    && projectSecretProbe.projectId === projectId
+    && projectSecretProbe.projectId === secretScopeProjectId
     && projectSecretProbe.namesKey === requiredProjectSecretNamesKey
   const projectProbeIsReady = projectProbeIsCurrent && projectSecretProbe?.state === 'ready'
   const projectProbeIsUnavailable = projectProbeIsCurrent && projectSecretProbe?.state === 'unavailable'
-  const persistedStatusByName = new Map((scriptSecretStatus && scriptSecretStatus.project_id === projectId ? scriptSecretStatus.secrets : [])
+  const persistedStatusByName = new Map((scriptSecretStatus && scriptSecretStatus.project_id === secretScopeProjectId ? scriptSecretStatus.secrets : [])
     .map(status => [status.name, status]))
   const persistedStatusCoversCurrentDraft = Boolean(scriptId)
     && requiredProjectSecretNames.every(name => persistedStatusByName.has(name))
