@@ -511,7 +511,7 @@ func TestDistributedExecutionBackendStopTestClearsRemoteAssignment(t *testing.T)
 	runner := NewTestRunner(1, hub, nil)
 	runner.setExecutionBackend(newDistributedExecutionBackend(
 		[]string{"bufnet"},
-		400*time.Millisecond,
+		2*time.Second,
 		func(ctx context.Context, target string) (generatorClient, error) {
 			return generatorrpc.Dial(
 				ctx,
