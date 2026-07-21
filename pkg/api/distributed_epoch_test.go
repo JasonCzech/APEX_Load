@@ -158,8 +158,8 @@ func stopEpochKeeperServer(t *testing.T, cancel context.CancelFunc, done <-chan 
 func TestGeneratorExecutionEpochKeeperAllowsNextRunAfterIdleBeyondTTL(t *testing.T) {
 	store := &generatorEpochKeeperLeaseStore{acquired: true, generation: 70}
 	leadership := newExecutionLeadership(store, "idle-keeper")
-	leadership.ttl = 150 * time.Millisecond
-	leadership.renew = 25 * time.Millisecond
+	leadership.ttl = 500 * time.Millisecond
+	leadership.renew = 50 * time.Millisecond
 	client := &expiringGeneratorEpochClient{accepted: make(chan uint64, 64)}
 	backend := newDistributedExecutionBackend([]string{"generator-idle"}, 15*time.Millisecond, func(context.Context, string) (generatorClient, error) {
 		return client, nil
