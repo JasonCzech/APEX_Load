@@ -533,6 +533,23 @@ func validateDataSourceIssues(script *Script) []string {
 				issues = append(issues, fmt.Sprintf("%s %q: staged_asset cannot be combined with inline_data, path, or storage_ref", label, name))
 			}
 		}
+		if !source.FirstRowHeader && len(source.Columns) > 0 && strings.TrimSpace(source.InlineData) != "" {
+			first := strings.SplitN(strings.ReplaceAll(source.InlineData, "\r\n", "\n"), "\n", 2)[0]
+			delimiter := ","
+			if source.Delimiter == "\t" || strings.EqualFold(source.Delimiter, "tab") {
+				delimiter = "\t"
+			}
+			cells := strings.Split(first, delimiter)
+			if len(cells) == len(source.Columns) {
+				matches := true
+				for index := range cells {
+					matches = matches && strings.EqualFold(strings.TrimSpace(cells[index]), strings.TrimSpace(source.Columns[index]))
+				}
+				if matches {
+					issues = append(issues, fmt.Sprintf("%s %q: first record matches declared columns while first_row_header is false", label, name))
+				}
+			}
+		}
 		switch sourceType {
 		case "", "csv", "dat":
 			continue

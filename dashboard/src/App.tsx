@@ -568,7 +568,9 @@ function AppShell({
   const { connectionState } = useWebSocket({
     onMessage: handleProjectWSMessage,
     projectId: activeProject?.id,
-    enabled: Boolean(activeProject?.id),
+    // Keep an unfiltered global socket alive before a project is selected so
+    // connection health and global events remain observable.
+    enabled: true,
   });
   const outerApplicationContext = useApplication();
   const applications = useMemo(

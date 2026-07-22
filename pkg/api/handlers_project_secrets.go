@@ -831,6 +831,8 @@ func projectSecretAuditDetails(provider, reason string, extra map[string]any) ma
 }
 
 func createProjectSecretWithReconciliation(ctx context.Context, store secretstore.Store, projectID, name, value, actor string) (secretstore.Metadata, string, error) {
+	ctx, cancel := engine.WithSecretResolutionBudget(ctx)
+	defer cancel()
 	metadata, err := store.Create(ctx, projectID, name, value, actor)
 	if err == nil {
 		return metadata, "created", nil
@@ -850,6 +852,8 @@ func createProjectSecretWithReconciliation(ctx context.Context, store secretstor
 }
 
 func replaceProjectSecretWithReconciliation(ctx context.Context, store secretstore.Store, projectID, name, value, actor string) (secretstore.Metadata, string, error) {
+	ctx, cancel := engine.WithSecretResolutionBudget(ctx)
+	defer cancel()
 	attemptStarted := time.Now().UTC().Truncate(time.Microsecond)
 	metadata, err := store.Replace(ctx, projectID, name, value, actor)
 	if err == nil {

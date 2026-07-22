@@ -3100,10 +3100,11 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 		return ctx, nil, nil, false, fmt.Errorf("persist running test state: %w", err)
 	}
 	snapshot := buildRunLiveStateSnapshotLocked(test, now)
+	eventSnapshot := cloneManagedTestFieldsLocked(test)
 	tr.mu.Unlock()
 
 	tr.cacheRunSnapshot(snapshot)
-	tr.broadcastEvent("test_started", test)
+	tr.broadcastEvent("test_started", eventSnapshot)
 	tr.startStageSchedules(ctx, test, mge)
 
 	metricsDone := make(chan struct{})

@@ -462,6 +462,13 @@ func (s *EncryptedStore) saveSession(ctx context.Context, descriptor SessionDesc
 	}
 	slot, err := s.reserveSessionCapacity(descriptor)
 	if err != nil {
+		deleted, deletedErr := s.projectDeleted(descriptor.ProjectID)
+		if deletedErr != nil {
+			return errors.Join(err, deletedErr)
+		}
+		if deleted {
+			return ErrProjectDeleted
+		}
 		return err
 	}
 	descriptor.CapacitySlot = &slot
@@ -556,30 +563,33 @@ func (s *EncryptedStore) reserveSessionCapacity(descriptor SessionDescriptor) (i
 	if err != nil {
 		return 0, err
 	}
+	temp, err := os.CreateTemp(directory, ".capacity-*")
+	if err != nil {
+		return 0, err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if _, err := temp.Write(data); err != nil {
+		_ = temp.Close()
+		return 0, err
+	}
+	if err := temp.Sync(); err != nil {
+		_ = temp.Close()
+		return 0, err
+	}
+	if err := temp.Close(); err != nil {
+		return 0, err
+	}
 	now := time.Now().UTC()
 	for slot := 0; slot < s.sessionCapacity; slot++ {
 		path := s.sessionCapacityPath(slot)
 		for attempt := 0; attempt < 2; attempt++ {
-			file, openErr := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-			if openErr == nil {
-				if _, writeErr := file.Write(data); writeErr != nil {
-					_ = file.Close()
-					_ = os.Remove(path)
-					return 0, writeErr
-				}
-				if syncErr := file.Sync(); syncErr != nil {
-					_ = file.Close()
-					_ = os.Remove(path)
-					return 0, syncErr
-				}
-				if closeErr := file.Close(); closeErr != nil {
-					_ = os.Remove(path)
-					return 0, closeErr
-				}
+			linkErr := os.Link(tempPath, path)
+			if linkErr == nil {
 				return slot, nil
 			}
-			if !errors.Is(openErr, os.ErrExist) {
-				return 0, openErr
+			if !errors.Is(linkErr, os.ErrExist) {
+				return 0, linkErr
 			}
 			reclaimed, reclaimErr := reclaimSessionCapacityReservation(path, now)
 			if reclaimErr != nil {

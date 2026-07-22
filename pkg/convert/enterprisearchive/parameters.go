@@ -165,9 +165,11 @@ func isSourceRandomNumberType(rawType string, values map[string]string) bool {
 func buildParameterDataSource(dataSourceName, dataFile, dataContent, column, delimiter, paramName string) dsl.DataSource {
 	firstRowHeader, columns := inferParameterDataSourceColumns(dataContent, column, delimiter, paramName, dataFile)
 	dataSource := dsl.DataSource{
-		Name:           dataSourceName,
-		Type:           parameterFileType(dataFile),
-		Path:           filepath.Base(cleanConfigValue(dataFile)),
+		Name: dataSourceName,
+		Type: parameterFileType(dataFile),
+		// An archive member name is provenance, not an executable host path.
+		// The actual data is self-contained in InlineData.
+		FileName:       filepath.Base(cleanConfigValue(dataFile)),
 		InlineData:     dataContent,
 		Strategy:       "sequential",
 		FirstRowHeader: firstRowHeader,

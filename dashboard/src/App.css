@@ -355,10 +355,8 @@
 }
 
 .main-topbar-feedback {
-  position: sticky;
-  top: 57px;
-  z-index: 79;
-  margin: -20px 0 20px;
+	position: relative;
+	margin: 0 0 20px;
   padding: 8px 0;
   border-bottom: 1px solid var(--border);
   background: var(--topbar-bg);
@@ -644,8 +642,7 @@
   }
 
   .main-topbar-feedback {
-    top: 0;
-    margin: -14px 0 16px;
+    margin: 0 0 16px;
     padding: 8px 0;
   }
 

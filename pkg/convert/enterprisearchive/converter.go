@@ -1,9 +1,11 @@
 package enterprisearchive
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"regexp"
+	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/uniquify"
@@ -692,6 +694,51 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	for _, fn := range sourceRuntimeControls {
 		reapplySourceRuntimeControlConfig(result, fn)
 	}
+	result.Stats.Extractors -= pruneUnusedWholeBodyExtractors(result.Script)
 
 	return result, nil
+}
+
+// Whole-response captures are expensive and can exceed the engine's bounded
+// extraction budget. Importers may emit them defensively even when no later
+// executable field consumes the value, so retain only structurally referenced
+// captures. Targeted extractors are intentionally unaffected.
+func pruneUnusedWholeBodyExtractors(script *dsl.Script) int {
+	if script == nil {
+		return 0
+	}
+	clone := *script
+	clone.Init = append([]dsl.Action(nil), script.Init...)
+	clone.Actions = append([]dsl.Action(nil), script.Actions...)
+	clone.Teardown = append([]dsl.Action(nil), script.Teardown...)
+	for _, actions := range [][]dsl.Action{clone.Init, clone.Actions, clone.Teardown} {
+		for i := range actions {
+			actions[i].Extractors = nil
+		}
+	}
+	references, err := json.Marshal(&clone)
+	if err != nil {
+		return 0
+	}
+	refText := string(references)
+	removed := 0
+	prune := func(actions []dsl.Action) {
+		for i := range actions {
+			kept := actions[i].Extractors[:0]
+			for _, extractor := range actions[i].Extractors {
+				wholeBody := extractor.Type == "regex" && extractor.Expression == "(?s)^(.*)$"
+				referenced := strings.Contains(refText, "{{var."+extractor.Name+"}}")
+				if wholeBody && !referenced {
+					removed++
+					continue
+				}
+				kept = append(kept, extractor)
+			}
+			actions[i].Extractors = kept
+		}
+	}
+	prune(script.Init)
+	prune(script.Actions)
+	prune(script.Teardown)
+	return removed
 }
