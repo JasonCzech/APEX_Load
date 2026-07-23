@@ -13,6 +13,7 @@ import { buildCreateTestPayload, buildScenarioUpsertPayload } from './scenarioPa
 import { SortHeader } from './SortHeader'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
+import { readImportedJavaVMParameters } from './scriptEditorImportModel'
 import GroupPlacementEditor from './GroupPlacementEditor'
 import { overrideFromRuntimeDraft } from './runtimeSettingsModel'
 import { applyEffectiveRuntimeSettingsToGroups } from './runtimeSettingsApply'
@@ -3298,6 +3299,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
                     scriptId: group.script_id,
                     protocol: script?.protocol,
                     scriptConfig: script?.script?.config,
+                    importedJavaVMParameters: readImportedJavaVMParameters(script?.script?.metadata?.import),
                   }
                 })}
                 focusedIndex={runtimeGroupIndex}

@@ -479,6 +479,17 @@ var javaVuserRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 		},
 		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings"}, []string{"Use_Xboot", "use_xboot", "UseXbootClasspath"})},
 	},
+	{
+		entry: RuntimeSettingSupportEntry{
+			ID:      "java_vm_skip_parameter_evaluation",
+			Area:    "Java VM",
+			Concept: "Skip automatic parameter evaluation",
+			Fields:  []string{"config.java_vuser.skip_parameter_evaluation"},
+			Status:  RuntimeSettingStatusExecuted,
+			Notes:   "When enabled, the engine suppresses the automatic parameter snapshot (data-source rows and named parameters) before dispatch; only explicitly authored lr_parameters reach the JVM and the per-invocation each_occurrence cursor does not advance. Per-iteration data-row refresh still runs but those values are not forwarded.",
+		},
+		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings", "Java:Options"}, []string{"skip_param_eval", "Skip_Param_Eval", "SkipParamEval", "skip_automatic_parameter_evaluation", "SkipAutomaticParameterEvaluation", "skip_parameter_evaluation"})},
+	},
 }
 
 var sourceRTSSupportMatrixNotes = []string{

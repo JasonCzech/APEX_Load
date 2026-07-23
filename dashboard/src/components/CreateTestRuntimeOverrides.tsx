@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ScenarioDraft } from '../types'
+import { JavaEnvSettingsFields, type JavaEnvSettingsValue } from './JavaEnvSettingsFields'
 
 type RuntimeSettingsState = ScenarioDraft['runtimeSettings']
 type BrowserRuntimeSettings = NonNullable<RuntimeSettingsState['browser']>
@@ -101,6 +102,15 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
   }
 
   const hasInvalidIp = ipRows.some((row) => row.trim() !== '' && !looksLikeIp(row))
+
+  const [javaEnvOpen, setJavaEnvOpen] = useState(Boolean(runtimeSettings.java_vuser))
+  const updateJavaEnv = (next: JavaEnvSettingsValue) => {
+    const cleaned: JavaEnvSettingsValue = { ...next }
+    for (const key of Object.keys(cleaned) as Array<keyof JavaEnvSettingsValue>) {
+      if (cleaned[key] === undefined) delete cleaned[key]
+    }
+    onRuntimeSettingChange('java_vuser', Object.keys(cleaned).length > 0 ? cleaned : undefined)
+  }
 
   const updateBrowserSetting = <K extends keyof BrowserRuntimeSettings>(field: K, value: BrowserRuntimeSettings[K]) => {
     const nextBrowser: BrowserRuntimeSettings = { ...(runtimeSettings.browser || {}) }
@@ -363,6 +373,29 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
             )}
             <button type="button" className="btn-add-ip" onClick={addIpRow}>+ Add IP</button>
           </div>
+        )}
+      </section>
+
+      <section className="java-env-overrides">
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={javaEnvOpen}
+            onChange={(event) => {
+              setJavaEnvOpen(event.target.checked)
+              if (!event.target.checked) onRuntimeSettingChange('java_vuser', undefined)
+            }}
+          />
+          <span>Override Java Env Settings (Java Vuser groups)</span>
+        </label>
+        {javaEnvOpen && (
+          <JavaEnvSettingsFields
+            idPrefix="scenario-java-vuser"
+            value={runtimeSettings.java_vuser ?? {}}
+            onChange={updateJavaEnv}
+            listOverrideInherits
+            dedicatedClassLoaderNote="Applies to every Java Vuser group unless a per-group override replaces it."
+          />
         )}
       </section>
     </div>

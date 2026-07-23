@@ -218,6 +218,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			ProjectSections:      projectSections,
 			ProjectConfig:        projectConfig,
 			RuntimeFileName:      runtimeFileName,
+			RuntimeConfig:        runtimeCfg,
 			ParameterFileNames:   parameterFileNames,
 			TrueClientInspection: trueClientInspection,
 		})
@@ -240,6 +241,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			ProjectSections:    projectSections,
 			ProjectConfig:      projectConfig,
 			RuntimeFileName:    runtimeFileName,
+			RuntimeConfig:      runtimeCfg,
 			ParameterFileNames: parameterFileNames,
 			ParsedActions:      javaSourcesAsParsedActions(orderedJavaSourceActionFiles(projectConfig, files), files),
 		})
@@ -312,6 +314,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			ProjectSections:    projectSections,
 			ProjectConfig:      projectConfig,
 			RuntimeFileName:    runtimeFileName,
+			RuntimeConfig:      runtimeCfg,
 			ParameterFileNames: parameterFileNames,
 		})
 		attachImportFidelityReport(result, files, projectConfig, parsedActions)
@@ -349,6 +352,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		ProjectSections:    projectSections,
 		ProjectConfig:      projectConfig,
 		RuntimeFileName:    runtimeFileName,
+		RuntimeConfig:      runtimeCfg,
 		ParameterFileNames: parameterFileNames,
 		ParsedActions:      parsedActions,
 	})
@@ -412,6 +416,13 @@ func applyJavaVMRuntimeSettingsReview(result *ConvertResult, runtimeCfg *Runtime
 			metadataKey: "java_vm_dedicated_class_loader_raw",
 			rawValue:    runtimeCfg.JavaVMDedicatedClassLoaderRaw,
 		},
+		{
+			blocker:     javaVMOptionsReviewBlocker,
+			evidence:    "Corrected and re-imported Java VM skip-parameter-evaluation setting",
+			nextAction:  "Correct the Java VM skip-parameter-evaluation boolean in the source runtime settings, then re-import before promotion.",
+			metadataKey: "java_vm_skip_parameter_evaluation_raw",
+			rawValue:    runtimeCfg.JavaVMSkipParameterEvaluationRaw,
+		},
 	} {
 		var parseError string
 		switch issue.metadataKey {
@@ -421,6 +432,8 @@ func applyJavaVMRuntimeSettingsReview(result *ConvertResult, runtimeCfg *Runtime
 			parseError = runtimeCfg.JavaVMUseXBootParseError
 		case "java_vm_dedicated_class_loader_raw":
 			parseError = runtimeCfg.JavaVMDedicatedParseError
+		case "java_vm_skip_parameter_evaluation_raw":
+			parseError = runtimeCfg.JavaVMSkipParamEvalParseError
 		}
 		if parseError != "" {
 			issues = append(issues, issue)
@@ -468,6 +481,7 @@ type archiveFinalizationContext struct {
 	ProjectSections      map[string]map[string]string
 	ProjectConfig        *ProjectConfig
 	RuntimeFileName      string
+	RuntimeConfig        *RuntimeConfig
 	ParameterFileNames   []string
 	TrueClientInspection *trueclient.ArchiveInspection
 	ParsedActions        []*ParsedAction
@@ -516,7 +530,7 @@ func finalizeEnterpriseArchiveImportResult(result *ConvertResult, ctx archiveFin
 	result.SourceReview = BuildSourceReview(ctx.Files, sourceReviewMappings(result))
 	for _, script := range scripts {
 		redactArchiveMaskedBodyMetadata(script)
-		attachSourceMetadata(script, result, ctx.ProjectFileName, ctx.ProjectSections, ctx.ProjectConfig, ctx.Files, ctx.RuntimeFileName, parameterSections, ctx.ParameterFileNames, ctx.TrueClientInspection)
+		attachSourceMetadata(script, result, ctx.ProjectFileName, ctx.ProjectSections, ctx.ProjectConfig, ctx.Files, ctx.RuntimeFileName, ctx.RuntimeConfig, parameterSections, ctx.ParameterFileNames, ctx.TrueClientInspection)
 	}
 	attachImportFidelityReport(result, ctx.Files, ctx.ProjectConfig, ctx.ParsedActions)
 }
@@ -878,7 +892,40 @@ func uniqueStrings(values []string) []string {
 	return result
 }
 
-func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFileName string, projectSections map[string]map[string]string, projectConfig *ProjectConfig, files map[string]string, runtimeFileName string, parameterSections map[string]map[string]map[string]string, parameterFileNames []string, trueClientInspection *trueclient.ArchiveInspection) {
+// preservedJavaVMSettings normalizes the parsed [JavaVM:Options] runtime
+// settings into a dedicated preserved-metadata object so the dashboard can
+// surface the imported source values (e.g. the VM-parameter picker) without
+// re-parsing raw cfg text from preserved["runtime_files"].
+func preservedJavaVMSettings(runtimeCfg *RuntimeConfig) map[string]any {
+	if runtimeCfg == nil {
+		return nil
+	}
+	settings := make(map[string]any)
+	if len(runtimeCfg.JavaVMAdditionalParameters) > 0 {
+		settings["additional_vm_parameters"] = append([]string(nil), runtimeCfg.JavaVMAdditionalParameters...)
+	}
+	if runtimeCfg.JavaVMParametersRaw != "" {
+		settings["additional_vm_parameters_raw"] = runtimeCfg.JavaVMParametersRaw
+	}
+	if len(runtimeCfg.JavaVMClasspath) > 0 {
+		settings["classpath"] = append([]string(nil), runtimeCfg.JavaVMClasspath...)
+	}
+	if runtimeCfg.JavaVMClasspathRaw != "" {
+		settings["classpath_raw"] = runtimeCfg.JavaVMClasspathRaw
+	}
+	if runtimeCfg.JavaVMJDKSelectionRaw != "" {
+		settings["jdk_selection_raw"] = runtimeCfg.JavaVMJDKSelectionRaw
+	}
+	if runtimeCfg.JavaVMSkipParameterEvaluationRaw != "" {
+		settings["skip_parameter_evaluation_raw"] = runtimeCfg.JavaVMSkipParameterEvaluationRaw
+	}
+	if len(settings) == 0 {
+		return nil
+	}
+	return settings
+}
+
+func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFileName string, projectSections map[string]map[string]string, projectConfig *ProjectConfig, files map[string]string, runtimeFileName string, runtimeCfg *RuntimeConfig, parameterSections map[string]map[string]map[string]string, parameterFileNames []string, trueClientInspection *trueclient.ArchiveInspection) {
 	if script == nil {
 		return
 	}
@@ -908,6 +955,15 @@ func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFile
 	}
 	if runtimeFileName != "" {
 		preserved["mapped_runtime_file"] = filepath.Base(runtimeFileName)
+	}
+	// Scope Java VM source metadata to Java Vuser scripts. A mixed/multi-lane
+	// archive can share one runtime cfg, so an http/jdbc lane must not carry a
+	// java_vm_settings picker source, matching the protocol-scoped RTS parity
+	// block below and appendJavaVuserConfig on the engine side.
+	if strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") {
+		if javaVM := preservedJavaVMSettings(runtimeCfg); javaVM != nil {
+			preserved["java_vm_settings"] = javaVM
+		}
 	}
 	if len(parameterFileNames) > 0 {
 		files := make([]string, 0, len(parameterFileNames))

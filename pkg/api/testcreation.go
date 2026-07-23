@@ -1746,6 +1746,33 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 	if err != nil {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: prepare runtime credential redaction: %w", index, err)
 	}
+	// The runtime copy diverges from the approved stored script whenever
+	// runtime overrides (e.g. the Java Env section) or managed rewrites mutate
+	// it, which would spuriously trip the launch-time authoring-approval hash
+	// check. When the STORED script still carries a valid approval, restamp
+	// that session onto the runtime copy with the copy's own content hash —
+	// but ONLY for runtime-safe divergence. A scenario override that changes
+	// the executable surface (lifecycle actions, or the code-selecting
+	// classpath / JDK / additional VM parameters) must NOT be re-blessed under
+	// the reviewer's approval; it is rejected here so the change goes back
+	// through authoring review. dsl.ValidateScriptIssues above only checks
+	// syntax (no classpath allowlist), so it cannot be the governance boundary.
+	// The metadata tree is deep-cloned first because scriptCopy shares the
+	// stored script's Metadata pointer and stamping in place would corrupt the
+	// stored approval.
+	if !runtimeAlreadyApplied && scriptRequiresJavaVuserAuthoringApproval(&scriptCopy) {
+		if conflict := tr.javaVuserApprovalConflict(script.Script); conflict == "" {
+			if evidence, ok := readJavaVuserAuthoringApproval(script.Script); ok {
+				if javaVuserOverrideChangedExecutableSurface(script.Script, &scriptCopy) {
+					return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: runtime overrides changed the approved Java Vuser classpath, JDK, VM parameters, or actions; apply these changes in the script and re-approve it through authoring review before launch", index)
+				}
+				if detached := cloneScriptForStoredGroup(&scriptCopy); detached != nil {
+					scriptCopy = *detached
+					stampJavaVuserAuthoringApproval(&scriptCopy, evidence.sessionID)
+				}
+			}
+		}
+	}
 	testGroup.script = &scriptCopy
 	testGroup.baseScript = baseScriptSnapshot
 	testGroup.sharedDataSources = cloneDataSources(sharedDataSources)

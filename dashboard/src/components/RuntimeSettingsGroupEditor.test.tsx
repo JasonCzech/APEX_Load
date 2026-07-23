@@ -195,6 +195,60 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(deviceSelect).toBeTruthy()
   })
 
+  it('shows the Java Env tab only for java_vuser groups and emits a java_vuser override', () => {
+    const groups: RuntimeEditorGroup[] = [
+      { name: 'JavaLoad', scriptId: 'j1', protocol: 'java_vuser', importedJavaVMParameters: ['-Xss2m'] },
+      { name: 'Api', scriptId: 's2', protocol: 'http' },
+    ]
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={groups}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[undefined, undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    expect(tabLabels()).toContain('Java Env')
+
+    clickTab('Java Env')
+    // The imported VM parameter is offered in the picker dropdown.
+    const importSelect = Array.from(container.querySelectorAll('select')).find(select =>
+      Array.from(select.options).some(option => option.value === '-Xss2m'),
+    )
+    expect(importSelect).toBeTruthy()
+
+    // Toggling the skip-parameter-evaluation checkbox emits a java_vuser override.
+    const skip = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).find(input =>
+      input.closest('label')?.textContent?.includes('Skip automatic parameter evaluation'),
+    )
+    expect(skip).toBeTruthy()
+    act(() => skip!.click())
+    expect(onChange).toHaveBeenCalledWith(0, expect.objectContaining({
+      java_vuser: expect.objectContaining({ skip_parameter_evaluation: true }),
+    }))
+  })
+
+  it('hides the Java Env tab for non-java protocols', () => {
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[undefined, undefined]}
+          onChange={() => {}}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    expect(tabLabels()).not.toContain('Java Env')
+  })
+
   it('shows matrix-gated rows in the Summary table (http applies, browser_config does not, for an http group)', () => {
     act(() => {
       root.render(

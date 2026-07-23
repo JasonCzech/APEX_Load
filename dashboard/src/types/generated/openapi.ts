@@ -706,6 +706,15 @@ export interface operations {
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
+            "java_vuser"?: {
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: boolean;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "skip_parameter_evaluation"?: boolean;
+              "use_xbootclasspath"?: boolean;
+            };
             "log"?: Record<string, unknown>;
             "log_level"?: string;
             "pacing"?: Record<string, unknown>;
@@ -776,6 +785,7 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: Record<string, unknown>;
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -804,6 +814,15 @@ export interface operations {
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -1697,6 +1716,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -1737,6 +1765,7 @@ export interface operations {
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -4142,6 +4171,7 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: Record<string, unknown>;
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -4176,6 +4206,15 @@ export interface operations {
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -4421,6 +4460,7 @@ export interface operations {
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -4716,6 +4756,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -5016,6 +5065,15 @@ export interface operations {
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -5044,6 +5102,15 @@ export interface operations {
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
+            "java_vuser"?: {
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: boolean;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "skip_parameter_evaluation"?: boolean;
+              "use_xbootclasspath"?: boolean;
+            };
             "log"?: Record<string, unknown>;
             "log_level"?: string;
             "pacing"?: Record<string, unknown>;
@@ -5124,6 +5191,15 @@ export interface operations {
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -5169,6 +5245,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -5480,6 +5565,15 @@ export interface operations {
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -5514,6 +5608,15 @@ export interface operations {
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
+            "java_vuser"?: {
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: boolean;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "skip_parameter_evaluation"?: boolean;
+              "use_xbootclasspath"?: boolean;
+            };
             "log"?: Record<string, unknown>;
             "log_level"?: string;
             "pacing"?: Record<string, unknown>;
@@ -5719,6 +5822,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -6066,6 +6178,15 @@ export interface operations {
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -8711,6 +8832,15 @@ export interface operations {
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -8745,6 +8875,15 @@ export interface operations {
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
+            "java_vuser"?: {
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: boolean;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "skip_parameter_evaluation"?: boolean;
+              "use_xbootclasspath"?: boolean;
+            };
             "log"?: Record<string, unknown>;
             "log_level"?: string;
             "pacing"?: Record<string, unknown>;
@@ -8899,6 +9038,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -11945,6 +12093,7 @@ export interface operations {
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -12240,6 +12389,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -12900,6 +13058,7 @@ export interface operations {
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -12931,6 +13090,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -13330,6 +13498,7 @@ export interface operations {
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -14097,6 +14266,15 @@ export interface operations {
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -14142,6 +14320,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -14962,6 +15149,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -15309,6 +15505,15 @@ export interface operations {
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -15576,6 +15781,7 @@ export interface operations {
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -15604,6 +15810,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -15753,6 +15968,7 @@ export interface operations {
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -15781,6 +15997,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -15992,6 +16217,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -22334,6 +22568,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -22681,6 +22924,15 @@ export interface operations {
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -24454,6 +24706,7 @@ export interface operations {
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -24749,6 +25002,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -25117,6 +25379,7 @@ export interface operations {
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -25412,6 +25675,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -25780,6 +26052,7 @@ export interface operations {
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -26075,6 +26348,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -26443,6 +26725,7 @@ export interface operations {
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -26738,6 +27021,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -27106,6 +27398,7 @@ export interface operations {
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -27401,6 +27694,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -28649,6 +28951,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -29515,6 +29826,7 @@ export interface operations {
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -29543,6 +29855,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -31711,6 +32032,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -32058,6 +32388,15 @@ export interface operations {
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -33357,6 +33696,15 @@ export interface operations {
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -33385,6 +33733,15 @@ export interface operations {
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
+            "java_vuser"?: {
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: boolean;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "skip_parameter_evaluation"?: boolean;
+              "use_xbootclasspath"?: boolean;
+            };
             "log"?: Record<string, unknown>;
             "log_level"?: string;
             "pacing"?: Record<string, unknown>;
@@ -33465,6 +33822,15 @@ export interface operations {
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -33510,6 +33876,15 @@ export interface operations {
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -34849,6 +35224,15 @@ export interface operations {
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -34877,6 +35261,15 @@ export interface operations {
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
+            "java_vuser"?: {
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: boolean;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "skip_parameter_evaluation"?: boolean;
+              "use_xbootclasspath"?: boolean;
+            };
             "log"?: Record<string, unknown>;
             "log_level"?: string;
             "pacing"?: Record<string, unknown>;

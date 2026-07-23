@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -289,6 +290,33 @@ func writeJavaVuserAuthoringApproval(script *dsl.Script, evidence javaVuserAppro
 		"session_id":   evidence.sessionID,
 		"content_hash": evidence.contentHash,
 	}
+}
+
+// javaVuserOverrideChangedExecutableSurface reports whether a scenario/runtime
+// override moved the candidate script away from the approved baseline in a way
+// that changes WHAT JAVA CODE RUNS: the lifecycle actions (which carry the
+// java_vuser_run class_name/method/source_archive_ref — also the {{env}}
+// template substitution vector) or the code-selecting Java Env config fields
+// (classpath, JDK home/selection, additional VM parameters). Runtime-safe
+// toggles (skip_parameter_evaluation, use_xbootclasspath, dedicated_class_loader)
+// and non-Java runtime sections (pacing, logging, think time, …) are NOT
+// code-selecting and are intentionally excluded, so those overrides remain
+// re-blessable under the existing authoring approval.
+func javaVuserOverrideChangedExecutableSurface(approved, candidate *dsl.Script) bool {
+	if approved == nil || candidate == nil {
+		return true
+	}
+	if !reflect.DeepEqual(approved.Init, candidate.Init) ||
+		!reflect.DeepEqual(approved.Actions, candidate.Actions) ||
+		!reflect.DeepEqual(approved.Teardown, candidate.Teardown) {
+		return true
+	}
+	a := approved.Config.JavaVuser
+	c := candidate.Config.JavaVuser
+	return a.JDKSelection != c.JDKSelection ||
+		a.JDKHome != c.JDKHome ||
+		!reflect.DeepEqual(a.Classpath, c.Classpath) ||
+		!reflect.DeepEqual(a.AdditionalVMParameters, c.AdditionalVMParameters)
 }
 
 func scriptRequiresJavaVuserAuthoringApproval(script *dsl.Script) bool {

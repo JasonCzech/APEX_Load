@@ -5832,6 +5832,41 @@
   font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
   color: var(--accent); font-weight: 600; margin: 0 0 10px 0;
 }
+
+/* Java Env Settings — shared row-list and imported-parameter picker widgets. */
+.settings-field-block { margin: 12px 0; }
+.settings-field-label {
+  display: block; font-size: 12px; font-weight: 600;
+  color: var(--text-secondary); margin-bottom: 6px;
+}
+.exact-string-list-rows { display: flex; flex-direction: column; gap: 6px; }
+.exact-string-list-row { display: flex; align-items: center; gap: 6px; }
+.exact-string-list-row > input { flex: 1 1 auto; min-width: 0; }
+.exact-string-list-rows .row-action,
+.java-env-import-picker .row-add,
+.exact-string-list-rows .row-add {
+  border: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.28);
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.2;
+  padding: 6px 8px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+.exact-string-list-rows .row-action { padding: 4px 7px; }
+.exact-string-list-rows .row-action:hover:not(:disabled),
+.exact-string-list-rows .row-add:hover,
+.java-env-import-picker .row-add:hover:not(:disabled) {
+  background: var(--bg-hover); border-color: var(--accent-transparent); color: var(--text-primary);
+}
+.exact-string-list-rows .row-action:disabled,
+.java-env-import-picker .row-add:disabled { opacity: 0.4; cursor: default; }
+.exact-string-list-rows .row-remove:hover:not(:disabled) { border-color: var(--danger, #ef4444); color: var(--danger, #ef4444); }
+.exact-string-list-rows .row-add { align-self: flex-start; margin-top: 2px; }
+.java-env-import-picker { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.java-env-import-picker > select { flex: 1 1 auto; min-width: 0; }
 .http-transport-tabs {
   display: flex;
   flex-wrap: wrap;

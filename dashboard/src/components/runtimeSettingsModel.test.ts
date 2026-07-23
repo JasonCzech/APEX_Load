@@ -4,6 +4,7 @@ import {
   formatAutoTransactions,
   formatEffectiveRuntimeField,
   formatErrorHandling,
+  formatJavaVuserSummary,
   formatPacing,
   formatThinkTime,
   isRuntimeFieldApplicable,
@@ -29,6 +30,34 @@ describe('runtimeSettingsModel', () => {
     expect(isRuntimeFieldApplicable('browser', undefined)).toBe(false)
     expect(isRuntimeFieldApplicable('pacing', 'http')).toBe(true)
     expect(isRuntimeFieldApplicable('log_level', 'jms')).toBe(true)
+    expect(isRuntimeFieldApplicable('java_vuser', 'java_vuser')).toBe(true)
+    expect(isRuntimeFieldApplicable('java_vuser', 'http')).toBe(false)
+    expect(isRuntimeFieldApplicable('java_vuser', undefined)).toBe(false)
+  })
+
+  it('formats and round-trips a Java Env override', () => {
+    expect(formatJavaVuserSummary(undefined)).toBeNull()
+    expect(
+      formatJavaVuserSummary({
+        jdk_selection: 'specified',
+        additional_vm_parameters: ['-Xmx512m', '-Denv=perf'],
+        classpath: ['/a.jar'],
+        skip_parameter_evaluation: true,
+      }),
+    ).toBe('Specified JDK · 2 VM params · 1 classpath · skip param eval')
+
+    const override = {
+      java_vuser: {
+        jdk_selection: 'internal' as const,
+        additional_vm_parameters: ['-Xmx1g'],
+        skip_parameter_evaluation: true,
+      },
+    }
+    const draft = runtimeDraftFromOverride(override)
+    expect(draft?.java_vuser).toEqual(override.java_vuser)
+    expect(overrideFromRuntimeDraft(draft)?.java_vuser).toEqual(override.java_vuser)
+    // An all-empty java_vuser draft collapses to no override.
+    expect(overrideFromRuntimeDraft({ log_level: '', auto_transactions: '', java_vuser: {} })?.java_vuser).toBeUndefined()
   })
 
   it('formats pacing variants', () => {

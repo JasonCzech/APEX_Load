@@ -250,6 +250,7 @@ export type {
 export type {
   RedactionRule,
   RuntimeBrowserSettings,
+  RuntimeJavaVuserSettings,
   RuntimeSettingsFinding,
   RuntimeSettingsOverride,
   RuntimeSettingsReview,
