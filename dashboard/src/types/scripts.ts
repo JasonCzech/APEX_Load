@@ -358,6 +358,7 @@ export interface JavaVuserConfig {
   additional_vm_parameters?: string[]
   use_xbootclasspath?: boolean
   dedicated_class_loader?: boolean
+  skip_parameter_evaluation?: boolean
 }
 
 export interface JMSConfig {

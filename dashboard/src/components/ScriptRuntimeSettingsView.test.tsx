@@ -53,7 +53,7 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     container.remove()
   })
 
-  it('renders governed Java VM controls without a Base URL and preserves exact argument lines', () => {
+  it('renders the governed Java Env Settings subsections without a Base URL', () => {
     const onUpdateField = vi.fn()
     act(() => {
       root.render(
@@ -73,7 +73,11 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
       )
     })
 
-    expect(container.textContent).toContain('Java VM Settings')
+    expect(container.textContent).toContain('Java Env Settings')
+    expect(container.textContent).toContain('Virtual Machine')
+    expect(container.textContent).toContain('Class Loading')
+    expect(container.textContent).toContain('Performance')
+    expect(container.textContent).toContain('Skip automatic parameter evaluation')
     expect(container.textContent).toContain('ordinary classpath')
     expect(container.textContent).toContain('one JVM, Actions instance, and child loader for its full lifecycle')
     expect(container.textContent).toContain('saved LoadRunner parameters persist')
@@ -83,26 +87,88 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     const jdkHome = container.querySelector<HTMLInputElement>('input[aria-label="JDK Home"]')
     expect(jdkHome?.disabled).toBe(true)
 
-    const specified = container.querySelectorAll<HTMLInputElement>('input[name="java-vuser-jdk-selection"]')[1]
+    const specified = container.querySelectorAll<HTMLInputElement>('input[name="script-java-vuser-jdk-selection"]')[1]
     act(() => specified.click())
-    expect(onUpdateField).toHaveBeenCalledWith('config.java_vuser.jdk_selection', 'specified')
-
-    const vmParams = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Additional VM Parameters"]')
-    expect(vmParams).not.toBeNull()
-    act(() => vmParams!.dispatchEvent(new FocusEvent('focusin', { bubbles: true })))
-    act(() => {
-      const setValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set
-      setValue?.call(vmParams, '-Xmx1g\n-Dlabel=hello world\n')
-      vmParams!.dispatchEvent(new Event('input', { bubbles: true }))
-    })
-    act(() => vmParams!.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
     expect(onUpdateField).toHaveBeenCalledWith(
-      'config.java_vuser.additional_vm_parameters',
-      ['-Xmx1g', '-Dlabel=hello world'],
+      'config.java_vuser',
+      expect.objectContaining({ jdk_selection: 'specified' }),
     )
   })
 
-  it('commits JDK home, class loading, xboot, and timeout writes to config.java_vuser paths', () => {
+  it('adds a new VM parameter row and commits the full argument list to config.java_vuser', () => {
+    const onUpdateField = vi.fn()
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="java_vuser"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={onUpdateField}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={javaVuserScript()}
+        />,
+      )
+    })
+
+    const setInputValue = (input: HTMLInputElement, value: string) => {
+      const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+      setValue?.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+
+    const addButtons = Array.from(container.querySelectorAll<HTMLButtonElement>('button.row-add'))
+    const addVmParam = addButtons.find(button => button.textContent?.includes('Add VM parameter'))
+    expect(addVmParam).not.toBeNull()
+    act(() => addVmParam!.click())
+
+    const vmRows = container.querySelectorAll<HTMLInputElement>('input[aria-label^="Additional VM Parameters entry"]')
+    const newRow = vmRows[vmRows.length - 1]
+    act(() => setInputValue(newRow, '-Dlabel=hello world'))
+    act(() => newRow.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
+
+    expect(onUpdateField).toHaveBeenCalledWith(
+      'config.java_vuser',
+      expect.objectContaining({ additional_vm_parameters: ['-Xmx512m', '-Dlabel=hello world'] }),
+    )
+  })
+
+  it('removes a classpath row and commits the shortened list', () => {
+    const onUpdateField = vi.fn()
+    const script = javaVuserScript()
+    script.config.java_vuser!.classpath = ['/one.jar', '/two.jar']
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="java_vuser"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={onUpdateField}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={script}
+        />,
+      )
+    })
+
+    const removeFirst = container.querySelector<HTMLButtonElement>('button[aria-label="Remove Java Vuser classpath entry 1"]')
+    expect(removeFirst).not.toBeNull()
+    act(() => removeFirst!.click())
+    expect(onUpdateField).toHaveBeenCalledWith(
+      'config.java_vuser',
+      expect.objectContaining({ classpath: ['/two.jar'] }),
+    )
+  })
+
+  it('commits JDK home, class loading, xboot, skip flag, and timeout writes to config.java_vuser', () => {
     const onUpdateField = vi.fn()
     const script = javaVuserScript()
     script.config.java_vuser!.jdk_selection = 'specified'
@@ -133,18 +199,36 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     const jdkHome = container.querySelector<HTMLInputElement>('input[aria-label="JDK Home"]')
     expect(jdkHome?.disabled).toBe(false)
     act(() => setInputValue(jdkHome!, '/opt/jdks/temurin-17'))
-    expect(onUpdateField).toHaveBeenCalledWith('config.java_vuser.jdk_home', '/opt/jdks/temurin-17')
+    act(() => jdkHome!.dispatchEvent(new FocusEvent('focusout', { bubbles: true })))
+    expect(onUpdateField).toHaveBeenCalledWith(
+      'config.java_vuser',
+      expect.objectContaining({ jdk_home: '/opt/jdks/temurin-17' }),
+    )
 
     const checkboxes = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
     const xboot = checkboxes.find(input => input.closest('label')?.textContent?.includes('-Xbootclasspath'))
     expect(xboot?.checked).toBe(true)
     act(() => xboot!.click())
-    expect(onUpdateField).toHaveBeenCalledWith('config.java_vuser.use_xbootclasspath', false)
+    expect(onUpdateField).toHaveBeenCalledWith(
+      'config.java_vuser',
+      expect.objectContaining({ use_xbootclasspath: false }),
+    )
 
     const dedicated = checkboxes.find(input => input.closest('label')?.textContent?.includes('dedicated class loader'))
     expect(dedicated?.checked).toBe(false)
     act(() => dedicated!.click())
-    expect(onUpdateField).toHaveBeenCalledWith('config.java_vuser.dedicated_class_loader', true)
+    expect(onUpdateField).toHaveBeenCalledWith(
+      'config.java_vuser',
+      expect.objectContaining({ dedicated_class_loader: true }),
+    )
+
+    const skip = checkboxes.find(input => input.closest('label')?.textContent?.includes('Skip automatic parameter evaluation'))
+    expect(skip?.checked).toBe(false)
+    act(() => skip!.click())
+    expect(onUpdateField).toHaveBeenCalledWith(
+      'config.java_vuser',
+      expect.objectContaining({ skip_parameter_evaluation: true }),
+    )
 
     const startup = container.querySelector<HTMLInputElement>('input[aria-label="Java Vuser startup timeout"]')
     act(() => setInputValue(startup!, '5'))
@@ -155,7 +239,7 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     expect(onUpdateField).toHaveBeenCalledWith('config.java_vuser.action_timeout_ms', 45000)
   })
 
-  it('does not offer the Java VM section for non-Java protocols', () => {
+  it('does not offer the Java Env section for non-Java protocols', () => {
     const httpScript: ScriptDefinition = {
       name: 'Plain HTTP',
       version: '1.0.0',
@@ -181,7 +265,7 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
       )
     })
 
-    expect(container.textContent).not.toContain('Java VM Settings')
+    expect(container.textContent).not.toContain('Java Env Settings')
     expect(container.querySelector('input[aria-label="JDK Home"]')).toBeNull()
     expect(container.textContent).toContain('Base URL')
   })

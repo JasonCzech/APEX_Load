@@ -569,10 +569,13 @@ func TestJavaVuserSidecarExecuteUsesTypedRemoteContractWithoutLocalCredentialGua
 		"java_vuser_classpath":                []any{"/assets/app.jar"},
 		"java_vuser_use_xbootclasspath":       true,
 		"java_vuser_dedicated_class_loader":   true,
-		"java_vuser_startup_timeout_ms":       float64(2500),
-		"java_vuser_action_timeout_ms":        float64(60000),
-		"vuser_id":                            "vu-7",
-		"group_name":                          "Checkout",
+		// Enforced engine-side (the automatic lr_parameters snapshot is
+		// suppressed before dispatch); the protocol must tolerate the key.
+		"java_vuser_skip_parameter_evaluation": true,
+		"java_vuser_startup_timeout_ms":        float64(2500),
+		"java_vuser_action_timeout_ms":         float64(60000),
+		"vuser_id":                             "vu-7",
+		"group_name":                           "Checkout",
 	}); err != nil {
 		t.Fatalf("Init: %v", err)
 	}

@@ -16,85 +16,88 @@ import (
 
 // RuntimeConfig holds parsed source runtime settings from a .cfg file.
 type RuntimeConfig struct {
-	ConnectTimeoutSec             int
-	ReceiveTimeoutSec             int
-	StepTimeoutSec                int
-	HTTPVersion                   string // "1.0" or "1.1"
-	KeepAlive                     bool
-	MaxConnsPerHost               int
-	ProxyMode                     string
-	ProxyURL                      string
-	ProxyUser                     string
-	ProxyPass                     string
-	UserAgent                     string
-	AcceptLanguage                string
-	UseGzip                       bool
-	SSLVersion                    string
-	AuthUser                      string
-	AuthPass                      string
-	MaxRedirects                  int
-	Iterations                    int
-	AutoTransactions              string
-	BlockScheduling               string
-	ActionSequence                []string
-	PacingType                    string
-	DelayMs                       int
-	MinDelayMs                    int
-	MaxDelayMs                    int
-	IntervalMs                    int
-	MinIntervalMs                 int
-	MaxIntervalMs                 int
-	ThinkTimeIgnore               bool
-	ThinkTimeMultiplier           float64
-	ThinkTimeLimitMs              float64
-	LogLevel                      string
-	OnErrorOnly                   bool
-	LogExtendedOptions            []string
-	ContinueOnError               bool
-	SnapshotOnError               bool
-	CacheEnabled                  bool
-	CacheContentURLs              bool
-	CheckNewerVersions            bool
-	NewUserPerIteration           bool
-	BrowserEngine                 string
-	BrowserDeviceProfile          string
-	BrowserTouchMode              bool
-	BrowserOrientation            string
-	BrowserClientMetrics          bool
-	BrowserSlowMoMs               int
-	BrowserViewportWidth          int
-	BrowserViewportHeight         int
-	DownloadResources             string
-	AdditionalAttributes          map[string]string
-	DownloadFilterMode            string
-	DownloadFilterHosts           []string
-	ContentChecks                 []dsl.ContentCheckConfig
-	NetworkSimulationMode         string
-	NetworkSimulationPreset       string
-	NetworkBandwidthKbps          int
-	NetworkLatencyMs              int
-	StreamingMode                 string
-	StreamingBufferSizeSeconds    int
-	StreamingFixedBitrateKbps     int
-	StreamingBandwidthEstimation  string
-	DataFormattingAutoDetect      bool
-	DataFormattingChain           []dsl.DFETransform
-	JavaVMJDKSelection            string
-	JavaVMJDKSelectionRaw         string
-	JavaVMJDKSelectionParseError  string
-	JavaVMJDKHome                 string
-	JavaVMAdditionalParameters    []string
-	JavaVMParametersRaw           string
-	JavaVMParametersParseError    string
-	JavaVMUseXBootClasspath       *bool
-	JavaVMUseXBootClasspathRaw    string
-	JavaVMUseXBootParseError      string
-	JavaVMDedicatedClassLoader    *bool
-	JavaVMDedicatedClassLoaderRaw string
-	JavaVMDedicatedParseError     string
-	JavaVMClasspath               []string
-	JavaVMClasspathRaw            string
-	JavaVMClasspathParseError     string
+	ConnectTimeoutSec                int
+	ReceiveTimeoutSec                int
+	StepTimeoutSec                   int
+	HTTPVersion                      string // "1.0" or "1.1"
+	KeepAlive                        bool
+	MaxConnsPerHost                  int
+	ProxyMode                        string
+	ProxyURL                         string
+	ProxyUser                        string
+	ProxyPass                        string
+	UserAgent                        string
+	AcceptLanguage                   string
+	UseGzip                          bool
+	SSLVersion                       string
+	AuthUser                         string
+	AuthPass                         string
+	MaxRedirects                     int
+	Iterations                       int
+	AutoTransactions                 string
+	BlockScheduling                  string
+	ActionSequence                   []string
+	PacingType                       string
+	DelayMs                          int
+	MinDelayMs                       int
+	MaxDelayMs                       int
+	IntervalMs                       int
+	MinIntervalMs                    int
+	MaxIntervalMs                    int
+	ThinkTimeIgnore                  bool
+	ThinkTimeMultiplier              float64
+	ThinkTimeLimitMs                 float64
+	LogLevel                         string
+	OnErrorOnly                      bool
+	LogExtendedOptions               []string
+	ContinueOnError                  bool
+	SnapshotOnError                  bool
+	CacheEnabled                     bool
+	CacheContentURLs                 bool
+	CheckNewerVersions               bool
+	NewUserPerIteration              bool
+	BrowserEngine                    string
+	BrowserDeviceProfile             string
+	BrowserTouchMode                 bool
+	BrowserOrientation               string
+	BrowserClientMetrics             bool
+	BrowserSlowMoMs                  int
+	BrowserViewportWidth             int
+	BrowserViewportHeight            int
+	DownloadResources                string
+	AdditionalAttributes             map[string]string
+	DownloadFilterMode               string
+	DownloadFilterHosts              []string
+	ContentChecks                    []dsl.ContentCheckConfig
+	NetworkSimulationMode            string
+	NetworkSimulationPreset          string
+	NetworkBandwidthKbps             int
+	NetworkLatencyMs                 int
+	StreamingMode                    string
+	StreamingBufferSizeSeconds       int
+	StreamingFixedBitrateKbps        int
+	StreamingBandwidthEstimation     string
+	DataFormattingAutoDetect         bool
+	DataFormattingChain              []dsl.DFETransform
+	JavaVMJDKSelection               string
+	JavaVMJDKSelectionRaw            string
+	JavaVMJDKSelectionParseError     string
+	JavaVMJDKHome                    string
+	JavaVMAdditionalParameters       []string
+	JavaVMParametersRaw              string
+	JavaVMParametersParseError       string
+	JavaVMUseXBootClasspath          *bool
+	JavaVMUseXBootClasspathRaw       string
+	JavaVMUseXBootParseError         string
+	JavaVMDedicatedClassLoader       *bool
+	JavaVMDedicatedClassLoaderRaw    string
+	JavaVMDedicatedParseError        string
+	JavaVMClasspath                  []string
+	JavaVMClasspathRaw               string
+	JavaVMClasspathParseError        string
+	JavaVMSkipParameterEvaluation    *bool
+	JavaVMSkipParameterEvaluationRaw string
+	JavaVMSkipParamEvalParseError    string
 }
 
 // ParseRuntimeCfg parses a source default.cfg / runtime settings .cfg file.
@@ -252,7 +255,7 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 		rc.DataFormattingChain = append(rc.DataFormattingChain, transform)
 	}
 
-	javaVMSectionAliases := []string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings"}
+	javaVMSectionAliases := []string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings", "Java:Options"}
 	javaVMSection := findSection(sections, javaVMSectionAliases...)
 	// Parse executable list values from the original CFG text. The general
 	// config parser decodes adjacent C string literals for source-code fields;
@@ -311,6 +314,17 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 			rc.JavaVMClasspathParseError = err.Error()
 		} else {
 			rc.JavaVMClasspath = classpath
+		}
+	}
+	// Key aliases are documented best guesses pending a real LR Java default.cfg
+	// sample containing the "Skip automatic parameter evaluation" performance
+	// checkbox; the forgiving list mirrors the other Java VM options above.
+	if value, ok := sectionValueCaseInsensitive(javaVMSection, "skip_param_eval", "Skip_Param_Eval", "SkipParamEval", "skip_automatic_parameter_evaluation", "SkipAutomaticParameterEvaluation", "skip_parameter_evaluation"); ok {
+		rc.JavaVMSkipParameterEvaluationRaw = value
+		if parsed, valid := parseBoolExplicit(value); valid {
+			rc.JavaVMSkipParameterEvaluation = &parsed
+		} else {
+			rc.JavaVMSkipParamEvalParseError = "invalid Java VM skip-parameter-evaluation boolean"
 		}
 	}
 
@@ -420,13 +434,14 @@ func (rc *RuntimeConfig) ToScriptConfig() *dsl.ScriptConfig {
 			},
 		}
 	}
-	if rc.JavaVMJDKSelection != "" || rc.JavaVMJDKHome != "" || len(rc.JavaVMAdditionalParameters) > 0 || rc.JavaVMUseXBootClasspath != nil || rc.JavaVMDedicatedClassLoader != nil || len(rc.JavaVMClasspath) > 0 {
+	if rc.JavaVMJDKSelection != "" || rc.JavaVMJDKHome != "" || len(rc.JavaVMAdditionalParameters) > 0 || rc.JavaVMUseXBootClasspath != nil || rc.JavaVMDedicatedClassLoader != nil || len(rc.JavaVMClasspath) > 0 || rc.JavaVMSkipParameterEvaluation != nil {
 		config.JavaVuser.JDKSelection = rc.JavaVMJDKSelection
 		config.JavaVuser.JDKHome = rc.JavaVMJDKHome
 		config.JavaVuser.AdditionalVMParameters = append([]string(nil), rc.JavaVMAdditionalParameters...)
 		config.JavaVuser.UseXBootClasspath = cloneRuntimeBoolPointer(rc.JavaVMUseXBootClasspath)
 		config.JavaVuser.DedicatedClassLoader = cloneRuntimeBoolPointer(rc.JavaVMDedicatedClassLoader)
 		config.JavaVuser.Classpath = append([]string(nil), rc.JavaVMClasspath...)
+		config.JavaVuser.SkipParameterEvaluation = cloneRuntimeBoolPointer(rc.JavaVMSkipParameterEvaluation)
 	}
 	return config
 }

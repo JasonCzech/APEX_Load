@@ -2,6 +2,7 @@ import type {
   BrowserConfig,
   ErrorHandlingConfig,
   HTTPConfig,
+  JavaVuserConfig,
   LogConfig,
   PacingConfig,
   RunLogicConfig,
@@ -17,6 +18,20 @@ export interface RedactionRule {
 
 export type RuntimeBrowserSettings = Pick<BrowserConfig, 'headless' | 'device_profile' | 'touch_mode' | 'orientation'>
 
+/** Script-owned Java Env settings overridable per scenario group. Operator
+ * runner fields (enablement, runner command, harness jar, work dir, capacity)
+ * are intentionally excluded — they cannot be steered by a scenario. */
+export type RuntimeJavaVuserSettings = Pick<
+  JavaVuserConfig,
+  | 'jdk_selection'
+  | 'jdk_home'
+  | 'additional_vm_parameters'
+  | 'classpath'
+  | 'use_xbootclasspath'
+  | 'dedicated_class_loader'
+  | 'skip_parameter_evaluation'
+>
+
 export interface RuntimeSettingsOverride {
   iterations?: number
   pacing?: PacingConfig
@@ -30,6 +45,7 @@ export interface RuntimeSettingsOverride {
   http?: HTTPConfig
   web_runtime?: WebRuntimeConfig
   browser_config?: BrowserConfig
+  java_vuser?: RuntimeJavaVuserSettings
   base_url?: string
   env?: Record<string, string>
   redaction_rules?: RedactionRule[]
@@ -79,6 +95,7 @@ export interface ScenarioRuntimeSettingsDraft {
   http?: HTTPConfig
   web_runtime?: WebRuntimeConfig
   browser_config?: BrowserConfig
+  java_vuser?: RuntimeJavaVuserSettings
   base_url?: string
   env?: Record<string, string>
   redaction_rules?: RedactionRule[]

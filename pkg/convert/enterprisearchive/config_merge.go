@@ -86,6 +86,9 @@ func mergeJavaVuserVMSettings(dst *dsl.JavaVuserConfig, src dsl.JavaVuserConfig)
 	if len(src.Classpath) > 0 {
 		dst.Classpath = append([]string(nil), src.Classpath...)
 	}
+	if src.SkipParameterEvaluation != nil {
+		dst.SkipParameterEvaluation = cloneRuntimeBoolPointer(src.SkipParameterEvaluation)
+	}
 }
 
 func mergeJavaVuserRuntimeSettingsIntoResult(result *ConvertResult, src *dsl.ScriptConfig) {

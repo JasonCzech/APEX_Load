@@ -18,6 +18,7 @@ export function copyRuntimeSettingsForProtocol(
   if (!isRuntimeFieldApplicable('browser_config', protocol)) copy.browser_config = undefined
   if (!isRuntimeFieldApplicable('http', protocol)) copy.http = undefined
   if (!isRuntimeFieldApplicable('web_runtime', protocol)) copy.web_runtime = undefined
+  if (!isRuntimeFieldApplicable('java_vuser', protocol)) copy.java_vuser = undefined
   return copy
 }
 
@@ -66,6 +67,31 @@ function mergeMaterializedWeb(base?: MaterializedWebSettings, override?: Materia
   return merged
 }
 
+type MaterializedJavaVuser = NonNullable<RuntimeSettingsOverride['java_vuser']>
+
+// mergeJavaVuserLayer mirrors the Go applyJavaVuserRuntimeOverride/
+// mergeJavaVuserRuntimeOverride non-empty-field-wins semantics (pkg/api/
+// runtime_overrides.go): an override that only sets one field must overlay onto
+// the lower layer, not wipe the script's classpath/VM params. Empty lists never
+// propagate a clear (matching the backend's `len(src) > 0` guard).
+function mergeJavaVuserLayer(base?: MaterializedJavaVuser, override?: MaterializedJavaVuser): MaterializedJavaVuser | undefined {
+  if (!base && !override) return undefined
+  const merged: MaterializedJavaVuser = base ? structuredClone(base) : {}
+  if (!override) return merged
+  if (override.jdk_selection) merged.jdk_selection = override.jdk_selection
+  if (override.jdk_home) merged.jdk_home = override.jdk_home
+  if (override.additional_vm_parameters && override.additional_vm_parameters.length > 0) {
+    merged.additional_vm_parameters = structuredClone(override.additional_vm_parameters)
+  }
+  if (override.classpath && override.classpath.length > 0) {
+    merged.classpath = structuredClone(override.classpath)
+  }
+  if (override.use_xbootclasspath !== undefined) merged.use_xbootclasspath = override.use_xbootclasspath
+  if (override.dedicated_class_loader !== undefined) merged.dedicated_class_loader = override.dedicated_class_loader
+  if (override.skip_parameter_evaluation !== undefined) merged.skip_parameter_evaluation = override.skip_parameter_evaluation
+  return merged
+}
+
 function overlayBrowserLegacy(
   base: NonNullable<RuntimeSettingsOverride['browser_config']>,
   legacy: NonNullable<RuntimeSettingsOverride['browser']>,
@@ -109,6 +135,7 @@ function applyEffectiveRuntimeLayer(base: RuntimeSettingsOverride, layer: Runtim
   if (layer.error_handling) next.error_handling = structuredClone(layer.error_handling)
   if (layer.http) next.http = structuredClone(layer.http)
   if (layer.web_runtime) next.web_runtime = mergeMaterializedWeb(next.web_runtime, layer.web_runtime)
+  if (layer.java_vuser) next.java_vuser = mergeJavaVuserLayer(next.java_vuser, layer.java_vuser)
 
   if (layer.browser_config) {
     next.browser_config = structuredClone(layer.browser_config)

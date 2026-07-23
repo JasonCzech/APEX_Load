@@ -155,6 +155,11 @@ type JavaVuserConfig struct {
 	AdditionalVMParameters []string `json:"additional_vm_parameters,omitempty" jsonschema:"maxItems=128"`
 	UseXBootClasspath      *bool    `json:"use_xbootclasspath,omitempty"`
 	DedicatedClassLoader   *bool    `json:"dedicated_class_loader,omitempty"`
+	// SkipParameterEvaluation disables the engine-side automatic parameter
+	// snapshot (data-source rows + named .prm parameters) that is otherwise
+	// injected as lr_parameters before dispatch to the JVM. Explicitly
+	// authored lr_parameters entries are still delivered.
+	SkipParameterEvaluation *bool `json:"skip_parameter_evaluation,omitempty"`
 }
 
 type WebSocketConfig struct {

@@ -108,12 +108,13 @@ func TestParseRuntimeCfgRejectsAmbiguousJavaVMBooleansWithoutDefaulting(t *testi
 	runtimeCfg := ParseRuntimeCfg(`[JavaVM:Options]
 Use_Xboot=inherit
 enable_CL_per_vuser=maybe
+skip_param_eval=sometimes
 `)
-	if runtimeCfg.JavaVMUseXBootClasspath != nil || runtimeCfg.JavaVMDedicatedClassLoader != nil {
-		t.Fatalf("invalid booleans became executable values: xboot=%#v dedicated=%#v", runtimeCfg.JavaVMUseXBootClasspath, runtimeCfg.JavaVMDedicatedClassLoader)
+	if runtimeCfg.JavaVMUseXBootClasspath != nil || runtimeCfg.JavaVMDedicatedClassLoader != nil || runtimeCfg.JavaVMSkipParameterEvaluation != nil {
+		t.Fatalf("invalid booleans became executable values: xboot=%#v dedicated=%#v skip=%#v", runtimeCfg.JavaVMUseXBootClasspath, runtimeCfg.JavaVMDedicatedClassLoader, runtimeCfg.JavaVMSkipParameterEvaluation)
 	}
-	if runtimeCfg.JavaVMUseXBootParseError == "" || runtimeCfg.JavaVMDedicatedParseError == "" {
-		t.Fatalf("parse errors = xboot %q dedicated %q, want both", runtimeCfg.JavaVMUseXBootParseError, runtimeCfg.JavaVMDedicatedParseError)
+	if runtimeCfg.JavaVMUseXBootParseError == "" || runtimeCfg.JavaVMDedicatedParseError == "" || runtimeCfg.JavaVMSkipParamEvalParseError == "" {
+		t.Fatalf("parse errors = xboot %q dedicated %q skip %q, want all", runtimeCfg.JavaVMUseXBootParseError, runtimeCfg.JavaVMDedicatedParseError, runtimeCfg.JavaVMSkipParamEvalParseError)
 	}
 }
 
@@ -172,14 +173,16 @@ func TestMergeJavaVuserRuntimeSettingsTargetsEveryJavaLaneAndPreservesDefaults(t
 			ActionTimeoutMs: 30000,
 		}},
 	}
+	skipParamEval := true
 	result := &ConvertResult{Script: httpScript, Scripts: []*dsl.Script{httpScript, javaScript}}
 	source := &dsl.ScriptConfig{JavaVuser: dsl.JavaVuserConfig{
-		JDKSelection:           "specified",
-		JDKHome:                "/opt/jdk-21",
-		AdditionalVMParameters: []string{"-Xmx512m", "-Dlabel=hello world"},
-		UseXBootClasspath:      &useXBoot,
-		DedicatedClassLoader:   &dedicated,
-		Classpath:              []string{"/assets/actions.jar"},
+		JDKSelection:            "specified",
+		JDKHome:                 "/opt/jdk-21",
+		AdditionalVMParameters:  []string{"-Xmx512m", "-Dlabel=hello world"},
+		UseXBootClasspath:       &useXBoot,
+		DedicatedClassLoader:    &dedicated,
+		Classpath:               []string{"/assets/actions.jar"},
+		SkipParameterEvaluation: &skipParamEval,
 	}}
 
 	mergeJavaVuserRuntimeSettingsIntoResult(result, source)
@@ -196,6 +199,9 @@ func TestMergeJavaVuserRuntimeSettingsTargetsEveryJavaLaneAndPreservesDefaults(t
 	}
 	if got.UseXBootClasspath == nil || *got.UseXBootClasspath || got.DedicatedClassLoader == nil || !*got.DedicatedClassLoader {
 		t.Fatalf("presence-aware booleans = xboot %#v dedicated %#v", got.UseXBootClasspath, got.DedicatedClassLoader)
+	}
+	if got.SkipParameterEvaluation == nil || !*got.SkipParameterEvaluation {
+		t.Fatalf("SkipParameterEvaluation = %#v, want merged true", got.SkipParameterEvaluation)
 	}
 }
 
@@ -215,6 +221,7 @@ jdk_home=/opt/java/jdk-21
 Java_VM_Params=-Xmx512m -Dlabel="hello world"
 Use_Xboot=0
 enable_CL_per_vuser=1
+skip_param_eval=1
 Java_Env_ClassPath=C:\fixtures\actions.jar;D:\shared\helpers.jar
 `)
 	addJavaZipFile(t, writer, "JavaVM/Actions.java", `public class Actions {
@@ -242,6 +249,23 @@ Java_Env_ClassPath=C:\fixtures\actions.jar;D:\shared\helpers.jar
 	}
 	if config.UseXBootClasspath == nil || *config.UseXBootClasspath || config.DedicatedClassLoader == nil || !*config.DedicatedClassLoader {
 		t.Fatalf("presence-aware booleans = xboot %#v dedicated %#v", config.UseXBootClasspath, config.DedicatedClassLoader)
+	}
+	if config.SkipParameterEvaluation == nil || !*config.SkipParameterEvaluation {
+		t.Fatalf("SkipParameterEvaluation = %#v, want true", config.SkipParameterEvaluation)
+	}
+	preserved := result.Script.Metadata.Import.Preserved
+	javaVM, ok := preserved["java_vm_settings"].(map[string]any)
+	if !ok {
+		t.Fatalf("preserved java_vm_settings = %#v, want normalized object", preserved["java_vm_settings"])
+	}
+	if params, _ := javaVM["additional_vm_parameters"].([]string); !reflect.DeepEqual(params, []string{"-Xmx512m", "-Dlabel=hello world"}) {
+		t.Fatalf("preserved additional_vm_parameters = %#v", javaVM["additional_vm_parameters"])
+	}
+	if classpath, _ := javaVM["classpath"].([]string); !reflect.DeepEqual(classpath, []string{`C:\fixtures\actions.jar`, `D:\shared\helpers.jar`}) {
+		t.Fatalf("preserved classpath = %#v", javaVM["classpath"])
+	}
+	if javaVM["skip_parameter_evaluation_raw"] != "1" || javaVM["jdk_selection_raw"] != "specified_jdk" {
+		t.Fatalf("preserved raw values = %#v", javaVM)
 	}
 }
 
@@ -337,6 +361,7 @@ use_jdk=future_mode
 jdk_home=/opt/old-jdk
 Use_Xboot=inherit
 enable_CL_per_vuser=maybe
+skip_param_eval=sometimes
 `)
 	addJavaZipFile(t, writer, "Ambiguous/Actions.java", `public class Actions {
   public int action() throws Throwable { return 0; }
@@ -350,16 +375,17 @@ enable_CL_per_vuser=maybe
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
 	config := result.Script.Config.JavaVuser
-	if config.JDKSelection != "" || config.UseXBootClasspath != nil || config.DedicatedClassLoader != nil {
+	if config.JDKSelection != "" || config.UseXBootClasspath != nil || config.DedicatedClassLoader != nil || config.SkipParameterEvaluation != nil {
 		t.Fatalf("ambiguous source values became executable settings: %#v", config)
 	}
 	if result.ReviewArtifact == nil {
 		t.Fatal("review artifact is nil")
 	}
 	for key, want := range map[string]string{
-		"java_vm_jdk_selection_raw":          "future_mode",
-		"java_vm_use_xbootclasspath_raw":     "inherit",
-		"java_vm_dedicated_class_loader_raw": "maybe",
+		"java_vm_jdk_selection_raw":             "future_mode",
+		"java_vm_use_xbootclasspath_raw":        "inherit",
+		"java_vm_dedicated_class_loader_raw":    "maybe",
+		"java_vm_skip_parameter_evaluation_raw": "sometimes",
 	} {
 		if got := result.ReviewArtifact.Metadata[key]; got != want {
 			t.Fatalf("review metadata %s = %#v, want %q", key, got, want)
@@ -385,16 +411,18 @@ jdk_home=/opt/jdk-21
 Java_VM_Params=-Xmx512m
 Use_Xboot=1
 enable_CL_per_vuser=0
+skip_param_eval=1
 Java_Env_ClassPath=C:\fixtures\actions.jar
 `),
 	}
 	parity := buildRTSParityReportForProtocol(runtimeSections, "java_vuser")
 	wantStatuses := map[string]RuntimeSettingStatus{
-		"java_vm_jdk":                    RuntimeSettingStatusExecuted,
-		"java_vm_parameters":             RuntimeSettingStatusExecuted,
-		"java_vm_classpath":              RuntimeSettingStatusExecuted,
-		"java_vm_dedicated_class_loader": RuntimeSettingStatusExecuted,
-		"java_vm_xbootclasspath":         RuntimeSettingStatusCompatibilityOnly,
+		"java_vm_jdk":                       RuntimeSettingStatusExecuted,
+		"java_vm_parameters":                RuntimeSettingStatusExecuted,
+		"java_vm_classpath":                 RuntimeSettingStatusExecuted,
+		"java_vm_dedicated_class_loader":    RuntimeSettingStatusExecuted,
+		"java_vm_xbootclasspath":            RuntimeSettingStatusCompatibilityOnly,
+		"java_vm_skip_parameter_evaluation": RuntimeSettingStatusExecuted,
 	}
 	for id, wantStatus := range wantStatuses {
 		found := false
@@ -447,7 +475,7 @@ Use_Xboot=1
 	httpScript := &dsl.Script{Protocol: "http"}
 	javaScript := &dsl.Script{Protocol: "java_vuser"}
 	for _, script := range []*dsl.Script{httpScript, javaScript} {
-		attachSourceMetadata(script, nil, "", nil, nil, files, "default.cfg", nil, nil, nil)
+		attachSourceMetadata(script, nil, "", nil, nil, files, "default.cfg", nil, nil, nil, nil)
 	}
 
 	httpPreserved := httpScript.Metadata.Import.Preserved
@@ -458,6 +486,40 @@ Use_Xboot=1
 	parity, ok := javaPreserved["runtime_settings_parity"].([]RuntimeSettingParityEntry)
 	if !ok || len(parity) != 1 || parity[0].ID != "java_vm_xbootclasspath" {
 		t.Fatalf("Java script parity = %#v, want scoped Xboot entry", javaPreserved["runtime_settings_parity"])
+	}
+}
+
+// A mixed archive can split into multiple protocol lanes sharing one runtime
+// cfg. The normalized java_vm_settings picker source must attach only to the
+// java_vuser lane, never to an http/jdbc lane, matching the protocol-scoped
+// parity block and the engine-side appendJavaVuserConfig.
+func TestAttachSourceMetadataScopesJavaVMSettingsToJavaVuserScripts(t *testing.T) {
+	xboot := true
+	runtimeCfg := &RuntimeConfig{
+		JavaVMAdditionalParameters: []string{"-Xmx512m", "-Dlabel=perf"},
+		JavaVMParametersRaw:        "-Xmx512m -Dlabel=perf",
+		JavaVMClasspath:            []string{"/opt/app.jar"},
+		JavaVMUseXBootClasspath:    &xboot,
+	}
+	httpScript := &dsl.Script{Protocol: "http"}
+	javaScript := &dsl.Script{Protocol: "java_vuser"}
+	for _, script := range []*dsl.Script{httpScript, javaScript} {
+		attachSourceMetadata(script, nil, "", nil, nil, map[string]string{}, "", runtimeCfg, nil, nil, nil)
+	}
+
+	// The http lane may have no Metadata at all (no preserved content) — either
+	// way it must not carry java_vm_settings.
+	if httpScript.Metadata != nil && httpScript.Metadata.Import != nil {
+		if _, exists := httpScript.Metadata.Import.Preserved["java_vm_settings"]; exists {
+			t.Fatalf("HTTP lane received java_vm_settings picker source: %#v", httpScript.Metadata.Import.Preserved["java_vm_settings"])
+		}
+	}
+	javaVM, ok := javaScript.Metadata.Import.Preserved["java_vm_settings"].(map[string]any)
+	if !ok {
+		t.Fatalf("Java lane missing java_vm_settings: %#v", javaScript.Metadata.Import.Preserved["java_vm_settings"])
+	}
+	if params, _ := javaVM["additional_vm_parameters"].([]string); len(params) != 2 {
+		t.Fatalf("java_vm_settings params = %#v, want the two imported tokens", javaVM["additional_vm_parameters"])
 	}
 }
 
@@ -600,6 +662,60 @@ func TestParseRuntimeCfgJavaVMKeyAliases(t *testing.T) {
 				want := []string{"/fixtures/actions.jar", "/shared/helpers.jar"}
 				if !reflect.DeepEqual(rc.JavaVMClasspath, want) {
 					t.Fatalf("classpath = %#v", rc.JavaVMClasspath)
+				}
+			},
+		},
+		{
+			name:    "skip_param_eval skip alias",
+			content: "[JavaVM:Options]\nskip_param_eval=1\n",
+			assert: func(t *testing.T, rc *RuntimeConfig) {
+				if rc.JavaVMSkipParameterEvaluation == nil || !*rc.JavaVMSkipParameterEvaluation {
+					t.Fatalf("skip = %#v", rc.JavaVMSkipParameterEvaluation)
+				}
+			},
+		},
+		{
+			name:    "SkipParamEval skip alias",
+			content: "[JavaVM:Options]\nSkipParamEval=true\n",
+			assert: func(t *testing.T, rc *RuntimeConfig) {
+				if rc.JavaVMSkipParameterEvaluation == nil || !*rc.JavaVMSkipParameterEvaluation {
+					t.Fatalf("skip = %#v", rc.JavaVMSkipParameterEvaluation)
+				}
+			},
+		},
+		{
+			name:    "skip_automatic_parameter_evaluation skip alias",
+			content: "[JavaVM:Options]\nskip_automatic_parameter_evaluation=0\n",
+			assert: func(t *testing.T, rc *RuntimeConfig) {
+				if rc.JavaVMSkipParameterEvaluation == nil || *rc.JavaVMSkipParameterEvaluation {
+					t.Fatalf("skip = %#v, want explicit false", rc.JavaVMSkipParameterEvaluation)
+				}
+			},
+		},
+		{
+			name:    "SkipAutomaticParameterEvaluation skip alias",
+			content: "[JavaVM:Options]\nSkipAutomaticParameterEvaluation=1\n",
+			assert: func(t *testing.T, rc *RuntimeConfig) {
+				if rc.JavaVMSkipParameterEvaluation == nil || !*rc.JavaVMSkipParameterEvaluation {
+					t.Fatalf("skip = %#v", rc.JavaVMSkipParameterEvaluation)
+				}
+			},
+		},
+		{
+			name:    "skip_parameter_evaluation skip alias",
+			content: "[JavaVM:Options]\nskip_parameter_evaluation=1\n",
+			assert: func(t *testing.T, rc *RuntimeConfig) {
+				if rc.JavaVMSkipParameterEvaluation == nil || !*rc.JavaVMSkipParameterEvaluation {
+					t.Fatalf("skip = %#v", rc.JavaVMSkipParameterEvaluation)
+				}
+			},
+		},
+		{
+			name:    "Java:Options section carries skip flag",
+			content: "[Java:Options]\nskip_param_eval=1\n",
+			assert: func(t *testing.T, rc *RuntimeConfig) {
+				if rc.JavaVMSkipParameterEvaluation == nil || !*rc.JavaVMSkipParameterEvaluation {
+					t.Fatalf("skip = %#v", rc.JavaVMSkipParameterEvaluation)
 				}
 			},
 		},

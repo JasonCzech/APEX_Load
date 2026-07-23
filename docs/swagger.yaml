@@ -1713,6 +1713,27 @@ paths:
                     iterations:
                       type: integer
                       format: int64
+                    java_vuser:
+                      type: object
+                      properties:
+                        additional_vm_parameters:
+                          type: array
+                          items:
+                            type: string
+                        classpath:
+                          type: array
+                          items:
+                            type: string
+                        dedicated_class_loader:
+                          type: boolean
+                        jdk_home:
+                          type: string
+                        jdk_selection:
+                          type: string
+                        skip_parameter_evaluation:
+                          type: boolean
+                        use_xbootclasspath:
+                          type: boolean
                     log:
                       type: object
                       description: 'Go type: dsl.LogConfig'
@@ -1909,6 +1930,10 @@ paths:
                               iterations:
                                 type: integer
                                 format: int64
+                              java_vuser:
+                                type: object
+                                description: 'Go type: RuntimeJavaVuserOverride'
+                                additionalProperties: true
                               log:
                                 type: object
                                 description: 'Go type: dsl.LogConfig'
@@ -1988,6 +2013,27 @@ paths:
                         iterations:
                           type: integer
                           format: int64
+                        java_vuser:
+                          type: object
+                          properties:
+                            additional_vm_parameters:
+                              type: array
+                              items:
+                                type: string
+                            classpath:
+                              type: array
+                              items:
+                                type: string
+                            dedicated_class_loader:
+                              type: boolean
+                            jdk_home:
+                              type: string
+                            jdk_selection:
+                              type: string
+                            skip_parameter_evaluation:
+                              type: boolean
+                            use_xbootclasspath:
+                              type: boolean
                         log:
                           type: object
                           description: 'Go type: dsl.LogConfig'
@@ -21677,6 +21723,10 @@ paths:
                               iterations:
                                 type: integer
                                 format: int64
+                              java_vuser:
+                                type: object
+                                description: 'Go type: RuntimeJavaVuserOverride'
+                                additionalProperties: true
                               log:
                                 type: object
                                 description: 'Go type: dsl.LogConfig'
@@ -21768,6 +21818,27 @@ paths:
                         iterations:
                           type: integer
                           format: int64
+                        java_vuser:
+                          type: object
+                          properties:
+                            additional_vm_parameters:
+                              type: array
+                              items:
+                                type: string
+                            classpath:
+                              type: array
+                              items:
+                                type: string
+                            dedicated_class_loader:
+                              type: boolean
+                            jdk_home:
+                              type: string
+                            jdk_selection:
+                              type: string
+                            skip_parameter_evaluation:
+                              type: boolean
+                            use_xbootclasspath:
+                              type: boolean
                         log:
                           type: object
                           description: 'Go type: dsl.LogConfig'
@@ -22370,6 +22441,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -23164,6 +23239,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -23996,6 +24092,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -24790,6 +24890,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -25626,6 +25747,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -26420,6 +26545,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -27262,6 +27408,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -28056,6 +28206,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -28898,6 +29069,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -29692,6 +29867,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -30534,6 +30730,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -31328,6 +31528,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -32170,6 +32391,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -32964,6 +33189,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -35314,6 +35560,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -35667,6 +35934,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -35746,6 +36034,27 @@ paths:
                     iterations:
                       type: integer
                       format: int64
+                    java_vuser:
+                      type: object
+                      properties:
+                        additional_vm_parameters:
+                          type: array
+                          items:
+                            type: string
+                        classpath:
+                          type: array
+                          items:
+                            type: string
+                        dedicated_class_loader:
+                          type: boolean
+                        jdk_home:
+                          type: string
+                        jdk_selection:
+                          type: string
+                        skip_parameter_evaluation:
+                          type: boolean
+                        use_xbootclasspath:
+                          type: boolean
                     log:
                       type: object
                       description: 'Go type: dsl.LogConfig'
@@ -35952,6 +36261,27 @@ paths:
                       iterations:
                         type: integer
                         format: int64
+                      java_vuser:
+                        type: object
+                        properties:
+                          additional_vm_parameters:
+                            type: array
+                            items:
+                              type: string
+                          classpath:
+                            type: array
+                            items:
+                              type: string
+                          dedicated_class_loader:
+                            type: boolean
+                          jdk_home:
+                            type: string
+                          jdk_selection:
+                            type: string
+                          skip_parameter_evaluation:
+                            type: boolean
+                          use_xbootclasspath:
+                            type: boolean
                       log:
                         type: object
                         description: 'Go type: dsl.LogConfig'
@@ -36076,6 +36406,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -36367,6 +36718,27 @@ paths:
                       iterations:
                         type: integer
                         format: int64
+                      java_vuser:
+                        type: object
+                        properties:
+                          additional_vm_parameters:
+                            type: array
+                            items:
+                              type: string
+                          classpath:
+                            type: array
+                            items:
+                              type: string
+                          dedicated_class_loader:
+                            type: boolean
+                          jdk_home:
+                            type: string
+                          jdk_selection:
+                            type: string
+                          skip_parameter_evaluation:
+                            type: boolean
+                          use_xbootclasspath:
+                            type: boolean
                       log:
                         type: object
                         description: 'Go type: dsl.LogConfig'
@@ -36491,6 +36863,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -36750,6 +37143,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -36829,6 +37243,27 @@ paths:
                     iterations:
                       type: integer
                       format: int64
+                    java_vuser:
+                      type: object
+                      properties:
+                        additional_vm_parameters:
+                          type: array
+                          items:
+                            type: string
+                        classpath:
+                          type: array
+                          items:
+                            type: string
+                        dedicated_class_loader:
+                          type: boolean
+                        jdk_home:
+                          type: string
+                        jdk_selection:
+                          type: string
+                        skip_parameter_evaluation:
+                          type: boolean
+                        use_xbootclasspath:
+                          type: boolean
                     log:
                       type: object
                       description: 'Go type: dsl.LogConfig'
@@ -37035,6 +37470,27 @@ paths:
                       iterations:
                         type: integer
                         format: int64
+                      java_vuser:
+                        type: object
+                        properties:
+                          additional_vm_parameters:
+                            type: array
+                            items:
+                              type: string
+                          classpath:
+                            type: array
+                            items:
+                              type: string
+                          dedicated_class_loader:
+                            type: boolean
+                          jdk_home:
+                            type: string
+                          jdk_selection:
+                            type: string
+                          skip_parameter_evaluation:
+                            type: boolean
+                          use_xbootclasspath:
+                            type: boolean
                       log:
                         type: object
                         description: 'Go type: dsl.LogConfig'
@@ -37159,6 +37615,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -37693,6 +38170,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -37810,6 +38308,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -39380,6 +39882,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -39459,6 +39965,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -39719,6 +40246,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -39798,6 +40346,27 @@ paths:
                     iterations:
                       type: integer
                       format: int64
+                    java_vuser:
+                      type: object
+                      properties:
+                        additional_vm_parameters:
+                          type: array
+                          items:
+                            type: string
+                        classpath:
+                          type: array
+                          items:
+                            type: string
+                        dedicated_class_loader:
+                          type: boolean
+                        jdk_home:
+                          type: string
+                        jdk_selection:
+                          type: string
+                        skip_parameter_evaluation:
+                          type: boolean
+                        use_xbootclasspath:
+                          type: boolean
                     log:
                       type: object
                       description: 'Go type: dsl.LogConfig'
@@ -52808,6 +53377,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -52899,6 +53489,27 @@ paths:
                     iterations:
                       type: integer
                       format: int64
+                    java_vuser:
+                      type: object
+                      properties:
+                        additional_vm_parameters:
+                          type: array
+                          items:
+                            type: string
+                        classpath:
+                          type: array
+                          items:
+                            type: string
+                        dedicated_class_loader:
+                          type: boolean
+                        jdk_home:
+                          type: string
+                        jdk_selection:
+                          type: string
+                        skip_parameter_evaluation:
+                          type: boolean
+                        use_xbootclasspath:
+                          type: boolean
                     log:
                       type: object
                       description: 'Go type: dsl.LogConfig'
@@ -53409,6 +54020,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -54323,6 +54955,27 @@ paths:
                       iterations:
                         type: integer
                         format: int64
+                      java_vuser:
+                        type: object
+                        properties:
+                          additional_vm_parameters:
+                            type: array
+                            items:
+                              type: string
+                          classpath:
+                            type: array
+                            items:
+                              type: string
+                          dedicated_class_loader:
+                            type: boolean
+                          jdk_home:
+                            type: string
+                          jdk_selection:
+                            type: string
+                          skip_parameter_evaluation:
+                            type: boolean
+                          use_xbootclasspath:
+                            type: boolean
                       log:
                         type: object
                         description: 'Go type: dsl.LogConfig'
@@ -55099,6 +55752,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -56013,6 +56687,27 @@ paths:
                       iterations:
                         type: integer
                         format: int64
+                      java_vuser:
+                        type: object
+                        properties:
+                          additional_vm_parameters:
+                            type: array
+                            items:
+                              type: string
+                          classpath:
+                            type: array
+                            items:
+                              type: string
+                          dedicated_class_loader:
+                            type: boolean
+                          jdk_home:
+                            type: string
+                          jdk_selection:
+                            type: string
+                          skip_parameter_evaluation:
+                            type: boolean
+                          use_xbootclasspath:
+                            type: boolean
                       log:
                         type: object
                         description: 'Go type: dsl.LogConfig'
@@ -57592,6 +58287,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -57678,6 +58377,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -58631,6 +59351,9 @@ paths:
                               iterations:
                                 type: integer
                                 format: int64
+                              java_vuser:
+                                type: object
+                                additionalProperties: true
                               log:
                                 type: object
                                 description: 'Go type: dsl.LogConfig'
@@ -60482,6 +61205,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -61396,6 +62140,27 @@ paths:
                       iterations:
                         type: integer
                         format: int64
+                      java_vuser:
+                        type: object
+                        properties:
+                          additional_vm_parameters:
+                            type: array
+                            items:
+                              type: string
+                          classpath:
+                            type: array
+                            items:
+                              type: string
+                          dedicated_class_loader:
+                            type: boolean
+                          jdk_home:
+                            type: string
+                          jdk_selection:
+                            type: string
+                          skip_parameter_evaluation:
+                            type: boolean
+                          use_xbootclasspath:
+                            type: boolean
                       log:
                         type: object
                         description: 'Go type: dsl.LogConfig'
@@ -62123,6 +62888,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -63037,6 +63823,27 @@ paths:
                       iterations:
                         type: integer
                         format: int64
+                      java_vuser:
+                        type: object
+                        properties:
+                          additional_vm_parameters:
+                            type: array
+                            items:
+                              type: string
+                          classpath:
+                            type: array
+                            items:
+                              type: string
+                          dedicated_class_loader:
+                            type: boolean
+                          jdk_home:
+                            type: string
+                          jdk_selection:
+                            type: string
+                          skip_parameter_evaluation:
+                            type: boolean
+                          use_xbootclasspath:
+                            type: boolean
                       log:
                         type: object
                         description: 'Go type: dsl.LogConfig'
@@ -63811,6 +64618,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -63890,6 +64701,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -64262,6 +65094,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -64341,6 +65177,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -64887,6 +65744,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -66420,6 +67298,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -66511,6 +67410,27 @@ paths:
                     iterations:
                       type: integer
                       format: int64
+                    java_vuser:
+                      type: object
+                      properties:
+                        additional_vm_parameters:
+                          type: array
+                          items:
+                            type: string
+                        classpath:
+                          type: array
+                          items:
+                            type: string
+                        dedicated_class_loader:
+                          type: boolean
+                        jdk_home:
+                          type: string
+                        jdk_selection:
+                          type: string
+                        skip_parameter_evaluation:
+                          type: boolean
+                        use_xbootclasspath:
+                          type: boolean
                     log:
                       type: object
                       description: 'Go type: dsl.LogConfig'
@@ -66891,6 +67811,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'

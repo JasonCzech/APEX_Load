@@ -7446,6 +7446,9 @@
         "runner_command": {
           "type": "string"
         },
+        "skip_parameter_evaluation": {
+          "type": "boolean"
+        },
         "startup_timeout_ms": {
           "maximum": 3600000,
           "minimum": 0,

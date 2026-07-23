@@ -16,6 +16,8 @@ import {
 } from './runtimeSettingsModel'
 import { materializeRuntimeSettingsForApply } from './runtimeSettingsApply'
 import WebHttpTab from './runtimeTabs/WebHttpTab'
+import { JavaEnvSettingsFields, type JavaEnvSettingsValue } from './JavaEnvSettingsFields'
+import { type RuntimeJavaVuserSettings } from '../types'
 
 export interface RuntimeEditorGroup {
   name: string
@@ -23,6 +25,8 @@ export interface RuntimeEditorGroup {
   protocol?: string
   /** The group's script DSL config, used to resolve actual script-default values. */
   scriptConfig?: ScriptConfig
+  /** VM-parameter tokens captured from an imported LoadRunner Java script, offered as a picker. */
+  importedJavaVMParameters?: string[]
 }
 
 export interface RuntimeSettingsGroupEditorProps {
@@ -53,6 +57,7 @@ const FIELD_LABELS: Record<RuntimeFieldKey, string> = {
   http: 'HTTP transport',
   web_runtime: 'Web runtime',
   browser_config: 'Browser config',
+  java_vuser: 'Java Env',
 }
 
 const SUMMARY_FIELDS: RuntimeFieldKey[] = [
@@ -68,6 +73,7 @@ const SUMMARY_FIELDS: RuntimeFieldKey[] = [
   'http',
   'web_runtime',
   'browser_config',
+  'java_vuser',
 ]
 
 /**
@@ -84,6 +90,7 @@ type RuntimeTabId =
   | 'error_handling'
   | 'http_transport'
   | 'web_http'
+  | 'java_env'
 
 /** Nested sub-tabs within the HTTP Transport tab (mirrors the Script Editor). */
 type HttpSubTabId = 'timeouts' | 'connection' | 'tls' | 'proxy' | 'authentication' | 'browser_emulation'
@@ -233,6 +240,12 @@ export default function RuntimeSettingsGroupEditor({
   const browserApplicable = isRuntimeFieldApplicable('browser', focusGroup.protocol)
   const httpApplicable = isRuntimeFieldApplicable('http', focusGroup.protocol)
   const webRuntimeApplicable = isRuntimeFieldApplicable('web_runtime', focusGroup.protocol)
+  const javaVuserApplicable = isRuntimeFieldApplicable('java_vuser', focusGroup.protocol)
+
+  // The Java Env override replaces the whole section: seed the editor from the
+  // group override when present, else from the inherited (script/scenario) value.
+  const inheritedJava: RuntimeJavaVuserSettings = structuredClone(inheritedOverride?.java_vuser ?? {})
+  const effectiveJava: JavaEnvSettingsValue = draft.java_vuser ?? inheritedJava
 
   const patch = (next: Partial<ScenarioRuntimeSettingsDraft>) => {
     const merged: ScenarioRuntimeSettingsDraft = { ...EMPTY_RUNTIME_DRAFT, ...draft, ...next }
@@ -418,6 +431,9 @@ export default function RuntimeSettingsGroupEditor({
       case 'browser_config':
         patch({ browser_config: undefined, browser: undefined })
         break
+      case 'java_vuser':
+        patch({ java_vuser: undefined })
+        break
     }
   }
 
@@ -452,7 +468,20 @@ export default function RuntimeSettingsGroupEditor({
         return Boolean(o.web_runtime)
       case 'browser_config':
         return Boolean(o.browser_config)
+      case 'java_vuser':
+        return Boolean(o.java_vuser)
     }
+  }
+
+  // A Java Env edit replaces the whole section. Materialize from the inherited
+  // value on first edit so a single field change does not clear the others, then
+  // drop the section entirely when it collapses back to the inherited value.
+  const patchJavaVuser = (next: JavaEnvSettingsValue) => {
+    const merged: RuntimeJavaVuserSettings = { ...next }
+    for (const key of Object.keys(merged) as Array<keyof RuntimeJavaVuserSettings>) {
+      if (merged[key] === undefined) delete merged[key]
+    }
+    patch({ java_vuser: Object.keys(merged).length > 0 ? merged : undefined })
   }
 
   const toggleTarget = (target: number) => {
@@ -479,6 +508,7 @@ export default function RuntimeSettingsGroupEditor({
     { id: 'error_handling', label: 'Error Handling', show: true },
     { id: 'http_transport', label: 'HTTP Transport', show: httpApplicable || browserApplicable },
     { id: 'web_http', label: 'Web/HTTP', show: webRuntimeApplicable },
+    { id: 'java_env', label: 'Java Env', show: javaVuserApplicable },
   ]
   const visibleTabs = tabs.filter(tab => tab.show)
   // Clamp the active tab to a visible one so switching focus to a group that hides the
@@ -1090,6 +1120,27 @@ export default function RuntimeSettingsGroupEditor({
 
         {activeTab === 'web_http' && (
           <WebHttpTab web={draft.web_runtime} inheritedWeb={inheritedWeb} setWeb={next => patch({ web_runtime: next })} />
+        )}
+
+        {activeTab === 'java_env' && (
+          <>
+            {draft.java_vuser && (
+              <div className="runtime-override-active-banner">
+                <span>Overriding the script's Java Env settings for this group.</span>
+                <button type="button" className="link-button" onClick={() => clearField('java_vuser')}>
+                  Clear override
+                </button>
+              </div>
+            )}
+            <JavaEnvSettingsFields
+              idPrefix={`group-${index}-java-vuser`}
+              value={effectiveJava}
+              importedVMParameters={focusGroup.importedJavaVMParameters}
+              onChange={patchJavaVuser}
+              listOverrideInherits
+              dedicatedClassLoaderNote="Each Java VUser keeps one JVM, Actions instance, and child loader for its full lifecycle when enabled."
+            />
+          </>
         )}
       </div>
 

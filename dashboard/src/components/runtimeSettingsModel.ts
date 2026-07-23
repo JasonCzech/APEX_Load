@@ -6,7 +6,7 @@
 // scenario default → script default), and mirror the backend's field-to-protocol
 // applicability rule (see pkg/api fieldApplicableForProtocol).
 
-import { type RuntimeBrowserSettings, type RuntimeSettingsOverride, type ScenarioRuntimeSettingsDraft } from '../types'
+import { type RuntimeBrowserSettings, type RuntimeJavaVuserSettings, type RuntimeSettingsOverride, type ScenarioRuntimeSettingsDraft } from '../types'
 import { type ScriptConfig } from '../types/scripts'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 
@@ -49,6 +49,7 @@ export type RuntimeFieldKey =
   | 'http'
   | 'web_runtime'
   | 'browser_config'
+  | 'java_vuser'
 
 function isPresent(value: unknown): boolean {
   return value !== undefined && value !== null && value !== ''
@@ -117,6 +118,22 @@ export function formatBrowserSummary(browser?: RuntimeBrowserSettings): string |
   return formatBrowserRuntimeSummary(browser)
 }
 
+export function formatJavaVuserSummary(java?: RuntimeJavaVuserSettings): string | null {
+  if (!java) return null
+  const parts: string[] = []
+  if (java.jdk_selection) parts.push(java.jdk_selection === 'specified' ? 'Specified JDK' : 'Internal JDK')
+  if (java.additional_vm_parameters?.length) parts.push(`${java.additional_vm_parameters.length} VM param${java.additional_vm_parameters.length === 1 ? '' : 's'}`)
+  if (java.classpath?.length) parts.push(`${java.classpath.length} classpath`)
+  // Render the tri-state toggles when explicitly set (including false), so an
+  // override whose only content is a false boolean still formats to a non-null
+  // string. Otherwise formatEffectiveRuntimeField would treat the layer as empty
+  // and mis-attribute the effective value to the script default.
+  if (java.dedicated_class_loader !== undefined) parts.push(java.dedicated_class_loader ? 'dedicated loader' : 'no dedicated loader')
+  if (java.skip_parameter_evaluation !== undefined) parts.push(java.skip_parameter_evaluation ? 'skip param eval' : 'no skip param eval')
+  if (java.use_xbootclasspath !== undefined) parts.push(java.use_xbootclasspath ? 'xboot' : 'no xboot')
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
 /**
  * isRuntimeFieldApplicable mirrors the backend fieldApplicableForProtocol (Phase 1):
  * browser device/runtime settings apply only to the browser protocol; every other
@@ -149,6 +166,8 @@ export function isRuntimeFieldApplicable(field: RuntimeFieldKey, protocol?: stri
       return isHTTPProtocol(protocol) || isBrowser
     case 'web_runtime':
       return isBrowser || isHTTPProtocol(protocol)
+    case 'java_vuser':
+      return (protocol || '').trim().toLowerCase() === 'java_vuser'
     default:
       return true
   }
@@ -180,9 +199,24 @@ export function isRuntimeDraftEmpty(draft?: ScenarioRuntimeSettingsDraft): boole
     !draft.http &&
     !draft.web_runtime &&
     !draft.browser_config &&
+    isJavaVuserSettingsEmpty(draft.java_vuser) &&
     !draft.base_url &&
     !draft.env &&
     !draft.redaction_rules
+  )
+}
+
+/** A Java Env override carries no value when every field is unset/empty. */
+function isJavaVuserSettingsEmpty(java?: RuntimeJavaVuserSettings): boolean {
+  if (!java) return true
+  return (
+    !java.jdk_selection &&
+    !java.jdk_home &&
+    !(java.additional_vm_parameters && java.additional_vm_parameters.length > 0) &&
+    !(java.classpath && java.classpath.length > 0) &&
+    java.use_xbootclasspath === undefined &&
+    java.dedicated_class_loader === undefined &&
+    java.skip_parameter_evaluation === undefined
   )
 }
 
@@ -209,6 +243,7 @@ export function runtimeDraftFromOverride(override?: RuntimeSettingsOverride): Sc
     http: override.http,
     web_runtime: override.web_runtime,
     browser_config: override.browser_config,
+    java_vuser: override.java_vuser ? { ...override.java_vuser } : undefined,
     base_url: override.base_url,
     env: override.env ? { ...override.env } : undefined,
     redaction_rules: override.redaction_rules ? override.redaction_rules.map(rule => ({ ...rule })) : undefined,
@@ -250,6 +285,7 @@ export function overrideFromRuntimeDraft(draft?: ScenarioRuntimeSettingsDraft): 
     http: draft.http,
     web_runtime: draft.web_runtime,
     browser_config: draft.browser_config,
+    java_vuser: isJavaVuserSettingsEmpty(draft.java_vuser) ? undefined : { ...draft.java_vuser },
     base_url: draft.base_url,
     env: draft.env ? { ...draft.env } : undefined,
     redaction_rules: draft.redaction_rules ? draft.redaction_rules.map(rule => ({ ...rule })) : undefined,
@@ -340,6 +376,17 @@ export function runtimeOverrideFromScriptConfig(config?: ScriptConfig): RuntimeS
     http: config.http,
     web_runtime: config.web_runtime,
     browser_config: config.browser,
+    java_vuser: config.java_vuser
+      ? {
+          jdk_selection: config.java_vuser.jdk_selection,
+          jdk_home: config.java_vuser.jdk_home,
+          additional_vm_parameters: config.java_vuser.additional_vm_parameters,
+          classpath: config.java_vuser.classpath,
+          use_xbootclasspath: config.java_vuser.use_xbootclasspath,
+          dedicated_class_loader: config.java_vuser.dedicated_class_loader,
+          skip_parameter_evaluation: config.java_vuser.skip_parameter_evaluation,
+        }
+      : undefined,
     base_url: config.base_url || undefined,
   }
 }
@@ -376,6 +423,7 @@ export function formatEffectiveRuntimeField(
     http: (o) => formatHTTP(o?.http),
     web_runtime: (o) => formatWebRuntime(o?.web_runtime),
     browser_config: (o) => formatBrowserConfig(o?.browser_config),
+    java_vuser: (o) => formatJavaVuserSummary(o?.java_vuser),
   }
   const format = formatters[field]
   const groupValue = format(group)

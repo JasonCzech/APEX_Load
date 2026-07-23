@@ -257,6 +257,12 @@ func appendJavaVuserConfig(cfg map[string]any, script *dsl.Script) {
 	if javaVuserCfg.DedicatedClassLoader != nil {
 		cfg["java_vuser_dedicated_class_loader"] = *javaVuserCfg.DedicatedClassLoader
 	}
+	// Flattened for runtime-settings report/evidence parity only. The skip is
+	// enforced engine-side in resolveAction (the automatic lr_parameters
+	// snapshot never runs); the protocol and sidecar ignore this key.
+	if javaVuserCfg.SkipParameterEvaluation != nil {
+		cfg["java_vuser_skip_parameter_evaluation"] = *javaVuserCfg.SkipParameterEvaluation
+	}
 	if javaVuserCfg.StartupTimeoutMs > 0 {
 		cfg["java_vuser_startup_timeout_ms"] = float64(javaVuserCfg.StartupTimeoutMs)
 	}

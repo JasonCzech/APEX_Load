@@ -167,6 +167,74 @@ function readPreservedImportObject(
   return value as Record<string, unknown>
 }
 
+function toStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
+}
+
+// tokenizeQuotedVMArguments is a minimal quote-aware splitter for the legacy
+// fallback path (archives imported before preserved.java_vm_settings existed).
+// It mirrors the backend's quote handling closely enough that a token like
+// -Dlabel="hello world" stays one argument instead of splitting on the space.
+// This only feeds a suggestion picker, so an unbalanced quote degrades to a
+// best-effort whitespace split rather than an error.
+function tokenizeQuotedVMArguments(raw: string): string[] {
+  const tokens: string[] = []
+  let current = ''
+  let inQuote = false
+  let sawContent = false
+  for (const ch of raw.trim()) {
+    if (ch === '"') {
+      inQuote = !inQuote
+      sawContent = true
+      continue
+    }
+    if (!inQuote && /\s/.test(ch)) {
+      if (sawContent) tokens.push(current)
+      current = ''
+      sawContent = false
+      continue
+    }
+    current += ch
+    sawContent = true
+  }
+  if (sawContent) tokens.push(current)
+  return tokens.filter(token => token !== '')
+}
+
+/**
+ * readImportedJavaVMParameters returns the VM-parameter tokens captured from an
+ * imported LoadRunner Java script so the runtime-settings UI can offer them as a
+ * picker. It reads the normalized preserved["java_vm_settings"] object written
+ * at import time, then falls back to tokenizing the raw [JavaVM:Options] section
+ * from preserved["runtime_files"] for archives imported before that key existed.
+ */
+export function readImportedJavaVMParameters(metadata?: ScriptImportMetadata | null): string[] {
+  const settings = readPreservedImportObject(metadata, 'java_vm_settings')
+  if (settings) {
+    const tokens = toStringArray(settings.additional_vm_parameters)
+    if (tokens.length > 0) return tokens
+  }
+  const runtimeFiles = metadata?.preserved?.runtime_files
+  if (!isRecord(runtimeFiles)) return []
+  const sectionAliases = ['JavaVM:Options', 'JavaVM', 'Java VM', 'Java Environment Settings', 'Java:Options']
+  const keyAliases = ['Java_VM_Params', 'java_vm_parameters', 'AdditionalVmParams', 'ExtraVmParams', 'VmParams']
+  for (const file of Object.values(runtimeFiles)) {
+    if (!isRecord(file)) continue
+    for (const [sectionName, section] of Object.entries(file)) {
+      if (!sectionAliases.some(alias => alias.toLowerCase() === sectionName.trim().toLowerCase())) continue
+      if (!isRecord(section)) continue
+      for (const [key, raw] of Object.entries(section)) {
+        if (!keyAliases.some(alias => alias.toLowerCase() === key.trim().toLowerCase())) continue
+        if (typeof raw === 'string' && raw.trim() !== '') {
+          return tokenizeQuotedVMArguments(raw)
+        }
+      }
+    }
+  }
+  return []
+}
+
 export function readSourceReview(metadata?: ScriptImportMetadata | null): SourceArchiveReview | null {
   const value = readPreservedImportObject(metadata, 'source_review')
   if (!value) return null
