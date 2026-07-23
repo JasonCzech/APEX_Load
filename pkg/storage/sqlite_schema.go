@@ -630,6 +630,24 @@ func schemaCreateTableStatements() []string {
 			updated_at DATETIME NOT NULL,
 			FOREIGN KEY(project_id) REFERENCES projects(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS powerbi_publishes (
+			id TEXT PRIMARY KEY,
+			test_id TEXT NOT NULL,
+			project_id TEXT NOT NULL,
+			workspace_id TEXT NOT NULL,
+			dataset_id TEXT,
+			dataset_name TEXT,
+			schema_version INTEGER NOT NULL DEFAULT 1,
+			status TEXT NOT NULL,
+			run_rows_pushed INTEGER NOT NULL DEFAULT 0,
+			transaction_rows_pushed INTEGER NOT NULL DEFAULT 0,
+			transaction_rows_total INTEGER NOT NULL DEFAULT 0,
+			error TEXT,
+			requested_by TEXT,
+			published_at DATETIME,
+			created_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS service_accounts (
 			id TEXT PRIMARY KEY,
 			name TEXT NOT NULL,
@@ -1179,6 +1197,8 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_archive_finalization_jobs_updated ON archive_finalization_jobs(updated_at)`, "idx_archive_finalization_jobs_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_archive_refresh_jobs_updated ON archive_refresh_jobs(updated_at)`, "idx_archive_refresh_jobs_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_test_notes_test_id ON test_notes(test_id)`, "idx_test_notes_test_id"},
+	{`CREATE INDEX IF NOT EXISTS idx_powerbi_publishes_test ON powerbi_publishes(test_id)`, "idx_powerbi_publishes_test"},
+	{`CREATE INDEX IF NOT EXISTS idx_powerbi_publishes_dataset ON powerbi_publishes(dataset_id)`, "idx_powerbi_publishes_dataset"},
 	{`CREATE INDEX IF NOT EXISTS idx_test_history_test_time ON test_history(test_id, timestamp)`, "idx_test_history_test_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_test_interval_summaries_test_time ON test_interval_summaries(test_id, timestamp)`, "idx_test_interval_summaries_test_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_scenario_schedule_occurrences_schedule_time ON scenario_schedule_occurrences(schedule_id, planned_at)`, "idx_scenario_schedule_occurrences_schedule_time"},

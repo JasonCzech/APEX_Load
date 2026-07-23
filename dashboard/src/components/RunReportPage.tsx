@@ -12,6 +12,7 @@ import { useExecutionTestPolling } from './useExecutionTestPolling'
 import RunReportCompareBar from './runReport/RunReportCompareBar'
 import RunReportDiagnostics from './runReport/RunReportDiagnostics'
 import RunReportExportActions from './runReport/RunReportExportActions'
+import RunReportPowerBIPublish from './runReport/RunReportPowerBIPublish'
 import RunReportKpiScorecard from './runReport/RunReportKpiScorecard'
 import RunReportLensSwitcher from './runReport/RunReportLensSwitcher'
 import RunReportVerdictBanner from './runReport/RunReportVerdictBanner'
@@ -335,6 +336,13 @@ export default function RunReportPage({
           testName={test.name}
           downloadHTML={api.downloadTestReport}
           downloadFormat={api.downloadTestReportFormat}
+        />
+      )}
+      {lensSections.sectionSet.has('exports') && (
+        <RunReportPowerBIPublish
+          testId={testId}
+          publish={api.publishTestToPowerBI}
+          getStatus={api.getPowerBIPublishStatus}
         />
       )}
     </div>

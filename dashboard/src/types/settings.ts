@@ -124,6 +124,63 @@ export interface DashboardGrafanaSettings {
   timeout_seconds: number
 }
 
+export interface DashboardPowerBISettings {
+  enabled: boolean
+  tenant_id?: string
+  client_id?: string
+  client_secret_env_var?: string
+  workspace_id?: string
+  dataset_name?: string
+  auth_base_url?: string
+  api_base_url?: string
+  scope?: string
+  timeout_seconds?: number
+  dashboard_base_url?: string
+}
+
+export interface DashboardPowerBIPublish {
+  id: string
+  test_id: string
+  project_id: string
+  workspace_id: string
+  dataset_id?: string
+  dataset_name?: string
+  schema_version: number
+  status: 'pending' | 'partial' | 'complete' | 'failed' | string
+  run_rows_pushed: number
+  transaction_rows_pushed: number
+  transaction_rows_total: number
+  error?: string
+  requested_by?: string
+  published_at?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface PowerBIPublishResponse {
+  publish: DashboardPowerBIPublish
+}
+
+export interface PowerBIPublishStatusResponse {
+  enabled: boolean
+  publishes: DashboardPowerBIPublish[]
+}
+
+export interface PowerBITestConnectionResponse {
+  ok: boolean
+  error?: string
+  workspace_id?: string
+  dataset_name?: string
+  dataset_exists?: boolean
+  dataset_id?: string
+}
+
+export interface PowerBIDatasetRecreateResponse {
+  dataset_id: string
+  dataset_name: string
+  schema_version: number
+}
+
 export interface DashboardClientAppSettings {
   availability: 'enabled' | 'disabled' | string
 }
@@ -147,6 +204,7 @@ export interface DashboardSystemSettings {
   github: DashboardGitHubSettings
   prometheus: DashboardPrometheusSettings
   grafana?: DashboardGrafanaSettings
+  powerbi?: DashboardPowerBISettings
   client_app: DashboardClientAppSettings
   client_downloads: DashboardClientDownloadsSettings
   script_imports: DashboardScriptImportSettings

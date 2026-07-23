@@ -29,6 +29,7 @@ import {
 import type { GoalConfig, GoalTargetStatus, ScenarioMode } from '../../types/goals'
 import type { GeneratorAssignmentSettings } from '../../types/testConfiguration'
 import type { RuntimeSettingsOverride } from '../../types/runtimeSettings'
+import type { PowerBIPublishResponse, PowerBIPublishStatusResponse } from '../../types/settings'
 import type {
   RunCalendarResponse,
   ScenarioSchedule,
@@ -638,6 +639,20 @@ export function useTestApi() {
     [],
   )
 
+  const publishTestToPowerBI = useCallback(
+    (id: string, options?: { force?: boolean }) =>
+      request<PowerBIPublishResponse>(`/tests/${id}/publish/powerbi`, {
+        method: 'POST',
+        body: JSON.stringify({ force: Boolean(options?.force) }),
+      }),
+    [],
+  )
+
+  const getPowerBIPublishStatus = useCallback(
+    (id: string) => request<PowerBIPublishStatusResponse>(`/tests/${id}/publish/powerbi`),
+    [],
+  )
+
   const downloadTestReportFormat = useCallback(
     (id: string, profile: string, format: 'pdf' | 'csv') =>
       fetchBlob(`/tests/${id}/archive/report${buildQuery({ format, profile })}`),
@@ -757,6 +772,8 @@ export function useTestApi() {
       deleteTestNote,
       downloadTestReport,
       downloadTestReportFormat,
+      publishTestToPowerBI,
+      getPowerBIPublishStatus,
       getTestArchiveAnalysis,
       downloadTestArchive,
       downloadTestArchiveComparison,
@@ -838,6 +855,8 @@ export function useTestApi() {
       deleteTestNote,
       downloadTestReport,
       downloadTestReportFormat,
+      publishTestToPowerBI,
+      getPowerBIPublishStatus,
       getTestArchiveAnalysis,
       downloadTestArchive,
       downloadTestArchiveComparison,

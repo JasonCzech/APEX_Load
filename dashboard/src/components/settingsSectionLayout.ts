@@ -65,6 +65,7 @@ export const INTEGRATION_SETTINGS_SUBSECTIONS = [
   { id: 'github', title: 'GitHub' },
   { id: 'prometheus', title: 'Prometheus' },
   { id: 'dashboards', title: 'Dashboards' },
+  { id: 'powerbi', title: 'Power BI' },
   { id: 'notifications', title: 'Notifications' },
 ] as const
 
