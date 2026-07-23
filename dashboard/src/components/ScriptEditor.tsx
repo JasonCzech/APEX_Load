@@ -623,7 +623,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         setScriptSecretStatus(null)
       }
     }
-  }, [api, projectId, scriptId])
+  }, [api, scriptId])
   useEffect(() => {
     void refreshScriptSecretStatus()
     return () => {

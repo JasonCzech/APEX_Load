@@ -125,6 +125,7 @@ func mergeJavaVuserRuntimeSettingsIntoResult(result *ConvertResult, src *dsl.Scr
 	}
 }
 
+
 func isEmptyPacingConfig(cfg dsl.PacingConfig) bool {
 	return cfg.Type == "" && cfg.DelayMs == 0 && cfg.MinDelayMs == 0 && cfg.MaxDelayMs == 0 && cfg.IntervalMs == 0 && cfg.MinIntervalMs == 0 && cfg.MaxIntervalMs == 0 && cfg.TPS == 0
 }
