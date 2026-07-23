@@ -63,6 +63,7 @@ var runtimeOverrideFieldKeys = map[string]bool{
 	"http":              true,
 	"web_runtime":       true,
 	"browser_config":    true,
+	"browser_emulation": true,
 }
 
 func (s *Server) handleApplyScenarioRuntimeToGroups(w http.ResponseWriter, r *http.Request) {
@@ -244,6 +245,10 @@ func runtimeSettingsFromScriptConfig(config dsl.ScriptConfig) *RuntimeSettingsOv
 	if !reflect.ValueOf(config.Browser).IsZero() {
 		projected.BrowserConfig = cloneViaJSON(&config.Browser)
 	}
+	// Pointer section: nil check instead of reflect.IsZero.
+	if config.BrowserEmulation != nil {
+		projected.BrowserEmulation = cloneViaJSON(config.BrowserEmulation)
+	}
 	if runtimeSettingsOverrideEmpty(projected) {
 		return nil
 	}
@@ -364,13 +369,17 @@ func projectRuntimeFields(src *RuntimeSettingsOverride, fields []string) *Runtim
 	if !requested["browser_config"] {
 		clone.BrowserConfig = nil
 	}
+	if !requested["browser_emulation"] {
+		clone.BrowserEmulation = nil
+	}
 	clone.Env = nil
 	clone.RedactionRules = nil
 	if clone.Iterations == nil && clone.Pacing == nil && clone.ThinkTime == nil &&
 		clone.ErrorHandling == nil && clone.Browser == nil && clone.LogLevel == "" &&
 		clone.AutoTransactions == "" && clone.BaseURL == "" &&
 		clone.Log == nil && clone.RunLogic == nil &&
-		clone.HTTP == nil && clone.WebRuntime == nil && clone.BrowserConfig == nil {
+		clone.HTTP == nil && clone.WebRuntime == nil && clone.BrowserConfig == nil &&
+		clone.BrowserEmulation == nil {
 		return nil
 	}
 	return clone
@@ -423,6 +432,8 @@ func replaceRuntimeFields(target, source *RuntimeSettingsOverride, fields []stri
 			next.WebRuntime = src.WebRuntime
 		case "browser_config":
 			next.BrowserConfig = src.BrowserConfig
+		case "browser_emulation":
+			next.BrowserEmulation = src.BrowserEmulation
 		}
 	}
 
@@ -536,7 +547,8 @@ func runtimeSettingsOverrideEmpty(settings *RuntimeSettingsOverride) bool {
 			settings.ErrorHandling == nil && settings.Browser == nil && settings.LogLevel == "" &&
 			settings.AutoTransactions == "" && settings.BaseURL == "" && settings.Log == nil &&
 			settings.RunLogic == nil && settings.HTTP == nil && settings.WebRuntime == nil &&
-			settings.BrowserConfig == nil && len(settings.Env) == 0 && len(settings.RedactionRules) == 0)
+			settings.BrowserConfig == nil && settings.BrowserEmulation == nil &&
+			len(settings.Env) == 0 && len(settings.RedactionRules) == 0)
 }
 
 // fieldApplicableForProtocol reports whether a runtime override field is meaningful
@@ -550,9 +562,13 @@ func fieldApplicableForProtocol(field, protocol string) bool {
 	case "browser", "browser_config":
 		return protocolFamilyIsBrowser(protocol)
 	case "http":
-		// HTTP transport (which now also hosts browser-emulation settings in the
-		// editor) applies to HTTP-family protocols AND the browser protocol.
+		// HTTP transport applies to HTTP-family protocols AND the browser
+		// protocol (which shares transport-adjacent fields in the editor).
 		return isHTTPProtocol(protocol) || protocolFamilyIsBrowser(protocol)
+	case "browser_emulation":
+		// Browser emulation drives the HTTP replay engine only. The browser
+		// protocol's emulation home stays browser_config.
+		return isHTTPProtocol(protocol)
 	case "web_runtime":
 		return protocolFamilyIsBrowser(protocol) || isHTTPProtocol(protocol)
 	default:

@@ -738,22 +738,24 @@ func TestBuildProtoConfig_JavaHTTPSidecarHelperMode(t *testing.T) {
 func TestBuildProtoConfig_JavaVuser(t *testing.T) {
 	useXBoot := false
 	dedicatedLoader := true
+	skipParamEval := true
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{
 			JavaVuser: dsl.JavaVuserConfig{
-				Enabled:                true,
-				RunnerCommand:          "/opt/apexload/bin/java-vuser-runner",
-				HarnessJar:             "/opt/apexload/java/apexload-java-vuser-runner.jar",
-				Classpath:              []string{"/scripts", "/deps/app.jar"},
-				WorkDir:                "/work/script",
-				MaxProcesses:           25,
-				StartupTimeoutMs:       3000,
-				ActionTimeoutMs:        45000,
-				JDKSelection:           "specified",
-				JDKHome:                "/opt/jdks/temurin-21",
-				AdditionalVMParameters: []string{"-Xmx512m", "-Dapp.label=hello world"},
-				UseXBootClasspath:      &useXBoot,
-				DedicatedClassLoader:   &dedicatedLoader,
+				Enabled:                 true,
+				RunnerCommand:           "/opt/apexload/bin/java-vuser-runner",
+				HarnessJar:              "/opt/apexload/java/apexload-java-vuser-runner.jar",
+				Classpath:               []string{"/scripts", "/deps/app.jar"},
+				WorkDir:                 "/work/script",
+				MaxProcesses:            25,
+				StartupTimeoutMs:        3000,
+				ActionTimeoutMs:         45000,
+				JDKSelection:            "specified",
+				JDKHome:                 "/opt/jdks/temurin-21",
+				AdditionalVMParameters:  []string{"-Xmx512m", "-Dapp.label=hello world"},
+				UseXBootClasspath:       &useXBoot,
+				DedicatedClassLoader:    &dedicatedLoader,
+				SkipParameterEvaluation: &skipParamEval,
 			},
 		},
 	}
@@ -789,6 +791,9 @@ func TestBuildProtoConfig_JavaVuser(t *testing.T) {
 	}
 	if cfg["java_vuser_dedicated_class_loader"] != true {
 		t.Errorf("java_vuser_dedicated_class_loader = %#v, want true", cfg["java_vuser_dedicated_class_loader"])
+	}
+	if cfg["java_vuser_skip_parameter_evaluation"] != true {
+		t.Errorf("java_vuser_skip_parameter_evaluation = %#v, want true", cfg["java_vuser_skip_parameter_evaluation"])
 	}
 	// Non-privileged per-action timeouts remain script-controlled.
 	if cfg["java_vuser_action_timeout_ms"] != float64(45000) {

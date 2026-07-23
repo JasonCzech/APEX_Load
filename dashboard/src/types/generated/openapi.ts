@@ -702,10 +702,20 @@ export interface operations {
               "touch_mode"?: boolean;
             };
             "browser_config"?: Record<string, unknown>;
+            "browser_emulation"?: Record<string, unknown>;
             "env"?: Record<string, unknown>;
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
+            "java_vuser"?: {
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: boolean;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "skip_parameter_evaluation"?: boolean;
+              "use_xbootclasspath"?: boolean;
+            };
             "log"?: Record<string, unknown>;
             "log_level"?: string;
             "pacing"?: Record<string, unknown>;
@@ -772,10 +782,12 @@ export interface operations {
                 "base_url"?: string;
                 "browser"?: Record<string, unknown>;
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: Record<string, unknown>;
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -800,10 +812,20 @@ export interface operations {
                 "touch_mode"?: boolean;
               };
               "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
               "env"?: Record<string, unknown>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -1693,10 +1715,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -1733,10 +1765,12 @@ export interface operations {
                   "base_url"?: string;
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
+                  "browser_emulation"?: Record<string, unknown>;
                   "env"?: Record<string, unknown>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -2249,6 +2283,34 @@ export interface operations {
       "200": {
         content: {
           "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleBrowserEmulationCatalog": {
+    parameters?: never;
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": {
+            "browsers"?: Array<Record<string, unknown>>;
+            "languages"?: Array<Record<string, unknown>>;
+            "platforms"?: Array<Record<string, unknown>>;
+          };
         };
       };
       "401": {
@@ -4138,10 +4200,12 @@ export interface operations {
                 "base_url"?: string;
                 "browser"?: Record<string, unknown>;
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: Record<string, unknown>;
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -4172,10 +4236,20 @@ export interface operations {
                 "touch_mode"?: boolean;
               };
               "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
               "env"?: Record<string, unknown>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -4417,10 +4491,12 @@ export interface operations {
                   "base_url"?: string;
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
+                  "browser_emulation"?: Record<string, unknown>;
                   "env"?: Record<string, unknown>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -4712,10 +4788,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -5012,10 +5098,20 @@ export interface operations {
                 "touch_mode"?: boolean;
               };
               "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
               "env"?: Record<string, unknown>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -5040,10 +5136,20 @@ export interface operations {
               "touch_mode"?: boolean;
             };
             "browser_config"?: Record<string, unknown>;
+            "browser_emulation"?: Record<string, unknown>;
             "env"?: Record<string, unknown>;
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
+            "java_vuser"?: {
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: boolean;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "skip_parameter_evaluation"?: boolean;
+              "use_xbootclasspath"?: boolean;
+            };
             "log"?: Record<string, unknown>;
             "log_level"?: string;
             "pacing"?: Record<string, unknown>;
@@ -5120,10 +5226,20 @@ export interface operations {
                 "touch_mode"?: boolean;
               };
               "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
               "env"?: Record<string, unknown>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -5165,10 +5281,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -5476,10 +5602,20 @@ export interface operations {
                 "touch_mode"?: boolean;
               };
               "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
               "env"?: Record<string, unknown>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -5510,10 +5646,20 @@ export interface operations {
               "touch_mode"?: boolean;
             };
             "browser_config"?: Record<string, unknown>;
+            "browser_emulation"?: Record<string, unknown>;
             "env"?: Record<string, unknown>;
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
+            "java_vuser"?: {
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: boolean;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "skip_parameter_evaluation"?: boolean;
+              "use_xbootclasspath"?: boolean;
+            };
             "log"?: Record<string, unknown>;
             "log_level"?: string;
             "pacing"?: Record<string, unknown>;
@@ -5715,10 +5861,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -6062,10 +6218,20 @@ export interface operations {
                 "touch_mode"?: boolean;
               };
               "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
               "env"?: Record<string, unknown>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -8707,10 +8873,20 @@ export interface operations {
                 "touch_mode"?: boolean;
               };
               "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
               "env"?: Record<string, unknown>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -8741,10 +8917,20 @@ export interface operations {
               "touch_mode"?: boolean;
             };
             "browser_config"?: Record<string, unknown>;
+            "browser_emulation"?: Record<string, unknown>;
             "env"?: Record<string, unknown>;
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
+            "java_vuser"?: {
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: boolean;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "skip_parameter_evaluation"?: boolean;
+              "use_xbootclasspath"?: boolean;
+            };
             "log"?: Record<string, unknown>;
             "log_level"?: string;
             "pacing"?: Record<string, unknown>;
@@ -8895,10 +9081,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -11941,10 +12137,12 @@ export interface operations {
                   "base_url"?: string;
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
+                  "browser_emulation"?: Record<string, unknown>;
                   "env"?: Record<string, unknown>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -12236,10 +12434,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -12896,10 +13104,12 @@ export interface operations {
                   "base_url"?: string;
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
+                  "browser_emulation"?: Record<string, unknown>;
                   "env"?: Record<string, unknown>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -12927,10 +13137,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -13326,10 +13546,12 @@ export interface operations {
                   "base_url"?: string;
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
+                  "browser_emulation"?: Record<string, unknown>;
                   "env"?: Record<string, unknown>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -14093,10 +14315,20 @@ export interface operations {
                 "touch_mode"?: boolean;
               };
               "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
               "env"?: Record<string, unknown>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -14138,10 +14370,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -14958,10 +15200,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -15305,10 +15557,20 @@ export interface operations {
                 "touch_mode"?: boolean;
               };
               "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
               "env"?: Record<string, unknown>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -15572,10 +15834,12 @@ export interface operations {
                   "base_url"?: string;
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
+                  "browser_emulation"?: Record<string, unknown>;
                   "env"?: Record<string, unknown>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -15600,10 +15864,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -15749,10 +16023,12 @@ export interface operations {
                   "base_url"?: string;
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
+                  "browser_emulation"?: Record<string, unknown>;
                   "env"?: Record<string, unknown>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -15777,10 +16053,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -15988,10 +16274,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -22330,10 +22626,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -22677,10 +22983,20 @@ export interface operations {
                 "touch_mode"?: boolean;
               };
               "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
               "env"?: Record<string, unknown>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -24450,10 +24766,12 @@ export interface operations {
                   "base_url"?: string;
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
+                  "browser_emulation"?: Record<string, unknown>;
                   "env"?: Record<string, unknown>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -24745,10 +25063,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -25113,10 +25441,12 @@ export interface operations {
                   "base_url"?: string;
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
+                  "browser_emulation"?: Record<string, unknown>;
                   "env"?: Record<string, unknown>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -25408,10 +25738,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -25776,10 +26116,12 @@ export interface operations {
                   "base_url"?: string;
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
+                  "browser_emulation"?: Record<string, unknown>;
                   "env"?: Record<string, unknown>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -26071,10 +26413,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -26439,10 +26791,12 @@ export interface operations {
                   "base_url"?: string;
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
+                  "browser_emulation"?: Record<string, unknown>;
                   "env"?: Record<string, unknown>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -26734,10 +27088,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -27102,10 +27466,12 @@ export interface operations {
                   "base_url"?: string;
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
+                  "browser_emulation"?: Record<string, unknown>;
                   "env"?: Record<string, unknown>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -27397,10 +27763,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -28645,10 +29021,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -29511,10 +29897,12 @@ export interface operations {
                   "base_url"?: string;
                   "browser"?: Record<string, unknown>;
                   "browser_config"?: Record<string, unknown>;
+                  "browser_emulation"?: Record<string, unknown>;
                   "env"?: Record<string, unknown>;
                   "error_handling"?: Record<string, unknown>;
                   "http"?: Record<string, unknown>;
                   "iterations"?: number;
+                  "java_vuser"?: Record<string, unknown>;
                   "log"?: Record<string, unknown>;
                   "log_level"?: string;
                   "pacing"?: Record<string, unknown>;
@@ -29539,10 +29927,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -31707,10 +32105,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -32054,10 +32462,20 @@ export interface operations {
                 "touch_mode"?: boolean;
               };
               "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
               "env"?: Record<string, unknown>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -33353,10 +33771,20 @@ export interface operations {
                 "touch_mode"?: boolean;
               };
               "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
               "env"?: Record<string, unknown>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -33381,10 +33809,20 @@ export interface operations {
               "touch_mode"?: boolean;
             };
             "browser_config"?: Record<string, unknown>;
+            "browser_emulation"?: Record<string, unknown>;
             "env"?: Record<string, unknown>;
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
+            "java_vuser"?: {
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: boolean;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "skip_parameter_evaluation"?: boolean;
+              "use_xbootclasspath"?: boolean;
+            };
             "log"?: Record<string, unknown>;
             "log_level"?: string;
             "pacing"?: Record<string, unknown>;
@@ -33461,10 +33899,20 @@ export interface operations {
                 "touch_mode"?: boolean;
               };
               "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
               "env"?: Record<string, unknown>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -33506,10 +33954,20 @@ export interface operations {
                   "touch_mode"?: boolean;
                 };
                 "browser_config"?: Record<string, unknown>;
+                "browser_emulation"?: Record<string, unknown>;
                 "env"?: Record<string, unknown>;
                 "error_handling"?: Record<string, unknown>;
                 "http"?: Record<string, unknown>;
                 "iterations"?: number;
+                "java_vuser"?: {
+                  "additional_vm_parameters"?: Array<string>;
+                  "classpath"?: Array<string>;
+                  "dedicated_class_loader"?: boolean;
+                  "jdk_home"?: string;
+                  "jdk_selection"?: string;
+                  "skip_parameter_evaluation"?: boolean;
+                  "use_xbootclasspath"?: boolean;
+                };
                 "log"?: Record<string, unknown>;
                 "log_level"?: string;
                 "pacing"?: Record<string, unknown>;
@@ -34845,10 +35303,20 @@ export interface operations {
                 "touch_mode"?: boolean;
               };
               "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
               "env"?: Record<string, unknown>;
               "error_handling"?: Record<string, unknown>;
               "http"?: Record<string, unknown>;
               "iterations"?: number;
+              "java_vuser"?: {
+                "additional_vm_parameters"?: Array<string>;
+                "classpath"?: Array<string>;
+                "dedicated_class_loader"?: boolean;
+                "jdk_home"?: string;
+                "jdk_selection"?: string;
+                "skip_parameter_evaluation"?: boolean;
+                "use_xbootclasspath"?: boolean;
+              };
               "log"?: Record<string, unknown>;
               "log_level"?: string;
               "pacing"?: Record<string, unknown>;
@@ -34873,10 +35341,20 @@ export interface operations {
               "touch_mode"?: boolean;
             };
             "browser_config"?: Record<string, unknown>;
+            "browser_emulation"?: Record<string, unknown>;
             "env"?: Record<string, unknown>;
             "error_handling"?: Record<string, unknown>;
             "http"?: Record<string, unknown>;
             "iterations"?: number;
+            "java_vuser"?: {
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: boolean;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "skip_parameter_evaluation"?: boolean;
+              "use_xbootclasspath"?: boolean;
+            };
             "log"?: Record<string, unknown>;
             "log_level"?: string;
             "pacing"?: Record<string, unknown>;
@@ -35682,6 +36160,9 @@ export interface paths {
   };
   "/api/v1/dsl/actions": {
     "get": operations["handleListDSLActions"];
+  };
+  "/api/v1/dsl/browser-emulation-catalog": {
+    "get": operations["handleBrowserEmulationCatalog"];
   };
   "/api/v1/dsl/config-defaults": {
     "get": operations["handleConfigDefaults"];

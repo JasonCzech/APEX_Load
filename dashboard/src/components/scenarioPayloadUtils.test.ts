@@ -990,6 +990,161 @@ describe('scenarioPayloadUtils', () => {
     expect(source.groups[0].stages[0].duration).toBe('2m')
   })
 
+  it('serializes a scenario-level java_vuser override into the runtime_settings payload', () => {
+    const payload = buildCreateTestPayload({
+      name: 'Java scenario',
+      duration: '5m',
+      startDelay: '',
+      scenarioMode: 'load_test',
+      scriptShakeout: false,
+      resourceBaseline: false,
+      groups: [{ name: 'JavaLoad', script_id: 'j1', vusers: 10 }],
+      runtimeSettings: {
+        log_level: '',
+        auto_transactions: '',
+        java_vuser: {
+          jdk_selection: 'specified',
+          jdk_home: '/opt/jdk-21',
+          additional_vm_parameters: ['-Xmx1g'],
+          classpath: ['/opt/app.jar'],
+          skip_parameter_evaluation: true,
+        },
+      },
+    } as never)
+    expect(payload.runtime_settings?.java_vuser).toEqual({
+      jdk_selection: 'specified',
+      jdk_home: '/opt/jdk-21',
+      additional_vm_parameters: ['-Xmx1g'],
+      classpath: ['/opt/app.jar'],
+      skip_parameter_evaluation: true,
+    })
+  })
+
+  it('drops an all-empty java_vuser override and omits runtime_settings entirely', () => {
+    const payload = buildCreateTestPayload({
+      name: 'Empty',
+      duration: '5m',
+      startDelay: '',
+      scenarioMode: 'load_test',
+      scriptShakeout: false,
+      resourceBaseline: false,
+      groups: [{ name: 'JavaLoad', script_id: 'j1', vusers: 10 }],
+      runtimeSettings: { log_level: '', auto_transactions: '', java_vuser: {} },
+    } as never)
+    expect(payload.runtime_settings).toBeUndefined()
+  })
+
+  it('round-trips a stored per-group java_vuser override through revision without loss', () => {
+    const source = {
+      id: 'java-rev',
+      name: 'Java Revision',
+      status: 'QUEUED',
+      total_vusers: 10,
+      duration: '5m',
+      created_at: '2026-07-23T12:00:00Z',
+      groups: [{
+        name: 'JavaLoad',
+        script_id: 'j1',
+        protocol: 'java_vuser',
+        vusers: 10,
+        initialization: 'at_runtime',
+        runtime_settings: {
+          java_vuser: { skip_parameter_evaluation: true, classpath: ['/opt/app.jar'] },
+        },
+      }],
+    } as const
+
+    const mapped = buildScenarioDraftFromTest(source as never)
+    const reloaded = buildInitialScenarioDraft(mapped, [])
+    const payload = buildCreateTestPayload({
+      name: reloaded.name,
+      duration: reloaded.duration,
+      startDelay: reloaded.startDelay,
+      scenarioMode: reloaded.scenarioMode,
+      scriptShakeout: reloaded.scriptShakeout,
+      resourceBaseline: reloaded.resourceBaseline,
+      assignment: reloaded.assignment,
+      groups: reloaded.groups,
+      goalConfig: reloaded.goalConfig,
+      runtimeSettings: reloaded.runtimeSettings,
+    })
+    expect(payload.groups?.[0].runtime_settings?.java_vuser).toEqual({
+      skip_parameter_evaluation: true,
+      classpath: ['/opt/app.jar'],
+    })
+  })
+
+  it('serializes a scenario-level browser_emulation override into the runtime_settings payload', () => {
+    const payload = buildCreateTestPayload({
+      name: 'BE scenario',
+      duration: '5m',
+      startDelay: '',
+      scenarioMode: 'load_test',
+      scriptShakeout: false,
+      resourceBaseline: false,
+      groups: [{ name: 'HttpLoad', script_id: 'h1', vusers: 10 }],
+      runtimeSettings: {
+        log_level: '',
+        auto_transactions: '',
+        browser_emulation: {
+          mode: 'specific',
+          browser_type: 'chrome',
+          browser_version: '120',
+          platform: 'windows',
+          cache: { simulate_cache: true, download_non_html_resources: true },
+        },
+      },
+    } as never)
+    expect(payload.runtime_settings?.browser_emulation).toEqual({
+      mode: 'specific',
+      browser_type: 'chrome',
+      browser_version: '120',
+      platform: 'windows',
+      cache: { simulate_cache: true, download_non_html_resources: true },
+    })
+  })
+
+  it('round-trips a stored per-group browser_emulation override through revision without loss', () => {
+    const source = {
+      id: 'be-rev',
+      name: 'BE Revision',
+      status: 'QUEUED',
+      total_vusers: 10,
+      duration: '5m',
+      created_at: '2026-07-23T12:00:00Z',
+      groups: [{
+        name: 'HttpLoad',
+        script_id: 'h1',
+        protocol: 'http',
+        vusers: 10,
+        initialization: 'at_runtime',
+        runtime_settings: {
+          browser_emulation: { mode: 'custom', custom_user_agent: 'MyAgent/2.0', cache: { new_user_each_iteration: true } },
+        },
+      }],
+    } as const
+
+    const mapped = buildScenarioDraftFromTest(source as never)
+    const reloaded = buildInitialScenarioDraft(mapped, [])
+    const payload = buildCreateTestPayload({
+      name: reloaded.name,
+      duration: reloaded.duration,
+      startDelay: reloaded.startDelay,
+      scenarioMode: reloaded.scenarioMode,
+      scriptShakeout: reloaded.scriptShakeout,
+      resourceBaseline: reloaded.resourceBaseline,
+      assignment: reloaded.assignment,
+      groups: reloaded.groups,
+      goalConfig: reloaded.goalConfig,
+      runtimeSettings: reloaded.runtimeSettings,
+    })
+    expect(payload.groups?.[0].runtime_settings?.browser_emulation).toEqual({
+      mode: 'custom',
+      custom_user_agent: 'MyAgent/2.0',
+      cache: { new_user_each_iteration: true },
+    })
+  })
+
   it('applies queued-revision compact edits to canonical runtime sections', () => {
     const mapped = buildScenarioDraftFromTest({
       id: 'canonical-revision',

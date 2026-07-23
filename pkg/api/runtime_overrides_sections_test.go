@@ -148,6 +148,102 @@ func TestCloneRuntimeSettingsDeepClonesHTTPMapsAndSlices(t *testing.T) {
 	}
 }
 
+func TestApplyRuntimeOverridesBrowserEmulationWholeSectionReplace(t *testing.T) {
+	scriptOn := true
+	script := &dsl.Script{
+		Name:     "s",
+		Protocol: "http",
+		Config: dsl.ScriptConfig{
+			BaseURL: "https://example.test",
+			BrowserEmulation: &dsl.BrowserEmulationConfig{
+				Mode:            "custom",
+				CustomUserAgent: "ScriptAgent/1.0",
+				Cache:           &dsl.BrowserCacheSimulationConfig{SimulateCache: &scriptOn},
+			},
+		},
+	}
+	overrides := &RuntimeSettingsOverride{
+		BrowserEmulation: &dsl.BrowserEmulationConfig{
+			Mode:        "specific",
+			BrowserType: "firefox",
+			Platform:    "linux",
+		},
+	}
+
+	if err := applyRuntimeOverrides(script, overrides); err != nil {
+		t.Fatalf("applyRuntimeOverrides: %v", err)
+	}
+	got := script.Config.BrowserEmulation
+	if got == nil || got.Mode != "specific" || got.BrowserType != "firefox" {
+		t.Fatalf("browser_emulation = %#v, want override section", got)
+	}
+	// Whole-section replace: the script's cache block must not survive.
+	if got.Cache != nil || got.CustomUserAgent != "" {
+		t.Fatalf("browser_emulation = %#v, want script cache/UA replaced away", got)
+	}
+	// The applied section must be a clone, not an alias of the override.
+	overrides.BrowserEmulation.BrowserType = "mutated"
+	if script.Config.BrowserEmulation.BrowserType != "firefox" {
+		t.Fatal("applied browser_emulation aliases the override struct")
+	}
+}
+
+func TestMergeRuntimeSettingsGroupBrowserEmulationWins(t *testing.T) {
+	base := &RuntimeSettingsOverride{
+		BrowserEmulation: &dsl.BrowserEmulationConfig{Mode: "custom", CustomUserAgent: "Root/1.0"},
+	}
+	group := &RuntimeSettingsOverride{
+		BrowserEmulation: &dsl.BrowserEmulationConfig{Mode: "specific", BrowserType: "chrome"},
+	}
+	merged := mergeRuntimeSettings(base, group)
+	if merged.BrowserEmulation == nil || merged.BrowserEmulation.Mode != "specific" || merged.BrowserEmulation.BrowserType != "chrome" {
+		t.Fatalf("merged browser_emulation = %#v, want group section", merged.BrowserEmulation)
+	}
+	if base.BrowserEmulation.Mode != "custom" {
+		t.Fatalf("merge mutated base: %#v", base.BrowserEmulation)
+	}
+}
+
+func TestCloneRuntimeSettingsDeepClonesBrowserEmulation(t *testing.T) {
+	on := true
+	o := &RuntimeSettingsOverride{
+		BrowserEmulation: &dsl.BrowserEmulationConfig{
+			Mode:  "specific",
+			Cache: &dsl.BrowserCacheSimulationConfig{SimulateCache: &on},
+		},
+	}
+	clone := cloneRuntimeSettings(o)
+	*clone.BrowserEmulation.Cache.SimulateCache = false
+	clone.BrowserEmulation.Mode = "custom"
+	if !*o.BrowserEmulation.Cache.SimulateCache || o.BrowserEmulation.Mode != "specific" {
+		t.Fatalf("clone aliases the original browser_emulation: %#v", o.BrowserEmulation)
+	}
+}
+
+func TestProjectAndReplaceRuntimeFieldsBrowserEmulation(t *testing.T) {
+	src := &RuntimeSettingsOverride{
+		BrowserEmulation: &dsl.BrowserEmulationConfig{Mode: "custom", CustomUserAgent: "Copy/1.0"},
+		HTTP:             &dsl.HTTPConfig{Version: "1.1"},
+	}
+	projected := projectRuntimeFields(src, []string{"browser_emulation"})
+	if projected == nil || projected.BrowserEmulation == nil || projected.HTTP != nil {
+		t.Fatalf("projected = %#v, want browser_emulation only", projected)
+	}
+
+	target := &RuntimeSettingsOverride{
+		BrowserEmulation: &dsl.BrowserEmulationConfig{Mode: "specific", BrowserType: "ie"},
+	}
+	replaced := replaceRuntimeFields(target, src, []string{"browser_emulation"})
+	if replaced.BrowserEmulation == nil || replaced.BrowserEmulation.Mode != "custom" {
+		t.Fatalf("replaced = %#v, want source section", replaced.BrowserEmulation)
+	}
+	// A nil source clears a stale target override.
+	cleared := replaceRuntimeFields(target, &RuntimeSettingsOverride{}, []string{"browser_emulation"})
+	if cleared != nil {
+		t.Fatalf("cleared = %#v, want nil (only field cleared)", cleared)
+	}
+}
+
 func TestFieldApplicableForProtocolMatrix(t *testing.T) {
 	cases := []struct {
 		field, protocol string
@@ -159,6 +255,11 @@ func TestFieldApplicableForProtocolMatrix(t *testing.T) {
 		{"http", "grpc", false},
 		{"browser_config", "browser", true},
 		{"browser_config", "http", false},
+		{"browser_emulation", "http", true},
+		{"browser_emulation", "soap", true},
+		{"browser_emulation", "java_http", true},
+		{"browser_emulation", "browser", false}, // browser protocol keeps browser_config
+		{"browser_emulation", "grpc", false},
 		{"web_runtime", "http", true},
 		{"web_runtime", "browser", true},
 		{"web_runtime", "grpc", false},

@@ -195,7 +195,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	auth, redactedAuth := toProtocolAuthConfig(action.Auth, vu)
 	soapAction, redactedSOAPAction := toProtocolSOAPActions(action.SOAP, vu)
 	params, redactedParams := vu.interpolateAnyMapWithSecrets(action.Params)
-	if dsl.CanonicalActionType(strings.ToLower(strings.TrimSpace(action.Type))) == "java_vuser_run" {
+	if dsl.CanonicalActionType(strings.ToLower(strings.TrimSpace(action.Type))) == "java_vuser_run" && !vu.javaVuserSkipsParameterEvaluation() {
 		params, redactedParams = vu.withJavaVuserRuntimeParameters(params, redactedParams)
 	}
 	discardSuccessfulResponseBody := false
@@ -235,6 +235,22 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		RedactedSOAP:                 redactedSOAPAction,
 		DiscardResponseBodyOnSuccess: discardSuccessfulResponseBody,
 	}
+}
+
+// javaVuserSkipsParameterEvaluation reports the script-level "skip automatic
+// parameter evaluation" performance setting. When enabled, the automatic
+// snapshot below never runs, so no data-source rows or named parameters are
+// injected into a Java action and the per-invocation each_occurrence cursor
+// does not advance — matching LoadRunner's Java RTS performance flag. Note the
+// per-iteration data-row/each_iteration refresh (vu.loadDataRow /
+// Parameters.RefreshIteration) is independent of this snapshot and still runs;
+// those values simply never reach the JVM while skipping is enabled.
+func (vu *VUser) javaVuserSkipsParameterEvaluation() bool {
+	if vu.Script == nil {
+		return false
+	}
+	skip := vu.Script.Config.JavaVuser.SkipParameterEvaluation
+	return skip != nil && *skip
 }
 
 // withJavaVuserRuntimeParameters overlays the VUser's current parameter state

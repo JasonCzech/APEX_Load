@@ -265,6 +265,42 @@ export interface BrowserConfig {
   }
 }
 
+// BrowserEmulationConfig drives HTTP-transport replay identity (User-Agent /
+// Accept-Language) and browser-cache simulation. Distinct from BrowserConfig,
+// which configures the Playwright browser protocol.
+export interface BrowserEmulationConfig {
+  mode?: '' | 'specific' | 'custom'
+  browser_type?: string
+  browser_version?: string
+  platform?: string
+  language?: string
+  custom_user_agent?: string
+  cache?: BrowserCacheSimulationConfig
+}
+
+export interface BrowserCacheSimulationConfig {
+  simulate_cache?: boolean
+  cache_content_urls?: boolean
+  check_newer_versions?: boolean
+  download_non_html_resources?: boolean
+  new_user_each_iteration?: boolean
+  simulate_prefetch?: boolean
+}
+
+// Browser-emulation catalog served by GET /api/v1/dsl/browser-emulation-catalog.
+export interface BrowserEmulationCatalogBrowser {
+  type: string
+  label: string
+  versions: string[]
+  platforms: string[]
+}
+
+export interface BrowserEmulationCatalog {
+  browsers: BrowserEmulationCatalogBrowser[]
+  platforms: { id: string; label: string }[]
+  languages: { tag: string; label: string }[]
+}
+
 export interface DownloadFiltersConfig {
   mode?: string
   hosts?: string[]
@@ -358,6 +394,7 @@ export interface JavaVuserConfig {
   additional_vm_parameters?: string[]
   use_xbootclasspath?: boolean
   dedicated_class_loader?: boolean
+  skip_parameter_evaluation?: boolean
 }
 
 export interface JMSConfig {
@@ -550,6 +587,7 @@ export interface ScriptConfig {
   database?: DatabaseConfig
   network?: NetworkConfig
   browser?: BrowserConfig
+  browser_emulation?: BrowserEmulationConfig
   jms?: JMSConfig
   sapgui?: SAPGUIConfig
   kafka?: KafkaConfig

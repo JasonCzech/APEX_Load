@@ -6444,6 +6444,30 @@
       },
       "type": "object"
     },
+    "BrowserCacheSimulationConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "cache_content_urls": {
+          "type": "boolean"
+        },
+        "check_newer_versions": {
+          "type": "boolean"
+        },
+        "download_non_html_resources": {
+          "type": "boolean"
+        },
+        "new_user_each_iteration": {
+          "type": "boolean"
+        },
+        "simulate_cache": {
+          "type": "boolean"
+        },
+        "simulate_prefetch": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
     "BrowserCaptureOptions": {
       "additionalProperties": false,
       "properties": {
@@ -6573,6 +6597,54 @@
         },
         "viewport": {
           "$ref": "#/$defs/BrowserViewport"
+        }
+      },
+      "type": "object"
+    },
+    "BrowserEmulationConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "browser_type": {
+          "enum": [
+            "chrome",
+            "edge",
+            "firefox",
+            "safari",
+            "ie"
+          ],
+          "type": "string"
+        },
+        "browser_version": {
+          "maxLength": 32,
+          "type": "string"
+        },
+        "cache": {
+          "$ref": "#/$defs/BrowserCacheSimulationConfig"
+        },
+        "custom_user_agent": {
+          "maxLength": 1024,
+          "type": "string"
+        },
+        "language": {
+          "maxLength": 64,
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "specific",
+            "custom"
+          ],
+          "type": "string"
+        },
+        "platform": {
+          "enum": [
+            "windows",
+            "macos",
+            "linux",
+            "android",
+            "ios"
+          ],
+          "type": "string"
         }
       },
       "type": "object"
@@ -7446,6 +7518,9 @@
         "runner_command": {
           "type": "string"
         },
+        "skip_parameter_evaluation": {
+          "type": "boolean"
+        },
         "startup_timeout_ms": {
           "maximum": 3600000,
           "minimum": 0,
@@ -8117,6 +8192,9 @@
         },
         "browser": {
           "$ref": "#/$defs/BrowserConfig"
+        },
+        "browser_emulation": {
+          "$ref": "#/$defs/BrowserEmulationConfig"
         },
         "bruno": {
           "$ref": "#/$defs/BrunoConfig"

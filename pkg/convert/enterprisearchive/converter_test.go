@@ -2080,8 +2080,16 @@ vuser_end()
 	if !result.Script.Config.ThinkTime.Ignore {
 		t.Fatal("think time ignore = false, want NOTHINK from default.cfg")
 	}
-	if !strings.Contains(result.Script.Config.HTTP.UserAgent, "SalesforceMobileSDK/12.0.1 Sanitized") {
-		t.Fatalf("user agent = %q, want sanitized Salesforce mobile CustomUserAgent", result.Script.Config.HTTP.UserAgent)
+	// The imported UA now lives in config.browser_emulation (authoritative on
+	// replay) instead of config.http.user_agent.
+	if result.Script.Config.BrowserEmulation == nil || result.Script.Config.BrowserEmulation.Mode != "custom" {
+		t.Fatalf("browser_emulation = %#v, want custom mode", result.Script.Config.BrowserEmulation)
+	}
+	if !strings.Contains(result.Script.Config.BrowserEmulation.CustomUserAgent, "SalesforceMobileSDK/12.0.1 Sanitized") {
+		t.Fatalf("user agent = %q, want sanitized Salesforce mobile CustomUserAgent", result.Script.Config.BrowserEmulation.CustomUserAgent)
+	}
+	if result.Script.Config.HTTP.UserAgent != "" {
+		t.Fatalf("http.user_agent = %q, want empty (moved to browser_emulation)", result.Script.Config.HTTP.UserAgent)
 	}
 	params := map[string]dsl.Parameter{}
 	for _, parameter := range result.Script.Parameters {

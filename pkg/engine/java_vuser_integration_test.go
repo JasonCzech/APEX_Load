@@ -210,6 +210,80 @@ func TestJavaVuserEachOccurrenceParametersAdvanceOnlyForIterationMethods(t *test
 	}
 }
 
+// The "skip automatic parameter evaluation" performance setting must suppress
+// the automatic runtime snapshot entirely: only explicitly authored
+// lr_parameters reach the JVM, and update-policy row state never advances.
+func TestJavaVuserSkipParameterEvaluationSuppressesAutomaticSnapshot(t *testing.T) {
+	skip := true
+	script := &dsl.Script{
+		Name:     "combined-java",
+		Protocol: "java_vuser",
+		Config: dsl.ScriptConfig{
+			RunLogic:  dsl.RunLogicConfig{Iterations: 2},
+			JavaVuser: dsl.JavaVuserConfig{SkipParameterEvaluation: &skip},
+		},
+		DataSources: []dsl.DataSource{{
+			Name:           "users",
+			Type:           "csv",
+			InlineData:     "username\nalice\nbob\n",
+			Strategy:       "sequential",
+			FirstRowHeader: true,
+		}},
+		Parameters: []dsl.Parameter{
+			{Name: "LoginUser", Type: "file", Update: "each_iteration", DataSource: "users", Column: "username"},
+			{Name: "Ticket", Type: "list", Update: "each_occurrence", Selection: "unique", OnExhaustion: "empty", Values: []string{"t1", "t2"}},
+		},
+		Actions: []dsl.Action{{
+			Name: "Actions.action",
+			Type: "java_vuser_run",
+			Params: map[string]any{
+				"method":        "action",
+				"lr_parameters": map[string]any{"CallerOnly": "present"},
+			},
+			Metadata: map[string]any{"emits_business_transactions": true},
+		}},
+	}
+	provider, err := NewDataProvider(script.DataSources)
+	if err != nil {
+		t.Fatalf("NewDataProvider: %v", err)
+	}
+	adapter := &javaVuserParameterCaptureProtocol{}
+	vu := &VUser{
+		ID:           0,
+		Group:        "java",
+		Proto:        adapter,
+		Script:       script,
+		Metrics:      NewMetricsCollector(32),
+		Variables:    map[string]string{},
+		DataProvider: provider,
+	}
+
+	vu.Run(context.Background())
+
+	if len(adapter.actions) != 2 {
+		t.Fatalf("executed actions = %d, want one per iteration", len(adapter.actions))
+	}
+	for _, action := range adapter.actions {
+		params, ok := stringAnyMap(action.Params["lr_parameters"])
+		if !ok {
+			t.Fatalf("%s lr_parameters = %#v, want the explicit object", action.Name, action.Params["lr_parameters"])
+		}
+		if got := params["CallerOnly"]; got != "present" {
+			t.Fatalf("%s dropped an explicitly authored parameter: %#v", action.Name, params)
+		}
+		for _, automatic := range []string{"LoginUser", "Ticket", "users.username"} {
+			if _, injected := params[automatic]; injected {
+				t.Fatalf("%s received automatic parameter %q despite skip_parameter_evaluation: %#v", action.Name, automatic, params)
+			}
+		}
+	}
+	if vu.Parameters != nil {
+		if state, tracked := vu.Parameters.states["Ticket"]; tracked && state.nextIndex != 0 {
+			t.Fatalf("Ticket rows consumed = %d, want none when evaluation is skipped", state.nextIndex)
+		}
+	}
+}
+
 // scriptHasExplicitTransactions must recurse into control-flow bodies so a
 // transaction-emitting java_vuser_run wrapped in a loop still suppresses the
 // automatic whole-iteration transaction (which would double-count).

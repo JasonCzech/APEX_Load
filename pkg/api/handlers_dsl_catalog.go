@@ -51,3 +51,24 @@ type dslConfigDefaultsResponse struct {
 func (s *Server) handleConfigDefaults(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, dslConfigDefaultsResponse{Config: dsl.DefaultScriptConfig()})
 }
+
+// browserEmulationCatalogResponse is the payload of
+// GET /api/v1/dsl/browser-emulation-catalog: the curated browser identities
+// (types, versions, platforms, languages) the Browser Emulation runtime tab
+// offers for its "specific browser" dropdowns. Serving the catalog from the
+// controller keeps the editor in lockstep with the replay-time User-Agent
+// resolution — no bundled list to drift.
+type browserEmulationCatalogResponse struct {
+	Browsers  []dsl.BrowserEmulationCatalogEntry `json:"browsers"`
+	Platforms []dsl.BrowserEmulationPlatform     `json:"platforms"`
+	Languages []dsl.BrowserEmulationLanguage     `json:"languages"`
+}
+
+// handleBrowserEmulationCatalog returns the browser-emulation catalog.
+func (s *Server) handleBrowserEmulationCatalog(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, browserEmulationCatalogResponse{
+		Browsers:  dsl.BrowserEmulationCatalog(),
+		Platforms: dsl.BrowserEmulationPlatforms(),
+		Languages: dsl.BrowserEmulationLanguages(),
+	})
+}

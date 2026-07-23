@@ -56,6 +56,9 @@ type HTTP struct {
 	traceparentSampled         bool
 	authConfig                 *protocol.AuthConfig
 	cache                      *httpResponseCache
+	cacheContentURLsOnly       bool
+	cacheCheckNewerVersions    bool
+	resources                  *resourceFetcher
 	captureCorrelationEvidence bool
 }
 
@@ -172,6 +175,9 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	} else {
 		h.cache = nil
 	}
+	h.cacheContentURLsOnly, _ = config["http_cache_content_urls_only"].(bool)
+	h.cacheCheckNewerVersions, _ = config["http_cache_check_newer_versions"].(bool)
+	h.resources = newResourceFetcher(h, config)
 	if err := validateAuthType(protocol.ConfigString(config, "auth_type")); err != nil {
 		return err
 	}
@@ -310,7 +316,9 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	var resp *http.Response
 	if h.cache != nil && method == http.MethodGet {
 		if entry, fresh := h.cache.lookup(req, time.Now()); entry != nil {
-			if fresh {
+			// "Check for newer versions on every visit" forces revalidation of
+			// fresh entries: the stored page is only served after a 304.
+			if fresh && !h.cacheCheckNewerVersions {
 				resp = entry.response(req)
 				cacheHit = true
 			} else {
@@ -507,7 +515,11 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 
 	rawResponseBody := buf.Bytes()
 	if h.cache != nil && !cacheHit && bodyReadErr == nil {
-		h.cache.store(req, resp, rawResponseBody, time.Now())
+		// "Cache URLs requiring content" restricts storage to content-bearing
+		// (HTML) responses, matching the LR checkbox semantics.
+		if !h.cacheContentURLsOnly || isContentBearingResponse(resp.Header) {
+			h.cache.store(req, resp, rawResponseBody, time.Now())
+		}
 	}
 	respBody := rawResponseBody
 	respBody, responseHeaders, err = decodeHTTPResponseContent(respBody, resp.Header, responseHeaders, maxBody, captureLease)
@@ -647,6 +659,21 @@ extractors:
 	}
 	if !result.Success || !action.DiscardResponseBodyOnSuccess {
 		result.ResponseBody = string(respBody)
+	}
+
+	// Browser-emulation resource download + prefetch simulation: fetch the
+	// page's embedded resources after the main sample. Gated on the transport
+	// outcome (not result.Success, which extractors/assertions may have
+	// flipped) — a real browser fetches resources for any rendered page.
+	if h.resources != nil && method == http.MethodGet && bodyReadErr == nil &&
+		resp.StatusCode >= 200 && resp.StatusCode < 400 && isContentBearingResponse(resp.Header) {
+		finalURL := req.URL
+		if resp.Request != nil && resp.Request.URL != nil {
+			finalURL = resp.Request.URL
+		}
+		h.resources.fetchPageResources(ctx, finalURL, respBody, result)
+		// Page time includes the resource phase (LR parity).
+		result.Duration = time.Since(result.StartTime)
 	}
 
 	return result, nil

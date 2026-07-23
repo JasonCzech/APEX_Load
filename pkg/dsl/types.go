@@ -62,28 +62,34 @@ type ImportMetadata struct {
 }
 
 type ScriptConfig struct {
-	BaseURL       string              `json:"base_url"`
-	ThinkTime     ThinkTimeConfig     `json:"think_time,omitempty"`
-	Pacing        PacingConfig        `json:"pacing,omitempty"`
-	Bruno         BrunoConfig         `json:"bruno,omitempty"`
-	HTTP          HTTPConfig          `json:"http,omitempty"`
-	WebRuntime    WebRuntimeConfig    `json:"web_runtime,omitempty"`
-	WebSocket     WebSocketConfig     `json:"websocket,omitempty"`
-	GRPC          GRPCConfig          `json:"grpc,omitempty"`
-	JavaHTTP      JavaHTTPConfig      `json:"java_http,omitempty"`
-	JavaVuser     JavaVuserConfig     `json:"java_vuser,omitempty"`
-	SOAP          SOAPConfig          `json:"soap,omitempty"`
-	Database      DatabaseConfig      `json:"database,omitempty"`
-	Network       NetworkConfig       `json:"network,omitempty"`
-	Browser       BrowserConfig       `json:"browser,omitempty"`
-	SAPGUI        SAPGUIConfig        `json:"sapgui,omitempty"`
-	JMS           JMSConfig           `json:"jms,omitempty"`
-	Kafka         KafkaConfig         `json:"kafka,omitempty"`
-	EventHubs     EventHubsConfig     `json:"eventhubs,omitempty"`
-	ErrorHandling ErrorHandlingConfig `json:"error_handling,omitempty"`
-	RunLogic      RunLogicConfig      `json:"run_logic,omitempty"`
-	Observability ObservabilityConfig `json:"observability,omitempty"`
-	Log           LogConfig           `json:"log,omitempty"`
+	BaseURL    string           `json:"base_url"`
+	ThinkTime  ThinkTimeConfig  `json:"think_time,omitempty"`
+	Pacing     PacingConfig     `json:"pacing,omitempty"`
+	Bruno      BrunoConfig      `json:"bruno,omitempty"`
+	HTTP       HTTPConfig       `json:"http,omitempty"`
+	WebRuntime WebRuntimeConfig `json:"web_runtime,omitempty"`
+	WebSocket  WebSocketConfig  `json:"websocket,omitempty"`
+	GRPC       GRPCConfig       `json:"grpc,omitempty"`
+	JavaHTTP   JavaHTTPConfig   `json:"java_http,omitempty"`
+	JavaVuser  JavaVuserConfig  `json:"java_vuser,omitempty"`
+	SOAP       SOAPConfig       `json:"soap,omitempty"`
+	Database   DatabaseConfig   `json:"database,omitempty"`
+	Network    NetworkConfig    `json:"network,omitempty"`
+	Browser    BrowserConfig    `json:"browser,omitempty"`
+	// BrowserEmulation drives HTTP-transport replay identity (User-Agent /
+	// Accept-Language) and browser-cache simulation. Nil means legacy behavior:
+	// http.user_agent / http.accept_language / http.cache_enabled stay in
+	// charge. The Playwright browser protocol ignores this section and keeps
+	// using Browser.
+	BrowserEmulation *BrowserEmulationConfig `json:"browser_emulation,omitempty"`
+	SAPGUI           SAPGUIConfig            `json:"sapgui,omitempty"`
+	JMS              JMSConfig               `json:"jms,omitempty"`
+	Kafka            KafkaConfig             `json:"kafka,omitempty"`
+	EventHubs        EventHubsConfig         `json:"eventhubs,omitempty"`
+	ErrorHandling    ErrorHandlingConfig     `json:"error_handling,omitempty"`
+	RunLogic         RunLogicConfig          `json:"run_logic,omitempty"`
+	Observability    ObservabilityConfig     `json:"observability,omitempty"`
+	Log              LogConfig               `json:"log,omitempty"`
 }
 
 // BrunoConfig binds a canonical APEX script to an immutable Bruno source
@@ -155,6 +161,11 @@ type JavaVuserConfig struct {
 	AdditionalVMParameters []string `json:"additional_vm_parameters,omitempty" jsonschema:"maxItems=128"`
 	UseXBootClasspath      *bool    `json:"use_xbootclasspath,omitempty"`
 	DedicatedClassLoader   *bool    `json:"dedicated_class_loader,omitempty"`
+	// SkipParameterEvaluation disables the engine-side automatic parameter
+	// snapshot (data-source rows + named .prm parameters) that is otherwise
+	// injected as lr_parameters before dispatch to the JVM. Explicitly
+	// authored lr_parameters entries are still delivered.
+	SkipParameterEvaluation *bool `json:"skip_parameter_evaluation,omitempty"`
 }
 
 type WebSocketConfig struct {
@@ -335,6 +346,46 @@ type EventHubsConfig struct {
 	AuthType               string `json:"auth_type,omitempty"`                                         // connection_string | aad
 	TimeoutMs              int    `json:"timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // default send/receive timeout
 	Mock                   bool   `json:"mock,omitempty"`                                              // use in-memory broker for local shakeout
+}
+
+// BrowserEmulationConfig selects the browser identity HTTP-transport replay
+// presents to the server and the browser-cache behavior it simulates.
+// Mode "" leaves everything to the legacy http.* fields; "specific" derives
+// User-Agent/Accept-Language from the built-in browser catalog; "custom" uses
+// CustomUserAgent verbatim.
+type BrowserEmulationConfig struct {
+	Mode            string                        `json:"mode,omitempty" jsonschema:"enum=specific,enum=custom"`
+	BrowserType     string                        `json:"browser_type,omitempty" jsonschema:"enum=chrome,enum=edge,enum=firefox,enum=safari,enum=ie"`
+	BrowserVersion  string                        `json:"browser_version,omitempty" jsonschema:"maxLength=32"`
+	Platform        string                        `json:"platform,omitempty" jsonschema:"enum=windows,enum=macos,enum=linux,enum=android,enum=ios"`
+	Language        string                        `json:"language,omitempty" jsonschema:"maxLength=64"`
+	CustomUserAgent string                        `json:"custom_user_agent,omitempty" jsonschema:"maxLength=1024"`
+	Cache           *BrowserCacheSimulationConfig `json:"cache,omitempty"`
+}
+
+// BrowserCacheSimulationConfig mirrors LoadRunner's Browser Emulation cache
+// checkboxes. All fields are tri-state: nil inherits the engine default
+// (http.cache_enabled for SimulateCache, off for the rest).
+type BrowserCacheSimulationConfig struct {
+	// SimulateCache toggles the per-VUser HTTP response cache. Explicit false
+	// wins over http.cache_enabled=true.
+	SimulateCache *bool `json:"simulate_cache,omitempty"`
+	// CacheContentURLs limits cache storage to content-bearing (HTML) responses
+	// — LR "Cache URLs requiring content (HTMLs)".
+	CacheContentURLs *bool `json:"cache_content_urls,omitempty"`
+	// CheckNewerVersions revalidates stored pages on every visit even while
+	// fresh — LR "Check for newer versions of stored pages every visit".
+	CheckNewerVersions *bool `json:"check_newer_versions,omitempty"`
+	// DownloadNonHTML fetches embedded page resources (images/CSS/JS/…) after
+	// each HTML response — LR "Download non-HTML resources".
+	DownloadNonHTML *bool `json:"download_non_html_resources,omitempty"`
+	// NewUserEachIteration clears cache AND cookies at the start of every
+	// iteration — LR "Simulate a new user on each iteration".
+	NewUserEachIteration *bool `json:"new_user_each_iteration,omitempty"`
+	// SimulatePrefetch fetches link rel=prefetch/prerender/preload targets
+	// after page resources — LR "Simulate browser prefetch and prerender".
+	// Independent of SimulateCache: the server-side load is issued either way.
+	SimulatePrefetch *bool `json:"simulate_prefetch,omitempty"`
 }
 
 type BrowserConfig struct {

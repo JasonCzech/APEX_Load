@@ -1,6 +1,10 @@
 package engine
 
-import "github.com/jasonczech/apexload/pkg/dsl"
+import (
+	"strings"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
+)
 
 // Per-protocol config appenders extracted from buildProtoConfigWithSecretResolver.
 // Each reads one protocol section off the script and writes the flattened keys into
@@ -88,6 +92,7 @@ func appendHTTPConfig(cfg map[string]any, script *dsl.Script) {
 	if len(httpCfg.DefaultHeaders) > 0 {
 		cfg["default_headers"] = httpCfg.DefaultHeaders
 	}
+	appendBrowserEmulationHTTPConfig(cfg, script)
 	if len(script.Config.WebRuntime.ContentChecks) > 0 {
 		cfg["web_content_checks"] = flattenContentChecks(script.Config.WebRuntime.ContentChecks)
 	}
@@ -142,6 +147,57 @@ func appendHTTPConfig(cfg map[string]any, script *dsl.Script) {
 		if streamingCfg.BandwidthEstimation != "" {
 			cfg["web_streaming_bandwidth_estimation"] = streamingCfg.BandwidthEstimation
 		}
+	}
+}
+
+// appendBrowserEmulationHTTPConfig flattens config.browser_emulation into the
+// HTTP protocol config. When a mode is selected it is authoritative for
+// User-Agent / Accept-Language, overwriting the http.user_agent /
+// http.accept_language emissions above; a set SimulateCache flag likewise
+// overrides http_cache_enabled. A nil section leaves everything untouched.
+func appendBrowserEmulationHTTPConfig(cfg map[string]any, script *dsl.Script) {
+	emu := script.Config.BrowserEmulation
+	if emu == nil {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(emu.Mode)) {
+	case "custom":
+		if ua := strings.TrimSpace(emu.CustomUserAgent); ua != "" {
+			cfg["user_agent"] = ua
+		}
+	case "specific":
+		if ua, _, ok := dsl.ResolveBrowserEmulationUserAgent(emu.BrowserType, emu.BrowserVersion, emu.Platform); ok {
+			cfg["user_agent"] = ua
+		}
+	}
+	if lang := dsl.AcceptLanguageForLanguage(emu.Language); lang != "" {
+		cfg["accept_language"] = lang
+	}
+
+	cache := emu.Cache
+	if cache == nil {
+		return
+	}
+	if cache.SimulateCache != nil {
+		cfg["http_cache_enabled"] = *cache.SimulateCache
+	}
+	if cache.CacheContentURLs != nil {
+		cfg["http_cache_content_urls_only"] = *cache.CacheContentURLs
+	}
+	if cache.CheckNewerVersions != nil {
+		cfg["http_cache_check_newer_versions"] = *cache.CheckNewerVersions
+	}
+	if cache.NewUserEachIteration != nil {
+		// Emitted for flattened-config visibility/parity only: the per-iteration
+		// cache+cookie clear is driven directly off the DSL by the engine's
+		// browserEmulationNewUserEachIteration, not by this key.
+		cfg["http_cache_clear_per_iteration"] = *cache.NewUserEachIteration
+	}
+	if cache.DownloadNonHTML != nil {
+		cfg["http_download_non_html_resources"] = *cache.DownloadNonHTML
+	}
+	if cache.SimulatePrefetch != nil {
+		cfg["http_simulate_prefetch"] = *cache.SimulatePrefetch
 	}
 }
 
@@ -256,6 +312,12 @@ func appendJavaVuserConfig(cfg map[string]any, script *dsl.Script) {
 	}
 	if javaVuserCfg.DedicatedClassLoader != nil {
 		cfg["java_vuser_dedicated_class_loader"] = *javaVuserCfg.DedicatedClassLoader
+	}
+	// Flattened for runtime-settings report/evidence parity only. The skip is
+	// enforced engine-side in resolveAction (the automatic lr_parameters
+	// snapshot never runs); the protocol and sidecar ignore this key.
+	if javaVuserCfg.SkipParameterEvaluation != nil {
+		cfg["java_vuser_skip_parameter_evaluation"] = *javaVuserCfg.SkipParameterEvaluation
 	}
 	if javaVuserCfg.StartupTimeoutMs > 0 {
 		cfg["java_vuser_startup_timeout_ms"] = float64(javaVuserCfg.StartupTimeoutMs)

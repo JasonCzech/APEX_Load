@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest'
 
 import {
   formatAutoTransactions,
+  formatBrowserEmulation,
   formatEffectiveRuntimeField,
   formatErrorHandling,
+  formatJavaVuserSummary,
   formatPacing,
   formatThinkTime,
   isRuntimeFieldApplicable,
@@ -29,6 +31,92 @@ describe('runtimeSettingsModel', () => {
     expect(isRuntimeFieldApplicable('browser', undefined)).toBe(false)
     expect(isRuntimeFieldApplicable('pacing', 'http')).toBe(true)
     expect(isRuntimeFieldApplicable('log_level', 'jms')).toBe(true)
+    expect(isRuntimeFieldApplicable('java_vuser', 'java_vuser')).toBe(true)
+    expect(isRuntimeFieldApplicable('java_vuser', 'http')).toBe(false)
+    expect(isRuntimeFieldApplicable('java_vuser', undefined)).toBe(false)
+  })
+
+  it('applies browser_emulation to HTTP-transport protocols only', () => {
+    expect(isRuntimeFieldApplicable('browser_emulation', 'http')).toBe(true)
+    expect(isRuntimeFieldApplicable('browser_emulation', 'soap')).toBe(true)
+    expect(isRuntimeFieldApplicable('browser_emulation', 'java_http')).toBe(true)
+    expect(isRuntimeFieldApplicable('browser_emulation', 'browser')).toBe(false)
+    expect(isRuntimeFieldApplicable('browser_emulation', 'grpc')).toBe(false)
+    expect(isRuntimeFieldApplicable('browser_emulation', undefined)).toBe(false)
+  })
+
+  it('formats and round-trips a browser emulation override', () => {
+    expect(formatBrowserEmulation(undefined)).toBeNull()
+    expect(formatBrowserEmulation({ mode: 'custom', custom_user_agent: 'X/1' })).toBe('Custom UA')
+    expect(formatBrowserEmulation({
+      mode: 'specific',
+      browser_type: 'chrome',
+      browser_version: '126',
+      platform: 'windows',
+      language: 'en-US',
+      cache: { simulate_cache: true, new_user_each_iteration: true, simulate_prefetch: true },
+    })).toBe('chrome 126 · windows · en-US · cache · new user/iter · prefetch')
+    expect(formatBrowserEmulation({})).toBe('configured')
+
+    const draft = runtimeDraftFromOverride({
+      browser_emulation: { mode: 'specific', browser_type: 'firefox', cache: { download_non_html_resources: true } },
+    })
+    expect(draft?.browser_emulation?.browser_type).toBe('firefox')
+    const roundTripped = overrideFromRuntimeDraft(draft)
+    expect(roundTripped?.browser_emulation).toEqual({
+      mode: 'specific',
+      browser_type: 'firefox',
+      cache: { download_non_html_resources: true },
+    })
+    // A draft carrying only browser_emulation is not empty.
+    expect(overrideFromRuntimeDraft({
+      log_level: '',
+      auto_transactions: '',
+      browser_emulation: { mode: 'custom', custom_user_agent: 'Y/2' },
+    })).toBeDefined()
+  })
+
+  it('resolves the effective browser emulation across layers', () => {
+    const scriptLayer = runtimeOverrideFromScriptConfig({
+      base_url: 'https://example.test',
+      browser_emulation: { mode: 'custom', custom_user_agent: 'Script/1.0' },
+    })
+    const resolved = formatEffectiveRuntimeField('browser_emulation', undefined, undefined, scriptLayer)
+    expect(resolved).toEqual({ value: 'Custom UA', source: 'script' })
+    const groupWins = formatEffectiveRuntimeField(
+      'browser_emulation',
+      { browser_emulation: { mode: 'specific', browser_type: 'edge' } },
+      undefined,
+      scriptLayer,
+    )
+    expect(groupWins).toEqual({ value: 'edge', source: 'group' })
+    const engineFallback = formatEffectiveRuntimeField('browser_emulation', undefined, undefined, undefined)
+    expect(engineFallback).toEqual({ value: 'None', source: 'engine' })
+  })
+
+  it('formats and round-trips a Java Env override', () => {
+    expect(formatJavaVuserSummary(undefined)).toBeNull()
+    expect(
+      formatJavaVuserSummary({
+        jdk_selection: 'specified',
+        additional_vm_parameters: ['-Xmx512m', '-Denv=perf'],
+        classpath: ['/a.jar'],
+        skip_parameter_evaluation: true,
+      }),
+    ).toBe('Specified JDK · 2 VM params · 1 classpath · skip param eval')
+
+    const override = {
+      java_vuser: {
+        jdk_selection: 'internal' as const,
+        additional_vm_parameters: ['-Xmx1g'],
+        skip_parameter_evaluation: true,
+      },
+    }
+    const draft = runtimeDraftFromOverride(override)
+    expect(draft?.java_vuser).toEqual(override.java_vuser)
+    expect(overrideFromRuntimeDraft(draft)?.java_vuser).toEqual(override.java_vuser)
+    // An all-empty java_vuser draft collapses to no override.
+    expect(overrideFromRuntimeDraft({ log_level: '', auto_transactions: '', java_vuser: {} })?.java_vuser).toBeUndefined()
   })
 
   it('formats pacing variants', () => {

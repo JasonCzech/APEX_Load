@@ -2172,7 +2172,7 @@ describe('TestHub', () => {
     // Browser device settings fold into the HTTP Transport tab's "Browser emulation" sub-tab.
     await clickRunSettingsTab('HTTP Transport')
     await act(async () => {
-      const browserEmulationTab = Array.from(container.querySelectorAll('.http-transport-tab')).find(tab => tab.textContent?.includes('Browser emulation'))
+      const browserEmulationTab = Array.from(container.querySelectorAll('.http-transport-tab')).find(tab => tab.textContent?.includes('Browser (Playwright)'))
       browserEmulationTab?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 

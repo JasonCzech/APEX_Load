@@ -26,6 +26,7 @@ import {
   getImportSummary,
   getImportedRuntimeSectionId,
   normalizeParameterDataLookup,
+  readImportedJavaVMParameters,
   readSourceReview,
   readTrueClientPromotionReview,
 } from './scriptEditorImportModel'
@@ -41,6 +42,43 @@ describe('script editor import model', () => {
     expect(readSourceReview({ preserved: { source_review: { summary: 'not a review' } } })).toBeNull()
     expect(readSourceReview({ preserved: { source_review: [] } })).toBeNull()
     expect(readSourceReview(undefined)).toBeNull()
+  })
+
+  it('reads imported VM parameters from the normalized preserved java_vm_settings object', () => {
+    expect(
+      readImportedJavaVMParameters({
+        preserved: { java_vm_settings: { additional_vm_parameters: ['-Xmx512m', '-Denv=perf'] } },
+      }),
+    ).toEqual(['-Xmx512m', '-Denv=perf'])
+  })
+
+  it('falls back to tokenizing the raw JavaVM section from runtime_files for older imports', () => {
+    expect(
+      readImportedJavaVMParameters({
+        preserved: {
+          runtime_files: {
+            'default.cfg': { 'JavaVM:Options': { Java_VM_Params: '-Xmx256m -Dlabel=perf' } },
+          },
+        },
+      }),
+    ).toEqual(['-Xmx256m', '-Dlabel=perf'])
+  })
+
+  it('keeps quoted VM arguments intact in the legacy fallback tokenizer', () => {
+    expect(
+      readImportedJavaVMParameters({
+        preserved: {
+          runtime_files: {
+            'default.cfg': { JavaVM: { VmParams: '-Xmx256m -Dlabel="hello world" -Dpath="/opt/app dir"' } },
+          },
+        },
+      }),
+    ).toEqual(['-Xmx256m', '-Dlabel=hello world', '-Dpath=/opt/app dir'])
+  })
+
+  it('returns an empty list when no Java VM parameters are present', () => {
+    expect(readImportedJavaVMParameters(undefined)).toEqual([])
+    expect(readImportedJavaVMParameters({ preserved: { runtime_files: { 'default.cfg': { HTTP: { KeepAlive: '1' } } } } })).toEqual([])
   })
 
   it('selects the most specific mapping for an action and supports name fallback', () => {

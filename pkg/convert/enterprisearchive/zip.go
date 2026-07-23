@@ -218,6 +218,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			ProjectSections:      projectSections,
 			ProjectConfig:        projectConfig,
 			RuntimeFileName:      runtimeFileName,
+			RuntimeConfig:        runtimeCfg,
 			ParameterFileNames:   parameterFileNames,
 			TrueClientInspection: trueClientInspection,
 		})
@@ -240,6 +241,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			ProjectSections:    projectSections,
 			ProjectConfig:      projectConfig,
 			RuntimeFileName:    runtimeFileName,
+			RuntimeConfig:      runtimeCfg,
 			ParameterFileNames: parameterFileNames,
 			ParsedActions:      javaSourcesAsParsedActions(orderedJavaSourceActionFiles(projectConfig, files), files),
 		})
@@ -312,6 +314,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			ProjectSections:    projectSections,
 			ProjectConfig:      projectConfig,
 			RuntimeFileName:    runtimeFileName,
+			RuntimeConfig:      runtimeCfg,
 			ParameterFileNames: parameterFileNames,
 		})
 		attachImportFidelityReport(result, files, projectConfig, parsedActions)
@@ -349,6 +352,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		ProjectSections:    projectSections,
 		ProjectConfig:      projectConfig,
 		RuntimeFileName:    runtimeFileName,
+		RuntimeConfig:      runtimeCfg,
 		ParameterFileNames: parameterFileNames,
 		ParsedActions:      parsedActions,
 	})
@@ -412,6 +416,13 @@ func applyJavaVMRuntimeSettingsReview(result *ConvertResult, runtimeCfg *Runtime
 			metadataKey: "java_vm_dedicated_class_loader_raw",
 			rawValue:    runtimeCfg.JavaVMDedicatedClassLoaderRaw,
 		},
+		{
+			blocker:     javaVMOptionsReviewBlocker,
+			evidence:    "Corrected and re-imported Java VM skip-parameter-evaluation setting",
+			nextAction:  "Correct the Java VM skip-parameter-evaluation boolean in the source runtime settings, then re-import before promotion.",
+			metadataKey: "java_vm_skip_parameter_evaluation_raw",
+			rawValue:    runtimeCfg.JavaVMSkipParameterEvaluationRaw,
+		},
 	} {
 		var parseError string
 		switch issue.metadataKey {
@@ -421,6 +432,8 @@ func applyJavaVMRuntimeSettingsReview(result *ConvertResult, runtimeCfg *Runtime
 			parseError = runtimeCfg.JavaVMUseXBootParseError
 		case "java_vm_dedicated_class_loader_raw":
 			parseError = runtimeCfg.JavaVMDedicatedParseError
+		case "java_vm_skip_parameter_evaluation_raw":
+			parseError = runtimeCfg.JavaVMSkipParamEvalParseError
 		}
 		if parseError != "" {
 			issues = append(issues, issue)
@@ -468,6 +481,7 @@ type archiveFinalizationContext struct {
 	ProjectSections      map[string]map[string]string
 	ProjectConfig        *ProjectConfig
 	RuntimeFileName      string
+	RuntimeConfig        *RuntimeConfig
 	ParameterFileNames   []string
 	TrueClientInspection *trueclient.ArchiveInspection
 	ParsedActions        []*ParsedAction
@@ -477,6 +491,7 @@ func finalizeEnterpriseArchiveImportResult(result *ConvertResult, ctx archiveFin
 	if result == nil {
 		return
 	}
+	applyBrowserEmulationRuntimeSettingsReview(result, ctx.RuntimeConfig)
 	parameterSections := make(map[string]map[string]map[string]string)
 	scripts := result.effectiveScripts()
 	if len(scripts) > 0 {
@@ -516,7 +531,7 @@ func finalizeEnterpriseArchiveImportResult(result *ConvertResult, ctx archiveFin
 	result.SourceReview = BuildSourceReview(ctx.Files, sourceReviewMappings(result))
 	for _, script := range scripts {
 		redactArchiveMaskedBodyMetadata(script)
-		attachSourceMetadata(script, result, ctx.ProjectFileName, ctx.ProjectSections, ctx.ProjectConfig, ctx.Files, ctx.RuntimeFileName, parameterSections, ctx.ParameterFileNames, ctx.TrueClientInspection)
+		attachSourceMetadata(script, result, ctx.ProjectFileName, ctx.ProjectSections, ctx.ProjectConfig, ctx.Files, ctx.RuntimeFileName, ctx.RuntimeConfig, parameterSections, ctx.ParameterFileNames, ctx.TrueClientInspection)
 	}
 	attachImportFidelityReport(result, ctx.Files, ctx.ProjectConfig, ctx.ParsedActions)
 }
@@ -878,7 +893,101 @@ func uniqueStrings(values []string) []string {
 	return result
 }
 
-func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFileName string, projectSections map[string]map[string]string, projectConfig *ProjectConfig, files map[string]string, runtimeFileName string, parameterSections map[string]map[string]map[string]string, parameterFileNames []string, trueClientInspection *trueclient.ArchiveInspection) {
+// preservedJavaVMSettings normalizes the parsed [JavaVM:Options] runtime
+// settings into a dedicated preserved-metadata object so the dashboard can
+// surface the imported source values (e.g. the VM-parameter picker) without
+// re-parsing raw cfg text from preserved["runtime_files"].
+func preservedJavaVMSettings(runtimeCfg *RuntimeConfig) map[string]any {
+	if runtimeCfg == nil {
+		return nil
+	}
+	settings := make(map[string]any)
+	if len(runtimeCfg.JavaVMAdditionalParameters) > 0 {
+		settings["additional_vm_parameters"] = append([]string(nil), runtimeCfg.JavaVMAdditionalParameters...)
+	}
+	if runtimeCfg.JavaVMParametersRaw != "" {
+		settings["additional_vm_parameters_raw"] = runtimeCfg.JavaVMParametersRaw
+	}
+	if len(runtimeCfg.JavaVMClasspath) > 0 {
+		settings["classpath"] = append([]string(nil), runtimeCfg.JavaVMClasspath...)
+	}
+	if runtimeCfg.JavaVMClasspathRaw != "" {
+		settings["classpath_raw"] = runtimeCfg.JavaVMClasspathRaw
+	}
+	if runtimeCfg.JavaVMJDKSelectionRaw != "" {
+		settings["jdk_selection_raw"] = runtimeCfg.JavaVMJDKSelectionRaw
+	}
+	if runtimeCfg.JavaVMSkipParameterEvaluationRaw != "" {
+		settings["skip_parameter_evaluation_raw"] = runtimeCfg.JavaVMSkipParameterEvaluationRaw
+	}
+	if len(settings) == 0 {
+		return nil
+	}
+	return settings
+}
+
+// preservedBrowserEmulationSettings captures the raw browser-emulation source
+// values (including unmapped browser names and the never-applied
+// ClearCacheForSimulateNewUser child key) for round-trip review.
+func preservedBrowserEmulationSettings(runtimeCfg *RuntimeConfig) map[string]any {
+	if runtimeCfg == nil {
+		return nil
+	}
+	settings := make(map[string]any)
+	putRaw := func(key, value string) {
+		if value != "" {
+			settings[key] = value
+		}
+	}
+	putRaw("browser_type_raw", runtimeCfg.BEBrowserTypeRaw)
+	putRaw("browser_version", runtimeCfg.BEBrowserVersion)
+	putRaw("platform_raw", runtimeCfg.BEPlatformRaw)
+	putRaw("language", runtimeCfg.BELanguage)
+	putRaw("use_custom_user_agent_raw", runtimeCfg.BEUseCustomUARaw)
+	putRaw("simulate_cache_raw", runtimeCfg.BESimulateCacheRaw)
+	putRaw("cache_content_urls_raw", runtimeCfg.BECacheContentURLsRaw)
+	putRaw("check_newer_versions_raw", runtimeCfg.BECheckNewerVersionsRaw)
+	putRaw("new_user_each_iteration_raw", runtimeCfg.BENewUserEachIterationRaw)
+	putRaw("download_non_html_resources_raw", runtimeCfg.BEDownloadNonHTMLRaw)
+	putRaw("simulate_prefetch_raw", runtimeCfg.BESimulatePrefetchRaw)
+	putRaw("clear_cache_each_iteration_raw", runtimeCfg.BEClearCacheEachIterationRaw)
+	if runtimeCfg.BEBrowserTypeRaw != "" && runtimeCfg.BEBrowserType == "" {
+		settings["browser_type_unmapped"] = true
+	}
+	if len(settings) == 0 {
+		return nil
+	}
+	return settings
+}
+
+// applyBrowserEmulationRuntimeSettingsReview surfaces malformed
+// browser-emulation values as import warnings. Unlike Java VM blockers these
+// do not gate promotion: an unparseable boolean simply leaves the setting
+// unset, with the raw value preserved in metadata for review.
+func applyBrowserEmulationRuntimeSettingsReview(result *ConvertResult, runtimeCfg *RuntimeConfig) {
+	if result == nil || runtimeCfg == nil {
+		return
+	}
+	warn := func(parseError, raw string) {
+		if parseError == "" {
+			return
+		}
+		result.Warnings = append(result.Warnings, fmt.Sprintf("Browser Emulation import: %s (source value %q); the setting was left unset and preserved for review.", parseError, raw))
+	}
+	warn(runtimeCfg.BEUseCustomUAParseError, runtimeCfg.BEUseCustomUARaw)
+	warn(runtimeCfg.BESimulateCacheParseError, runtimeCfg.BESimulateCacheRaw)
+	warn(runtimeCfg.BECacheContentURLsParseError, runtimeCfg.BECacheContentURLsRaw)
+	warn(runtimeCfg.BECheckNewerParseError, runtimeCfg.BECheckNewerVersionsRaw)
+	warn(runtimeCfg.BENewUserParseError, runtimeCfg.BENewUserEachIterationRaw)
+	warn(runtimeCfg.BEDownloadNonHTMLParseError, runtimeCfg.BEDownloadNonHTMLRaw)
+	warn(runtimeCfg.BESimulatePrefetchParseError, runtimeCfg.BESimulatePrefetchRaw)
+	if runtimeCfg.BEBrowserTypeRaw != "" && runtimeCfg.BEBrowserType == "" {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("Browser Emulation import: browser type %q is not in the APEX browser catalog; no specific-browser emulation was configured and the raw value was preserved for review.", runtimeCfg.BEBrowserTypeRaw))
+	}
+	result.Warnings = uniqueSortedStrings(result.Warnings)
+}
+
+func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFileName string, projectSections map[string]map[string]string, projectConfig *ProjectConfig, files map[string]string, runtimeFileName string, runtimeCfg *RuntimeConfig, parameterSections map[string]map[string]map[string]string, parameterFileNames []string, trueClientInspection *trueclient.ArchiveInspection) {
 	if script == nil {
 		return
 	}
@@ -908,6 +1017,18 @@ func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFile
 	}
 	if runtimeFileName != "" {
 		preserved["mapped_runtime_file"] = filepath.Base(runtimeFileName)
+	}
+	// Scope Java VM source metadata to Java Vuser scripts. A mixed/multi-lane
+	// archive can share one runtime cfg, so an http/jdbc lane must not carry a
+	// java_vm_settings picker source, matching the protocol-scoped RTS parity
+	// block below and appendJavaVuserConfig on the engine side.
+	if strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") {
+		if javaVM := preservedJavaVMSettings(runtimeCfg); javaVM != nil {
+			preserved["java_vm_settings"] = javaVM
+		}
+	}
+	if browserEmulation := preservedBrowserEmulationSettings(runtimeCfg); browserEmulation != nil {
+		preserved["browser_emulation_settings"] = browserEmulation
 	}
 	if len(parameterFileNames) > 0 {
 		files := make([]string, 0, len(parameterFileNames))

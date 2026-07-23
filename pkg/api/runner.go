@@ -1464,19 +1464,40 @@ type RuntimeBrowserOverride struct {
 	Orientation   string `json:"orientation,omitempty"`
 }
 
+// RuntimeJavaVuserOverride carries the script-owned Java Env settings that a
+// scenario may override per group. It is deliberately a closed struct: the
+// operator-owned runner fields (enablement, runner command, harness jar, work
+// directory, capacity) have no counterpart here and cannot be smuggled in.
+// Overridden values re-enter dsl.ValidateScriptIssues (VM-parameter denylist,
+// classpath validation, JDK selection checks) before test creation succeeds.
+type RuntimeJavaVuserOverride struct {
+	JDKSelection            string   `json:"jdk_selection,omitempty"`
+	JDKHome                 string   `json:"jdk_home,omitempty"`
+	AdditionalVMParameters  []string `json:"additional_vm_parameters,omitempty"`
+	Classpath               []string `json:"classpath,omitempty"`
+	UseXBootClasspath       *bool    `json:"use_xbootclasspath,omitempty"`
+	DedicatedClassLoader    *bool    `json:"dedicated_class_loader,omitempty"`
+	SkipParameterEvaluation *bool    `json:"skip_parameter_evaluation,omitempty"`
+}
+
 type RuntimeSettingsOverride struct {
-	Iterations    *int                     `json:"iterations,omitempty"`
-	Pacing        *dsl.PacingConfig        `json:"pacing,omitempty"`
-	ThinkTime     *dsl.ThinkTimeConfig     `json:"think_time,omitempty"`
-	ErrorHandling *dsl.ErrorHandlingConfig `json:"error_handling,omitempty"`
-	Log           *dsl.LogConfig           `json:"log,omitempty"`
-	RunLogic      *dsl.RunLogicConfig      `json:"run_logic,omitempty"`
-	HTTP          *dsl.HTTPConfig          `json:"http,omitempty"`
-	WebRuntime    *dsl.WebRuntimeConfig    `json:"web_runtime,omitempty"`
+	Iterations    *int                      `json:"iterations,omitempty"`
+	Pacing        *dsl.PacingConfig         `json:"pacing,omitempty"`
+	ThinkTime     *dsl.ThinkTimeConfig      `json:"think_time,omitempty"`
+	ErrorHandling *dsl.ErrorHandlingConfig  `json:"error_handling,omitempty"`
+	Log           *dsl.LogConfig            `json:"log,omitempty"`
+	RunLogic      *dsl.RunLogicConfig       `json:"run_logic,omitempty"`
+	HTTP          *dsl.HTTPConfig           `json:"http,omitempty"`
+	WebRuntime    *dsl.WebRuntimeConfig     `json:"web_runtime,omitempty"`
+	JavaVuser     *RuntimeJavaVuserOverride `json:"java_vuser,omitempty"`
 	// BrowserConfig is the full browser section (whole-section replace); it wins over
 	// the legacy 4-field Browser partial-merge below when both are present.
 	BrowserConfig *dsl.BrowserConfig      `json:"browser_config,omitempty"`
 	Browser       *RuntimeBrowserOverride `json:"browser,omitempty"`
+	// BrowserEmulation is the HTTP-transport browser-emulation section
+	// (whole-section replace). It is distinct from BrowserConfig, which is the
+	// Playwright browser protocol's device/runtime section.
+	BrowserEmulation *dsl.BrowserEmulationConfig `json:"browser_emulation,omitempty"`
 	// LogLevel/Iterations/AutoTransactions are legacy single-field aliases for the
 	// Log/RunLogic sections above; the section wins when both are present.
 	LogLevel         string                 `json:"log_level,omitempty"`

@@ -792,6 +792,9 @@ func TestReplaySessionOperationsRejectAuthorizedProjectSubstitution(t *testing.T
 	t.Run("browser replay", func(t *testing.T) {
 		manager := NewBrowserReplayManager(nil)
 		lastActivity := time.Date(2026, 7, 23, 10, 0, 0, 0, time.UTC)
+		// Pin the retention clock inside the idle-cancel window so the on-access
+		// prune cannot stop the session and mask a project-guard regression.
+		manager.retention.now = func() time.Time { return lastActivity.Add(time.Minute) }
 		runtime := &BrowserReplaySession{
 			ID:             sessionID,
 			ProjectID:      replacementOwner,
@@ -845,6 +848,9 @@ func TestReplaySessionOperationsRejectAuthorizedProjectSubstitution(t *testing.T
 	t.Run("script debugger", func(t *testing.T) {
 		manager := NewScriptDebugManager(nil)
 		lastActivity := time.Date(2026, 7, 23, 10, 0, 0, 0, time.UTC)
+		// Pin the retention clock inside the idle-cancel window so the on-access
+		// prune cannot stop the session and mask a project-guard regression.
+		manager.retention.now = func() time.Time { return lastActivity.Add(time.Minute) }
 		runtime := &ScriptDebugSession{
 			ID:             sessionID,
 			ProjectID:      replacementOwner,

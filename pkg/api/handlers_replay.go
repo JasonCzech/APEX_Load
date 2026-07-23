@@ -394,6 +394,9 @@ func (s *Server) activatePendingReplaySessionID(executionCtx context.Context, se
 		leadershipCtx            context.Context
 		releaseLeadershipContext context.CancelFunc
 	)
+	if s.haExecution {
+		leadershipCtx, releaseLeadershipContext = context.WithCancel(executionCtx)
+	}
 	fail := func(err error) (string, func(), *replaySessionLeaseSignal, error) {
 		if releaseLeadershipContext != nil {
 			releaseLeadershipContext()
@@ -404,7 +407,6 @@ func (s *Server) activatePendingReplaySessionID(executionCtx context.Context, se
 	}
 	leaseStartedAt := time.Now()
 	if s.haExecution {
-		leadershipCtx, releaseLeadershipContext = context.WithCancel(executionCtx)
 		var ok bool
 		leaseStore, ok = s.store.(replaySessionLeaseStore)
 		if !ok || leaseStore == nil {

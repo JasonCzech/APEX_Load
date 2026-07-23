@@ -308,6 +308,12 @@ func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverrid
 	if overrides.WebRuntime != nil {
 		script.Config.WebRuntime = mergeWebRuntime(script.Config.WebRuntime, *overrides.WebRuntime)
 	}
+	if overrides.JavaVuser != nil {
+		applyJavaVuserRuntimeOverride(&script.Config.JavaVuser, overrides.JavaVuser)
+	}
+	if overrides.BrowserEmulation != nil {
+		script.Config.BrowserEmulation = cloneViaJSON(overrides.BrowserEmulation)
+	}
 	if overrides.BrowserConfig != nil {
 		script.Config.Browser = *cloneViaJSON(overrides.BrowserConfig)
 	} else if overrides.Browser != nil {
@@ -415,6 +421,8 @@ func cloneRuntimeSettings(overrides *RuntimeSettingsOverride) *RuntimeSettingsOv
 	clone.HTTP = cloneViaJSON(overrides.HTTP)
 	clone.WebRuntime = cloneViaJSON(overrides.WebRuntime)
 	clone.BrowserConfig = cloneViaJSON(overrides.BrowserConfig)
+	clone.BrowserEmulation = cloneViaJSON(overrides.BrowserEmulation)
+	clone.JavaVuser = cloneViaJSON(overrides.JavaVuser)
 	if overrides.Browser != nil {
 		browser := *overrides.Browser
 		if overrides.Browser.Headless != nil {
@@ -519,6 +527,80 @@ func cloneRunLogicConfig(c *dsl.RunLogicConfig) *dsl.RunLogicConfig {
 	return &clone
 }
 
+// applyJavaVuserRuntimeOverride field-merges a scenario-level Java Env override
+// onto the script's Java Vuser config with non-empty/non-nil-wins semantics
+// (mirroring the importer's mergeJavaVuserVMSettings): an override that only
+// sets one field must not wipe imported values such as the classpath. Operator
+// fields (enablement, runner command, harness, work dir, capacity) have no
+// override counterpart and are untouched.
+func applyJavaVuserRuntimeOverride(dst *dsl.JavaVuserConfig, src *RuntimeJavaVuserOverride) {
+	if dst == nil || src == nil {
+		return
+	}
+	if src.JDKSelection != "" {
+		dst.JDKSelection = src.JDKSelection
+	}
+	if src.JDKHome != "" {
+		dst.JDKHome = src.JDKHome
+	}
+	if len(src.AdditionalVMParameters) > 0 {
+		dst.AdditionalVMParameters = append([]string(nil), src.AdditionalVMParameters...)
+	}
+	if len(src.Classpath) > 0 {
+		dst.Classpath = append([]string(nil), src.Classpath...)
+	}
+	if src.UseXBootClasspath != nil {
+		useXBoot := *src.UseXBootClasspath
+		dst.UseXBootClasspath = &useXBoot
+	}
+	if src.DedicatedClassLoader != nil {
+		dedicated := *src.DedicatedClassLoader
+		dst.DedicatedClassLoader = &dedicated
+	}
+	if src.SkipParameterEvaluation != nil {
+		skip := *src.SkipParameterEvaluation
+		dst.SkipParameterEvaluation = &skip
+	}
+}
+
+// mergeJavaVuserRuntimeOverride combines root- and group-level Java Env
+// overrides at field granularity (group wins where specified), mirroring the
+// Browser partial-merge precedent above.
+func mergeJavaVuserRuntimeOverride(base *RuntimeJavaVuserOverride, group *RuntimeJavaVuserOverride) *RuntimeJavaVuserOverride {
+	if base == nil {
+		return cloneViaJSON(group)
+	}
+	merged := cloneViaJSON(base)
+	if group == nil || merged == nil {
+		return merged
+	}
+	if group.JDKSelection != "" {
+		merged.JDKSelection = group.JDKSelection
+	}
+	if group.JDKHome != "" {
+		merged.JDKHome = group.JDKHome
+	}
+	if len(group.AdditionalVMParameters) > 0 {
+		merged.AdditionalVMParameters = append([]string(nil), group.AdditionalVMParameters...)
+	}
+	if len(group.Classpath) > 0 {
+		merged.Classpath = append([]string(nil), group.Classpath...)
+	}
+	if group.UseXBootClasspath != nil {
+		useXBoot := *group.UseXBootClasspath
+		merged.UseXBootClasspath = &useXBoot
+	}
+	if group.DedicatedClassLoader != nil {
+		dedicated := *group.DedicatedClassLoader
+		merged.DedicatedClassLoader = &dedicated
+	}
+	if group.SkipParameterEvaluation != nil {
+		skip := *group.SkipParameterEvaluation
+		merged.SkipParameterEvaluation = &skip
+	}
+	return merged
+}
+
 func mergeRuntimeSettings(base *RuntimeSettingsOverride, group *RuntimeSettingsOverride) *RuntimeSettingsOverride {
 	if base == nil {
 		return cloneRuntimeSettings(group)
@@ -571,6 +653,9 @@ func mergeRuntimeSettings(base *RuntimeSettingsOverride, group *RuntimeSettingsO
 	}
 	if group.BrowserConfig != nil {
 		merged.BrowserConfig = cloneViaJSON(group.BrowserConfig)
+	}
+	if group.BrowserEmulation != nil {
+		merged.BrowserEmulation = cloneViaJSON(group.BrowserEmulation)
 	}
 	if group.Browser != nil {
 		if group.BrowserConfig == nil && merged.BrowserConfig != nil {
@@ -637,6 +722,9 @@ func mergeRuntimeSettings(base *RuntimeSettingsOverride, group *RuntimeSettingsO
 		} else {
 			merged.AutoTransactions = group.AutoTransactions
 		}
+	}
+	if group.JavaVuser != nil {
+		merged.JavaVuser = mergeJavaVuserRuntimeOverride(merged.JavaVuser, group.JavaVuser)
 	}
 	if group.BaseURL != "" {
 		merged.BaseURL = group.BaseURL

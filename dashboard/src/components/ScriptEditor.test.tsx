@@ -3468,13 +3468,14 @@ describe('ScriptEditor', () => {
     expect(sectionFor('Iteration Pacing')?.classList.contains('open')).toBe(false)
     expect(sectionFor('HTTP Transport')?.classList.contains('open')).toBe(true)
     const httpTransportTabs = Array.from(container.querySelectorAll('.http-transport-tabs [role="tab"]')) as HTMLButtonElement[]
+    // The Playwright 'Browser Emulation' sub-tab is browser-protocol-only now;
+    // HTTP scripts get the top-level Browser Emulation section instead.
     expect(httpTransportTabs.map(tab => tab.textContent?.trim())).toEqual([
       'Timeouts',
       'Connection',
       'TLS / SSL',
       'Proxy',
       'Authentication',
-      'Browser Emulation',
     ])
     expect(httpTransportTabs.find(tab => tab.textContent?.includes('Timeouts'))?.getAttribute('aria-selected')).toBe('true')
     expect(sectionFor('HTTP Transport')?.textContent).toContain('Connect (s)')

@@ -1,7 +1,7 @@
-import { GeneratorAssignmentSettings, GoalConfig, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode } from '../types'
+import { GeneratorAssignmentSettings, GoalConfig, RuntimeJavaVuserSettings, ScenarioDataPoolBinding, ScenarioDraftGroup, ScenarioMode } from '../types'
 import { normalizeRequiredLabels } from './assignmentLabels'
 import { ScenarioRuntimeSettings } from './scenarioDraftUtils'
-import { BrowserConfig, ErrorHandlingConfig, HTTPConfig, LogConfig, PacingConfig, RunLogicConfig, ThinkTimeConfig, WebRuntimeConfig } from '../types/scripts'
+import { BrowserConfig, BrowserEmulationConfig, ErrorHandlingConfig, HTTPConfig, LogConfig, PacingConfig, RunLogicConfig, ThinkTimeConfig, WebRuntimeConfig } from '../types/scripts'
 
 export type ScenarioGroupPayload = {
   name?: string
@@ -48,6 +48,8 @@ export type ScenarioUpsertPayload = {
     http?: HTTPConfig
     web_runtime?: WebRuntimeConfig
     browser_config?: BrowserConfig
+    browser_emulation?: BrowserEmulationConfig
+    java_vuser?: RuntimeJavaVuserSettings
     base_url?: string
     env?: Record<string, string>
     redaction_rules?: Array<{ name?: string, pattern: string, replacement?: string }>
@@ -268,6 +270,21 @@ export function buildGoalConfigPayload(scenarioMode: ScenarioMode, goalConfig: G
   return Object.keys(payload).length > 0 ? payload : undefined
 }
 
+// hasJavaVuserOverride mirrors isJavaVuserSettingsEmpty (runtimeSettingsModel):
+// a {} or all-empty Java Env section carries no override and is not serialized.
+function hasJavaVuserOverride(java?: RuntimeJavaVuserSettings): boolean {
+  if (!java) return false
+  return Boolean(
+    java.jdk_selection
+    || java.jdk_home
+    || (java.additional_vm_parameters && java.additional_vm_parameters.length > 0)
+    || (java.classpath && java.classpath.length > 0)
+    || java.use_xbootclasspath !== undefined
+    || java.dedicated_class_loader !== undefined
+    || java.skip_parameter_evaluation !== undefined,
+  )
+}
+
 export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSettings): ScenarioUpsertPayload['runtime_settings'] | undefined {
   const hasCanonicalRunLogic = runtimeSettings.run_logic !== undefined
   const hasCanonicalLog = runtimeSettings.log !== undefined
@@ -302,7 +319,9 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
     || runtimeSettings.retry_delay_ms !== undefined
     || Boolean(runtimeSettings.retry_backoff)
 
-  if ((!hasCanonicalRunLogic && runtimeSettings.iterations === undefined) && !pacing && !thinkTime && !browser && (!hasCanonicalLog && !runtimeSettings.log_level) && (!hasCanonicalRunLogic && !runtimeSettings.auto_transactions) && !hasErrorHandling && !runtimeSettings.log && !runtimeSettings.run_logic && !runtimeSettings.http && !runtimeSettings.web_runtime && !runtimeSettings.browser_config && !runtimeSettings.base_url && !runtimeSettings.env && !runtimeSettings.redaction_rules) {
+  const javaVuser = hasJavaVuserOverride(runtimeSettings.java_vuser) ? runtimeSettings.java_vuser : undefined
+
+  if ((!hasCanonicalRunLogic && runtimeSettings.iterations === undefined) && !pacing && !thinkTime && !browser && (!hasCanonicalLog && !runtimeSettings.log_level) && (!hasCanonicalRunLogic && !runtimeSettings.auto_transactions) && !hasErrorHandling && !runtimeSettings.log && !runtimeSettings.run_logic && !runtimeSettings.http && !runtimeSettings.web_runtime && !runtimeSettings.browser_config && !runtimeSettings.browser_emulation && !javaVuser && !runtimeSettings.base_url && !runtimeSettings.env && !runtimeSettings.redaction_rules) {
     return undefined
   }
 
@@ -329,6 +348,8 @@ export function buildRuntimeSettingsPayload(runtimeSettings: ScenarioRuntimeSett
     ...(runtimeSettings.http !== undefined ? { http: runtimeSettings.http } : {}),
     ...(runtimeSettings.web_runtime !== undefined ? { web_runtime: runtimeSettings.web_runtime } : {}),
     ...(runtimeSettings.browser_config !== undefined ? { browser_config: runtimeSettings.browser_config } : {}),
+    ...(runtimeSettings.browser_emulation !== undefined ? { browser_emulation: runtimeSettings.browser_emulation } : {}),
+    ...(javaVuser ? { java_vuser: { ...javaVuser } } : {}),
     ...(runtimeSettings.base_url !== undefined ? { base_url: runtimeSettings.base_url } : {}),
     ...(runtimeSettings.env ? { env: { ...runtimeSettings.env } } : {}),
     ...(runtimeSettings.redaction_rules ? { redaction_rules: runtimeSettings.redaction_rules.map(rule => ({ ...rule })) } : {}),

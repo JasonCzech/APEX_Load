@@ -1699,6 +1699,10 @@ paths:
                       type: object
                       description: 'Go type: dsl.BrowserConfig'
                       additionalProperties: true
+                    browser_emulation:
+                      type: object
+                      description: 'Go type: dsl.BrowserEmulationConfig'
+                      additionalProperties: true
                     env:
                       type: object
                       additionalProperties: true
@@ -1713,6 +1717,27 @@ paths:
                     iterations:
                       type: integer
                       format: int64
+                    java_vuser:
+                      type: object
+                      properties:
+                        additional_vm_parameters:
+                          type: array
+                          items:
+                            type: string
+                        classpath:
+                          type: array
+                          items:
+                            type: string
+                        dedicated_class_loader:
+                          type: boolean
+                        jdk_home:
+                          type: string
+                        jdk_selection:
+                          type: string
+                        skip_parameter_evaluation:
+                          type: boolean
+                        use_xbootclasspath:
+                          type: boolean
                     log:
                       type: object
                       description: 'Go type: dsl.LogConfig'
@@ -1895,6 +1920,10 @@ paths:
                                 type: object
                                 description: 'Go type: dsl.BrowserConfig'
                                 additionalProperties: true
+                              browser_emulation:
+                                type: object
+                                description: 'Go type: dsl.BrowserEmulationConfig'
+                                additionalProperties: true
                               env:
                                 type: object
                                 additionalProperties: true
@@ -1909,6 +1938,10 @@ paths:
                               iterations:
                                 type: integer
                                 format: int64
+                              java_vuser:
+                                type: object
+                                description: 'Go type: RuntimeJavaVuserOverride'
+                                additionalProperties: true
                               log:
                                 type: object
                                 description: 'Go type: dsl.LogConfig'
@@ -1974,6 +2007,10 @@ paths:
                           type: object
                           description: 'Go type: dsl.BrowserConfig'
                           additionalProperties: true
+                        browser_emulation:
+                          type: object
+                          description: 'Go type: dsl.BrowserEmulationConfig'
+                          additionalProperties: true
                         env:
                           type: object
                           additionalProperties: true
@@ -1988,6 +2025,27 @@ paths:
                         iterations:
                           type: integer
                           format: int64
+                        java_vuser:
+                          type: object
+                          properties:
+                            additional_vm_parameters:
+                              type: array
+                              items:
+                                type: string
+                            classpath:
+                              type: array
+                              items:
+                                type: string
+                            dedicated_class_loader:
+                              type: boolean
+                            jdk_home:
+                              type: string
+                            jdk_selection:
+                              type: string
+                            skip_parameter_evaluation:
+                              type: boolean
+                            use_xbootclasspath:
+                              type: boolean
                         log:
                           type: object
                           description: 'Go type: dsl.LogConfig'
@@ -11470,6 +11528,55 @@ paths:
       tags:
         - Dsl
       x-handler: handleListDSLActions
+  /api/v1/dsl/browser-emulation-catalog:
+    get:
+      summary: Browser Emulation Catalog
+      description: '**Access Control:** Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read'
+      operationId: handleBrowserEmulationCatalog
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  browsers:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: dsl.BrowserEmulationCatalogEntry'
+                      additionalProperties: true
+                  languages:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: dsl.BrowserEmulationLanguage'
+                      additionalProperties: true
+                  platforms:
+                    type: array
+                    items:
+                      type: object
+                      description: 'Go type: dsl.BrowserEmulationPlatform'
+                      additionalProperties: true
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read'
+      tags:
+        - Dsl
+      x-handler: handleBrowserEmulationCatalog
   /api/v1/dsl/config-defaults:
     get:
       summary: Config Defaults
@@ -21663,6 +21770,10 @@ paths:
                                 type: object
                                 description: 'Go type: dsl.BrowserConfig'
                                 additionalProperties: true
+                              browser_emulation:
+                                type: object
+                                description: 'Go type: dsl.BrowserEmulationConfig'
+                                additionalProperties: true
                               env:
                                 type: object
                                 additionalProperties: true
@@ -21677,6 +21788,10 @@ paths:
                               iterations:
                                 type: integer
                                 format: int64
+                              java_vuser:
+                                type: object
+                                description: 'Go type: RuntimeJavaVuserOverride'
+                                additionalProperties: true
                               log:
                                 type: object
                                 description: 'Go type: dsl.LogConfig'
@@ -21754,6 +21869,10 @@ paths:
                           type: object
                           description: 'Go type: dsl.BrowserConfig'
                           additionalProperties: true
+                        browser_emulation:
+                          type: object
+                          description: 'Go type: dsl.BrowserEmulationConfig'
+                          additionalProperties: true
                         env:
                           type: object
                           additionalProperties: true
@@ -21768,6 +21887,27 @@ paths:
                         iterations:
                           type: integer
                           format: int64
+                        java_vuser:
+                          type: object
+                          properties:
+                            additional_vm_parameters:
+                              type: array
+                              items:
+                                type: string
+                            classpath:
+                              type: array
+                              items:
+                                type: string
+                            dedicated_class_loader:
+                              type: boolean
+                            jdk_home:
+                              type: string
+                            jdk_selection:
+                              type: string
+                            skip_parameter_evaluation:
+                              type: boolean
+                            use_xbootclasspath:
+                              type: boolean
                         log:
                           type: object
                           description: 'Go type: dsl.LogConfig'
@@ -22356,6 +22496,10 @@ paths:
                                   type: object
                                   description: 'Go type: dsl.BrowserConfig'
                                   additionalProperties: true
+                                browser_emulation:
+                                  type: object
+                                  description: 'Go type: dsl.BrowserEmulationConfig'
+                                  additionalProperties: true
                                 env:
                                   type: object
                                   additionalProperties: true
@@ -22370,6 +22514,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -23150,6 +23298,10 @@ paths:
                             type: object
                             description: 'Go type: dsl.BrowserConfig'
                             additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
                           env:
                             type: object
                             additionalProperties: true
@@ -23164,6 +23316,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -23982,6 +24155,10 @@ paths:
                                   type: object
                                   description: 'Go type: dsl.BrowserConfig'
                                   additionalProperties: true
+                                browser_emulation:
+                                  type: object
+                                  description: 'Go type: dsl.BrowserEmulationConfig'
+                                  additionalProperties: true
                                 env:
                                   type: object
                                   additionalProperties: true
@@ -23996,6 +24173,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -24776,6 +24957,10 @@ paths:
                             type: object
                             description: 'Go type: dsl.BrowserConfig'
                             additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
                           env:
                             type: object
                             additionalProperties: true
@@ -24790,6 +24975,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -25612,6 +25818,10 @@ paths:
                                   type: object
                                   description: 'Go type: dsl.BrowserConfig'
                                   additionalProperties: true
+                                browser_emulation:
+                                  type: object
+                                  description: 'Go type: dsl.BrowserEmulationConfig'
+                                  additionalProperties: true
                                 env:
                                   type: object
                                   additionalProperties: true
@@ -25626,6 +25836,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -26406,6 +26620,10 @@ paths:
                             type: object
                             description: 'Go type: dsl.BrowserConfig'
                             additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
                           env:
                             type: object
                             additionalProperties: true
@@ -26420,6 +26638,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -27248,6 +27487,10 @@ paths:
                                   type: object
                                   description: 'Go type: dsl.BrowserConfig'
                                   additionalProperties: true
+                                browser_emulation:
+                                  type: object
+                                  description: 'Go type: dsl.BrowserEmulationConfig'
+                                  additionalProperties: true
                                 env:
                                   type: object
                                   additionalProperties: true
@@ -27262,6 +27505,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -28042,6 +28289,10 @@ paths:
                             type: object
                             description: 'Go type: dsl.BrowserConfig'
                             additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
                           env:
                             type: object
                             additionalProperties: true
@@ -28056,6 +28307,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -28884,6 +29156,10 @@ paths:
                                   type: object
                                   description: 'Go type: dsl.BrowserConfig'
                                   additionalProperties: true
+                                browser_emulation:
+                                  type: object
+                                  description: 'Go type: dsl.BrowserEmulationConfig'
+                                  additionalProperties: true
                                 env:
                                   type: object
                                   additionalProperties: true
@@ -28898,6 +29174,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -29678,6 +29958,10 @@ paths:
                             type: object
                             description: 'Go type: dsl.BrowserConfig'
                             additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
                           env:
                             type: object
                             additionalProperties: true
@@ -29692,6 +29976,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -30520,6 +30825,10 @@ paths:
                                   type: object
                                   description: 'Go type: dsl.BrowserConfig'
                                   additionalProperties: true
+                                browser_emulation:
+                                  type: object
+                                  description: 'Go type: dsl.BrowserEmulationConfig'
+                                  additionalProperties: true
                                 env:
                                   type: object
                                   additionalProperties: true
@@ -30534,6 +30843,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -31314,6 +31627,10 @@ paths:
                             type: object
                             description: 'Go type: dsl.BrowserConfig'
                             additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
                           env:
                             type: object
                             additionalProperties: true
@@ -31328,6 +31645,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -32156,6 +32494,10 @@ paths:
                                   type: object
                                   description: 'Go type: dsl.BrowserConfig'
                                   additionalProperties: true
+                                browser_emulation:
+                                  type: object
+                                  description: 'Go type: dsl.BrowserEmulationConfig'
+                                  additionalProperties: true
                                 env:
                                   type: object
                                   additionalProperties: true
@@ -32170,6 +32512,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -32950,6 +33296,10 @@ paths:
                             type: object
                             description: 'Go type: dsl.BrowserConfig'
                             additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
                           env:
                             type: object
                             additionalProperties: true
@@ -32964,6 +33314,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -35300,6 +35671,10 @@ paths:
                               type: object
                               description: 'Go type: dsl.BrowserConfig'
                               additionalProperties: true
+                            browser_emulation:
+                              type: object
+                              description: 'Go type: dsl.BrowserEmulationConfig'
+                              additionalProperties: true
                             env:
                               type: object
                               additionalProperties: true
@@ -35314,6 +35689,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -35653,6 +36049,10 @@ paths:
                             type: object
                             description: 'Go type: dsl.BrowserConfig'
                             additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
                           env:
                             type: object
                             additionalProperties: true
@@ -35667,6 +36067,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -35732,6 +36153,10 @@ paths:
                       type: object
                       description: 'Go type: dsl.BrowserConfig'
                       additionalProperties: true
+                    browser_emulation:
+                      type: object
+                      description: 'Go type: dsl.BrowserEmulationConfig'
+                      additionalProperties: true
                     env:
                       type: object
                       additionalProperties: true
@@ -35746,6 +36171,27 @@ paths:
                     iterations:
                       type: integer
                       format: int64
+                    java_vuser:
+                      type: object
+                      properties:
+                        additional_vm_parameters:
+                          type: array
+                          items:
+                            type: string
+                        classpath:
+                          type: array
+                          items:
+                            type: string
+                        dedicated_class_loader:
+                          type: boolean
+                        jdk_home:
+                          type: string
+                        jdk_selection:
+                          type: string
+                        skip_parameter_evaluation:
+                          type: boolean
+                        use_xbootclasspath:
+                          type: boolean
                     log:
                       type: object
                       description: 'Go type: dsl.LogConfig'
@@ -35938,6 +36384,10 @@ paths:
                         type: object
                         description: 'Go type: dsl.BrowserConfig'
                         additionalProperties: true
+                      browser_emulation:
+                        type: object
+                        description: 'Go type: dsl.BrowserEmulationConfig'
+                        additionalProperties: true
                       env:
                         type: object
                         additionalProperties: true
@@ -35952,6 +36402,27 @@ paths:
                       iterations:
                         type: integer
                         format: int64
+                      java_vuser:
+                        type: object
+                        properties:
+                          additional_vm_parameters:
+                            type: array
+                            items:
+                              type: string
+                          classpath:
+                            type: array
+                            items:
+                              type: string
+                          dedicated_class_loader:
+                            type: boolean
+                          jdk_home:
+                            type: string
+                          jdk_selection:
+                            type: string
+                          skip_parameter_evaluation:
+                            type: boolean
+                          use_xbootclasspath:
+                            type: boolean
                       log:
                         type: object
                         description: 'Go type: dsl.LogConfig'
@@ -36062,6 +36533,10 @@ paths:
                               type: object
                               description: 'Go type: dsl.BrowserConfig'
                               additionalProperties: true
+                            browser_emulation:
+                              type: object
+                              description: 'Go type: dsl.BrowserEmulationConfig'
+                              additionalProperties: true
                             env:
                               type: object
                               additionalProperties: true
@@ -36076,6 +36551,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -36353,6 +36849,10 @@ paths:
                         type: object
                         description: 'Go type: dsl.BrowserConfig'
                         additionalProperties: true
+                      browser_emulation:
+                        type: object
+                        description: 'Go type: dsl.BrowserEmulationConfig'
+                        additionalProperties: true
                       env:
                         type: object
                         additionalProperties: true
@@ -36367,6 +36867,27 @@ paths:
                       iterations:
                         type: integer
                         format: int64
+                      java_vuser:
+                        type: object
+                        properties:
+                          additional_vm_parameters:
+                            type: array
+                            items:
+                              type: string
+                          classpath:
+                            type: array
+                            items:
+                              type: string
+                          dedicated_class_loader:
+                            type: boolean
+                          jdk_home:
+                            type: string
+                          jdk_selection:
+                            type: string
+                          skip_parameter_evaluation:
+                            type: boolean
+                          use_xbootclasspath:
+                            type: boolean
                       log:
                         type: object
                         description: 'Go type: dsl.LogConfig'
@@ -36477,6 +36998,10 @@ paths:
                               type: object
                               description: 'Go type: dsl.BrowserConfig'
                               additionalProperties: true
+                            browser_emulation:
+                              type: object
+                              description: 'Go type: dsl.BrowserEmulationConfig'
+                              additionalProperties: true
                             env:
                               type: object
                               additionalProperties: true
@@ -36491,6 +37016,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -36736,6 +37282,10 @@ paths:
                             type: object
                             description: 'Go type: dsl.BrowserConfig'
                             additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
                           env:
                             type: object
                             additionalProperties: true
@@ -36750,6 +37300,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -36815,6 +37386,10 @@ paths:
                       type: object
                       description: 'Go type: dsl.BrowserConfig'
                       additionalProperties: true
+                    browser_emulation:
+                      type: object
+                      description: 'Go type: dsl.BrowserEmulationConfig'
+                      additionalProperties: true
                     env:
                       type: object
                       additionalProperties: true
@@ -36829,6 +37404,27 @@ paths:
                     iterations:
                       type: integer
                       format: int64
+                    java_vuser:
+                      type: object
+                      properties:
+                        additional_vm_parameters:
+                          type: array
+                          items:
+                            type: string
+                        classpath:
+                          type: array
+                          items:
+                            type: string
+                        dedicated_class_loader:
+                          type: boolean
+                        jdk_home:
+                          type: string
+                        jdk_selection:
+                          type: string
+                        skip_parameter_evaluation:
+                          type: boolean
+                        use_xbootclasspath:
+                          type: boolean
                     log:
                       type: object
                       description: 'Go type: dsl.LogConfig'
@@ -37021,6 +37617,10 @@ paths:
                         type: object
                         description: 'Go type: dsl.BrowserConfig'
                         additionalProperties: true
+                      browser_emulation:
+                        type: object
+                        description: 'Go type: dsl.BrowserEmulationConfig'
+                        additionalProperties: true
                       env:
                         type: object
                         additionalProperties: true
@@ -37035,6 +37635,27 @@ paths:
                       iterations:
                         type: integer
                         format: int64
+                      java_vuser:
+                        type: object
+                        properties:
+                          additional_vm_parameters:
+                            type: array
+                            items:
+                              type: string
+                          classpath:
+                            type: array
+                            items:
+                              type: string
+                          dedicated_class_loader:
+                            type: boolean
+                          jdk_home:
+                            type: string
+                          jdk_selection:
+                            type: string
+                          skip_parameter_evaluation:
+                            type: boolean
+                          use_xbootclasspath:
+                            type: boolean
                       log:
                         type: object
                         description: 'Go type: dsl.LogConfig'
@@ -37145,6 +37766,10 @@ paths:
                               type: object
                               description: 'Go type: dsl.BrowserConfig'
                               additionalProperties: true
+                            browser_emulation:
+                              type: object
+                              description: 'Go type: dsl.BrowserEmulationConfig'
+                              additionalProperties: true
                             env:
                               type: object
                               additionalProperties: true
@@ -37159,6 +37784,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -37679,6 +38325,10 @@ paths:
                             type: object
                             description: 'Go type: dsl.BrowserConfig'
                             additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
                           env:
                             type: object
                             additionalProperties: true
@@ -37693,6 +38343,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -37796,6 +38467,10 @@ paths:
                                   type: object
                                   description: 'Go type: dsl.BrowserConfig'
                                   additionalProperties: true
+                                browser_emulation:
+                                  type: object
+                                  description: 'Go type: dsl.BrowserEmulationConfig'
+                                  additionalProperties: true
                                 env:
                                   type: object
                                   additionalProperties: true
@@ -37810,6 +38485,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -39366,6 +40045,10 @@ paths:
                                   type: object
                                   description: 'Go type: dsl.BrowserConfig'
                                   additionalProperties: true
+                                browser_emulation:
+                                  type: object
+                                  description: 'Go type: dsl.BrowserEmulationConfig'
+                                  additionalProperties: true
                                 env:
                                   type: object
                                   additionalProperties: true
@@ -39380,6 +40063,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -39445,6 +40132,10 @@ paths:
                             type: object
                             description: 'Go type: dsl.BrowserConfig'
                             additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
                           env:
                             type: object
                             additionalProperties: true
@@ -39459,6 +40150,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -39705,6 +40417,10 @@ paths:
                             type: object
                             description: 'Go type: dsl.BrowserConfig'
                             additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
                           env:
                             type: object
                             additionalProperties: true
@@ -39719,6 +40435,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -39784,6 +40521,10 @@ paths:
                       type: object
                       description: 'Go type: dsl.BrowserConfig'
                       additionalProperties: true
+                    browser_emulation:
+                      type: object
+                      description: 'Go type: dsl.BrowserEmulationConfig'
+                      additionalProperties: true
                     env:
                       type: object
                       additionalProperties: true
@@ -39798,6 +40539,27 @@ paths:
                     iterations:
                       type: integer
                       format: int64
+                    java_vuser:
+                      type: object
+                      properties:
+                        additional_vm_parameters:
+                          type: array
+                          items:
+                            type: string
+                        classpath:
+                          type: array
+                          items:
+                            type: string
+                        dedicated_class_loader:
+                          type: boolean
+                        jdk_home:
+                          type: string
+                        jdk_selection:
+                          type: string
+                        skip_parameter_evaluation:
+                          type: boolean
+                        use_xbootclasspath:
+                          type: boolean
                     log:
                       type: object
                       description: 'Go type: dsl.LogConfig'
@@ -52794,6 +53556,10 @@ paths:
                             type: object
                             description: 'Go type: dsl.BrowserConfig'
                             additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
                           env:
                             type: object
                             additionalProperties: true
@@ -52808,6 +53574,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -52885,6 +53672,10 @@ paths:
                       type: object
                       description: 'Go type: dsl.BrowserConfig'
                       additionalProperties: true
+                    browser_emulation:
+                      type: object
+                      description: 'Go type: dsl.BrowserEmulationConfig'
+                      additionalProperties: true
                     env:
                       type: object
                       additionalProperties: true
@@ -52899,6 +53690,27 @@ paths:
                     iterations:
                       type: integer
                       format: int64
+                    java_vuser:
+                      type: object
+                      properties:
+                        additional_vm_parameters:
+                          type: array
+                          items:
+                            type: string
+                        classpath:
+                          type: array
+                          items:
+                            type: string
+                        dedicated_class_loader:
+                          type: boolean
+                        jdk_home:
+                          type: string
+                        jdk_selection:
+                          type: string
+                        skip_parameter_evaluation:
+                          type: boolean
+                        use_xbootclasspath:
+                          type: boolean
                     log:
                       type: object
                       description: 'Go type: dsl.LogConfig'
@@ -53395,6 +54207,10 @@ paths:
                               type: object
                               description: 'Go type: dsl.BrowserConfig'
                               additionalProperties: true
+                            browser_emulation:
+                              type: object
+                              description: 'Go type: dsl.BrowserEmulationConfig'
+                              additionalProperties: true
                             env:
                               type: object
                               additionalProperties: true
@@ -53409,6 +54225,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -54309,6 +55146,10 @@ paths:
                         type: object
                         description: 'Go type: dsl.BrowserConfig'
                         additionalProperties: true
+                      browser_emulation:
+                        type: object
+                        description: 'Go type: dsl.BrowserEmulationConfig'
+                        additionalProperties: true
                       env:
                         type: object
                         additionalProperties: true
@@ -54323,6 +55164,27 @@ paths:
                       iterations:
                         type: integer
                         format: int64
+                      java_vuser:
+                        type: object
+                        properties:
+                          additional_vm_parameters:
+                            type: array
+                            items:
+                              type: string
+                          classpath:
+                            type: array
+                            items:
+                              type: string
+                          dedicated_class_loader:
+                            type: boolean
+                          jdk_home:
+                            type: string
+                          jdk_selection:
+                            type: string
+                          skip_parameter_evaluation:
+                            type: boolean
+                          use_xbootclasspath:
+                            type: boolean
                       log:
                         type: object
                         description: 'Go type: dsl.LogConfig'
@@ -55085,6 +55947,10 @@ paths:
                               type: object
                               description: 'Go type: dsl.BrowserConfig'
                               additionalProperties: true
+                            browser_emulation:
+                              type: object
+                              description: 'Go type: dsl.BrowserEmulationConfig'
+                              additionalProperties: true
                             env:
                               type: object
                               additionalProperties: true
@@ -55099,6 +55965,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -55999,6 +56886,10 @@ paths:
                         type: object
                         description: 'Go type: dsl.BrowserConfig'
                         additionalProperties: true
+                      browser_emulation:
+                        type: object
+                        description: 'Go type: dsl.BrowserEmulationConfig'
+                        additionalProperties: true
                       env:
                         type: object
                         additionalProperties: true
@@ -56013,6 +56904,27 @@ paths:
                       iterations:
                         type: integer
                         format: int64
+                      java_vuser:
+                        type: object
+                        properties:
+                          additional_vm_parameters:
+                            type: array
+                            items:
+                              type: string
+                          classpath:
+                            type: array
+                            items:
+                              type: string
+                          dedicated_class_loader:
+                            type: boolean
+                          jdk_home:
+                            type: string
+                          jdk_selection:
+                            type: string
+                          skip_parameter_evaluation:
+                            type: boolean
+                          use_xbootclasspath:
+                            type: boolean
                       log:
                         type: object
                         description: 'Go type: dsl.LogConfig'
@@ -57578,6 +58490,10 @@ paths:
                                   type: object
                                   description: 'Go type: dsl.BrowserConfig'
                                   additionalProperties: true
+                                browser_emulation:
+                                  type: object
+                                  description: 'Go type: dsl.BrowserEmulationConfig'
+                                  additionalProperties: true
                                 env:
                                   type: object
                                   additionalProperties: true
@@ -57592,6 +58508,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -57664,6 +58584,10 @@ paths:
                             type: object
                             description: 'Go type: dsl.BrowserConfig'
                             additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
                           env:
                             type: object
                             additionalProperties: true
@@ -57678,6 +58602,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -58617,6 +59562,10 @@ paths:
                                 type: object
                                 description: 'Go type: dsl.BrowserConfig'
                                 additionalProperties: true
+                              browser_emulation:
+                                type: object
+                                description: 'Go type: dsl.BrowserEmulationConfig'
+                                additionalProperties: true
                               env:
                                 type: object
                                 additionalProperties: true
@@ -58631,6 +59580,9 @@ paths:
                               iterations:
                                 type: integer
                                 format: int64
+                              java_vuser:
+                                type: object
+                                additionalProperties: true
                               log:
                                 type: object
                                 description: 'Go type: dsl.LogConfig'
@@ -60468,6 +61420,10 @@ paths:
                               type: object
                               description: 'Go type: dsl.BrowserConfig'
                               additionalProperties: true
+                            browser_emulation:
+                              type: object
+                              description: 'Go type: dsl.BrowserEmulationConfig'
+                              additionalProperties: true
                             env:
                               type: object
                               additionalProperties: true
@@ -60482,6 +61438,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -61382,6 +62359,10 @@ paths:
                         type: object
                         description: 'Go type: dsl.BrowserConfig'
                         additionalProperties: true
+                      browser_emulation:
+                        type: object
+                        description: 'Go type: dsl.BrowserEmulationConfig'
+                        additionalProperties: true
                       env:
                         type: object
                         additionalProperties: true
@@ -61396,6 +62377,27 @@ paths:
                       iterations:
                         type: integer
                         format: int64
+                      java_vuser:
+                        type: object
+                        properties:
+                          additional_vm_parameters:
+                            type: array
+                            items:
+                              type: string
+                          classpath:
+                            type: array
+                            items:
+                              type: string
+                          dedicated_class_loader:
+                            type: boolean
+                          jdk_home:
+                            type: string
+                          jdk_selection:
+                            type: string
+                          skip_parameter_evaluation:
+                            type: boolean
+                          use_xbootclasspath:
+                            type: boolean
                       log:
                         type: object
                         description: 'Go type: dsl.LogConfig'
@@ -62109,6 +63111,10 @@ paths:
                               type: object
                               description: 'Go type: dsl.BrowserConfig'
                               additionalProperties: true
+                            browser_emulation:
+                              type: object
+                              description: 'Go type: dsl.BrowserEmulationConfig'
+                              additionalProperties: true
                             env:
                               type: object
                               additionalProperties: true
@@ -62123,6 +63129,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -63023,6 +64050,10 @@ paths:
                         type: object
                         description: 'Go type: dsl.BrowserConfig'
                         additionalProperties: true
+                      browser_emulation:
+                        type: object
+                        description: 'Go type: dsl.BrowserEmulationConfig'
+                        additionalProperties: true
                       env:
                         type: object
                         additionalProperties: true
@@ -63037,6 +64068,27 @@ paths:
                       iterations:
                         type: integer
                         format: int64
+                      java_vuser:
+                        type: object
+                        properties:
+                          additional_vm_parameters:
+                            type: array
+                            items:
+                              type: string
+                          classpath:
+                            type: array
+                            items:
+                              type: string
+                          dedicated_class_loader:
+                            type: boolean
+                          jdk_home:
+                            type: string
+                          jdk_selection:
+                            type: string
+                          skip_parameter_evaluation:
+                            type: boolean
+                          use_xbootclasspath:
+                            type: boolean
                       log:
                         type: object
                         description: 'Go type: dsl.LogConfig'
@@ -63797,6 +64849,10 @@ paths:
                                   type: object
                                   description: 'Go type: dsl.BrowserConfig'
                                   additionalProperties: true
+                                browser_emulation:
+                                  type: object
+                                  description: 'Go type: dsl.BrowserEmulationConfig'
+                                  additionalProperties: true
                                 env:
                                   type: object
                                   additionalProperties: true
@@ -63811,6 +64867,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -63876,6 +64936,10 @@ paths:
                             type: object
                             description: 'Go type: dsl.BrowserConfig'
                             additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
                           env:
                             type: object
                             additionalProperties: true
@@ -63890,6 +64954,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -64248,6 +65333,10 @@ paths:
                                   type: object
                                   description: 'Go type: dsl.BrowserConfig'
                                   additionalProperties: true
+                                browser_emulation:
+                                  type: object
+                                  description: 'Go type: dsl.BrowserEmulationConfig'
+                                  additionalProperties: true
                                 env:
                                   type: object
                                   additionalProperties: true
@@ -64262,6 +65351,10 @@ paths:
                                 iterations:
                                   type: integer
                                   format: int64
+                                java_vuser:
+                                  type: object
+                                  description: 'Go type: RuntimeJavaVuserOverride'
+                                  additionalProperties: true
                                 log:
                                   type: object
                                   description: 'Go type: dsl.LogConfig'
@@ -64327,6 +65420,10 @@ paths:
                             type: object
                             description: 'Go type: dsl.BrowserConfig'
                             additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
                           env:
                             type: object
                             additionalProperties: true
@@ -64341,6 +65438,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -64873,6 +65991,10 @@ paths:
                               type: object
                               description: 'Go type: dsl.BrowserConfig'
                               additionalProperties: true
+                            browser_emulation:
+                              type: object
+                              description: 'Go type: dsl.BrowserEmulationConfig'
+                              additionalProperties: true
                             env:
                               type: object
                               additionalProperties: true
@@ -64887,6 +66009,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'
@@ -66406,6 +67549,10 @@ paths:
                             type: object
                             description: 'Go type: dsl.BrowserConfig'
                             additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
                           env:
                             type: object
                             additionalProperties: true
@@ -66420,6 +67567,27 @@ paths:
                           iterations:
                             type: integer
                             format: int64
+                          java_vuser:
+                            type: object
+                            properties:
+                              additional_vm_parameters:
+                                type: array
+                                items:
+                                  type: string
+                              classpath:
+                                type: array
+                                items:
+                                  type: string
+                              dedicated_class_loader:
+                                type: boolean
+                              jdk_home:
+                                type: string
+                              jdk_selection:
+                                type: string
+                              skip_parameter_evaluation:
+                                type: boolean
+                              use_xbootclasspath:
+                                type: boolean
                           log:
                             type: object
                             description: 'Go type: dsl.LogConfig'
@@ -66497,6 +67665,10 @@ paths:
                       type: object
                       description: 'Go type: dsl.BrowserConfig'
                       additionalProperties: true
+                    browser_emulation:
+                      type: object
+                      description: 'Go type: dsl.BrowserEmulationConfig'
+                      additionalProperties: true
                     env:
                       type: object
                       additionalProperties: true
@@ -66511,6 +67683,27 @@ paths:
                     iterations:
                       type: integer
                       format: int64
+                    java_vuser:
+                      type: object
+                      properties:
+                        additional_vm_parameters:
+                          type: array
+                          items:
+                            type: string
+                        classpath:
+                          type: array
+                          items:
+                            type: string
+                        dedicated_class_loader:
+                          type: boolean
+                        jdk_home:
+                          type: string
+                        jdk_selection:
+                          type: string
+                        skip_parameter_evaluation:
+                          type: boolean
+                        use_xbootclasspath:
+                          type: boolean
                     log:
                       type: object
                       description: 'Go type: dsl.LogConfig'
@@ -66877,6 +68070,10 @@ paths:
                               type: object
                               description: 'Go type: dsl.BrowserConfig'
                               additionalProperties: true
+                            browser_emulation:
+                              type: object
+                              description: 'Go type: dsl.BrowserEmulationConfig'
+                              additionalProperties: true
                             env:
                               type: object
                               additionalProperties: true
@@ -66891,6 +68088,27 @@ paths:
                             iterations:
                               type: integer
                               format: int64
+                            java_vuser:
+                              type: object
+                              properties:
+                                additional_vm_parameters:
+                                  type: array
+                                  items:
+                                    type: string
+                                classpath:
+                                  type: array
+                                  items:
+                                    type: string
+                                dedicated_class_loader:
+                                  type: boolean
+                                jdk_home:
+                                  type: string
+                                jdk_selection:
+                                  type: string
+                                skip_parameter_evaluation:
+                                  type: boolean
+                                use_xbootclasspath:
+                                  type: boolean
                             log:
                               type: object
                               description: 'Go type: dsl.LogConfig'

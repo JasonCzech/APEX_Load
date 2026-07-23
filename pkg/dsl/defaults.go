@@ -38,6 +38,9 @@ func DefaultScriptConfig() ScriptConfig {
 			CacheContentURLs:  defaultBoolPtr(true),
 			DownloadResources: "all",
 		},
+		// BrowserEmulation stays nil by design: nil means "inherit the http.*
+		// fields" (user_agent, accept_language, cache_enabled). The config-defaults
+		// payload therefore intentionally has no browser_emulation block.
 		RunLogic: RunLogicConfig{
 			Iterations:       0, // 0 = run until the test duration expires (duration-driven)
 			WorkloadModel:    "closed",

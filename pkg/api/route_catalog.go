@@ -113,6 +113,7 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/correlations/rules", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/dsl/actions", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/dsl/config-defaults", viewerGlobalAccess()),
+	routeAuth(http.MethodGet, "/api/v1/dsl/browser-emulation-catalog", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/browser-recorder/devices", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/browser-recorder/install", viewerGlobalAccess()),
 	routeAuth(http.MethodPost, "/api/v1/browser-recorder/install", accessRequirement{GlobalRoles: []string{RoleEditor, RoleProjectAdmin, RoleSystemAdmin}}),

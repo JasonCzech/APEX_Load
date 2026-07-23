@@ -4,6 +4,8 @@ import type {
   RuntimeSettingsReview,
 } from '../types/runtimeSettings'
 import type {
+  BrowserEmulationCatalog,
+  BrowserEmulationConfig,
   ContentCheckConfig,
   DFETransform,
   ScriptConfig,
@@ -49,6 +51,7 @@ export const RUNTIME_SETTINGS_SECTION_IDS = [
   'database',
   'network',
   'http',
+  'browser_emulation',
   'soap',
   'java_http',
   'java_vuser',
@@ -71,6 +74,7 @@ export type HTTPTransportTabId = typeof HTTP_TRANSPORT_TAB_OPTIONS[number]['id']
 
 export interface RuntimeProtocolCapabilities {
   browser: boolean
+  browserEmulation: boolean
   database: boolean
   grpc: boolean
   http: boolean
@@ -110,12 +114,16 @@ export function getRuntimeProtocolCapabilities(protocol: string): RuntimeProtoco
   const database = normalized === 'database'
   const jms = normalized.startsWith('jms')
   const network = normalized === 'network'
+  const httpTransport = http || normalized === 'https' || javaHttp || soap || browser
   return {
     browser,
+    // Browser emulation drives the HTTP replay engine; the browser protocol's
+    // emulation home stays the browser sub-tab (config.browser).
+    browserEmulation: httpTransport && !browser,
     database,
     grpc: normalized === 'grpc',
     http,
-    httpTransport: http || normalized === 'https' || javaHttp || soap || browser,
+    httpTransport,
     javaHttp,
     javaVuser,
     jms,
@@ -135,12 +143,65 @@ export function runtimeSettingsSectionIsAvailable(section: RuntimeSettingsSectio
     case 'database': return capability.database
     case 'network': return capability.network
     case 'http': return capability.httpTransport
+    case 'browser_emulation': return capability.browserEmulation
     case 'soap': return capability.soap
     case 'java_http': return capability.javaHttp
     case 'java_vuser': return capability.javaVuser
     case 'web_runtime': return capability.http
     default: return true
   }
+}
+
+// FALLBACK_BROWSER_EMULATION_CATALOG seeds the Browser Emulation dropdowns
+// until GET /api/v1/dsl/browser-emulation-catalog resolves (and in tests). It
+// mirrors the controller catalog in pkg/dsl/catalog_browser_emulation.go.
+export const FALLBACK_BROWSER_EMULATION_CATALOG: BrowserEmulationCatalog = {
+  browsers: [
+    { type: 'chrome', label: 'Google Chrome', versions: ['126', '120', '109'], platforms: ['windows', 'macos', 'linux', 'android'] },
+    { type: 'edge', label: 'Microsoft Edge', versions: ['126', '120'], platforms: ['windows', 'macos'] },
+    { type: 'firefox', label: 'Mozilla Firefox', versions: ['127', '115'], platforms: ['windows', 'macos', 'linux'] },
+    { type: 'safari', label: 'Apple Safari', versions: ['17', '16'], platforms: ['macos', 'ios'] },
+    { type: 'ie', label: 'Microsoft Internet Explorer', versions: ['11', '10'], platforms: ['windows'] },
+  ],
+  platforms: [
+    { id: 'windows', label: 'Windows' },
+    { id: 'macos', label: 'macOS' },
+    { id: 'linux', label: 'Linux' },
+    { id: 'android', label: 'Android' },
+    { id: 'ios', label: 'iOS' },
+  ],
+  languages: [
+    { tag: 'en-US', label: 'English (United States)' },
+    { tag: 'en-GB', label: 'English (United Kingdom)' },
+    { tag: 'de-DE', label: 'German (Germany)' },
+    { tag: 'fr-FR', label: 'French (France)' },
+    { tag: 'es-ES', label: 'Spanish (Spain)' },
+    { tag: 'pt-BR', label: 'Portuguese (Brazil)' },
+    { tag: 'it-IT', label: 'Italian (Italy)' },
+    { tag: 'nl-NL', label: 'Dutch (Netherlands)' },
+    { tag: 'ja-JP', label: 'Japanese (Japan)' },
+    { tag: 'zh-CN', label: 'Chinese (Simplified, China)' },
+    { tag: 'ko-KR', label: 'Korean (Korea)' },
+    { tag: 'hi-IN', label: 'Hindi (India)' },
+  ],
+}
+
+// httpTransportTabIsAvailable gates the HTTP Transport sub-tabs per protocol.
+// The 'browser' sub-tab edits config.browser.* (Playwright runtime) and is
+// shown only for browser-protocol scripts; HTTP-transport scripts use the
+// top-level Browser Emulation section instead so no field has two editors.
+export function httpTransportTabIsAvailable(tab: HTTPTransportTabId, protocol: string): boolean {
+  if (tab === 'browser') return getRuntimeProtocolCapabilities(protocol).browser
+  return true
+}
+
+export function formatBrowserEmulationSummary(emulation?: BrowserEmulationConfig | null): string {
+  if (!emulation || !emulation.mode) return 'Engine default'
+  if (emulation.mode === 'custom') return 'Custom UA'
+  const parts = [emulation.browser_type || 'browser']
+  if (emulation.browser_version) parts.push(emulation.browser_version)
+  const label = parts.join(' ')
+  return emulation.platform ? `${label} · ${emulation.platform}` : label
 }
 
 export function formatScriptProtocolLabel(protocol: string): string {
@@ -318,6 +379,7 @@ export function getImportedRuntimeSectionId(area?: string | null): RuntimeSettin
     case 'error handling': return 'errors'
     case 'logging': return 'log'
     case 'http': return 'http'
+    case 'browser emulation': return 'browser_emulation'
     case 'web http/html':
     case 'web runtime': return 'web_runtime'
     case 'soap':
@@ -388,6 +450,7 @@ export function runtimeOverrideFromScriptConfig(config: ScriptConfig): RuntimeSe
     http: config.http ? structuredClone(config.http) : undefined,
     web_runtime: config.web_runtime ? structuredClone(config.web_runtime) : undefined,
     browser_config: config.browser ? structuredClone(config.browser) : undefined,
+    browser_emulation: config.browser_emulation ? structuredClone(config.browser_emulation) : undefined,
     base_url: config.base_url,
   }
 }

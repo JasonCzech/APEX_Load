@@ -2,7 +2,9 @@ package http
 
 import (
 	"bytes"
+	"context"
 	"io"
+	"mime"
 	"net/http"
 	"strconv"
 	"strings"
@@ -147,6 +149,29 @@ func (c *httpResponseCache) clear() {
 	c.totalBytes = 0
 	c.memory.releaseBytes(released)
 	c.mu.Unlock()
+}
+
+// ClearCache implements protocol.CacheController: it discards every cached
+// response the VUser has accumulated. Used by browser emulation's "simulate a
+// new user on each iteration". Nil-safe when caching is disabled.
+func (h *HTTP) ClearCache(_ context.Context) error {
+	h.cache.clear()
+	return nil
+}
+
+// isContentBearingResponse reports whether the response carries a
+// content-bearing (HTML) media type — the set "Cache URLs requiring content"
+// restricts cache storage to.
+func isContentBearingResponse(headers http.Header) bool {
+	mediaType, _, err := mime.ParseMediaType(headers.Get("Content-Type"))
+	if err != nil {
+		return false
+	}
+	switch strings.ToLower(mediaType) {
+	case "text/html", "application/xhtml+xml":
+		return true
+	}
+	return false
 }
 
 // size estimates the memory footprint of a cache entry: the body plus the
