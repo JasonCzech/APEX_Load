@@ -11,7 +11,10 @@ import (
 	"unicode"
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 type Correlation struct {
@@ -30,6 +33,10 @@ type Correlation struct {
 	RuleID     string   `json:"rule_id,omitempty"`
 	Confidence float64  `json:"confidence,omitempty"`
 	Reasons    []string `json:"reasons,omitempty"`
+	PreApplied bool     `json:"pre_applied,omitempty"`
+	// ReviewAction is populated when one or more detected spellings cannot be
+	// rewritten without changing wire encoding semantics.
+	ReviewAction string `json:"review_action,omitempty"`
 }
 
 type ConvertResult struct {
@@ -53,11 +60,14 @@ func ConvertSession(session *Session, name string) *ConvertResult {
 
 // ConvertSessionWithOptions converts a recording, applying the supplied options.
 func ConvertSessionWithOptions(session *Session, name string, opts ConvertOptions) *ConvertResult {
+	result := &ConvertResult{}
+	if session == nil {
+		result.Warnings = append(result.Warnings, "recording conversion was not completed because the session is unavailable")
+		return result
+	}
 	if name == "" {
 		name = session.Name
 	}
-
-	result := &ConvertResult{}
 
 	webSocketRequests := includedWebSocketRequests(session.Requests)
 	hasHTTPRequests := hasIncludedHTTPRequests(session.Requests)
@@ -66,11 +76,12 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		return result
 	}
 
-	correlations := detectCorrelations(convertibleCorrelationRequests(session.Requests))
-	result.Correlations = correlations
-
-	appliedCorrelations := highConfidenceCorrelations(correlations)
-	corrMap := buildCorrelationMap(appliedCorrelations)
+	correlations, correlationErr := detectCorrelationsChecked(convertibleCorrelationRequests(session.Requests))
+	if correlationErr != nil {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("Correlation analysis was not completed and no automatic correlation rewrites were applied: %v", correlationErr))
+	}
+	correlationApplication := prepareRecorderCorrelationApplication(session.Requests, correlations)
+	result.Correlations = disclosureSafeCorrelations(correlations)
 
 	script := &dsl.Script{
 		Name:        name,
@@ -105,6 +116,7 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		if len(req.WebSocketMessages) > 0 {
 			continue
 		}
+		corrMap := recorderCorrelationVarsAvailableAtSequence(correlationApplication.vars, correlationApplication.sourceSequences, req.Seq)
 		target := recordedRequestTarget(req, session.BaseURL)
 		target = applyCorrelationVars(target, corrMap)
 
@@ -134,8 +146,11 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 		}
 
 		headers := correlatedRecordedHeaders(req, session.Filters.CaptureCookies, corrMap)
-		if len(headers) > 0 {
-			action.Headers = headers
+		if len(headers.Summary) > 0 {
+			action.Headers = headers.Summary
+		}
+		if len(headers.Repeated) > 0 {
+			action.HeaderList = headers.Repeated
 		}
 
 		if req.Body != "" {
@@ -147,17 +162,7 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 			action.BodyEncoding = req.BodyEncoding
 		}
 
-		for _, corr := range appliedCorrelations {
-			if corr.FoundInSeq == req.Seq {
-				action.Extractors = append(action.Extractors, dsl.Extractor{
-					Name:       corr.Name,
-					Source:     corr.Source,
-					Type:       corr.ExtractType,
-					Expression: corr.Expression,
-					Convert:    corr.Convert,
-				})
-			}
-		}
+		action.Extractors = append(action.Extractors, correlationApplication.extractors[req.Seq]...)
 
 		if shouldAssertRecordedStatus(req.StatusCode) {
 			action.Assertions = append(action.Assertions, dsl.Assertion{
@@ -181,8 +186,8 @@ func ConvertSessionWithOptions(session *Session, name string, opts ConvertOption
 	if len(script.Actions) == 0 {
 		result.Warnings = append(result.Warnings, "no non-static requests found in recording")
 	}
-	if skipped := len(correlations) - len(appliedCorrelations); skipped > 0 {
-		result.Warnings = append(result.Warnings, fmt.Sprintf("Detected %d lower-confidence correlation candidate(s) left for review; only high-confidence correlations were applied to the generated script.", skipped))
+	if skipped := countUnappliedRecorderCorrelations(correlations); skipped > 0 {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("Detected %d correlation candidate(s) left for review because confidence or encoding semantics did not permit an automatic rewrite.", skipped))
 	}
 	if opts.Parameterize {
 		result.Warnings = append(result.Warnings, parameterizeInputs(script, session.Name)...)
@@ -214,26 +219,56 @@ func convertibleCorrelationRequests(requests []RecordedRequest) []RecordedReques
 		if req.IsStatic || req.Excluded || len(req.WebSocketMessages) > 0 {
 			continue
 		}
-		if len(req.RawHeaders) > 0 {
-			req.Headers = withoutRecorderControlHeaders(req.RawHeaders)
-		} else {
-			req.Headers = withoutRecorderControlHeaders(req.Headers)
-		}
-		req.ResponseHeaders = withoutRecorderControlHeaders(req.ResponseHeaders)
+		req.Headers = requestHeadersForBaseline(req)
+		req.ResponseHeaders = responseHeadersForBaseline(req)
 		filtered = append(filtered, req)
 	}
 	return filtered
 }
 
-func correlatedRecordedHeaders(req RecordedRequest, captureCookies bool, corrMap map[string]string) map[string]string {
+func disclosureSafeCorrelations(correlations []Correlation) []Correlation {
+	if len(correlations) == 0 {
+		return correlations
+	}
+	safe := make([]Correlation, len(correlations))
+	copy(safe, correlations)
+	for index := range safe {
+		safe[index].Value = ""
+		safe[index].SampleValue = ""
+	}
+	return safe
+}
+
+type correlatedRecordedHeaderProjection struct {
+	Summary  map[string]string
+	Repeated dsl.HeaderList
+}
+
+func correlatedRecordedHeaders(req RecordedRequest, captureCookies bool, corrMap map[string]string) correlatedRecordedHeaderProjection {
 	headers := filterRecordedHeaders(req.Headers, captureCookies)
 	rawHeaders := filterRecordedHeaders(req.RawHeaders, captureCookies)
-	for key, rawValue := range rawHeaders {
+	rawNames := make([]string, 0, len(rawHeaders))
+	rawNameCounts := make(map[string]int, len(rawHeaders))
+	for key := range rawHeaders {
+		rawNames = append(rawNames, key)
+		rawNameCounts[strings.ToLower(strings.TrimSpace(key))]++
+	}
+	sort.Strings(rawNames)
+	for _, key := range rawNames {
+		if rawNameCounts[strings.ToLower(strings.TrimSpace(key))] != 1 {
+			// Case-only duplicates cannot be mapped back to one disclosure-safe
+			// summary deterministically. Keep the sanitized projection.
+			continue
+		}
+		rawValue := rawHeaders[key]
 		correlated := applyCorrelationVars(rawValue, corrMap)
 		if correlated == rawValue {
 			continue // nothing in the raw value correlated
 		}
-		redactedValue, ok := headers[key]
+		redactedKey, redactedValue, ok, ambiguous := uniqueRecordedHeader(headers, key)
+		if ambiguous {
+			continue
+		}
 		// When the raw header value was redacted (its redacted view differs from
 		// raw, i.e. it carried secret material), only adopt the raw-derived
 		// correlated value if the correlation consumed the secret and left behind
@@ -241,15 +276,146 @@ func correlatedRecordedHeaders(req RecordedRequest, captureCookies bool, corrMap
 		// scheme). A substring match on the secret itself (e.g. a token inside
 		// "Bearer abc<matched>xyz") would splice the un-correlated remainder of
 		// the live credential into the generated script.
-		if ok && redactedValue != rawValue && !headerResidualIsSafe(correlated) {
+		if (ok && redactedValue != rawValue || !ok) && !headerResidualIsSafe(correlated) {
 			continue
 		}
-		headers[key] = correlated
+		if ok {
+			headers[redactedKey] = correlated
+		} else {
+			headers[key] = correlated
+		}
 	}
 	for key, value := range headers {
 		headers[key] = applyCorrelationVars(value, corrMap)
 	}
-	return headers
+	return correlatedRecordedHeaderProjection{
+		Summary:  headers,
+		Repeated: correlatedRepeatedRecordedHeaders(req, captureCookies, corrMap),
+	}
+}
+
+// uniqueRecordedHeader resolves one logical header name without allowing
+// case-only map collisions to choose a disclosure-safe value nondeterministically.
+func uniqueRecordedHeader(headers map[string]string, name string) (key, value string, found, ambiguous bool) {
+	for _, candidate := range sortedStringMapKeys(headers) {
+		if !strings.EqualFold(candidate, name) {
+			continue
+		}
+		if found {
+			return "", "", false, true
+		}
+		key, value, found = candidate, headers[candidate], true
+	}
+	return key, value, found, false
+}
+
+func sortedStringMapKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// correlatedRepeatedRecordedHeaders preserves duplicate request-header
+// occurrences in HeaderList. The legacy Headers map intentionally remains a
+// first-value summary; HTTP replay gives HeaderList precedence for names found
+// there, so the list is the lossless wire representation for repeated values.
+func correlatedRepeatedRecordedHeaders(req RecordedRequest, captureCookies bool, corrMap map[string]string) dsl.HeaderList {
+	names := repeatedRecordedHeaderNames(req.HeadersMulti, req.RawHeadersMulti)
+	result := make(dsl.HeaderList, 0)
+	for _, name := range names {
+		if !includeRecordedHeader(name, captureCookies) {
+			continue
+		}
+		redactedValues, _ := recordedHeaderValues(req.HeadersMulti, name)
+		rawValues, _ := recordedHeaderValues(req.RawHeadersMulti, name)
+		count := len(redactedValues)
+		if len(rawValues) > count {
+			count = len(rawValues)
+		}
+		if count <= 1 {
+			continue
+		}
+		entries := make(dsl.HeaderList, 0, count)
+		complete := true
+		for index := 0; index < count; index++ {
+			redactedValue, hasRedacted := headerValueAt(redactedValues, index)
+			rawValue, hasRaw := headerValueAt(rawValues, index)
+			value := redactedValue
+			hasValue := hasRedacted
+			if hasRaw {
+				correlated := applyCorrelationVars(rawValue, corrMap)
+				if correlated != rawValue {
+					// Match the single-value safety rule: when sanitization changed a
+					// secret-bearing value, use the raw-derived rewrite only if the
+					// correlation consumed all secret material except known scaffolding.
+					if !hasRedacted || redactedValue == rawValue || headerResidualIsSafe(correlated) {
+						value = correlated
+						hasValue = true
+					}
+				} else if !hasValue {
+					// Raw multi-values are correlation-only. Do not introduce an
+					// unmatched raw value when no disclosure-safe projection exists.
+					// Also reject the whole list: an incomplete HeaderList would shadow
+					// the summary map and silently drop the omitted occurrence on replay.
+					complete = false
+					break
+				}
+			} else if hasRedacted {
+				value = applyCorrelationVars(redactedValue, corrMap)
+			}
+			if hasValue {
+				entries = append(entries, dsl.HeaderEntry{Name: name, Value: value})
+			}
+		}
+		if complete && len(entries) == count {
+			result = append(result, entries...)
+		}
+	}
+	return result
+}
+
+func repeatedRecordedHeaderNames(headerSets ...map[string][]string) []string {
+	canonical := make(map[string]string)
+	for _, headers := range headerSets {
+		for name := range headers {
+			normalized := strings.ToLower(strings.TrimSpace(name))
+			if normalized == "" {
+				continue
+			}
+			if _, exists := canonical[normalized]; !exists {
+				canonical[normalized] = name
+			}
+		}
+	}
+	normalizedNames := make([]string, 0, len(canonical))
+	for normalized := range canonical {
+		normalizedNames = append(normalizedNames, normalized)
+	}
+	sort.Strings(normalizedNames)
+	names := make([]string, 0, len(normalizedNames))
+	for _, normalized := range normalizedNames {
+		names = append(names, canonical[normalized])
+	}
+	return names
+}
+
+func recordedHeaderValues(headers map[string][]string, name string) ([]string, bool) {
+	for candidate, values := range headers {
+		if strings.EqualFold(candidate, name) {
+			return values, true
+		}
+	}
+	return nil, false
+}
+
+func headerValueAt(values []string, index int) (string, bool) {
+	if index < 0 || index >= len(values) {
+		return "", false
+	}
+	return values[index], true
 }
 
 // templatePlaceholderPattern matches a {{...}} correlation/parameter placeholder.
@@ -270,6 +436,12 @@ var knownHeaderScaffolding = map[string]bool{
 // an un-correlated fragment of the original secret, so the header stays redacted.
 func headerResidualIsSafe(correlated string) bool {
 	stripped := templatePlaceholderPattern.ReplaceAllString(correlated, " ")
+	for _, char := range stripped {
+		if unicode.IsLetter(char) || unicode.IsDigit(char) || char == ' ' || char == '\t' || char == '=' {
+			continue
+		}
+		return false
+	}
 	for _, word := range strings.FieldsFunc(stripped, func(r rune) bool {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 	}) {
@@ -301,12 +473,13 @@ func SessionBaseline(session *Session) []correlate.Observation {
 			continue
 		}
 		observations = append(observations, correlate.Observation{
-			ID:              actionIdx,
-			RequestURL:      req.URL,
-			RequestBody:     req.Body,
-			RequestHeaders:  requestHeadersForBaseline(req),
-			ResponseBody:    req.ResponseBody,
-			ResponseHeaders: withoutRecorderControlHeaders(req.ResponseHeaders),
+			ID:                     actionIdx,
+			RequestURL:             req.URL,
+			RequestBody:            req.Body,
+			RequestBodyTransformed: req.BodyEncoding != "",
+			RequestHeaders:         requestHeadersForBaseline(req),
+			ResponseBody:           req.ResponseBody,
+			ResponseHeaders:        responseHeadersForBaseline(req),
 		})
 		actionIdx++
 	}
@@ -314,10 +487,46 @@ func SessionBaseline(session *Session) []correlate.Observation {
 }
 
 func requestHeadersForBaseline(req RecordedRequest) map[string]string {
+	if len(req.RawHeadersMulti) > 0 {
+		return multiHeadersForBaseline(req.RawHeadersMulti)
+	}
 	if len(req.RawHeaders) > 0 {
 		return withoutRecorderControlHeaders(req.RawHeaders)
 	}
+	if len(req.HeadersMulti) > 0 {
+		return multiHeadersForBaseline(req.HeadersMulti)
+	}
 	return withoutRecorderControlHeaders(req.Headers)
+}
+
+func responseHeadersForBaseline(req RecordedRequest) map[string]string {
+	if len(req.RawResponseHeadersMulti) > 0 {
+		return multiHeadersForBaseline(req.RawResponseHeadersMulti)
+	}
+	if len(req.RawResponseHeaders) > 0 {
+		return withoutRecorderControlHeaders(req.RawResponseHeaders)
+	}
+	if len(req.ResponseHeadersMulti) > 0 {
+		return multiHeadersForBaseline(req.ResponseHeadersMulti)
+	}
+	return withoutRecorderControlHeaders(req.ResponseHeaders)
+}
+
+// multiHeadersForBaseline preserves repeated header lines for the correlation
+// detector. Newlines mirror the HTTP extractor's flattened-header surface and,
+// unlike comma folding, do not corrupt Set-Cookie values containing Expires.
+func multiHeadersForBaseline(headers map[string][]string) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	result := make(map[string]string, len(headers))
+	for name, values := range headers {
+		if isRecorderControlHeader(name) {
+			continue
+		}
+		result[name] = strings.Join(values, "\n")
+	}
+	return result
 }
 
 func includedWebSocketRequests(requests []RecordedRequest) []RecordedRequest {
@@ -609,18 +818,27 @@ func webSocketActionTarget(rawURL, baseURL string) string {
 }
 
 func detectCorrelations(requests []RecordedRequest) []Correlation {
+	correlations, _ := detectCorrelationsChecked(requests)
+	return correlations
+}
+
+func detectCorrelationsChecked(requests []RecordedRequest) ([]Correlation, error) {
 	observations := make([]correlate.Observation, 0, len(requests))
 	for _, req := range requests {
 		observations = append(observations, correlate.Observation{
-			ID:              req.Seq,
-			RequestURL:      req.URL,
-			RequestBody:     req.Body,
-			RequestHeaders:  withoutRecorderControlHeaders(req.Headers),
-			ResponseBody:    req.ResponseBody,
-			ResponseHeaders: withoutRecorderControlHeaders(req.ResponseHeaders),
+			ID:                     req.Seq,
+			RequestURL:             req.URL,
+			RequestBody:            req.Body,
+			RequestBodyTransformed: req.BodyEncoding != "",
+			RequestHeaders:         requestHeadersForBaseline(req),
+			ResponseBody:           req.ResponseBody,
+			ResponseHeaders:        responseHeadersForBaseline(req),
 		})
 	}
-	shared := correlate.Detect(observations)
+	shared, err := correlate.DetectChecked(observations)
+	if err != nil {
+		return nil, err
+	}
 	correlations := make([]Correlation, 0, len(shared))
 	for _, corr := range shared {
 		correlations = append(correlations, Correlation{
@@ -638,7 +856,7 @@ func detectCorrelations(requests []RecordedRequest) []Correlation {
 			Reasons:     corr.Reasons,
 		})
 	}
-	return uniquifyCorrelationNames(correlations)
+	return uniquifyCorrelationNames(correlations), nil
 }
 
 func slugifyCorrelationName(field string) string {
@@ -653,6 +871,16 @@ func buildCorrelationMap(correlations []Correlation) map[string]string {
 	return correlate.BuildVarMap(shared)
 }
 
+func buildCorrelationMapForSequence(correlations []Correlation, sequence int) map[string]string {
+	available := make([]Correlation, 0, len(correlations))
+	for _, correlation := range correlations {
+		if correlation.FoundInSeq < sequence {
+			available = append(available, correlation)
+		}
+	}
+	return buildCorrelationMap(available)
+}
+
 func highConfidenceCorrelations(correlations []Correlation) []Correlation {
 	result := make([]Correlation, 0, len(correlations))
 	for _, c := range correlations {
@@ -661,6 +889,530 @@ func highConfidenceCorrelations(correlations []Correlation) []Correlation {
 		}
 	}
 	return result
+}
+
+const recorderManualCorrelationReplacement = "manual_value_replacement_required"
+
+type recorderCorrelationUse struct {
+	raw                bool
+	encoded            bool
+	unsupportedEncoded bool
+}
+
+type recorderCorrelationPlan struct {
+	index            int
+	automatic        bool
+	value            string
+	queryEncoded     string
+	usage            recorderCorrelationUse
+	encodedConvert   string
+	encodedSupported bool
+	rawMapped        bool
+	encodedMapped    bool
+	encodedName      string
+}
+
+type recorderCorrelationApplication struct {
+	vars            map[string]string
+	sourceSequences map[string]int
+	extractors      map[int][]dsl.Extractor
+}
+
+// prepareRecorderCorrelationApplication mirrors the sample/Salesforce
+// correlation rewrite contract: raw and canonical QueryEscape consumers use
+// separate variables when needed, while path/non-canonical spellings remain
+// untouched and explicitly require review.
+func prepareRecorderCorrelationApplication(requests []RecordedRequest, correlations []Correlation) recorderCorrelationApplication {
+	return prepareRecorderCorrelationApplicationWithExtractionLimit(requests, correlations, protocol.MaxExtractionBytes)
+}
+
+func prepareRecorderCorrelationApplicationWithExtractionLimit(requests []RecordedRequest, correlations []Correlation, extractionLimit int) recorderCorrelationApplication {
+	application := recorderCorrelationApplication{
+		vars:            make(map[string]string, len(correlations)*2),
+		sourceSequences: make(map[string]int, len(correlations)*2),
+		extractors:      make(map[int][]dsl.Extractor),
+	}
+	usedNames := make(map[string]bool, len(correlations)*2)
+	sourceValidator := correlate.NewExactQueryEncodingValidator()
+	requestsBySequence := indexRecordedRequestsBySequence(requests)
+	for _, correlation := range correlations {
+		if name := strings.TrimSpace(correlation.Name); name != "" {
+			usedNames[name] = true
+		}
+	}
+
+	plans := make([]recorderCorrelationPlan, 0, len(correlations))
+	for index := range correlations {
+		correlation := &correlations[index]
+		automatic := correlate.HighConfidence(toSharedCorrelation(*correlation))
+		if !automatic {
+			correlation.ReviewAction = "manual_review_required"
+		}
+		value := correlation.Value
+		if value == "" {
+			value = correlation.SampleValue
+		}
+		if value == "" {
+			correlation.ReviewAction = "manual_review_required"
+			continue
+		}
+		usage := recorderCorrelationValueUsage(requestsBySequence, *correlation, value)
+		queryEncoded := correlate.QueryEncodedFormOf(value)
+		encodedConvert, encodedSupported := correlate.EncodedReuseExtractorConvert(correlation.Convert)
+		encodedSupported = encodedSupported &&
+			correlate.CorrelationExtractionValueFits(correlation.Name+"_encoded", queryEncoded)
+		if encodedSupported && strings.EqualFold(strings.TrimSpace(correlation.Convert), "url_decode") {
+			encodedSupported = recorderCorrelationSourceUsesExactQueryEncoding(sourceValidator, requestsBySequence, *correlation, queryEncoded)
+		}
+		plans = append(plans, recorderCorrelationPlan{
+			index:            index,
+			automatic:        automatic,
+			value:            value,
+			queryEncoded:     queryEncoded,
+			usage:            usage,
+			encodedConvert:   encodedConvert,
+			encodedSupported: encodedSupported,
+		})
+	}
+
+	ambiguousLiterals, ambiguousPlans := recorderCorrelationReplacementCollisions(requests, plans)
+	for planIndex := range ambiguousPlans {
+		correlations[plans[planIndex].index].ReviewAction = recorderManualCorrelationReplacement
+	}
+
+	sourceExtractionBytes := make(map[int]int)
+	for index := range plans {
+		plan := &plans[index]
+		correlation := &correlations[plan.index]
+		if plan.usage.unsupportedEncoded || (plan.usage.encoded && !plan.encodedSupported) {
+			correlation.ReviewAction = recorderManualCorrelationReplacement
+		}
+
+		// Omit ambiguous literals entirely. Overlapping claims can otherwise rewrite
+		// a larger correlation with a smaller variable before its own source extractor
+		// is available. Reserve both the base extractor and any encoded sibling before
+		// exposing either replacement so an action never exceeds the DSL ceiling.
+		plan.rawMapped = plan.automatic && plan.usage.raw && !ambiguousLiterals[plan.value]
+		plan.encodedMapped = plan.automatic && plan.usage.encoded && plan.encodedSupported && plan.queryEncoded != "" && !ambiguousLiterals[plan.queryEncoded]
+		requiredExtractors := 0
+		if plan.rawMapped || plan.encodedMapped {
+			requiredExtractors = 1
+		}
+		if plan.rawMapped && plan.encodedMapped {
+			requiredExtractors++
+		}
+		if plan.encodedMapped {
+			plan.encodedName = correlation.Name
+			if plan.rawMapped {
+				plan.encodedName = claimRecorderCorrelationName(correlation.Name+"_encoded", usedNames)
+			}
+		}
+		if len(application.extractors[correlation.FoundInSeq])+requiredExtractors > dsl.MaxActionExtractors {
+			plan.rawMapped = false
+			plan.encodedMapped = false
+			correlation.PreApplied = false
+			correlation.ReviewAction = recorderManualCorrelationReplacement
+			continue
+		}
+		if requiredExtractors == 0 {
+			correlation.PreApplied = false
+			if correlation.ReviewAction == "" {
+				correlation.ReviewAction = recorderManualCorrelationReplacement
+			}
+			continue
+		}
+		requiredBytes := 0
+		baseValue := plan.value
+		if !plan.rawMapped {
+			baseValue = plan.queryEncoded
+		}
+		baseBytes, baseFits := correlate.CorrelationExtractionEntryBytes(correlation.Name, baseValue)
+		if !baseFits {
+			plan.rawMapped = false
+			plan.encodedMapped = false
+			correlation.PreApplied = false
+			correlation.ReviewAction = recorderManualCorrelationReplacement
+			continue
+		}
+		requiredBytes += baseBytes
+		if plan.rawMapped && plan.encodedMapped {
+			encodedBytes, encodedFits := correlate.CorrelationExtractionEntryBytes(plan.encodedName, plan.queryEncoded)
+			if !encodedFits {
+				plan.rawMapped = false
+				plan.encodedMapped = false
+				correlation.PreApplied = false
+				correlation.ReviewAction = recorderManualCorrelationReplacement
+				continue
+			}
+			requiredBytes += encodedBytes
+		}
+		if requiredBytes > extractionLimit || sourceExtractionBytes[correlation.FoundInSeq] > extractionLimit-requiredBytes {
+			plan.rawMapped = false
+			plan.encodedMapped = false
+			correlation.PreApplied = false
+			correlation.ReviewAction = recorderManualCorrelationReplacement
+			continue
+		}
+		sourceExtractionBytes[correlation.FoundInSeq] += requiredBytes
+
+		if plan.rawMapped {
+			application.vars[plan.value] = "{{var." + correlation.Name + "}}"
+			application.sourceSequences[plan.value] = correlation.FoundInSeq
+		}
+		if plan.encodedMapped {
+			application.vars[plan.queryEncoded] = "{{var." + plan.encodedName + "}}"
+			application.sourceSequences[plan.queryEncoded] = correlation.FoundInSeq
+			plan.encodedMapped = true
+		}
+
+		base := dsl.Extractor{
+			Name:       correlation.Name,
+			Source:     correlation.Source,
+			Type:       correlation.ExtractType,
+			Expression: correlation.Expression,
+			Convert:    correlation.Convert,
+			OnMiss:     "fail",
+		}
+		switch {
+		case plan.rawMapped && plan.encodedMapped:
+			application.extractors[correlation.FoundInSeq] = append(application.extractors[correlation.FoundInSeq], base, dsl.Extractor{
+				Name:       plan.encodedName,
+				Source:     correlation.Source,
+				Type:       correlation.ExtractType,
+				Expression: correlation.Expression,
+				Convert:    plan.encodedConvert,
+				OnMiss:     "fail",
+			})
+		case plan.rawMapped:
+			application.extractors[correlation.FoundInSeq] = append(application.extractors[correlation.FoundInSeq], base)
+		case plan.encodedMapped:
+			base.Convert = plan.encodedConvert
+			correlation.Convert = plan.encodedConvert
+			application.extractors[correlation.FoundInSeq] = append(application.extractors[correlation.FoundInSeq], base)
+		}
+		correlation.PreApplied = true
+	}
+
+	return application
+}
+
+const maxRecorderCorrelationReplacementSurfaces = 100_000
+
+func recorderCorrelationReplacementCollisions(requests []RecordedRequest, plans []recorderCorrelationPlan) (map[string]bool, map[int]bool) {
+	return recorderCorrelationReplacementCollisionsWithSurfaceLimit(requests, plans, maxRecorderCorrelationReplacementSurfaces)
+}
+
+func recorderCorrelationReplacementCollisionsWithSurfaceLimit(requests []RecordedRequest, plans []recorderCorrelationPlan, surfaceLimit int) (map[string]bool, map[int]bool) {
+	const comparisonLimit = 4_000_000
+
+	type literalClaim struct {
+		planIndex int
+		literal   string
+	}
+	claims := make([]literalClaim, 0, len(plans)*2)
+	for index, plan := range plans {
+		seen := make(map[string]bool)
+		add := func(literal string) {
+			if literal == "" || seen[literal] {
+				return
+			}
+			seen[literal] = true
+			claims = append(claims, literalClaim{planIndex: index, literal: literal})
+		}
+		if plan.usage.raw {
+			add(plan.value)
+		}
+		if plan.usage.encoded {
+			add(plan.queryEncoded)
+		}
+		if plan.usage.unsupportedEncoded {
+			for _, spelling := range recorderUnsupportedCorrelationEncodings(plan.value, plan.queryEncoded) {
+				add(spelling)
+			}
+		}
+	}
+
+	overlapBudget := paramize.NewLiteralOverlapSearchBudget()
+	ambiguousLiterals := make(map[string]bool)
+	ambiguousPlans := make(map[int]bool)
+	markAutomaticClaimsAmbiguous := func() {
+		for _, claim := range claims {
+			if !plans[claim.planIndex].automatic {
+				continue
+			}
+			ambiguousLiterals[claim.literal] = true
+			ambiguousPlans[claim.planIndex] = true
+		}
+	}
+	requestSurfaces, surfacesComplete := recorderRequestReplacementSurfaces(requests, surfaceLimit)
+	if !surfacesComplete {
+		// Surface collection is safety-critical too. Do not build one aggregate
+		// string (recordings can retain hundreds of MiB), and do not analyze only
+		// a bounded prefix: either all editable surfaces are represented by string
+		// references or every automatic claim is suppressed.
+		markAutomaticClaimsAmbiguous()
+		return ambiguousLiterals, ambiguousPlans
+	}
+	comparisons := 0
+	for leftIndex, left := range claims {
+		for _, right := range claims[leftIndex+1:] {
+			if left.planIndex == right.planIndex {
+				continue
+			}
+			if !plans[left.planIndex].automatic && !plans[right.planIndex].automatic {
+				continue
+			}
+			comparisons++
+			if comparisons > comparisonLimit {
+				// Collision analysis is safety-critical: when the bounded comparison
+				// budget is exhausted, suppress every automatic claim rather than
+				// returning a partially checked replacement map.
+				markAutomaticClaimsAmbiguous()
+				return ambiguousLiterals, ambiguousPlans
+			}
+			overlaps := false
+			switch {
+			case plans[left.planIndex].automatic && plans[right.planIndex].automatic:
+				overlaps = overlapBudget.Contains(left.literal, right.literal) || overlapBudget.Contains(right.literal, left.literal)
+			case plans[left.planIndex].automatic:
+				// Only the automatic literal can mutate the script. A longer
+				// review-only value is at risk when it contains that literal; the
+				// inverse is safe because longest-first replaces the automatic value
+				// as a whole (for example a contentUrl containing a review-only id).
+				overlaps = overlapBudget.Contains(right.literal, left.literal)
+			case plans[right.planIndex].automatic:
+				overlaps = overlapBudget.Contains(left.literal, right.literal)
+			}
+			if overlapBudget.Exhausted() {
+				markAutomaticClaimsAmbiguous()
+				return ambiguousLiterals, ambiguousPlans
+			}
+			if !overlaps {
+				for _, surface := range requestSurfaces {
+					overlaps = overlapBudget.LiteralsPartiallyOverlapInSurface(surface, left.literal, right.literal)
+					if overlapBudget.Exhausted() {
+						markAutomaticClaimsAmbiguous()
+						return ambiguousLiterals, ambiguousPlans
+					}
+					if overlaps {
+						break
+					}
+				}
+			}
+			if !overlaps {
+				continue
+			}
+			ambiguousLiterals[left.literal] = true
+			ambiguousLiterals[right.literal] = true
+			ambiguousPlans[left.planIndex] = true
+			ambiguousPlans[right.planIndex] = true
+		}
+	}
+	return ambiguousLiterals, ambiguousPlans
+}
+
+// recorderRequestReplacementSurfaces returns references to the fields that
+// recorder conversion can rewrite. Keeping surfaces separate prevents overlap
+// detection across field/action boundaries and avoids copying a retained
+// recording (up to hundreds of MiB) into one aggregate string.
+func recorderRequestReplacementSurfaces(requests []RecordedRequest, limit int) ([]string, bool) {
+	if limit <= 0 || len(requests) > maxRecordedRequests {
+		return nil, false
+	}
+	capacity := min(len(requests)*3, limit)
+	surfaces := make([]string, 0, capacity)
+	seen := make(map[string]struct{}, capacity)
+	add := func(surface string) bool {
+		if surface == "" {
+			return true
+		}
+		if _, exists := seen[surface]; exists {
+			return true
+		}
+		if len(surfaces) >= limit {
+			return false
+		}
+		seen[surface] = struct{}{}
+		surfaces = append(surfaces, surface)
+		return true
+	}
+	for _, request := range requests {
+		if request.IsStatic || request.Excluded || len(request.WebSocketMessages) > 0 {
+			continue
+		}
+		if !add(recordedRequestTarget(request, "")) {
+			return nil, false
+		}
+		if request.BodyEncoding == "" && !add(request.Body) {
+			return nil, false
+		}
+		for _, headers := range []map[string]string{request.Headers, request.RawHeaders} {
+			names := make([]string, 0, len(headers))
+			for name := range headers {
+				if includeRecordedHeader(name, true) {
+					names = append(names, name)
+				}
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				if !add(headers[name]) {
+					return nil, false
+				}
+			}
+		}
+		for _, headers := range []map[string][]string{request.HeadersMulti, request.RawHeadersMulti} {
+			names := make([]string, 0, len(headers))
+			for name := range headers {
+				if includeRecordedHeader(name, true) {
+					names = append(names, name)
+				}
+			}
+			sort.Strings(names)
+			for _, name := range names {
+				for _, value := range headers[name] {
+					if !add(value) {
+						return nil, false
+					}
+				}
+			}
+		}
+	}
+	return surfaces, true
+}
+
+func recorderCorrelationValueUsage(requestsBySequence map[int]*RecordedRequest, correlation Correlation, value string) recorderCorrelationUse {
+	usage := recorderCorrelationUse{}
+	queryEncoded := correlate.QueryEncodedFormOf(value)
+	unsupported := recorderUnsupportedCorrelationEncodings(value, queryEncoded)
+	for _, sequence := range correlation.UsedInSeqs {
+		request := requestsBySequence[sequence]
+		if request == nil {
+			continue
+		}
+		surfaces := []string{request.URL}
+		if request.BodyEncoding == "" {
+			surfaces = append(surfaces, request.Body)
+		} else if strings.Contains(request.Body, value) || containsAnyLiteral(request.Body, append([]string{queryEncoded}, unsupported...)) {
+			usage.unsupportedEncoded = true
+		}
+		for _, headerValue := range requestHeadersForBaseline(*request) {
+			surfaces = append(surfaces, headerValue)
+		}
+		for _, surface := range surfaces {
+			if strings.Contains(surface, value) {
+				usage.raw = true
+			}
+			if queryEncoded != "" && strings.Contains(surface, queryEncoded) {
+				usage.encoded = true
+			}
+			if containsAnyLiteral(surface, unsupported) {
+				usage.unsupportedEncoded = true
+			}
+		}
+	}
+	return usage
+}
+
+func recorderUnsupportedCorrelationEncodings(value, queryEncoded string) []string {
+	seen := map[string]bool{value: true, queryEncoded: true}
+	forms := make([]string, 0, 8)
+	appendForm := func(form string) {
+		if form == "" || seen[form] {
+			return
+		}
+		seen[form] = true
+		forms = append(forms, form)
+	}
+	for _, form := range correlate.EncodedFormsOf(value) {
+		appendForm(form)
+		appendForm(recorderLowerPercentEscapes(form))
+	}
+	appendForm(recorderLowerPercentEscapes(queryEncoded))
+	return forms
+}
+
+func recorderLowerPercentEscapes(value string) string {
+	encoded := []byte(value)
+	for index := 0; index+2 < len(encoded); index++ {
+		if encoded[index] != '%' {
+			continue
+		}
+		for offset := 1; offset <= 2; offset++ {
+			if encoded[index+offset] >= 'A' && encoded[index+offset] <= 'F' {
+				encoded[index+offset] += 'a' - 'A'
+			}
+		}
+		index += 2
+	}
+	return string(encoded)
+}
+
+func recorderCorrelationSourceUsesExactQueryEncoding(validator *correlate.ExactQueryEncodingValidator, requestsBySequence map[int]*RecordedRequest, correlation Correlation, queryEncoded string) bool {
+	if queryEncoded == "" {
+		return false
+	}
+	request := requestsBySequence[correlation.FoundInSeq]
+	if request == nil {
+		return false
+	}
+	return validator.Matches(correlation.FoundInSeq, request.ResponseBody, responseHeadersForBaseline(*request), toSharedCorrelation(correlation), queryEncoded)
+}
+
+func indexRecordedRequestsBySequence(requests []RecordedRequest) map[int]*RecordedRequest {
+	indexed := make(map[int]*RecordedRequest, len(requests))
+	for index := range requests {
+		sequence := requests[index].Seq
+		if _, exists := indexed[sequence]; !exists {
+			// Preserve the legacy first-match behavior if malformed input repeats a
+			// sequence. Checked correlation detection rejects duplicate included IDs;
+			// this also keeps excluded/static entries deterministic.
+			indexed[sequence] = &requests[index]
+		}
+	}
+	return indexed
+}
+
+func containsAnyLiteral(value string, candidates []string) bool {
+	for _, candidate := range candidates {
+		if candidate != "" && strings.Contains(value, candidate) {
+			return true
+		}
+	}
+	return false
+}
+
+func claimRecorderCorrelationName(base string, used map[string]bool) string {
+	if !used[base] {
+		used[base] = true
+		return base
+	}
+	for suffix := 2; ; suffix++ {
+		candidate := fmt.Sprintf("%s_%d", base, suffix)
+		if !used[candidate] {
+			used[candidate] = true
+			return candidate
+		}
+	}
+}
+
+func recorderCorrelationVarsAvailableAtSequence(vars map[string]string, sourceSequences map[string]int, sequence int) map[string]string {
+	available := make(map[string]string, len(vars))
+	for literal, replacement := range vars {
+		if sourceSequence, exists := sourceSequences[literal]; exists && sourceSequence < sequence {
+			available[literal] = replacement
+		}
+	}
+	return available
+}
+
+func countUnappliedRecorderCorrelations(correlations []Correlation) int {
+	count := 0
+	for _, correlation := range correlations {
+		if !correlation.PreApplied {
+			count++
+		}
+	}
+	return count
 }
 
 func toSharedCorrelation(c Correlation) correlate.Correlation {
@@ -703,6 +1455,11 @@ func applyCorrelationVars(s string, corrMap map[string]string) string {
 
 const parameterizedDataSourceName = "recorded_inputs"
 
+const (
+	maxRecorderParameterizationScanBytes int64 = 64 << 20
+	maxRecorderParameterizationMatches         = 4096
+)
+
 // parameterizableField matches form/query field names that typically hold
 // user-supplied input worth turning into data-driven parameters.
 var parameterizableField = regexp.MustCompile(`(?i)\b(user(name)?|email|login|pass(word|wd)?|search|query|q|first[_-]?name|last[_-]?name|full[_-]?name|phone|mobile|zip|postal[_-]?code|city|address|account|customer)\b`)
@@ -719,52 +1476,123 @@ var keyValuePair = regexp.MustCompile(`([?&]|^)([A-Za-z0-9_.\-\[\]]+)=([^&#\s"']
 // after correlation replacement so values already turned into {{var.*}} are left
 // alone. Returns warnings describing what was parameterized.
 func parameterizeInputs(script *dsl.Script, sourceName string) []string {
+	return parameterizeInputsWithLimits(
+		script,
+		sourceName,
+		maxRecorderParameterizationScanBytes,
+		maxRecorderParameterizationMatches,
+	)
+}
+
+func parameterizeInputsWithLimits(script *dsl.Script, sourceName string, scanByteLimit int64, matchLimit int) []string {
+	if script == nil {
+		return nil
+	}
 	columns := make([]string, 0)
 	sampleValues := make(map[string]string)
 	secretColumns := make(map[string]bool)
-	seen := make(map[string]bool)
+	columnByField := make(map[string]string)
+	usedColumns := make(map[string]bool)
+	var scannedBytes int64
+	matchesSeen := 0
 
-	rewrite := func(s string) string {
-		return keyValuePair.ReplaceAllStringFunc(s, func(segment string) string {
-			m := keyValuePair.FindStringSubmatch(segment)
-			if m == nil {
-				return segment
+	rewrite := func(s string) (string, bool) {
+		valueBytes := int64(len(s))
+		if scanByteLimit < 0 || valueBytes > scanByteLimit-scannedBytes {
+			return "", false
+		}
+		scannedBytes += valueBytes
+		remainingMatches := matchLimit - matchesSeen
+		if remainingMatches < 0 {
+			return "", false
+		}
+		matches := keyValuePair.FindAllStringSubmatchIndex(s, remainingMatches+1)
+		if len(matches) > remainingMatches {
+			return "", false
+		}
+		matchesSeen += len(matches)
+		if len(matches) == 0 {
+			return s, true
+		}
+
+		var rewritten strings.Builder
+		rewritten.Grow(len(s))
+		lastEnd := 0
+		for _, match := range matches {
+			if len(match) < 8 {
+				return "", false
 			}
-			prefix, key, value := m[1], m[2], m[3]
+			start, end := match[0], match[1]
+			prefix := s[match[2]:match[3]]
+			key := s[match[4]:match[5]]
+			value := s[match[6]:match[7]]
+			replacement := s[start:end]
 			if strings.Contains(value, "{{") || !parameterizableField.MatchString(key) {
-				return segment
+				rewritten.WriteString(s[lastEnd:end])
+				lastEnd = end
+				continue
 			}
-			col := slugifyCorrelationName(key)
-			if col == "" {
-				return segment
-			}
-			if !seen[col] {
-				seen[col] = true
-				columns = append(columns, col)
-				decoded, err := url.QueryUnescape(value)
-				if err != nil {
-					decoded = value
+			col, exists := columnByField[key]
+			if !exists {
+				base := slugifyCorrelationName(key)
+				if base != "" {
+					col = claimRecorderCorrelationName(base, usedColumns)
+					columnByField[key] = col
+					columns = append(columns, col)
+					decoded, err := url.QueryUnescape(value)
+					if err != nil {
+						decoded = value
+					}
+					if parameterizedSecretField.MatchString(key) {
+						sampleValues[col] = "__REPLACE_WITH_SECRET__"
+						secretColumns[col] = true
+					} else {
+						sampleValues[col] = decoded
+					}
 				}
-				if parameterizedSecretField.MatchString(key) {
-					sampleValues[col] = "__REPLACE_WITH_SECRET__"
-					secretColumns[col] = true
-				} else {
-					sampleValues[col] = decoded
-				}
 			}
-			return prefix + key + "={{data." + parameterizedDataSourceName + "." + col + "}}"
-		})
+			if col != "" {
+				replacement = prefix + key + "={{data." + parameterizedDataSourceName + "." + col + "}}"
+			}
+			rewritten.WriteString(s[lastEnd:start])
+			rewritten.WriteString(replacement)
+			lastEnd = end
+		}
+		rewritten.WriteString(s[lastEnd:])
+		return rewritten.String(), true
 	}
 
+	targets := make([]string, len(script.Actions))
+	bodies := make([]string, len(script.Actions))
 	for i := range script.Actions {
-		script.Actions[i].Target = rewrite(script.Actions[i].Target)
+		var complete bool
+		targets[i], complete = rewrite(script.Actions[i].Target)
+		if !complete {
+			return []string{fmt.Sprintf(
+				"Recorded-input parameterization was not completed and no input rewrites were applied because analysis exceeded %d bytes or %d key/value matches.",
+				scanByteLimit, matchLimit,
+			)}
+		}
 		if script.Actions[i].Body != "" {
-			script.Actions[i].Body = rewrite(script.Actions[i].Body)
+			bodies[i], complete = rewrite(script.Actions[i].Body)
+			if !complete {
+				return []string{fmt.Sprintf(
+					"Recorded-input parameterization was not completed and no input rewrites were applied because analysis exceeded %d bytes or %d key/value matches.",
+					scanByteLimit, matchLimit,
+				)}
+			}
 		}
 	}
 
 	if len(columns) == 0 {
 		return nil
+	}
+
+	for i := range script.Actions {
+		script.Actions[i].Target = targets[i]
+		if script.Actions[i].Body != "" {
+			script.Actions[i].Body = bodies[i]
+		}
 	}
 
 	header := strings.Join(columns, ",")
@@ -826,26 +1654,33 @@ func csvEscapeField(value string) string {
 }
 
 func filterRecordedHeaders(headers map[string]string, captureCookies bool) map[string]string {
-	skip := map[string]bool{
-		"host": true, "content-length": true, "accept-encoding": true,
-		"connection": true, "proxy-connection": true, "user-agent": true,
-		"accept": true, "accept-language": true, "cache-control": true,
-		"pragma": true, "sec-ch-ua": true, "sec-ch-ua-mobile": true,
-		"sec-ch-ua-platform": true, "sec-fetch-dest": true,
-		"sec-fetch-mode": true, "sec-fetch-site": true,
-		"sec-fetch-user": true, "upgrade-insecure-requests": true,
-	}
-	if !captureCookies {
-		skip["cookie"] = true
-	}
-
 	filtered := make(map[string]string)
 	for k, v := range headers {
-		if !isRecorderControlHeader(k) && !skip[strings.ToLower(k)] {
+		if includeRecordedHeader(k, captureCookies) {
 			filtered[k] = v
 		}
 	}
 	return filtered
+}
+
+func includeRecordedHeader(name string, captureCookies bool) bool {
+	if isRecorderControlHeader(name) {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "host", "content-length", "accept-encoding",
+		"connection", "proxy-connection", "user-agent",
+		"accept", "accept-language", "cache-control",
+		"pragma", "sec-ch-ua", "sec-ch-ua-mobile",
+		"sec-ch-ua-platform", "sec-fetch-dest",
+		"sec-fetch-mode", "sec-fetch-site", "sec-fetch-user",
+		"upgrade-insecure-requests":
+		return false
+	case "cookie":
+		return captureCookies
+	default:
+		return true
+	}
 }
 
 func withoutRecorderControlHeaders(headers map[string]string) map[string]string {
@@ -868,7 +1703,7 @@ func simplifyPath(path string) string {
 	}
 	result := "/" + strings.Join(parts, "/")
 	if len(result) > 40 {
-		result = result[:40]
+		result = boundedtext.TruncateUTF8(result, 40)
 	}
 	return result
 }

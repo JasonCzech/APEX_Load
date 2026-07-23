@@ -33,6 +33,16 @@ helm.sh/chart: {{ .Chart.Name }}-{{ .Chart.Version | replace "+" "_" }}
 {{- printf "%s/%s:%s" $registry .Values.bruno.runner.image.repository $tag -}}
 {{- end -}}
 
+{{- define "apexload.javaVuserRunnerImage" -}}
+{{- $registry := include "apexload.requiredCleanValue" (list "image.registry" .Values.image.registry) -}}
+{{- /* The runner has only a standard release coordinate. Strip any global
+      controller/generator profile and derive the published standard tag. */ -}}
+{{- $releaseTag := regexReplaceAll "(-standard|-enterprise)$" .Values.image.tag "" -}}
+{{- $defaultTag := printf "%s-standard" $releaseTag -}}
+{{- $tag := default $defaultTag .Values.javaVuser.runner.image.tag -}}
+{{- printf "%s/%s:%s" $registry .Values.javaVuser.runner.image.repository $tag -}}
+{{- end -}}
+
 {{- define "apexload.wrappingKeyVaultKeyId" -}}
 {{- coalesce .Values.projectSecrets.wrappingKeyVaultKeyId .Values.bruno.keyVaultKeyId -}}
 {{- end -}}

@@ -430,7 +430,7 @@ Code-owned source of truth: `pkg/convert/enterprisearchive/rts_support.go`. Publ
 | Data Formatting | Auto-detect DFEs, transform chain | `config.web_runtime.data_formatting.*` | Executed |
 | Replay engine mode | WinInet / process-vs-thread | N/A | Non-applicable |
 
-**Java-over-HTTP RTS:** Java VM settings (`JDK location`, `Java VM arguments`, `classpath`, `Enable Java VM logging`) map to generator pod environment configuration. Internet Protocol / web settings map to `pkg/protocol/http` config fields (proxy, HTTP version, timeouts, keep-alive, browser emulation, content check). Multithreading concepts are non-applicable — APEX Load uses goroutines.
+**Java runtime settings:** Java-over-HTTP transport settings map to `pkg/protocol/http` fields. For governed `java_vuser` scripts, JDK selection/home, exact JVM argument tokens, and script-controlled path references to operator-provisioned precompiled artifacts map to `config.java_vuser.*` and execute after generator-local preflight. Dedicated user-class loading is partial parity. The legacy Xboot checkbox is preserved as compatibility-only metadata and warning evidence on Java 17+; APEX Load does not emit an `-Xbootclasspath` flag. Runner enablement, harness, work directory, shared classpath, and process capacity remain operator-owned. Multithreading concepts are non-applicable to Go-native protocols — APEX Load uses goroutines — while each Java runner process is separately capacity-bounded.
 
 **Web Services (SOAP) RTS:** WSDL definitions map to `pkg/protocol/soap`. WS-Security configurations map to automated header management in the Go engine. Transport-level settings (proxy, HTTP version, keep-alive, timeouts, SOAP fault content check) map to standard HTTP protocol config.
 

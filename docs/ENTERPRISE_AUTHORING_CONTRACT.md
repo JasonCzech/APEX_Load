@@ -54,7 +54,9 @@ Web/API source acquisition also uses the shared import review envelope:
 
 Web 2.0 browser-profile archives are active through Enterprise Script Archive acquisition. They preserve source browser-profile metadata, map executable browser steps to APEX Load browser DSL, and add profile-specific replay, repair, runtime, and optional browser-to-HTTP conversion review.
 
-Java-family and SAP GUI imports use the same envelope but separate execution posture from import success. Deterministic Java HTTP, JMS, and JDBC idiom mapping emits native protocol drafts when possible. The `allow_java_vuser_runner=true` multipart field enables an explicit Java Vuser sidecar fallback; fallback scripts return `import_mode: "external_runner_required"` and require `java_vuser_jvm_runner`. SAP GUI imports preserve SAP GUI scripting calls and source identity as `sap_gui` drafts that require `windows_sap_gui_runner`.
+Java-family and SAP GUI imports use the same envelope but separate execution posture from import success. Every LoadRunner Java archive produces one `java_vuser` authoring draft, with `init`, `action`, and `end` lifecycle calls kept in source order; detected HTTP, JMS, JDBC, SOAP, and custom Java are source-review evidence rather than independently executable lanes. Java drafts return `import_mode: "external_runner_required"` and require `java_vuser_jvm_runner`; launch additionally requires the generator to advertise `java_vuser_persistent_lifecycle_v1` and `java_vuser_session_frame_token_v1`. A qualified local or loopback-sidecar runner that advertises both capabilities retains one JVM and one `Actions` instance per VUser through `init`, repeated `action` iterations, and `end`. Windows Job Object containment or a narrowly delegated Linux cgroup can qualify; the stock non-privileged Helm, Kustomize, and Compose sidecars remain legacy `full_lifecycle` only. The deprecated `allow_java_vuser_runner` field is accepted but ignored. SAP GUI imports preserve SAP GUI scripting calls and source identity as `sap_gui` drafts that require `windows_sap_gui_runner`.
+
+External-runner posture does not by itself make an otherwise complete Java draft fidelity-blocked. Authors save one review artifact as one authoring session and may approve it into the library after structural review. Launch preflight independently requires the governed runner, approved classpath, and available runner capacity.
 
 AI-assisted authoring now has a dedicated governed workflow envelope:
 
@@ -86,8 +88,7 @@ The matrix covers:
 | Mobile browser profile | Active | Enterprise Script Archive acquisition, browser replay readiness, unsupported-step review, repair suggestions |
 | Web 2.0 browser profile | Active | Enterprise Script Archive acquisition, executable browser draft import, object descriptor review, step outline creation, browser replay evidence, optional browser-to-HTTP conversion |
 | SAP GUI | Active, external runner required | Enterprise Script Archive acquisition, SAP GUI call preservation, source mapping, review artifact save, Windows SAP GUI runner gate |
-| Java Vuser fallback | Active, external runner required | Enterprise Script Archive acquisition, explicit `allow_java_vuser_runner` opt-in, Java source preservation, isolated JVM runner gate |
-| Java native mapping | Active | Enterprise Script Archive acquisition, deterministic HTTP/JMS/JDBC idiom mapping, native HTTP/JMS/database draft generation, replay evidence gates |
+| Java Vuser combined import | Active, external runner required | Enterprise Script Archive acquisition, singleton Java draft, phase-source order preservation, source idiom review, authoring approval, isolated JVM runner launch gate |
 | JMeter | Active | JMX acquisition, validate-only review, multi-script output, scenario draft generation |
 | DevWeb | Active | JavaScript/ZIP/JSON acquisition, protocol coverage review |
 | HAR | Active | HAR/JSON acquisition, correlation and base URL readiness |

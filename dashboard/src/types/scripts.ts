@@ -56,6 +56,10 @@ export interface CorrelationStep {
   response_body?: string
   response_headers?: Record<string, string>
   response_status?: number
+  response_success?: boolean
+  parent_action_name?: string
+  request_index?: number
+  step_path?: string[]
 }
 
 export interface SuggestedExtractor {
@@ -64,6 +68,7 @@ export interface SuggestedExtractor {
   extract_type: string
   expression: string
   convert?: string
+  on_miss?: string
 }
 
 export interface CorrelationRepairSuggestion {
@@ -77,6 +82,7 @@ export interface CorrelationRepairSuggestion {
   used_in_ids?: number[]
   usage_count?: number
   affected_fields?: string[]
+  repair_locations?: Array<{ field: string; start: number; end: number; editable_surface_exact?: boolean }>
   recorded_value?: string
   replay_value?: string
   suggestion: string
@@ -90,6 +96,9 @@ export interface CorrelationDiagnoseResponse {
   suggestions: CorrelationRepairSuggestion[]
   blocking: boolean
   counts: { errors: number; warnings: number }
+  compared_recorded_steps?: number
+  total_recorded_steps?: number
+  truncated?: boolean
 }
 
 export interface ScriptActionDefinition {
@@ -344,6 +353,11 @@ export interface JavaVuserConfig {
   max_processes?: number
   startup_timeout_ms?: number
   action_timeout_ms?: number
+  jdk_selection?: 'internal' | 'specified'
+  jdk_home?: string
+  additional_vm_parameters?: string[]
+  use_xbootclasspath?: boolean
+  dedicated_class_loader?: boolean
 }
 
 export interface JMSConfig {
@@ -467,6 +481,20 @@ export interface ScriptImportMetadata {
   preserved?: Record<string, unknown>
 }
 
+export interface JavaVuserSourceManifestFile {
+  path: string
+  bytes: number
+  sha256: string
+}
+
+export interface JavaVuserSourceManifest {
+  contract: string
+  digest: string
+  file_count: number
+  total_bytes: number
+  files?: JavaVuserSourceManifestFile[]
+}
+
 export interface SourceReviewFile {
   path: string
   language?: string
@@ -493,6 +521,8 @@ export interface SourceReviewMapping {
 export interface SourceReview {
   source_files?: SourceReviewFile[]
   mappings?: SourceReviewMapping[]
+  total_source_files?: number
+  omitted_source_files?: string[]
 }
 
 export type SourceArchiveReviewFile = SourceReviewFile
@@ -739,6 +769,9 @@ export interface ScriptReplayActionEvent {
     confidence?: number
     fields?: Record<string, string>
   }>
+  parent_action_name?: string
+  request_index?: number
+  step_path?: string[]
 }
 
 export interface ScriptReplayReport {

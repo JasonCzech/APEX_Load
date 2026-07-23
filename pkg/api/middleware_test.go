@@ -1252,7 +1252,8 @@ func TestTrustedHeaderAuthProjectRoleGuardsDraftScriptExecution(t *testing.T) {
 		t.Fatalf("draft browser replay editor status = %d, want auth to pass body=%s", editorBrowserResp.Code, editorBrowserResp.Body.String())
 	}
 
-	debugBody := []byte(`{"project_id":"` + projectID + `","replay_session_id":"debug-project-binding","start_paused":true,"script":{"name":"Draft Debug","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.com"},"actions":[{"name":"Open","type":"http","method":"GET","target":"/"}]}}`)
+	debugSessionID := uuid.New().String()
+	debugBody := []byte(`{"project_id":"` + projectID + `","replay_session_id":"` + debugSessionID + `","start_paused":true,"script":{"name":"Draft Debug","version":"1.0.0","protocol":"http","config":{"base_url":"https://example.com"},"actions":[{"name":"Open","type":"http","method":"GET","target":"/"}]}}`)
 	viewerDebugReq := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/debug/sessions", bytes.NewReader(debugBody))
 	viewerDebugReq.Header.Set("Content-Type", "application/json")
 	viewerDebugReq.Header.Set("X-Auth-Request-User", "viewer-user")
@@ -1272,7 +1273,7 @@ func TestTrustedHeaderAuthProjectRoleGuardsDraftScriptExecution(t *testing.T) {
 	if editorDebugResp.Code != http.StatusOK {
 		t.Fatalf("draft debug editor status = %d, want %d body=%s", editorDebugResp.Code, http.StatusOK, editorDebugResp.Body.String())
 	}
-	_, _ = server.scriptDebug.Stop("debug-project-binding")
+	_, _ = server.scriptDebug.Stop(debugSessionID)
 }
 
 func TestTrustedHeaderAuthProjectRoleGuardsJMeterImportSave(t *testing.T) {

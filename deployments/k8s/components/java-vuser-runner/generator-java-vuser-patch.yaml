@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: apexload-generator
+spec:
+  template:
+    metadata:
+      annotations:
+        # Prevent Azure Workload Identity from injecting credentials into the
+        # Java process container. Harmless on clusters without that webhook.
+        azure.workload.identity/skip-containers: java-vuser-runner
+    spec:
+      enableServiceLinks: false
+      containers:
+        - name: generator
+          env:
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_ENABLED
+              value: "true"
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_MODE
+              value: sidecar
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_URL
+              value: http://127.0.0.1:8098
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+        - name: java-vuser-runner
+          image: apexload-java-vuser-runner:0.1.0-standard
+          imagePullPolicy: IfNotPresent
+          # No host cgroup mount or elevated capability is granted here.
+          # Consequently this stock sidecar advertises legacy full_lifecycle
+          # only; combined persistent lifecycle placement fails capability
+          # preflight. See docs/JAVA_VUSER_RUNTIME.md.
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_ENABLED
+              value: "true"
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_ADDR
+              value: 127.0.0.1:8098
+            - name: APEXLOAD_JAVA_VUSER_HARNESS_JAR
+              value: /opt/apexload/java-vuser/java-vuser-runner.jar
+            - name: APEXLOAD_JAVA_VUSER_DEFAULT_JDK_HOME
+              value: /opt/java/openjdk
+            - name: APEXLOAD_JAVA_VUSER_MAX_PROCESSES
+              value: "25"
+            - name: APEXLOAD_JAVA_VUSER_WORK_DIR
+              value: /tmp
+          ports:
+            - name: java-vuser
+              containerPort: 8098
+          volumeMounts:
+            - name: java-vuser-runner-tmp
+              mountPath: /tmp
+          startupProbe:
+            exec:
+              command: ["curl", "--fail", "--silent", "http://127.0.0.1:8098/readyz"]
+            periodSeconds: 2
+            failureThreshold: 30
+            timeoutSeconds: 12
+          readinessProbe:
+            exec:
+              command: ["curl", "--fail", "--silent", "http://127.0.0.1:8098/readyz"]
+            periodSeconds: 10
+            timeoutSeconds: 12
+          livenessProbe:
+            exec:
+              command: ["curl", "--fail", "--silent", "http://127.0.0.1:8098/livez"]
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+              ephemeral-storage: 512Mi
+            limits:
+              cpu: "2"
+              memory: 2Gi
+              ephemeral-storage: 4Gi
+      volumes:
+        - name: java-vuser-runner-tmp
+          emptyDir:
+            sizeLimit: 2Gi

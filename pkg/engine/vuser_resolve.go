@@ -195,6 +195,9 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	auth, redactedAuth := toProtocolAuthConfig(action.Auth, vu)
 	soapAction, redactedSOAPAction := toProtocolSOAPActions(action.SOAP, vu)
 	params, redactedParams := vu.interpolateAnyMapWithSecrets(action.Params)
+	if dsl.CanonicalActionType(strings.ToLower(strings.TrimSpace(action.Type))) == "java_vuser_run" {
+		params, redactedParams = vu.withJavaVuserRuntimeParameters(params, redactedParams)
+	}
 	discardSuccessfulResponseBody := false
 	if vu.Script != nil {
 		discardSuccessfulResponseBody = !logConfigRetainsSuccessfulResponseBody(vu.Script.Config.Log)
@@ -231,6 +234,139 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		SOAP:                         soapAction,
 		RedactedSOAP:                 redactedSOAPAction,
 		DiscardResponseBodyOnSuccess: discardSuccessfulResponseBody,
+	}
+}
+
+// withJavaVuserRuntimeParameters overlays the VUser's current parameter state
+// onto the Java sidecar command. Precedence is current data-row values, then
+// named script/.prm parameters, then explicitly authored lr_parameters. The
+// explicit action map therefore remains the final authority for intentional
+// per-lifecycle overrides.
+//
+// Automatically injected values are runtime-only. Their redacted projection is
+// deliberately opaque so parameter files and current data rows cannot leak via
+// action diagnostics or tracing.
+func (vu *VUser) withJavaVuserRuntimeParameters(params, redactedParams map[string]any) (map[string]any, map[string]any) {
+	explicit, explicitOK := stringAnyMap(params["lr_parameters"])
+	if params != nil {
+		if _, present := params["lr_parameters"]; present && !explicitOK {
+			// Preserve malformed authored input so protocol validation reports it;
+			// silently replacing it would hide a script error.
+			return params, redactedParams
+		}
+	}
+	method := ""
+	if params != nil {
+		if value, ok := params["method"].(string); ok {
+			method = value
+		}
+	}
+	automatic := vu.javaVuserRuntimeParameterSnapshot(method, explicit)
+	if len(automatic) == 0 {
+		return params, redactedParams
+	}
+	redactedExplicit, _ := stringAnyMap(redactedParams["lr_parameters"])
+
+	merged := make(map[string]any, len(automatic)+len(explicit))
+	redactedMerged := make(map[string]any, len(automatic)+len(redactedExplicit))
+	for name, value := range automatic {
+		merged[name] = value
+		redactedMerged[name] = "[REDACTED]"
+	}
+	for name, value := range explicit {
+		merged[name] = value
+	}
+	for name, value := range redactedExplicit {
+		redactedMerged[name] = value
+	}
+
+	if params == nil {
+		params = make(map[string]any, 1)
+	}
+	if redactedParams == nil {
+		redactedParams = make(map[string]any, 1)
+	}
+	params["lr_parameters"] = merged
+	redactedParams["lr_parameters"] = redactedMerged
+	return params, redactedParams
+}
+
+func (vu *VUser) javaVuserRuntimeParameterSnapshot(method string, overridden map[string]any) map[string]string {
+	if vu == nil {
+		return nil
+	}
+	values := make(map[string]string)
+	// Data rows are intentionally selected from declared data-source namespaces
+	// instead of copying vu.Variables wholesale. Extracted credentials and other
+	// transient variables must not be exposed to the JVM unless the script author
+	// explicitly places them in lr_parameters.
+	if vu.Script != nil {
+		for _, source := range vu.Script.DataSources {
+			prefix := strings.TrimSpace(source.Name) + "."
+			if prefix == "." {
+				continue
+			}
+			for name, value := range vu.Variables {
+				if strings.HasPrefix(name, prefix) {
+					values[name] = value
+				}
+			}
+		}
+	}
+	if vu.Parameters != nil {
+		advanceOccurrences := javaVuserMethodConsumesOccurrenceRows(method)
+		for _, name := range vu.Parameters.order {
+			if _, isOverridden := overridden[name]; isOverridden {
+				// The explicitly authored lr_parameters entry is the final
+				// authority for this name; resolving it here would advance
+				// each_occurrence selection state for a value the JVM never sees.
+				continue
+			}
+			if !advanceOccurrences && effectiveParameterUpdate(vu.Parameters.params[name]) == "each_occurrence" {
+				// LoadRunner consumes each_occurrence rows at substitution sites in
+				// the iteration body. init/end phase invocations must not burn
+				// data rows the Java iteration code never read.
+				continue
+			}
+			if value, ok := vu.Parameters.ResolveNamed(name); ok {
+				values[name] = value
+			}
+		}
+	}
+	if len(values) == 0 {
+		return nil
+	}
+	return values
+}
+
+// javaVuserMethodConsumesOccurrenceRows reports whether a java_vuser lifecycle
+// method represents iteration work, i.e. the phase where LoadRunner advances
+// each_occurrence parameters. Init/end phase invocations reuse cached values
+// only.
+func javaVuserMethodConsumesOccurrenceRows(method string) bool {
+	switch strings.ToLower(strings.TrimSpace(method)) {
+	case "", "action", "run", "full_lifecycle":
+		return true
+	default:
+		return false
+	}
+}
+
+func stringAnyMap(value any) (map[string]any, bool) {
+	if value == nil {
+		return nil, true
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		return typed, true
+	case map[string]string:
+		converted := make(map[string]any, len(typed))
+		for name, item := range typed {
+			converted[name] = item
+		}
+		return converted, true
+	default:
+		return nil, false
 	}
 }
 

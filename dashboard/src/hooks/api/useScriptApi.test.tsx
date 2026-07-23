@@ -105,6 +105,29 @@ describe('useScriptApi import wrappers', () => {
     })
   })
 
+  it('binds stored correlation diagnosis to the raw replay session when available', async () => {
+    const replay = [{ id: 0, request_url: '/login' }]
+
+    await api.diagnoseScriptReplay('script-1', replay, 'replay-1')
+
+    expect(request).toHaveBeenCalledWith('/scripts/script-1/diagnose-replay', {
+      method: 'POST',
+      body: JSON.stringify({ replay, replay_session_id: 'replay-1' }),
+    })
+  })
+
+  it('sends uploaded recordings only through the disclosure-safe generic endpoint', async () => {
+    const replay = [{ id: 0, request_url: '/login' }]
+    const recorded = [{ id: 0, request_url: '/recorded-login' }]
+
+    await api.diagnoseCorrelations(recorded, replay)
+
+    expect(request).toHaveBeenCalledWith('/correlations/diagnose', {
+      method: 'POST',
+      body: JSON.stringify({ recorded, replay }),
+    })
+  })
+
   it('applies logical secret bindings through the dedicated endpoint', async () => {
     const payload = {
       script: { name: 'Imported', version: '1.0.0', protocol: 'http', config: { base_url: '' }, actions: [] },

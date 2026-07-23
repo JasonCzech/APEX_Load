@@ -28,100 +28,115 @@ func JavaImportSurfaceCoverage() []JavaImportSurfaceSupportEntry {
 			Area:            "LoadRunner Utility API",
 			Construct:       "lrapi.lr.*",
 			Status:          "supported",
-			ExecutionStatus: "classified",
+			ExecutionStatus: "external_runner_required",
+			ReviewRequired:  true,
 			Fields:          []string{"transaction", "parameter", "message", "runtime", "timer"},
-			Notes:           "The closed lr API is fully classified by java_lr_function_matrix; executable effects map to native actions or config, non-executable effects are named review dispositions.",
+			Notes:           "The closed lr API is classified for review and transaction evidence; its source remains in the combined governed Java Vuser draft.",
+		},
+		{
+			ID:              "java-vm-runtime-settings",
+			Area:            "Java VM",
+			Construct:       "default.cfg [JavaVM:Options]",
+			Status:          "supported",
+			ExecutionStatus: "external_runner_required",
+			ReviewRequired:  true,
+			Fields:          []string{"config.java_vuser.jdk_selection", "config.java_vuser.jdk_home", "config.java_vuser.additional_vm_parameters", "config.java_vuser.classpath", "config.java_vuser.use_xbootclasspath", "config.java_vuser.dedicated_class_loader"},
+			Notes:           "JDK, exact JVM argument, precompiled classpath, Xboot compatibility, and dedicated-loader settings are imported with per-setting parity status and validated by the governed runner before execution.",
 		},
 		{
 			ID:              "java-web-http",
 			Area:            "HTTP",
 			Construct:       "web.* / HttpURLConnection / HttpClient / Apache HttpClient",
 			Status:          "supported",
-			ExecutionStatus: "executable",
+			ExecutionStatus: "external_runner_required",
+			ReviewRequired:  true,
 			Fields:          []string{"url", "method", "headers", "body", "transactions"},
-			Notes:           "Recognized Java-over-HTTP idioms are converted through the same executable HTTP path used by C web_* imports; generic Java object-over-HTTP remains review-only.",
+			Notes:           "HTTP evidence is reported for review, but Java source remains in one java_vuser draft so fields and phase ordering are preserved.",
 		},
 		{
 			ID:              "java-jms",
 			Area:            "Messaging",
 			Construct:       "javax.jms / jakarta.jms",
 			Status:          "supported",
-			ExecutionStatus: "executable",
+			ExecutionStatus: "external_runner_required",
+			ReviewRequired:  true,
 			Fields:          []string{"provider", "destination", "body", "properties", "transactions"},
-			Notes:           "JMS provider and queue/topic targeting are inferred from source evidence, with broker credentials redacted into secret references.",
+			Notes:           "JMS evidence is reported for review; calls remain in the same source-order-preserving Java Vuser draft as every other Java protocol family.",
 		},
 		{
 			ID:              "java-jdbc",
 			Area:            "Database",
 			Construct:       "java.sql DriverManager/Connection/PreparedStatement",
 			Status:          "supported",
-			ExecutionStatus: "executable",
+			ExecutionStatus: "external_runner_required",
+			ReviewRequired:  true,
 			Fields:          []string{"sql", "query", "exec", "commit", "rollback"},
-			Notes:           "Statically recoverable JDBC statements are delegated to the database importer and emitted as db_query/db_exec/transaction actions.",
+			Notes:           "JDBC evidence is reported for review; statements are not extracted into a separate database script.",
 		},
 		{
 			ID:              "java-soap",
 			Area:            "SOAP",
 			Construct:       "JAX-WS / SOAPMessage / Axis / CXF",
-			Status:          "partial",
-			ExecutionStatus: "scoped_executable",
+			Status:          "supported",
+			ExecutionStatus: "external_runner_required",
 			ReviewRequired:  true,
 			Fields:          []string{"endpoint", "envelope"},
-			Notes:           "Recoverable static endpoint/envelope calls become native HTTP SOAP requests; dynamic SOAP clients remain named review items.",
+			Notes:           "SOAP evidence is reported for review; clients remain part of the combined Java Vuser runner draft.",
 		},
 		{
 			ID:              "java-no-runtime-surfaces",
 			Area:            "Review",
 			Construct:       "RMI, EJB, CORBA, SAP GUI Java, Jacada, Oracle NCA, Tuxedo",
-			Status:          "review_only",
-			ExecutionStatus: "not_executable",
+			Status:          "supported",
+			ExecutionStatus: "external_runner_required",
 			ReviewRequired:  true,
-			Notes:           "No-runtime Java middleware surfaces receive deterministic named review dispositions instead of generic fallthrough.",
+			Notes:           "Middleware calls are preserved in the combined source and require the governed runner classpath to supply their dependencies.",
 		},
 		{
 			ID:              "java-custom-code",
 			Area:            "Custom Java",
 			Construct:       "helpers, third-party clients, arbitrary Java",
-			Status:          "review_only",
-			ExecutionStatus: "external_runner_opt_in",
+			Status:          "supported",
+			ExecutionStatus: "external_runner_required",
 			ReviewRequired:  true,
-			Notes:           "Arbitrary Java is preserved for review by default; governed java_vuser sidecar replay requires explicit operator opt-in.",
+			Notes:           "Arbitrary Java is preserved in one review draft; launch requires authoring approval and an enabled governed runner.",
 		},
 	}
 }
 
-// JavaHTTPIdiomCoverage returns the Java-over-HTTP idioms recognized as native
-// HTTP actions.
+// JavaHTTPIdiomCoverage returns HTTP idioms recognized as review evidence in a
+// combined Java Vuser draft.
 func JavaHTTPIdiomCoverage() []JavaImportSurfaceSupportEntry {
 	return []JavaImportSurfaceSupportEntry{
-		{ID: "java-web-url", Area: "HTTP", Construct: "web.url", Status: "supported", ExecutionStatus: "executable", Fields: []string{"name", "URL"}, Notes: "Delegates to web_url conversion and emits http_request."},
-		{ID: "java-web-submit-data", Area: "HTTP", Construct: "web.submitData", Status: "supported", ExecutionStatus: "executable", Fields: []string{"name", "Action", "Method", "ItemData"}, Notes: "Delegates to web_submit_data conversion."},
-		{ID: "java-web-custom-request", Area: "HTTP", Construct: "web.customRequest", Status: "supported", ExecutionStatus: "executable", Fields: []string{"name", "URL", "Method", "Body"}, Notes: "Delegates to web_custom_request conversion and preserves ordered header_list."},
-		{ID: "java-web-rest-request", Area: "HTTP", Construct: "web.restRequest", Status: "supported", ExecutionStatus: "executable", Fields: []string{"name", "URL", "Method", "Body"}, Notes: "Delegates to web_rest conversion."},
-		{ID: "java-http-client-static-url", Area: "HTTP", Construct: "HttpURLConnection / Java HttpClient / Apache HttpClient with static URL", Status: "partial", ExecutionStatus: "executable", ReviewRequired: true, Fields: []string{"url", "method", "headers", "body"}, Notes: "Static URL sends, split HttpURLConnection flows, split Java HttpRequest builders, and Apache HttpClient object flows are promoted; unrecoverable dynamic clients remain named review items."},
+		{ID: "java-web-url", Area: "HTTP", Construct: "web.url", Status: "supported", ExecutionStatus: "external_runner_required", ReviewRequired: true, Fields: []string{"name", "URL"}, Notes: "Preserved in the combined Java source; no native HTTP lane is emitted."},
+		{ID: "java-web-submit-data", Area: "HTTP", Construct: "web.submitData", Status: "supported", ExecutionStatus: "external_runner_required", ReviewRequired: true, Fields: []string{"name", "Action", "Method", "ItemData"}, Notes: "Preserved in the combined Java source; no native HTTP lane is emitted."},
+		{ID: "java-web-custom-request", Area: "HTTP", Construct: "web.customRequest", Status: "supported", ExecutionStatus: "external_runner_required", ReviewRequired: true, Fields: []string{"name", "URL", "Method", "Body"}, Notes: "Preserved in the combined Java source; no native HTTP lane is emitted."},
+		{ID: "java-web-rest-request", Area: "HTTP", Construct: "web.restRequest", Status: "supported", ExecutionStatus: "external_runner_required", ReviewRequired: true, Fields: []string{"name", "URL", "Method", "Body"}, Notes: "Preserved in the combined Java source; no native HTTP lane is emitted."},
+		{ID: "java-http-client-static-url", Area: "HTTP", Construct: "HttpURLConnection / Java HttpClient / Apache HttpClient with static URL", Status: "supported", ExecutionStatus: "external_runner_required", ReviewRequired: true, Fields: []string{"url", "method", "headers", "body"}, Notes: "Client evidence is classified for review while the original calls remain in the combined runner draft."},
 	}
 }
 
-// JavaJMSIdiomCoverage returns the JMS idioms recognized as native JMS actions.
+// JavaJMSIdiomCoverage returns JMS idioms recognized as review evidence in a
+// combined Java Vuser draft.
 func JavaJMSIdiomCoverage() []JavaImportSurfaceSupportEntry {
 	return []JavaImportSurfaceSupportEntry{
-		{ID: "java-jms-config", Area: "JMS", Construct: "JNDI env.put / InitialContext", Status: "supported", ExecutionStatus: "executable", Fields: []string{"broker_url", "provider", "vpn", "credentials"}, Notes: "JNDI evidence configures the native JMS provider with credentials redacted."},
-		{ID: "java-jms-destination", Area: "JMS", Construct: "createQueue / createTopic / lookup", Status: "supported", ExecutionStatus: "executable", Fields: []string{"destination", "destination_type"}, Notes: "Queue/topic targeting is inferred from source evidence."},
-		{ID: "java-jms-message", Area: "JMS", Construct: "createTextMessage / readFile / replaceAll(lr.eval_string)", Status: "supported", ExecutionStatus: "executable", Fields: []string{"body", "template"}, Notes: "XML/text bodies are recovered and parameterized where statically visible."},
-		{ID: "java-jms-publish-consume", Area: "JMS", Construct: "producer.send / consumer.receive", Status: "supported", ExecutionStatus: "executable", Fields: []string{"jms_publish", "jms_consume"}, Notes: "Mapped to native JMS publish and consume actions."},
-		{ID: "java-jms-transaction", Area: "JMS", Construct: "commit / rollback / acknowledge", Status: "supported", ExecutionStatus: "executable", Fields: []string{"jms_commit", "jms_rollback", "jms_ack"}, Notes: "Session transaction and acknowledgement calls are converted to native actions."},
+		{ID: "java-jms-config", Area: "JMS", Construct: "JNDI env.put / InitialContext", Status: "supported", ExecutionStatus: "external_runner_required", ReviewRequired: true, Fields: []string{"broker_url", "provider", "vpn", "credentials"}, Notes: "JNDI setup remains in init on the same persistent per-VUser Actions instance used by action and end."},
+		{ID: "java-jms-destination", Area: "JMS", Construct: "createQueue / createTopic / lookup", Status: "supported", ExecutionStatus: "external_runner_required", ReviewRequired: true, Fields: []string{"destination", "destination_type"}, Notes: "Destination setup remains on the same persistent per-VUser Actions instance across init, action iterations, and end."},
+		{ID: "java-jms-message", Area: "JMS", Construct: "createTextMessage / readFile / replaceAll(lr.eval_string)", Status: "supported", ExecutionStatus: "external_runner_required", ReviewRequired: true, Fields: []string{"body", "template"}, Notes: "Message construction remains in the combined draft and can use Java fields and saved LoadRunner parameters retained by the persistent per-VUser session."},
+		{ID: "java-jms-publish-consume", Area: "JMS", Construct: "producer.send / consumer.receive", Status: "supported", ExecutionStatus: "external_runner_required", ReviewRequired: true, Fields: []string{"publish", "consume"}, Notes: "Calls execute through the governed Java runner, not native JMS actions."},
+		{ID: "java-jms-transaction", Area: "JMS", Construct: "commit / rollback / acknowledge", Status: "supported", ExecutionStatus: "external_runner_required", ReviewRequired: true, Fields: []string{"commit", "rollback", "acknowledge"}, Notes: "Session ownership and ordering remain in source and persist on the same per-VUser Actions instance across lifecycle calls."},
 	}
 }
 
-// JavaJDBCIdiomCoverage returns the JDBC idioms recognized as native database
-// actions.
+// JavaJDBCIdiomCoverage returns JDBC idioms recognized as review evidence in a
+// combined Java Vuser draft.
 func JavaJDBCIdiomCoverage() []JavaImportSurfaceSupportEntry {
 	return []JavaImportSurfaceSupportEntry{
-		{ID: "java-jdbc-connect", Area: "JDBC", Construct: "DriverManager.getConnection", Status: "partial", ExecutionStatus: "review_required", ReviewRequired: true, Fields: []string{"dsn"}, Notes: "Connection literals are redacted to {{secret.database_dsn}}; operators must bind the real DSN."},
-		{ID: "java-jdbc-query", Area: "JDBC", Construct: "PreparedStatement.executeQuery", Status: "supported", ExecutionStatus: "executable", Fields: []string{"select_sql"}, Notes: "Static SELECT SQL becomes db_query through the database importer."},
-		{ID: "java-jdbc-exec", Area: "JDBC", Construct: "executeUpdate / execute", Status: "supported", ExecutionStatus: "executable", Fields: []string{"dml_sql"}, Notes: "Static DML/DDL SQL becomes db_exec through the database importer."},
-		{ID: "java-jdbc-transactions", Area: "JDBC", Construct: "setAutoCommit(false) / commit / rollback", Status: "supported", ExecutionStatus: "executable", Fields: []string{"db_begin", "db_commit", "db_rollback"}, Notes: "Transaction controls map to native database transaction actions."},
-		{ID: "java-jdbc-dynamic-sql", Area: "JDBC", Construct: "runtime-built SQL", Status: "review_only", ExecutionStatus: "not_executable", ReviewRequired: true, Notes: "Unrecoverable dynamic SQL is preserved for source review instead of fabricated."},
+		{ID: "java-jdbc-connect", Area: "JDBC", Construct: "DriverManager.getConnection", Status: "supported", ExecutionStatus: "external_runner_required", ReviewRequired: true, Fields: []string{"dsn"}, Notes: "Connection-setup source remains in the governed Java draft; runtime credentials stay operator-provisioned and connection state persists on the same per-VUser Actions instance."},
+		{ID: "java-jdbc-query", Area: "JDBC", Construct: "PreparedStatement.executeQuery", Status: "supported", ExecutionStatus: "external_runner_required", ReviewRequired: true, Fields: []string{"select_sql"}, Notes: "Queries remain in the combined Java source; no db_query lane is emitted."},
+		{ID: "java-jdbc-exec", Area: "JDBC", Construct: "executeUpdate / execute", Status: "supported", ExecutionStatus: "external_runner_required", ReviewRequired: true, Fields: []string{"dml_sql"}, Notes: "Statements remain in the combined Java source; no db_exec lane is emitted."},
+		{ID: "java-jdbc-transactions", Area: "JDBC", Construct: "setAutoCommit(false) / commit / rollback", Status: "supported", ExecutionStatus: "external_runner_required", ReviewRequired: true, Fields: []string{"begin", "commit", "rollback"}, Notes: "Connection and transaction ownership remain in source and persist on the same per-VUser Actions instance across lifecycle calls."},
+		{ID: "java-jdbc-dynamic-sql", Area: "JDBC", Construct: "runtime-built SQL", Status: "supported", ExecutionStatus: "external_runner_required", ReviewRequired: true, Notes: "Dynamic SQL remains intact in the governed runner draft."},
 	}
 }
 
@@ -132,8 +147,8 @@ func RenderJavaImportSurfaceCoverageMarkdown() string {
 	b.WriteString("# LoadRunner Java Vuser Import Coverage\n\n")
 	b.WriteString("<!-- Generated by `go generate ./pkg/convert/enterprisearchive` (cmd/webcoverage -set java-surfaces). Do not edit by hand. -->\n\n")
 	b.WriteString("This matrix covers the Java Vuser importer surfaces outside the closed `lrapi.lr` utility API. ")
-	b.WriteString("Recorded Java-over-HTTP targets native HTTP requests, not the inert `java_http` object codec. ")
-	b.WriteString("Arbitrary/custom Java remains governed sidecar opt-in or named review; unsupported behavior is never fabricated.\n\n")
+	b.WriteString("Every Java archive remains one `java_vuser` draft so init/action/end source ordering and per-VUser Java state are preserved. ")
+	b.WriteString("Static idiom analysis supplies review evidence only; launch requires approval plus an enabled governed JVM runner advertising `java_vuser_persistent_lifecycle_v1` and `java_vuser_session_frame_token_v1`.\n\n")
 
 	writeJavaSurfaceCoverageTable(&b, "Surface Disposition", JavaImportSurfaceCoverage())
 	writeJavaSurfaceCoverageTable(&b, "HTTP Idioms", JavaHTTPIdiomCoverage())

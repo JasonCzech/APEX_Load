@@ -214,9 +214,18 @@ review and act on these gates:
   diff review, replay evidence, and explicit approval. The provider allow-list and
   redaction posture are policy-controlled and default to a deterministic local
   provider; external LLM integration is off unless explicitly enabled.
-- **External-runner gating** — imports that require an external runner (for example, a
-  Java Vuser JVM runner) are blocked until the matching capability is enabled, so
-  unmapped drafts cannot run unexpectedly.
+- **External-runner gating** — drafts that require an external runner (for example, a
+  Java Vuser JVM runner) may complete authoring review and library approval, but test
+  launch remains blocked until the matching runtime capability and capacity are
+  available. Combined Java drafts specifically require the generator capability
+  `java_vuser_persistent_lifecycle_v1` and
+  `java_vuser_session_frame_token_v1`. A qualified local or loopback-sidecar
+  runner that advertises both capabilities keeps one JVM and one `Actions`
+  instance alive per VUser across `init`, repeated `action` calls, and `end`.
+  Windows Job Object containment and narrowly delegated Linux cgroups can
+  qualify; the stock non-privileged Helm, Kustomize, and Compose sidecars are
+  legacy `full_lifecycle` only. This keeps runtime availability separate from
+  import-fidelity review.
 - **Capacity reservations** — reservations start pending and require approval before
   they bind capacity to a run.
 

@@ -41,6 +41,9 @@ func hashLibraryScript(script *dsl.Script) string {
 	copied.FolderID = nil
 	copied.CreatedAt = time.Time{}
 	copied.UpdatedAt = time.Time{}
+	if copied.Metadata != nil && copied.Metadata.Import != nil && copied.Metadata.Import.Preserved != nil {
+		delete(copied.Metadata.Import.Preserved, javaVuserApprovalEvidenceKey)
+	}
 	return hashCanonical(copied)
 }
 

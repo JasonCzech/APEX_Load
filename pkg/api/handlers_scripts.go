@@ -363,6 +363,10 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	script := &wrapper.Script
+	// Approval provenance is server-owned. Never allow a PUT payload to supply
+	// or replace it; an unchanged, already-approved Java script may have its
+	// verified durable evidence restored below.
+	clearJavaVuserAuthoringApproval(script)
 	if err := bindStoredScriptProject(script, stored.ProjectID, ""); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -393,6 +397,10 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 
 	if issues := validateScript(script); len(issues) > 0 {
 		writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
+		return
+	}
+	if err := s.runner.restoreJavaVuserAuthoringApprovalForUpdate(script, stored.Script); err != nil {
+		writeError(w, http.StatusConflict, err.Error())
 		return
 	}
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { harToSteps, replayEventsToSteps } from './correlationDiagnose'
+import { duplicateCorrelationStepIds, HarToStepsLimitError, harToSteps, nestedCorrelationStepIds, replayEventsToSteps } from './correlationDiagnose'
 import type { ScriptReplayActionEvent } from '../types/scripts'
 
 describe('replayEventsToSteps', () => {
@@ -23,6 +23,7 @@ describe('replayEventsToSteps', () => {
     expect(steps.map(s => s.id)).toEqual([0, 1])
     expect(steps[0].request_url).toBe('/login')
     expect(steps[0].response_status).toBe(202)
+    expect(steps[0].response_success).toBe(true)
     expect(steps[0].response_body).toBe('{"t":"1"}')
     // Falls back to event-level request fields when no snapshot.
     expect(steps[1].request_headers).toEqual({ 'X-Token': '1' })
@@ -32,6 +33,30 @@ describe('replayEventsToSteps', () => {
 
   it('handles undefined events', () => {
     expect(replayEventsToSteps(undefined)).toEqual([])
+  })
+
+  it('reports ambiguous action IDs emitted by sequence or loop leaves', () => {
+    const steps = replayEventsToSteps([
+      { phase: 'action', action_index: 2, action_name: 'sequence request 1', action_type: 'GET', target: '/one', started_at: '', completed_at: '', duration_ms: 1, success: true },
+      { phase: 'action', action_index: 2, action_name: 'sequence request 2', action_type: 'GET', target: '/two', started_at: '', completed_at: '', duration_ms: 1, success: true },
+      { phase: 'action', action_index: 3, action_name: 'loop request iteration 1', action_type: 'GET', target: '/three', started_at: '', completed_at: '', duration_ms: 1, success: true },
+      { phase: 'action', action_index: 3, action_name: 'loop request iteration 2', action_type: 'GET', target: '/three', started_at: '', completed_at: '', duration_ms: 1, success: true },
+    ] as ScriptReplayActionEvent[])
+
+    expect(duplicateCorrelationStepIds(steps)).toEqual([2, 3])
+  })
+
+  it('reports even one nested leaf as unsafe for top-level correlation mapping', () => {
+    const steps = replayEventsToSteps([{
+      phase: 'action', action_index: 2, action_name: 'sequence request', action_type: 'GET', target: '/one',
+      started_at: '', completed_at: '', duration_ms: 1, success: false,
+      parent_action_name: 'sequence', request_index: 0, step_path: ['requests[0]'],
+    }] as ScriptReplayActionEvent[])
+
+    expect(steps[0].step_path).toEqual(['requests[0]'])
+    expect(steps[0].response_success).toBe(false)
+    expect(nestedCorrelationStepIds(steps)).toEqual([2])
+    expect(duplicateCorrelationStepIds(steps)).toEqual([])
   })
 })
 
@@ -65,5 +90,41 @@ describe('harToSteps', () => {
   it('returns [] for a non-HAR object', () => {
     expect(harToSteps({})).toEqual([])
     expect(harToSteps(null)).toEqual([])
+  })
+
+  it('preserves repeated HAR headers without corrupting Set-Cookie values', () => {
+    const steps = harToSteps({
+      log: {
+        entries: [{
+          request: {
+            method: 'GET',
+            url: '/login',
+            headers: [{ name: 'X-Trace', value: 'one' }, { name: 'x-trace', value: 'two' }],
+          },
+          response: {
+            status: 200,
+            headers: [
+              { name: 'Set-Cookie', value: 'sid=first; Expires=Wed, 01 Jan 2030 00:00:00 GMT' },
+              { name: 'set-cookie', value: 'route=second; Path=/' },
+            ],
+          },
+        }],
+      },
+    })
+
+    expect(steps[0].request_headers).toEqual({ 'X-Trace': 'one\ntwo' })
+    expect(steps[0].response_headers?.['Set-Cookie']).toBe(
+      'sid=first; Expires=Wed, 01 Jan 2030 00:00:00 GMT\nroute=second; Path=/',
+    )
+  })
+
+  it('rejects compact HARs that exceed entry or decoded-content limits', () => {
+    expect(() => harToSteps({
+      log: { entries: [{ request: { url: '/one' } }, { request: { url: '/two' } }] },
+    }, { maxEntries: 1 })).toThrow(HarToStepsLimitError)
+
+    expect(() => harToSteps({
+      log: { entries: [{ request: { url: '/large' }, response: { content: { text: '123456' } } }] },
+    }, { maxDecodedChars: 5 })).toThrow(HarToStepsLimitError)
   })
 })

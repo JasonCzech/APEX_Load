@@ -36,6 +36,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 
 	// Read all files from the zip
 	files := make(map[string]string)
+	normalizedFileNames := make(map[string]string)
 	var totalUncompressed int64
 	for _, f := range reader.File {
 		if f.FileInfo().IsDir() {
@@ -74,6 +75,15 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		if _, duplicate := files[name]; duplicate {
 			return nil, fmt.Errorf("zip archive contains duplicate normalized entry %q", name)
 		}
+		// Source projects are authored on case-insensitive Windows filesystems,
+		// and all downstream archive lookups intentionally use EqualFold. Reject
+		// case-only aliases here rather than letting map iteration choose which
+		// runtime, project, or source file wins.
+		caseFoldedName := strings.ToLower(name)
+		if existing, duplicate := normalizedFileNames[caseFoldedName]; duplicate {
+			return nil, fmt.Errorf("zip archive contains case-insensitive duplicate normalized entries %q and %q", existing, name)
+		}
+		normalizedFileNames[caseFoldedName] = name
 		files[name] = string(data)
 	}
 
@@ -83,22 +93,39 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	var projectSections map[string]map[string]string
 	var trueClientScope *trueclient.ScriptTypeScope
 	var trueClientInspection *trueclient.ArchiveInspection
-	for name, content := range files {
+	projectFileNames := make([]string, 0, 1)
+	for name := range files {
 		if strings.HasSuffix(strings.ToLower(name), ".usr") {
-			projectFileName = name
-			projectSections = ParseConfigSections(content)
-			cfg, err := ParseUSRFile(content)
-			if err == nil {
-				projectConfig = cfg
-				// Use .usr filename (without extension) as script name if not set
-				if opts.ScriptName == "" {
-					opts.ScriptName = strings.TrimSuffix(filepath.Base(name), filepath.Ext(name))
-				}
-			}
-			break
+			projectFileNames = append(projectFileNames, name)
 		}
 	}
-	if sourceZipHasDevWebMain(files) {
+	sort.Strings(projectFileNames)
+	if len(projectFileNames) > 1 {
+		return nil, fmt.Errorf(
+			"zip archive contains multiple LoadRunner project (.usr) files (%s); import exactly one script project per archive",
+			strings.Join(projectFileNames, ", "),
+		)
+	}
+	if len(projectFileNames) == 1 {
+		projectFileName = projectFileNames[0]
+		content := files[projectFileName]
+		projectSections = ParseConfigSections(content)
+		cfg, err := ParseUSRFile(content)
+		if err != nil {
+			return nil, fmt.Errorf("parse LoadRunner project file %q: %w", projectFileName, err)
+		}
+		projectConfig = cfg
+		// Use .usr filename (without extension) as script name if not set
+		if opts.ScriptName == "" {
+			opts.ScriptName = strings.TrimSuffix(
+				filepath.Base(projectFileName),
+				filepath.Ext(projectFileName),
+			)
+		}
+	}
+	javaArchive := isJavaProtocolsProject(projectConfig) ||
+		isJavaVuserArchive(files, projectConfig)
+	if sourceZipHasDevWebMain(files) && !javaArchive {
 		return convertDevWebZipViaEnterpriseArchiveImport(zipData, opts, files, projectConfig)
 	}
 	if projectConfig != nil {
@@ -137,8 +164,9 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 	}
 
 	runtimeFileName, runtimeContent := findRuntimeConfig(files, projectConfig)
+	var runtimeCfg *RuntimeConfig
 	if runtimeContent != "" {
-		runtimeCfg := ParseRuntimeCfg(runtimeContent)
+		runtimeCfg = ParseRuntimeCfg(runtimeContent)
 		if opts.HTTPConfig == nil {
 			opts.HTTPConfig = runtimeCfg.ToHTTPConfig()
 		}
@@ -195,7 +223,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		})
 		return result, nil
 	}
-	if isJavaProtocolsProject(projectConfig) || isJavaVuserArchive(files, projectConfig) {
+	if javaArchive {
 		detected := DetectProtocol(files, projectConfig, nil)
 		result, err := ConvertJava(files, opts, detected, projectConfig)
 		if err != nil {
@@ -204,6 +232,8 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		if opts.RuntimeSettings != nil && result.Script != nil {
 			mergeScriptConfig(&result.Script.Config, opts.RuntimeSettings)
 		}
+		mergeJavaVuserRuntimeSettingsIntoResult(result, opts.RuntimeSettings)
+		applyJavaVMRuntimeSettingsReview(result, runtimeCfg, files)
 		finalizeEnterpriseArchiveImportResult(result, archiveFinalizationContext{
 			Files:              files,
 			ProjectFileName:    projectFileName,
@@ -323,6 +353,113 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		ParsedActions:      parsedActions,
 	})
 	return result, nil
+}
+
+const javaVMParametersReviewBlocker = "Imported Java VM parameters contain malformed quoting; executable VM parameters were not populated and the draft must remain review-blocked until the source runtime setting is corrected."
+const javaVMClasspathReviewBlocker = "Imported Java VM classpath contains malformed quoting; executable classpath entries were not populated and the draft must remain review-blocked until the source runtime setting is corrected."
+const javaVMOptionsReviewBlocker = "Imported Java VM settings contain an unsupported selector or invalid boolean; the ambiguous setting was not populated and the draft must remain review-blocked until the source runtime setting is corrected."
+
+func applyJavaVMRuntimeSettingsReview(result *ConvertResult, runtimeCfg *RuntimeConfig, files map[string]string) {
+	if result == nil || runtimeCfg == nil {
+		return
+	}
+
+	type reviewIssue struct {
+		blocker     string
+		evidence    string
+		nextAction  string
+		metadataKey string
+		rawValue    string
+	}
+	issues := make([]reviewIssue, 0, 4)
+	if runtimeCfg.JavaVMParametersParseError != "" {
+		issues = append(issues, reviewIssue{
+			blocker:     javaVMParametersReviewBlocker,
+			evidence:    "Corrected and re-imported Java_VM_Params quoting",
+			nextAction:  "Correct the quoted Java VM parameter list in the source runtime settings, then re-import before promotion.",
+			metadataKey: "java_vm_parameters_raw",
+			rawValue:    runtimeCfg.JavaVMParametersRaw,
+		})
+	}
+	if runtimeCfg.JavaVMClasspathParseError != "" {
+		issues = append(issues, reviewIssue{
+			blocker:     javaVMClasspathReviewBlocker,
+			evidence:    "Corrected and re-imported Java VM classpath quoting",
+			nextAction:  "Correct the quoted Java VM classpath in the source runtime settings, then re-import before promotion.",
+			metadataKey: "java_vm_classpath_raw",
+			rawValue:    runtimeCfg.JavaVMClasspathRaw,
+		})
+	}
+	for _, issue := range []reviewIssue{
+		{
+			blocker:     javaVMOptionsReviewBlocker,
+			evidence:    "Corrected and re-imported Java VM JDK selector",
+			nextAction:  "Correct the Java VM JDK selector in the source runtime settings, then re-import before promotion.",
+			metadataKey: "java_vm_jdk_selection_raw",
+			rawValue:    runtimeCfg.JavaVMJDKSelectionRaw,
+		},
+		{
+			blocker:     javaVMOptionsReviewBlocker,
+			evidence:    "Corrected and re-imported Java VM Xboot setting",
+			nextAction:  "Correct the Java VM Xboot boolean in the source runtime settings, then re-import before promotion.",
+			metadataKey: "java_vm_use_xbootclasspath_raw",
+			rawValue:    runtimeCfg.JavaVMUseXBootClasspathRaw,
+		},
+		{
+			blocker:     javaVMOptionsReviewBlocker,
+			evidence:    "Corrected and re-imported Java VM class-loader setting",
+			nextAction:  "Correct the Java VM dedicated-class-loader boolean in the source runtime settings, then re-import before promotion.",
+			metadataKey: "java_vm_dedicated_class_loader_raw",
+			rawValue:    runtimeCfg.JavaVMDedicatedClassLoaderRaw,
+		},
+	} {
+		var parseError string
+		switch issue.metadataKey {
+		case "java_vm_jdk_selection_raw":
+			parseError = runtimeCfg.JavaVMJDKSelectionParseError
+		case "java_vm_use_xbootclasspath_raw":
+			parseError = runtimeCfg.JavaVMUseXBootParseError
+		case "java_vm_dedicated_class_loader_raw":
+			parseError = runtimeCfg.JavaVMDedicatedParseError
+		}
+		if parseError != "" {
+			issues = append(issues, issue)
+		}
+	}
+	if len(issues) == 0 {
+		return
+	}
+
+	if result.ReviewArtifact == nil {
+		detected := DetectedProtocol{
+			CanonicalSourceProtocol: "java_vuser",
+			APEXLoadProtocol:        "java_vuser",
+			ImportMode:              ImportModeReviewOnly,
+			Confidence:              DetectionConfidenceHigh,
+			DisplayName:             "Java Vuser",
+		}
+		if result.DetectedProtocol != nil {
+			detected = *result.DetectedProtocol
+		}
+		result.ReviewArtifact = NewReviewArtifact(detected, files, nil, nil)
+	}
+	if result.ReviewArtifact.Metadata == nil {
+		result.ReviewArtifact.Metadata = make(map[string]any)
+	}
+	blockers := javaReviewArtifactBlockers(result, javaSourceIntegrityKey)
+	for _, issue := range issues {
+		result.ReviewArtifact.Metadata[issue.metadataKey] = issue.rawValue
+		blockers = appendUnique(blockers, issue.blocker)
+		if result.DetectedProtocol != nil {
+			result.DetectedProtocol.RequiredEvidence = appendUnique(result.DetectedProtocol.RequiredEvidence, issue.evidence)
+		}
+		result.ReviewArtifact.RequiredEvidence = appendUnique(result.ReviewArtifact.RequiredEvidence, issue.evidence)
+		result.ReviewArtifact.Protocol.RequiredEvidence = appendUnique(result.ReviewArtifact.Protocol.RequiredEvidence, issue.evidence)
+		result.ReviewArtifact.NextActions = appendUnique(result.ReviewArtifact.NextActions, issue.nextAction)
+		result.Warnings = append(result.Warnings, issue.blocker)
+	}
+	result.ReviewArtifact.Metadata[javaSourceIntegrityKey] = blockers
+	result.Warnings = uniqueSortedStrings(result.Warnings)
 }
 
 type archiveFinalizationContext struct {
@@ -594,6 +731,16 @@ func isJavaVuserArchive(files map[string]string, projectConfig *ProjectConfig) b
 				return true
 			}
 		}
+		// Once a parsed project explicitly identifies a non-Java type,
+		// language, or runtime, its declared entry point is authoritative.
+		// Auxiliary dependencies named Actions.java must not redirect a DevWeb
+		// or C project away from its selected converter. Java project types and
+		// source-action declarations are handled by isJavaProtocolsProject.
+		if strings.TrimSpace(projectConfig.ScriptType) != "" ||
+			strings.TrimSpace(projectConfig.ScriptLanguage) != "" ||
+			strings.TrimSpace(projectConfig.RunType) != "" {
+			return false
+		}
 	}
 	for name, content := range files {
 		base := strings.ToLower(filepath.Base(name))
@@ -754,7 +901,7 @@ func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFile
 	runtimeSections := collectRuntimeSections(files)
 	if len(runtimeSections) > 0 {
 		preserved["runtime_files"] = runtimeSections
-		if parity := BuildRTSParityReport(runtimeSections); len(parity) > 0 {
+		if parity := buildRTSParityReportForProtocol(runtimeSections, script.Protocol); len(parity) > 0 {
 			preserved["runtime_settings_parity"] = parity
 			preserved["runtime_settings_status_counts"] = RuntimeSettingStatusCounts(parity)
 		}

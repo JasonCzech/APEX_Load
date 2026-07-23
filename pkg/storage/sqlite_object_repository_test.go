@@ -1,6 +1,8 @@
 package storage
 
 import (
+	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -171,6 +173,21 @@ func TestObjectRepositoryOptimisticUpdateRejectsStaleAndOwnershipChanges(t *test
 		t.Fatalf("fresh repository = %#v, want first writer in project-a", fresh)
 	}
 
+	canceledContext, cancel := context.WithCancel(context.Background())
+	cancel()
+	fresh.Name = "canceled writer"
+	if updated, err := store.UpdateObjectRepositoryIfUnchangedContext(canceledContext, fresh, fresh.UpdatedAt); !errors.Is(err, context.Canceled) || updated {
+		t.Fatalf("canceled update = (%v, %v), want context.Canceled without mutation", updated, err)
+	}
+	afterCanceled, err := store.GetObjectRepository(repo.ID)
+	if err != nil {
+		t.Fatalf("GetObjectRepository after canceled update: %v", err)
+	}
+	if afterCanceled.Name != "first writer" {
+		t.Fatalf("canceled update persisted name %q", afterCanceled.Name)
+	}
+	fresh = afterCanceled
+
 	expected := fresh.UpdatedAt
 	fresh.ProjectID = "project-b"
 	if updated, err := store.UpdateObjectRepositoryIfUnchanged(fresh, expected); err != nil || updated {
@@ -187,5 +204,91 @@ func TestObjectRepositoryOptimisticUpdateRejectsStaleAndOwnershipChanges(t *test
 	}
 	if err := store.SaveObjectRepository(&ObjectRepository{ID: "missing-owner", ProjectID: "missing-project", Name: "bad"}); err == nil {
 		t.Fatal("SaveObjectRepository accepted a missing owner project")
+	}
+}
+
+func TestObjectRepositoryOptimisticUpdateFencesExecutionLeaseTerm(t *testing.T) {
+	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatalf("NewSQLiteStore: %v", err)
+	}
+	defer store.Close()
+	requireProjectFixtures(t, store, "project-a")
+
+	repo := &ObjectRepository{ID: "object-repo-lease-cas", ProjectID: "project-a", Name: "original"}
+	if err := store.SaveObjectRepository(repo); err != nil {
+		t.Fatalf("SaveObjectRepository: %v", err)
+	}
+	const (
+		leaseName = "controller-execution-leader"
+		oldOwner  = "controller-old/1"
+		newOwner  = "controller-new/1"
+	)
+	acquired, oldTerm, err := store.TryAcquireSchedulerLeaseTerm(leaseName, oldOwner, time.Time{}, time.Minute)
+	if err != nil || !acquired || oldTerm == nil {
+		t.Fatalf("acquire old lease term = (%v, %#v, %v)", acquired, oldTerm, err)
+	}
+
+	expiredSnapshot, err := store.GetObjectRepository(repo.ID)
+	if err != nil {
+		t.Fatalf("GetObjectRepository expired snapshot: %v", err)
+	}
+	expiredSnapshot.Name = "expired writer"
+	if err := store.ReleaseSchedulerLease(leaseName, oldOwner); err != nil {
+		t.Fatalf("ReleaseSchedulerLease old term: %v", err)
+	}
+	liveContext := context.Background()
+	if updated, err := store.UpdateObjectRepositoryIfUnchangedContextAndLeaseTermHeld(
+		liveContext,
+		expiredSnapshot,
+		expiredSnapshot.UpdatedAt,
+		leaseName,
+		oldOwner,
+		oldTerm.Generation,
+	); err != nil || updated {
+		t.Fatalf("expired-term update = (%v, %v), want fenced without context cancellation", updated, err)
+	}
+
+	acquired, newTerm, err := store.TryAcquireSchedulerLeaseTerm(leaseName, newOwner, time.Time{}, time.Minute)
+	if err != nil || !acquired || newTerm == nil {
+		t.Fatalf("acquire replacement lease term = (%v, %#v, %v)", acquired, newTerm, err)
+	}
+	replacedSnapshot, err := store.GetObjectRepository(repo.ID)
+	if err != nil {
+		t.Fatalf("GetObjectRepository replaced snapshot: %v", err)
+	}
+	replacedSnapshot.Name = "replaced writer"
+	if updated, err := store.UpdateObjectRepositoryIfUnchangedContextAndLeaseTermHeld(
+		liveContext,
+		replacedSnapshot,
+		replacedSnapshot.UpdatedAt,
+		leaseName,
+		oldOwner,
+		oldTerm.Generation,
+	); err != nil || updated {
+		t.Fatalf("replaced-term update = (%v, %v), want fenced without context cancellation", updated, err)
+	}
+
+	currentSnapshot, err := store.GetObjectRepository(repo.ID)
+	if err != nil {
+		t.Fatalf("GetObjectRepository current snapshot: %v", err)
+	}
+	currentSnapshot.Name = "current writer"
+	if updated, err := store.UpdateObjectRepositoryIfUnchangedContextAndLeaseTermHeld(
+		liveContext,
+		currentSnapshot,
+		currentSnapshot.UpdatedAt,
+		leaseName,
+		newOwner,
+		newTerm.Generation,
+	); err != nil || !updated {
+		t.Fatalf("current-term update = (%v, %v), want success", updated, err)
+	}
+	persisted, err := store.GetObjectRepository(repo.ID)
+	if err != nil {
+		t.Fatalf("GetObjectRepository persisted: %v", err)
+	}
+	if persisted.Name != "current writer" {
+		t.Fatalf("persisted repository name = %q, want current writer", persisted.Name)
 	}
 }

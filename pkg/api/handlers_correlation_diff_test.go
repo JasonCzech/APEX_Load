@@ -34,14 +34,23 @@ func TestHandleDiffCorrelations(t *testing.T) {
 	if resp.Code != http.StatusOK {
 		t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
 	}
+	responseJSON := resp.Body.String()
+	for _, forbidden := range []string{
+		"tok-aaaa-1111-secret",
+		"tok-bbbb-2222-secret",
+		"55512345",
+		`"Value"`,
+		`"SampleValue"`,
+		`"value_b"`,
+		`"sample_value"`,
+	} {
+		if strings.Contains(responseJSON, forbidden) {
+			t.Fatalf("diff response disclosed recording value or value field %q: %s", forbidden, responseJSON)
+		}
+	}
 	var result struct {
-		Results []struct {
-			Name   string  `json:"Name"`
-			Class  string  `json:"class"`
-			ValueB string  `json:"value_b"`
-			Conf   float64 `json:"Confidence"`
-		} `json:"results"`
-		Counts struct {
+		Results []correlationDiffResult `json:"results"`
+		Counts  struct {
 			Dynamic int `json:"dynamic"`
 			Static  int `json:"static"`
 			Unknown int `json:"unknown"`
@@ -55,6 +64,9 @@ func TestHandleDiffCorrelations(t *testing.T) {
 	}
 	if result.Results[0].Class != "dynamic" {
 		t.Errorf("first result class = %q, want dynamic sorted first", result.Results[0].Class)
+	}
+	if result.Results[0].Name == "" || result.Results[0].Source == "" || result.Results[0].Expression == "" || result.Results[0].DiffReason == "" {
+		t.Errorf("safe result lost useful extractor/classification structure: %+v", result.Results[0])
 	}
 }
 
@@ -78,5 +90,87 @@ func TestHandleDiffCorrelationsValidation(t *testing.T) {
 				t.Errorf("status = %d, want 400", resp.Code)
 			}
 		})
+	}
+}
+
+func TestHandleDiffCorrelationsRejectsDuplicateIDs(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	for _, body := range []string{
+		`{"recording_a":[{"id":1},{"id":1}],"recording_b":[{"id":1}]}`,
+		`{"recording_a":[{"id":1}],"recording_b":[{"id":1},{"id":1}]}`,
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/correlations/diff", strings.NewReader(body))
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "duplicate id") {
+			t.Fatalf("duplicate observations = status %d body=%s, want 400", resp.Code, resp.Body.String())
+		}
+	}
+}
+
+func TestHandleDiffCorrelationsRejectsOversizedObservationSet(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	steps := make([]correlationStep, maxRecordedBaselineObservations+1)
+	for index := range steps {
+		steps[index] = correlationStep{ID: index}
+	}
+	body, err := json.Marshal(correlationDiffRequest{RecordingA: steps, RecordingB: []correlationStep{{ID: 0}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/correlations/diff", strings.NewReader(string(body)))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("oversized observations = status %d body=%s, want 413", resp.Code, resp.Body.String())
+	}
+}
+
+// A single response beyond the per-observation candidate cap is truncated by
+// the engine and the diff succeeds; exhausting the aggregate candidate budget
+// across many such responses truncates the second-recording index instead of
+// failing, leaving un-indexed steps classified unknown for manual review.
+func TestHandleDiffCorrelationsSurfacesWorkLimitExhaustion(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	overflowBody := "[" + strings.Repeat(`{"token":"token-abcdef"},`, maxCorrelationCandidatesPerObservationForAPITest()) + `{"token":"token-abcdef"}]`
+
+	singleBody, err := json.Marshal(correlationDiffRequest{
+		RecordingA: []correlationStep{{ID: 1}},
+		RecordingB: []correlationStep{{ID: 1, ResponseBody: overflowBody}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	singleReq := httptest.NewRequest(http.MethodPost, "/api/v1/correlations/diff", strings.NewReader(string(singleBody)))
+	singleResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(singleResp, singleReq)
+	if singleResp.Code != http.StatusOK {
+		t.Fatalf("single candidate overflow = status %d body=%s, want truncated 200", singleResp.Code, singleResp.Body.String())
+	}
+
+	overflowSteps := make([]correlationStep, 0, 5)
+	for id := 1; id <= 5; id++ {
+		overflowSteps = append(overflowSteps, correlationStep{ID: id, ResponseBody: overflowBody})
+	}
+	// Recording A anchors a real correlation at step 5 — the step the
+	// truncated second-recording index never reaches.
+	body, err := json.Marshal(correlationDiffRequest{
+		RecordingA: []correlationStep{
+			{ID: 5, ResponseBody: `{"session_token":"corr-value-1234567890"}`},
+			{ID: 6, RequestURL: "https://example.test/next?session_token=corr-value-1234567890"},
+		},
+		RecordingB: overflowSteps,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/correlations/diff", strings.NewReader(string(body)))
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("aggregate work exhaustion = status %d body=%s, want truncated 200", resp.Code, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "reached its work limit") {
+		t.Fatalf("aggregate work exhaustion body=%s, want truncation reason on un-indexed steps", resp.Body.String())
 	}
 }

@@ -1,18 +1,120 @@
 package api
 
 import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/recorder"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
-func TestRedactBaselineObservation(t *testing.T) {
+func recordingDigestTestScript() *dsl.Script {
+	return &dsl.Script{
+		Protocol: "http",
+		Actions: []dsl.Action{
+			{Name: "login", Type: "http_request", Target: "/login"},
+			{Name: "orders", Type: "http_request", Target: "/orders"},
+		},
+	}
+}
+
+func saveRecordingParent(t *testing.T, store storage.Store, id string, script *dsl.Script) *dsl.Script {
+	t.Helper()
+	clone := *script
+	clone.ID = id
+	if strings.TrimSpace(clone.Name) == "" {
+		clone.Name = id
+	}
+	clone.ProjectID = normalizeProjectID(clone.ProjectID)
+	if clone.ProjectID != storage.DefaultProjectID {
+		now := time.Now().UTC()
+		if err := store.SaveProject(&storage.Project{ID: clone.ProjectID, Name: clone.ProjectID, CreatedAt: now, UpdatedAt: now}); err != nil {
+			t.Fatalf("SaveProject(%s): %v", clone.ProjectID, err)
+		}
+	}
+	if err := store.SaveScript(&clone); err != nil {
+		t.Fatalf("SaveScript(%s): %v", id, err)
+	}
+	parent, err := store.GetScript(id)
+	if err != nil {
+		t.Fatalf("GetScript(%s): %v", id, err)
+	}
+	return parent
+}
+
+func TestScriptCorrelationActionGraphDigestIsCanonicalAndContentBound(t *testing.T) {
+	left := recordingDigestTestScript()
+	left.Config.BaseURL = "https://api.example.test"
+	left.Config.HTTP.DefaultHeaders = map[string]string{"X-Default": "one"}
+	left.Actions[0].Headers = map[string]string{"X-B": "two", "X-A": "one"}
+	right := recordingDigestTestScript()
+	right.ID = "display-only-id"
+	right.Name = "Display-only name"
+	right.ProjectID = "display-only-project"
+	right.CreatedAt = time.Now().UTC()
+	right.Config.BaseURL = left.Config.BaseURL
+	right.Config.HTTP.DefaultHeaders = map[string]string{"X-Default": "one"}
+	right.Init = []dsl.Action{}
+	right.Teardown = []dsl.Action{}
+	right.Actions[0].Headers = map[string]string{"X-A": "one", "X-B": "two"}
+
+	leftDigest, err := scriptCorrelationActionGraphDigest(left)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rightDigest, err := scriptCorrelationActionGraphDigest(right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if leftDigest != rightDigest {
+		t.Fatalf("equivalent action graphs produced %q and %q", leftDigest, rightDigest)
+	}
+
+	right.Config.BaseURL = "https://other.example.test"
+	changedConfigDigest, err := scriptCorrelationActionGraphDigest(right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changedConfigDigest == leftDigest {
+		t.Fatal("base URL edit did not change the action-graph digest")
+	}
+	right.Config.BaseURL = left.Config.BaseURL
+	right.Config.HTTP.DefaultHeaders["X-Default"] = "two"
+	changedConfigDigest, err = scriptCorrelationActionGraphDigest(right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changedConfigDigest == leftDigest {
+		t.Fatal("HTTP default-header edit did not change the action-graph digest")
+	}
+	right.Config.HTTP.DefaultHeaders["X-Default"] = "one"
+	right.Actions[1].Body = `{"changed":true}`
+	changedDigest, err := scriptCorrelationActionGraphDigest(right)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if changedDigest == leftDigest {
+		t.Fatal("semantic action edit did not change the action-graph digest")
+	}
+	if err := validateRecordingActionGraph(&storage.ScriptRecordingRecord{ActionGraphDigest: leftDigest}, right); !errors.Is(err, errRecordingActionGraphDigestMismatch) {
+		t.Fatalf("validate mismatch = %v", err)
+	}
+	if err := validateRecordingActionGraph(&storage.ScriptRecordingRecord{}, left); !errors.Is(err, errRecordingActionGraphDigestMissing) {
+		t.Fatalf("validate legacy record = %v", err)
+	}
+}
+
+func TestRedactBaselineObservationKeepsOnlyStructuralIdentity(t *testing.T) {
 	obs := correlate.Observation{
 		ID:             3,
 		RequestURL:     "/api/login",
@@ -26,33 +128,8 @@ func TestRedactBaselineObservation(t *testing.T) {
 	if got.ID != 3 {
 		t.Errorf("ID must be preserved as the action index, got %d", got.ID)
 	}
-	// Credentials stripped on the request side; non-secret fields survive.
-	if strings.Contains(got.RequestBody, "hunter2") {
-		t.Errorf("password leaked into baseline: %q", got.RequestBody)
-	}
-	if !strings.Contains(got.RequestBody, "alice") {
-		t.Errorf("non-secret username must be preserved in persisted view: %q", got.RequestBody)
-	}
-	if got.RequestHeaders["Authorization"] != "[REDACTED]" {
-		t.Errorf("Basic auth must be redacted, got %q", got.RequestHeaders["Authorization"])
-	}
-	// Live session/CSRF tokens are redacted in the persisted (scrubbed) view —
-	// including in JSON bodies — because correlation-time replay reconstruction
-	// uses the raw sidecar (rawBaselineObservation) below, not this view.
-	if strings.Contains(got.RequestBody, "tok-keep") {
-		t.Errorf("CSRF token in body must be redacted in the persisted view: %q", got.RequestBody)
-	}
-	if got.RequestHeaders["X-CSRF-Token"] != "[REDACTED]" {
-		t.Errorf("CSRF header must be redacted in persisted baselines, got %q", got.RequestHeaders["X-CSRF-Token"])
-	}
-	if strings.Contains(got.ResponseBody, `"token":"abc"`) {
-		t.Errorf("response token leaked into persisted baseline: %q", got.ResponseBody)
-	}
-	if strings.Contains(got.ResponseBody, "sess-keep") {
-		t.Errorf("session_id must be redacted in the persisted view: %q", got.ResponseBody)
-	}
-	if !strings.Contains(got.ResponseBody, "admin") {
-		t.Errorf("non-secret response field must be preserved in persisted view: %q", got.ResponseBody)
+	if got.RequestURL != "" || got.RequestBody != "" || got.ResponseBody != "" || got.RequestHeaders != nil || got.ResponseHeaders != nil {
+		t.Fatalf("persistence projection retained request/response material: %#v", got)
 	}
 
 	// The raw server-side sidecar preserves the live session/CSRF values so
@@ -63,7 +140,7 @@ func TestRedactBaselineObservation(t *testing.T) {
 	}
 }
 
-func TestRedactBaselineObservationRedactsXMLAndMultipartCredentials(t *testing.T) {
+func TestRedactBaselineObservationOmitsArbitraryBodyFormats(t *testing.T) {
 	cases := []struct {
 		name string
 		body string
@@ -89,13 +166,8 @@ func TestRedactBaselineObservationRedactsXMLAndMultipartCredentials(t *testing.T
 				RequestURL:  "/api/login",
 				RequestBody: tc.body,
 			})
-			for _, secret := range []string{"hunter2", "static-key"} {
-				if strings.Contains(got.RequestBody, secret) {
-					t.Fatalf("request credential %q leaked into baseline: %q", secret, got.RequestBody)
-				}
-			}
-			if strings.Contains(got.RequestBody, "csrf-keep") || !strings.Contains(got.RequestBody, scrub.Redacted) {
-				t.Fatalf("request CSRF token was not redacted from persisted view: %q", got.RequestBody)
+			if got.ID != 1 || got.RequestURL != "" || got.RequestBody != "" {
+				t.Fatalf("arbitrary %s material entered persistence projection: %#v", tc.name, got)
 			}
 		})
 	}
@@ -110,7 +182,8 @@ func TestPersistRecordedBaselineStoresRedactedAndEncryptedViews(t *testing.T) {
 	defer store.Close()
 
 	server := &Server{store: store}
-	err = server.persistRecordedBaseline("script-1", "browser_recording", []correlate.Observation{{
+	parent := saveRecordingParent(t, store, "script-1", recordingDigestTestScript())
+	err = server.persistRecordedBaseline("script-1", "browser_recording", parent, []correlate.Observation{{
 		ID:             1,
 		RequestURL:     "https://example.test/login?token=request-token",
 		RequestBody:    `{"username":"alice","password":"hunter2","csrf":"tok-keep"}`,
@@ -135,14 +208,237 @@ func TestPersistRecordedBaselineStoresRedactedAndEncryptedViews(t *testing.T) {
 		t.Fatalf("recording observations = %#v", record)
 	}
 	persisted := record.Observations[0]
+	if persisted.ID != 1 || persisted.RequestURL != "" || persisted.RequestBody != "" || persisted.ResponseBody != "" || persisted.RequestHeaders != nil || persisted.ResponseHeaders != nil {
+		t.Fatalf("persisted observation was not structural-only: %#v", persisted)
+	}
+	if !strings.HasPrefix(record.EncryptedCorrelationObservations, recordingBaselineCipherPrefixV3) {
+		t.Fatalf("encrypted sidecar = %q, want v3", record.EncryptedCorrelationObservations)
+	}
 	for _, secret := range []string{"request-token", "hunter2", "response-token", "Basic dXNlcjpwdw=="} {
 		if strings.Contains(persisted.RequestURL+persisted.RequestBody+persisted.ResponseBody+persisted.RequestHeaders["Authorization"]+record.EncryptedCorrelationObservations, secret) {
 			t.Fatalf("persisted observation leaked %q: %#v", secret, persisted)
 		}
 	}
-	decrypted := baselineObservations(record)
+	decrypted, err := baselineObservations(record)
+	if err != nil {
+		t.Fatalf("baselineObservations: %v", err)
+	}
 	if len(decrypted) != 1 || !strings.Contains(decrypted[0].RequestURL, "request-token") || !strings.Contains(decrypted[0].RequestBody, "hunter2") || !strings.Contains(decrypted[0].ResponseBody, "response-token") {
 		t.Fatalf("encrypted correlation observation lost source values: %#v", decrypted)
+	}
+}
+
+func TestPersistRecordedBaselineCapsEncryptedObservationCount(t *testing.T) {
+	t.Setenv(recordingBaselineKeyEnvVar, "recording-test-key")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	observations := make([]correlate.Observation, maxRecordedBaselineObservations+25)
+	for index := range observations {
+		observations[index] = correlate.Observation{ID: index, ResponseBody: `{"token":"token-value-abcdef123456"}`}
+	}
+	server := &Server{store: store}
+	parent := saveRecordingParent(t, store, "script-capped-count", recordingDigestTestScript())
+	if err := server.persistRecordedBaseline("script-capped-count", "proxy_recording", parent, observations); err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.GetScriptRecording("script-capped-count")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := baselineObservations(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(record.Observations) != maxRecordedBaselineObservations || len(decrypted) != maxRecordedBaselineObservations || record.RequestCount != len(observations) {
+		t.Fatalf("baseline cap = redacted:%d encrypted:%d original count:%d, want retained %d/original %d", len(record.Observations), len(decrypted), record.RequestCount, maxRecordedBaselineObservations, len(observations))
+	}
+}
+
+func TestPersistRecordedBaselineCapsEncryptedPlaintextSize(t *testing.T) {
+	t.Setenv(recordingBaselineKeyEnvVar, "recording-test-key")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	// The conservative estimator budgets six JSON bytes per input byte. Each
+	// body fits independently, but two cannot enter the encrypted sidecar.
+	body := strings.Repeat("x", maxRecordedBaselinePlaintextSize/7)
+	server := &Server{store: store}
+	parent := saveRecordingParent(t, store, "script-capped-bytes", recordingDigestTestScript())
+	if err := server.persistRecordedBaseline("script-capped-bytes", "proxy_recording", parent, []correlate.Observation{
+		{ID: 0, ResponseBody: body},
+		{ID: 1, ResponseBody: body},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.GetScriptRecording("script-capped-bytes")
+	if err != nil {
+		t.Fatal(err)
+	}
+	decrypted, err := baselineObservations(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(decrypted) != 1 || record.RequestCount != 2 {
+		t.Fatalf("byte-bounded baseline = encrypted:%d original count:%d, want one retained from two", len(decrypted), record.RequestCount)
+	}
+}
+
+func TestPersistRecordedBaselinePreservesOriginalCountWhenNoObservationFits(t *testing.T) {
+	t.Setenv(recordingBaselineKeyEnvVar, "recording-test-key")
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	server := &Server{store: store}
+	parent := saveRecordingParent(t, store, "script-fully-byte-truncated", recordingDigestTestScript())
+	// A NUL expands to six bytes in JSON. This single observation therefore
+	// exceeds the authenticated plaintext ceiling before any raw evidence can
+	// be retained.
+	body := strings.Repeat("\x00", maxRecordedBaselinePlaintextSize/6+1)
+	if err := server.persistRecordedBaseline(parent.ID, "proxy_recording", parent, []correlate.Observation{
+		{ID: 0, ResponseBody: body},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.GetScriptRecording(parent.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record == nil {
+		t.Fatal("fully truncated capture lost its durable count witness")
+	}
+	if record.RequestCount != 1 || len(record.Observations) != 0 || record.EncryptedCorrelationObservations != "" {
+		t.Fatalf("fully truncated baseline = count:%d retained:%d encrypted:%t, want 1/0/false",
+			record.RequestCount, len(record.Observations), record.EncryptedCorrelationObservations != "")
+	}
+}
+
+func TestBaselineObservationsFailsClosedForUnavailableRawBaseline(t *testing.T) {
+	t.Setenv(recordingBaselineKeyEnvVar, "recording-test-key")
+	tests := []struct {
+		name    string
+		record  *storage.ScriptRecordingRecord
+		wantErr error
+	}{
+		{
+			name: "explicitly scrubbed only",
+			record: &storage.ScriptRecordingRecord{
+				Sensitivity:  scrub.SensitivityScrubbed,
+				Observations: []storage.ScriptRecordingObservation{{ResponseBody: `{"token":"[REDACTED]"}`}},
+			},
+			wantErr: errRecordingBaselineUnauthenticated,
+		},
+		{
+			name: "legacy plaintext raw sidecar",
+			record: &storage.ScriptRecordingRecord{
+				CorrelationObservations: []storage.ScriptRecordingObservation{{ResponseBody: `{"token":"plaintext"}`}},
+			},
+			wantErr: errRecordingBaselineUnauthenticated,
+		},
+		{
+			name: "encrypted payload missing",
+			record: &storage.ScriptRecordingRecord{
+				Sensitivity:  "encrypted_contains_secrets",
+				Observations: []storage.ScriptRecordingObservation{{ResponseBody: `{"token":"[REDACTED]"}`}},
+			},
+			wantErr: errRecordingBaselineUnauthenticated,
+		},
+		{
+			name: "legacy encrypted payload is unbound",
+			record: &storage.ScriptRecordingRecord{
+				Sensitivity:                      "encrypted_contains_secrets",
+				EncryptedCorrelationObservations: "enc:v1:not-valid-ciphertext",
+				Observations:                     []storage.ScriptRecordingObservation{{ResponseBody: `{"token":"[REDACTED]"}`}},
+			},
+			wantErr: errRecordingBaselineCiphertextUnbound,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			observations, err := baselineObservations(tc.record)
+			if err == nil {
+				t.Fatalf("baselineObservations = %#v, want an explicit error", observations)
+			}
+			if tc.wantErr != nil && !errors.Is(err, tc.wantErr) {
+				t.Fatalf("baselineObservations error = %v, want %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestBaselineObservationsStreamsAndRejectsAuthenticatedCountOverflow(t *testing.T) {
+	t.Setenv(recordingBaselineKeyEnvVar, "recording-test-key")
+	binding := testRecordingBaselineBinding()
+	raw := make([]storage.ScriptRecordingObservation, maxRecordedBaselineObservations+1)
+	for index := range raw {
+		raw[index].ID = index
+	}
+	payload, err := json.Marshal(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encrypted, err := encryptRecordingBaseline(payload, binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := &storage.ScriptRecordingRecord{
+		ScriptID:                         binding.ScriptID,
+		ProjectID:                        binding.ProjectID,
+		ScriptIncarnation:                binding.ScriptIncarnation,
+		ActionGraphDigest:                binding.ActionGraphDigest,
+		SchemaVersion:                    binding.SchemaVersion,
+		EncryptedCorrelationObservations: encrypted,
+	}
+	if observations, err := baselineObservations(record); err == nil || observations != nil || !strings.Contains(err.Error(), "more than") {
+		t.Fatalf("baselineObservations overflow = %#v, %v", observations, err)
+	}
+}
+
+func TestDecodeRecordingBaselineObservationsRejectsTrailingJSON(t *testing.T) {
+	if observations, err := decodeRecordingBaselineObservations([]byte(`[{"id":1}] {"id":2}`)); err == nil || observations != nil {
+		t.Fatalf("decode trailing JSON = %#v, %v", observations, err)
+	}
+}
+
+func TestScrubRepairSuggestionsOmitsSensitiveRepairLiterals(t *testing.T) {
+	suggestions := scrubRepairSuggestions([]correlate.RepairSuggestion{
+		{
+			// These intentionally do not look secret to heuristic scrubbers. Every
+			// dynamic correlation value is sensitive at this boundary regardless.
+			RecordedValue: "abc123",
+			ReplayValue:   "def456",
+			ReviewAction:  "auto_apply_available",
+		},
+		{
+			RecordedValue:   "ghi789",
+			ReplayValue:     "jkl012",
+			RepairLocations: []correlate.RepairLocation{{Field: "request_body", Start: 5, End: 11}},
+			ReviewAction:    "auto_apply_available",
+		},
+	})
+	if len(suggestions) != 2 {
+		t.Fatalf("suggestions = %#v", suggestions)
+	}
+	for _, got := range suggestions {
+		if got.RecordedValue != "" || got.ReplayValue != "" {
+			t.Fatalf("sensitive values remained repair literals: %#v", got)
+		}
+	}
+	if suggestions[0].ReviewAction != "manual_value_replacement_required" {
+		t.Fatalf("review action without locations = %q, want manual replacement", suggestions[0].ReviewAction)
+	}
+	if suggestions[1].ReviewAction != "auto_apply_available" || len(suggestions[1].RepairLocations) != 1 {
+		t.Fatalf("structural auto-apply metadata was not preserved: %#v", suggestions[1])
 	}
 }
 
@@ -154,19 +450,20 @@ func TestPersistRecordedBaselineWithoutKeyKeepsOnlyScrubbedView(t *testing.T) {
 	}
 	defer store.Close()
 	server := &Server{store: store}
-	if err := server.persistRecordedBaseline("script-no-key", "browser_recording", []correlate.Observation{{RequestBody: `{"password":"secret-value"}`}}); err != nil {
+	parent := saveRecordingParent(t, store, "script-no-key", recordingDigestTestScript())
+	if err := server.persistRecordedBaseline("script-no-key", "browser_recording", parent, []correlate.Observation{{RequestBody: `{"password":"secret-value"}`}}); err != nil {
 		t.Fatal(err)
 	}
 	record, err := store.GetScriptRecording("script-no-key")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record.Sensitivity != scrub.SensitivityScrubbed || record.EncryptedCorrelationObservations != "" || strings.Contains(record.Observations[0].RequestBody, "secret-value") {
+	if record.Sensitivity != scrub.SensitivityScrubbed || record.EncryptedCorrelationObservations != "" || record.Observations[0].RequestURL != "" || record.Observations[0].RequestBody != "" || record.Observations[0].ResponseBody != "" || record.Observations[0].RequestHeaders != nil || record.Observations[0].ResponseHeaders != nil {
 		t.Fatalf("keyless recording retained raw detail: %#v", record)
 	}
 }
 
-func TestCaptureRecordingBaselinePersistsSameProjectProxySession(t *testing.T) {
+func TestAttestRecordingBaselineCapturePersistsExactSameProjectConversion(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -187,7 +484,42 @@ func TestCaptureRecordingBaselinePersistsSameProjectProxySession(t *testing.T) {
 	})
 
 	server := &Server{store: store, recorder: proxyRecorder}
-	server.captureRecordingBaseline("script-same-project", "project-a", session.ID)
+	converted := recorder.ConvertSession(session, "Checkout")
+	if converted == nil || converted.Script == nil {
+		t.Fatal("recording conversion produced no script")
+	}
+	safeScript, _, err := applySuggestedSecretBindings(converted.Script, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	snapshot, ok := proxyRecorder.GetSession(session.ID)
+	if !ok {
+		t.Fatal("recording snapshot not found")
+	}
+	reconverted := recorder.ConvertSession(snapshot, safeScript.Name)
+	safeReconverted, _, err := applySuggestedSecretBindings(reconverted.Script, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	directDigest, _ := scriptCorrelationActionGraphDigest(safeScript)
+	snapshotDigest, _ := scriptCorrelationActionGraphDigest(safeReconverted)
+	if directDigest != snapshotDigest {
+		directJSON, _ := json.Marshal(safeScript.Actions)
+		snapshotJSON, _ := json.Marshal(safeReconverted.Actions)
+		t.Fatalf("snapshot conversion changed action graph: direct=%s snapshot=%s", directJSON, snapshotJSON)
+	}
+	attested, err := server.attestRecordingBaselineCapture("project-a", safeScript, session.ID)
+	if err != nil {
+		t.Fatalf("attest exact conversion: %v", err)
+	}
+	if attested == nil || attested.source != "proxy_recording" || len(attested.observations) != 1 {
+		t.Fatalf("attestation = %#v, want one proxy observation", attested)
+	}
+	safeScript.ProjectID = "project-a"
+	parent := saveRecordingParent(t, store, "script-same-project", safeScript)
+	if err := server.persistRecordedBaseline("script-same-project", attested.source, parent, attested.observations); err != nil {
+		t.Fatal(err)
+	}
 
 	record, err := store.GetScriptRecording("script-same-project")
 	if err != nil {
@@ -204,7 +536,34 @@ func TestCaptureRecordingBaselinePersistsSameProjectProxySession(t *testing.T) {
 	}
 }
 
-func TestCaptureRecordingBaselineRejectsCrossProjectProxySession(t *testing.T) {
+func TestAttestRecordingBaselineCaptureRejectsRequestConfigOverride(t *testing.T) {
+	proxyRecorder := recorder.New("127.0.0.1:0")
+	session, err := proxyRecorder.StartSessionForProject("proxy-config-session", "Checkout", "project-a", recorder.SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.BaseURL = "https://shop.example.test"
+	session.Requests = append(session.Requests, recorder.RecordedRequest{
+		Seq: 1, Method: http.MethodGet, URL: "https://shop.example.test/cart", Path: "/cart",
+	})
+	converted := recorder.ConvertSession(session, "Checkout")
+	if converted == nil || converted.Script == nil {
+		t.Fatal("recording conversion produced no script")
+	}
+	safeScript, _, err := applySuggestedSecretBindings(converted.Script, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	overridden := *safeScript
+	overridden.Config.BaseURL = "https://unrelated.example.test"
+
+	server := &Server{recorder: proxyRecorder}
+	if _, err := server.attestRecordingBaselineCapture("project-a", &overridden, session.ID); !errors.Is(err, errRecordingCaptureUnattested) {
+		t.Fatalf("config-overridden attestation error = %v, want unattested", err)
+	}
+}
+
+func TestAttestRecordingBaselineCaptureRejectsCrossProjectProxySession(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -219,18 +578,76 @@ func TestCaptureRecordingBaselineRejectsCrossProjectProxySession(t *testing.T) {
 	session.Requests = append(session.Requests, recorder.RecordedRequest{Seq: 1, Method: "GET", URL: "https://shop.example.test/cart"})
 
 	server := &Server{store: store, recorder: proxyRecorder}
-	server.captureRecordingBaseline("script-other-project", "project-b", session.ID)
-
-	record, err := store.GetScriptRecording("script-other-project")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if record != nil {
-		t.Fatalf("cross-project recording baseline was persisted: %#v", record)
+	converted := recorder.ConvertSession(session, "Checkout")
+	if _, err := server.attestRecordingBaselineCapture("project-b", converted.Script, session.ID); !errors.Is(err, errRecordingCaptureSourceNotFound) {
+		t.Fatalf("cross-project attestation error = %v, want source not found", err)
 	}
 }
 
-func TestCaptureRecordingBaselineDoesNotMapBrowserUIActionsToProxyObservations(t *testing.T) {
+func TestHandleCreateScriptMasksForeignRecordingSessionsAsNotFound(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	proxyRecorder := recorder.New("127.0.0.1:0")
+	proxySession, err := proxyRecorder.StartSessionForProject("foreign-proxy", "Checkout", "project-b", recorder.SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proxySession.BaseURL = "https://shop.example.test"
+	proxySession.Requests = append(proxySession.Requests, recorder.RecordedRequest{
+		Seq: 1, Method: http.MethodGet, URL: "https://shop.example.test/cart", Path: "/cart",
+	})
+	converted := recorder.ConvertSession(proxySession, "Checkout")
+	if converted == nil || converted.Script == nil {
+		t.Fatal("proxy recording conversion produced no script")
+	}
+	converted.Script.ProjectID = "project-a"
+
+	browserManager := NewBrowserRecordingManager(nil)
+	browserManager.sessions["foreign-browser"] = &BrowserRecordingSession{
+		ID:        "foreign-browser",
+		Name:      "Browser",
+		ProjectID: "project-b",
+		Status:    BrowserRecordingStopped,
+		StartedAt: time.Now(),
+	}
+	server := NewServer(ServerConfig{Store: store})
+	server.recorder = proxyRecorder
+	server.browserRecording = browserManager
+
+	probe := func(sessionID string) (int, string) {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{
+			"project_id":                  "project-a",
+			"source_recording_session_id": sessionID,
+			"script":                      converted.Script,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		return resp.Code, resp.Body.String()
+	}
+
+	wantStatus, wantBody := probe("missing-recording")
+	if wantStatus != http.StatusNotFound {
+		t.Fatalf("missing recording status = %d body=%s, want 404", wantStatus, wantBody)
+	}
+	for _, sessionID := range []string{proxySession.ID, "foreign-browser"} {
+		status, body := probe(sessionID)
+		if status != wantStatus || body != wantBody {
+			t.Errorf("recording %q response = %d %q, want absent response %d %q", sessionID, status, body, wantStatus, wantBody)
+		}
+	}
+}
+
+func TestAttestRecordingBaselineCaptureDoesNotMapBrowserUIActionsToProxyObservations(t *testing.T) {
 	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -257,13 +674,66 @@ func TestCaptureRecordingBaselineDoesNotMapBrowserUIActionsToProxyObservations(t
 		StartedAt: time.Now(),
 	}
 	server := &Server{store: store, recorder: proxyRecorder, browserRecording: browserManager}
-	server.captureRecordingBaseline("browser-ui-script", "project-a", sessionID)
+	if _, err := server.attestRecordingBaselineCapture("project-a", recordingDigestTestScript(), sessionID); !errors.Is(err, errRecordingCaptureUnattested) {
+		t.Fatalf("browser recording attestation error = %v, want unattested", err)
+	}
+}
 
-	record, err := store.GetScriptRecording("browser-ui-script")
+func TestAttestRecordingBaselineCaptureRejectsUnrelatedSameProjectScript(t *testing.T) {
+	proxyRecorder := recorder.New("127.0.0.1:0")
+	session, err := proxyRecorder.StartSessionForProject("proxy-session", "Checkout", "project-a", recorder.SessionFilters{}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record != nil {
-		t.Fatalf("browser UI script received an unrelated HTTP baseline: %#v", record)
+	session.BaseURL = "https://shop.example.test"
+	session.Requests = append(session.Requests, recorder.RecordedRequest{Seq: 1, Method: http.MethodGet, URL: "https://shop.example.test/cart", Path: "/cart"})
+	server := &Server{recorder: proxyRecorder}
+	if _, err := server.attestRecordingBaselineCapture("project-a", recordingDigestTestScript(), session.ID); !errors.Is(err, errRecordingCaptureUnattested) {
+		t.Fatalf("unrelated script attestation error = %v, want unattested", err)
+	}
+}
+
+func TestHandleCreateScriptRejectsUnattestedRecordingBindingBeforeStore(t *testing.T) {
+	store, err := storage.NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	server := NewServer(ServerConfig{Store: store})
+	proxyRecorder := recorder.New("127.0.0.1:0")
+	session, err := proxyRecorder.StartSessionForProject("proxy-session", "Checkout", "project-a", recorder.SessionFilters{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.BaseURL = "https://shop.example.test"
+	session.Requests = append(session.Requests, recorder.RecordedRequest{Seq: 1, Method: http.MethodGet, URL: "https://shop.example.test/cart", Path: "/cart"})
+	server.recorder = proxyRecorder
+
+	converted := recorder.ConvertSession(session, "Unrelated")
+	if converted == nil || converted.Script == nil || len(converted.Script.Actions) == 0 {
+		t.Fatal("recording conversion produced no actions")
+	}
+	converted.Script.ProjectID = "project-a"
+	converted.Script.Actions[0].Target = "/unrelated"
+	body, err := json.Marshal(map[string]any{
+		"project_id":                  "project-a",
+		"source_recording_session_id": session.ID,
+		"script":                      converted.Script,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusConflict, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "not an attested conversion") {
+		t.Fatalf("body = %s, want attestation guidance", resp.Body.String())
+	}
+	if scripts := server.runner.ListScripts(); len(scripts) != 0 {
+		t.Fatalf("stored scripts = %#v, rejected binding must not create a script", scripts)
 	}
 }

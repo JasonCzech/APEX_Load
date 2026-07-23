@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 type regionPlacementState struct {
@@ -115,6 +117,7 @@ func planDistributedGroupShardsForCandidates(groups []TestGroup, allLoadByTarget
 	}
 	projected := make(map[string]generatorLoadSnapshot, len(allLoadByTarget))
 	for key, value := range allLoadByTarget {
+		value.RuntimeCapacities = cloneProtocolRuntimeCapacities(value.RuntimeCapacities)
 		projected[key] = value
 	}
 	defaultProjected := filterLoadSnapshots(projected, defaultLoadByTarget)
@@ -125,12 +128,15 @@ func planDistributedGroupShardsForCandidates(groups []TestGroup, allLoadByTarget
 		shards := chooseGeneratorShardsForGroup(group, projected, defaultProjected, preferredAll, preferredDefault, assignment, regionState, compatibility)
 		shardsByGroup[group.Name] = shards
 		for _, shard := range shards {
-			if shard.Target == "" || shard.VUsers <= 0 {
+			if shard.Target == "" {
 				continue
 			}
 			snapshot := projected[shard.Target]
-			snapshot.AvailableCapacity -= int32(shard.VUsers)
-			snapshot.Stats.ActiveVUsers += int32(shard.VUsers)
+			if shard.VUsers > 0 {
+				snapshot.AvailableCapacity -= int32(shard.VUsers)
+				snapshot.Stats.ActiveVUsers += int32(shard.VUsers)
+			}
+			consumeGroupRuntimeCapacity(&snapshot, group, shard.VUsers)
 			projected[shard.Target] = snapshot
 			if _, ok := defaultProjected[shard.Target]; ok {
 				defaultProjected[shard.Target] = snapshot
@@ -201,12 +207,18 @@ func chooseGeneratorShardsForGroup(group TestGroup, allLoadByTarget map[string]g
 			if _, ok := allLoadByTarget[target]; !ok {
 				return nil
 			}
-			if compatibility != nil && !compatibility.targetCanRun(target, group.Protocol, requiredLabels) {
+			if compatibility != nil && !compatibility.targetCanRun(target, group.Protocol, groupRequiredRuntimeFeature(group), requiredLabels) {
 				return nil
+			}
+			if !runtimeOccupancyAllowsGroup(group, allLoadByTarget[target]) {
+				// Occupancy is transient capacity, so a sharded specific-host
+				// group may use the remaining selected hosts. Static protocol,
+				// feature, and label incompatibility above remains a hard error.
+				continue
 			}
 			targets = append(targets, target)
 		}
-		return capacityWeightedShards(group.Name, group.VUsers, targets, allLoadByTarget, group.Assignment.ShardStrategy)
+		return capacityWeightedShardsForGroup(group, targets, allLoadByTarget, group.Assignment.ShardStrategy)
 	}
 
 	candidateLoad := defaultLoadByTarget
@@ -224,6 +236,328 @@ func chooseGeneratorShardsForGroup(group TestGroup, allLoadByTarget map[string]g
 		return nil
 	}
 	return []GeneratorShardSummary{{Group: group.Name, Target: target, VUsers: group.VUsers}}
+}
+
+func capacityWeightedShardsForGroup(group TestGroup, targets []string, loadByTarget map[string]generatorLoadSnapshot, strategy string) []GeneratorShardSummary {
+	if javaVuserOccupancyModeForGroup(group) != "" {
+		targets = targetsAllowingGroupRuntimeOccupancy(group, targets, loadByTarget)
+		if len(targets) == 0 {
+			return nil
+		}
+	}
+	plan := engine.NewJavaVuserCapacityPlan(group.script)
+	if !plan.RequiresPersistentLifecycle() {
+		return capacityWeightedShards(group.Name, group.VUsers, targets, loadByTarget, strategy)
+	}
+	if len(targets) == 0 || group.VUsers <= 0 {
+		return nil
+	}
+
+	adjusted := make(map[string]generatorLoadSnapshot, len(targets))
+	maxByTarget := make(map[string]int, len(targets))
+	totalMaximum := 0
+	for _, target := range targets {
+		snapshot, ok := loadByTarget[target]
+		if !ok {
+			return nil
+		}
+		// Persistent Java VUsers pin one external process slot for their entire
+		// lifecycle. A general generator heartbeat or top-level feature bit cannot
+		// prove how many such slots exist, so a missing protocol capacity
+		// advertisement is unusable rather than an unbounded fallback.
+		maximum := 0
+		if available, advertised := protocolRuntimeAvailableVUsers(snapshot, "java_vuser"); advertised {
+			maximum = maximumVUsersWithinRuntimeCapacity(plan, group.VUsers, available)
+		}
+		if snapshot.AvailableCapacity > int32(maximum) {
+			snapshot.AvailableCapacity = int32(maximum)
+		}
+		maxByTarget[target] = maximum
+		if maximum >= group.VUsers-totalMaximum {
+			totalMaximum = group.VUsers
+		} else {
+			totalMaximum += maximum
+		}
+		adjusted[target] = snapshot
+	}
+	if totalMaximum < group.VUsers {
+		return nil
+	}
+
+	allocations := allocateCapacityWeightedVUsers(group.VUsers, targets, adjusted)
+	assigned := 0
+	for _, target := range targets {
+		if allocations[target] > maxByTarget[target] {
+			allocations[target] = maxByTarget[target]
+		}
+		assigned += allocations[target]
+	}
+	remaining := group.VUsers - assigned
+	if remaining > 0 {
+		ordered := append([]string(nil), targets...)
+		sort.SliceStable(ordered, func(left, right int) bool {
+			leftSpare := maxByTarget[ordered[left]] - allocations[ordered[left]]
+			rightSpare := maxByTarget[ordered[right]] - allocations[ordered[right]]
+			if leftSpare != rightSpare {
+				return leftSpare > rightSpare
+			}
+			leftCapacity := adjusted[ordered[left]].AvailableCapacity
+			rightCapacity := adjusted[ordered[right]].AvailableCapacity
+			if leftCapacity != rightCapacity {
+				return leftCapacity > rightCapacity
+			}
+			return ordered[left] < ordered[right]
+		})
+		for _, target := range ordered {
+			spare := maxByTarget[target] - allocations[target]
+			if spare <= 0 {
+				continue
+			}
+			add := min(spare, remaining)
+			allocations[target] += add
+			remaining -= add
+			if remaining == 0 {
+				break
+			}
+		}
+	}
+	if remaining != 0 {
+		return nil
+	}
+	if strategy == "" {
+		strategy = generatorShardStrategyCapacityWeighted
+	}
+	shards := make([]GeneratorShardSummary, 0, len(targets))
+	for _, target := range targets {
+		if allocations[target] <= 0 {
+			continue
+		}
+		shards = append(shards, GeneratorShardSummary{
+			Group:         group.Name,
+			Target:        target,
+			VUsers:        allocations[target],
+			ShardStrategy: strategy,
+		})
+	}
+	return shards
+}
+
+func capacityWeightedShardsForGroupIncludingZero(group TestGroup, targets []string, loadByTarget map[string]generatorLoadSnapshot, strategy string) []GeneratorShardSummary {
+	if javaVuserOccupancyModeForGroup(group) != "" {
+		targets = targetsAllowingGroupRuntimeOccupancy(group, targets, loadByTarget)
+		if len(targets) == 0 {
+			return nil
+		}
+	}
+	plan := engine.NewJavaVuserCapacityPlan(group.script)
+	if !plan.RequiresPersistentLifecycle() {
+		return capacityWeightedShardsIncludingZero(group.Name, group.VUsers, targets, loadByTarget, strategy)
+	}
+	if len(targets) == 0 || group.VUsers < 0 {
+		return nil
+	}
+	if strategy == "" {
+		strategy = generatorShardStrategyCapacityWeighted
+	}
+	allocated := map[string]int{}
+	if group.VUsers > 0 {
+		shards := capacityWeightedShardsForGroup(group, targets, loadByTarget, strategy)
+		if len(shards) == 0 {
+			return nil
+		}
+		for _, shard := range shards {
+			allocated[shard.Target] = shard.VUsers
+		}
+	}
+	shards := make([]GeneratorShardSummary, 0, len(targets))
+	for _, target := range targets {
+		shards = append(shards, GeneratorShardSummary{
+			Group:         group.Name,
+			Target:        target,
+			VUsers:        allocated[target],
+			ShardStrategy: strategy,
+		})
+	}
+	return shards
+}
+
+func maximumVUsersWithinRuntimeCapacity(plan engine.JavaVuserCapacityPlan, upperBound int, available int64) int {
+	if upperBound <= 0 || available <= 0 {
+		return 0
+	}
+	low, high := 0, upperBound
+	for low < high {
+		middle := low + (high-low+1)/2
+		if plan.Demand(middle) <= available {
+			low = middle
+		} else {
+			high = middle - 1
+		}
+	}
+	return low
+}
+
+func protocolRuntimeAvailableVUsers(snapshot generatorLoadSnapshot, protocolName string) (int64, bool) {
+	found := false
+	var available int64
+	for _, capacity := range snapshot.RuntimeCapacities {
+		if !strings.EqualFold(strings.TrimSpace(capacity.Protocol), protocolName) {
+			continue
+		}
+		candidate := int64(0)
+		if capacity.Available && capacity.MaxVUsers > 0 && capacity.AvailableVUsers > 0 {
+			candidate = min(capacity.AvailableVUsers, capacity.MaxVUsers)
+		}
+		if !found || candidate < available {
+			available = candidate
+		}
+		found = true
+	}
+	return available, found
+}
+
+func javaVuserOccupancyModeForGroup(group TestGroup) string {
+	protocolName := strings.TrimSpace(group.Protocol)
+	if group.script != nil && strings.TrimSpace(group.script.Protocol) != "" {
+		protocolName = strings.TrimSpace(group.script.Protocol)
+	}
+	if !strings.EqualFold(protocolName, "java_vuser") {
+		return ""
+	}
+	if engine.NewJavaVuserCapacityPlan(group.script).RequiresPersistentLifecycle() {
+		return generatorrpc.RuntimeOccupancyModePersistent
+	}
+	// A java_vuser script without phase methods uses the backward-compatible
+	// one-shot runner path. Invalid/empty Java scripts are classified
+	// conservatively and will still fail normal script validation.
+	return generatorrpc.RuntimeOccupancyModeLegacy
+}
+
+func protocolRuntimeOccupancyMode(snapshot generatorLoadSnapshot, protocolName string) (string, bool) {
+	mode := ""
+	for _, capacity := range snapshot.RuntimeCapacities {
+		if !strings.EqualFold(strings.TrimSpace(capacity.Protocol), protocolName) {
+			continue
+		}
+		candidate := strings.ToLower(strings.TrimSpace(capacity.OccupancyMode))
+		if candidate == "" {
+			// Empty is the rolling-upgrade representation from generators
+			// predating occupancy-mode advertisement.
+			continue
+		}
+		switch candidate {
+		case generatorrpc.RuntimeOccupancyModeIdle,
+			generatorrpc.RuntimeOccupancyModePersistent,
+			generatorrpc.RuntimeOccupancyModeLegacy:
+		default:
+			return candidate, true
+		}
+		if mode != "" && mode != candidate {
+			return "conflict", true
+		}
+		mode = candidate
+	}
+	return mode, mode != ""
+}
+
+func runtimeOccupancyAllowsGroup(group TestGroup, snapshot generatorLoadSnapshot) bool {
+	required := javaVuserOccupancyModeForGroup(group)
+	if required == "" {
+		return true
+	}
+	occupied, advertised := protocolRuntimeOccupancyMode(snapshot, "java_vuser")
+	if !advertised {
+		// Persistent lifecycle is a governed, capacity-pinned contract and current
+		// generators advertise the shared process pool's occupancy with every
+		// java_vuser capacity observation. Without it the controller cannot prove
+		// that legacy one-shot work is not already using the same slots.
+		if required == generatorrpc.RuntimeOccupancyModePersistent {
+			return false
+		}
+		// Preserve rolling-upgrade compatibility for genuinely legacy-only
+		// generators. A target that advertises governed persistent lifecycle is
+		// current enough to owe an occupancy observation; accepting legacy work
+		// there would otherwise race an existing persistent assignment.
+		return !stringSliceContainsEqualFold(
+			snapshot.CompatibleFeatures,
+			protocol.FeatureJavaVuserPersistentLifecycleV1,
+		)
+	}
+	return occupied == generatorrpc.RuntimeOccupancyModeIdle || occupied == required
+}
+
+func targetsAllowingGroupRuntimeOccupancy(group TestGroup, targets []string, loadByTarget map[string]generatorLoadSnapshot) []string {
+	filtered := make([]string, 0, len(targets))
+	for _, target := range targets {
+		snapshot, ok := loadByTarget[target]
+		if !ok || !runtimeOccupancyAllowsGroup(group, snapshot) {
+			continue
+		}
+		filtered = append(filtered, target)
+	}
+	return filtered
+}
+
+func runtimeCapacityAllowsGroup(group TestGroup, snapshot generatorLoadSnapshot, vusers int) bool {
+	if !runtimeOccupancyAllowsGroup(group, snapshot) {
+		return false
+	}
+	plan := engine.NewJavaVuserCapacityPlan(group.script)
+	if !plan.RequiresPersistentLifecycle() {
+		return true
+	}
+	available, advertised := protocolRuntimeAvailableVUsers(snapshot, "java_vuser")
+	return advertised && available > 0 && plan.Demand(vusers) <= available
+}
+
+func consumeGroupRuntimeCapacity(snapshot *generatorLoadSnapshot, group TestGroup, vusers int) {
+	if snapshot == nil {
+		return
+	}
+	occupancyMode := javaVuserOccupancyModeForGroup(group)
+	if occupancyMode == "" {
+		return
+	}
+	plan := engine.NewJavaVuserCapacityPlan(group.script)
+	demand := plan.Demand(vusers)
+	for index := range snapshot.RuntimeCapacities {
+		if !strings.EqualFold(strings.TrimSpace(snapshot.RuntimeCapacities[index].Protocol), "java_vuser") {
+			continue
+		}
+		capacity := &snapshot.RuntimeCapacities[index]
+		currentMode := strings.ToLower(strings.TrimSpace(capacity.OccupancyMode))
+		if currentMode == "" || currentMode == generatorrpc.RuntimeOccupancyModeIdle {
+			capacity.OccupancyMode = occupancyMode
+		}
+		if plan.RequiresPersistentLifecycle() {
+			capacity.AvailableVUsers -= demand
+			if capacity.AvailableVUsers < 0 {
+				capacity.AvailableVUsers = 0
+			}
+		}
+	}
+}
+
+func restoreGroupRuntimeCapacity(snapshot *generatorLoadSnapshot, group TestGroup, vusers int) {
+	if snapshot == nil {
+		return
+	}
+	plan := engine.NewJavaVuserCapacityPlan(group.script)
+	if !plan.RequiresPersistentLifecycle() {
+		return
+	}
+	demand := plan.Demand(vusers)
+	for index := range snapshot.RuntimeCapacities {
+		capacity := &snapshot.RuntimeCapacities[index]
+		if !strings.EqualFold(strings.TrimSpace(capacity.Protocol), "java_vuser") ||
+			!capacity.Available || capacity.MaxVUsers <= 0 {
+			continue
+		}
+		capacity.AvailableVUsers += demand
+		if capacity.AvailableVUsers > capacity.MaxVUsers {
+			capacity.AvailableVUsers = capacity.MaxVUsers
+		}
+	}
 }
 
 func capacityWeightedShards(groupName string, vusers int, targets []string, loadByTarget map[string]generatorLoadSnapshot, strategy string) []GeneratorShardSummary {
@@ -343,7 +677,10 @@ func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]gene
 		return ""
 	}
 	for _, target := range ordered {
-		if compatibility != nil && !compatibility.targetCanRun(target, group.Protocol, requiredLabels) {
+		if compatibility != nil && !compatibility.targetCanRun(target, group.Protocol, groupRequiredRuntimeFeature(group), requiredLabels) {
+			continue
+		}
+		if !runtimeCapacityAllowsGroup(group, loadByTarget[target], group.VUsers) {
 			continue
 		}
 		if loadByTarget[target].AvailableCapacity >= int32(group.VUsers) {
@@ -351,9 +688,17 @@ func chooseGeneratorTargetForGroup(group TestGroup, loadByTarget map[string]gene
 		}
 	}
 	for _, target := range ordered {
-		if compatibility == nil || compatibility.targetCanRun(target, group.Protocol, requiredLabels) {
+		if (compatibility == nil || compatibility.targetCanRun(target, group.Protocol, groupRequiredRuntimeFeature(group), requiredLabels)) &&
+			runtimeCapacityAllowsGroup(group, loadByTarget[target], group.VUsers) {
 			return target
 		}
+	}
+	return ""
+}
+
+func groupRequiredRuntimeFeature(group TestGroup) string {
+	if groupRequiresJavaVuserPhaseLifecycle(group) {
+		return protocol.FeatureJavaVuserPersistentLifecycleV1
 	}
 	return ""
 }

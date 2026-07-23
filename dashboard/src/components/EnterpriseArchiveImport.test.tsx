@@ -4,6 +4,7 @@ import { act } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
+import { ApiError } from '../hooks/apiClient'
 import EnterpriseArchiveImport from './EnterpriseArchiveImport'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -436,37 +437,37 @@ describe('EnterpriseArchiveImport', () => {
           area: 'HTTP',
           construct: 'web.* / HttpURLConnection / HttpClient / Apache HttpClient',
           status: 'supported',
-          execution_status: 'executable',
+          execution_status: 'external_runner_required',
           fields: ['url', 'method', 'headers', 'body'],
-          notes: 'Recognized Java-over-HTTP idioms convert through the native HTTP path.',
+          notes: 'Detected for source review; the complete archive remains in one source-order-preserving java_vuser draft.',
         },
         {
           id: 'java-jdbc',
           area: 'Database',
           construct: 'java.sql DriverManager/Connection/PreparedStatement',
           status: 'supported',
-          execution_status: 'executable',
+          execution_status: 'external_runner_required',
           fields: ['sql', 'query', 'exec'],
-          notes: 'Statically recoverable JDBC statements are delegated to the database importer.',
+          notes: 'Detected for source review; the complete archive remains in one source-order-preserving java_vuser draft.',
         },
         {
           id: 'java-no-runtime-surfaces',
           area: 'Review',
           construct: 'RMI, EJB, CORBA, SAP GUI Java, Jacada, Oracle NCA, Tuxedo',
-          status: 'review_only',
-          execution_status: 'not_executable',
+          status: 'supported',
+          execution_status: 'external_runner_required',
           review_required: true,
-          notes: 'No-runtime Java middleware surfaces receive deterministic named review dispositions.',
+          notes: 'Detected for source review; the complete archive remains in one source-order-preserving java_vuser draft.',
         },
       ],
       java_http_idiom_matrix: [
-        { id: 'java-web-custom-request', area: 'HTTP', construct: 'web.customRequest', status: 'supported', execution_status: 'executable', fields: ['name', 'URL', 'Method', 'Body'], notes: 'Preserves ordered header_list.' },
+        { id: 'java-web-custom-request', area: 'HTTP', construct: 'web.customRequest', status: 'supported', execution_status: 'external_runner_required', fields: ['name', 'URL', 'Method', 'Body'], notes: 'Detected for source review; the complete archive remains combined.' },
       ],
       java_jms_idiom_matrix: [
-        { id: 'java-jms-publish-consume', area: 'JMS', construct: 'producer.send / consumer.receive', status: 'supported', execution_status: 'executable', fields: ['jms_publish', 'jms_consume'], notes: 'Mapped to native JMS actions.' },
+        { id: 'java-jms-publish-consume', area: 'JMS', construct: 'producer.send / consumer.receive', status: 'supported', execution_status: 'external_runner_required', fields: ['jms_publish', 'jms_consume'], notes: 'Detected for source review; the complete archive remains combined.' },
       ],
       java_jdbc_idiom_matrix: [
-        { id: 'java-jdbc-query', area: 'JDBC', construct: 'PreparedStatement.executeQuery', status: 'supported', execution_status: 'executable', fields: ['select_sql'], notes: 'Static SELECT SQL becomes db_query.' },
+        { id: 'java-jdbc-query', area: 'JDBC', construct: 'PreparedStatement.executeQuery', status: 'supported', execution_status: 'external_runner_required', fields: ['select_sql'], notes: 'Detected for source review; the complete archive remains combined.' },
       ],
     })
 
@@ -504,16 +505,19 @@ describe('EnterpriseArchiveImport', () => {
     expect(javaCoverage).not.toBeNull()
     expect(javaCoverage?.textContent).toContain('Java Vuser Import Coverage')
     expect(javaCoverage?.textContent).toContain('HTTP: web.* / HttpURLConnection / HttpClient / Apache HttpClient')
-    expect(javaCoverage?.textContent).toContain('Supported / Executable')
+    expect(javaCoverage?.textContent).toContain('Supported / External Runner Required')
     expect(javaCoverage?.textContent).toContain('Database: java.sql DriverManager/Connection/PreparedStatement')
     expect(javaCoverage?.textContent).toContain('Review: RMI, EJB, CORBA, SAP GUI Java, Jacada, Oracle NCA, Tuxedo')
-    expect(javaCoverage?.textContent).toContain('Review Only / Not Executable / Review Required')
+    expect(javaCoverage?.textContent).toContain('Supported / External Runner Required / Review Required')
+    expect(javaCoverage?.textContent).toContain('HTTP, JDBC, JMS, SOAP, and custom Java remain together')
+    expect(javaCoverage?.textContent).toContain('java_vuser_persistent_lifecycle_v1')
+    expect(javaCoverage?.textContent).toContain('java_vuser_session_frame_token_v1')
 
     const javaHTTPDetails = coverage?.querySelector('details[data-coverage="java_http"]') as HTMLDetailsElement | null
     const javaJMSDetails = coverage?.querySelector('details[data-coverage="java_jms"]') as HTMLDetailsElement | null
     const javaJDBCDetails = coverage?.querySelector('details[data-coverage="java_jdbc"]') as HTMLDetailsElement | null
     expect(javaHTTPDetails?.textContent).toContain('web.customRequest')
-    expect(javaHTTPDetails?.textContent).toContain('Preserves ordered header_list.')
+    expect(javaHTTPDetails?.textContent).toContain('complete archive remains combined')
     expect(javaJMSDetails?.textContent).toContain('producer.send / consumer.receive')
     expect(javaJDBCDetails?.textContent).toContain('PreparedStatement.executeQuery')
   })
@@ -1085,21 +1089,21 @@ describe('EnterpriseArchiveImport', () => {
     expect(JSON.stringify(onEdit.mock.calls[0]?.[0])).not.toContain('[REDACTED]')
   })
 
-  it('shows and switches generated scripts for multi-script enterprise archive results', async () => {
+  it('shows and switches generated scripts for non-Java multi-script enterprise archive results', async () => {
     apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce({
       scripts: [
         {
-          name: 'Java HTTP Flow',
+          name: 'HTTP Flow',
           protocol: 'http',
           actions: [{ name: 'Open Home', type: 'http_request' }],
         },
         {
-          name: 'Java JMS Orders',
+          name: 'JMS Orders',
           protocol: 'jms-ibmmq',
           actions: [{ name: 'Publish Order', type: 'jms_publish' }],
         },
         {
-          name: 'Java JDBC Checks',
+          name: 'Database Checks',
           protocol: 'database',
           actions: [{ name: 'Select Orders', type: 'db_query' }],
         },
@@ -1110,7 +1114,7 @@ describe('EnterpriseArchiveImport', () => {
       review_sections: [],
       repair_suggestions: [],
       summary: {
-        project_file: 'MixedJava.usr',
+        project_file: 'MixedProtocols.usr',
         migration_readiness: {
           score_pct: 100,
           blocked: false,
@@ -1140,7 +1144,7 @@ describe('EnterpriseArchiveImport', () => {
       return
     }
 
-    const file = new File(['zip-content'], 'mixed-java.zip', { type: 'application/zip' })
+    const file = new File(['zip-content'], 'mixed-protocols.zip', { type: 'application/zip' })
     await act(async () => {
       Object.defineProperty(fileInput, 'files', {
         configurable: true,
@@ -1154,18 +1158,18 @@ describe('EnterpriseArchiveImport', () => {
     const outputSelector = container.querySelector('[aria-label="Generated scripts"]') as HTMLElement | null
     expect(outputSelector).not.toBeNull()
     expect(outputSelector?.textContent).toContain('3 scripts')
-    expect(outputSelector?.textContent).toContain('Java HTTP Flow')
+    expect(outputSelector?.textContent).toContain('HTTP Flow')
     expect(outputSelector?.textContent).toContain('http · 1 actions')
-    expect(outputSelector?.textContent).toContain('Java JMS Orders')
+    expect(outputSelector?.textContent).toContain('JMS Orders')
     expect(outputSelector?.textContent).toContain('jms-ibmmq · 1 actions')
-    expect(outputSelector?.textContent).toContain('Java JDBC Checks')
+    expect(outputSelector?.textContent).toContain('Database Checks')
     expect(outputSelector?.textContent).toContain('database · 1 actions')
 
     const preview = () => container.querySelector('.script-import-review-preview pre')?.textContent || ''
-    expect(preview()).toContain('"name": "Java HTTP Flow"')
+    expect(preview()).toContain('"name": "HTTP Flow"')
     expect(preview()).toContain('"protocol": "http"')
 
-    const jmsButton = container.querySelector('button[aria-label="Review generated script Java JMS Orders"]') as HTMLButtonElement | null
+    const jmsButton = container.querySelector('button[aria-label="Review generated script JMS Orders"]') as HTMLButtonElement | null
     expect(jmsButton).not.toBeNull()
     if (!jmsButton) {
       return
@@ -1174,10 +1178,10 @@ describe('EnterpriseArchiveImport', () => {
     await clickButton(jmsButton)
 
     expect(jmsButton.getAttribute('aria-pressed')).toBe('true')
-    expect(preview()).toContain('"name": "Java JMS Orders"')
+    expect(preview()).toContain('"name": "JMS Orders"')
     expect(preview()).toContain('"protocol": "jms-ibmmq"')
 
-    const databaseButton = container.querySelector('button[aria-label="Review generated script Java JDBC Checks"]') as HTMLButtonElement | null
+    const databaseButton = container.querySelector('button[aria-label="Review generated script Database Checks"]') as HTMLButtonElement | null
     expect(databaseButton).not.toBeNull()
     if (!databaseButton) {
       return
@@ -1186,8 +1190,469 @@ describe('EnterpriseArchiveImport', () => {
     await clickButton(databaseButton)
 
     expect(databaseButton.getAttribute('aria-pressed')).toBe('true')
-    expect(preview()).toContain('"name": "Java JDBC Checks"')
+    expect(preview()).toContain('"name": "Database Checks"')
     expect(preview()).toContain('"protocol": "database"')
+  })
+
+  it('reviews one combined Java Vuser draft and saves it as one authoring session', async () => {
+    const onEdit = vi.fn()
+    const combinedJavaDraft = {
+      name: 'Combined Java Vuser',
+      version: '1.0.0',
+      protocol: 'java_vuser',
+      init: [{ name: 'Java init', type: 'java_vuser_run', params: { method: 'init' } }],
+      actions: [{ name: 'Java action', type: 'java_vuser_run', params: { method: 'action' } }],
+      teardown: [{ name: 'Java end', type: 'java_vuser_run', params: { method: 'end' } }],
+      metadata: {
+        import: {
+          source: 'enterprise_script_archive',
+          source_script_name: 'CombinedJava.usr',
+          preserved: {
+            fidelity_report: { promotion_status: 'promotable', blockers: [] },
+          },
+        },
+      },
+    }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce({
+      script: combinedJavaDraft,
+      scripts: [combinedJavaDraft],
+      detected_protocol: {
+        canonical_source_protocol: 'java_vuser',
+        apexload_protocol: 'java_vuser',
+        display_name: 'LoadRunner Java Vuser',
+        import_mode: 'external_runner_required',
+        confidence: 'high',
+        runner_requirement: 'java_vuser_jvm_runner',
+        required_evidence: ['Reviewed runner classpath'],
+      },
+      review_artifact: {
+        id: 'java-combined-review',
+        title: 'Combined Java Vuser review',
+        status: 'external_runner_required',
+        protocol: {
+          canonical_source_protocol: 'java_vuser',
+          apexload_protocol: 'java_vuser',
+          import_mode: 'external_runner_required',
+          confidence: 'high',
+          runner_requirement: 'java_vuser_jvm_runner',
+        },
+        summary: 'Review the combined Java source order before approval.',
+        required_evidence: ['Reviewed runner classpath'],
+      },
+      fidelity_report: { promotion_status: 'promotable', blockers: [] },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      summary: {
+        import_mode: 'external_runner_required',
+        fidelity_report: { promotion_status: 'promotable', blockers: [] },
+        migration_readiness: {
+          score_pct: 100,
+          blocked: false,
+          summary: 'Ready for review',
+          policy: { block_statuses: ['blocked', 'partial', 'compatibility_only'] },
+        },
+      },
+      stats: {
+        total_functions: 3,
+        converted_actions: 3,
+        extractors: 0,
+        think_times: 0,
+        transactions: 0,
+        skipped: 0,
+      },
+    })
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" onEdit={onEdit} />))
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const file = new File(['zip-content'], 'combined-java.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    expect(container.querySelector('[aria-label="Generated scripts"]')).toBeNull()
+    expect(container.textContent).toContain('one combined init/action/end source-order draft')
+    expect(container.textContent).toContain('java_vuser_persistent_lifecycle_v1')
+    expect(container.textContent).toContain('java_vuser_session_frame_token_v1')
+    expect(container.textContent).toContain('Each VUser keeps one JVM and Actions instance')
+    expect(container.textContent).not.toContain('persistent per-VUser lifecycle support')
+    expect(container.textContent).toContain('Runner: java_vuser_jvm_runner')
+    expect(container.textContent).toContain('Save this combined draft as an authoring session, then resume that session to edit and approve it')
+    expect(findButton(container, 'Open In Visual Editor')).toBeUndefined()
+    expect(container.textContent).not.toContain('Open Imported Script In Editor')
+    expect(container.textContent).not.toContain('import_promotion_blocked')
+    const preview = container.querySelector('.script-import-review-preview pre')?.textContent || ''
+    expect(preview).toContain('"protocol": "java_vuser"')
+    expect(preview).toContain('"method": "init"')
+    expect(preview).toContain('"method": "action"')
+    expect(preview).toContain('"method": "end"')
+
+    const saveButton = findButton(container, 'Save Combined Java Draft for Approval')
+    expect(saveButton).toBeDefined()
+    await clickButton(saveButton!)
+
+    expect(apiMock.createAuthoringSession).toHaveBeenCalledWith(expect.objectContaining({
+      project_id: 'project-1',
+      source: 'source_review_artifact',
+      idempotency_key: expect.stringMatching(/^enterprise-archive-review:lr-import-[^:]+:1:0$/),
+      draft: combinedJavaDraft,
+      review_state: expect.objectContaining({
+        review_artifact: expect.objectContaining({ id: 'java-combined-review' }),
+      }),
+    }))
+    const firstIdempotencyKey = apiMock.createAuthoringSession.mock.calls[0]?.[0]?.idempotency_key
+    await clickButton(saveButton!)
+    expect(apiMock.createAuthoringSession).toHaveBeenCalledTimes(2)
+    expect(apiMock.createAuthoringSession.mock.calls[1]?.[0]?.idempotency_key).toBe(firstIdempotencyKey)
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(onEdit).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Combined Java Vuser draft saved as authoring session')
+  })
+
+  it('saves the credential-bound combined Java draft instead of the stale redacted review', async () => {
+    const redactedDraft = {
+      name: 'Credentialed Combined Java Vuser',
+      version: '1.0.0',
+      protocol: 'java_vuser',
+      config: { base_url: '' },
+      actions: [{
+        name: 'Java action',
+        type: 'java_vuser_run',
+        target: 'Actions',
+        params: { method: 'action', password: '[REDACTED]' },
+      }],
+    }
+    const resolvedDraft = {
+      ...redactedDraft,
+      actions: [{
+        ...redactedDraft.actions[0],
+        params: { method: 'action', password: '{{secret.JAVA_PASSWORD}}' },
+      }],
+    }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce({
+      script: redactedDraft,
+      scripts: [redactedDraft],
+      detected_protocol: {
+        canonical_source_protocol: 'java_vuser',
+        apexload_protocol: 'java_vuser',
+        display_name: 'LoadRunner Java Vuser',
+        import_mode: 'external_runner_required',
+        confidence: 'high',
+        runner_requirement: 'java_vuser_jvm_runner',
+      },
+      review_artifact: {
+        id: 'java-credential-review',
+        title: 'Credentialed combined Java Vuser review',
+        status: 'external_runner_required',
+        protocol: {
+          canonical_source_protocol: 'java_vuser',
+          apexload_protocol: 'java_vuser',
+          import_mode: 'external_runner_required',
+          confidence: 'high',
+          runner_requirement: 'java_vuser_jvm_runner',
+        },
+        summary: 'Review and approve the combined Java draft.',
+      },
+      fidelity_report: { promotion_status: 'promotable', blockers: [] },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      summary: {
+        import_mode: 'external_runner_required',
+        fidelity_report: { promotion_status: 'promotable', blockers: [] },
+        migration_readiness: {
+          score_pct: 100,
+          blocked: false,
+          summary: 'Ready for review',
+          policy: { block_statuses: ['blocked', 'partial', 'compatibility_only'] },
+        },
+      },
+      stats: {
+        total_functions: 1,
+        converted_actions: 1,
+        extractors: 0,
+        think_times: 0,
+        transactions: 0,
+        skipped: 0,
+      },
+      secret_binding_requirements: [{
+        id: 'java-password',
+        path: '/actions/0/params/password',
+        label: 'Java password',
+        context: 'Java Vuser credential',
+        suggested_name: 'JAVA_PASSWORD',
+        script_index: 0,
+        script_name: redactedDraft.name,
+      }],
+      source_secret_session_id: 'java-source-secrets',
+      source_secret_session_expires_at: '2026-05-17T01:00:00Z',
+      source_secret_migration_allowed: false,
+    })
+    apiMock.applySecretBindings.mockResolvedValueOnce({
+      script: resolvedDraft,
+      secret_binding_requirements: [],
+    })
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [
+          new File(['zip-content'], 'credentialed-java.zip', { type: 'application/zip' }),
+          new File(['unrelated'], 'unrelated.zip', { type: 'application/zip' }),
+        ],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    const removeUnrelated = container.querySelector('[aria-label="Remove unrelated.zip"]') as HTMLButtonElement
+    await act(async () => {
+      removeUnrelated.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(apiMock.discardImportSecretSession).not.toHaveBeenCalled()
+
+    const saveButton = findButton(container, 'Save Combined Java Draft for Approval with 1 secret to configure')
+    expect(saveButton).toBeDefined()
+    await clickButton(saveButton!)
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).toHaveBeenCalledWith({
+      script: redactedDraft,
+      script_index: 0,
+      bindings: [{ requirement_id: 'java-password', secret_name: 'JAVA_PASSWORD' }],
+    })
+    expect(apiMock.createAuthoringSession).toHaveBeenCalledTimes(1)
+    expect(apiMock.createAuthoringSession).toHaveBeenCalledWith(expect.objectContaining({
+      project_id: 'project-1',
+      source: 'source_review_artifact',
+      draft: resolvedDraft,
+    }))
+    expect(JSON.stringify(apiMock.createAuthoringSession.mock.calls[0]?.[0])).not.toContain('[REDACTED]')
+  })
+
+  it('keeps an active review-artifact save locked when an unrelated queued archive is removed', async () => {
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue({
+      detected_protocol: {
+        canonical_source_protocol: 'sap_gui',
+        apexload_protocol: 'sap_gui',
+        display_name: 'SAP GUI',
+        import_mode: 'external_runner_required',
+        confidence: 'high',
+        runner_requirement: 'sap_gui_runner',
+      },
+      review_artifact: {
+        id: 'sap-review',
+        title: 'SAP GUI review artifact',
+        status: 'external_runner_required',
+        protocol: {
+          canonical_source_protocol: 'sap_gui',
+          apexload_protocol: 'sap_gui',
+          import_mode: 'external_runner_required',
+          confidence: 'high',
+          runner_requirement: 'sap_gui_runner',
+        },
+        summary: 'Review the external-runner requirements.',
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      summary: {
+        import_mode: 'external_runner_required',
+        migration_readiness: {
+          score_pct: 100,
+          blocked: false,
+          summary: 'Ready for review',
+          policy: { block_statuses: ['blocked', 'partial', 'compatibility_only'] },
+        },
+      },
+      stats: {
+        total_functions: 1,
+        converted_actions: 0,
+        extractors: 0,
+        think_times: 0,
+        transactions: 0,
+        skipped: 1,
+      },
+    })
+    let resolveSave: ((session: {
+      id: string
+      name: string
+      source: string
+      status: string
+      created_at: string
+      updated_at: string
+      last_accessed_at: string
+    }) => void) | undefined
+    apiMock.createAuthoringSession.mockReturnValueOnce(new Promise(resolve => {
+      resolveSave = resolve
+    }))
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [
+          new File(['alpha'], 'alpha.zip', { type: 'application/zip' }),
+          new File(['beta'], 'beta.zip', { type: 'application/zip' }),
+        ],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    const saveButton = findButton(container, 'Save Review Artifact')
+    expect(saveButton).toBeDefined()
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(apiMock.createAuthoringSession).toHaveBeenCalledTimes(1)
+
+    const removeUnrelated = container.querySelector('[aria-label="Remove beta.zip"]') as HTMLButtonElement
+    await act(async () => {
+      removeUnrelated.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const savingButton = findButton(container, 'Saving Review Artifact')
+    expect(savingButton?.disabled).toBe(true)
+    savingButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(apiMock.createAuthoringSession).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveSave?.({
+        id: 'review-session',
+        name: 'SAP GUI review artifact',
+        source: 'source_review_artifact',
+        status: 'reviewing',
+        created_at: '2026-05-17T00:00:00Z',
+        updated_at: '2026-05-17T00:00:00Z',
+        last_accessed_at: '2026-05-17T00:00:00Z',
+      })
+    })
+    await flushPromises()
+    expect(container.textContent).toContain('Review artifact saved as authoring session')
+  })
+
+  it('keeps a fidelity-blocked combined Java Vuser draft in review instead of offering approval', async () => {
+    const blockedJavaDraft = {
+      name: 'Blocked Combined Java Vuser',
+      version: '1.0.0',
+      protocol: 'java_vuser',
+      actions: [{ name: 'Java action', type: 'java_vuser_run', params: { method: 'action' } }],
+      metadata: {
+        import: {
+          source: 'enterprise_script_archive',
+          preserved: {
+            fidelity_report: {
+              promotion_status: 'blocked',
+              blockers: ['Selected Actions class has no public zero-argument action method.'],
+            },
+          },
+        },
+      },
+    }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValueOnce({
+      script: blockedJavaDraft,
+      scripts: [blockedJavaDraft],
+      detected_protocol: {
+        canonical_source_protocol: 'java_vuser',
+        apexload_protocol: 'java_vuser',
+        display_name: 'LoadRunner Java Vuser',
+        import_mode: 'external_runner_required',
+        confidence: 'high',
+        runner_requirement: 'java_vuser_jvm_runner',
+      },
+      review_artifact: {
+        id: 'java-blocked-review',
+        title: 'Blocked combined Java Vuser review',
+        status: 'external_runner_required',
+        protocol: {
+          canonical_source_protocol: 'java_vuser',
+          apexload_protocol: 'java_vuser',
+          import_mode: 'external_runner_required',
+          confidence: 'high',
+          runner_requirement: 'java_vuser_jvm_runner',
+        },
+        summary: 'Resolve the selected lifecycle blocker.',
+      },
+      fidelity_report: {
+        promotion_status: 'blocked',
+        blockers: ['Selected Actions class has no public zero-argument action method.'],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [{
+        id: 'protocol:java-vuser-fidelity',
+        category: 'protocol',
+        severity: 'blocker',
+        title: 'Resolve combined Java Vuser fidelity blockers',
+        description: 'The draft is not ready for authoring approval.',
+        action: 'Resolve every named fidelity blocker.',
+      }],
+      summary: {
+        import_mode: 'external_runner_required',
+        fidelity_report: {
+          promotion_status: 'blocked',
+          blockers: ['Selected Actions class has no public zero-argument action method.'],
+        },
+        migration_readiness: {
+          score_pct: 50,
+          blocked: false,
+          summary: 'Review required',
+          policy: { block_statuses: ['blocked', 'partial', 'compatibility_only'] },
+        },
+      },
+      stats: {
+        total_functions: 1,
+        converted_actions: 1,
+        extractors: 0,
+        think_times: 0,
+        transactions: 0,
+        skipped: 0,
+      },
+    })
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const file = new File(['zip-content'], 'blocked-java.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    expect(container.textContent).toContain('fidelity blockers must be resolved before authoring approval')
+    expect(container.textContent).toContain('Fidelity blocker: Selected Actions class has no public zero-argument action method.')
+    expect(findButton(container, 'Save Combined Java Draft for Approval')).toBeUndefined()
+    const saveReview = findButton(container, 'Save Review Artifact Instead')
+    expect(saveReview).toBeDefined()
+    await clickButton(saveReview!)
+
+    expect(apiMock.createAuthoringSession).toHaveBeenCalledWith(expect.objectContaining({
+      project_id: 'project-1',
+      source: 'source_review_artifact',
+      draft: blockedJavaDraft,
+    }))
+    expect(container.textContent).toContain('Combined Java Vuser review artifact saved as authoring session')
   })
 
   it('surfaces TrueClient2 compatibility report from Enterprise Script Archive import responses', async () => {
@@ -3507,12 +3972,32 @@ describe('EnterpriseArchiveImport', () => {
       return
     }
 
+    const assertionOption = Array.from(container.querySelectorAll('label')).find(label => label.textContent?.includes('Add default status_code assertions'))
+      ?.querySelector('input') as HTMLInputElement | undefined
+    expect(assertionOption).toBeDefined()
+    if (!assertionOption) {
+      return
+    }
     await act(async () => {
+      assertionOption.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      validateReplayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(validateReplayButton.disabled).toBe(true)
+    expect(apiMock.startDraftBrowserReplaySession).not.toHaveBeenCalled()
+
+    await act(async () => {
+      assertionOption.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(validateReplayButton.disabled).toBe(false)
+
+    act(() => {
+      validateReplayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       validateReplayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
 
     await flushPromises()
 
+    expect(apiMock.startDraftBrowserReplaySession).toHaveBeenCalledTimes(1)
     expect(container.textContent).toContain('Starting')
     expect(container.textContent).toContain('Wait for the draft browser replay to finish before saving it to the library.')
     expect(container.textContent).toContain('Review the generated script, preserved metadata, and warnings. Wait for the draft browser replay to finish before saving it to the library.')
@@ -3873,7 +4358,7 @@ describe('EnterpriseArchiveImport', () => {
     }
   })
 
-  it('shows a draft-specific replay refresh error when replay status polling fails', async () => {
+  it('fails a permanently missing draft replay after a bounded reconciliation window', async () => {
     vi.useFakeTimers()
 
     apiMock.importEnterpriseArchive.mockResolvedValueOnce({
@@ -3943,7 +4428,7 @@ describe('EnterpriseArchiveImport', () => {
       },
       warnings: [],
     })
-    apiMock.getBrowserReplaySession.mockRejectedValueOnce(undefined)
+    apiMock.getBrowserReplaySession.mockRejectedValue(new ApiError('not found', 404))
 
     try {
       await act(async () => {
@@ -3991,16 +4476,18 @@ describe('EnterpriseArchiveImport', () => {
 
       await flushPromises()
 
-      await act(async () => {
-        vi.advanceTimersByTime(2000)
-      })
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        await act(async () => {
+          vi.advanceTimersByTime(2000)
+        })
+        await flushPromises()
+      }
 
-      await flushPromises()
-
+      expect(apiMock.getBrowserReplaySession).toHaveBeenCalledTimes(5)
       expect(apiMock.getBrowserReplaySession).toHaveBeenCalledWith('draft-browser-validation')
-      expect(container.textContent).toContain('Draft browser replay status refresh failed')
-      expect(container.textContent).toContain('Replay Status: Running')
-      expect(container.textContent).toContain('Draft Browser Replay In Progress')
+      expect(container.textContent).toContain('Replay session could not be confirmed')
+      expect(container.textContent).toContain('Replay Status: Failed')
+      expect(container.textContent).toContain('Rerun Draft Browser Replay Before Saving')
     } finally {
       vi.useRealTimers()
     }
@@ -4062,7 +4549,9 @@ describe('EnterpriseArchiveImport', () => {
         skipped: 0,
       },
     })
-    apiMock.startDraftBrowserReplaySession.mockRejectedValueOnce(undefined)
+    apiMock.startDraftBrowserReplaySession.mockRejectedValueOnce(
+      Object.assign(new Error('Draft browser replay failed to start'), { status: 422 }),
+    )
 
     await act(async () => {
       root.render(<EnterpriseArchiveImport projectId="project-1" />)
@@ -4112,6 +4601,47 @@ describe('EnterpriseArchiveImport', () => {
     expect(container.textContent).toContain('Draft browser replay failed to start')
     expect(container.textContent).toContain('Start Draft Browser Replay')
     expect(container.textContent).toContain('Not Run')
+
+    vi.useFakeTimers()
+    try {
+      apiMock.startDraftBrowserReplaySession.mockRejectedValueOnce(new Error('connection reset'))
+      apiMock.getBrowserReplaySession.mockImplementationOnce(async (replaySessionId: string) => ({
+        session: {
+          id: replaySessionId,
+          status: 'completed',
+          group: 'Imported TruClient Mobile Web-replay',
+          protocol: 'browser',
+          current_event_index: 0,
+          completed_at: '2026-07-23T12:00:00Z',
+          events: [],
+        },
+        warnings: [],
+      }))
+
+      const retryButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Start Draft Browser Replay'))
+      expect(retryButton).toBeDefined()
+      await act(async () => {
+        retryButton?.click()
+      })
+      await flushPromises()
+
+      const replayCalls = apiMock.startDraftBrowserReplaySession.mock.calls
+      const payload = replayCalls[replayCalls.length - 1]?.[0]
+      expect(payload.replay_session_id).toMatch(/^[0-9a-f-]{36}$/)
+      expect(container.textContent).toContain(`Replay Session: ${payload.replay_session_id}`)
+      expect(container.textContent).toContain('Confirming the accepted replay session')
+
+      await act(async () => {
+        vi.advanceTimersByTime(2000)
+      })
+      await flushPromises()
+
+      expect(apiMock.getBrowserReplaySession).toHaveBeenCalledWith(payload.replay_session_id)
+      expect(container.textContent).toContain('Replay Status: Completed')
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('shows the convert action for browser validation reviews', async () => {
@@ -4431,7 +4961,9 @@ describe('EnterpriseArchiveImport', () => {
       },
       warnings: [],
     })
-    apiMock.startDraftBrowserReplaySession.mockRejectedValueOnce(undefined)
+    apiMock.startDraftBrowserReplaySession.mockRejectedValueOnce(
+      Object.assign(new Error('Draft browser replay failed to start'), { status: 422 }),
+    )
     apiMock.getBrowserReplaySession.mockResolvedValueOnce({
       session: {
         id: 'draft-browser-validation',

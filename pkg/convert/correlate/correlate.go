@@ -2,25 +2,81 @@ package correlate
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
+
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
+const (
+	maxCorrelationCandidatesPerObservation = 1024
+	maxCorrelationCandidatesPerAnalysis    = 4096
+	maxCorrelationObservationsPerAnalysis  = 4096
+	maxCorrelationEvidenceBytes            = 16 << 20
+	maxCorrelationAnalysisEvidenceBytes    = 64 << 20
+	maxCorrelationStructuredFields         = 8192
+	maxCorrelationJSONTokens               = 32768
+	maxCorrelationJSONNodes                = 32768
+	maxCorrelationJSONDepth                = 128
+	maxCorrelationJSONConstructionBytes    = 16 << 20
+	maxCorrelationRegexOrdinal             = protocol.MaxExtractionEntries - 1
+	// Keep generated HTTP extractors inside the runtime/DSL expression ceiling.
+	// This mirrors protocol/http.MaxExtractorExpressionBytes without importing
+	// the HTTP package back through dsl and creating a package cycle.
+	maxCorrelationExtractorExpressionBytes = 64 << 10
+	// Reserve room for deterministic uniquification suffixes in the extraction
+	// result key; StoreExtraction accounts for key and value together.
+	maxCorrelationExtractionNameSuffixBytes = 16
+)
+
+// maxCorrelationSearchBytes is a deterministic CPU-work ceiling for cross-step
+// value scanning, measured in scanned request-surface bytes (unique candidate
+// values x later-observation surfaces). It is sized so realistic recordings
+// (hundreds of candidates over megabytes of surfaces) never approach it;
+// exhaustion truncates best-effort analysis with a warning; checked analysis
+// converts that warning to ErrCorrelationWorkLimit.
+// A var (not const) so tests can lower it deterministically.
+var maxCorrelationSearchBytes int64 = 8 << 30
+
+// ErrCorrelationWorkLimit identifies deterministic complexity rejection or an
+// incomplete checked analysis. The explicitly best-effort
+// DetectCheckedWithWarnings API reports bounded truncation as warnings instead.
+var ErrCorrelationWorkLimit = errors.New("correlation analysis work limit exceeded")
+
 type Observation struct {
-	ID              int
-	RequestURL      string
-	RequestBody     string
-	RequestHeaders  map[string]string
-	ResponseBody    string
-	ResponseHeaders map[string]string
+	ID          int
+	RequestURL  string
+	RequestBody string
+	// RequestBodyTransformed is true when RequestBody is the wire representation
+	// of a differently encoded editable field (currently an HTTP base64 body).
+	// Diagnosis may inspect it, but must not emit offsets that a client could
+	// apply to the encoded DSL body.
+	RequestBodyTransformed bool
+	RequestHeaders         map[string]string
+	// EditableRequest* are proof bits computed inside the trusted replay boundary:
+	// true means the private wire field exactly matched its authored DSL surface.
+	// Imported/generic observations default false and therefore remain manual-only.
+	EditableRequestURL     bool
+	EditableRequestBody    bool
+	EditableRequestHeaders map[string]bool
+	ResponseBody           string
+	ResponseHeaders        map[string]string
 	// ResponseStatus is the replay HTTP status (0 if unknown). It lets the
 	// diagnosis flag a step the server rejected (>=400) even when no dynamic
 	// value visibly rotated — e.g. a custom anti-replay token re-sent verbatim.
 	ResponseStatus int
+	// ResponseSuccess carries the replay engine's assertion-aware outcome. Nil
+	// preserves status-only behavior for legacy/imported observations; true means
+	// an expected 4xx/5xx response must not be described as a server rejection.
+	ResponseSuccess *bool
 }
 
 type Correlation struct {
@@ -62,7 +118,7 @@ type Candidate struct {
 
 var (
 	jsonStringTokenPattern = regexp.MustCompile(`(?i)"([A-Za-z0-9_]*(?:token|access_token|id_token|refresh_token|session_id|sessionid|sid|csrf|_token|xsrf|auth|id)[A-Za-z0-9_]*)"\s*:\s*"([^"]{6,})"`)
-	jsonNumberIDPattern    = regexp.MustCompile(`(?i)"([A-Za-z0-9_]*(?:id)[A-Za-z0-9_]*)"\s*:\s*(\d{4,})`)
+	jsonNumberIDPattern    = regexp.MustCompile(`(?i)"([A-Za-z0-9_]*(?:id)[A-Za-z0-9_]*)"\s*:\s*(\d{4,})(?:\s*[,}\]]|\s*$)`)
 	htmlInputPatterns      = []struct {
 		re         *regexp.Regexp
 		nameGroup  int
@@ -72,10 +128,9 @@ var (
 		{regexp.MustCompile(`(?i)<input[^>]*\bvalue="([^"]{4,})"[^>]*\bname="([A-Za-z0-9_.\-\[\]]*(?:csrf|xsrf|token|nonce|state|viewstate|authenticity)[A-Za-z0-9_.\-\[\]]*)"`), 2, 1},
 	}
 	nonWordCorrelationChars = regexp.MustCompile(`[^a-z0-9]+`)
-	setCookieValuePattern   = regexp.MustCompile(`(?i)([A-Za-z0-9_.\-]+)=([^;\s,]{4,})`)
 	// ASP.NET WebForms hidden state fields (__VIEWSTATE, __EVENTVALIDATION, …).
 	aspNetHiddenPattern    = regexp.MustCompile(`(?i)<input[^>]*\bname="(__[A-Za-z0-9]+)"[^>]*\bvalue="([^"]*)"`)
-	xmlElementTokenPattern = regexp.MustCompile(`(?is)<(?:[A-Za-z0-9_.-]+:)?([A-Za-z0-9_.-]*(?:token|session|csrf|xsrf|nonce|state|messageid|relatesto|correlationid|correlation|requestid|id)[A-Za-z0-9_.-]*)\b[^>]*>\s*([^<\s][^<]{5,})\s*</(?:[A-Za-z0-9_.-]+:)?[A-Za-z0-9_.-]+>`)
+	xmlElementTokenPattern = regexp.MustCompile(`(?is)<(?:[A-Za-z0-9_.-]+:)?([A-Za-z0-9_.-]*(?:token|session|csrf|xsrf|nonce|state|messageid|relatesto|correlationid|correlation|requestid|id)[A-Za-z0-9_.-]*)\b[^>]*>([^<]{6,})</(?:[A-Za-z0-9_.-]+:)?([A-Za-z0-9_.-]+)>`)
 	xmlAttrTokenPattern    = regexp.MustCompile(`(?is)\b(?:[A-Za-z0-9_.-]+:)?([A-Za-z0-9_.-]*(?:token|session|csrf|xsrf|nonce|state|messageid|relatesto|correlationid|correlation|requestid|id)[A-Za-z0-9_.-]*)\s*=\s*"([^"]{6,})"`)
 	auraTokenPattern       = regexp.MustCompile(`(?i)(?:^|[&{,"\s])aura\.token["']?\s*[:=]\s*["']?([^"&',}\s]{6,})`)
 	auraFWUIDPattern       = regexp.MustCompile(`(?i)"fwuid"\s*:\s*"([^"]{6,})"`)
@@ -83,13 +138,20 @@ var (
 	// descriptor — a markup:// reference or a "namespace:name" descriptor — so a
 	// generic "app":"SomeName" field in unrelated JSON (analytics, feature flags)
 	// is not mis-detected as an Aura correlation. See TestAuraAppPatternRequiresDescriptorShape.
-	auraAppPattern         = regexp.MustCompile(`(?i)"app"\s*:\s*"(markup://[^"]+|[A-Za-z][\w$.-]*:[A-Za-z][\w$./-]*)"`)
-	auraLoadedPattern      = regexp.MustCompile(`(?i)"loaded"\s*:\s*(\{[^}]{6,}\})`)
-	auraPageURIPattern     = regexp.MustCompile(`(?i)(?:"pageURI"\s*:\s*"([^"]{4,})"|aura\.pageURI\s*=\s*([^&\s]{4,}))`)
+	auraAppPattern    = regexp.MustCompile(`(?i)"app"\s*:\s*"(markup://[^"]+|[A-Za-z][\w$.-]*:[A-Za-z][\w$./-]*)"`)
+	auraLoadedPattern = regexp.MustCompile(`(?i)"loaded"\s*:\s*(\{[^}]{6,}\})`)
+	// Keep the JSON and form spellings separate so every replay regex has the
+	// selected value in capture group 1. The HTTP regex extractor always returns
+	// group 1; an alternation with one capture per branch would return an empty
+	// value for the second branch.
+	auraPageURIJSONPattern = regexp.MustCompile(`(?i)"pageURI"\s*:\s*"([^"]{4,})"`)
+	auraPageURIFormPattern = regexp.MustCompile(`(?i)aura\.pageURI\s*=\s*([^&\s]{4,})`)
 	auraPageScopeIDPattern = regexp.MustCompile(`(?i)"pageScopeId"\s*:\s*"([^"]{6,})"`)
-	visualforcePattern     = regexp.MustCompile(`(?i)<input[^>]*\bname="((?:com\.salesforce\.visualforce\.)?ViewState(?:MAC|Version|CSRF)?)"[^>]*\bvalue="([^"]{4,})"`)
-	confirmationPattern    = regexp.MustCompile(`(?i)(?:^|[&{,"\s])_CONFIRMATIONTOKEN["']?\s*[:=]\s*["']?([^"&',}\s]{6,})`)
-	frontdoorSIDPattern    = regexp.MustCompile(`(?i)(?:^|[?&{,"\s])sid(?:_Client(?:_id)?)?["']?\s*[:=]\s*["']?([A-Za-z0-9!._-]{8,})`)
+	// The field name is deliberately non-capturing: generated regex extractors
+	// must return the ViewState value as capture group 1.
+	visualforcePattern  = regexp.MustCompile(`(?i)<input[^>]*\bname="(?:(?:com\.salesforce\.visualforce\.)?ViewState(?:MAC|Version|CSRF)?)"[^>]*\bvalue="([^"]{4,})"`)
+	confirmationPattern = regexp.MustCompile(`(?i)(?:^|[&{,"\s])_CONFIRMATIONTOKEN["']?\s*[:=]\s*["']?([^"&',}\s]{6,})`)
+	frontdoorSIDPattern = regexp.MustCompile(`(?i)(?:^|[?&{,"\s])sid(?:_Client(?:_id)?)?["']?\s*[:=]\s*["']?([A-Za-z0-9!._-]{8,})`)
 	// salesforceNextRecordsURLPattern matches the SOQL REST Query API pagination
 	// cursor: the response carries {"done":false,"nextRecordsUrl":"/services/data/
 	// vXX/query/01g...-2000",...} and the client must GET that relative URL to page.
@@ -104,23 +166,78 @@ var (
 )
 
 func Detect(observations []Observation) []Correlation {
+	correlations, _, _ := DetectCheckedWithWarnings(observations)
+	return correlations
+}
+
+// DetectChecked is the fail-closed form of correlation detection. Any
+// truncation means the returned prefix is not a complete analysis, so checked
+// callers receive ErrCorrelationWorkLimit and no correlations. Callers that
+// intentionally support degraded, best-effort results must use
+// DetectCheckedWithWarnings and surface its warnings.
+func DetectChecked(observations []Observation) ([]Correlation, error) {
+	correlations, warnings, err := DetectCheckedWithWarnings(observations)
+	if err != nil {
+		return nil, err
+	}
+	if len(warnings) > 0 {
+		return nil, fmt.Errorf("%w: %s", ErrCorrelationWorkLimit, strings.Join(warnings, "; "))
+	}
+	return correlations, nil
+}
+
+// DetectCheckedWithWarnings is the explicitly best-effort form of detection:
+// per-response candidate truncation and analysis-budget exhaustion preserve
+// the completed prefix and record degradation warnings.
+func DetectCheckedWithWarnings(observations []Observation) ([]Correlation, []string, error) {
+	if err := validateCorrelationObservations(observations); err != nil {
+		return nil, nil, err
+	}
 	checkedValues := map[string]bool{}
 	searches := make([]observationSearch, len(observations))
+	searchSizes := make([]int64, len(observations))
 	for index, observation := range observations {
 		searches[index] = newObservationSearch(observation)
+		searchSizes[index] = searches[index].searchBytes()
 	}
+	var warnings []string
 	correlations := make([]Correlation, 0)
+	totalCandidates := 0
+	var searchBytes int64
+	truncated := false
+scan:
 	for index, observation := range observations {
 		if observation.ResponseBody == "" && len(observation.ResponseHeaders) == 0 {
 			continue
 		}
-		for _, candidate := range Candidates(observation.ResponseBody, observation.ResponseHeaders) {
+		candidates, candidatesTruncated, err := candidatesCheckedWithTruncation(observation.ResponseBody, observation.ResponseHeaders)
+		if err != nil {
+			return nil, nil, err
+		}
+		if candidatesTruncated {
+			warnings = append(warnings, fmt.Sprintf(
+				"correlation candidate discovery for observation %d was incomplete after retaining %d candidate(s) (per-observation cap %d); later values in that response were not analyzed",
+				observation.ID, len(candidates), maxCorrelationCandidatesPerObservation,
+			))
+		}
+		totalCandidates += len(candidates)
+		if totalCandidates > maxCorrelationCandidatesPerAnalysis {
+			truncated = true
+			break
+		}
+		for _, candidate := range candidates {
 			if candidate.Value == "" || checkedValues[candidate.Value] {
 				continue
 			}
 			checkedValues[candidate.Value] = true
 			usedIn := make([]int, 0)
 			for later := index + 1; later < len(observations); later++ {
+				cost := searchSizes[later]
+				if cost > maxCorrelationSearchBytes-searchBytes {
+					truncated = true
+					break scan
+				}
+				searchBytes += cost
 				if searches[later].Contains(candidate.Value) {
 					usedIn = append(usedIn, observations[later].ID)
 				}
@@ -145,6 +262,9 @@ func Detect(observations []Observation) []Correlation {
 			})
 		}
 	}
+	if truncated {
+		warnings = append(warnings, "correlation analysis exceeded its deterministic work budget; remaining candidates and observations were skipped")
+	}
 	// Rank by confidence (desc) so the most certain correlations surface first,
 	// falling back to source order for stable, deterministic output.
 	sort.SliceStable(correlations, func(i, j int) bool {
@@ -157,7 +277,7 @@ func Detect(observations []Observation) []Correlation {
 		return correlations[i].FoundInID < correlations[j].FoundInID
 	})
 	uniquifyCorrelationNames(correlations)
-	return correlations
+	return correlations, warnings, nil
 }
 
 type observationSearch struct {
@@ -190,6 +310,11 @@ func (search *observationSearch) addSurface(raw string) {
 }
 
 func (search *observationSearch) addFormValues(body string) {
+	if formParseTooWide(body) {
+		// The raw surface is still searched; only the parsed form projection is
+		// skipped for surfaces too wide to materialize.
+		return
+	}
 	values, err := url.ParseQuery(body)
 	if err != nil || len(values) == 0 {
 		return
@@ -228,6 +353,69 @@ func (search observationSearch) Contains(value string) bool {
 	return false
 }
 
+func (search observationSearch) searchBytes() int64 {
+	var total int64
+	for _, surface := range search.rawSurfaces {
+		total += int64(len(surface))
+	}
+	for _, surface := range search.decodedSurfaces {
+		total += int64(len(surface))
+	}
+	for _, surface := range search.formValues {
+		total += int64(len(surface))
+	}
+	return total
+}
+
+func correlationObservationBytes(observation Observation) int64 {
+	total := int64(len(observation.RequestURL) + len(observation.RequestBody) + len(observation.ResponseBody))
+	for key, value := range observation.RequestHeaders {
+		total += int64(len(key) + len(value))
+	}
+	for key, value := range observation.ResponseHeaders {
+		total += int64(len(key) + len(value))
+	}
+	return total
+}
+
+// formParseTooWide bounds url.ParseQuery materialization: parsing splits on
+// every '&', so a surface with an enormous separator count (ordinary HTML can
+// legitimately carry thousands of '&' bytes that are never form-parsed) is
+// simply not form-parsed. Raw substring search still covers such surfaces, so
+// this is a per-surface skip, never an analysis failure.
+func formParseTooWide(body string) bool {
+	return strings.Count(body, "&") >= maxCorrelationStructuredFields
+}
+
+// headerValueSplitTooWide bounds the strings.Split materialization of a
+// newline-joined repeated header value the same way.
+func headerValueSplitTooWide(value string) bool {
+	return strings.Count(value, "\n") >= maxCorrelationStructuredFields
+}
+
+func validateCorrelationObservations(observations []Observation) error {
+	if len(observations) > maxCorrelationObservationsPerAnalysis {
+		return fmt.Errorf("%w: observation count exceeds %d", ErrCorrelationWorkLimit, maxCorrelationObservationsPerAnalysis)
+	}
+	var evidenceBytes int64
+	seenIDs := make(map[int]struct{}, len(observations))
+	for _, observation := range observations {
+		if _, duplicate := seenIDs[observation.ID]; duplicate {
+			return fmt.Errorf("%w: duplicate observation id %d", ErrCorrelationWorkLimit, observation.ID)
+		}
+		seenIDs[observation.ID] = struct{}{}
+		observationBytes := correlationObservationBytes(observation)
+		if observationBytes > maxCorrelationEvidenceBytes {
+			return fmt.Errorf("%w: observation evidence exceeds %d bytes", ErrCorrelationWorkLimit, maxCorrelationEvidenceBytes)
+		}
+		if observationBytes > maxCorrelationAnalysisEvidenceBytes-evidenceBytes {
+			return fmt.Errorf("%w: aggregate evidence exceeds %d bytes", ErrCorrelationWorkLimit, maxCorrelationAnalysisEvidenceBytes)
+		}
+		evidenceBytes += observationBytes
+	}
+	return nil
+}
+
 func uniquifyCorrelationNames(correlations []Correlation) {
 	used := map[string]struct{}{}
 	nextSuffix := map[string]int{}
@@ -256,15 +444,165 @@ func uniquifyCorrelationNames(correlations []Correlation) {
 }
 
 func Candidates(responseBody string, responseHeaders map[string]string) []Candidate {
-	candidates := make([]Candidate, 0)
-	candidates = append(candidates, salesforceCandidates(responseBody, responseHeaders)...)
-	candidates = append(candidates, formCandidates(responseBody)...)
-	candidates = append(candidates, aspNetHiddenCandidates(responseBody)...)
-	candidates = append(candidates, htmlInputCandidates(responseBody)...)
-	candidates = append(candidates, jsonCandidates(responseBody)...)
-	candidates = append(candidates, xmlCandidates(responseBody)...)
-	candidates = append(candidates, headerCandidates(responseHeaders)...)
+	candidates, _ := CandidatesChecked(responseBody, responseHeaders)
 	return candidates
+}
+
+func CandidatesChecked(responseBody string, responseHeaders map[string]string) ([]Candidate, error) {
+	candidates, _, err := candidatesCheckedWithTruncation(responseBody, responseHeaders)
+	return candidates, err
+}
+
+// candidatesCheckedWithTruncation retains the best-effort public behavior while
+// carrying an explicit completeness bit for fail-closed detection, diff, and
+// repair callers. Candidate length alone cannot prove truncation: a response
+// may contain exactly the configured cap and no omitted value.
+func candidatesCheckedWithTruncation(responseBody string, responseHeaders map[string]string) ([]Candidate, bool, error) {
+	responseBytes := int64(len(responseBody))
+	for key, value := range responseHeaders {
+		responseBytes += int64(len(key) + len(value))
+	}
+	if responseBytes > maxCorrelationEvidenceBytes {
+		return nil, false, fmt.Errorf("%w: response evidence exceeds %d bytes", ErrCorrelationWorkLimit, maxCorrelationEvidenceBytes)
+	}
+	candidates := make([]Candidate, 0, maxCorrelationCandidatesPerObservation+1)
+	truncated := false
+	// A response that yields more candidates than the per-observation cap keeps
+	// the earliest ones (families run in fixed priority order) and drops the
+	// rest, instead of failing the whole analysis. Internally retain one sentinel
+	// beyond the cap so exactly-at-cap results are not mislabeled incomplete.
+	appendFamily := func(family []Candidate, familyTruncated bool) bool {
+		truncated = truncated || familyTruncated
+		remaining := maxCorrelationCandidatesPerObservation + 1 - len(candidates)
+		if remaining <= 0 {
+			if len(family) > 0 {
+				truncated = true
+			}
+			return true
+		}
+		if len(family) > remaining {
+			family = family[:remaining]
+			truncated = true
+		}
+		candidates = append(candidates, family...)
+		return len(candidates) > maxCorrelationCandidatesPerObservation
+	}
+	finish := func() ([]Candidate, bool, error) {
+		if len(candidates) > maxCorrelationCandidatesPerObservation {
+			candidates = candidates[:maxCorrelationCandidatesPerObservation]
+			truncated = true
+		}
+		return candidates, truncated, nil
+	}
+	if appendFamily(salesforceCandidates(responseBody, responseHeaders), false) {
+		return finish()
+	}
+	if appendFamily(formCandidates(responseBody), false) {
+		return finish()
+	}
+	aspNetFamily, aspNetTruncated := aspNetHiddenCandidatesWithTruncation(responseBody)
+	if appendFamily(aspNetFamily, aspNetTruncated) {
+		return finish()
+	}
+	if appendFamily(htmlInputCandidates(responseBody), false) {
+		return finish()
+	}
+	jsonFamily, jsonTruncated, err := jsonCandidatesCheckedWithTruncation(responseBody)
+	if err != nil {
+		return nil, false, err
+	}
+	if appendFamily(jsonFamily, jsonTruncated) {
+		return finish()
+	}
+	xmlFamily, xmlTruncated := xmlCandidatesWithTruncation(responseBody)
+	if appendFamily(xmlFamily, xmlTruncated) {
+		return finish()
+	}
+	headerTruncated := headerCandidateDiscoveryTruncated(responseHeaders)
+	appendFamily(headerCandidates(responseHeaders), headerTruncated)
+	return finish()
+}
+
+func headerCanProduceCandidates(name string) bool {
+	lower := strings.ToLower(strings.TrimSpace(name))
+	return lower == "set-cookie" ||
+		lower == "location" ||
+		isJMSHeaderName(lower) ||
+		isWebSocketHeaderName(lower) ||
+		dynamicHeaderName(lower)
+}
+
+func headerCandidateDiscoveryTruncated(headers map[string]string) bool {
+	for key, value := range headers {
+		if headerValueSplitTooWide(value) {
+			if headerCanProduceCandidates(key) {
+				return true
+			}
+			continue
+		}
+		switch strings.ToLower(strings.TrimSpace(key)) {
+		case "location":
+			for _, line := range strings.Split(value, "\n") {
+				parsed, err := url.Parse(strings.TrimSpace(line))
+				// Each '&' in RawQuery can materialize another url.Values entry.
+				if err == nil && formParseTooWide(parsed.RawQuery) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func appendCandidatesBounded(dst []Candidate, src ...Candidate) []Candidate {
+	for _, candidate := range src {
+		if !candidateFitsRuntimeLimits(candidate) {
+			continue
+		}
+		if len(dst) >= maxCorrelationCandidatesPerObservation+1 {
+			break
+		}
+		dst = append(dst, candidate)
+	}
+	return dst
+}
+
+func candidateFitsRuntimeLimits(candidate Candidate) bool {
+	if len(candidate.Expression) > maxCorrelationExtractorExpressionBytes {
+		return false
+	}
+	return CorrelationExtractionValueFits(candidate.Name, candidate.Value)
+}
+
+// CorrelationExtractionEntryBytes returns the exact result-map bytes consumed
+// by one generated extraction entry when both its name and expected value fit
+// the protocol's per-entry limits.
+func CorrelationExtractionEntryBytes(name, value string) (int, bool) {
+	if len(name) == 0 || len(name) > protocol.MaxExtractionKeyBytes ||
+		len(value) > protocol.MaxExtractionValueBytes {
+		return 0, false
+	}
+	entryBytes := len(name) + len(value)
+	return entryBytes, entryBytes <= protocol.MaxExtractionBytes
+}
+
+// CorrelationExtractionValueFits reports whether a generated variable name and
+// value can coexist in the protocol extraction store, including room for the
+// deterministic suffixes added when candidate names collide.
+func CorrelationExtractionValueFits(name, value string) bool {
+	entryBytes, ok := CorrelationExtractionEntryBytes(name, value)
+	if !ok || len(name)+maxCorrelationExtractionNameSuffixBytes > protocol.MaxExtractionKeyBytes {
+		return false
+	}
+	return entryBytes <= protocol.MaxExtractionBytes-maxCorrelationExtractionNameSuffixBytes
+}
+
+func remainingCandidateMatchLimit(candidates []Candidate) int {
+	remaining := maxCorrelationCandidatesPerObservation + 1 - len(candidates)
+	if remaining < 0 {
+		return 0
+	}
+	return remaining
 }
 
 func ObservationContains(observation Observation, value string) bool {
@@ -284,37 +622,142 @@ func BuildVarMap(correlations []Correlation) map[string]string {
 }
 
 func ApplyVars(value string, vars map[string]string) string {
-	values := make([]string, 0, len(vars))
-	for raw := range vars {
+	replacements := make(map[string]string, len(vars))
+	for raw, replacement := range vars {
 		if raw != "" {
-			values = append(values, raw)
+			replacements[raw] = replacement
 		}
 	}
-	sort.Slice(values, func(i, j int) bool { return len(values[i]) > len(values[j]) })
-	for _, raw := range values {
-		value = strings.ReplaceAll(value, raw, vars[raw])
-	}
-	return value
+	return applyLiteralReplacements(value, replacements)
 }
 
 func ApplyVarsWithEncodedValues(value string, vars map[string]string, encodedValues map[string]bool) string {
-	values := make([]string, 0, len(vars))
+	replacements := make(map[string]string, len(vars)*2)
+	for raw, replacement := range vars {
+		if raw != "" {
+			replacements[raw] = replacement
+		}
+	}
+	// Exact raw-value mappings win if an encoded spelling of one value happens
+	// to equal another correlation's literal value.
+	rawValues := make([]string, 0, len(vars))
 	for raw := range vars {
+		if raw != "" {
+			rawValues = append(rawValues, raw)
+		}
+	}
+	sort.Strings(rawValues)
+	for _, raw := range rawValues {
+		if !encodedValues[raw] {
+			continue
+		}
+		replacement := vars[raw]
+		encoded := QueryEncodedFormOf(raw)
+		if encoded != "" {
+			if _, exists := replacements[encoded]; !exists {
+				replacements[encoded] = replacement
+			}
+		}
+	}
+	return applyLiteralReplacements(value, replacements)
+}
+
+// applyLiteralReplacements performs one non-recursive replacement pass. A
+// replacement may itself contain another raw correlation value (variable names
+// such as corr_access_token make that quite plausible); strings.NewReplacer
+// never scans inserted output, so generated {{var.*}} templates remain intact.
+func applyLiteralReplacements(value string, replacements map[string]string) string {
+	if value == "" || len(replacements) == 0 {
+		return value
+	}
+	replacer := newLiteralReplacer(replacements)
+	if replacer == nil {
+		return value
+	}
+	return replacer.Replace(value)
+}
+
+// ApplyVarsWithOutputLimit performs the same deterministic, non-recursive
+// replacement as ApplyVars while retaining at most maxOutputBytes. The full
+// input is still scanned so every retained byte has passed through the
+// replacer; discarded suffix bytes can never reappear in a caller's output.
+func ApplyVarsWithOutputLimit(value string, vars map[string]string, maxOutputBytes int) (string, bool) {
+	if maxOutputBytes < 0 {
+		maxOutputBytes = 0
+	}
+	replacements := make(map[string]string, len(vars))
+	for raw, replacement := range vars {
+		if raw != "" {
+			replacements[raw] = replacement
+		}
+	}
+	replacer := newLiteralReplacer(replacements)
+	if replacer == nil {
+		if len(value) <= maxOutputBytes {
+			return value, false
+		}
+		return value[:maxOutputBytes], true
+	}
+	writer := boundedReplacementWriter{limit: maxOutputBytes}
+	_, _ = replacer.WriteString(&writer, value)
+	return writer.builder.String(), writer.truncated
+}
+
+func newLiteralReplacer(replacements map[string]string) *strings.Replacer {
+	values := make([]string, 0, len(replacements))
+	for raw := range replacements {
 		if raw != "" {
 			values = append(values, raw)
 		}
 	}
-	sort.Slice(values, func(i, j int) bool { return len(values[i]) > len(values[j]) })
-	for _, raw := range values {
-		replacement := vars[raw]
-		value = strings.ReplaceAll(value, raw, replacement)
-		if encodedValues[raw] {
-			for _, encoded := range EncodedFormsOf(raw) {
-				value = strings.ReplaceAll(value, encoded, replacement)
-			}
+	sort.Slice(values, func(i, j int) bool {
+		if len(values[i]) != len(values[j]) {
+			return len(values[i]) > len(values[j])
 		}
+		return values[i] < values[j]
+	})
+	if len(values) == 0 {
+		return nil
 	}
-	return value
+	pairs := make([]string, 0, len(values)*2)
+	for _, raw := range values {
+		pairs = append(pairs, raw, replacements[raw])
+	}
+	return strings.NewReplacer(pairs...)
+}
+
+type boundedReplacementWriter struct {
+	builder   strings.Builder
+	limit     int
+	truncated bool
+}
+
+func (writer *boundedReplacementWriter) Write(value []byte) (int, error) {
+	originalBytes := len(value)
+	writer.writeString(string(value))
+	return originalBytes, nil
+}
+
+func (writer *boundedReplacementWriter) WriteString(value string) (int, error) {
+	originalBytes := len(value)
+	writer.writeString(value)
+	return originalBytes, nil
+}
+
+func (writer *boundedReplacementWriter) writeString(value string) {
+	remaining := writer.limit - writer.builder.Len()
+	if remaining <= 0 {
+		if value != "" {
+			writer.truncated = true
+		}
+		return
+	}
+	if len(value) > remaining {
+		writer.builder.WriteString(value[:remaining])
+		writer.truncated = true
+		return
+	}
+	writer.builder.WriteString(value)
 }
 
 func EncodedFormsOf(value string) []string {
@@ -342,6 +785,18 @@ func EncodedFormsOf(value string) []string {
 	return forms
 }
 
+// QueryEncodedFormOf returns the one encoded spelling the DSL's url_encode
+// conversion can reproduce exactly. EncodedFormsOf is intentionally broader
+// for discovery (it also recognizes path escaping and common form variants),
+// but those spellings are not interchangeable when a script is rewritten.
+func QueryEncodedFormOf(value string) string {
+	encoded := url.QueryEscape(value)
+	if encoded == "" || encoded == value {
+		return ""
+	}
+	return encoded
+}
+
 func DetectEncodedValueUsage(value string, surfaces []string) bool {
 	encodedForms := EncodedFormsOf(value)
 	if len(encodedForms) == 0 {
@@ -355,6 +810,25 @@ func DetectEncodedValueUsage(value string, surfaces []string) bool {
 		}
 	}
 	return false
+}
+
+// EncodedReuseExtractorConvert returns the extractor conversion needed for a
+// variable that will replace a URL/form-encoded request literal. Correlation
+// values are compared in their decoded form: an unconverted source therefore
+// needs url_encode, while a url_decode source already captures encoded text and
+// must drop that conversion to avoid double-encoding. Other conversion chains
+// cannot be represented by the DSL's single Convert field.
+func EncodedReuseExtractorConvert(sourceConvert string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(sourceConvert)) {
+	case "":
+		return "url_encode", true
+	case "url_decode":
+		return "", true
+	case "url_encode":
+		return "url_encode", true
+	default:
+		return "", false
+	}
 }
 
 func ApplyVarsToHeadersWithEncodedValues(headers map[string]string, vars map[string]string, encodedValues map[string]bool) map[string]string {
@@ -387,27 +861,64 @@ func Slug(value string) string {
 }
 
 func Truncate(value string, maxLen int) string {
-	if len(value) <= maxLen {
+	if value == "" {
 		return value
 	}
-	return value[:maxLen] + "..."
+	if maxLen <= 0 {
+		return "..."
+	}
+	truncated := boundedtext.TruncateUTF8(value, maxLen)
+	if truncated == value {
+		return value
+	}
+	return truncated + "..."
 }
 
 func salesforceCandidates(responseBody string, responseHeaders map[string]string) []Candidate {
 	candidates := make([]Candidate, 0)
 	if !looksLikeFormEncodedBody(responseBody) {
-		candidates = append(candidates, salesforceRegexCandidates(responseBody)...)
+		candidates = appendCandidatesBounded(candidates, salesforceRegexCandidates(responseBody)...)
+		if len(candidates) > maxCorrelationCandidatesPerObservation {
+			return candidates
+		}
 	}
-	for key, value := range responseHeaders {
+	keys := make([]string, 0, len(responseHeaders))
+	for key := range responseHeaders {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	seenHeaderRegex := make(map[string]bool)
+	for _, key := range keys {
+		if strings.EqualFold(strings.TrimSpace(key), "Set-Cookie") {
+			// Set-Cookie has its own grammar-aware candidate path below. Broad
+			// Salesforce patterns (especially sid=) otherwise win family
+			// priority and replace the precise leading-cookie extractor with an
+			// unanchored regex that can capture an attribute or another header.
+			continue
+		}
+		value := responseHeaders[key]
 		header := key + ": " + value
-		candidates = append(candidates, salesforceRegexCandidates(header)...)
+		for _, candidate := range salesforceRegexCandidatesForSource(header, "header") {
+			identity := candidate.ExtractType + "\x00" + candidate.Expression
+			if seenHeaderRegex[identity] {
+				// The HTTP header regex runs over one globally flattened surface.
+				// A later map key with the same expression would still extract the
+				// first key's value, so omit the non-replayable duplicate.
+				continue
+			}
+			seenHeaderRegex[identity] = true
+			candidates = appendCandidatesBounded(candidates, candidate)
+		}
+		if len(candidates) > maxCorrelationCandidatesPerObservation {
+			return candidates
+		}
 	}
 	return candidates
 }
 
 func looksLikeFormEncodedBody(body string) bool {
 	trimmed := strings.TrimSpace(body)
-	if trimmed == "" || !strings.Contains(trimmed, "=") {
+	if trimmed == "" || !strings.Contains(trimmed, "=") || formParseTooWide(trimmed) {
 		return false
 	}
 	// url.ParseQuery is far too permissive — it accepts almost any '%'-free text,
@@ -432,19 +943,31 @@ func looksLikeFormEncodedBody(body string) bool {
 }
 
 func salesforceRegexCandidates(body string) []Candidate {
+	return salesforceRegexCandidatesForSource(body, "body")
+}
+
+func salesforceRegexCandidatesForSource(body string, source string) []Candidate {
 	candidates := make([]Candidate, 0)
 	addMatches := func(pattern *regexp.Regexp, name, ruleID, reason string, confidence float64) {
-		for _, match := range pattern.FindAllStringSubmatch(body, -1) {
-			value := lastNonEmptyMatch(match)
+		limit := remainingCandidateMatchLimit(candidates)
+		if limit == 0 {
+			return
+		}
+		for matchIndex, match := range pattern.FindAllStringSubmatch(body, limit) {
+			value := firstCapturedValue(match)
 			if value == "" {
 				continue
 			}
-			candidates = append(candidates, Candidate{
+			extractType, expression, replayable := regexExtractorForMatch(source, pattern.String(), matchIndex+1)
+			if !replayable {
+				continue
+			}
+			candidates = appendCandidatesBounded(candidates, Candidate{
 				Name:           "corr_" + Slug(name),
 				Value:          value,
-				Source:         "body",
-				ExtractType:    "regex",
-				Expression:     pattern.String(),
+				Source:         source,
+				ExtractType:    extractType,
+				Expression:     expression,
 				RuleID:         ruleID,
 				BaseConfidence: confidence,
 				Reason:         reason,
@@ -455,7 +978,8 @@ func salesforceRegexCandidates(body string) []Candidate {
 	addMatches(auraFWUIDPattern, "salesforce_aura_fwuid", RuleSalesforceAuraContextFWUID, "Salesforce Aura context fwuid", 0.94)
 	addMatches(auraAppPattern, "salesforce_aura_app", RuleSalesforceAuraAppDescriptor, "Salesforce Aura app descriptor", 0.9)
 	addMatches(auraLoadedPattern, "salesforce_aura_loaded", RuleSalesforceAuraLoaded, "Salesforce Aura loaded map", 0.88)
-	addMatches(auraPageURIPattern, "salesforce_aura_page_uri", RuleSalesforceAuraPageURI, "Salesforce Aura page URI", 0.86)
+	addMatches(auraPageURIJSONPattern, "salesforce_aura_page_uri", RuleSalesforceAuraPageURI, "Salesforce Aura page URI", 0.86)
+	addMatches(auraPageURIFormPattern, "salesforce_aura_page_uri", RuleSalesforceAuraPageURI, "Salesforce Aura page URI", 0.86)
 	addMatches(auraPageScopeIDPattern, "salesforce_page_scope_id", RuleSalesforcePageScopeID, "Salesforce pageScopeId value", 0.85)
 	addMatches(visualforcePattern, "salesforce_viewstate", RuleSalesforceViewState, "Salesforce Visualforce ViewState field", 0.94)
 	addMatches(confirmationPattern, "salesforce_confirmation_token", RuleSalesforceConfirmationToken, "Salesforce confirmation token", 0.93)
@@ -464,17 +988,47 @@ func salesforceRegexCandidates(body string) []Candidate {
 	// values that live at a well-known top-level JSON field, so the generated
 	// extractor reads $.<field> at replay rather than re-running the match regex.
 	addJSONPath := func(pattern *regexp.Regexp, name, ruleID, expression, reason string, confidence float64) {
-		for _, match := range pattern.FindAllStringSubmatch(body, -1) {
-			value := lastNonEmptyMatch(match)
+		limit := remainingCandidateMatchLimit(candidates)
+		if limit == 0 {
+			return
+		}
+		matches := pattern.FindAllStringSubmatch(body, limit)
+		for matchIndex, match := range matches {
+			value := firstCapturedValue(match)
 			if value == "" {
 				continue
 			}
-			candidates = append(candidates, Candidate{
+			extractType := "regex"
+			extractorExpression := pattern.String()
+			jsonKey := strings.TrimPrefix(expression, "$.")
+			if source == "body" && len(matches) == 1 {
+				// A JSONPath is faithful only when the matched spelling is the exact
+				// top-level key and JSON decoding yields the candidate value. The
+				// discovery regex is intentionally case-insensitive and sees raw escape
+				// bytes, while JSONPath is case-sensitive and returns decoded strings.
+				if decoded, ok := exactTopLevelJSONString(body, jsonKey); ok {
+					value = decoded
+					extractType = "jsonpath"
+					extractorExpression = expression
+				}
+			}
+			if extractType != "jsonpath" {
+				// Duplicate JSON keys cannot be represented faithfully by JSONPath,
+				// and header extraction supports regex rather than JSONPath. Malformed,
+				// nested, case-variant, or escape-sensitive fields likewise retain the
+				// byte-exact regex contract.
+				var replayable bool
+				extractType, extractorExpression, replayable = regexExtractorForMatch(source, pattern.String(), matchIndex+1)
+				if !replayable {
+					continue
+				}
+			}
+			candidates = appendCandidatesBounded(candidates, Candidate{
 				Name:           "corr_" + Slug(name),
 				Value:          value,
-				Source:         "body",
-				ExtractType:    "jsonpath",
-				Expression:     expression,
+				Source:         source,
+				ExtractType:    extractType,
+				Expression:     extractorExpression,
 				RuleID:         ruleID,
 				BaseConfidence: confidence,
 				Reason:         reason,
@@ -484,6 +1038,27 @@ func salesforceRegexCandidates(body string) []Candidate {
 	addJSONPath(salesforceNextRecordsURLPattern, "salesforce_soql_next_records_url", RuleSalesforceNextRecordsURL, "$.nextRecordsUrl", "Salesforce SOQL pagination nextRecordsUrl cursor", 0.9)
 	addJSONPath(salesforceBulkContentURLPattern, "salesforce_bulk_content_url", RuleSalesforceBulkContentURL, "$.contentUrl", "Salesforce Bulk API ingest contentUrl upload target", 0.9)
 	return candidates
+}
+
+func exactTopLevelJSONString(body, key string) (string, bool) {
+	if key == "" {
+		return "", false
+	}
+	valid, err := validateCorrelationJSONShape(body)
+	if err != nil || !valid {
+		return "", false
+	}
+	var decoded map[string]any
+	decoder := json.NewDecoder(strings.NewReader(body))
+	if err := decoder.Decode(&decoded); err != nil {
+		return "", false
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return "", false
+	}
+	value, ok := decoded[key].(string)
+	return value, ok
 }
 
 func formFieldRegex(fieldName string) string {
@@ -498,83 +1073,256 @@ func formEncodedJSONStringFieldRegex(formField, jsonField string) string {
 func salesforceFormContextCandidates(fieldName, decodedValue string) []Candidate {
 	candidates := make([]Candidate, 0)
 	addStringField := func(pattern *regexp.Regexp, jsonField, name, ruleID, reason string, confidence float64) {
-		for _, match := range pattern.FindAllStringSubmatch(decodedValue, -1) {
-			value := lastNonEmptyMatch(match)
-			if value == "" {
-				continue
-			}
-			candidates = append(candidates, Candidate{
-				Name:           "corr_" + Slug(name),
-				Value:          value,
-				Source:         "body",
-				ExtractType:    "regex",
-				Expression:     formEncodedJSONStringFieldRegex(fieldName, jsonField),
-				Convert:        "url_decode",
-				RuleID:         ruleID,
-				BaseConfidence: confidence,
-				Reason:         reason,
-			})
-		}
-	}
-	addStringField(auraFWUIDPattern, "fwuid", "salesforce_aura_fwuid", RuleSalesforceAuraContextFWUID, "Salesforce Aura context fwuid", 0.94)
-	addStringField(auraAppPattern, "app", "salesforce_aura_app", RuleSalesforceAuraAppDescriptor, "Salesforce Aura app descriptor", 0.9)
-	addStringField(auraPageScopeIDPattern, "pageScopeId", "salesforce_page_scope_id", RuleSalesforcePageScopeID, "Salesforce pageScopeId value", 0.85)
-	addStringField(auraPageURIPattern, "pageURI", "salesforce_aura_page_uri", RuleSalesforceAuraPageURI, "Salesforce Aura page URI", 0.86)
-	return candidates
-}
-
-func formCandidates(body string) []Candidate {
-	values, err := url.ParseQuery(body)
-	if err != nil || len(values) == 0 {
-		return nil
-	}
-	candidates := make([]Candidate, 0)
-	add := func(fieldName, name, value, ruleID string, confidence float64, reason string) {
-		if strings.TrimSpace(value) == "" {
+		limit := remainingCandidateMatchLimit(candidates)
+		if limit == 0 {
 			return
 		}
-		candidates = append(candidates, Candidate{
+		matches := pattern.FindAllStringSubmatch(decodedValue, limit+1)
+		// The raw form extractor deliberately selects one JSON field per
+		// aura.context occurrence. Duplicate keys inside a single context cannot
+		// be assigned a faithful nested ordinal, so omit them rather than emit two
+		// candidates whose extractor would return the same (usually last) value.
+		if len(matches) != 1 {
+			return
+		}
+		value := firstCapturedValue(matches[0])
+		if value == "" {
+			return
+		}
+		candidates = appendCandidatesBounded(candidates, Candidate{
 			Name:           "corr_" + Slug(name),
 			Value:          value,
 			Source:         "body",
 			ExtractType:    "regex",
-			Expression:     formFieldRegex(fieldName),
+			Expression:     formEncodedJSONStringFieldRegex(fieldName, jsonField),
 			Convert:        "url_decode",
 			RuleID:         ruleID,
 			BaseConfidence: confidence,
 			Reason:         reason,
 		})
 	}
-	for key, fieldValues := range values {
-		for _, value := range fieldValues {
-			switch strings.ToLower(key) {
+	addStringField(auraFWUIDPattern, "fwuid", "salesforce_aura_fwuid", RuleSalesforceAuraContextFWUID, "Salesforce Aura context fwuid", 0.94)
+	addStringField(auraAppPattern, "app", "salesforce_aura_app", RuleSalesforceAuraAppDescriptor, "Salesforce Aura app descriptor", 0.9)
+	addStringField(auraPageScopeIDPattern, "pageScopeId", "salesforce_page_scope_id", RuleSalesforcePageScopeID, "Salesforce pageScopeId value", 0.85)
+	addStringField(auraPageURIJSONPattern, "pageURI", "salesforce_aura_page_uri", RuleSalesforceAuraPageURI, "Salesforce Aura page URI", 0.86)
+	return candidates
+}
+
+func formCandidates(body string) []Candidate {
+	if formParseTooWide(body) {
+		return nil
+	}
+	values, err := url.ParseQuery(body)
+	if err != nil || len(values) == 0 {
+		return nil
+	}
+	candidates := make([]Candidate, 0)
+	contextRegexMatches := make(map[string][][]int)
+	add := func(fieldName, name, value, ruleID string, confidence float64, reason string, ordinal, total int) {
+		if strings.TrimSpace(value) == "" || remainingCandidateMatchLimit(candidates) == 0 {
+			return
+		}
+		extractType := "regex"
+		expression := formFieldRegex(fieldName)
+		if total > 1 {
+			if ordinal > maxCorrelationRegexOrdinal {
+				// The replay runtime cannot address this occurrence; omit just
+				// this candidate rather than aborting the analysis.
+				return
+			}
+			extractType = "regex_ordinal"
+			expression = encodeRegexOrdinalExpression(expression, ordinal)
+		}
+		candidates = appendCandidatesBounded(candidates, Candidate{
+			Name:           "corr_" + Slug(name),
+			Value:          value,
+			Source:         "body",
+			ExtractType:    extractType,
+			Expression:     expression,
+			Convert:        "url_decode",
+			RuleID:         ruleID,
+			BaseConfidence: confidence,
+			Reason:         reason,
+		})
+	}
+	occurrencesByKey := exactRawFormOccurrenceIndex(body)
+	keys := make([]string, 0, len(occurrencesByKey))
+	for key := range occurrencesByKey {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		fieldOccurrences := occurrencesByKey[key]
+		if len(fieldOccurrences) == 0 {
+			continue
+		}
+		for valueIndex, occurrence := range fieldOccurrences {
+			value := occurrence.value
+			if len(candidates) > maxCorrelationCandidatesPerObservation {
+				return candidates
+			}
+			switch key {
 			case "aura.token":
-				add(key, "salesforce_aura_token", value, RuleSalesforceAuraToken, 0.95, "Salesforce aura.token form field")
+				add(key, "salesforce_aura_token", value, RuleSalesforceAuraToken, 0.95, "Salesforce aura.token form field", valueIndex+1, len(fieldOccurrences))
 			case "aura.context":
-				for _, candidate := range salesforceFormContextCandidates(key, value) {
-					candidates = append(candidates, candidate)
+				contextCandidates := salesforceFormContextCandidates(key, value)
+				replayable := contextCandidates[:0]
+				for _, candidate := range contextCandidates {
+					ordinal, exact, overflow := formContextRegexOrdinal(body, occurrence, candidate, contextRegexMatches)
+					if overflow || !exact {
+						// Beyond the replayable ordinal range: omit just this
+						// candidate.
+						continue
+					}
+					if ordinal > 1 {
+						candidate.ExtractType = "regex_ordinal"
+						candidate.Expression = encodeRegexOrdinalExpression(candidate.Expression, ordinal)
+					}
+					replayable = append(replayable, candidate)
 				}
+				candidates = appendCandidatesBounded(candidates, replayable...)
 			case "aura.pageuri":
-				add(key, "salesforce_aura_page_uri", value, RuleSalesforceAuraPageURI, 0.86, "Salesforce aura.pageURI form field")
+				add(key, "salesforce_aura_page_uri", value, RuleSalesforceAuraPageURI, 0.86, "Salesforce aura.pageURI form field", valueIndex+1, len(fieldOccurrences))
 			case "com.salesforce.visualforce.viewstate", "viewstatemac", "viewstateversion", "viewstatecsrf":
-				add(key, "salesforce_viewstate", value, RuleSalesforceViewState, 0.94, "Salesforce Visualforce ViewState form field")
+				add(key, "salesforce_viewstate", value, RuleSalesforceViewState, 0.94, "Salesforce Visualforce ViewState form field", valueIndex+1, len(fieldOccurrences))
 			case "_confirmationtoken":
-				add(key, "salesforce_confirmation_token", value, RuleSalesforceConfirmationToken, 0.93, "Salesforce confirmation token form field")
+				add(key, "salesforce_confirmation_token", value, RuleSalesforceConfirmationToken, 0.93, "Salesforce confirmation token form field", valueIndex+1, len(fieldOccurrences))
 			case "sid", "sid_client", "sid_client_id":
-				add(key, "salesforce_frontdoor_sid", value, RuleSalesforceFrontdoorSID, 0.85, "Salesforce frontdoor sid form field")
+				add(key, "salesforce_frontdoor_sid", value, RuleSalesforceFrontdoorSID, 0.85, "Salesforce frontdoor sid form field", valueIndex+1, len(fieldOccurrences))
 			}
 		}
 	}
 	return candidates
 }
 
-func lastNonEmptyMatch(match []string) string {
-	for i := len(match) - 1; i >= 1; i-- {
-		if strings.TrimSpace(match[i]) != "" {
-			return strings.TrimSpace(match[i])
+type rawFormOccurrence struct {
+	value      string
+	valueStart int
+	valueEnd   int
+}
+
+// exactRawFormOccurrenceIndex makes one wire-order pass over the form body.
+// ParseQuery decodes keys as well as values, but generated extractors can only
+// match the literal ASCII Salesforce field spellings below. Retain occurrences
+// whose wire key is identical to its decoded key modulo case; encoded keys such
+// as aura%2Etoken therefore remain review-only. Key-only fields are excluded
+// because every generated regex requires '=', while empty key=value fields are
+// retained because they do consume a replay-side regex ordinal.
+func exactRawFormOccurrenceIndex(body string) map[string][]rawFormOccurrence {
+	index := make(map[string][]rawFormOccurrence)
+	for fieldStart := 0; fieldStart <= len(body); {
+		fieldEnd := strings.IndexByte(body[fieldStart:], '&')
+		if fieldEnd < 0 {
+			fieldEnd = len(body)
+		} else {
+			fieldEnd += fieldStart
 		}
+		field := body[fieldStart:fieldEnd]
+		rawKey, rawValue, hasEquals := strings.Cut(field, "=")
+		if !hasEquals {
+			if fieldEnd == len(body) {
+				break
+			}
+			fieldStart = fieldEnd + 1
+			continue
+		}
+		key, err := url.QueryUnescape(rawKey)
+		normalizedKey := strings.ToLower(key)
+		if err != nil || !correlationFormKey(normalizedKey) || !strings.EqualFold(rawKey, key) {
+			if fieldEnd == len(body) {
+				break
+			}
+			fieldStart = fieldEnd + 1
+			continue
+		}
+		value, err := url.QueryUnescape(rawValue)
+		if err == nil {
+			valueStart := fieldStart + len(rawKey) + 1
+			index[normalizedKey] = append(index[normalizedKey], rawFormOccurrence{
+				value:      value,
+				valueStart: valueStart,
+				valueEnd:   fieldEnd,
+			})
+		}
+		if fieldEnd == len(body) {
+			break
+		}
+		fieldStart = fieldEnd + 1
 	}
-	return ""
+	return index
+}
+
+func correlationFormKey(key string) bool {
+	switch key {
+	case "aura.token", "aura.context", "aura.pageuri",
+		"com.salesforce.visualforce.viewstate", "viewstatemac", "viewstateversion", "viewstatecsrf",
+		"_confirmationtoken", "sid", "sid_client", "sid_client_id":
+		return true
+	default:
+		return false
+	}
+}
+
+// formContextRegexOrdinal maps one decoded aura.context candidate back to the
+// exact match the replay-side raw regex will select. Discovery patterns are
+// intentionally narrower than the wire regex (for example they require a
+// six-byte fwuid), so counting only emitted candidates can miss an earlier
+// runtime match and silently attach the wrong ordinal.
+func formContextRegexOrdinal(body string, occurrence rawFormOccurrence, candidate Candidate, cache map[string][][]int) (ordinal int, exact bool, overflow bool) {
+	matches, cached := cache[candidate.Expression]
+	if !cached {
+		pattern, err := regexp.Compile(candidate.Expression)
+		if err != nil {
+			return 0, false, false
+		}
+		matches = pattern.FindAllStringSubmatchIndex(body, maxCorrelationRegexOrdinal+1)
+		cache[candidate.Expression] = matches
+	}
+	for index, match := range matches {
+		if len(match) < 4 || match[2] < occurrence.valueStart || match[3] > occurrence.valueEnd {
+			continue
+		}
+		ordinal = index + 1
+		if ordinal > maxCorrelationRegexOrdinal {
+			return 0, false, true
+		}
+		captured, err := url.QueryUnescape(body[match[2]:match[3]])
+		if err != nil || captured != candidate.Value {
+			return 0, false, false
+		}
+		return ordinal, true, false
+	}
+	if len(matches) > maxCorrelationRegexOrdinal && occurrence.valueStart >= matches[len(matches)-1][0] {
+		return 0, false, true
+	}
+	return 0, false, false
+}
+
+func firstCapturedValue(match []string) string {
+	if len(match) < 2 {
+		return ""
+	}
+	// The HTTP regex extractor returns capture group 1 byte-for-byte. Preserve
+	// that contract here: trimming a candidate can make detection rewrite the
+	// trimmed literal even though replay later extracts surrounding whitespace.
+	return match[1]
+}
+
+// regexExtractorForMatch preserves the runtime identity of repeated body
+// matches. Header extraction does not support regex_ordinal; later matches of a
+// shared header regex therefore fail closed instead of advertising an extractor
+// that would return the first value.
+func regexExtractorForMatch(source, expression string, ordinal int) (string, string, bool) {
+	if ordinal <= 1 {
+		return "regex", expression, true
+	}
+	if strings.EqualFold(strings.TrimSpace(source), "body") {
+		if ordinal > maxCorrelationRegexOrdinal {
+			return "", "", false
+		}
+		return "regex_ordinal", encodeRegexOrdinalExpression(expression, ordinal), true
+	}
+	return "", "", false
 }
 
 func decodedContains(raw, value string) bool {
@@ -583,6 +1331,9 @@ func decodedContains(raw, value string) bool {
 }
 
 func formContainsValue(body, value string) bool {
+	if formParseTooWide(body) {
+		return false
+	}
 	values, err := url.ParseQuery(body)
 	if err != nil || len(values) == 0 {
 		return false
@@ -612,54 +1363,234 @@ func urlDecoded(raw string) string {
 }
 
 func jsonCandidates(body string) []Candidate {
-	if parsed, ok := jsonCandidatesFromParsedBody(body); ok {
-		return parsed
+	candidates, _ := jsonCandidatesChecked(body)
+	return candidates
+}
+
+func jsonCandidatesChecked(body string) ([]Candidate, error) {
+	candidates, _, err := jsonCandidatesCheckedWithTruncation(body)
+	if len(candidates) > maxCorrelationCandidatesPerObservation {
+		candidates = candidates[:maxCorrelationCandidatesPerObservation]
+	}
+	return candidates, err
+}
+
+func jsonCandidatesCheckedWithTruncation(body string) ([]Candidate, bool, error) {
+	if parsed, ok, truncated, err := jsonCandidatesFromParsedBodyAnalysis(body, newCorrelationJSONWalkBudget()); err != nil {
+		return nil, false, err
+	} else if ok {
+		return parsed, truncated, nil
 	}
 	candidates := make([]Candidate, 0)
-	for _, match := range jsonStringTokenPattern.FindAllStringSubmatch(body, -1) {
+	truncated := false
+	// Regex fallback scanning has its own match-work bound. Ask for one sentinel
+	// beyond that bound so a window exhausted by broad false-positive key shapes
+	// cannot silently hide a later real token.
+	stringMatchLimit := remainingCandidateMatchLimit(candidates)
+	stringMatches := jsonStringTokenPattern.FindAllStringSubmatch(body, stringMatchLimit+1)
+	if len(stringMatches) > stringMatchLimit {
+		stringMatches = stringMatches[:stringMatchLimit]
+		truncated = true
+	}
+	stringOrdinals := make(map[string]int)
+	for _, match := range stringMatches {
 		if len(match) < 3 {
 			continue
 		}
 		key := match[1]
+		expression := jsonFallbackStringFieldRegex(key)
+		stringOrdinals[expression]++
+		if !dynamicJSONKey(key) {
+			continue
+		}
+		extractType, extractorExpression, replayable := regexExtractorForMatch("body", expression, stringOrdinals[expression])
+		if !replayable {
+			continue
+		}
 		ruleID, base := classifyJSONKey(key)
-		candidates = append(candidates, Candidate{
+		candidates = appendCandidatesBounded(candidates, Candidate{
 			Name:           "corr_" + Slug(key),
 			Value:          match[2],
 			Source:         "body",
-			ExtractType:    "jsonpath",
-			Expression:     "$." + key,
+			ExtractType:    extractType,
+			Expression:     extractorExpression,
 			RuleID:         ruleID,
 			BaseConfidence: base,
 			Reason:         "JSON field " + key + " looks like a dynamic token/identifier",
 		})
 	}
-	for _, match := range jsonNumberIDPattern.FindAllStringSubmatch(body, -1) {
+	limit := remainingCandidateMatchLimit(candidates)
+	if limit == 0 {
+		return candidates, true, nil
+	}
+	numberMatches := jsonNumberIDPattern.FindAllStringSubmatch(body, limit+1)
+	if len(numberMatches) > limit {
+		numberMatches = numberMatches[:limit]
+		truncated = true
+	}
+	numberOrdinals := make(map[string]int)
+	for _, match := range numberMatches {
 		if len(match) < 3 {
 			continue
 		}
 		key := match[1]
-		candidates = append(candidates, Candidate{
+		expression := jsonFallbackNumberFieldRegex(key)
+		numberOrdinals[expression]++
+		if !dynamicJSONIDKey(key) || !numericJSONIDValue(match[2]) {
+			continue
+		}
+		extractType, extractorExpression, replayable := regexExtractorForMatch("body", expression, numberOrdinals[expression])
+		if !replayable {
+			continue
+		}
+		candidates = appendCandidatesBounded(candidates, Candidate{
 			Name:           "corr_" + Slug(key),
 			Value:          match[2],
 			Source:         "body",
-			ExtractType:    "jsonpath",
-			Expression:     "$." + key,
+			ExtractType:    extractType,
+			Expression:     extractorExpression,
 			RuleID:         RuleJSONNumericID,
 			BaseConfidence: 0.5,
 			Reason:         "JSON numeric id field " + key,
 		})
 	}
-	return candidates
+	if len(candidates) > maxCorrelationCandidatesPerObservation {
+		truncated = true
+	}
+	return candidates, truncated, nil
 }
 
-func jsonCandidatesFromParsedBody(body string) ([]Candidate, bool) {
-	var value any
-	if err := json.Unmarshal([]byte(body), &value); err != nil {
-		return nil, false
+type correlationJSONWalkBudget struct {
+	constructionBytes    int64
+	maxConstructionBytes int64
+	candidates           int
+	maxCandidates        int
+}
+
+func newCorrelationJSONWalkBudget() *correlationJSONWalkBudget {
+	return &correlationJSONWalkBudget{
+		maxConstructionBytes: maxCorrelationJSONConstructionBytes,
+		// Retain one sentinel candidate so an exactly-at-cap document can be
+		// distinguished from a document with omitted candidates.
+		maxCandidates: maxCorrelationCandidatesPerObservation + 1,
 	}
-	candidates := make([]Candidate, 0)
-	walkJSONCandidates(value, "$", true, &candidates)
-	return candidates, true
+}
+
+func (budget *correlationJSONWalkBudget) chargeConstruction(size int64) error {
+	if budget == nil || size < 0 || size > budget.maxConstructionBytes-budget.constructionBytes {
+		return fmt.Errorf("%w: JSON candidate/path construction exceeds %d bytes", ErrCorrelationWorkLimit, maxCorrelationJSONConstructionBytes)
+	}
+	budget.constructionBytes += size
+	return nil
+}
+
+func (budget *correlationJSONWalkBudget) chargeCandidate(path, key string) error {
+	if budget == nil || budget.candidates >= budget.maxCandidates {
+		return fmt.Errorf("%w: JSON candidate count exceeds %d", ErrCorrelationWorkLimit, maxCorrelationCandidatesPerObservation)
+	}
+	// Candidate names/reasons and escaped path/key spellings are newly retained.
+	// Six bytes per key byte bounds JSON escaping (for example, \u00XX).
+	if err := budget.chargeConstruction(256 + int64(len(path)) + 6*int64(len(key))); err != nil {
+		return err
+	}
+	budget.candidates++
+	return nil
+}
+
+// validateCorrelationJSONShape performs a streaming pass before Decode can
+// materialize attacker-controlled maps/slices. Token, structural-node, and
+// nesting limits are aggregate across the document; malformed or multiple JSON
+// documents — and documents beyond those structural limits (legitimate large
+// pages routinely exceed them) — return valid=false so the byte-faithful,
+// bounded regex fallback runs instead of failing the analysis.
+func validateCorrelationJSONShape(body string) (valid bool, err error) {
+	if strings.TrimSpace(body) == "" {
+		return false, nil
+	}
+	decoder := json.NewDecoder(strings.NewReader(body))
+	decoder.UseNumber()
+	tokens := 0
+	nodes := 0
+	depth := 0
+	roots := 0
+	for {
+		token, tokenErr := decoder.Token()
+		if tokenErr == io.EOF {
+			return depth == 0 && roots == 1, nil
+		}
+		if tokenErr != nil {
+			return false, nil
+		}
+		tokens++
+		if tokens > maxCorrelationJSONTokens {
+			return false, nil
+		}
+		if delimiter, ok := token.(json.Delim); ok {
+			switch delimiter {
+			case '{', '[':
+				if depth == 0 {
+					roots++
+				}
+				depth++
+				nodes++
+				if depth > maxCorrelationJSONDepth {
+					return false, nil
+				}
+			case '}', ']':
+				depth--
+				if depth < 0 {
+					return false, nil
+				}
+			}
+		} else {
+			if depth == 0 {
+				roots++
+			}
+			nodes++
+		}
+		if nodes > maxCorrelationJSONNodes {
+			return false, nil
+		}
+	}
+}
+
+func jsonCandidatesFromParsedBodyChecked(body string, budget *correlationJSONWalkBudget) ([]Candidate, bool, error) {
+	candidates, valid, _, err := jsonCandidatesFromParsedBodyAnalysis(body, budget)
+	if len(candidates) > maxCorrelationCandidatesPerObservation {
+		candidates = candidates[:maxCorrelationCandidatesPerObservation]
+	}
+	return candidates, valid, err
+}
+
+func jsonCandidatesFromParsedBodyAnalysis(body string, budget *correlationJSONWalkBudget) ([]Candidate, bool, bool, error) {
+	valid, err := validateCorrelationJSONShape(body)
+	if err != nil || !valid {
+		return nil, valid, false, err
+	}
+	var value any
+	decoder := json.NewDecoder(strings.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&value); err != nil {
+		return nil, false, false, nil
+	}
+	// Decode must consume exactly one JSON document. If an XSSI prefix, JSONP
+	// wrapper, or trailing payload makes the body non-JSON, use replayable regex
+	// fallbacks instead of advertising a JSONPath the runtime cannot evaluate.
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, false, false, nil
+	}
+	candidates := make([]Candidate, 0, min(16, maxCorrelationCandidatesPerObservation))
+	if err := walkJSONCandidates(value, "$", true, 0, &candidates, budget); err != nil {
+		if errors.Is(err, ErrCorrelationWorkLimit) {
+			// Deterministic walk budget exhausted mid-document: keep the bounded
+			// prefix for best-effort callers and mark it incomplete for checked
+			// detection/diff/repair callers.
+			return candidates, true, true, nil
+		}
+		return nil, true, false, err
+	}
+	return candidates, true, false, nil
 }
 
 // walkJSONCandidates descends the parsed body collecting correlation candidates.
@@ -671,9 +1602,18 @@ func jsonCandidatesFromParsedBody(body string) ([]Candidate, bool) {
 // candidate under such a path would silently error at replay. We keep descending
 // (a deeper subtree might still be useful for review) but do not EMIT candidates
 // once the path is no longer evaluable, rather than emitting broken extractors.
-func walkJSONCandidates(value any, path string, evaluable bool, candidates *[]Candidate) {
+func walkJSONCandidates(value any, path string, evaluable bool, depth int, candidates *[]Candidate, budget *correlationJSONWalkBudget) error {
+	if depth > maxCorrelationJSONDepth {
+		return fmt.Errorf("%w: JSON nesting exceeds %d", ErrCorrelationWorkLimit, maxCorrelationJSONDepth)
+	}
 	switch typed := value.(type) {
 	case map[string]any:
+		if len(typed) > maxCorrelationStructuredFields {
+			return fmt.Errorf("%w: JSON object exceeds %d fields", ErrCorrelationWorkLimit, maxCorrelationStructuredFields)
+		}
+		if err := budget.chargeConstruction(int64(len(typed)) * 16); err != nil {
+			return err
+		}
 		keys := make([]string, 0, len(typed))
 		for key := range typed {
 			keys = append(keys, key)
@@ -681,19 +1621,37 @@ func walkJSONCandidates(value any, path string, evaluable bool, candidates *[]Ca
 		sort.Strings(keys)
 		for _, key := range keys {
 			childEvaluable := evaluable && jsonPathIdentifier.MatchString(key)
-			walkJSONCandidates(typed[key], jsonPathChild(path, key), childEvaluable, candidates)
+			if err := budget.chargeConstruction(int64(len(path)+4) + 6*int64(len(key))); err != nil {
+				return err
+			}
+			if err := walkJSONCandidates(typed[key], jsonPathChild(path, key), childEvaluable, depth+1, candidates, budget); err != nil {
+				return err
+			}
 		}
 	case []any:
+		if len(typed) > maxCorrelationStructuredFields {
+			return fmt.Errorf("%w: JSON array exceeds %d entries", ErrCorrelationWorkLimit, maxCorrelationStructuredFields)
+		}
 		for index, item := range typed {
-			walkJSONCandidates(item, fmt.Sprintf("%s[%d]", path, index), evaluable, candidates)
+			indexBytes := decimalIndexBytes(index)
+			if err := budget.chargeConstruction(int64(len(path) + indexBytes + 2)); err != nil {
+				return err
+			}
+			indexText := strconv.Itoa(index)
+			if err := walkJSONCandidates(item, path+"["+indexText+"]", evaluable, depth+1, candidates, budget); err != nil {
+				return err
+			}
 		}
 	case string:
 		key := jsonPathLastKey(path)
 		if key == "" || len(typed) < 6 || !dynamicJSONKey(key) || !evaluable {
-			return
+			return nil
+		}
+		if err := budget.chargeCandidate(path, key); err != nil {
+			return err
 		}
 		ruleID, base := classifyJSONKey(key)
-		*candidates = append(*candidates, Candidate{
+		*candidates = appendCandidatesBounded(*candidates, Candidate{
 			Name:           "corr_" + Slug(key),
 			Value:          typed,
 			Source:         "body",
@@ -703,16 +1661,16 @@ func walkJSONCandidates(value any, path string, evaluable bool, candidates *[]Ca
 			BaseConfidence: base,
 			Reason:         "JSON field " + key + " looks like a dynamic token/identifier",
 		})
-	case float64:
+	case json.Number:
 		key := jsonPathLastKey(path)
-		if key == "" || !dynamicJSONKey(key) || !evaluable {
-			return
+		number := typed.String()
+		if key == "" || !dynamicJSONIDKey(key) || !numericJSONIDValue(number) || !evaluable {
+			return nil
 		}
-		number := fmt.Sprintf("%.0f", typed)
-		if typed != float64(int64(typed)) {
-			number = fmt.Sprint(typed)
+		if err := budget.chargeCandidate(path, key); err != nil {
+			return err
 		}
-		*candidates = append(*candidates, Candidate{
+		*candidates = appendCandidatesBounded(*candidates, Candidate{
 			Name:           "corr_" + Slug(key),
 			Value:          number,
 			Source:         "body",
@@ -722,6 +1680,51 @@ func walkJSONCandidates(value any, path string, evaluable bool, candidates *[]Ca
 			BaseConfidence: 0.5,
 			Reason:         "JSON numeric id field " + key,
 		})
+	}
+	return nil
+}
+
+func decimalIndexBytes(value int) int {
+	if value == 0 {
+		return 1
+	}
+	digits := 0
+	for value > 0 {
+		digits++
+		value /= 10
+	}
+	return digits
+}
+
+func jsonFallbackStringFieldRegex(key string) string {
+	// The key spelling comes from this concrete wire match. Keep it
+	// case-sensitive so differently-cased keys do not share a first-match regex.
+	return fmt.Sprintf(`"%s"\s*:\s*"([^"]{6,})"`, regexp.QuoteMeta(key))
+}
+
+func jsonFallbackNumberFieldRegex(key string) string {
+	return fmt.Sprintf(`"%s"\s*:\s*(\d{4,})(?:\s*[,}\]]|\s*$)`, regexp.QuoteMeta(key))
+}
+
+func numericJSONIDValue(value string) bool {
+	return len(value) >= 4 && allDigits.MatchString(value)
+}
+
+// dynamicJSONIDKey is the numeric-ID subset of dynamicJSONKey. Tokenizing the
+// field name prevents benign keys such as "valid" or "consider" from matching
+// merely because their spelling contains the substring "id".
+func dynamicJSONIDKey(key string) bool {
+	tokens := correlationKeyTokens(key)
+	for _, token := range tokens {
+		if token == "id" || token == "sid" {
+			return true
+		}
+	}
+	switch strings.Join(tokens, "") {
+	case "sessionid", "jmscorrelationid", "jmsmessageid", "messageid", "operationid", "subscriptionid", "correlationid":
+		return true
+	default:
+		return false
 	}
 }
 
@@ -834,8 +1837,13 @@ func classifyJSONKey(key string) (string, float64) {
 
 func htmlInputCandidates(body string) []Candidate {
 	candidates := make([]Candidate, 0)
+	ordinals := make(map[string]int)
 	for _, pattern := range htmlInputPatterns {
-		for _, match := range pattern.re.FindAllStringSubmatch(body, -1) {
+		limit := remainingCandidateMatchLimit(candidates)
+		if limit == 0 {
+			return candidates
+		}
+		for _, match := range pattern.re.FindAllStringSubmatch(body, limit) {
 			if len(match) <= pattern.valueGroup || len(match) <= pattern.nameGroup {
 				continue
 			}
@@ -844,17 +1852,23 @@ func htmlInputCandidates(body string) []Candidate {
 			if value == "" {
 				continue
 			}
-			expression := fmt.Sprintf(`name="%s"[^>]*value="([^"]+)"`, regexp.QuoteMeta(field))
+			expression := fmt.Sprintf(`(?i)<input[^>]*\bname="%s"[^>]*\bvalue="([^"]{4,})"`, regexp.QuoteMeta(field))
 			if pattern.nameGroup > pattern.valueGroup {
-				expression = fmt.Sprintf(`value="([^"]+)"[^>]*name="%s"`, regexp.QuoteMeta(field))
+				expression = fmt.Sprintf(`(?i)<input[^>]*\bvalue="([^"]{4,})"[^>]*\bname="%s"`, regexp.QuoteMeta(field))
+			}
+			identity := strings.ToLower(expression)
+			ordinals[identity]++
+			extractType, extractorExpression, replayable := regexExtractorForMatch("body", expression, ordinals[identity])
+			if !replayable {
+				continue
 			}
 			ruleID, base, reason := htmlInputCorrelationRule(field)
-			candidates = append(candidates, Candidate{
+			candidates = appendCandidatesBounded(candidates, Candidate{
 				Name:           "corr_" + Slug(field),
 				Value:          value,
 				Source:         "body",
-				ExtractType:    "regex",
-				Expression:     expression,
+				ExtractType:    extractType,
+				Expression:     extractorExpression,
 				RuleID:         ruleID,
 				BaseConfidence: base,
 				Reason:         reason,
@@ -876,8 +1890,20 @@ func htmlInputCorrelationRule(field string) (string, float64, string) {
 // classic correlation case for .NET apps and a frequent LoadRunner migration
 // pain point. They are large opaque hidden inputs that change every request.
 func aspNetHiddenCandidates(body string) []Candidate {
+	candidates, _ := aspNetHiddenCandidatesWithTruncation(body)
+	return candidates
+}
+
+func aspNetHiddenCandidatesWithTruncation(body string) ([]Candidate, bool) {
 	candidates := make([]Candidate, 0)
-	for _, match := range aspNetHiddenPattern.FindAllStringSubmatch(body, -1) {
+	ordinals := make(map[string]int)
+	matchLimit := maxCorrelationCandidatesPerObservation + 1
+	matches := aspNetHiddenPattern.FindAllStringSubmatch(body, matchLimit+1)
+	truncated := len(matches) > matchLimit
+	if truncated {
+		matches = matches[:matchLimit]
+	}
+	for _, match := range matches {
 		if len(match) < 3 {
 			continue
 		}
@@ -886,65 +1912,133 @@ func aspNetHiddenCandidates(body string) []Candidate {
 		if value == "" {
 			continue
 		}
-		candidates = append(candidates, Candidate{
+		expression := fmt.Sprintf(`(?i)<input[^>]*\bname="%s"[^>]*\bvalue="([^"]+)"`, regexp.QuoteMeta(field))
+		identity := strings.ToLower(expression)
+		ordinals[identity]++
+		extractType, extractorExpression, replayable := regexExtractorForMatch("body", expression, ordinals[identity])
+		if !replayable {
+			continue
+		}
+		candidates = appendCandidatesBounded(candidates, Candidate{
 			Name:           "corr_" + Slug(field),
 			Value:          value,
 			Source:         "body",
-			ExtractType:    "regex",
-			Expression:     fmt.Sprintf(`name="%s"[^>]*value="([^"]+)"`, regexp.QuoteMeta(field)),
+			ExtractType:    extractType,
+			Expression:     extractorExpression,
 			RuleID:         RuleASPNetState,
 			BaseConfidence: 0.95,
 			Reason:         "ASP.NET state field " + field,
 		})
 	}
-	return candidates
+	if len(candidates) > maxCorrelationCandidatesPerObservation {
+		truncated = true
+	}
+	return candidates, truncated
 }
 
 func xmlCandidates(body string) []Candidate {
+	candidates, _ := xmlCandidatesWithTruncation(body)
+	return candidates
+}
+
+func xmlCandidatesWithTruncation(body string) ([]Candidate, bool) {
 	candidates := make([]Candidate, 0)
-	for _, match := range xmlElementTokenPattern.FindAllStringSubmatch(body, -1) {
-		if len(match) < 3 {
+	elementOrdinals := make(map[string]int)
+	attributeOrdinals := make(map[string]int)
+	matchLimit := maxCorrelationCandidatesPerObservation + 1
+	elementMatches := xmlElementTokenPattern.FindAllStringSubmatchIndex(body, matchLimit+1)
+	truncated := len(elementMatches) > matchLimit
+	if truncated {
+		elementMatches = elementMatches[:matchLimit]
+	}
+	for _, match := range elementMatches {
+		name := regexpIndexedSubmatch(body, match, 1)
+		value := regexpIndexedSubmatch(body, match, 2)
+		closingName := regexpIndexedSubmatch(body, match, 3)
+		// XML element names are case-sensitive. The broad discovery regex is
+		// case-insensitive for ecosystem tolerance, so explicitly reject a
+		// mismatched close tag before assigning a runtime ordinal.
+		if name == "" || name != closingName {
 			continue
 		}
-		name := match[1]
-		value := strings.TrimSpace(match[2])
-		if value == "" {
+		localName := localXMLName(name)
+		expression := fmt.Sprintf(`(?s)<(?:[A-Za-z0-9_.-]+:)?%s\b[^>]*>([^<]{6,})</(?:[A-Za-z0-9_.-]+:)?%s>`, regexp.QuoteMeta(localName), regexp.QuoteMeta(localName))
+		elementOrdinals[expression]++
+		ordinal := elementOrdinals[expression]
+		// Whitespace-only values are not useful candidates, but they still match
+		// the replay expression and therefore consume an ordinal.
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		extractType, extractorExpression, replayable := regexExtractorForMatch("body", expression, ordinal)
+		if !replayable {
 			continue
 		}
 		ruleID, base := classifyXMLName(name)
-		candidates = append(candidates, Candidate{
+		candidates = appendCandidatesBounded(candidates, Candidate{
 			Name:           "corr_" + Slug(name),
 			Value:          value,
 			Source:         "body",
-			ExtractType:    "xpath",
-			Expression:     "//*[local-name()='" + localXMLName(name) + "']/text()",
+			ExtractType:    extractType,
+			Expression:     extractorExpression,
 			RuleID:         ruleID,
 			BaseConfidence: base,
 			Reason:         "XML/SOAP element " + name + " looks dynamic",
 		})
 	}
-	for _, match := range xmlAttrTokenPattern.FindAllStringSubmatch(body, -1) {
-		if len(match) < 3 {
+	if len(candidates) > maxCorrelationCandidatesPerObservation {
+		return candidates, true
+	}
+	remaining := remainingCandidateMatchLimit(candidates)
+	if remaining == 0 {
+		return candidates, true
+	}
+	attributeMatches := xmlAttrTokenPattern.FindAllStringSubmatchIndex(body, remaining+1)
+	if len(attributeMatches) > remaining {
+		attributeMatches = attributeMatches[:remaining]
+		truncated = true
+	}
+	for _, match := range attributeMatches {
+		name := regexpIndexedSubmatch(body, match, 1)
+		value := regexpIndexedSubmatch(body, match, 2)
+		if name == "" {
 			continue
 		}
-		name := match[1]
-		value := strings.TrimSpace(match[2])
-		if value == "" {
+		localName := localXMLName(name)
+		expression := fmt.Sprintf(`(?s)\b(?:[A-Za-z0-9_.-]+:)?%s\s*=\s*"([^"]{6,})"`, regexp.QuoteMeta(localName))
+		attributeOrdinals[expression]++
+		ordinal := attributeOrdinals[expression]
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		extractType, extractorExpression, replayable := regexExtractorForMatch("body", expression, ordinal)
+		if !replayable {
 			continue
 		}
 		ruleID, base := classifyXMLName(name)
-		candidates = append(candidates, Candidate{
+		candidates = appendCandidatesBounded(candidates, Candidate{
 			Name:           "corr_" + Slug(name),
 			Value:          value,
 			Source:         "body",
-			ExtractType:    "xpath",
-			Expression:     "//@*[local-name()='" + localXMLName(name) + "']",
+			ExtractType:    extractType,
+			Expression:     extractorExpression,
 			RuleID:         ruleID,
 			BaseConfidence: base,
 			Reason:         "XML/SOAP attribute " + name + " looks dynamic",
 		})
 	}
-	return candidates
+	if len(candidates) > maxCorrelationCandidatesPerObservation {
+		truncated = true
+	}
+	return candidates, truncated
+}
+
+func regexpIndexedSubmatch(input string, match []int, group int) string {
+	index := group * 2
+	if index+1 >= len(match) || match[index] < 0 || match[index+1] < match[index] {
+		return ""
+	}
+	return input[match[index]:match[index+1]]
 }
 
 func classifyXMLName(name string) (string, float64) {
@@ -979,76 +2073,140 @@ func headerCandidates(headers map[string]string) []Candidate {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
+	// Go's header runtime treats field names case-insensitively, while a generic
+	// observation map can still contain case-variant keys. Compute physical
+	// occurrence ordinals across those variants in the same sorted order used by
+	// flattenHeaders; resetting at each map key can make a later candidate's
+	// regex capture an earlier differently-cased field.
+	headerValueCounts := make(map[string]int)
+	unaddressableHeaders := make(map[string]bool)
 	for _, key := range keys {
-		value := headers[key]
-		if strings.TrimSpace(value) == "" {
+		lowerKey := strings.ToLower(key)
+		if headerValueSplitTooWide(headers[key]) {
+			unaddressableHeaders[lowerKey] = true
 			continue
+		}
+		headerValueCounts[lowerKey] += len(strings.Split(headers[key], "\n"))
+	}
+	headerValueOrdinals := make(map[string]int)
+	cookieOccurrences := make(map[string]int)
+	for _, key := range keys {
+		if len(candidates) > maxCorrelationCandidatesPerObservation {
+			return candidates
 		}
 		lowerKey := strings.ToLower(key)
-		if lowerKey == "set-cookie" {
-			candidates = append(candidates, setCookieCandidates(key, value)...)
+		if unaddressableHeaders[lowerKey] {
+			// Skip only this header's occurrence split; a pathologically wide
+			// repeated header must not abort the whole response analysis. Skip
+			// case variants too because their replay ordinals cannot be proven
+			// after omitting the wide occurrence set.
 			continue
 		}
-		if lowerKey == "location" {
-			locationMatches := locationCandidates(key, value)
-			candidates = append(candidates, locationMatches...)
-			if len(locationMatches) == 0 && shouldCorrelateWholeLocation(value) {
-				// A redirect target frequently carries a one-time code/state that the
-				// next request must echo back. Capture the whole value for review.
-				candidates = append(candidates, Candidate{
-					Name:           "corr_location",
-					Value:          value,
-					Source:         "header",
-					ExtractType:    "header",
-					Expression:     key,
-					RuleID:         RuleLocationRedirect,
-					BaseConfidence: 0.6,
-					Reason:         "Location redirect target may carry a one-time code/state",
-				})
+		values := strings.Split(headers[key], "\n")
+		baseOrdinal := headerValueOrdinals[lowerKey]
+		for valueIndex, value := range values {
+			if len(candidates) > maxCorrelationCandidatesPerObservation {
+				return candidates
 			}
-			continue
-		}
-		if isJMSHeaderName(lowerKey) {
-			candidates = append(candidates, Candidate{
+			rawValue := value
+			trimmedValue := strings.TrimSpace(rawValue)
+			if trimmedValue == "" {
+				continue
+			}
+			if lowerKey == "set-cookie" {
+				candidates = appendCandidatesBounded(candidates, setCookieCandidates(key, rawValue, cookieOccurrences)...)
+				continue
+			}
+			if lowerKey == "location" {
+				locationMatches := locationCandidates(key, trimmedValue, baseOrdinal+valueIndex, headerValueCounts[lowerKey])
+				candidates = appendCandidatesBounded(candidates, locationMatches...)
+				if len(candidates) > maxCorrelationCandidatesPerObservation {
+					return candidates
+				}
+				if len(locationMatches) == 0 && shouldCorrelateWholeLocation(trimmedValue) {
+					extractType, expression, replayable := headerExtractorForOccurrence(key, baseOrdinal+valueIndex, headerValueCounts[lowerKey])
+					if !replayable {
+						continue
+					}
+					// A redirect target frequently carries a one-time code/state that the
+					// next request must echo back. Capture the whole value for review.
+					candidates = appendCandidatesBounded(candidates, Candidate{
+						Name:           "corr_location",
+						Value:          rawValue,
+						Source:         "header",
+						ExtractType:    extractType,
+						Expression:     expression,
+						RuleID:         RuleLocationRedirect,
+						BaseConfidence: 0.6,
+						Reason:         "Location redirect target may carry a one-time code/state",
+					})
+				}
+				continue
+			}
+			jmsHeader := isJMSHeaderName(lowerKey)
+			webSocketHeader := isWebSocketHeaderName(lowerKey)
+			dynamicHeader := dynamicHeaderName(lowerKey) && len(trimmedValue) >= 4
+			if !jmsHeader && !webSocketHeader && !dynamicHeader {
+				continue
+			}
+			extractType, expression, replayable := headerExtractorForOccurrence(key, baseOrdinal+valueIndex, headerValueCounts[lowerKey])
+			if !replayable {
+				continue
+			}
+			if jmsHeader {
+				candidates = appendCandidatesBounded(candidates, Candidate{
+					Name:           "corr_" + Slug(lowerKey),
+					Value:          rawValue,
+					Source:         "header",
+					ExtractType:    extractType,
+					Expression:     expression,
+					RuleID:         RuleJMSCorrelationID,
+					BaseConfidence: 0.88,
+					Reason:         "JMS correlation/message header " + key,
+				})
+				continue
+			}
+			if webSocketHeader {
+				candidates = appendCandidatesBounded(candidates, Candidate{
+					Name:           "corr_" + Slug(lowerKey),
+					Value:          rawValue,
+					Source:         "header",
+					ExtractType:    extractType,
+					Expression:     expression,
+					RuleID:         RuleWebSocketID,
+					BaseConfidence: 0.84,
+					Reason:         "WebSocket correlation header " + key,
+				})
+				continue
+			}
+			candidates = appendCandidatesBounded(candidates, Candidate{
 				Name:           "corr_" + Slug(lowerKey),
-				Value:          value,
+				Value:          rawValue,
 				Source:         "header",
-				ExtractType:    "header",
-				Expression:     key,
-				RuleID:         RuleJMSCorrelationID,
-				BaseConfidence: 0.88,
-				Reason:         "JMS correlation/message header " + key,
+				ExtractType:    extractType,
+				Expression:     expression,
+				RuleID:         RuleDynamicHeader,
+				BaseConfidence: 0.8,
+				Reason:         "Response header " + key + " looks dynamic (token/auth/id)",
 			})
-			continue
 		}
-		if isWebSocketHeaderName(lowerKey) {
-			candidates = append(candidates, Candidate{
-				Name:           "corr_" + Slug(lowerKey),
-				Value:          value,
-				Source:         "header",
-				ExtractType:    "header",
-				Expression:     key,
-				RuleID:         RuleWebSocketID,
-				BaseConfidence: 0.84,
-				Reason:         "WebSocket correlation header " + key,
-			})
-			continue
-		}
-		if !dynamicHeaderName(lowerKey) || len(value) < 4 {
-			continue
-		}
-		candidates = append(candidates, Candidate{
-			Name:           "corr_" + Slug(lowerKey),
-			Value:          value,
-			Source:         "header",
-			ExtractType:    "header",
-			Expression:     key,
-			RuleID:         RuleDynamicHeader,
-			BaseConfidence: 0.8,
-			Reason:         "Response header " + key + " looks dynamic (token/auth/id)",
-		})
+		headerValueOrdinals[lowerKey] = baseOrdinal + len(values)
 	}
 	return candidates
+}
+
+func headerExtractorForOccurrence(name string, zeroBasedOrdinal, total int) (string, string, bool) {
+	if zeroBasedOrdinal < 0 || zeroBasedOrdinal > maxCorrelationRegexOrdinal {
+		return "", "", false
+	}
+	if total <= 1 {
+		return "header", name, true
+	}
+	escapedName := regexp.QuoteMeta(name)
+	if zeroBasedOrdinal <= 0 {
+		return "regex", fmt.Sprintf(`(?im)^%s: ([^\r\n]+)`, escapedName), true
+	}
+	return "regex", fmt.Sprintf(`(?im)(?:^%s: [^\r\n]*\r?\n(?:^[^\r\n]*\r?\n)*?){%d}^%s: ([^\r\n]+)`, escapedName, zeroBasedOrdinal, escapedName), true
 }
 
 func shouldCorrelateWholeLocation(value string) bool {
@@ -1104,80 +2262,305 @@ func looksDynamicLocationValue(value string) bool {
 	return hasLetter && hasDigit
 }
 
-func locationCandidates(headerName string, value string) []Candidate {
+func locationCandidates(headerName string, value string, headerOrdinal, headerCount int) []Candidate {
 	parsed, err := url.Parse(value)
 	if err != nil {
+		return nil
+	}
+	if formParseTooWide(parsed.RawQuery) {
 		return nil
 	}
 	params := parsed.Query()
 	if len(params) == 0 {
 		return nil
 	}
-	keys := make([]string, 0, len(params))
-	for key := range params {
+	valuesByKey := exactLocationQueryValueIndex(parsed.RawQuery, params)
+	keys := make([]string, 0, len(valuesByKey))
+	for key := range valuesByKey {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	candidates := make([]Candidate, 0, len(keys))
+	candidates := make([]Candidate, 0, min(len(keys), maxCorrelationCandidatesPerObservation+1))
 	for _, key := range keys {
-		values := params[key]
-		if len(values) == 0 || !dynamicLocationParamName(key) || len(values[0]) < 4 {
+		if len(candidates) > maxCorrelationCandidatesPerObservation {
+			return candidates
+		}
+		indexed := valuesByKey[key]
+		if !indexed.replayable || len(indexed.values) == 0 {
 			continue
 		}
-		candidates = append(candidates, Candidate{
-			Name:           "corr_location_" + Slug(key),
-			Value:          values[0],
-			Source:         "header",
-			ExtractType:    "regex",
-			Expression:     locationHeaderQueryRegex(headerName, key),
-			RuleID:         RuleLocationParam,
-			BaseConfidence: 0.78,
-			Reason:         "Location query parameter " + key + " looks dynamic",
-		})
+		for valueOrdinal, queryValue := range indexed.values {
+			if len(queryValue) < 4 {
+				continue
+			}
+			expression, replayable := locationHeaderQueryRegex(headerName, key, headerOrdinal, headerCount, valueOrdinal)
+			if !replayable {
+				continue
+			}
+			candidates = appendCandidatesBounded(candidates, Candidate{
+				Name:           "corr_location_" + Slug(key),
+				Value:          queryValue,
+				Source:         "header",
+				ExtractType:    "regex",
+				Expression:     expression,
+				Convert:        "url_decode",
+				RuleID:         RuleLocationParam,
+				BaseConfidence: 0.78,
+				Reason:         "Location query parameter " + key + " looks dynamic",
+			})
+		}
 	}
 	return candidates
 }
 
-func setCookieCandidates(headerName string, value string) []Candidate {
-	candidates := make([]Candidate, 0)
-	for _, match := range setCookieValuePattern.FindAllStringSubmatch(value, -1) {
-		if len(match) < 3 {
-			continue
+type exactLocationQueryValues struct {
+	values     []string
+	replayable bool
+}
+
+// exactLocationQueryValueIndex verifies every relevant query occurrence in one
+// wire-order pass. ParseQuery's successfully decoded key set is supplied so its
+// malformed-semicolon/error behavior remains authoritative. Generated regexes
+// intentionally capture wire values and cannot replay percent-encoded keys.
+func exactLocationQueryValueIndex(rawQuery string, parsed url.Values) map[string]*exactLocationQueryValues {
+	index := make(map[string]*exactLocationQueryValues)
+	for key := range parsed {
+		if dynamicLocationParamName(key) {
+			index[key] = &exactLocationQueryValues{replayable: true}
 		}
-		cookieName := match[1]
-		cookieValue := match[2]
-		if setCookieAttributeName(cookieName) {
-			continue
-		}
-		ruleID, base := RuleSetCookieOther, 0.55
-		if isSessionCookieName(cookieName) {
-			ruleID, base = RuleSetCookieSession, 0.8
-		}
-		candidates = append(candidates, Candidate{
-			Name:           "corr_cookie_" + Slug(cookieName),
-			Value:          cookieValue,
-			Source:         "header",
-			ExtractType:    "regex",
-			Expression:     fmt.Sprintf(`(?i)%s:\s*%s=([^;\s,]+)`, regexp.QuoteMeta(headerName), regexp.QuoteMeta(cookieName)),
-			RuleID:         ruleID,
-			BaseConfidence: base,
-			Reason:         "Set-Cookie " + cookieName,
-		})
 	}
-	return candidates
+	if len(index) == 0 {
+		return index
+	}
+	for fieldStart := 0; fieldStart <= len(rawQuery); {
+		fieldEnd := strings.IndexByte(rawQuery[fieldStart:], '&')
+		if fieldEnd < 0 {
+			fieldEnd = len(rawQuery)
+		} else {
+			fieldEnd += fieldStart
+		}
+		field := rawQuery[fieldStart:fieldEnd]
+		rawKey, rawValue, hasEquals := strings.Cut(field, "=")
+		decodedKey, err := url.QueryUnescape(rawKey)
+		if err == nil {
+			if values := index[decodedKey]; values != nil {
+				switch {
+				case rawKey != decodedKey:
+					values.replayable = false
+				case !hasEquals || rawValue == "":
+					// The runtime regex also ignores key-only and empty fields, so
+					// neither consumes a value ordinal.
+				case strings.IndexFunc(rawValue, unicode.IsSpace) >= 0:
+					// The runtime capture class stops at whitespace, so a literal
+					// space in the wire value would replay as a truncated prefix.
+					values.replayable = false
+				default:
+					decodedValue, decodeErr := url.QueryUnescape(rawValue)
+					if decodeErr != nil {
+						values.replayable = false
+					} else {
+						values.values = append(values.values, decodedValue)
+					}
+				}
+			}
+		}
+		if fieldEnd == len(rawQuery) {
+			break
+		}
+		fieldStart = fieldEnd + 1
+	}
+	return index
 }
 
-func locationHeaderQueryRegex(headerName string, queryKey string) string {
-	return fmt.Sprintf(`(?im)^%s:\s*[^\r\n]*[?&]%s=([^&#\s]+)`, regexp.QuoteMeta(headerName), regexp.QuoteMeta(queryKey))
+func setCookieCandidates(headerName string, value string, occurrences map[string]int) []Candidate {
+	// RFC 6265 gives each physical Set-Cookie field exactly one leading
+	// cookie-pair. Every later name=value segment is an attribute (including
+	// unknown extension attributes), not another cookie. Treating those
+	// attributes as cookies can generate a replay extractor for a value that a
+	// user agent never stores or sends.
+	replayName, replayValue, replayable := parseSetCookieExtractorPair(value)
+	ordinal := 0
+	if replayable {
+		ordinal = occurrences[replayName]
+		occurrences[replayName] = ordinal + 1
+	}
+	cookieName, cookieValue, ok := parseSetCookiePair(value)
+	if !ok || cookieValue == "" {
+		return nil
+	}
+	// Candidate validation is intentionally stricter than the replay regex:
+	// malformed recorded cookies must not become automatic correlations. The
+	// occurrence counter above nevertheless mirrors every line the generated
+	// regex can consume. Otherwise an empty or malformed earlier field can shift
+	// the regex ordinal and make a later valid candidate extract the wrong value.
+	if !replayable || replayName != cookieName || replayValue != cookieValue {
+		return nil
+	}
+	if len(cookieValue) < 4 {
+		return nil
+	}
+	ruleID, base := RuleSetCookieOther, 0.55
+	if isSessionCookieName(cookieName) {
+		ruleID, base = RuleSetCookieSession, 0.8
+	}
+	// Cookie names are case-sensitive. In particular, SID and sid can coexist
+	// and must not share an occurrence ordinal or a case-insensitive extractor.
+	expression, replayable := setCookieExtractorForOccurrence(headerName, cookieName, ordinal)
+	if !replayable {
+		return nil
+	}
+	return []Candidate{{
+		Name:           "corr_cookie_" + Slug(cookieName),
+		Value:          cookieValue,
+		Source:         "header",
+		ExtractType:    "regex",
+		Expression:     expression,
+		RuleID:         ruleID,
+		BaseConfidence: base,
+		Reason:         "Set-Cookie " + cookieName,
+	}}
 }
 
-func setCookieAttributeName(name string) bool {
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "path", "domain", "max-age", "expires", "samesite", "secure", "httponly", "partitioned", "priority":
-		return true
-	default:
+// parseSetCookieExtractorPair mirrors the deliberately permissive value grammar
+// used by setCookieExtractorForOccurrence. It exists solely for ordinal
+// accounting: strict candidate eligibility remains parseSetCookiePair's job.
+// In particular, an unmatched optional quote is not a valid cookie, but the
+// replay regex can still consume it and therefore a later occurrence must count
+// it when selecting its ordinal.
+func parseSetCookieExtractorPair(line string) (string, string, bool) {
+	line = strings.TrimLeft(line, " \t")
+	name, remainder, found := strings.Cut(line, "=")
+	if !found || !validCookieName(name) {
+		return "", "", false
+	}
+	remainder = strings.TrimLeft(remainder, " \t")
+	if strings.HasPrefix(remainder, `"`) {
+		remainder = remainder[1:]
+	}
+	valueEnd := 0
+	for valueEnd < len(remainder) {
+		switch remainder[valueEnd] {
+		case '"', ';', ',', ' ', '\t', '\r', '\n', '\f':
+			goto valueComplete
+		default:
+			valueEnd++
+		}
+	}
+
+valueComplete:
+	if valueEnd == 0 {
+		return "", "", false
+	}
+	value := remainder[:valueEnd]
+	remainder = remainder[valueEnd:]
+	if strings.HasPrefix(remainder, `"`) {
+		remainder = remainder[1:]
+	}
+	remainder = strings.TrimLeft(remainder, " \t")
+	if remainder != "" && remainder[0] != ';' {
+		return "", "", false
+	}
+	return name, value, true
+}
+
+func parseSetCookiePair(line string) (string, string, bool) {
+	line = strings.TrimLeft(line, " \t")
+	pair, _, _ := strings.Cut(line, ";")
+	pair = strings.TrimRight(pair, " \t")
+	name, rawValue, found := strings.Cut(pair, "=")
+	if !found || name != strings.TrimSpace(name) || !validCookieName(name) {
+		return "", "", false
+	}
+	rawValue = strings.TrimSpace(rawValue)
+	if len(rawValue) >= 2 && rawValue[0] == '"' {
+		if rawValue[len(rawValue)-1] != '"' {
+			return "", "", false
+		}
+		rawValue = rawValue[1 : len(rawValue)-1]
+	} else if strings.Contains(rawValue, `"`) {
+		return "", "", false
+	}
+	for index := 0; index < len(rawValue); index++ {
+		if !validCookieOctet(rawValue[index]) {
+			return "", "", false
+		}
+	}
+	return name, rawValue, true
+}
+
+func validCookieName(name string) bool {
+	if name == "" {
 		return false
 	}
+	for index := 0; index < len(name); index++ {
+		char := name[index]
+		if char >= 'a' && char <= 'z' || char >= 'A' && char <= 'Z' || char >= '0' && char <= '9' {
+			continue
+		}
+		switch char {
+		case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~':
+			continue
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+func validCookieOctet(char byte) bool {
+	return char == 0x21 ||
+		char >= 0x23 && char <= 0x2b ||
+		char >= 0x2d && char <= 0x3a ||
+		char >= 0x3c && char <= 0x5b ||
+		char >= 0x5d && char <= 0x7e
+}
+
+func setCookieExtractorForOccurrence(headerName, cookieName string, zeroBasedOrdinal int) (string, bool) {
+	if zeroBasedOrdinal < 0 || zeroBasedOrdinal > maxCorrelationRegexOrdinal {
+		return "", false
+	}
+	header := `(?i:` + regexp.QuoteMeta(headerName) + `)`
+	cookie := regexp.QuoteMeta(cookieName)
+	// The header name is case-insensitive, but the cookie name is not. Capture
+	// the stored value without optional RFC quotes so it matches the value sent
+	// later in the Cookie request header.
+	prefix := fmt.Sprintf(`^%s:[ \t]*%s=[ \t]*`, header, cookie)
+	capture := prefix + `"?([^";\s,]+)"?(?:[ \t]*;|[ \t]*$)`
+	if zeroBasedOrdinal <= 0 {
+		return `(?m)` + capture, true
+	}
+	// Count only prior same-name lines that the final capture grammar could
+	// actually consume. A prefix-only repetition also counts `sid=`; after an
+	// omitted empty value, that shifts every later ordinal by one.
+	prior := prefix + `"?[^";\s,]+"?(?:[ \t]*;[^\r\n]*|[ \t]*)\r?\n`
+	return fmt.Sprintf(`(?m)(?:%s(?:^[^\r\n]*\r?\n)*?){%d}%s`, prior, zeroBasedOrdinal, capture), true
+}
+
+func locationHeaderQueryRegex(headerName, queryKey string, headerOrdinal, headerCount, valueOrdinal int) (string, bool) {
+	if headerOrdinal < 0 || headerOrdinal > maxCorrelationRegexOrdinal || valueOrdinal < 0 || valueOrdinal > maxCorrelationRegexOrdinal {
+		return "", false
+	}
+	header := `(?i:` + regexp.QuoteMeta(headerName) + `)`
+	key := regexp.QuoteMeta(queryKey)
+	var expression strings.Builder
+	expression.WriteString(`(?m)`)
+	if headerCount > 1 && headerOrdinal > 0 {
+		// [ \t]* (not \s*) so an empty header value cannot swallow its own
+		// newline and make one counted iteration consume two physical lines.
+		// Allow unrelated flattened headers between case-variant map keys while
+		// still counting only Location occurrences.
+		fmt.Fprintf(&expression, `(?:^%s:[ \t]*[^\r\n]*\r?\n(?:^[^\r\n]*\r?\n)*?){%d}`, header, headerOrdinal)
+	}
+	// Anchor on the first '?' (the true query start) and only advance across
+	// whole '&'-separated fields, so `key=` matches solely at top-level field
+	// starts. Scanning the whole line for `[?&]key=` also matched inside the
+	// path or inside another parameter's unencoded nested-URL value.
+	fmt.Fprintf(&expression, `^%s:[ \t]*[^?\r\n]*?\?`, header)
+	if valueOrdinal > 0 {
+		fmt.Fprintf(&expression, `(?:(?:[^&#\r\n]*&)*?%s=[^&#\s]+&){%d}`, key, valueOrdinal)
+	}
+	fmt.Fprintf(&expression, `(?:[^&#\r\n]*&)*?%s=([^&#\s]+)`, key)
+	return expression.String(), true
 }
 
 func isSessionCookieName(name string) bool {

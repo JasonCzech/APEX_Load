@@ -53,7 +53,7 @@ public class Actions {
     return 0;
   }
 }`)
-	result, err := ConvertZip(archive, ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(archive, ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -98,7 +98,7 @@ public class Actions {
     return 0;
   }
 }`)
-	result, err := ConvertZip(archive, ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(archive, ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -127,7 +127,7 @@ public class Actions {
     return 0;
   }
 }`)
-	result, err := ConvertZip(archive, ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(archive, ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -174,7 +174,7 @@ public class Actions {
     return 0;
   }
 }`)
-	result, err := ConvertZip(archive, ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(archive, ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}

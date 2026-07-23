@@ -73,6 +73,9 @@ func TestResolveObjectRefs_BareReference(t *testing.T) {
 	if got.Metadata[objectRefRepositoryMetadataKey] != "object-repo-a" {
 		t.Fatalf("repo stamp = %v, want object-repo-a", got.Metadata[objectRefRepositoryMetadataKey])
 	}
+	if got.Metadata[objectRefLogicalNameMetadataKey] != "login" {
+		t.Fatalf("logical-name stamp = %v, want login", got.Metadata[objectRefLogicalNameMetadataKey])
+	}
 	// The stored script must be untouched.
 	if script.Actions[0].Selector != "" || script.Actions[0].Metadata != nil {
 		t.Fatalf("input script mutated: %#v", script.Actions[0])
@@ -95,6 +98,9 @@ func TestResolveObjectRefs_QualifiedPinsRepository(t *testing.T) {
 	}
 	if resolved.Actions[0].Metadata[objectRefRepositoryMetadataKey] != "object-repo-b" {
 		t.Fatalf("repo stamp wrong: %v", resolved.Actions[0].Metadata[objectRefRepositoryMetadataKey])
+	}
+	if resolved.Actions[0].Metadata[objectRefLogicalNameMetadataKey] != "go" {
+		t.Fatalf("logical-name stamp wrong: %v", resolved.Actions[0].Metadata[objectRefLogicalNameMetadataKey])
 	}
 }
 
@@ -126,6 +132,76 @@ func TestResolveObjectRefs_DegradeToInlineSelector(t *testing.T) {
 	}
 	if got := resolved.Actions[0].Selector; got != "#fallback" {
 		t.Fatalf("selector = %q, want inline #fallback preserved", got)
+	}
+}
+
+func TestResolveObjectRefs_ClearsForgedAttestationOnUnresolvedFallback(t *testing.T) {
+	reader := &fakeObjectRepoReader{}
+	action := clickAction("Go", "object-repo-missing:go")
+	action.Selector = "#fallback"
+	action.Metadata = map[string]any{
+		objectRefRepositoryMetadataKey:  "object-repo-missing",
+		objectRefLogicalNameMetadataKey: "go",
+		selector.MetadataCandidatesKey: []selector.Candidate{
+			{Kind: "css", Value: "#stale-candidate", Confidence: 99},
+		},
+		selector.MetadataFallbacksKey: []selector.Candidate{
+			{Kind: "css", Value: "#stale-fallback", Confidence: 98},
+		},
+		"caller_metadata": "preserved",
+	}
+	script := &dsl.Script{Protocol: "browser", Actions: []dsl.Action{action}}
+
+	resolved, warnings, issues := resolveObjectRefs(reader, script)
+	if len(issues) != 0 || len(warnings) != 1 {
+		t.Fatalf("warnings=%v issues=%v, want one fallback warning", warnings, issues)
+	}
+	got := &resolved.Actions[0]
+	if _, exists := got.Metadata[objectRefRepositoryMetadataKey]; exists {
+		t.Fatalf("forged repository attestation survived failed resolution: %#v", got.Metadata)
+	}
+	if _, exists := got.Metadata[objectRefLogicalNameMetadataKey]; exists {
+		t.Fatalf("forged logical-name attestation survived failed resolution: %#v", got.Metadata)
+	}
+	if _, exists := got.Metadata[selector.MetadataCandidatesKey]; exists {
+		t.Fatalf("stale repository candidates survived failed resolution: %#v", got.Metadata)
+	}
+	if _, exists := got.Metadata[selector.MetadataFallbacksKey]; exists {
+		t.Fatalf("stale repository fallbacks survived failed resolution: %#v", got.Metadata)
+	}
+	if got.Metadata["caller_metadata"] != "preserved" {
+		t.Fatalf("unrelated metadata was removed: %#v", got.Metadata)
+	}
+	if binding, ok := objectRefBindingForAction(got); ok {
+		t.Fatalf("unresolved inline fallback produced self-heal binding %#v", binding)
+	}
+}
+
+func TestResolveObjectRefs_ReplacesStaleAttestationAfterSuccessfulResolution(t *testing.T) {
+	reader := &fakeObjectRepoReader{repos: []*storage.ObjectRepository{{
+		ID:        "object-repo-new",
+		ProjectID: "unassigned",
+		Objects:   []storage.RepositoryObject{{LogicalName: "new-button", CSS: "#new", BestConfidence: 88}},
+	}}}
+	action := clickAction("Go", "object-repo-new:new-button")
+	action.Metadata = map[string]any{
+		objectRefRepositoryMetadataKey:  "object-repo-stale",
+		objectRefLogicalNameMetadataKey: "old-button",
+	}
+	script := &dsl.Script{Protocol: "browser", Actions: []dsl.Action{action}}
+
+	resolved, warnings, issues := resolveObjectRefs(reader, script)
+	if len(warnings) != 0 || len(issues) != 0 {
+		t.Fatalf("warnings=%v issues=%v", warnings, issues)
+	}
+	got := &resolved.Actions[0]
+	if got.Metadata[objectRefRepositoryMetadataKey] != "object-repo-new" ||
+		got.Metadata[objectRefLogicalNameMetadataKey] != "new-button" {
+		t.Fatalf("stale attestation was not replaced: %#v", got.Metadata)
+	}
+	if binding, ok := objectRefBindingForAction(got); !ok ||
+		binding != (objectRefBinding{repoID: "object-repo-new", logicalName: "new-button"}) {
+		t.Fatalf("resolved binding = %#v, %v", binding, ok)
 	}
 }
 

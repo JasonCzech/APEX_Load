@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1070,10 +1071,32 @@ func (s *Server) handleExportBrowserRecordingStorageState(w http.ResponseWriter,
 	w.Write(data)
 }
 
+type browserRecordingVerifyRequest struct {
+	ReplaySessionID string `json:"replay_session_id,omitempty"`
+}
+
+type browserRecordingVerifyResponse struct {
+	ReplaySessionID string                `json:"replay_session_id"`
+	ReplaySession   *BrowserReplaySession `json:"replay_session"`
+	Warnings        []string              `json:"warnings,omitempty"`
+}
+
 // handleVerifyBrowserRecording converts the stopped recording in-memory and
 // replays it immediately through the browser-replay engine so the user can see
 // per-step pass/fail and self-heal suggestions without saving anything.
+// OpenAPI-Responses: 409, 500, 503
 func (s *Server) handleVerifyBrowserRecording(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
+	var req browserRecordingVerifyRequest
+	if !decodeOptionalJSONBody(w, r, &req) {
+		return
+	}
+	if err := validateExternalReplaySessionID(req.ReplaySessionID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	id := r.PathValue("id")
 	artifact, info, ok := s.browserRecording.Artifact(id)
 	if !ok {
@@ -1098,17 +1121,27 @@ func (s *Server) handleVerifyBrowserRecording(w http.ResponseWriter, r *http.Req
 		script.ID = uuid.New().String()
 	}
 	ignoreThink := true
-	replay := s.browserReplay.Start(script.ID, script, BrowserReplayStartRequest{
-		GroupName:       script.Name + " — verify",
-		IgnoreThinkTime: &ignoreThink,
+	executionCtx, releaseExecutionCtx := s.runner.executionOperationContext(context.Background())
+	replay, replayErr := s.browserReplay.Start(script.ID, script, BrowserReplayStartRequest{
+		GroupName:               script.Name + " — verify",
+		ReplaySessionID:         req.ReplaySessionID,
+		IgnoreThinkTime:         &ignoreThink,
+		executionContext:        executionCtx,
+		releaseExecutionContext: releaseExecutionCtx,
 	})
+	if replayErr != nil {
+		releaseExecutionCtx()
+		writeBrowserReplayStartError(w, replayErr)
+		return
+	}
 	s.recordAuditEvent(r, "browser_recording.verify", "success", "browser_recording", id, info.ProjectID,
 		map[string]any{"replay_session_id": replay.ID, "actions": result.Stats.ConvertedActions})
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"replay_session_id": replay.ID,
-		"replay_session":    replay,
-		"warnings":          result.Warnings,
-	})
+	response := browserRecordingVerifyResponse{
+		ReplaySessionID: replay.ID,
+		ReplaySession:   replay,
+		Warnings:        result.Warnings,
+	}
+	writeJSON(w, http.StatusCreated, response)
 }
 
 // handleBrowserRecorderInstall provisions the Playwright driver/Chromium in the

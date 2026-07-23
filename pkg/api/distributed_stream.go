@@ -1199,6 +1199,7 @@ func (b *distributedExecutionBackend) probeGeneratorLoad(ctx context.Context, ta
 	snapshot.Version = strings.TrimSpace(response.Version)
 	snapshot.SupportedProtocols = normalizedProtocolList(response.SupportedProtocols)
 	snapshot.CompatibleFeatures = normalizedProtocolList(response.CompatibleFeatures)
+	snapshot.RuntimeCapacities = cloneProtocolRuntimeCapacities(response.RuntimeCapacities)
 	snapshot.HeartbeatOK = true
 	return snapshot
 }

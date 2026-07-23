@@ -22,6 +22,12 @@ function formatTimestamp(value?: string): string {
 export default function CorrelationRulesetPanel({ projectId, canManage = false }: Props) {
   const api = useCorrelationRulesetApi()
   const mountedRef = useRef(false)
+  const currentProjectRef = useRef(projectId)
+  const loadRequestRef = useRef(0)
+  const actionRequestRef = useRef(0)
+  const actionInFlightRef = useRef(false)
+  const applyRequestRef = useRef(0)
+  currentProjectRef.current = projectId
   const [rulesets, setRulesets] = useState<CorrelationRuleset[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -39,43 +45,80 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
     }
   }, [])
 
+  useEffect(() => {
+    // Project changes are an authorization-boundary change. Invalidate every
+    // request issued for the prior project and clear state that references its
+    // rulesets before loading the new project.
+    loadRequestRef.current += 1
+    actionRequestRef.current += 1
+    applyRequestRef.current += 1
+    actionInFlightRef.current = false
+    setRulesets([])
+    setLoading(false)
+    setError(null)
+    setDiscoverForm({ scriptId: '', name: '' })
+    setExpanded(null)
+    setApplyForm({ rulesetId: '', scriptId: '' })
+    setApplyResult(null)
+    setDeleteTarget(null)
+    setBusy(false)
+  }, [projectId])
+
   const load = useCallback(async () => {
-    if (!projectId) {
-      if (mountedRef.current) setRulesets([])
+    const requestedProject = projectId
+    const requestID = ++loadRequestRef.current
+    const isCurrentRequest = () => (
+      mountedRef.current
+      && currentProjectRef.current === requestedProject
+      && loadRequestRef.current === requestID
+    )
+    if (!requestedProject) {
+      if (isCurrentRequest()) setRulesets([])
       return
     }
-    if (!mountedRef.current) return
+    if (!isCurrentRequest()) return
     setLoading(true)
     setError(null)
     try {
-      const res = await api.listCorrelationRulesets({ project_id: projectId })
-      if (!mountedRef.current) return
+      const res = await api.listCorrelationRulesets({ project_id: requestedProject })
+      if (!isCurrentRequest()) return
       setRulesets(res.correlation_rulesets || [])
     } catch (err) {
-      if (!mountedRef.current) return
+      if (!isCurrentRequest()) return
       setError(err instanceof ApiError ? err.message : 'Failed to load correlation rulesets.')
       setRulesets([])
     } finally {
-      if (mountedRef.current) setLoading(false)
+      if (isCurrentRequest()) setLoading(false)
     }
   }, [api, projectId])
 
   useEffect(() => { void load() }, [load])
 
   const runAction = async (action: () => Promise<unknown>, onDone?: () => void) => {
-    if (!mountedRef.current) return
+    if (!mountedRef.current || actionInFlightRef.current) return
+    const requestedProject = projectId
+    const requestID = ++actionRequestRef.current
+    const isCurrentAction = () => (
+      mountedRef.current
+      && currentProjectRef.current === requestedProject
+      && actionRequestRef.current === requestID
+    )
+    actionInFlightRef.current = true
     setBusy(true)
     setError(null)
     try {
       await action()
-      if (!mountedRef.current) return
+      if (!isCurrentAction()) return
       onDone?.()
       await load()
     } catch (err) {
-      if (!mountedRef.current) return
+      if (!isCurrentAction()) return
       setError(err instanceof ApiError ? err.message : 'Action failed.')
     } finally {
-      if (mountedRef.current) setBusy(false)
+      if (isCurrentAction()) {
+        actionInFlightRef.current = false
+        setBusy(false)
+      }
     }
   }
 
@@ -88,19 +131,48 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
   }
 
   const handleApply = async (rulesetId: string, commit: boolean) => {
-    if (!applyForm.scriptId.trim() || applyForm.rulesetId !== rulesetId) return
+    const requestedScriptID = applyForm.scriptId.trim()
+    if (!requestedScriptID || applyForm.rulesetId !== rulesetId || actionInFlightRef.current) return
+    if (commit && (
+      !applyResult?.preview_token
+      || applyResult.ruleset_id !== rulesetId
+      || applyResult.script_id !== requestedScriptID
+    )) return
+    const requestedProject = projectId
+    const actionRequestID = ++actionRequestRef.current
+    const applyRequestID = ++applyRequestRef.current
+    const isCurrentAction = () => (
+      mountedRef.current
+      && currentProjectRef.current === requestedProject
+      && actionRequestRef.current === actionRequestID
+    )
+    const isCurrentApply = () => isCurrentAction() && applyRequestRef.current === applyRequestID
+    actionInFlightRef.current = true
     setBusy(true)
     setError(null)
     try {
-      const res = await api.applyCorrelationRulesetToScript(rulesetId, { script_id: applyForm.scriptId.trim(), apply: commit })
-      if (!mountedRef.current) return
+      const res = await api.applyCorrelationRulesetToScript(rulesetId, {
+        script_id: requestedScriptID,
+        apply: commit,
+        preview_token: commit ? applyResult?.preview_token : undefined,
+      })
+      if (!isCurrentApply()) return
+      if (res.ruleset_id !== rulesetId || res.script_id !== requestedScriptID) {
+        setApplyResult(null)
+        setError('The apply response did not match the selected ruleset and script. Preview again.')
+        return
+      }
       setApplyResult(res)
       if (commit) await load()
     } catch (err) {
-      if (!mountedRef.current) return
+      if (!isCurrentApply()) return
+      if (commit) setApplyResult(null)
       setError(err instanceof ApiError ? err.message : 'Apply failed.')
     } finally {
-      if (mountedRef.current) setBusy(false)
+      if (isCurrentAction()) {
+        actionInFlightRef.current = false
+        setBusy(false)
+      }
     }
   }
 
@@ -110,7 +182,14 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
     // wipe the typed script id and the computed preview when the user clicks back
     // into the same field to verify or edit it.
     if (applyForm.rulesetId === rulesetId) return
+    applyRequestRef.current += 1
     setApplyForm({ rulesetId, scriptId: '' })
+    setApplyResult(null)
+  }
+
+  const updateApplyScriptID = (rulesetId: string, scriptId: string) => {
+    applyRequestRef.current += 1
+    setApplyForm({ rulesetId, scriptId })
     setApplyResult(null)
   }
 
@@ -164,12 +243,12 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
                   )}
                   {canManage && (
                     <div className="pp-field-row">
-                      <input className="pp-field" placeholder="Apply to script id…" value={applyForm.rulesetId === ruleset.id ? applyForm.scriptId : ''} onFocus={() => openApply(ruleset.id)} onChange={e => { setApplyForm({ rulesetId: ruleset.id, scriptId: e.target.value }); setApplyResult(null) }} />
+                      <input className="pp-field" placeholder="Apply to script id…" value={applyForm.rulesetId === ruleset.id ? applyForm.scriptId : ''} onFocus={() => openApply(ruleset.id)} onChange={e => updateApplyScriptID(ruleset.id, e.target.value)} />
                       <button type="button" className="btn btn-secondary btn-sm" disabled={busy || applyForm.rulesetId !== ruleset.id || !applyForm.scriptId.trim()} onClick={() => handleApply(ruleset.id, false)}>Preview</button>
-                      <button type="button" className="btn btn-primary btn-sm" disabled={busy || applyForm.rulesetId !== ruleset.id || !applyForm.scriptId.trim() || !applyResult || applyResult.matched_rules === 0 || applyResult.script_id !== applyForm.scriptId.trim()} onClick={() => handleApply(ruleset.id, true)}>Apply</button>
+                      <button type="button" className="btn btn-primary btn-sm" disabled={busy || applyForm.rulesetId !== ruleset.id || !applyForm.scriptId.trim() || !applyResult?.preview_token || applyResult.matched_rules === 0 || applyResult.ruleset_id !== ruleset.id || applyResult.script_id !== applyForm.scriptId.trim()} onClick={() => handleApply(ruleset.id, true)}>Apply</button>
                     </div>
                   )}
-                  {applyResult && applyForm.rulesetId === ruleset.id && (
+                  {applyResult && applyForm.rulesetId === ruleset.id && applyResult.ruleset_id === ruleset.id && applyResult.script_id === applyForm.scriptId.trim() && (
                     <div className="pp-apply-result">
                       {applyResult.applied
                         ? <span className="pp-pill pp-pill-heal">applied {applyResult.matched_rules} rule{applyResult.matched_rules === 1 ? '' : 's'}</span>
@@ -177,7 +256,7 @@ export default function CorrelationRulesetPanel({ projectId, canManage = false }
                       {(applyResult.diffs || []).slice(0, 12).map((diff, i) => (
                         <div key={i} className="pp-candidate">
                           <span className="pp-pill pp-pill-kind">{diff.kind}</span>
-                          <code className="pp-candidate-value">{diff.after || diff.before || diff.path || ''}</code>
+                          <code className="pp-candidate-value">{diff.path || ''}</code>
                         </div>
                       ))}
                     </div>

@@ -28,11 +28,17 @@ func TestScriptEnvUnsetAllowlistDeniesOrdinaryKeys(t *testing.T) {
 }
 
 func TestScriptEnvAllowlistCannotExposeCredentials(t *testing.T) {
-	t.Setenv(EnvScriptEnvAllowlist, "APEXLOAD_GRPC_AUTH_TOKEN,AWS_ACCESS_KEY_ID,SAFE_API_KEY")
+	t.Setenv(EnvScriptEnvAllowlist, "APEXLOAD_GRPC_AUTH_TOKEN,APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN,AWS_ACCESS_KEY_ID,SAFE_API_KEY")
 	t.Setenv("APEXLOAD_GRPC_AUTH_TOKEN", "controller-token")
+	t.Setenv("APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN", "java-runner-token")
 	t.Setenv("AWS_ACCESS_KEY_ID", "cloud-key")
 	t.Setenv("SAFE_API_KEY", "api-key")
-	for _, key := range []string{"APEXLOAD_GRPC_AUTH_TOKEN", "AWS_ACCESS_KEY_ID", "SAFE_API_KEY"} {
+	for _, key := range []string{
+		"APEXLOAD_GRPC_AUTH_TOKEN",
+		"APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN",
+		"AWS_ACCESS_KEY_ID",
+		"SAFE_API_KEY",
+	} {
 		if _, ok := lookupScriptEnv(key); ok {
 			t.Errorf("credential key %q was exposed despite the hard block", key)
 		}

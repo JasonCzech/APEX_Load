@@ -40,6 +40,39 @@
   line-height: 1.5;
 }
 
+.source-map-incomplete {
+  padding: 10px 12px;
+  border: 1px solid var(--warning);
+  border-radius: 6px;
+  color: var(--text-primary);
+  background: var(--warning-soft, rgba(255, 170, 0, 0.12));
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.source-map-manifest {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  font-size: 12px;
+}
+
+.source-map-manifest strong {
+  color: var(--text-primary);
+}
+
+.source-map-manifest code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+
 .source-map-header-actions {
   display: flex;
   flex-wrap: wrap;

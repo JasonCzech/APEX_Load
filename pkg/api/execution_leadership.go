@@ -493,7 +493,8 @@ func (l *executionLeadership) transitionToFollowerLocked() bool {
 }
 
 // operationContext combines caller cancellation with the current leadership
-// epoch. The epoch is cancelled synchronously on lease loss and never reused on
+// epoch and snapshots its durable lease term into the returned context. The
+// epoch is cancelled synchronously on lease loss and never reused on
 // reacquisition, so an old operation cannot resume under a newer lease.
 func (l *executionLeadership) operationContext(parent context.Context) (context.Context, context.CancelFunc) {
 	if parent == nil {
@@ -511,8 +512,13 @@ func (l *executionLeadership) operationContext(parent context.Context) (context.
 	}
 	epoch := l.operationCtx
 	active := l.leader.Load() && l.pendingLoss == 0 && epoch != nil
+	term := executionLeaseTerm{ownerID: l.leaseOwnerID, generation: l.durableGeneration}
 	l.mu.Unlock()
 	ctx, cancel := context.WithCancel(parent)
+	// Bind the exact durable term captured with this leadership epoch. Replay
+	// completion hooks may run long after their request returned and must never
+	// adopt a newer term if this process loses and later reacquires leadership.
+	ctx = context.WithValue(ctx, executionLeaseTermContextKey{}, term)
 	if !active {
 		cancel()
 		return ctx, cancel

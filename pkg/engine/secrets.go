@@ -733,6 +733,20 @@ func resolveProtoConfigSecrets(value any, resolver SecretResolver) any {
 	case map[string]any:
 		resolved := make(map[string]any, len(typed))
 		for key, item := range typed {
+			// JVM arguments are observable in the child process command line.
+			// Never turn a secret reference into an argv value: concurrent
+			// Java VUser processes share an OS identity in the governed runner
+			// and could otherwise inspect one another through /proc. The
+			// java_vuser protocol validates the preserved tokens and rejects
+			// template-bearing arguments before process creation.
+			if strings.EqualFold(strings.TrimSpace(key), "java_vuser_additional_vm_parameters") {
+				if values, ok := item.([]string); ok {
+					resolved[key] = append([]string(nil), values...)
+				} else {
+					resolved[key] = item
+				}
+				continue
+			}
 			if text, ok := item.(string); ok && isDedicatedProtoConfigSecretKey(key) {
 				resolved[key] = resolveDedicatedProtoConfigSecret(text, resolver)
 				continue

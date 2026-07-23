@@ -61,3 +61,60 @@ func TestExecuteWithRetryMatchesCaseInsensitiveValidation(t *testing.T) {
 		t.Fatalf("adapter calls = %d, want initial attempt plus retry", adapter.calls)
 	}
 }
+
+func TestExecuteWithRetryDoesNotRepeatPersistentJavaLifecycle(t *testing.T) {
+	for _, method := range []string{"init", "action", "end", " VuSeR_EnD "} {
+		t.Run(strings.TrimSpace(method), func(t *testing.T) {
+			adapter := &retryBoundsProtocol{}
+			vu := &VUser{Proto: adapter}
+			result, err := vu.executeWithRetry(
+				context.Background(),
+				&protocol.Action{
+					Name:   "persistent-" + strings.TrimSpace(method),
+					Type:   " JAVA_VUSER_RUN ",
+					Params: map[string]any{"method": method},
+				},
+				dsl.ErrorHandlingConfig{MaxRetries: 3, RetryDelayMs: 1},
+			)
+			if err != nil {
+				t.Fatalf("executeWithRetry returned error: %v", err)
+			}
+			if result == nil || result.Success {
+				t.Fatalf("result = %#v, want the original unsuccessful result", result)
+			}
+			if adapter.calls != 1 {
+				t.Fatalf("adapter calls = %d, want one lifecycle invocation", adapter.calls)
+			}
+		})
+	}
+}
+
+func TestExecuteWithRetryPreservesLegacyJavaOneShotRetries(t *testing.T) {
+	for _, params := range []map[string]any{
+		nil,
+		{"method": " FULL_LIFECYCLE "},
+	} {
+		adapter := &retryBoundsProtocol{}
+		vu := &VUser{Proto: adapter}
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		result, err := vu.executeWithRetry(
+			ctx,
+			&protocol.Action{
+				Name:   "legacy-full-lifecycle",
+				Type:   "java_vuser_run",
+				Params: params,
+			},
+			dsl.ErrorHandlingConfig{MaxRetries: 1, RetryDelayMs: 1},
+		)
+		cancel()
+		if err != nil {
+			t.Fatalf("executeWithRetry returned error: %v", err)
+		}
+		if result == nil || result.Success {
+			t.Fatalf("result = %#v, want the final unsuccessful result", result)
+		}
+		if adapter.calls != 2 {
+			t.Fatalf("adapter calls = %d, want initial one-shot plus retry", adapter.calls)
+		}
+	}
+}

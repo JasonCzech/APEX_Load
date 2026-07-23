@@ -47,10 +47,17 @@ spec:
 {{- if .Values.workloadIdentity.enabled }}
         azure.workload.identity/use: "true"
 {{- end }}
+{{- if and .Values.workloadIdentity.enabled .Values.javaVuser.enabled }}
+      annotations:
+        azure.workload.identity/skip-containers: "java-vuser-runner"
+{{- end }}
     spec:
       serviceAccountName: {{ .Values.generator.serviceAccountName }}
       terminationGracePeriodSeconds: 120
       automountServiceAccountToken: false
+{{- if .Values.javaVuser.enabled }}
+      enableServiceLinks: false
+{{- end }}
 {{- with .Values.generator.nodeSelector }}
       nodeSelector:
 {{ toYaml . | indent 8 }}
@@ -88,6 +95,18 @@ spec:
               value: production
             - name: APEXLOAD_GENERATOR_MAX_VUSERS
               value: {{ .Values.generator.maxVUsers | quote }}
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_ENABLED
+              value: {{ .Values.javaVuser.enabled | quote }}
+{{- if .Values.javaVuser.enabled }}
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_MODE
+              value: sidecar
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_URL
+              value: http://127.0.0.1:8098
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+{{- end }}
 {{- if .Values.bruno.enabled }}
             - name: APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED
               value: "true"
@@ -291,6 +310,65 @@ spec:
           resources:
 {{ toYaml .Values.bruno.runner.resources | indent 12 }}
 {{- end }}
+{{- if .Values.javaVuser.enabled }}
+        - name: java-vuser-runner
+          image: {{ include "apexload.javaVuserRunnerImage" . | quote }}
+          imagePullPolicy: {{ .Values.javaVuser.runner.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          env:
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_ENABLED
+              value: "true"
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_ADDR
+              value: 127.0.0.1:8098
+            - name: APEXLOAD_JAVA_VUSER_HARNESS_JAR
+              value: /opt/apexload/java-vuser/java-vuser-runner.jar
+            - name: APEXLOAD_JAVA_VUSER_DEFAULT_JDK_HOME
+              value: /opt/java/openjdk
+            - name: APEXLOAD_JAVA_VUSER_MAX_PROCESSES
+              value: {{ .Values.javaVuser.runner.maxProcesses | quote }}
+            - name: APEXLOAD_JAVA_VUSER_WORK_DIR
+              value: /tmp
+          ports:
+            - name: java-vuser
+              containerPort: 8098
+          volumeMounts:
+            - name: java-vuser-runner-tmp
+              mountPath: /tmp
+{{- if .Values.javaVuser.assets.existingClaim }}
+            - name: java-vuser-assets
+              mountPath: {{ .Values.javaVuser.assets.mountPath | quote }}
+              readOnly: true
+{{- end }}
+          startupProbe:
+            exec:
+              command: ["curl", "--fail", "--silent", "http://127.0.0.1:8098/readyz"]
+            periodSeconds: 2
+            failureThreshold: 30
+            timeoutSeconds: 12
+          readinessProbe:
+            exec:
+              command: ["curl", "--fail", "--silent", "http://127.0.0.1:8098/readyz"]
+            periodSeconds: 10
+            timeoutSeconds: 12
+          livenessProbe:
+            exec:
+              command: ["curl", "--fail", "--silent", "http://127.0.0.1:8098/livez"]
+            periodSeconds: 20
+            timeoutSeconds: 3
+          resources:
+{{ toYaml .Values.javaVuser.runner.resources | indent 12 }}
+{{- end }}
       volumes:
         - name: tmp
           emptyDir:
@@ -305,6 +383,16 @@ spec:
         - name: bruno-runner-tmp
           emptyDir:
             sizeLimit: {{ .Values.bruno.runner.scratch.tmpSizeLimit }}
+{{- end }}
+{{- if .Values.javaVuser.enabled }}
+        - name: java-vuser-runner-tmp
+          emptyDir:
+            sizeLimit: {{ .Values.javaVuser.runner.scratch.tmpSizeLimit }}
+{{- if .Values.javaVuser.assets.existingClaim }}
+        - name: java-vuser-assets
+          persistentVolumeClaim:
+            claimName: {{ .Values.javaVuser.assets.existingClaim | quote }}
+{{- end }}
 {{- end }}
   persistentVolumeClaimRetentionPolicy:
     whenDeleted: Retain

@@ -116,6 +116,28 @@ func TestDeploymentIdentityChecksUseFullRevision(t *testing.T) {
 	}
 }
 
+func TestJavaVuserContainerSmokeVerifiesWritableWorkDirectory(t *testing.T) {
+	content, err := os.ReadFile("ci/java-vuser-container-smoke.sh")
+	if err != nil {
+		t.Fatalf("read Java Vuser container smoke: %v", err)
+	}
+	script := string(content)
+	for _, required := range []string{
+		"APEXLOAD_JAVA_VUSER_WORK_DIR=/tmp",
+		"APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true",
+		"APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN",
+		"X-Apexload-Java-Runner-Token",
+		"/v1/owner/claim",
+		"owner_epoch",
+		"unauthenticated protected request",
+		"writable-workdir",
+	} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("Java Vuser container smoke is missing work-directory check %q", required)
+		}
+	}
+}
+
 func TestControllerSmokeValidatesOptionalSignedReleaseMetadata(t *testing.T) {
 	root := t.TempDir()
 	curlPath := filepath.Join(root, "curl")

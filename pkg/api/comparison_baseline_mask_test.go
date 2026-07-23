@@ -5,9 +5,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/scrub"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 // TestComparisonBaselinePinUnpinMaskRuntimeSecrets is a regression test for the
@@ -32,6 +34,15 @@ func TestComparisonBaselinePinUnpinMaskRuntimeSecrets(t *testing.T) {
 		},
 	}
 	server.runner.mu.Unlock()
+	if err := server.store.SaveTest(&storage.TestRecord{
+		ID:        id,
+		Name:      "Baseline secret test",
+		Status:    "COMPLETE",
+		ProjectID: storage.DefaultProjectID,
+		StartTime: time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("SaveTest: %v", err)
+	}
 
 	check := func(t *testing.T, h http.HandlerFunc, label string) {
 		t.Helper()

@@ -1272,6 +1272,27 @@ func TestScriptHasExplicitTransactionsRecognizesLegacyTypes(t *testing.T) {
 	if !scriptHasExplicitTransactions(legacyMetadataScript) {
 		t.Error("expected legacy loadrunner_transaction metadata key to count as an explicit transaction")
 	}
+
+	javaVuserScript := &dsl.Script{
+		Actions: []dsl.Action{{
+			Name:     "Actions.action",
+			Type:     "java_vuser_run",
+			Metadata: map[string]any{"emits_business_transactions": true},
+		}},
+	}
+	if !scriptHasExplicitTransactions(javaVuserScript) {
+		t.Error("expected Java Vuser runner event metadata to count as an explicit transaction")
+	}
+
+	javaVuserWithoutTransactions := &dsl.Script{
+		Actions: []dsl.Action{{
+			Name: "Actions.action",
+			Type: "java_vuser_run",
+		}},
+	}
+	if scriptHasExplicitTransactions(javaVuserWithoutTransactions) {
+		t.Error("Java Vuser actions without transaction event metadata must retain automatic iteration transactions")
+	}
 }
 
 func TestSourceTransactionNameAcceptsLegacyKey(t *testing.T) {

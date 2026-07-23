@@ -57,8 +57,8 @@ describe('generated OpenAPI transport helpers', () => {
     expectTypeOf<OptionsBody>().toMatchTypeOf<{ break_on_failure: boolean }>()
 
     expectTypeOf<StepSuccessBody>().not.toBeAny()
-    expectTypeOf<string>().toMatchTypeOf<keyof StepSuccessBody>()
-    expectTypeOf<StepSuccessBody>().toMatchTypeOf<Record<string, unknown>>()
+    expectTypeOf<'session'>().toMatchTypeOf<keyof StepSuccessBody>()
+    expectTypeOf<StepSuccessBody>().toMatchTypeOf<{ session?: { id?: string } }>()
 
     expect({
       startFixture,

@@ -20,6 +20,8 @@ import (
 
 const maxOpenAPIHandlerCallDepth = 4
 
+const openAPIResponsesAnnotation = "OpenAPI-Responses:"
+
 type handlerContractAnalysis struct {
 	queryNames       map[string]bool
 	repeatedQueries  map[string]bool
@@ -60,19 +62,25 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 	packages, err := parser.ParseDir(token.NewFileSet(), dir, func(info fs.FileInfo) bool {
 		name := info.Name()
 		return strings.HasSuffix(name, ".go") && !strings.HasSuffix(name, "_test.go")
-	}, 0)
+	}, parser.ParseComments)
 	if err != nil {
 		return nil, fmt.Errorf("parse API handlers in %s: %w", dir, err)
 	}
 
 	functionCandidates := map[string][]*ast.FuncDecl{}
 	typeDefinitions := map[string]ast.Expr{}
+	explicitResponseStatuses := map[*ast.FuncDecl]map[int]bool{}
 	for _, pkg := range packages {
 		for _, file := range pkg.Files {
 			for _, decl := range file.Decls {
 				fn, ok := decl.(*ast.FuncDecl)
 				if ok && fn.Body != nil {
+					statuses, err := annotatedOpenAPIResponseStatuses(fn.Doc)
+					if err != nil {
+						return nil, fmt.Errorf("%s: %w", fn.Name.Name, err)
+					}
 					functionCandidates[fn.Name.Name] = append(functionCandidates[fn.Name.Name], fn)
+					explicitResponseStatuses[fn] = statuses
 				}
 				gen, ok := decl.(*ast.GenDecl)
 				if !ok || gen.Tok != token.TYPE {
@@ -119,7 +127,7 @@ func inferRouteContracts(serverGoPath string, routes []discoveredRoute) (map[str
 	for _, route := range routes {
 		analysis := newHandlerContractAnalysis()
 		if route.Handler != "" {
-			inspectHandlerContract(route.Handler, functions, functionResults, typeDefinitions, analysis, map[string]bool{}, 0)
+			inspectHandlerContract(route.Handler, functions, functionResults, typeDefinitions, explicitResponseStatuses, analysis, map[string]bool{}, 0)
 		}
 		contracts[route.Method+" "+route.Path] = inferredContractForAnalysis(route, analysis)
 	}
@@ -140,7 +148,7 @@ func receiverTypeName(fn *ast.FuncDecl) string {
 	return ""
 }
 
-func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, functionResults map[string][]ast.Expr, typeDefinitions map[string]ast.Expr, analysis *handlerContractAnalysis, visiting map[string]bool, depth int) {
+func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, functionResults map[string][]ast.Expr, typeDefinitions map[string]ast.Expr, explicitResponseStatuses map[*ast.FuncDecl]map[int]bool, analysis *handlerContractAnalysis, visiting map[string]bool, depth int) {
 	if depth > maxOpenAPIHandlerCallDepth || visiting[name] {
 		return
 	}
@@ -150,6 +158,10 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, fun
 	}
 	visiting[name] = true
 	defer delete(visiting, name)
+
+	for status := range explicitResponseStatuses[fn] {
+		analysis.statuses[status] = true
+	}
 
 	queryVariables := findQueryVariables(fn.Body)
 	variableTypes := findLocalVariableTypes(fn.Body, functionResults)
@@ -265,10 +277,39 @@ func inspectHandlerContract(name string, functions map[string]*ast.FuncDecl, fun
 		}
 
 		if depth < maxOpenAPIHandlerCallDepth && functions[callName] != nil && callPassesRequest(call) && shouldInspectCalledContract(callName) {
-			inspectHandlerContract(callName, functions, functionResults, typeDefinitions, analysis, visiting, depth+1)
+			inspectHandlerContract(callName, functions, functionResults, typeDefinitions, explicitResponseStatuses, analysis, visiting, depth+1)
 		}
 		return true
 	})
+}
+
+// annotatedOpenAPIResponseStatuses returns response codes explicitly declared
+// on a handler or a request-carrying helper. It is reserved for response paths
+// hidden behind helpers that the bounded request call-graph analysis cannot
+// safely inspect. For example:
+//
+//	OpenAPI-Responses: 409, 500, 503
+func annotatedOpenAPIResponseStatuses(doc *ast.CommentGroup) (map[int]bool, error) {
+	statuses := map[int]bool{}
+	if doc == nil {
+		return statuses, nil
+	}
+	for _, line := range strings.Split(doc.Text(), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, openAPIResponsesAnnotation) {
+			continue
+		}
+		fields := strings.Split(strings.TrimSpace(strings.TrimPrefix(line, openAPIResponsesAnnotation)), ",")
+		for _, field := range fields {
+			rawStatus := strings.TrimSpace(field)
+			status, err := strconv.Atoi(rawStatus)
+			if err != nil || status < 100 || status > 599 {
+				return nil, fmt.Errorf("invalid %s status %q", openAPIResponsesAnnotation, rawStatus)
+			}
+			statuses[status] = true
+		}
+	}
+	return statuses, nil
 }
 
 func shouldInspectCalledContract(name string) bool {
@@ -361,10 +402,17 @@ func inferredQueryParameters(route discoveredRoute, analysis *handlerContractAna
 	parameters := make([]oasParameter, 0, len(analysis.queryNames))
 	for name := range analysis.queryNames {
 		schema := queryParameterSchema(name, analysis.repeatedQueries[name])
+		description := "Handler-defined query parameter."
+		deprecated := false
+		if compatibilityDescription, isDeprecated := deprecatedCompatibilityInput(route, name); isDeprecated {
+			description = compatibilityDescription
+			deprecated = true
+		}
 		parameters = append(parameters, oasParameter{
 			Name:        name,
 			In:          "query",
-			Description: "Handler-defined query parameter.",
+			Description: description,
+			Deprecated:  deprecated,
 			Required:    requiredQueryParameter(route.Method, route.Path, name),
 			Schema:      schema,
 		})
@@ -422,7 +470,12 @@ func inferredRequestBody(route discoveredRoute, analysis *handlerContractAnalysi
 	if analysis.multipartRequest {
 		properties := map[string]oasSchema{}
 		for name := range analysis.formValues {
-			properties[name] = oasSchema{Type: "string"}
+			property := oasSchema{Type: "string"}
+			if description, deprecated := deprecatedCompatibilityInput(route, name); deprecated {
+				property.Description = description
+				property.Deprecated = true
+			}
+			properties[name] = property
 		}
 		for name := range analysis.formFiles {
 			properties[name] = oasSchema{Type: "string", Format: "binary"}
@@ -469,6 +522,20 @@ func inferredRequestBody(route discoveredRoute, analysis *handlerContractAnalysi
 	return nil
 }
 
+func deprecatedCompatibilityInput(route discoveredRoute, name string) (string, bool) {
+	if route.Method != http.MethodPost ||
+		(name != "allow_java_vuser_runner") {
+		return "", false
+	}
+	switch route.Path {
+	case "/api/v1/scripts/import/enterprise-script-archive",
+		"/api/v1/scripts/import/enterprise-script-archive/validate":
+		return "Deprecated compatibility input; accepted but ignored. Every LoadRunner Java archive produces one combined java_vuser draft regardless of this value.", true
+	default:
+		return "", false
+	}
+}
+
 func explicitRequestRequiredFields(method, path string, properties map[string]oasSchema) []string {
 	declared := map[string][]string{
 		"POST /api/v1/scenarios":                                                                        {"name", "duration", "groups"},
@@ -482,6 +549,10 @@ func explicitRequestRequiredFields(method, path string, properties map[string]oa
 		"POST /api/v1/execution-plans/{id}/schedules/{schedule_id}/occurrences/{occurrence_id}/resolve": {"action"},
 		"POST /api/v1/execution-plans":                                                                  {"name"},
 		"PUT /api/v1/execution-plans/{id}":                                                              {"name", "revision"},
+		"PUT /api/v1/correlation-rulesets/{id}":                                                         {"expected_updated_at", "name"},
+		"POST /api/v1/correlation-rulesets/discover-from-script":                                        {"script_id"},
+		"POST /api/v1/correlation-rulesets/{id}/apply-to-script":                                        {"script_id"},
+		"POST /api/v1/scripts/browser-replay/sessions":                                                  {"script"},
 	}
 	fields := declared[method+" "+path]
 	if len(fields) == 0 {
@@ -680,6 +751,15 @@ func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr,
 			if pkg.Name == "json" && value.Sel.Name == "RawMessage" {
 				return oasSchema{}
 			}
+			// Cross-package named scalars cannot be resolved from this
+			// package's AST alone; known string enums are mapped explicitly so
+			// they are not advertised as opaque objects.
+			if pkg.Name == "correlate" && value.Sel.Name == "DiffClass" {
+				return oasSchema{Type: "string", Description: "Go type: correlate.DiffClass", Enum: []string{"dynamic", "static", "unknown"}}
+			}
+			if pkg.Name == "generatorrpc" && value.Sel.Name == "ProtocolRuntimeCapacity" {
+				return protocolRuntimeCapacityOpenAPISchema()
+			}
 			additional := true
 			return oasSchema{Type: "object", Description: "Go type: " + pkg.Name + "." + value.Sel.Name, AdditionalProperties: &additional}
 		}
@@ -700,6 +780,26 @@ func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr,
 	}
 	additional := true
 	return oasSchema{Type: "object", AdditionalProperties: &additional}
+}
+
+func protocolRuntimeCapacityOpenAPISchema() oasSchema {
+	stringItem := oasSchema{Type: "string"}
+	return oasSchema{
+		Type:        "object",
+		Description: "Heartbeat snapshot of a protocol-specific external runtime and its independently governed VUser capacity.",
+		Properties: map[string]oasSchema{
+			"protocol":         {Type: "string"},
+			"available":        {Type: "boolean"},
+			"max_vusers":       {Type: "integer", Format: "int64"},
+			"available_vusers": {Type: "integer", Format: "int64"},
+			"features":         {Type: "array", Items: &stringItem},
+			"occupancy_mode": {
+				Type: "string",
+				Enum: []string{"idle", "persistent", "legacy"},
+			},
+		},
+		Required: []string{"protocol", "available", "max_vusers", "available_vusers"},
+	}
 }
 
 func jsonFieldName(field *ast.Field) (string, bool, bool) {

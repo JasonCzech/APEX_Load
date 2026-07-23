@@ -84,6 +84,23 @@ describe('useScriptRuntimeSettingsController', () => {
     expect(harness.openSections()).toMatchObject({ runtime: true, think: true, web_runtime: false })
   })
 
+  it('deep-links imported Java VM findings to the java_vuser section for Java Vuser scripts', () => {
+    const harness = renderController('java_vuser')
+    expect(harness.controller().sectionIsAvailable('java_vuser')).toBe(true)
+
+    act(() => harness.controller().openImportedRuntimeSettings('Java VM'))
+    expect(harness.onOpenRuntimeTab).toHaveBeenCalledTimes(1)
+    expect(harness.controller().activeSection).toBe('java_vuser')
+    expect(harness.openSections()).toMatchObject({ runtime: true, java_vuser: true })
+
+    // For a non-Java protocol the same imported area only opens the runtime tab.
+    const httpHarness = renderController('http')
+    expect(httpHarness.controller().sectionIsAvailable('java_vuser')).toBe(false)
+    act(() => httpHarness.controller().openImportedRuntimeSettings('Java VM'))
+    expect(httpHarness.onOpenRuntimeTab).toHaveBeenCalledTimes(1)
+    expect(httpHarness.controller().activeSection).not.toBe('java_vuser')
+  })
+
   it('retains the HTTP subtab while coordinating section state', () => {
     const harness = renderController('browser')
     act(() => {

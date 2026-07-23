@@ -22,6 +22,10 @@ const { codeMirrorDispatchMock, codeMirrorScrollDoms } = vi.hoisted(() => ({
   codeMirrorScrollDoms: [] as HTMLElement[],
 }))
 
+const { useWebSocketMock } = vi.hoisted(() => ({
+  useWebSocketMock: vi.fn(),
+}))
+
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 const apiMock = {
@@ -49,6 +53,8 @@ const apiMock = {
   stopScriptDebugSession: vi.fn(),
   getScriptDebugSession: vi.fn(),
   updateScriptDebugBreakpoints: vi.fn(),
+  diagnoseScriptReplay: vi.fn(),
+  diagnoseCorrelations: vi.fn(),
   listAuthoringComponents: vi.fn(),
   createAuthoringComponent: vi.fn(),
   deleteAuthoringComponent: vi.fn(),
@@ -59,7 +65,7 @@ vi.mock('../hooks/useApi', () => ({
 }))
 
 vi.mock('../hooks/useWebSocket', () => ({
-  useWebSocket: vi.fn(),
+  useWebSocket: useWebSocketMock,
 }))
 
 vi.mock('@uiw/react-codemirror', async () => {
@@ -223,11 +229,11 @@ function cssRule(css: string, selector: string) {
 }
 
 function findButtonByText(root: ParentNode, text: string) {
-  return Array.from(root.querySelectorAll('button')).find(button => button.textContent?.trim() === text)
+  return Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.trim() === text)
 }
 
 function findButtonByTitle(root: ParentNode, title: string) {
-  return Array.from(root.querySelectorAll('button')).find(button => button.getAttribute('title') === title)
+  return Array.from(root.querySelectorAll<HTMLButtonElement>('button')).find(button => button.getAttribute('title') === title)
 }
 
 function findReadinessCard(root: ParentNode) {
@@ -236,11 +242,11 @@ function findReadinessCard(root: ParentNode) {
 }
 
 function findWorkspaceTab(root: ParentNode, label: string) {
-  return Array.from(root.querySelectorAll('button[role="tab"]')).find(button => button.textContent?.trim() === label)
+  return Array.from(root.querySelectorAll<HTMLButtonElement>('button[role="tab"]')).find(button => button.textContent?.trim() === label)
 }
 
 function findCenterTab(root: ParentNode, label: string) {
-  return Array.from(root.querySelectorAll('.center-tab-button')).find(button => button.textContent?.trim() === label)
+  return Array.from(root.querySelectorAll<HTMLButtonElement>('.center-tab-button')).find(button => button.textContent?.trim() === label)
 }
 
 async function activateParameterDetailTab(root: ParentNode, label: 'Settings' | 'Data') {
@@ -569,14 +575,46 @@ describe('ScriptEditor', () => {
       },
       review: {
         status: 'needs_repair',
+		promotion_status: 'blocked',
         source_browser_actions: 1,
         captured_requests: 1,
         generated_http_actions: 1,
         skipped_static_assets: 0,
-        correlation_candidates: [{ name: 'csrf_token', source: 'query', value: 'abcdef0123456789', evidence: 'GET /api/cart' }],
+		correlation_candidates: [{ name: 'csrf_token', source: 'query', evidence: 'GET /api/cart' }],
         data_source_candidates: [{ name: 'customer_id', source: 'query', value: '123', evidence: 'GET /api/cart' }],
+		blocking_findings: [{ severity: 'error', summary: 'Correlation evidence is not durable.', evidence: 'Uploaded network evidence only.', action: 'Run and retain a successful replay.' }],
         findings: ['1 replay network request(s) were converted into an HTTP draft.'],
+		next_actions: ['Run and retain a successful replay.'],
+		evidence: {
+		  replay_session_id: 'browser-replay-1',
+		  replay_session_resolved: true,
+		  replay_session_status: 'completed',
+		  replay_session_successful: true,
+		  replay_network_entries: 1,
+		  network_durable: true,
+		  correlation_durable: false,
+		  durable: false,
+		  verification_status: 'correlation_evidence_required',
+		  network_entries: 1,
+		  correlation_observations: 0,
+		},
       },
+	  governance: {
+		status: 'blocked',
+		approval_required: true,
+		approval_status: 'missing',
+		required_evidence: ['durable_correlation_evidence'],
+		blockers: [{ severity: 'error', summary: 'Correlation evidence is not durable.', evidence: 'Uploaded network evidence only.', action: 'Run and retain a successful replay.' }],
+		next_actions: ['Run and retain a successful replay.'],
+	  },
+	  diff: {
+		source_protocol: 'browser',
+		generated_protocol: 'http',
+		source_browser_actions: 1,
+		generated_http_actions: 1,
+		captured_requests: 1,
+		endpoint_coverage_pct: 100,
+	  },
       scenario_template: {
         name: 'Checkout Flow Canary Plus HTTP Load',
         duration: '10m',
@@ -2022,6 +2060,46 @@ describe('ScriptEditor', () => {
     expect((container.querySelector('.script-code-pane textarea') as HTMLTextAreaElement | null)?.value).toContain('"Checkout Flow"')
   })
 
+  it('reports a recording-status request failure instead of treating it as an absent baseline', async () => {
+    apiMock.getScriptRecordingStatus.mockRejectedValueOnce(new Error('status unavailable'))
+    apiMock.startScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+      group: 'Checkout Flow-debug',
+      protocol: 'http',
+      started_at: '2026-05-14T20:00:00Z',
+      completed_at: '2026-05-14T20:00:01Z',
+      success: false,
+      events: [{
+        phase: 'action',
+        action_index: 0,
+        action_name: 'Login',
+        action_type: 'POST',
+        target: '/login',
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:01Z',
+        duration_ms: 1000,
+        success: false,
+      }],
+    }))
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} />)
+    })
+    await act(async () => {
+      findOpenDebuggerButton(container)?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushReact()
+
+    const runButton = findDebuggerRunButton(container)
+    expect(runButton).toBeDefined()
+    await act(async () => {
+      runButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushReact()
+
+    expect(container.textContent).toContain('Could not check whether this script has a stored baseline')
+    expect(container.textContent).not.toContain('No stored baseline for this script')
+  })
+
   it('keeps the combined import review tab out of the Debug workbench', async () => {
     const importedScript: ScriptDefinition = {
       ...initialScript,
@@ -2981,7 +3059,19 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Checkout Flow HTTP Draft')
     expect(container.textContent).toContain('Correlation · csrf_token')
     expect(container.textContent).toContain('Data Source · customer_id')
+	expect(container.textContent).toContain('Promotion Blockers')
+	expect(container.textContent).toContain('Correlation evidence is not durable.')
+	expect(container.textContent).toContain('correlation evidence required')
+    const correlationCard = Array.from(container.querySelectorAll('.import-correlation-card'))
+      .find(card => card.textContent?.includes('Correlation · csrf_token'))
+    expect(correlationCard?.querySelector('code')).toBeNull()
     expect(container.textContent).toContain('browser_canary: browser / 1 VUsers')
+
+	await act(async () => {
+	  root.render(<ScriptEditor initialScript={importedWeb2Script} projectId="project-2" />)
+	  await Promise.resolve()
+	})
+	expect(container.textContent).not.toContain('Generated HTTP Draft Preview')
   })
 
   it('renders the provided script model without fetching from the API', async () => {
@@ -4961,6 +5051,508 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Debugger session expired')
   })
 
+  it('does not dispatch duplicate replay starts on rapid clicks', async () => {
+    let resolveStart!: (value: ReturnType<typeof debugSessionResponse>) => void
+    apiMock.startScriptDebugSession.mockReturnValueOnce(new Promise(resolve => {
+      resolveStart = resolve
+    }))
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+    const runButton = findDebuggerRunButton(container)!
+    act(() => {
+      runButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      runButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(apiMock.startScriptDebugSession).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      resolveStart(debugSessionResponse({
+        group: 'Checkout Flow-debug',
+        protocol: 'http',
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:01Z',
+        success: true,
+        events: [],
+      }))
+      await Promise.resolve()
+    })
+  })
+
+  it('tolerates a transient not-found while reconciling an ambiguous replay start', async () => {
+    apiMock.startScriptDebugSession.mockRejectedValueOnce(new TypeError('connection reset'))
+    apiMock.getScriptDebugSession
+      .mockRejectedValueOnce(new ApiError('not found', 404))
+      .mockImplementationOnce(async (sessionId: string) => ({
+        session: {
+          id: sessionId,
+          group: 'Checkout Flow-debug',
+          protocol: 'http',
+          status: 'running',
+          started_at: '2026-05-14T20:00:00Z',
+          current_event_index: -1,
+          events: [],
+        },
+      }))
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)?.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    expect(apiMock.getScriptDebugSession).toHaveBeenCalledTimes(1)
+    expect(container.textContent).not.toContain('Debugger session expired')
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 1250))
+    })
+    await flushReact()
+
+    expect(apiMock.getScriptDebugSession.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(container.textContent).toContain('Replay start confirmed')
+    expect(container.textContent).not.toContain('Debugger session expired')
+  })
+
+  it('reconciles and timestamps a terminal polling response when the completion WebSocket event is missed', async () => {
+    const terminalReport = {
+      group: 'Checkout Flow-debug',
+      protocol: 'http',
+      started_at: '2026-05-14T20:00:00Z',
+      success: true,
+      events: [{
+        phase: 'action',
+        action_index: 0,
+        action_name: 'Get Products',
+        action_type: 'GET',
+        method: 'GET',
+        target: '/api/products',
+        status_code: 200,
+        success: true,
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:01Z',
+        duration_ms: 1000,
+        snapshot: {
+          request_url: '/api/products',
+          response_status: 200,
+          response_body: '{"csrf":"rotated"}',
+        },
+      }],
+    }
+    apiMock.startScriptDebugSession.mockResolvedValueOnce({
+      replay_session_id: 'debug-session-1',
+      debug_session_id: 'debug-session-1',
+      session: {
+        id: 'debug-session-1',
+        group: terminalReport.group,
+        protocol: terminalReport.protocol,
+        status: 'running',
+        started_at: terminalReport.started_at,
+        current_event_index: -1,
+        events: [],
+      },
+    })
+    apiMock.getScriptDebugSession.mockResolvedValueOnce({
+      session: {
+        id: 'debug-session-1',
+        group: terminalReport.group,
+        protocol: terminalReport.protocol,
+        status: 'completed',
+        started_at: terminalReport.started_at,
+        completed_at: '2026-05-14T20:00:01Z',
+        current_event_index: 0,
+        events: terminalReport.events,
+        report: terminalReport,
+      },
+    })
+    apiMock.getScriptRecordingStatus.mockResolvedValueOnce({
+      exists: true,
+      correlation_usable: true,
+      request_count: 1,
+      correlation_request_count: 1,
+    })
+    apiMock.diagnoseScriptReplay.mockResolvedValueOnce({
+      suggestions: [],
+      compared_recorded_steps: 1,
+      total_recorded_steps: 1,
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+
+    const runReplayButton = findDebuggerRunButton(container)
+    expect(runReplayButton).toBeDefined()
+    if (!runReplayButton) return
+    await act(async () => {
+      runReplayButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    expect(apiMock.getScriptDebugSession).toHaveBeenCalledWith('debug-session-1')
+    const diagnoseButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Diagnose correlations')
+    expect(diagnoseButton).toBeDefined()
+    expect(diagnoseButton?.disabled).toBe(false)
+    expect(findDebuggerRunButton(container)?.disabled).toBe(false)
+
+    await act(async () => {
+      diagnoseButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    expect(apiMock.diagnoseScriptReplay).toHaveBeenCalledWith(
+      'script-1',
+      expect.any(Array),
+      'debug-session-1',
+    )
+  })
+
+  it('keeps tracking an acknowledged stop until the final WebSocket event arrives', async () => {
+    apiMock.startScriptDebugSession.mockResolvedValueOnce({
+      replay_session_id: 'debug-session-1',
+      debug_session_id: 'debug-session-1',
+      session: {
+        id: 'debug-session-1', group: 'Checkout Flow-debug', protocol: 'http', status: 'running',
+        started_at: '2026-05-14T20:00:00Z', current_event_index: -1, events: [],
+      },
+    })
+    apiMock.getScriptDebugSession.mockReturnValueOnce(new Promise(() => {}))
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+    const runReplayButton = findDebuggerRunButton(container)!
+    await act(async () => {
+      runReplayButton.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    const socketOptions = useWebSocketMock.mock.calls[useWebSocketMock.mock.calls.length - 1]?.[0] as { onMessage?: (message: unknown) => void } | undefined
+    await act(async () => {
+      socketOptions?.onMessage?.({
+        type: 'script_debug_stopped',
+        replay_session_id: 'debug-session-1',
+        debug_session_id: 'debug-session-1',
+        session: {
+          id: 'debug-session-1', group: 'Checkout Flow-debug', protocol: 'http', status: 'stopped',
+          started_at: '2026-05-14T20:00:00Z', current_event_index: -1, events: [],
+          report: {
+            replay_session_id: 'debug-session-1', group: 'Checkout Flow-debug', protocol: 'http',
+            started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z',
+            success: false, events: [],
+          },
+        },
+      })
+      await Promise.resolve()
+    })
+
+    expect(findDebuggerRunButton(container)?.disabled).toBe(true)
+    expect(container.textContent).toContain('Debugger stopping')
+
+    const finalReport = {
+      replay_session_id: 'debug-session-1', group: 'Checkout Flow-debug', protocol: 'http',
+      started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:02Z',
+      success: false, error: 'replay stopped', events: [],
+    }
+    await act(async () => {
+      socketOptions?.onMessage?.({
+        type: 'script_debug_stopped',
+        replay_session_id: 'debug-session-1',
+        debug_session_id: 'debug-session-1',
+        report: finalReport,
+        session: {
+          id: 'debug-session-1', group: finalReport.group, protocol: finalReport.protocol, status: 'stopped',
+          started_at: finalReport.started_at, completed_at: finalReport.completed_at,
+          current_event_index: -1, events: [], report: finalReport,
+        },
+      })
+      await Promise.resolve()
+    })
+
+    expect(findDebuggerRunButton(container)?.disabled).toBe(false)
+    expect(container.textContent).toContain('Debugger stopped')
+  })
+
+  it('keeps polling an unfinalized stopped session until CompletedAt and the final report are available', async () => {
+    apiMock.startScriptDebugSession.mockResolvedValueOnce({
+      replay_session_id: 'debug-session-1',
+      debug_session_id: 'debug-session-1',
+      session: {
+        id: 'debug-session-1', group: 'Checkout Flow-debug', protocol: 'http', status: 'running',
+        started_at: '2026-05-14T20:00:00Z', current_event_index: -1, events: [],
+      },
+    })
+    apiMock.getScriptDebugSession
+      .mockResolvedValueOnce({
+        session: {
+          id: 'debug-session-1', group: 'Checkout Flow-debug', protocol: 'http', status: 'stopped',
+          started_at: '2026-05-14T20:00:00Z', current_event_index: -1, events: [],
+          report: {
+            replay_session_id: 'debug-session-1', group: 'Checkout Flow-debug', protocol: 'http',
+            started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z',
+            success: false, events: [],
+          },
+        },
+      })
+      .mockResolvedValue({
+        session: {
+          id: 'debug-session-1', group: 'Checkout Flow-debug', protocol: 'http', status: 'stopped',
+          started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:02Z',
+          current_event_index: -1, events: [],
+          report: {
+            replay_session_id: 'debug-session-1', group: 'Checkout Flow-debug', protocol: 'http',
+            started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:02Z',
+            success: false, error: 'replay stopped', events: [],
+          },
+        },
+      })
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)?.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    expect(apiMock.getScriptDebugSession).toHaveBeenCalledTimes(1)
+    expect(findDebuggerRunButton(container)?.disabled).toBe(true)
+    expect(container.textContent).toContain('Debugger stopping')
+
+    await act(async () => {
+      await new Promise(resolve => window.setTimeout(resolve, 1250))
+    })
+    await flushReact()
+
+    expect(apiMock.getScriptDebugSession.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(findDebuggerRunButton(container)?.disabled).toBe(false)
+  })
+
+  it('keeps a terminal WebSocket result when a stale running start response resolves later', async () => {
+    let resolveStart: ((value: unknown) => void) | undefined
+    apiMock.startScriptDebugSession.mockReturnValueOnce(new Promise(resolve => {
+      resolveStart = resolve
+    }))
+    apiMock.getScriptRecordingStatus.mockResolvedValueOnce({
+      exists: true,
+      correlation_usable: true,
+      request_count: 1,
+      correlation_request_count: 1,
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+    const runReplayButton = findDebuggerRunButton(container)
+    expect(runReplayButton).toBeDefined()
+    await act(async () => {
+      runReplayButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    const requestedSessionId = apiMock.startScriptDebugSession.mock.calls[0]?.[1]?.replay_session_id as string
+    expect(requestedSessionId).toBeTruthy()
+    const socketOptions = useWebSocketMock.mock.calls[useWebSocketMock.mock.calls.length - 1]?.[0] as { onMessage?: (message: unknown) => void } | undefined
+    const terminalReport = {
+      replay_session_id: requestedSessionId,
+      group: 'Checkout Flow-debug',
+      protocol: 'http',
+      started_at: '2026-05-14T20:00:00Z',
+      completed_at: '2026-05-14T20:00:01Z',
+      success: false,
+      events: [{
+        phase: 'action',
+        action_index: 0,
+        action_name: 'Get Products',
+        action_type: 'GET',
+        target: '/api/products',
+        success: false,
+        started_at: '2026-05-14T20:00:00Z',
+        completed_at: '2026-05-14T20:00:01Z',
+        duration_ms: 1000,
+      }],
+    }
+    await act(async () => {
+      socketOptions?.onMessage?.({
+        type: 'script_debug_failed',
+        replay_session_id: requestedSessionId,
+        debug_session_id: requestedSessionId,
+        report: terminalReport,
+        session: {
+          id: requestedSessionId,
+          group: terminalReport.group,
+          protocol: terminalReport.protocol,
+          status: 'failed',
+          started_at: terminalReport.started_at,
+          completed_at: terminalReport.completed_at,
+          current_event_index: 0,
+          events: terminalReport.events,
+          report: terminalReport,
+        },
+      })
+      await Promise.resolve()
+    })
+    await act(async () => {
+      resolveStart?.({
+        replay_session_id: requestedSessionId,
+        debug_session_id: requestedSessionId,
+        session: {
+          id: requestedSessionId,
+          group: terminalReport.group,
+          protocol: terminalReport.protocol,
+          status: 'running',
+          started_at: terminalReport.started_at,
+          current_event_index: -1,
+          events: [],
+        },
+      })
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    expect(findDebuggerRunButton(container)?.disabled).toBe(false)
+    expect(container.textContent).not.toContain('Wait for the replay session to finish before diagnosing correlations.')
+  })
+
+  it.each([
+    ['a network failure', () => new TypeError('network connection closed')],
+    ['a 5xx response', () => new ApiError('controller response failed', 503)],
+  ])('reconciles an accepted replay after %s before the terminal event', async (_failure, createError) => {
+    apiMock.startScriptDebugSession.mockRejectedValueOnce(createError())
+    apiMock.getScriptDebugSession.mockImplementationOnce(async (sessionId: string) => ({
+      session: {
+        id: sessionId,
+        group: 'Checkout Flow-debug',
+        protocol: 'http',
+        status: 'running',
+        started_at: '2026-05-14T20:00:00Z',
+        current_event_index: -1,
+        events: [],
+      },
+    }))
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)?.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    const requestedSessionId = apiMock.startScriptDebugSession.mock.calls[0]?.[1]?.replay_session_id as string
+    expect(requestedSessionId).toBeTruthy()
+    expect(apiMock.getScriptDebugSession).toHaveBeenCalledWith(requestedSessionId)
+    expect(findDebuggerRunButton(container)?.disabled).toBe(true)
+    expect(container.textContent).toContain('Replay start confirmed')
+    expect(container.textContent).not.toContain('Replay failed before completion')
+
+    const terminalReport = {
+      replay_session_id: requestedSessionId,
+      group: 'Checkout Flow-debug',
+      protocol: 'http',
+      started_at: '2026-05-14T20:00:00Z',
+      completed_at: '2026-05-14T20:00:01Z',
+      success: true,
+      events: [],
+    }
+    const socketOptions = useWebSocketMock.mock.calls[useWebSocketMock.mock.calls.length - 1]?.[0] as { onMessage?: (message: unknown) => void } | undefined
+    await act(async () => {
+      socketOptions?.onMessage?.({
+        type: 'script_debug_completed',
+        replay_session_id: requestedSessionId,
+        debug_session_id: requestedSessionId,
+        report: terminalReport,
+        session: {
+          id: requestedSessionId,
+          group: terminalReport.group,
+          protocol: terminalReport.protocol,
+          status: 'completed',
+          started_at: terminalReport.started_at,
+          completed_at: terminalReport.completed_at,
+          current_event_index: -1,
+          events: [],
+          report: terminalReport,
+        },
+      })
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    expect(findDebuggerRunButton(container)?.disabled).toBe(false)
+    expect(container.textContent).toContain('Debugger completed successfully')
+    expect(container.textContent).not.toContain('network connection closed')
+    expect(container.textContent).not.toContain('controller response failed')
+  })
+
+  it('clears replay state immediately when the start request is definitively rejected', async () => {
+    apiMock.startScriptDebugSession.mockRejectedValueOnce(new ApiError('invalid replay options', 422))
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)?.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    expect(apiMock.getScriptDebugSession).not.toHaveBeenCalled()
+    expect(findDebuggerRunButton(container)?.disabled).toBe(false)
+    expect(container.textContent).toContain('invalid replay options')
+    expect(container.textContent).toContain('No debugger session yet')
+    expect(container.textContent).not.toContain('Confirming replay start')
+  })
+
+  it('keeps a terminal WebSocket result when the start request later fails ambiguously', async () => {
+    let rejectStart: ((reason: unknown) => void) | undefined
+    apiMock.startScriptDebugSession.mockReturnValueOnce(new Promise((_resolve, reject) => {
+      rejectStart = reject
+    }))
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)?.click()
+      await Promise.resolve()
+    })
+    const requestedSessionId = apiMock.startScriptDebugSession.mock.calls[0]?.[1]?.replay_session_id as string
+    const socketOptions = useWebSocketMock.mock.calls[useWebSocketMock.mock.calls.length - 1]?.[0] as { onMessage?: (message: unknown) => void } | undefined
+    const terminalReport = {
+      replay_session_id: requestedSessionId, group: 'Checkout Flow-debug', protocol: 'http',
+      started_at: '2026-05-14T20:00:00Z', completed_at: '2026-05-14T20:00:01Z',
+      success: true, events: [],
+    }
+    await act(async () => {
+      socketOptions?.onMessage?.({
+        type: 'script_debug_completed', replay_session_id: requestedSessionId, debug_session_id: requestedSessionId,
+        report: terminalReport,
+        session: {
+          id: requestedSessionId, group: terminalReport.group, protocol: terminalReport.protocol, status: 'completed',
+          started_at: terminalReport.started_at, completed_at: terminalReport.completed_at,
+          current_event_index: -1, events: [], report: terminalReport,
+        },
+      })
+      await Promise.resolve()
+    })
+    await act(async () => {
+      rejectStart?.(new TypeError('network connection closed'))
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    expect(findDebuggerRunButton(container)?.disabled).toBe(false)
+    expect(container.textContent).toContain('Debugger completed successfully')
+    expect(container.textContent).not.toContain('Replay failed before completion')
+    expect(container.textContent).not.toContain('No debugger session yet')
+    expect(container.textContent).not.toContain('network connection closed')
+  })
+
   it('resizes debugger panels with accessible splitters without the shell header controls', async () => {
     await act(async () => {
       root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
@@ -5112,6 +5704,35 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-feedback-strip')?.textContent || '').not.toContain('Script validation passed')
   })
 
+  it('validates unsaved saved-script edits as a draft instead of attesting the stored revision', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="script-1" initialScript={initialScript} projectId="project-1" />)
+    })
+    await act(async () => {
+      findCenterTab(container, 'Source')?.click()
+    })
+    await act(async () => {
+      findButtonByText(container, 'Full Script JSON')?.click()
+    })
+    const sourceEditor = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement
+    await act(async () => {
+      changeTextareaValue(sourceEditor, sourceEditor.value.replace('/login', '/login?draft=1'))
+    })
+    await act(async () => {
+      findButtonByTitle(container, 'Recheck script readiness')?.click()
+      await Promise.resolve()
+    })
+
+    expect(apiMock.validateScript).not.toHaveBeenCalled()
+    expect(apiMock.validateDraftScript).toHaveBeenCalledWith(
+      expect.objectContaining({
+        actions: [expect.objectContaining({ target: '/login?draft=1' })],
+      }),
+      'project-1',
+      undefined,
+    )
+  })
+
   it('renders saved script validation issues when validation fails', async () => {
     apiMock.validateScript.mockResolvedValueOnce({
       script_id: 'script-1',
@@ -5174,6 +5795,62 @@ describe('ScriptEditor', () => {
     expect(container.querySelector('.editor-feedback-strip')?.textContent || '').not.toContain('Draft browser config')
   })
 
+  it('ignores a validation response when the editable draft changes in flight', async () => {
+    const importedScript: ScriptDefinition = {
+      ...initialScript,
+      metadata: {
+        import: {
+          source: 'enterprise_script_archive',
+          source_script_name: 'checkout.usr',
+          preserved: {},
+        },
+      },
+    }
+    let resolveValidation!: (value: unknown) => void
+    apiMock.validateDraftScript.mockReturnValueOnce(new Promise(resolve => {
+      resolveValidation = resolve
+    }))
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={importedScript} projectId="project-1" />)
+    })
+
+    const validateButton = findButtonByTitle(container, 'Recheck script readiness')
+    const nameInput = container.querySelector<HTMLInputElement>('.side-panel-script-name input')
+    expect(validateButton).toBeDefined()
+    expect(nameInput).not.toBeNull()
+    if (!validateButton || !nameInput) return
+
+    await act(async () => {
+      validateButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      changeInputValue(nameInput, 'Checkout Flow Edited While Validating')
+    })
+
+    await act(async () => {
+      resolveValidation({
+        script_id: '',
+        valid: true,
+        issues: [],
+        warnings: ['stale validation warning'],
+        runtime_settings_parity: [{
+          id: 'logging',
+          area: 'Logging',
+          concept: 'Extended logging',
+          status: 'partial',
+          runtime_files: ['default.cfg'],
+        }],
+        runtime_settings_status_counts: { partial: 1 },
+      })
+    })
+    await flushReact()
+
+    expect(nameInput.value).toBe('Checkout Flow Edited While Validating')
+    expect(findReadinessCard(container)?.textContent || '').not.toContain('stale validation warning')
+    expect(findButtonByTitle(container, 'Recheck script readiness')?.disabled).toBe(false)
+  })
+
   it('surfaces validation data-source fit and AI guardrail evidence', async () => {
     apiMock.validateDraftScript.mockResolvedValueOnce({
       script_id: '',
@@ -5232,6 +5909,229 @@ describe('ScriptEditor', () => {
     expect(readinessCard?.textContent).toContain('AI Draft Guardrails')
     expect(readinessCard?.textContent).toContain('AI-generated drafts require replay evidence before promotion.')
     expect(container.querySelector('.editor-feedback-strip')?.textContent || '').not.toContain('Authoring Health')
+  })
+
+  it('does not mark Approve / Save ready when the completed replay failed', async () => {
+    const browserScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'browser',
+      config: {
+        ...initialScript.config,
+        browser: { engine: 'chromium', headless: true },
+      },
+      actions: [{
+        name: 'Open home',
+        type: 'browser_navigate',
+        target: '/',
+        selector: '',
+        value: '',
+      }],
+    }
+    apiMock.startDraftScriptDebugSession.mockResolvedValueOnce(debugSessionResponse({
+      group: 'Checkout Flow-debug',
+      protocol: 'browser',
+      started_at: '2026-07-23T12:00:00Z',
+      completed_at: '2026-07-23T12:00:01Z',
+      success: false,
+      error: 'browser action failed',
+      events: [{
+        action_name: 'Open home',
+        action_type: 'browser_navigate',
+        success: false,
+        error_message: 'navigation failed',
+      }],
+    }))
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={browserScript} initiallyDirty projectId="project-1" />)
+    })
+
+    const validateButton = findButtonByTitle(container, 'Recheck script readiness')
+    expect(validateButton).toBeDefined()
+    await act(async () => {
+      validateButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      findOpenDebuggerButton(container)?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    const replayButton = findDebuggerRunButton(container, 'Run Browser Replay')
+    expect(replayButton).toBeDefined()
+    await act(async () => {
+      replayButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    await act(async () => {
+      findWorkspaceTab(container, 'Author')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await act(async () => {
+      findCenterTab(container, 'Runtime Settings')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    const approvalItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
+      .find(item => item.textContent?.includes('Approve / Save'))
+    expect(approvalItem?.textContent).toContain('needs evidence')
+    expect(approvalItem?.textContent).not.toContain('ready')
+    expect(approvalItem?.querySelector('button')?.disabled).toBe(true)
+
+  })
+
+  it('does not mark Approve / Save ready when backend validation failed', async () => {
+    apiMock.validateDraftScript.mockResolvedValueOnce({
+      script_id: '',
+      valid: false,
+      issues: ['Action 1 is invalid.'],
+      warnings: [],
+    })
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
+    })
+    await act(async () => {
+      findButtonByTitle(container, 'Recheck script readiness')?.click()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      findOpenDebuggerButton(container)?.click()
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)?.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+    await act(async () => {
+      findWorkspaceTab(container, 'Author')?.click()
+    })
+    await act(async () => {
+      findCenterTab(container, 'Runtime Settings')?.click()
+    })
+
+    const approvalItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
+      .find(item => item.textContent?.includes('Approve / Save'))
+    expect(approvalItem?.textContent).toContain('needs evidence')
+    expect(approvalItem?.textContent).not.toContain('ready')
+
+  })
+
+  it('does not carry approval evidence across project scope changes', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
+    })
+    await act(async () => {
+      findButtonByTitle(container, 'Recheck script readiness')?.click()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      findOpenDebuggerButton(container)?.click()
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)?.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} projectId="project-2" />)
+    })
+    await act(async () => {
+      findWorkspaceTab(container, 'Author')?.click()
+    })
+    await act(async () => {
+      findCenterTab(container, 'Runtime Settings')?.click()
+    })
+    const approvalItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
+      .find(item => item.textContent?.includes('Approve / Save'))
+    expect(approvalItem?.textContent).toContain('needs evidence')
+    expect(approvalItem?.textContent).not.toContain('ready')
+    const debugEvidenceItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
+      .find(item => item.textContent?.includes('Debug Evidence'))
+    expect(debugEvidenceItem?.textContent).toContain('missing')
+  })
+
+  it('requires a new replay after actions change even when the edited draft revalidates', async () => {
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} initiallyDirty projectId="project-1" />)
+    })
+    await act(async () => {
+      findButtonByTitle(container, 'Recheck script readiness')?.click()
+      await Promise.resolve()
+    })
+    await act(async () => {
+      findOpenDebuggerButton(container)?.click()
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)?.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    await act(async () => {
+      findWorkspaceTab(container, 'Author')?.click()
+    })
+    await act(async () => {
+      findCenterTab(container, 'Runtime Settings')?.click()
+    })
+    const readyApprovalItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
+      .find(item => item.textContent?.includes('Approve / Save'))
+    expect(readyApprovalItem?.textContent).toContain('ready')
+    expect(readyApprovalItem?.querySelector('button')?.disabled).toBe(false)
+    await act(async () => {
+      findCenterTab(container, 'Source')?.click()
+    })
+    await act(async () => {
+      findButtonByText(container, 'Full Script JSON')?.click()
+    })
+    const sourceEditor = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement
+    expect(sourceEditor.value).toContain('/login')
+    await act(async () => {
+      changeTextareaValue(sourceEditor, sourceEditor.value.replace('/login', '/login?fresh=1'))
+    })
+    await act(async () => {
+      findButtonByTitle(container, 'Recheck script readiness')?.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+    await act(async () => {
+      findCenterTab(container, 'Runtime Settings')?.click()
+    })
+
+    const approvalItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
+      .find(item => item.textContent?.includes('Approve / Save'))
+    expect(approvalItem?.textContent).toContain('needs evidence')
+    expect(approvalItem?.textContent).not.toContain('ready')
+    expect(approvalItem?.querySelector('button')?.disabled).toBe(true)
+
+    await act(async () => {
+      findCenterTab(container, 'Source')?.click()
+    })
+    await act(async () => {
+      findButtonByText(container, 'Full Script JSON')?.click()
+    })
+    const editedAgain = container.querySelector('[data-testid="codemirror-mock"]') as HTMLTextAreaElement
+    await act(async () => {
+      changeTextareaValue(editedAgain, editedAgain.value.replace('/login?fresh=1', '/login?fresh=2'))
+    })
+    await act(async () => {
+      findOpenDebuggerButton(container)?.click()
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)?.click()
+      await Promise.resolve()
+    })
+    await flushReact()
+    await act(async () => {
+      findWorkspaceTab(container, 'Author')?.click()
+    })
+    await act(async () => {
+      findCenterTab(container, 'Runtime Settings')?.click()
+    })
+    const validationStaleApprovalItem = Array.from(container.querySelectorAll<HTMLElement>('.utility-checklist-item'))
+      .find(item => item.textContent?.includes('Approve / Save'))
+    expect(validationStaleApprovalItem?.textContent).toContain('needs evidence')
+    expect(validationStaleApprovalItem?.textContent).not.toContain('ready')
+    expect(validationStaleApprovalItem?.querySelector('button')?.disabled).toBe(true)
   })
 
   it('uses backend validation preflight for edit-page debug readiness', async () => {
@@ -5379,6 +6279,107 @@ describe('ScriptEditor', () => {
     expect(container.textContent).toContain('Executed: Run Logic')
     expect(container.textContent).toContain('Partial: Logging')
     expect(container.textContent).toContain('No imported runtime settings matched the selected block statuses: blocked.')
+  })
+
+  it('deduplicates rapid saves before React commits the pending state', async () => {
+    let resolveSave!: (value: { id: string }) => void
+    apiMock.createScript.mockReturnValueOnce(new Promise(resolve => {
+      resolveSave = resolve
+    }))
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} initiallyDirty projectId="project-1" />)
+    })
+
+    const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')!
+    act(() => {
+      saveButton.click()
+      saveButton.click()
+    })
+
+    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      resolveSave({ id: 'saved-once' })
+      await Promise.resolve()
+    })
+  })
+
+  it('does not let an older save response overwrite a newly opened project document', async () => {
+    let resolveSave!: (value: { id: string }) => void
+    const onSave = vi.fn()
+    apiMock.createScript.mockReturnValueOnce(new Promise(resolve => {
+      resolveSave = resolve
+    }))
+    const nextScript: ScriptDefinition = {
+      ...initialScript,
+      name: 'Project Two Flow',
+      actions: [{ ...initialScript.actions[0], target: '/project-two' }],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} initiallyDirty projectId="project-1" onSave={onSave} />)
+    })
+    const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')!
+    await act(async () => {
+      saveButton.click()
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={nextScript} initiallyDirty projectId="project-2" onSave={onSave} />)
+    })
+    await act(async () => {
+      resolveSave({ id: 'old-project-save' })
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    expect(container.querySelector<HTMLInputElement>('.side-panel-script-name input')?.value).toBe('Project Two Flow')
+    expect(onSave).not.toHaveBeenCalled()
+    expect(container.textContent).not.toContain('Script saved successfully!')
+  })
+
+  it('does not let an older replay start response attach to a newly opened project document', async () => {
+    let resolveReplay!: (value: ReturnType<typeof debugSessionResponse>) => void
+    apiMock.startDraftScriptDebugSession.mockReturnValueOnce(new Promise(resolve => {
+      resolveReplay = resolve
+    }))
+    const nextScript: ScriptDefinition = {
+      ...initialScript,
+      name: 'Project Two Replay',
+      actions: [{ ...initialScript.actions[0], target: '/project-two' }],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={initialScript} projectId="project-1" />)
+    })
+    await act(async () => {
+      findOpenDebuggerButton(container)?.click()
+    })
+    await act(async () => {
+      findDebuggerRunButton(container)?.click()
+      await Promise.resolve()
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={nextScript} projectId="project-2" />)
+    })
+    await act(async () => {
+      resolveReplay(debugSessionResponse({
+        group: 'Old project replay',
+        protocol: 'http',
+        started_at: '2026-07-23T12:00:00Z',
+        completed_at: '2026-07-23T12:00:01Z',
+        success: true,
+        events: [],
+      }))
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    expect(container.querySelector<HTMLInputElement>('.side-panel-script-name input')?.value).toBe('Project Two Replay')
+    expect(container.textContent).not.toContain('Old project replay')
+    expect(container.textContent).not.toContain('Debugger completed successfully')
   })
 
   it('passes the stored script response through the save callback', async () => {

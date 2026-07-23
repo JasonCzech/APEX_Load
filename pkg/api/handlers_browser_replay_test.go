@@ -2,11 +2,15 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -75,6 +79,123 @@ func TestHandleStartBrowserReplayDraftScriptReturnsSession(t *testing.T) {
 	}
 }
 
+func TestHandleStartBrowserReplayRejectsInvalidAndCrossProjectCollidingSessionIDs(t *testing.T) {
+	t.Run("invalid id", func(t *testing.T) {
+		server := NewServer(ServerConfig{})
+		body, _ := json.Marshal(map[string]any{
+			"replay_session_id": "predictable-browser-id",
+			"project_id":        "project-b",
+			"script":            map[string]any{"name": "Draft", "protocol": "browser"},
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "canonical UUID v4") {
+			t.Fatalf("status = %d body=%s, want invalid session-id rejection", resp.Code, resp.Body.String())
+		}
+	})
+
+	t.Run("cross project collision", func(t *testing.T) {
+		const sessionID = "66666666-6666-4666-8666-666666666666"
+		server := NewServer(ServerConfig{})
+		now := time.Now().UTC()
+		cancelled := make(chan struct{})
+		server.browserReplay.mu.Lock()
+		server.browserReplay.sessions[sessionID] = &BrowserReplaySession{
+			ID: sessionID, ProjectID: "project-a", Status: BrowserReplayRunning, StartedAt: &now,
+			lastActivityAt: now, cancel: func() { close(cancelled) },
+		}
+		server.browserReplay.mu.Unlock()
+		body, _ := json.Marshal(map[string]any{
+			"replay_session_id": sessionID,
+			"project_id":        "project-b",
+			"start_paused":      true,
+			"script": map[string]any{
+				"name": "Draft", "version": "1.0.0", "protocol": "browser",
+				"config":  map[string]any{"browser": map[string]any{"engine": "chromium"}},
+				"actions": []map[string]any{{"name": "capture", "type": "browser_screenshot"}},
+			},
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusConflict, resp.Body.String())
+		}
+		select {
+		case <-cancelled:
+			t.Fatal("cross-project colliding start cancelled the established session")
+		default:
+		}
+		existing, ok := server.browserReplay.Get(sessionID)
+		if !ok || existing.ProjectID != "project-a" || existing.Status != BrowserReplayRunning {
+			t.Fatalf("existing session = %#v, want untouched project-a session", existing)
+		}
+		_, _ = server.browserReplay.Stop(sessionID)
+	})
+
+	t.Run("cross project capacity", func(t *testing.T) {
+		const (
+			establishedSessionID = "77777777-7777-4777-8777-777777777777"
+			newSessionID         = "88888888-8888-4888-8888-888888888888"
+		)
+		server := NewServer(ServerConfig{})
+		now := time.Now().UTC()
+		cancelled := make(chan struct{})
+		server.browserReplay.mu.Lock()
+		server.browserReplay.retention.maxSessions = 1
+		server.browserReplay.sessions[establishedSessionID] = &BrowserReplaySession{
+			ID: establishedSessionID, ProjectID: "project-a", Status: BrowserReplayRunning, StartedAt: &now,
+			lastActivityAt: now, cancel: func() { close(cancelled) }, stateChanged: make(chan struct{}),
+		}
+		server.browserReplay.mu.Unlock()
+
+		body, _ := json.Marshal(map[string]any{
+			"replay_session_id": newSessionID,
+			"project_id":        "project-b",
+			"start_paused":      true,
+			"script": map[string]any{
+				"name": "Draft", "version": "1.0.0", "protocol": "browser",
+				"config":  map[string]any{"browser": map[string]any{"engine": "chromium"}},
+				"actions": []map[string]any{{"name": "capture", "type": "browser_screenshot"}},
+			},
+		})
+		start := func() *httptest.ResponseRecorder {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-replay/sessions", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+			return resp
+		}
+
+		resp := start()
+		if resp.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d body=%s, want browser replay capacity rejection", resp.Code, resp.Body.String())
+		}
+		select {
+		case <-cancelled:
+			t.Fatal("cross-project capacity rejection cancelled the established session")
+		default:
+		}
+		existing, ok := server.browserReplay.Get(establishedSessionID)
+		if !ok || existing.ProjectID != "project-a" || existing.Status != BrowserReplayRunning {
+			t.Fatalf("existing session = %#v, want untouched project-a session", existing)
+		}
+		if _, ok := server.browserReplay.Get(newSessionID); ok {
+			t.Fatal("capacity-rejected browser replay session was retained")
+		}
+
+		_, _ = server.browserReplay.Stop(establishedSessionID)
+		resp = start()
+		if resp.Code != http.StatusOK {
+			t.Fatalf("retry status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		_, _ = server.browserReplay.Stop(newSessionID)
+	})
+}
+
 func TestHandleStartBrowserReplayDraftScriptRejectsProjectMismatch(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	body, _ := json.Marshal(map[string]any{
@@ -134,10 +255,13 @@ func TestHandleGetBrowserReplaySessionDoesNotRecordStopAudit(t *testing.T) {
 		Config:    dsl.ScriptConfig{Browser: dsl.BrowserConfig{Engine: "chromium"}},
 		Actions:   []dsl.Action{{Name: "Capture", Type: "browser_screenshot"}},
 	}
-	session := server.browserReplay.Start("", script, BrowserReplayStartRequest{
+	session, err := server.browserReplay.Start("", script, BrowserReplayStartRequest{
 		ReplaySessionID: "browser-get-audit",
 		StartPaused:     true,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/browser-replay/sessions/"+session.ID, nil)
 	resp := httptest.NewRecorder()
@@ -218,12 +342,15 @@ func TestBrowserReplayManagerRetainsStreamedEvents(t *testing.T) {
 	})
 
 	manager := NewBrowserReplayManager(NewHub())
-	session := manager.Start("", &dsl.Script{
+	session, err := manager.Start("", &dsl.Script{
 		Name:     "Browser Session",
 		Protocol: protocolName,
 		Version:  "1.0.0",
 		Actions:  []dsl.Action{{Name: "shot", Type: "browser_screenshot"}},
 	}, BrowserReplayStartRequest{ReplaySessionID: "session-events"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if session.ID != "session-events" {
 		t.Fatalf("session.ID = %q, want session-events", session.ID)
 	}
@@ -347,6 +474,204 @@ func TestBrowserReplayManagerPrunesTerminalSessions(t *testing.T) {
 	}
 }
 
+// Pruning a retained tombstone must perform the durable lease release after
+// dropping the manager mutex: in HA mode the release is a synchronous store
+// call and running it under m.mu freezes every handler and progress path.
+func TestBrowserReplayManagerPruneReleasesRetainedLeaseOffManagerLock(t *testing.T) {
+	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	terminalAt := now.Add(-2 * time.Hour)
+	manager := NewBrowserReplayManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  time.Hour,
+		maxSessions: 250,
+		now:         func() time.Time { return now },
+	}
+	released := false
+	releasedOffLock := false
+	signal := newReplaySessionLeaseSignal()
+	signal.releaseRetainedIDFn = func() {
+		released = true
+		if manager.mu.TryLock() {
+			releasedOffLock = true
+			manager.mu.Unlock()
+		}
+	}
+	manager.sessions["old"] = &BrowserReplaySession{
+		ID:             "old",
+		Status:         BrowserReplayCompleted,
+		StartedAt:      &terminalAt,
+		CompletedAt:    &terminalAt,
+		lastActivityAt: terminalAt,
+		terminalAt:     &terminalAt,
+		reservation:    signal,
+	}
+
+	if removed := manager.PruneExpired(); removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+	if !released {
+		t.Fatal("retained lease was not released by prune")
+	}
+	if !releasedOffLock {
+		t.Fatal("retained lease release ran while the manager mutex was held")
+	}
+}
+
+// The completion hook performs storage writes and must run without the manager
+// lock held; acquiring the write lock from inside the hook deadlocks if the
+// hook is still invoked under m.mu.RLock.
+func TestBrowserReplayManagerCompletionHookRunsOffManagerLock(t *testing.T) {
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	manager := NewBrowserReplayManager(NewHub())
+	t.Cleanup(manager.Close)
+	hookDone := make(chan struct{})
+	manager.setCompletionHook(func(_ context.Context, projectID string, script *dsl.Script, report *engine.ReplayReport) {
+		manager.mu.Lock() //nolint:staticcheck // deadlocks (and fails the test) if the hook runs under m.mu.RLock
+		manager.mu.Unlock()
+		close(hookDone)
+	})
+
+	if _, err := manager.Start("hook-script", &dsl.Script{
+		Name: "hook", Protocol: protocolName, ProjectID: "project-a",
+		Actions: []dsl.Action{{Name: "step", Type: "request", Target: "/step"}},
+	}, BrowserReplayStartRequest{ReplaySessionID: "hook-session"}); err != nil {
+		t.Fatalf("start browser replay: %v", err)
+	}
+	select {
+	case <-hookDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("completion hook did not run off the manager lock")
+	}
+}
+
+// A worker that ignores cancellation past the abandon grace period must lose
+// its slot and lease. The failed terminal transition is pushed before the
+// capability is retired, and a late finalization must not corrupt a replacement
+// that reuses the released ID.
+func TestBrowserReplayManagerAbandonBackstopFreesSlotAndLease(t *testing.T) {
+	started := make(chan struct{})
+	unblock := make(chan struct{})
+	var unblockOnce sync.Once
+	releaseWorker := func() { unblockOnce.Do(func() { close(unblock) }) }
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		close(started)
+		<-unblock // Deliberately ignore cancellation.
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	hub := NewHub()
+	manager := NewBrowserReplayManager(hub)
+	manager.retention.maxSessions = 1
+	manager.retention.workerAbandonGrace = 50 * time.Millisecond
+	t.Cleanup(manager.Close)
+	t.Cleanup(releaseWorker) // run before Close so the bounded drain is fast
+
+	var activeReleased, allReleased atomic.Bool
+	manager.setSessionIDReserver(func(_ context.Context, requested, projectID string) (string, func(), *replaySessionLeaseSignal, error) {
+		signal := newReplaySessionLeaseSignal()
+		signal.releaseAllFn = func() { allReleased.Store(true) }
+		return requested, func() { activeReleased.Store(true) }, signal, nil
+	})
+
+	snapshot, err := manager.Start("wedged-script", &dsl.Script{
+		Name: "wedged", Protocol: protocolName, ProjectID: "project-a",
+		Actions: []dsl.Action{{Name: "blocked", Type: "request", Target: "/blocked"}},
+	}, BrowserReplayStartRequest{ReplaySessionID: "wedged-session"})
+	if err != nil {
+		t.Fatalf("start wedged replay: %v", err)
+	}
+	<-started
+	manager.mu.RLock()
+	runtime := manager.sessions[snapshot.ID]
+	manager.mu.RUnlock()
+	if runtime == nil {
+		t.Fatal("runtime session was not retained by manager")
+	}
+
+	if _, ok := manager.Stop(snapshot.ID); !ok {
+		t.Fatal("stop wedged replay returned not found")
+	}
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		runtime.mu.RLock()
+		status, errMsg, abandoned := runtime.Status, runtime.Error, runtime.workerAbandoned
+		runtime.mu.RUnlock()
+		if abandoned && status == BrowserReplayFailed &&
+			strings.Contains(errMsg, "ignored cancellation") &&
+			activeReleased.Load() && allReleased.Load() {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("session status=%q error=%q abandoned=%t active_released=%t lease_released=%t; backstop never fully orphaned the wedged worker",
+				status, errMsg, abandoned, activeReleased.Load(), allReleased.Load())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, ok := manager.Get(snapshot.ID); ok {
+		t.Fatal("orphaned session remained addressable after its global capability was released")
+	}
+
+	terminalPublished := false
+	for !terminalPublished {
+		select {
+		case message := <-hub.broadcast:
+			var envelope struct {
+				Type            string                `json:"type"`
+				ReplaySessionID string                `json:"replay_session_id"`
+				Session         *BrowserReplaySession `json:"session"`
+			}
+			if err := json.Unmarshal(message.payload, &envelope); err != nil {
+				t.Fatalf("decode browser replay broadcast: %v", err)
+			}
+			if envelope.Type != "browser_replay_failed" || envelope.ReplaySessionID != snapshot.ID {
+				continue
+			}
+			if envelope.Session == nil || envelope.Session.Status != BrowserReplayFailed ||
+				!strings.Contains(envelope.Session.Error, "ignored cancellation") {
+				t.Fatalf("terminal broadcast = %#v, want orphaned failure snapshot", envelope)
+			}
+			terminalPublished = true
+		case <-time.After(2 * time.Second):
+			t.Fatal("orphaned terminal state was not published before capability retirement")
+		}
+	}
+
+	// While the worker is still wedged, both its capacity slot and externally
+	// supplied ID must already be reusable without a restart.
+	replacement, err := manager.Start("replacement-script", &dsl.Script{
+		Name: "replacement", Protocol: protocolName, ProjectID: "project-a",
+	}, BrowserReplayStartRequest{ReplaySessionID: snapshot.ID, StartPaused: true})
+	if err != nil {
+		t.Fatalf("start exact-ID replacement after backstop = %v, want a free slot and released capability", err)
+	}
+	if replacement.ID != snapshot.ID {
+		t.Fatalf("replacement id = %q, want released id %q", replacement.ID, snapshot.ID)
+	}
+
+	// A late-finishing worker must detect the takeover and no-op.
+	releaseWorker()
+	select {
+	case <-runtime.workerDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("wedged worker did not finish after release")
+	}
+	runtime.mu.RLock()
+	status, errMsg, finalReport := runtime.Status, runtime.Error, runtime.FinalReport
+	runtime.mu.RUnlock()
+	if status != BrowserReplayFailed || !strings.Contains(errMsg, "ignored cancellation") {
+		t.Fatalf("late worker overwrote orphaned state: status=%q error=%q", status, errMsg)
+	}
+	if finalReport != nil {
+		t.Fatal("late worker attached its report to the orphaned session")
+	}
+	if current, ok := manager.Get(snapshot.ID); !ok || current.Status != BrowserReplayPaused {
+		t.Fatalf("late worker corrupted replacement: session=%#v addressable=%t", current, ok)
+	}
+}
+
 func TestBrowserReplayManagerSessionCapEvictsOldestTerminal(t *testing.T) {
 	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
 	manager := NewBrowserReplayManager(nil)
@@ -379,7 +704,7 @@ func TestBrowserReplayManagerSessionCapEvictsOldestTerminal(t *testing.T) {
 	}
 }
 
-func TestBrowserReplayManagerSessionCapEvictsOldestNonTerminalWhenNoTerminalExists(t *testing.T) {
+func TestBrowserReplayManagerSessionCapPreservesNonTerminalSessionsWhenOverCap(t *testing.T) {
 	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
 	cancelled := make(chan string, 1)
 	manager := NewBrowserReplayManager(nil)
@@ -402,19 +727,21 @@ func TestBrowserReplayManagerSessionCapEvictsOldestNonTerminalWhenNoTerminalExis
 		}
 	}
 
-	if removed := manager.PruneExpired(); removed != 1 {
-		t.Fatalf("removed = %d, want 1", removed)
+	if removed := manager.PruneExpired(); removed != 0 {
+		t.Fatalf("removed = %d, want 0", removed)
 	}
-	if _, ok := manager.sessions["oldest"]; ok {
-		t.Fatal("expected oldest non-terminal session to be evicted")
+	if len(manager.sessions) != 3 {
+		t.Fatalf("session count = %d, want 3", len(manager.sessions))
+	}
+	for _, id := range []string{"oldest", "middle", "newest"} {
+		if _, ok := manager.sessions[id]; !ok {
+			t.Fatalf("active session %q was evicted", id)
+		}
 	}
 	select {
 	case id := <-cancelled:
-		if id != "oldest" {
-			t.Fatalf("cancelled session = %q, want oldest", id)
-		}
+		t.Fatalf("active session %q was cancelled to enforce the cap", id)
 	default:
-		t.Fatal("expected oldest non-terminal session cancel function to be called")
 	}
 }
 
@@ -528,7 +855,8 @@ func TestBrowserReplayManagerDoesNotCancelRecentlyActivePausedSession(t *testing
 	}
 }
 
-func TestBrowserReplayManagerStartReusedIDCancelsPriorSession(t *testing.T) {
+func TestBrowserReplayManagerStartReusedIDRejectsCollision(t *testing.T) {
+	const sessionID = "33333333-3333-4333-8333-333333333333"
 	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
 	cancelled := make(chan struct{})
 	manager := NewBrowserReplayManager(nil)
@@ -538,34 +866,35 @@ func TestBrowserReplayManagerStartReusedIDCancelsPriorSession(t *testing.T) {
 		maxSessions: 250,
 		now:         func() time.Time { return now },
 	}
-	manager.sessions["reuse"] = &BrowserReplaySession{
-		ID:             "reuse",
+	manager.sessions[sessionID] = &BrowserReplaySession{
+		ID:             sessionID,
+		ProjectID:      "project-a",
 		Status:         BrowserReplayRunning,
 		StartedAt:      &now,
 		lastActivityAt: now,
 		cancel:         func() { close(cancelled) },
 	}
 
-	started := manager.Start("", &dsl.Script{Name: "Replacement", Version: "1.0.0", Protocol: "browser"}, BrowserReplayStartRequest{
-		ReplaySessionID: "reuse",
+	started, err := manager.Start("", &dsl.Script{Name: "Replacement", Version: "1.0.0", Protocol: "browser"}, BrowserReplayStartRequest{
+		ReplaySessionID: sessionID,
 		StartPaused:     true,
 	})
-	if started.ID != "reuse" {
-		t.Fatalf("started id = %q, want reuse", started.ID)
+	if !errors.Is(err, errBrowserReplaySessionIDConflict) || started != nil {
+		t.Fatalf("Start collision = session %#v, error %v", started, err)
 	}
 	select {
 	case <-cancelled:
+		t.Fatal("existing session was cancelled by colliding start")
 	default:
-		t.Fatal("expected prior session cancel function to be called")
 	}
-	session, ok := manager.Get("reuse")
+	session, ok := manager.Get(sessionID)
 	if !ok {
-		t.Fatal("replacement session not found")
+		t.Fatal("existing session not found")
 	}
-	if session.Group != "Replacement-browser-replay" {
-		t.Fatalf("replacement group = %q, want Replacement-browser-replay", session.Group)
+	if session.Status != BrowserReplayRunning {
+		t.Fatalf("existing status = %q, want running", session.Status)
 	}
-	_, _ = manager.Stop("reuse")
+	_, _ = manager.Stop(sessionID)
 }
 
 func TestBrowserReplayManagerStopCancelsPausedSession(t *testing.T) {
@@ -578,7 +907,7 @@ func TestBrowserReplayManagerStopCancelsPausedSession(t *testing.T) {
 	})
 
 	manager := NewBrowserReplayManager(NewHub())
-	session := manager.Start("", &dsl.Script{
+	session, err := manager.Start("", &dsl.Script{
 		Name:     "Browser Session",
 		Protocol: protocolName,
 		Version:  "1.0.0",
@@ -587,6 +916,9 @@ func TestBrowserReplayManagerStopCancelsPausedSession(t *testing.T) {
 			{Name: "second", Type: "browser_wait_for_timeout", Value: "25"},
 		},
 	}, BrowserReplayStartRequest{ReplaySessionID: "session-paused-stop"})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if session.ID != "session-paused-stop" {
 		t.Fatalf("session.ID = %q, want session-paused-stop", session.ID)
 	}
@@ -793,10 +1125,13 @@ func TestHandleResumeBrowserReplaySessionFromStartPaused(t *testing.T) {
 			Target: "/",
 		}},
 	}
-	session := server.browserReplay.Start("", script, BrowserReplayStartRequest{
+	session, err := server.browserReplay.Start("", script, BrowserReplayStartRequest{
 		ReplaySessionID: "browser-replay-start-paused",
 		StartPaused:     true,
 	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if session.ID == "" {
 		t.Fatal("replay_session_id is empty")
 	}

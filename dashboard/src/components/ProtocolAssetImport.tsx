@@ -16,7 +16,7 @@ import SelectorCandidatesReview, { type SelectorCandidate } from './SelectorCand
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { salesforceApiSurfaceBreakdown, salesforceEndpointTotal } from './salesforceReviewSummary'
-import { buildReplayStartPayload } from './scriptEditorUtils'
+import { buildReplayStartPayload, createReplaySessionId, isDefiniteReplayStartRejection } from './scriptEditorUtils'
 import { refreshedSecretBindingRequirements, replaceSecretBindingRequirementsForScript, secretBindingRequirementsForScript } from './secretBindingUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './SampleScriptImport.css'
@@ -599,6 +599,12 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     } : null)
   }, [])
   const saveAllInFlightRef = useRef(false)
+  const saveScriptInFlightRef = useRef<{
+    generation: number
+    projectId: string | undefined
+    scriptIndex: number
+    result: ProtocolImportResult
+  } | null>(null)
   const [saveAllPreparing, setSaveAllPreparing] = useState(false)
   const internalReviewBusyRef = useRef(false)
   const [internalReviewBusy, setInternalReviewBusy] = useState(false)
@@ -639,9 +645,22 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const [reviewMode, setReviewMode] = useState<'conversion' | 'validation'>('conversion')
   const replayTask = useAsyncTask<BrowserReplayStartResponse>()
   const [recorderReplaySessionId, setRecorderReplaySessionId] = useState('')
+  const recorderReplaySessionIdRef = useRef('')
+  const recorderReplayStartRef = useRef<{
+    generation: number
+    projectId: string | undefined
+    scriptIndex: number
+    script: ScriptDefinition
+  } | null>(null)
   const [recorderReplayStatus, setRecorderReplayStatus] = useState<'idle' | 'running' | 'completed' | 'failed' | 'stopped'>('idle')
   const [recorderReplayReport, setRecorderReplayReport] = useState<BrowserReplayReport | null>(null)
   const [allowRecorderDraftSave, setAllowRecorderDraftSave] = useState(false)
+  const recorderReplayStatusRef = useRef(recorderReplayStatus)
+  const recorderReplayReportRef = useRef<BrowserReplayReport | null>(recorderReplayReport)
+  const allowRecorderDraftSaveRef = useRef(allowRecorderDraftSave)
+  recorderReplayStatusRef.current = recorderReplayStatus
+  recorderReplayReportRef.current = recorderReplayReport
+  allowRecorderDraftSaveRef.current = allowRecorderDraftSave
   const [recorderDraftNotice, setRecorderDraftNotice] = useState('')
   const [devWebSupport, setDevWebSupport] = useState<SourceImportSupportState | null>(null)
   const [ramlSupport, setRamlSupport] = useState<{ entries: RAMLSupportMatrixEntry[]; notes: string[] } | null>(null)
@@ -668,6 +687,15 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const invalidateConversionSource = useCallback(() => {
     void credentialReviewRef.current?.discardSourceSession()
     advanceReviewGeneration()
+    recorderReplaySessionIdRef.current = ''
+    recorderReplayStatusRef.current = 'idle'
+    recorderReplayReportRef.current = null
+    allowRecorderDraftSaveRef.current = false
+    setRecorderReplaySessionId('')
+    setRecorderReplayStatus('idle')
+    setRecorderReplayReport(null)
+    setAllowRecorderDraftSave(false)
+    setRecorderDraftNotice('')
     resetConvertTask()
     resetSaveTask()
     setSaveAllPreparing(false)
@@ -776,6 +804,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   }, [result, selectedScriptIndex])
 
   useEffect(() => {
+    recorderReplaySessionIdRef.current = ''
+    recorderReplayStatusRef.current = 'idle'
+    recorderReplayReportRef.current = null
+    allowRecorderDraftSaveRef.current = false
     setRecorderReplaySessionId('')
     setRecorderReplayStatus('idle')
     setRecorderReplayReport(null)
@@ -822,6 +854,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       && sourceFileRef.current === sourceFile
     setMessageError('')
     setReviewMode(mode)
+    recorderReplaySessionIdRef.current = ''
+    recorderReplayStatusRef.current = 'idle'
+    recorderReplayReportRef.current = null
+    allowRecorderDraftSaveRef.current = false
     setRecorderReplaySessionId('')
     setRecorderReplayStatus('idle')
     setRecorderReplayReport(null)
@@ -960,6 +996,21 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     const sourceProjectId = reviewProjectIdRef.current
     const sourceScript = reviewedScript
     const sourceScriptIndex = selectedScriptIndex
+    const activeStart = recorderReplayStartRef.current
+    if (
+      activeStart?.generation === sourceGeneration
+      && activeStart.projectId === sourceProjectId
+      && activeStart.scriptIndex === sourceScriptIndex
+      && activeStart.script === sourceScript
+    ) return
+    const startScope = {
+      generation: sourceGeneration,
+      projectId: sourceProjectId,
+      scriptIndex: sourceScriptIndex,
+      script: sourceScript,
+    }
+    recorderReplayStartRef.current = startScope
+    const clientReplaySessionId = createReplaySessionId()
     const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration
       && reviewProjectIdRef.current === sourceProjectId
       && selectedScriptIndexRef.current === sourceScriptIndex
@@ -967,33 +1018,68 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       && scriptsFromImportResult(latestResultRef.current as BrowserRecordingImportResult)[sourceScriptIndex] === sourceScript
     setMessageError('')
     setRecorderDraftNotice('')
+    recorderReplaySessionIdRef.current = clientReplaySessionId
+    recorderReplayStatusRef.current = 'running'
+    recorderReplayReportRef.current = null
+    setRecorderReplaySessionId(clientReplaySessionId)
     setRecorderReplayReport(null)
     setRecorderReplayStatus('running')
     try {
       const response = await replayTask.run(async () => api.startDraftBrowserReplaySession(buildReplayStartPayload(sourceScript, {
         projectId: sourceProjectId,
         ignoreThinkTime: true,
+        replaySessionId: clientReplaySessionId || undefined,
       })))
-      if (requestIsCurrent()) setRecorderReplaySessionId(response.replay_session_id)
+      if (requestIsCurrent()) {
+        recorderReplaySessionIdRef.current = response.replay_session_id
+        setRecorderReplaySessionId(response.replay_session_id)
+      }
     } catch (error: unknown) {
       if (requestIsCurrent()) {
-        setRecorderReplayStatus('failed')
-        setMessageError(getErrorMessage(error, 'Failed to start browser replay validation'))
+        if (clientReplaySessionId && !isDefiniteReplayStartRejection(error)) {
+          setRecorderDraftNotice('The replay start response was interrupted. Confirming the accepted replay session…')
+        } else {
+          recorderReplaySessionIdRef.current = ''
+          recorderReplayStatusRef.current = 'failed'
+          setRecorderReplaySessionId('')
+          setRecorderReplayStatus('failed')
+          setMessageError(getErrorMessage(error, 'Failed to start browser replay validation'))
+        }
+      }
+    } finally {
+      if (recorderReplayStartRef.current === startScope) {
+        recorderReplayStartRef.current = null
       }
     }
   }
 
-  const handleRecorderReplayComplete = (report: BrowserReplayReport | null) => {
+  const handleRecorderReplayComplete = (sourceReplaySessionId: string, report: BrowserReplayReport | null) => {
+    const activeSessionId = recorderReplaySessionIdRef.current
+    if (!activeSessionId || sourceReplaySessionId !== activeSessionId || (report?.replay_session_id && report.replay_session_id !== activeSessionId)) return
+    recorderReplayReportRef.current = report
+    recorderReplayStatusRef.current = report?.success ? 'completed' : 'failed'
     setRecorderReplayReport(report)
     setRecorderReplayStatus(report?.success ? 'completed' : 'failed')
   }
 
   const markRecorderDraftChanged = (message: string) => {
+    recorderReplaySessionIdRef.current = ''
+    recorderReplayReportRef.current = null
+    recorderReplayStatusRef.current = 'idle'
+    allowRecorderDraftSaveRef.current = false
     setRecorderReplaySessionId('')
     setRecorderReplayReport(null)
     setRecorderReplayStatus('idle')
     setAllowRecorderDraftSave(false)
     setRecorderDraftNotice(message)
+  }
+
+  const commitReviewMutation = (nextResult: ProtocolImportResult, recorderDraftNotice?: string) => {
+    latestResultRef.current = nextResult
+    convertTask.setValue(nextResult)
+    if (kind === 'recorder-export' && recorderDraftNotice) {
+      markRecorderDraftChanged(recorderDraftNotice)
+    }
   }
 
   const handlePromoteRecorderCandidate = (actionIndex: number, candidate: SelectorCandidate) => {
@@ -1005,9 +1091,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       index === selectedScriptIndex ? promoteDraftSelector(script, actionIndex, candidate.value, candidate) : script
     ))
     const nextResult = { ...currentResult, script: nextScripts[0], scripts: nextScripts } as ProtocolImportResult
-    latestResultRef.current = nextResult
-    convertTask.setValue(nextResult)
-    markRecorderDraftChanged('Selector updated in the draft. Run replay validation again before saving normally.')
+    commitReviewMutation(nextResult, 'Selector updated in the draft. Run replay validation again before saving normally.')
   }
 
   const handleApplyRecorderReplaySuggestion = async (suggestion: ReplayRepairSuggestion) => {
@@ -1033,9 +1117,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       index === selectedScriptIndex ? promoteDraftSelector(script, actionIndex, selector) : script
     ))
     const nextResult = { ...currentResult, script: nextScripts[0], scripts: nextScripts } as ProtocolImportResult
-    latestResultRef.current = nextResult
-    convertTask.setValue(nextResult)
-    markRecorderDraftChanged('Replay suggestion applied to the draft. Run replay validation again before saving normally.')
+    commitReviewMutation(nextResult, 'Replay suggestion applied to the draft. Run replay validation again before saving normally.')
   }
 
   const handleSave = async () => {
@@ -1050,7 +1132,15 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         : []
     const currentGeneratedScripts = currentImportedScripts
     const currentReviewedScript = currentGeneratedScripts[selectedScriptIndex] || currentGeneratedScripts[0]
-    if (!currentReviewedScript) return
+    if (!currentResult || !currentReviewedScript || saveAllInFlightRef.current || internalReviewBusyRef.current) return
+    const activeSave = saveScriptInFlightRef.current
+    if (activeSave
+      && activeSave.generation === sourceGeneration
+      && activeSave.projectId === sourceProjectId
+      && activeSave.scriptIndex === sourceScriptIndex
+      && activeSave.result === currentResult) {
+      return
+    }
     const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration
       && reviewProjectIdRef.current === sourceProjectId
       && selectedScriptIndexRef.current === sourceScriptIndex
@@ -1063,15 +1153,24 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       setMessageError('Resolve every redacted credential binding before saving this script.')
       return
     }
+    const saveAttempt = {
+      generation: sourceGeneration,
+      projectId: sourceProjectId,
+      scriptIndex: sourceScriptIndex,
+      result: currentResult,
+    }
+    saveScriptInFlightRef.current = saveAttempt
     try {
       let scriptToSave = currentReviewedScript
       if (kind === 'recorder-export') {
-        const replayPassed = recorderReplayStatus === 'completed' && recorderReplayReport?.success
-        if (!replayPassed && !allowRecorderDraftSave) {
+        const currentReplayStatus = recorderReplayStatusRef.current
+        const currentReplayReport = recorderReplayReportRef.current
+        const replayPassed = currentReplayStatus === 'completed' && currentReplayReport?.success
+        if (!replayPassed && !allowRecorderDraftSaveRef.current) {
           setMessageError('Run replay validation successfully before saving, or choose Save as draft needing replay review.')
           return
         }
-        scriptToSave = attachRecorderReplayEvidence(currentReviewedScript, recorderReplayReport, recorderReplayStatus, !replayPassed, recorderReplaySessionId)
+        scriptToSave = attachRecorderReplayEvidence(currentReviewedScript, currentReplayReport, currentReplayStatus, !replayPassed, recorderReplaySessionIdRef.current)
       }
       if (kind === 'openapi') {
         if (openAPISaveMode === 'replace' && !openAPIReplaceScriptId) {
@@ -1124,6 +1223,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
       if (requestIsCurrent()) onImported?.({ scripts: [withFallbackPersistedScript(savedScript, scriptToSave)] })
     } catch (error: unknown) {
       if (requestIsCurrent()) setMessageError(getErrorMessage(error, 'Failed to save generated script'))
+    } finally {
+      if (saveScriptInFlightRef.current === saveAttempt) {
+        saveScriptInFlightRef.current = null
+      }
     }
   }
 
@@ -1139,7 +1242,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   }
 
   const handleSaveAllAsyncAPIScripts = async () => {
-    if (kind !== 'asyncapi' || generatedScripts.length === 0 || saveAllInFlightRef.current || internalReviewBusyRef.current) return
+    if (kind !== 'asyncapi' || generatedScripts.length === 0 || saveAllInFlightRef.current || saveScriptInFlightRef.current || internalReviewBusyRef.current) return
     const sourceGeneration = reviewGenerationRef.current
     const sourceProjectId = reviewProjectIdRef.current
     const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration
@@ -1209,8 +1312,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     advanceReviewGeneration()
     const nextScripts = generatedScripts.length ? generatedScripts.map((script, index) => index === selectedScriptIndex ? parameterizedScript : script) : [parameterizedScript]
     const nextResult = { ...result, script: nextScripts[0], scripts: nextScripts } as ProtocolImportResult
-    latestResultRef.current = nextResult
-    convertTask.setValue(nextResult)
+    commitReviewMutation(nextResult, 'Parameterization updated the draft. Run replay validation again before saving normally.')
   }
 
   const handleSecretBindingsApply = async (bindings: SecretBindingSelection[]) => {
@@ -1280,8 +1382,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         }
       }
       assertCurrent()
-      latestResultRef.current = resolvedResult
-      convertTask.setValue(resolvedResult)
+      commitReviewMutation(resolvedResult, 'Credential bindings updated the draft. Run replay validation again before saving normally.')
       return
     }
     try {
@@ -1306,8 +1407,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           resolved.secret_binding_requirements,
         ),
       } as ProtocolImportResult
-      latestResultRef.current = nextResult
-      convertTask.setValue(nextResult)
+      commitReviewMutation(nextResult, 'Credential bindings updated the draft. Run replay validation again before saving normally.')
     } catch (error: unknown) {
       if (!requestIsCurrent()) throw error
       const refreshed = refreshedSecretBindingRequirements(error)
@@ -1333,8 +1433,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     advanceReviewGeneration()
     const nextScripts = generatedScripts.length ? generatedScripts.map((script, index) => index === selectedScriptIndex ? updatedScript : script) : [updatedScript]
     const nextResult = { ...result, script: nextScripts[0], scripts: nextScripts } as ProtocolImportResult
-    latestResultRef.current = nextResult
-    convertTask.setValue(nextResult)
+    commitReviewMutation(nextResult, 'Runtime settings updated the draft. Run replay validation again before saving normally.')
   }
 
   return (
@@ -1587,7 +1686,10 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                     {replayTask.pending || recorderReplayStatus === 'running' ? 'Starting Replay...' : 'Run Replay Validation'}
                   </button>
                   <label className="sample-toggle" title="Save the import as a draft even if replay has not passed yet.">
-                    <input type="checkbox" checked={allowRecorderDraftSave} onChange={event => setAllowRecorderDraftSave(event.target.checked)} />
+                    <input type="checkbox" checked={allowRecorderDraftSave} onChange={event => {
+                      allowRecorderDraftSaveRef.current = event.target.checked
+                      setAllowRecorderDraftSave(event.target.checked)
+                    }} />
                     Save as draft needing replay review
                   </label>
                 </div>
@@ -1595,7 +1697,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                   <BrowserReplayProgress
                     replaySessionId={recorderReplaySessionId}
                     projectId={projectId}
-                    onComplete={handleRecorderReplayComplete}
+                    onComplete={report => handleRecorderReplayComplete(recorderReplaySessionId, report)}
                     onApplySuggestion={handleApplyRecorderReplaySuggestion}
                   />
                 )}

@@ -29,6 +29,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -68,6 +69,9 @@ type Engine struct {
 	softStop  context.CancelFunc
 	secrets   SecretResolver
 	redaction *RedactionConfig
+	// javaVuserCapacityLimit is populated by the governed runtime validation
+	// immediately before Run acquires its process-wide persistent-session lease.
+	javaVuserCapacityLimit int64
 }
 
 // Config contains configuration for Engine creation.
@@ -98,6 +102,9 @@ type RunResult struct {
 func New(cfg Config) (*Engine, error) {
 	if cfg.Script == nil {
 		return nil, fmt.Errorf("script is required")
+	}
+	if javaVuserScriptUsesPhaseLifecycle(cfg.Script) && javaVuserScriptHasLegacyRunAction(cfg.Script) {
+		return nil, fmt.Errorf("java_vuser scripts must not mix persistent phase methods with legacy full_lifecycle actions")
 	}
 	if issues := dsl.ValidateWorkloadSettingsIssues(cfg.Script.Config.RunLogic, cfg.Script.Config.Pacing); len(issues) > 0 {
 		return nil, fmt.Errorf("invalid workload settings: %s", issues[0])
@@ -151,14 +158,57 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	if err != nil {
 		return nil, fmt.Errorf("protocol init: %s", scrubSensitiveTextWithConfig(err.Error(), e.redaction))
 	}
+	if err := e.validateJavaVuserRuntime(ctx, proto); err != nil {
+		return nil, fmt.Errorf("protocol runtime: %s", scrubSensitiveTextWithConfig(err.Error(), e.redaction))
+	}
+	javaCapacityPlan := NewJavaVuserCapacityPlan(e.script)
+	var javaCapacityReservation *javaVuserCapacityReservation
+	var javaLegacyReservation *javaVuserLegacyRunReservation
+	if javaCapacityPlan.RequiresPersistentLifecycle() {
+		javaCapacityReservation, err = reserveJavaVuserCapacity(javaCapacityPlan.Demand(e.vusers), e.javaVuserCapacityLimit)
+		if err != nil {
+			return nil, fmt.Errorf("protocol runtime: %s", scrubSensitiveTextWithConfig(err.Error(), e.redaction))
+		}
+	} else if javaVuserScriptUsesLegacyOneShot(e.script) {
+		javaLegacyReservation, err = reserveLegacyJavaVuserRun()
+		if err != nil {
+			return nil, fmt.Errorf("protocol runtime: %s", scrubSensitiveTextWithConfig(err.Error(), e.redaction))
+		}
+	}
+	defer javaCapacityReservation.Release()
+	defer javaLegacyReservation.Release()
 
 	protoConfig := buildProtoConfigForRunModeWithSecretResolver(e.script, "load", e.secrets)
+	if _, ok := proto.(protocol.RuntimePreflightProvider); ok {
+		targets, targetErr := runtimePreflightTargets(ctx, e.script, e.secrets)
+		if targetErr != nil {
+			return nil, fmt.Errorf("protocol runtime preflight: %s", scrubSensitiveTextWithConfig(targetErr.Error(), e.redaction))
+		}
+		preflight, _, preflightErr := protocol.RunRuntimePreflight(ctx, proto, protocol.RuntimePreflightRequest{
+			Config:  protoConfig,
+			Targets: targets,
+		})
+		if preflightErr != nil {
+			return nil, fmt.Errorf("protocol runtime preflight: %s", scrubSensitiveTextWithConfig(preflightErr.Error(), e.redaction))
+		}
+		for _, warning := range preflight.Warnings {
+			slog.Warn("protocol runtime preflight warning", "code", safeRuntimeWarningCode(warning))
+		}
+	}
 	mockNamespace := newRuntimeMockNamespace()
 	applyRuntimeMockNamespace(protoConfig, mockNamespace)
 	releaseMockNamespace := protocol.AcquireRuntimeNamespace(mockNamespace)
 	defer releaseMockNamespace()
-	if err := callProtocolHealthCheck(ctx, proto, e.redaction); err != nil {
-		slog.Warn("health check failed, proceeding anyway", "err", err)
+	if !strings.EqualFold(strings.TrimSpace(e.script.Protocol), "java_vuser") {
+		if err := callProtocolHealthCheck(ctx, proto, e.redaction); err != nil {
+			slog.Warn("health check failed, proceeding anyway", "err", err)
+		}
+	} else if _, ok := proto.(protocol.RuntimeHealthChecker); !ok {
+		// Defensive fallback for a future java_vuser implementation that exposes
+		// static capabilities without the runtime health extension.
+		if err := callProtocolHealthCheck(ctx, proto, e.redaction); err != nil {
+			return nil, fmt.Errorf("protocol runtime health: %s", scrubSensitiveTextWithConfig(err.Error(), e.redaction))
+		}
 	}
 
 	e.metrics.Start(time.Second)
@@ -297,6 +347,79 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 		result.FinalSnapshot = snap
 	}
 	return result, nil
+}
+
+// validateJavaVuserRuntime keeps direct engine and CLI launches behind the same
+// governed runtime boundary as controller and generator assignments. Combined
+// lifecycle scripts pin one JVM per live VUser, so direct launches must reserve
+// the advertised persistent-runner capacity before any VUser starts.
+func (e *Engine) validateJavaVuserRuntime(ctx context.Context, instance protocol.Protocol) error {
+	if e == nil || e.script == nil || !strings.EqualFold(strings.TrimSpace(e.script.Protocol), "java_vuser") {
+		return nil
+	}
+	plan := NewJavaVuserCapacityPlan(e.script)
+	capabilities, err := validatedJavaVuserRuntimeCapacityForPlan(ctx, instance, plan, plan.Demand(e.vusers))
+	if err != nil {
+		return err
+	}
+	e.javaVuserCapacityLimit = capabilities.MaxVUsers
+	return nil
+}
+
+func javaVuserScriptUsesPhaseLifecycle(script *dsl.Script) bool {
+	if script == nil {
+		return false
+	}
+	return javaVuserActionsUsePhaseLifecycle(script.Init) ||
+		javaVuserActionsUsePhaseLifecycle(script.Actions) ||
+		javaVuserActionsUsePhaseLifecycle(script.Teardown)
+}
+
+func javaVuserScriptHasLegacyRunAction(script *dsl.Script) bool {
+	if script == nil || !strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") {
+		return false
+	}
+	return javaVuserActionsHaveLegacyRunAction(script.Init) ||
+		javaVuserActionsHaveLegacyRunAction(script.Actions) ||
+		javaVuserActionsHaveLegacyRunAction(script.Teardown)
+}
+
+func javaVuserActionsHaveLegacyRunAction(actions []dsl.Action) bool {
+	for _, action := range actions {
+		if strings.EqualFold(strings.TrimSpace(action.Type), "java_vuser_run") {
+			method := ""
+			if value, ok := action.Params["method"]; ok && value != nil {
+				method = strings.TrimSpace(fmt.Sprint(value))
+			}
+			if method == "" || strings.EqualFold(method, "full_lifecycle") {
+				return true
+			}
+		}
+		if action.Control != nil &&
+			(javaVuserActionsHaveLegacyRunAction(action.Control.Steps) ||
+				javaVuserActionsHaveLegacyRunAction(action.Control.Else)) {
+			return true
+		}
+	}
+	return false
+}
+
+func javaVuserActionsUsePhaseLifecycle(actions []dsl.Action) bool {
+	for _, action := range actions {
+		if strings.EqualFold(strings.TrimSpace(action.Type), "java_vuser_run") {
+			method := ""
+			if value, ok := action.Params["method"]; ok && value != nil {
+				method = strings.TrimSpace(fmt.Sprint(value))
+			}
+			if method != "" && !strings.EqualFold(method, "full_lifecycle") {
+				return true
+			}
+		}
+		if action.Control != nil && (javaVuserActionsUsePhaseLifecycle(action.Control.Steps) || javaVuserActionsUsePhaseLifecycle(action.Control.Else)) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Engine) Stop() {

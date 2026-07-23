@@ -18,8 +18,12 @@ import (
 const maxMultiGroupRuntimeSecretRedactionBytes = 32 << 20
 
 type GroupConfig struct {
-	Name            string
-	Script          *dsl.Script
+	Name   string
+	Script *dsl.Script
+	// ScenarioID is the managed execution identity exposed to protocol
+	// runtimes. Direct/library callers may leave it empty to fall back to the
+	// script artifact ID.
+	ScenarioID      string
 	VUsers          int
 	RampUp          time.Duration
 	RampDown        time.Duration
@@ -54,6 +58,11 @@ type MultiGroupConfig struct {
 	// StartPaused latches the execution gate before Run creates any VUsers.
 	// Distributed evacuation uses it when a replacement joins a paused run.
 	StartPaused bool
+	// RuntimePreflightValidated is set only by distributed two-phase staging
+	// after every group has passed PreflightScriptRuntime on this generator.
+	// Local/controller callers leave it false so MultiGroupEngine performs the
+	// same validation before publishing readiness or allocating VUsers.
+	RuntimePreflightValidated bool
 }
 
 type MultiGroupEngine struct {
@@ -67,41 +76,48 @@ type MultiGroupEngine struct {
 	readyOnce    sync.Once
 
 	// Dynamic control state
-	mu                    sync.Mutex
-	scaleMu               sync.Mutex
-	scalingOpen           bool
-	activeReserved        int
-	totalCtx              context.Context
-	wg                    *sync.WaitGroup
-	vuserCancels          map[int]context.CancelFunc
-	vuserGroups           map[int]string
-	vuserStopping         map[int]bool
-	nextVUserID           int
-	freeVUserIDs          vuserIDHeap
-	vuserIDsInUse         map[int]struct{}
-	vuserIDSpan           int
-	paused                bool
-	pauseRequested        bool
-	pauseCh               chan struct{}
-	pauseChanged          chan struct{}
-	pauseStartTime        time.Time
-	runStartedAt          time.Time
-	baseTargetDuration    time.Duration
-	pauseCompensation     time.Duration
-	targetDuration        time.Duration
-	controlsReady         bool
-	stopVUsers            context.CancelFunc
-	baseCtx               context.Context
-	loopCtx               context.Context
-	arrivalCtx            context.Context
-	gracefulCtx           context.Context
-	arrivalStop           context.CancelFunc
-	gracefulCancel        context.CancelFunc
-	softStop              context.CancelFunc
-	gracefulStopRequested bool
-	gracefulStopCh        chan struct{}
-	mockNamespace         string
-	scaleGuard            bool
+	mu                     sync.Mutex
+	scaleMu                sync.Mutex
+	scalingOpen            bool
+	activeReserved         int
+	totalCtx               context.Context
+	wg                     *sync.WaitGroup
+	vuserCancels           map[int]context.CancelFunc
+	vuserGroups            map[int]string
+	vuserStopping          map[int]bool
+	vuserChanged           chan struct{}
+	nextVUserID            int
+	freeVUserIDs           vuserIDHeap
+	vuserIDsInUse          map[int]struct{}
+	vuserIDSpan            int
+	paused                 bool
+	pauseRequested         bool
+	pauseCh                chan struct{}
+	pauseChanged           chan struct{}
+	pauseStartTime         time.Time
+	runStartedAt           time.Time
+	baseTargetDuration     time.Duration
+	pauseCompensation      time.Duration
+	targetDuration         time.Duration
+	controlsReady          bool
+	stopVUsers             context.CancelFunc
+	baseCtx                context.Context
+	loopCtx                context.Context
+	arrivalCtx             context.Context
+	gracefulCtx            context.Context
+	arrivalStop            context.CancelFunc
+	gracefulCancel         context.CancelFunc
+	softStop               context.CancelFunc
+	gracefulStopRequested  bool
+	gracefulStopCh         chan struct{}
+	mockNamespace          string
+	scaleGuard             bool
+	runtimePreflightOnce   sync.Once
+	runtimePreflightErr    error
+	runtimePreflightValid  bool
+	javaVuserCapacityLimit int64
+	javaVuserReservation   *javaVuserCapacityReservation
+	javaVuserLegacyRun     *javaVuserLegacyRunReservation
 }
 
 type GroupResult struct {
@@ -149,6 +165,9 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		return nil, fmt.Errorf("post-baseline must be non-negative")
 	}
 	totalVUsers := int64(0)
+	persistentJavaVUsers := int64(0)
+	persistentJavaConfigured := false
+	legacyJavaConfigured := false
 	effectiveGroupNames := make(map[string]int, len(cfg.Groups))
 	for i, g := range cfg.Groups {
 		if g.Script == nil {
@@ -172,6 +191,19 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		}
 		if g.VUsers == 0 && isOpenWorkload(g.Script) {
 			return nil, fmt.Errorf("group[%d] %q: open workload groups require positive vusers", i, g.Name)
+		}
+		if javaVuserScriptUsesPhaseLifecycle(g.Script) && javaVuserScriptHasLegacyRunAction(g.Script) {
+			return nil, fmt.Errorf("group[%d] %q: java_vuser scripts must not mix persistent phase methods with legacy full_lifecycle actions", i, g.Name)
+		}
+		javaCapacityPlan := NewJavaVuserCapacityPlan(g.Script)
+		if javaCapacityPlan.RequiresPersistentLifecycle() {
+			persistentJavaConfigured = true
+			if strings.EqualFold(strings.TrimSpace(g.InitStrategy), "at_once") {
+				return nil, fmt.Errorf("group[%d] %q: init_strategy at_once is incompatible with persistent java_vuser lifecycle; use at_runtime", i, g.Name)
+			}
+			persistentJavaVUsers += javaCapacityPlan.Demand(g.VUsers)
+		} else if javaVuserScriptUsesLegacyOneShot(g.Script) {
+			legacyJavaConfigured = true
 		}
 		if g.VUserIDSpan < 0 {
 			return nil, fmt.Errorf("group[%d] %q: vuser id span must be non-negative", i, g.Name)
@@ -200,6 +232,16 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 			return nil, fmt.Errorf("group[%d] %q: initialize data sources: %s", i, cfg.Groups[i].Name, scrubSensitiveText(err.Error()))
 		}
 		cfg.Groups[i].dataProvider = dataProvider
+	}
+	if persistentJavaConfigured && legacyJavaConfigured {
+		return nil, fmt.Errorf("persistent and legacy full_lifecycle java_vuser groups cannot share generator process slots")
+	}
+	if persistentJavaVUsers > 0 {
+		if maxVUsers, available, err := availableJavaVuserPersistentCapacity(); err != nil {
+			return nil, fmt.Errorf("inspect java_vuser runtime capacity: %w", err)
+		} else if available && persistentJavaVUsers > maxVUsers {
+			return nil, fmt.Errorf("java_vuser persistent runtime capacity exceeded: requires %d VUsers, maximum %d", persistentJavaVUsers, maxVUsers)
+		}
 	}
 	defaultSecretResolvers := make(map[string]SecretResolver)
 	runtimeRedactionSets := make(map[[32]byte]*RedactionConfig)
@@ -239,16 +281,18 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		cfg.Groups[i].RedactionConfig = attachRuntimeSecretRedaction(cfg.Groups[i].RedactionConfig, runtimeConfig)
 	}
 	mge := &MultiGroupEngine{
-		groups:         cfg.Groups,
-		duration:       cfg.Duration,
-		preBaseline:    cfg.PreBaseline,
-		postBaseline:   cfg.PostBaseline,
-		metrics:        NewMetricsCollector(10000),
-		readyCh:        make(chan struct{}),
-		gracefulStopCh: make(chan struct{}),
-		vuserIDSpan:    int(^uint(0) >> 1),
-		paused:         cfg.StartPaused,
-		pauseRequested: cfg.StartPaused,
+		groups:                cfg.Groups,
+		duration:              cfg.Duration,
+		preBaseline:           cfg.PreBaseline,
+		postBaseline:          cfg.PostBaseline,
+		metrics:               NewMetricsCollector(10000),
+		readyCh:               make(chan struct{}),
+		gracefulStopCh:        make(chan struct{}),
+		vuserIDSpan:           int(^uint(0) >> 1),
+		paused:                cfg.StartPaused,
+		pauseRequested:        cfg.StartPaused,
+		runtimePreflightValid: cfg.RuntimePreflightValidated,
+		vuserChanged:          make(chan struct{}),
 	}
 	for _, group := range cfg.Groups {
 		if group.VUserIDSpan > 0 && group.VUserIDSpan < mge.vuserIDSpan {
@@ -278,6 +322,13 @@ func (mge *MultiGroupEngine) activeVUserCountByGroup() map[string]int {
 }
 
 func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, error) {
+	if err := mge.preflightRuntimeAtStart(ctx); err != nil {
+		return nil, err
+	}
+	if err := mge.acquireJavaVuserCapacity(); err != nil {
+		return nil, err
+	}
+	defer mge.releaseJavaVuserCapacity()
 	mge.metrics.EnableIdleSnapshots(mge.preBaseline > 0 || mge.postBaseline > 0)
 	mge.metrics.Start(time.Second)
 	defer mge.metrics.Stop()
@@ -441,7 +492,8 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 		}
 		atOnceTeardownComplete = true
 		for _, group := range atOnceGroups {
-			protoConfig := buildProtoConfigForRunModeWithSecretResolver(group.Script, "load", group.SecretResolver)
+			protoConfig := buildGroupProtoConfig(group, "load")
+			protoConfig["group_name"] = group.Name
 			applyRuntimeMockNamespace(protoConfig, mge.mockNamespace)
 			tctx, tcancel := teardownContext()
 			mge.runGroupLifecycleBlock(tctx, group, protoConfig, group.Script.Teardown, "teardown")
@@ -461,7 +513,8 @@ groupLoop:
 		}
 		groupResults[gi] = GroupResult{Name: group.Name}
 
-		protoConfig := buildProtoConfigForRunModeWithSecretResolver(group.Script, "load", group.SecretResolver)
+		protoConfig := buildGroupProtoConfig(group, "load")
+		protoConfig["group_name"] = group.Name
 		applyRuntimeMockNamespace(protoConfig, mge.mockNamespace)
 		if groupLifecycleAtOnce(group) {
 			// A replacement joining a paused distributed run must not execute
@@ -603,6 +656,317 @@ groupLoop:
 	return result, nil
 }
 
+func (mge *MultiGroupEngine) preflightRuntimeAtStart(ctx context.Context) error {
+	mge.mu.Lock()
+	previouslyValidated := mge.runtimePreflightValid
+	mge.mu.Unlock()
+	if err := mge.PreflightRuntime(ctx); err != nil {
+		return err
+	}
+	if !previouslyValidated {
+		// This Run consumed the once-only preflight itself, at the actual start
+		// boundary, so that observation is already fresh.
+		return nil
+	}
+	// A constructor hint or an earlier explicit preflight may be arbitrarily
+	// old after a coordinated future-start barrier. Observe the runner again.
+	return mge.RevalidateRuntime(ctx)
+}
+
+// PreflightRuntime validates each group's secret-resolved runtime settings and
+// unique executable targets exactly once for this generator. It deliberately
+// runs before metrics, readiness, lifecycle blocks, or VUser allocation.
+func (mge *MultiGroupEngine) PreflightRuntime(ctx context.Context) error {
+	if mge == nil {
+		return fmt.Errorf("multi-group engine is unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	mge.runtimePreflightOnce.Do(func() {
+		if mge.runtimePreflightValid {
+			return
+		}
+		mge.mu.Lock()
+		groups := append([]GroupConfig(nil), mge.groups...)
+		mge.mu.Unlock()
+		limit, err := preflightGroupRuntimes(ctx, groups)
+		mge.mu.Lock()
+		mge.javaVuserCapacityLimit = limit
+		mge.runtimePreflightErr = err
+		if err == nil {
+			mge.runtimePreflightValid = true
+		}
+		mge.mu.Unlock()
+		if err != nil {
+			return
+		}
+	})
+	mge.mu.Lock()
+	err := mge.runtimePreflightErr
+	mge.mu.Unlock()
+	return err
+}
+
+// RevalidateRuntime performs a new runner/target observation without consuming
+// the optional cached preflight. Distributed CommitWork uses it after staging,
+// and Run invokes it again at the coordinated start boundary.
+func (mge *MultiGroupEngine) RevalidateRuntime(ctx context.Context) error {
+	if mge == nil {
+		return fmt.Errorf("multi-group engine is unavailable")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	mge.mu.Lock()
+	groups := append([]GroupConfig(nil), mge.groups...)
+	mge.mu.Unlock()
+	limit, err := preflightGroupRuntimes(ctx, groups)
+	if err != nil {
+		return err
+	}
+	mge.mu.Lock()
+	mge.javaVuserCapacityLimit = limit
+	mge.mu.Unlock()
+	return nil
+}
+
+func preflightGroupRuntimes(ctx context.Context, groups []GroupConfig) (int64, error) {
+	persistentJavaVUsers := int64(0)
+	var persistentJavaPlan JavaVuserCapacityPlan
+	persistentJavaConfigured := false
+	legacyJavaValidated := false
+	for index, group := range groups {
+		if group.Script == nil || !strings.EqualFold(strings.TrimSpace(group.Script.Protocol), "java_vuser") {
+			continue
+		}
+		plan := NewJavaVuserCapacityPlan(group.Script)
+		if plan.RequiresPersistentLifecycle() {
+			persistentJavaPlan = plan
+			persistentJavaConfigured = true
+			persistentJavaVUsers += plan.Demand(group.VUsers)
+			continue
+		}
+		if legacyJavaValidated {
+			continue
+		}
+		instance, err := protocol.Get("java_vuser")
+		if err != nil {
+			return 0, fmt.Errorf("group[%d] %q protocol runtime: %s", index, group.Name, scrubSensitiveTextWithConfig(err.Error(), group.RedactionConfig))
+		}
+		if err := validateJavaVuserRuntimeForPlan(ctx, instance, plan, 0); err != nil {
+			return 0, fmt.Errorf("group[%d] %q protocol runtime: %s", index, group.Name, scrubSensitiveTextWithConfig(err.Error(), group.RedactionConfig))
+		}
+		legacyJavaValidated = true
+	}
+	persistentJavaLimit := int64(0)
+	if persistentJavaConfigured {
+		instance, err := protocol.Get("java_vuser")
+		if err != nil {
+			return 0, fmt.Errorf("java_vuser protocol runtime: %s", scrubSensitiveText(err.Error()))
+		}
+		capabilities, err := validatedJavaVuserRuntimeCapacityForPlan(ctx, instance, persistentJavaPlan, persistentJavaVUsers)
+		if err != nil {
+			return 0, fmt.Errorf("java_vuser protocol runtime: %s", scrubSensitiveText(err.Error()))
+		}
+		persistentJavaLimit = capabilities.MaxVUsers
+	}
+	for index, group := range groups {
+		result, err := PreflightScriptRuntime(ctx, group.Script, group.SecretResolver)
+		if err != nil {
+			message := scrubSensitiveTextWithConfig(err.Error(), group.RedactionConfig)
+			return 0, fmt.Errorf("group[%d] %q protocol runtime preflight: %s", index, group.Name, message)
+		}
+		for _, warning := range result.Warnings {
+			slog.Warn("group protocol runtime preflight warning",
+				"group", group.Name,
+				"protocol", strings.TrimSpace(group.Script.Protocol),
+				"code", safeRuntimeWarningCode(warning),
+			)
+		}
+	}
+	return persistentJavaLimit, nil
+}
+
+func persistentJavaConfiguredDemand(groups []GroupConfig) int64 {
+	var demand int64
+	for _, group := range groups {
+		demand += NewJavaVuserCapacityPlan(group.Script).Demand(group.VUsers)
+	}
+	return demand
+}
+
+func hasPersistentJavaGroup(groups []GroupConfig) bool {
+	for _, group := range groups {
+		if NewJavaVuserCapacityPlan(group.Script).RequiresPersistentLifecycle() {
+			return true
+		}
+	}
+	return false
+}
+
+func hasLegacyJavaGroup(groups []GroupConfig) bool {
+	for _, group := range groups {
+		if javaVuserScriptUsesLegacyOneShot(group.Script) {
+			return true
+		}
+	}
+	return false
+}
+
+func (mge *MultiGroupEngine) acquireJavaVuserCapacity() error {
+	mge.mu.Lock()
+	if mge.javaVuserReservation != nil || mge.javaVuserLegacyRun != nil {
+		mge.mu.Unlock()
+		return fmt.Errorf("java_vuser runtime capacity is already reserved")
+	}
+	demand := persistentJavaConfiguredDemand(mge.groups)
+	configured := hasPersistentJavaGroup(mge.groups)
+	legacyConfigured := hasLegacyJavaGroup(mge.groups)
+	limit := mge.javaVuserCapacityLimit
+	mge.mu.Unlock()
+	if configured && legacyConfigured {
+		return fmt.Errorf("persistent and legacy full_lifecycle java_vuser groups cannot share generator process slots")
+	}
+	if !configured {
+		if !legacyConfigured {
+			return nil
+		}
+		reservation, err := reserveLegacyJavaVuserRun()
+		if err != nil {
+			return err
+		}
+		mge.mu.Lock()
+		if mge.javaVuserReservation != nil || mge.javaVuserLegacyRun != nil {
+			mge.mu.Unlock()
+			reservation.Release()
+			return fmt.Errorf("java_vuser runtime capacity is already reserved")
+		}
+		mge.javaVuserLegacyRun = reservation
+		mge.mu.Unlock()
+		return nil
+	}
+	if limit <= 0 {
+		var available bool
+		var err error
+		limit, available, err = availableJavaVuserPersistentCapacity()
+		if err != nil {
+			return fmt.Errorf("inspect java_vuser runtime capacity: %w", err)
+		}
+		if !available {
+			return fmt.Errorf("java_vuser persistent runtime capacity is unavailable")
+		}
+	}
+	reservation, err := reserveJavaVuserCapacity(demand, limit)
+	if err != nil {
+		return err
+	}
+	mge.mu.Lock()
+	if mge.javaVuserReservation != nil || mge.javaVuserLegacyRun != nil {
+		mge.mu.Unlock()
+		reservation.Release()
+		return fmt.Errorf("java_vuser runtime capacity is already reserved")
+	}
+	mge.javaVuserReservation = reservation
+	mge.javaVuserCapacityLimit = limit
+	mge.mu.Unlock()
+	return nil
+}
+
+func (mge *MultiGroupEngine) releaseJavaVuserCapacity() {
+	if mge == nil {
+		return
+	}
+	mge.mu.Lock()
+	reservation := mge.javaVuserReservation
+	legacyReservation := mge.javaVuserLegacyRun
+	mge.javaVuserReservation = nil
+	mge.javaVuserLegacyRun = nil
+	mge.mu.Unlock()
+	reservation.Release()
+	legacyReservation.Release()
+}
+
+func (mge *MultiGroupEngine) signalVUserChangeLocked() {
+	if mge.vuserChanged != nil {
+		close(mge.vuserChanged)
+	}
+	mge.vuserChanged = make(chan struct{})
+}
+
+func (mge *MultiGroupEngine) unregisterVUserLocked(vuserID int) {
+	delete(mge.vuserCancels, vuserID)
+	delete(mge.vuserGroups, vuserID)
+	delete(mge.vuserStopping, vuserID)
+	mge.releaseVUserIDLocked(vuserID)
+	mge.signalVUserChangeLocked()
+	if err := mge.reconcileJavaVuserCapacityLocked(); err != nil {
+		// Teardown only reduces live demand. Treat an increase request here as
+		// an invariant violation while retaining the existing reservation.
+		slog.Error("failed to reconcile java_vuser capacity after teardown", "err", err)
+	}
+}
+
+func (mge *MultiGroupEngine) liveVUsersByGroupLocked() map[string]int64 {
+	liveByGroup := make(map[string]int64, len(mge.groups))
+	for _, groupName := range mge.vuserGroups {
+		liveByGroup[groupName]++
+	}
+	return liveByGroup
+}
+
+func (mge *MultiGroupEngine) reconcileJavaVuserCapacityLocked() error {
+	if mge.javaVuserReservation == nil {
+		return nil
+	}
+	liveByGroup := mge.liveVUsersByGroupLocked()
+	var demand int64
+	for _, group := range mge.groups {
+		plan := NewJavaVuserCapacityPlan(group.Script)
+		if !plan.RequiresPersistentLifecycle() {
+			continue
+		}
+		demand += max(plan.Demand(group.VUsers), liveByGroup[group.Name])
+	}
+	return mge.javaVuserReservation.Resize(demand)
+}
+
+// WaitForGroupVUsers waits until no more than maxLive VUsers for groupName
+// remain registered. Registration is removed only after protocol teardown, so
+// callers can use this to retain external capacity through JVM/session reap.
+func (mge *MultiGroupEngine) WaitForGroupVUsers(ctx context.Context, groupName string, maxLive int) error {
+	if mge == nil {
+		return fmt.Errorf("multi-group engine is unavailable")
+	}
+	if maxLive < 0 {
+		return fmt.Errorf("maximum live vusers must be non-negative")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for {
+		mge.mu.Lock()
+		live := 0
+		for _, liveGroup := range mge.vuserGroups {
+			if liveGroup == groupName {
+				live++
+			}
+		}
+		if live <= maxLive {
+			mge.mu.Unlock()
+			return nil
+		}
+		changed := mge.vuserChanged
+		mge.mu.Unlock()
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-changed:
+		}
+	}
+}
+
 func (mge *MultiGroupEngine) holdScaleGuard(loopCtx context.Context, wg *sync.WaitGroup) {
 	<-loopCtx.Done()
 	mge.mu.Lock()
@@ -728,6 +1092,7 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 	mge.mu.Lock()
 	mge.vuserCancels[vuserID] = cancelVUser
 	mge.vuserGroups[vuserID] = group.Name
+	mge.signalVUserChangeLocked()
 	mge.mu.Unlock()
 
 	runtimeVUserID := group.VUserIDOffset + vuserID
@@ -796,10 +1161,7 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 
 func (mge *MultiGroupEngine) finishReservedVUser(vuserID int, wg *sync.WaitGroup) {
 	mge.mu.Lock()
-	delete(mge.vuserCancels, vuserID)
-	delete(mge.vuserGroups, vuserID)
-	delete(mge.vuserStopping, vuserID)
-	mge.releaseVUserIDLocked(vuserID)
+	mge.unregisterVUserLocked(vuserID)
 	if mge.activeReserved > 0 {
 		mge.activeReserved--
 	}
@@ -941,6 +1303,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 	mge.mu.Lock()
 	mge.vuserCancels[vuserID] = cancelVUser
 	mge.vuserGroups[vuserID] = group.Name
+	mge.signalVUserChangeLocked()
 	mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 	mge.mu.Unlock()
 
@@ -951,10 +1314,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 		slog.Error("failed to create protocol for open workload worker", "group", group.Name, "worker", runtimeVUserID, "err", safeErr)
 		cancelVUser()
 		mge.mu.Lock()
-		delete(mge.vuserCancels, vuserID)
-		delete(mge.vuserGroups, vuserID)
-		delete(mge.vuserStopping, vuserID)
-		mge.releaseVUserIDLocked(vuserID)
+		mge.unregisterVUserLocked(vuserID)
 		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 		mge.mu.Unlock()
 		release()
@@ -965,14 +1325,11 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 		safeErr := err
 		slog.Error("failed to init protocol for open workload worker", "group", group.Name, "worker", runtimeVUserID, "err", safeErr)
 		cancelVUser()
+		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
 		mge.mu.Lock()
-		delete(mge.vuserCancels, vuserID)
-		delete(mge.vuserGroups, vuserID)
-		delete(mge.vuserStopping, vuserID)
-		mge.releaseVUserIDLocked(vuserID)
+		mge.unregisterVUserLocked(vuserID)
 		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 		mge.mu.Unlock()
-		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
 		release()
 		return safeErr
 	}
@@ -994,10 +1351,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 		defer func() {
 			runProtocolTeardown(vuProto, redaction)
 			mge.mu.Lock()
-			delete(mge.vuserCancels, vuserID)
-			delete(mge.vuserGroups, vuserID)
-			delete(mge.vuserStopping, vuserID)
-			mge.releaseVUserIDLocked(vuserID)
+			mge.unregisterVUserLocked(vuserID)
 			mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 			mge.mu.Unlock()
 		}()
@@ -1030,6 +1384,71 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) error {
 	mge.scaleMu.Lock()
 	defer mge.scaleMu.Unlock()
+	if targetVUsers < 0 {
+		return fmt.Errorf("target vusers must be non-negative")
+	}
+	if targetVUsers > MaxEngineVUsers {
+		return fmt.Errorf("target vusers must not exceed %d", MaxEngineVUsers)
+	}
+
+	mge.mu.Lock()
+	groupIndex := -1
+	for i := range mge.groups {
+		if mge.groups[i].Name == groupName {
+			groupIndex = i
+			break
+		}
+	}
+	if groupIndex < 0 {
+		mge.mu.Unlock()
+		return fmt.Errorf("group not found: %s", groupName)
+	}
+	if mge.baseCtx == nil || mge.baseCtx.Err() != nil || mge.wg == nil || !mge.controlsReady || !mge.scalingOpen {
+		mge.mu.Unlock()
+		return fmt.Errorf("engine not running")
+	}
+	snapshotGroup := mge.groups[groupIndex]
+	if isOpenWorkload(snapshotGroup.Script) {
+		mge.mu.Unlock()
+		return fmt.Errorf("scaling open workload groups is not supported")
+	}
+	aggregateTarget := int64(targetVUsers)
+	for i := range mge.groups {
+		if i != groupIndex {
+			aggregateTarget += int64(mge.groups[i].VUsers)
+		}
+	}
+	if aggregateTarget > MaxEngineVUsers {
+		mge.mu.Unlock()
+		return fmt.Errorf("aggregate target vusers must not exceed %d", MaxEngineVUsers)
+	}
+	if snapshotGroup.VUserIDSpan > 0 && targetVUsers > snapshotGroup.VUserIDSpan {
+		mge.mu.Unlock()
+		return fmt.Errorf("target vusers %d exceed vuser id span %d", targetVUsers, snapshotGroup.VUserIDSpan)
+	}
+	if targetVUsers > 0 && snapshotGroup.VUserIDOffset > int(^uint(0)>>1)-targetVUsers {
+		mge.mu.Unlock()
+		return fmt.Errorf("target vusers overflow the configured vuser id offset")
+	}
+	targetCapacityPlan := NewJavaVuserCapacityPlan(snapshotGroup.Script)
+	currentVUsers := snapshotGroup.VUsers
+	mge.mu.Unlock()
+
+	var observedPersistentJavaLimit int64
+	if targetCapacityPlan.RequiresPersistentLifecycle() && targetVUsers > currentVUsers {
+		// Capability discovery can cold-start the sidecar probe. Keep it outside
+		// the engine state lock so teardown, metrics, and stop controls continue.
+		instance, err := protocol.Get("java_vuser")
+		if err != nil {
+			return fmt.Errorf("inspect java_vuser runtime capacity: %w", err)
+		}
+		capabilities, err := javaVuserPersistentCapacityForInstance(instance)
+		if err != nil {
+			return err
+		}
+		observedPersistentJavaLimit = capabilities.MaxVUsers
+	}
+
 	mge.mu.Lock()
 	defer mge.mu.Unlock()
 
@@ -1037,26 +1456,14 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 		return fmt.Errorf("engine not running")
 	}
 
-	var group *GroupConfig
-	for i := range mge.groups {
-		if mge.groups[i].Name == groupName {
-			group = &mge.groups[i]
-			break
-		}
-	}
-	if group == nil {
-		return fmt.Errorf("group not found: %s", groupName)
+	group := &mge.groups[groupIndex]
+	if group.Name != groupName || group.VUsers != currentVUsers {
+		return fmt.Errorf("group changed while inspecting java_vuser runtime capacity")
 	}
 	if isOpenWorkload(group.Script) {
 		return fmt.Errorf("scaling open workload groups is not supported")
 	}
-	if targetVUsers < 0 {
-		return fmt.Errorf("target vusers must be non-negative")
-	}
-	if targetVUsers > MaxEngineVUsers {
-		return fmt.Errorf("target vusers must not exceed %d", MaxEngineVUsers)
-	}
-	aggregateTarget := int64(targetVUsers)
+	aggregateTarget = int64(targetVUsers)
 	for i := range mge.groups {
 		if &mge.groups[i] != group {
 			aggregateTarget += int64(mge.groups[i].VUsers)
@@ -1080,17 +1487,29 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 		go mge.holdScaleGuard(mge.loopCtx, mge.wg)
 	}
 
-	currentVUsers := group.VUsers
 	delta := targetVUsers - currentVUsers
-	group.VUsers = targetVUsers
-
 	if delta > 0 {
 		availableIDs := mge.vuserIDSpan - len(mge.vuserIDsInUse)
 		if delta > availableIDs {
-			group.VUsers = currentVUsers
 			return fmt.Errorf("vuser id namespace has %d available ids, need %d", availableIDs, delta)
 		}
-		protoConfig := buildProtoConfigForRunModeWithSecretResolver(group.Script, "load", group.SecretResolver)
+	}
+	if targetCapacityPlan.RequiresPersistentLifecycle() && delta != 0 {
+		persistentJavaTarget := persistentJavaScaleCapacityDemand(
+			mge.groups,
+			mge.liveVUsersByGroupLocked(),
+			groupIndex,
+			targetVUsers,
+		)
+		if err := mge.javaVuserReservation.resizeWithinLimit(persistentJavaTarget, observedPersistentJavaLimit); err != nil {
+			return err
+		}
+	}
+	group.VUsers = targetVUsers
+
+	if delta > 0 {
+		protoConfig := buildGroupProtoConfig(*group, "load")
+		protoConfig["group_name"] = group.Name
 		applyRuntimeMockNamespace(protoConfig, mge.mockNamespace)
 
 		spawnedIDs := make([]int, 0, delta)
@@ -1101,6 +1520,9 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 					mge.vuserStopping[id] = true
 					cancel()
 				}
+			}
+			if err := mge.reconcileJavaVuserCapacityLocked(); err != nil {
+				slog.Error("failed to reconcile java_vuser capacity after scale rollback", "group", groupName, "err", err)
 			}
 		}
 		for i := 0; i < delta; i++ {
@@ -1132,6 +1554,9 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 		sort.Sort(sort.Reverse(sort.IntSlice(ids)))
 		if len(ids) < toRemove {
 			group.VUsers = currentVUsers
+			if err := mge.reconcileJavaVuserCapacityLocked(); err != nil {
+				slog.Error("failed to reconcile java_vuser capacity after scale rollback", "group", groupName, "err", err)
+			}
 			return fmt.Errorf("group %q only has %d active vusers available to remove", groupName, len(ids))
 		}
 		for _, id := range ids[:toRemove] {

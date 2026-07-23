@@ -15,8 +15,12 @@ func isJavaProtocolsProject(projectConfig *ProjectConfig) bool {
 	if projectConfig == nil {
 		return false
 	}
-	if profile, _, ok := profileForProjectConfig(projectConfig); ok && profile.Canonical == "java_jms_solace" {
-		return true
+	if profile, _, ok := profileForProjectConfig(projectConfig); ok {
+		if profile.Canonical == "java_vuser" ||
+			profile.Canonical == "java_jms_solace" ||
+			isSpecializedJavaProfile(profile.Canonical) {
+			return true
+		}
 	}
 	if strings.EqualFold(strings.TrimSpace(projectConfig.ScriptType), "Java_protocols") {
 		return true

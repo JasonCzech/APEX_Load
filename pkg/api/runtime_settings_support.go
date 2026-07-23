@@ -143,6 +143,7 @@ func runtimeSettingsSupportMatrix() []RuntimeSettingsSupportEntry {
 	}
 	matrix = append(matrix, web2BrowserProfileRuntimeSupportEntries()...)
 	matrix = append(matrix, nativeRuntimeSupportEntries()...)
+	matrix = append(matrix, javaVuserRuntimeSupportEntries()...)
 	sort.SliceStable(matrix, func(i, j int) bool {
 		if strings.Join(matrix[i].Protocols, ",") == strings.Join(matrix[j].Protocols, ",") {
 			return matrix[i].ID < matrix[j].ID
@@ -150,6 +151,28 @@ func runtimeSettingsSupportMatrix() []RuntimeSettingsSupportEntry {
 		return strings.Join(matrix[i].Protocols, ",") < strings.Join(matrix[j].Protocols, ",")
 	})
 	return matrix
+}
+
+func javaVuserRuntimeSupportEntries() []RuntimeSettingsSupportEntry {
+	sourceEntries := enterprisearchive.GetJavaVuserRTSSupportMatrix()
+	entries := make([]RuntimeSettingsSupportEntry, 0, len(sourceEntries))
+	for _, entry := range sourceEntries {
+		entries = append(entries, RuntimeSettingsSupportEntry{
+			ID:                  entry.ID,
+			Protocols:           []string{"java_vuser"},
+			Source:              "source_java_vuser",
+			Area:                entry.Area,
+			Concept:             entry.Concept,
+			Fields:              cloneStringSlice(entry.Fields),
+			Status:              string(entry.Status),
+			ExecutionScope:      "Reviewed Java Vuser scripts executed by the governed local or sidecar JVM runner.",
+			ImportSources:       []string{"Enterprise Script Archive Java Vuser", "JSON DSL"},
+			Evidence:            []string{"pkg/convert/enterprisearchive/java_runtime_config_test.go", "pkg/protocol/java_vuser/java_vuser_test.go"},
+			RecommendedWorkflow: "Import, review Java source and runtime settings, provision precompiled classpath artifacts on every runner, then pass runtime preflight before launch.",
+			Notes:               entry.Notes,
+		})
+	}
+	return entries
 }
 
 func web2BrowserProfileRuntimeSupportEntries() []RuntimeSettingsSupportEntry {

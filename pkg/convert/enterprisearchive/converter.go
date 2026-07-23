@@ -74,9 +74,9 @@ type ConvertOptions struct {
 	// imports enable this so payload bytes never leak while operators get a
 	// re-provisioning handle; lower-level conversions keep opaque bodies empty.
 	UseMaskedBodySecretReferences bool
-	// AllowJavaVuserRunner emits a governed java_vuser sidecar-runner draft for
-	// unmappable Java archives. It is intentionally opt-in because Java replay
-	// executes arbitrary source code inside a generator-java runner boundary.
+	// AllowJavaVuserRunner is retained for API compatibility. Java archives now
+	// always produce a governed java_vuser draft, so this option is deprecated
+	// and has no effect.
 	AllowJavaVuserRunner bool
 
 	// HTTP runtime settings mapped from source runtime config.

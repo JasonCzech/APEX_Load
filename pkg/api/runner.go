@@ -1267,6 +1267,16 @@ func (tr *TestRunner) getExecutionBackend() testExecutionBackend {
 // an HTTP 503 so clients retry against the active leader.
 var errNotExecutionLeader = errors.New("controller is not the active execution leader")
 
+type executionLeaseTermContextKey struct{}
+
+func executionLeaseTermFromContext(ctx context.Context) (executionLeaseTerm, bool) {
+	if ctx == nil {
+		return executionLeaseTerm{}, false
+	}
+	term, ok := ctx.Value(executionLeaseTermContextKey{}).(executionLeaseTerm)
+	return term, ok && term.valid()
+}
+
 // isExecutionLeader reports whether this replica may mutate live test-execution
 // state. With no leadership coordinator (single-node / tests) it is always true.
 func (tr *TestRunner) isExecutionLeader() bool {
@@ -1291,8 +1301,8 @@ func (tr *TestRunner) holdsExecutionLeadership() bool {
 }
 
 // executionOperationContext combines caller cancellation with the current
-// leadership epoch. Single-controller deployments retain ordinary caller
-// cancellation semantics.
+// leadership epoch and its immutable durable lease term. Single-controller
+// deployments retain ordinary caller cancellation semantics.
 func (tr *TestRunner) executionOperationContext(parent context.Context) (context.Context, context.CancelFunc) {
 	if parent == nil {
 		parent = context.Background()

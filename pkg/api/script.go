@@ -29,6 +29,16 @@ type conditionalScriptPersistence interface {
 	UpdateScriptIfUnchanged(script *dsl.Script, expectedUpdatedAt time.Time) (bool, error)
 }
 
+type correlationRulesetFencedScriptPersistence interface {
+	UpdateScriptIfUnchangedAndCorrelationRulesetCurrent(
+		script *dsl.Script,
+		expectedUpdatedAt time.Time,
+		rulesetID string,
+		expectedRulesetProjectID string,
+		expectedRulesetUpdatedAt time.Time,
+	) (bool, error)
+}
+
 type conditionalScriptDeletePersistence interface {
 	DeleteScriptIfUnchanged(id string, expectedUpdatedAt time.Time) (bool, error)
 }
@@ -125,8 +135,23 @@ func (tr *TestRunner) StoreScript(script *dsl.Script) *StoredScript {
 }
 
 func (tr *TestRunner) StoreScriptDurable(script *dsl.Script) (*StoredScript, error) {
+	return tr.storeScriptDurable(script, false)
+}
+
+// storeScriptDurableForRestore is restricted to hydrating records that already
+// existed before authoring-session governance was introduced. New external
+// persistence paths must use StoreScriptDurable and cannot manufacture legacy
+// full_lifecycle grandfathering.
+func (tr *TestRunner) storeScriptDurableForRestore(script *dsl.Script) (*StoredScript, error) {
+	return tr.storeScriptDurable(script, true)
+}
+
+func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJava bool) (*StoredScript, error) {
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
+	}
+	if scriptRequiresJavaVuserAuthoringApproval(script) && !restoringExistingJava {
+		return nil, fmt.Errorf("Java Vuser scripts must be saved through authoring-session review and approval")
 	}
 	if err := validatePersistentLibraryScript(script); err != nil {
 		return nil, err
@@ -142,6 +167,13 @@ func (tr *TestRunner) StoreScriptDurable(script *dsl.Script) (*StoredScript, err
 		return nil, err
 	}
 	existing := tr.scripts[scriptID]
+	current, err := tr.durableScriptForMutationLocked(scriptID)
+	if err != nil {
+		return nil, err
+	}
+	if scriptRequiresJavaVuserAuthoringApproval(current) && !restoringExistingJava {
+		return nil, fmt.Errorf("Java Vuser scripts must be changed through local authoring-session review and approval")
+	}
 	var prior *dsl.Script
 	if existing != nil {
 		prior = existing.Script
@@ -177,6 +209,16 @@ func (tr *TestRunner) StoreScriptDurable(script *dsl.Script) (*StoredScript, err
 	if existing != nil && !existing.CreatedAt.IsZero() {
 		createdAt = existing.CreatedAt
 	}
+	if script.CreatedAt.IsZero() {
+		script.CreatedAt = createdAt
+	}
+	if tr.scriptStore == nil {
+		now := time.Now().UTC()
+		if existing != nil && existing.Script != nil && !now.After(existing.Script.UpdatedAt) {
+			now = existing.Script.UpdatedAt.Add(time.Nanosecond)
+		}
+		script.UpdatedAt = now
+	}
 	stored := &StoredScript{
 		ID:              script.ID,
 		RefKey:          script.RefKey,
@@ -198,10 +240,6 @@ func (tr *TestRunner) StoreScriptDurable(script *dsl.Script) (*StoredScript, err
 				return nil, err
 			}
 		} else {
-			current, err := tr.durableScriptForMutationLocked(script.ID)
-			if err != nil {
-				return nil, err
-			}
 			if current == nil {
 				store, ok := tr.scriptStore.(createOnlyScriptPersistence)
 				if !ok {
@@ -258,8 +296,24 @@ func (tr *TestRunner) StoreScriptDurable(script *dsl.Script) (*StoredScript, err
 // an existing durable ID. It is idempotent for an identical prior create, which
 // lets an interrupted authoring approval resume safely across HA replicas.
 func (tr *TestRunner) CreateScriptDurable(script *dsl.Script) (*StoredScript, error) {
+	return tr.createScriptDurable(script, false)
+}
+
+func (tr *TestRunner) createAuthoringApprovedScriptDurable(script *dsl.Script) (*StoredScript, error) {
+	if scriptRequiresJavaVuserAuthoringApproval(script) {
+		if _, ok := readJavaVuserAuthoringApproval(script); !ok {
+			return nil, fmt.Errorf("Java Vuser authoring approval evidence is missing")
+		}
+	}
+	return tr.createScriptDurable(script, true)
+}
+
+func (tr *TestRunner) createScriptDurable(script *dsl.Script, authoringApprovedJava bool) (*StoredScript, error) {
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
+	}
+	if scriptRequiresJavaVuserAuthoringApproval(script) && !authoringApprovedJava {
+		return nil, fmt.Errorf("Java Vuser scripts must be saved through authoring-session review and approval")
 	}
 	if err := validatePersistentLibraryScript(script); err != nil {
 		return nil, err
@@ -365,6 +419,9 @@ func (tr *TestRunner) UpdateScriptDurableIfUnchanged(script, expected *dsl.Scrip
 	if script == nil || expected == nil {
 		return nil, false, fmt.Errorf("script and expected durable version are required")
 	}
+	if scriptRequiresJavaVuserAuthoringApproval(script) || scriptRequiresJavaVuserAuthoringApproval(expected) {
+		return nil, false, fmt.Errorf("Java Vuser scripts cannot be synchronized into executable storage without local authoring-session review and approval")
+	}
 	if err := validatePersistentLibraryScript(script); err != nil {
 		return nil, false, err
 	}
@@ -375,6 +432,13 @@ func (tr *TestRunner) UpdateScriptDurableIfUnchanged(script, expected *dsl.Scrip
 	}
 	if err := tr.rejectActivePrivateCISnapshotMutationLocked(script.ID); err != nil {
 		return nil, false, err
+	}
+	current, err := tr.durableScriptForMutationLocked(script.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	if scriptRequiresJavaVuserAuthoringApproval(current) {
+		return nil, false, fmt.Errorf("Java Vuser scripts cannot be synchronized into executable storage without local authoring-session review and approval")
 	}
 	script.ProjectID = normalizeProjectID(script.ProjectID)
 	if script.ProjectID != normalizeProjectID(expected.ProjectID) {
@@ -567,8 +631,15 @@ func (tr *TestRunner) ReplayScript(id string, opts engine.ReplayOptions) (*engin
 }
 
 func (tr *TestRunner) ReplayScriptDefinition(script *dsl.Script, opts engine.ReplayOptions) (*engine.ReplayReport, error) {
+	return tr.ReplayScriptDefinitionContext(context.Background(), script, opts)
+}
+
+func (tr *TestRunner) ReplayScriptDefinitionContext(ctx context.Context, script *dsl.Script, opts engine.ReplayOptions) (*engine.ReplayReport, error) {
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 	effectiveRedactionRules, err := tr.resolveEffectiveRedactionRules(script.ProjectID, opts.RedactionRules)
 	if err != nil {
@@ -578,7 +649,7 @@ func (tr *TestRunner) ReplayScriptDefinition(script *dsl.Script, opts engine.Rep
 	if opts.SecretResolver == nil {
 		opts.SecretResolver = tr.secretResolverForProject(script.ProjectID)
 	}
-	return engine.ReplayScript(context.Background(), script, opts)
+	return engine.ReplayScript(ctx, script, opts)
 }
 
 func (tr *TestRunner) ListScripts() []*StoredScript {
@@ -709,6 +780,61 @@ func (tr *TestRunner) UpdateScriptDurable(id string, script *dsl.Script) (*Store
 // ID's delete/recreate window from turning a previously authorized request into
 // a cross-project overwrite.
 func (tr *TestRunner) UpdateScriptDurableInProject(id string, script *dsl.Script, expectedProjectID string) (*StoredScript, bool, error) {
+	return tr.updateScriptDurableInProject(id, script, expectedProjectID, time.Time{}, "", "", time.Time{})
+}
+
+// UpdateScriptDurableInProjectIfUnchanged applies a mutation only when the
+// authoritative script still has the exact timestamp and executable action
+// graph observed by the caller. It is used by multi-step authoring operations
+// that derive a clone before committing it; the ordinary durable update's
+// storage CAS alone cannot detect a change that happened before its internal
+// authoritative read.
+func (tr *TestRunner) UpdateScriptDurableInProjectIfUnchanged(id string, script *dsl.Script, expectedProjectID string, expectedUpdatedAt time.Time, expectedActionGraphDigest string) (*StoredScript, bool, error) {
+	if expectedUpdatedAt.IsZero() || strings.TrimSpace(expectedActionGraphDigest) == "" {
+		return nil, false, fmt.Errorf("script mutation requires an original timestamp and action-graph digest")
+	}
+	return tr.updateScriptDurableInProject(id, script, expectedProjectID, expectedUpdatedAt, expectedActionGraphDigest, "", time.Time{})
+}
+
+// UpdateScriptDurableInProjectIfUnchangedAndCorrelationRulesetCurrent adds an
+// atomic durable ruleset-revision fence to the ordinary script/action-graph
+// CAS. Correlation apply uses this boundary so the ruleset cannot change in the
+// final window between preview computation and script commit.
+func (tr *TestRunner) UpdateScriptDurableInProjectIfUnchangedAndCorrelationRulesetCurrent(
+	id string,
+	script *dsl.Script,
+	expectedProjectID string,
+	expectedUpdatedAt time.Time,
+	expectedActionGraphDigest string,
+	rulesetID string,
+	expectedRulesetUpdatedAt time.Time,
+) (*StoredScript, bool, error) {
+	if expectedUpdatedAt.IsZero() ||
+		strings.TrimSpace(expectedActionGraphDigest) == "" ||
+		strings.TrimSpace(rulesetID) == "" ||
+		expectedRulesetUpdatedAt.IsZero() {
+		return nil, false, fmt.Errorf("script mutation requires original script and correlation ruleset revisions")
+	}
+	return tr.updateScriptDurableInProject(
+		id,
+		script,
+		expectedProjectID,
+		expectedUpdatedAt,
+		expectedActionGraphDigest,
+		rulesetID,
+		expectedRulesetUpdatedAt,
+	)
+}
+
+func (tr *TestRunner) updateScriptDurableInProject(
+	id string,
+	script *dsl.Script,
+	expectedProjectID string,
+	expectedUpdatedAt time.Time,
+	expectedActionGraphDigest string,
+	rulesetID string,
+	expectedRulesetUpdatedAt time.Time,
+) (*StoredScript, bool, error) {
 	if script == nil {
 		return nil, false, fmt.Errorf("script is required")
 	}
@@ -736,15 +862,38 @@ func (tr *TestRunner) UpdateScriptDurableInProject(id string, script *dsl.Script
 	if err := verifyScriptMutationOwnership(current, expectedProjectID); err != nil {
 		return nil, false, err
 	}
+	if !expectedUpdatedAt.IsZero() && !current.UpdatedAt.Equal(expectedUpdatedAt) {
+		return nil, false, errScriptConcurrentChange
+	}
+	if expectedActionGraphDigest != "" {
+		currentDigest, digestErr := scriptCorrelationActionGraphDigest(current)
+		if digestErr != nil {
+			return nil, false, digestErr
+		}
+		if currentDigest != expectedActionGraphDigest {
+			return nil, false, errScriptConcurrentChange
+		}
+	}
 	projected, err := preparePersistentLibraryScript(script, current)
 	if err != nil {
 		return nil, false, err
 	}
 	script = projected
+	script.ID = current.ID
+	script.ProjectID = current.ProjectID
+	currentRequiresJavaApproval := scriptRequiresJavaVuserAuthoringApproval(current)
+	scriptRequiresJavaApproval := scriptRequiresJavaVuserAuthoringApproval(script)
+	if currentRequiresJavaApproval && !scriptRequiresJavaApproval {
+		return nil, false, fmt.Errorf("Java Vuser scripts must be changed through local authoring-session review and approval")
+	}
+	if scriptRequiresJavaApproval {
+		if conflict := tr.javaVuserApprovalConflict(script); conflict != "" {
+			return nil, false, fmt.Errorf("%s", conflict)
+		}
+	}
 	if err := tr.projectDeletionErrorLocked(current.ProjectID); err != nil {
 		return nil, false, err
 	}
-	script.ID = current.ID
 	if strings.TrimSpace(script.Version) == "" {
 		script.Version = current.Version
 	}
@@ -765,16 +914,42 @@ func (tr *TestRunner) UpdateScriptDurableInProject(id string, script *dsl.Script
 	// Project ownership is immutable for an in-place update. Moving a script
 	// requires a dedicated operation that authorizes both source and destination;
 	// ordinary update callers must never be able to rewrite tenant ownership.
-	script.ProjectID = current.ProjectID
 	if script.FolderID == nil {
 		script.FolderID = current.FolderID
 	}
 	if script.CreatedAt.IsZero() {
 		script.CreatedAt = current.CreatedAt
 	}
+	if tr.scriptStore == nil {
+		if strings.TrimSpace(rulesetID) != "" {
+			return nil, false, fmt.Errorf("atomic correlation ruleset apply requires durable storage")
+		}
+		now := time.Now().UTC()
+		if !now.After(current.UpdatedAt) {
+			now = current.UpdatedAt.Add(time.Nanosecond)
+		}
+		script.UpdatedAt = now
+	}
 	if tr.scriptStore != nil {
-		store, ok := tr.scriptStore.(conditionalScriptPersistence)
-		if !ok {
+		if strings.TrimSpace(rulesetID) != "" {
+			store, ok := tr.scriptStore.(correlationRulesetFencedScriptPersistence)
+			if !ok {
+				return nil, false, fmt.Errorf("atomic correlation ruleset apply is not supported by the configured storage")
+			}
+			updated, err := store.UpdateScriptIfUnchangedAndCorrelationRulesetCurrent(
+				script,
+				current.UpdatedAt,
+				rulesetID,
+				expectedProjectID,
+				expectedRulesetUpdatedAt,
+			)
+			if err != nil {
+				return nil, false, err
+			}
+			if !updated {
+				return nil, false, errScriptConcurrentChange
+			}
+		} else if store, ok := tr.scriptStore.(conditionalScriptPersistence); !ok {
 			if err := tr.saveStoredScript(script); err != nil {
 				return nil, false, err
 			}

@@ -127,6 +127,9 @@ func paramizeSummary(suggestions []paramize.Suggestion) paramize.Summary {
 func sampleCorrelationsToPreApplied(correlations []sample.Correlation) []paramize.PreAppliedCorrelation {
 	preApplied := make([]paramize.PreAppliedCorrelation, 0, len(correlations))
 	for _, corr := range correlations {
+		if !corr.PreApplied {
+			continue
+		}
 		preApplied = append(preApplied, paramize.PreAppliedCorrelation{
 			Name:        corr.Name,
 			Source:      corr.Source,

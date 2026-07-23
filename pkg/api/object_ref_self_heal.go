@@ -8,6 +8,7 @@ package api
 // path (the controller has the store); distributed load runs cannot write back.
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -41,6 +42,23 @@ type objectRepositoryCASPersistence interface {
 	UpdateObjectRepositoryIfUnchanged(repo *storage.ObjectRepository, expectedUpdatedAt time.Time) (bool, error)
 }
 
+type objectRepositoryContextCASPersistence interface {
+	UpdateObjectRepositoryIfUnchangedContext(ctx context.Context, repo *storage.ObjectRepository, expectedUpdatedAt time.Time) (bool, error)
+}
+
+type objectRepositoryLeaseTermContextCASPersistence interface {
+	UpdateObjectRepositoryIfUnchangedContextAndLeaseTermHeld(
+		ctx context.Context,
+		repo *storage.ObjectRepository,
+		expectedUpdatedAt time.Time,
+		leaseName string,
+		leaseOwnerID string,
+		leaseGeneration uint64,
+	) (bool, error)
+}
+
+type objectRepositoryContextCASUpdater func(context.Context, *storage.ObjectRepository, time.Time) (bool, error)
+
 type pendingRepositoryHeal struct {
 	logicalName string
 	heal        selfHealRecord
@@ -52,17 +70,21 @@ type pendingRepositoryHeal struct {
 // already present is left in place (its confidence is only raised, never
 // lowered) so a single lucky heal cannot reorder a shared object's primary
 // selector. Promotion is left to a human via the dashboard.
-func (s *Server) persistSelfHealToRepository(projectID string, script *dsl.Script, report *engine.ReplayReport) {
-	if s == nil || s.store == nil || script == nil || report == nil {
+func (s *Server) persistSelfHealToRepository(ctx context.Context, projectID string, script *dsl.Script, report *engine.ReplayReport) {
+	if s == nil || s.store == nil || script == nil || report == nil || ctx == nil || ctx.Err() != nil {
+		return
+	}
+	hookProjectID := normalizeProjectID(projectID)
+	scriptProjectID := normalizeProjectID(script.ProjectID)
+	if hookProjectID != scriptProjectID {
 		return
 	}
 	heals := collectSelfHeals(report)
 	if len(heals) == 0 {
 		return
 	}
-	casStore, ok := s.store.(objectRepositoryCASPersistence)
+	updateRepository, ok := s.selfHealRepositoryCASUpdater(ctx)
 	if !ok {
-		slog.Warn("persist self-heal skipped because storage lacks optimistic object repository updates")
 		return
 	}
 	bindings := objectRefBindingsByActionName(script)
@@ -78,25 +100,26 @@ func (s *Server) persistSelfHealToRepository(projectID string, script *dsl.Scrip
 	changed := map[string]bool{}
 	pending := map[string][]pendingRepositoryHeal{}
 	for _, heal := range heals {
-		binding := objectRefBinding{logicalName: heal.logicalName, repoID: heal.repoID}
-		if binding.repoID == "" || binding.logicalName == "" {
-			var ok bool
-			binding, ok = bindings[heal.actionName]
-			if !ok {
-				continue
-			}
+		if ctx.Err() != nil {
+			return
+		}
+		binding, ok := bindings[heal.actionName]
+		if !ok || !selfHealEvidenceCorroboratesBinding(heal, binding) {
+			continue
 		}
 		if binding.repoID == "" || binding.logicalName == "" {
 			continue
 		}
-		repo := loaded[binding.repoID]
-		if repo == nil {
+		repo, alreadyLoaded := loaded[binding.repoID]
+		if !alreadyLoaded {
 			fetched, err := s.store.GetObjectRepository(binding.repoID)
-			if err != nil || fetched == nil {
-				continue
+			if err == nil && selfHealRepositoryMatchesProjects(fetched, hookProjectID, scriptProjectID) {
+				repo = fetched
 			}
-			repo = fetched
 			loaded[binding.repoID] = repo
+		}
+		if repo == nil {
+			continue
 		}
 		if applyHealToRepositoryObject(repo, binding.logicalName, heal, repo.AutoPromoteOnHeal) {
 			changed[binding.repoID] = true
@@ -107,17 +130,86 @@ func (s *Server) persistSelfHealToRepository(projectID string, script *dsl.Scrip
 		if !changed[repoID] {
 			continue
 		}
-		if err := s.persistRepositoryHealsCAS(casStore, repo, pending[repoID]); err != nil {
+		if err := s.persistRepositoryHealsCAS(ctx, updateRepository, repo, pending[repoID], hookProjectID, scriptProjectID); err != nil {
 			slog.Warn("persist self-heal to object repository failed", "repository", repoID, "error", err)
 		}
 	}
 }
 
-func (s *Server) persistRepositoryHealsCAS(store objectRepositoryCASPersistence, repo *storage.ObjectRepository, pending []pendingRepositoryHeal) error {
+func (s *Server) selfHealRepositoryCASUpdater(ctx context.Context) (objectRepositoryContextCASUpdater, bool) {
+	durableHAMode := s != nil && (s.haExecution || (s.runner != nil && s.runner.durableExecutionFence))
+	if durableHAMode {
+		if s.runner == nil || !s.runner.durableExecutionFence || s.runner.leadership == nil ||
+			!sameStoreInstance(s.runner.leadership.store, s.store) {
+			slog.Warn("persist self-heal skipped because durable execution lease and repository writes do not share a store")
+			return nil, false
+		}
+		term, ok := executionLeaseTermFromContext(ctx)
+		if !ok {
+			slog.Warn("persist self-heal skipped because its durable execution lease term is missing")
+			return nil, false
+		}
+		fencedStore, ok := s.store.(objectRepositoryLeaseTermContextCASPersistence)
+		if !ok {
+			slog.Warn("persist self-heal skipped because storage lacks lease-term-fenced object repository updates")
+			return nil, false
+		}
+		return func(ctx context.Context, repo *storage.ObjectRepository, expectedUpdatedAt time.Time) (bool, error) {
+			return fencedStore.UpdateObjectRepositoryIfUnchangedContextAndLeaseTermHeld(
+				ctx,
+				repo,
+				expectedUpdatedAt,
+				executionLeaseName,
+				term.ownerID,
+				term.generation,
+			)
+		}, true
+	}
+	casStore, ok := s.store.(objectRepositoryContextCASPersistence)
+	if !ok {
+		slog.Warn("persist self-heal skipped because storage lacks context-aware optimistic object repository updates")
+		return nil, false
+	}
+	return casStore.UpdateObjectRepositoryIfUnchangedContext, true
+}
+
+func selfHealEvidenceCorroboratesBinding(heal selfHealRecord, binding objectRefBinding) bool {
+	if heal.repoID != "" && heal.repoID != binding.repoID {
+		return false
+	}
+	if heal.logicalName != "" && !strings.EqualFold(heal.logicalName, binding.logicalName) {
+		return false
+	}
+	return true
+}
+
+func selfHealRepositoryMatchesProjects(repo *storage.ObjectRepository, hookProjectID, scriptProjectID string) bool {
+	if repo == nil {
+		return false
+	}
+	repoProjectID := normalizeProjectID(repo.ProjectID)
+	return repoProjectID == normalizeProjectID(hookProjectID) &&
+		repoProjectID == normalizeProjectID(scriptProjectID)
+}
+
+func (s *Server) persistRepositoryHealsCAS(
+	ctx context.Context,
+	updateRepository objectRepositoryContextCASUpdater,
+	repo *storage.ObjectRepository,
+	pending []pendingRepositoryHeal,
+	hookProjectID string,
+	scriptProjectID string,
+) error {
 	const maxAttempts = 5
 	for attempt := 0; attempt < maxAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if !selfHealRepositoryMatchesProjects(repo, hookProjectID, scriptProjectID) {
+			return fmt.Errorf("object repository %q project changed during self-heal", repo.ID)
+		}
 		expectedUpdatedAt := repo.UpdatedAt
-		updated, err := store.UpdateObjectRepositoryIfUnchanged(repo, expectedUpdatedAt)
+		updated, err := updateRepository(ctx, repo, expectedUpdatedAt)
 		if err != nil {
 			return err
 		}
@@ -130,6 +222,9 @@ func (s *Server) persistRepositoryHealsCAS(store objectRepositoryCASPersistence,
 		}
 		if fresh == nil {
 			return fmt.Errorf("object repository %q disappeared during self-heal", repo.ID)
+		}
+		if !selfHealRepositoryMatchesProjects(fresh, hookProjectID, scriptProjectID) {
+			return fmt.Errorf("object repository %q project changed during self-heal", repo.ID)
 		}
 		changed := false
 		for _, mutation := range pending {
@@ -159,18 +254,20 @@ func collectSelfHeals(report *engine.ReplayReport) []selfHealRecord {
 		if !ok {
 			continue
 		}
+		eventActionName := strings.TrimSpace(report.Events[i].ActionName)
+		evidenceActionName := anyToString(fields["action"])
+		if eventActionName == "" || (evidenceActionName != "" && evidenceActionName != eventActionName) {
+			continue
+		}
 		rec := selfHealRecord{
-			actionName:  anyToString(fields["action"]),
+			actionName:  eventActionName,
 			logicalName: anyToString(fields["object_ref_logical_name"]),
 			repoID:      anyToString(fields["object_ref_repository"]),
 			healed:      anyToString(fields["healed_selector"]),
 			kind:        anyToString(fields["candidate_kind"]),
 			confidence:  anyToInt(fields["confidence"]),
 		}
-		if rec.actionName == "" {
-			rec.actionName = report.Events[i].ActionName
-		}
-		if rec.actionName == "" || rec.healed == "" {
+		if rec.healed == "" {
 			continue
 		}
 		out = append(out, rec)
@@ -187,19 +284,17 @@ func objectRefBindingsByActionName(script *dsl.Script) map[string]objectRefBindi
 	walk = func(actions []dsl.Action) {
 		for i := range actions {
 			action := &actions[i]
-			ref := strings.TrimSpace(action.ObjectRef)
 			name := strings.TrimSpace(action.Name)
-			if ref != "" && name != "" {
-				_, logicalName := splitObjectRef(ref)
-				repoID := ""
-				if action.Metadata != nil {
-					if v, ok := action.Metadata[objectRefRepositoryMetadataKey].(string); ok {
-						repoID = v
-					}
-				}
-				binding := objectRefBinding{logicalName: logicalName, repoID: repoID}
+			if name != "" {
+				binding, bound := objectRefBindingForAction(action)
 				if _, dropped := ambiguous[name]; dropped {
 					// Already known to be ambiguous; keep skipping it.
+				} else if !bound {
+					// Replay evidence identifies actions by name. An unbound action
+					// sharing that name makes it impossible to prove that the heal
+					// came from the bound action.
+					delete(out, name)
+					ambiguous[name] = struct{}{}
 				} else if existing, seen := out[name]; seen && existing != binding {
 					// Two object_ref-bound actions share a name but resolve to
 					// different repository objects, so a heal reported under this name
@@ -221,6 +316,27 @@ func objectRefBindingsByActionName(script *dsl.Script) map[string]objectRefBindi
 	walk(script.Actions)
 	walk(script.Teardown)
 	return out
+}
+
+func objectRefBindingForAction(action *dsl.Action) (objectRefBinding, bool) {
+	ref := strings.TrimSpace(action.ObjectRef)
+	if ref == "" || action.Metadata == nil {
+		return objectRefBinding{}, false
+	}
+	qualifiedRepoID, logicalName := splitObjectRef(ref)
+	metadataRepoValue, repoAttested := action.Metadata[objectRefRepositoryMetadataKey].(string)
+	metadataLogicalValue, logicalAttested := action.Metadata[objectRefLogicalNameMetadataKey].(string)
+	metadataRepoID := strings.TrimSpace(metadataRepoValue)
+	metadataLogicalName := strings.TrimSpace(metadataLogicalValue)
+	logicalName = strings.TrimSpace(logicalName)
+	if !repoAttested || !logicalAttested || metadataRepoID == "" || metadataLogicalName == "" ||
+		logicalName == "" || metadataLogicalName != logicalName {
+		return objectRefBinding{}, false
+	}
+	if qualifiedRepoID != "" && metadataRepoID != qualifiedRepoID {
+		return objectRefBinding{}, false
+	}
+	return objectRefBinding{logicalName: metadataLogicalName, repoID: metadataRepoID}, true
 }
 
 // reasonPromotedByHeal marks a repository candidate that replay self-heal

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -107,6 +108,86 @@ func TestExtractJSONPath_InvalidJSON(t *testing.T) {
 	_, err := extractJSONPath("$.field", []byte(`not json`))
 	if err == nil {
 		t.Fatal("expected error for invalid JSON")
+	}
+}
+
+func TestJSONExtractorsRejectTrailingDataAndMultipleDocuments(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{name: "trailing garbage", body: `{"field":"ok"} trailing`},
+		{name: "multiple documents", body: `{"field":"ok"} {"field":"second"}`},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := extractJSONPath("$.field", []byte(test.body)); err == nil {
+				t.Fatal("JSONPath accepted a body that is not exactly one JSON document")
+			}
+			if _, err := extractJMESPath("field", []byte(test.body)); err == nil {
+				t.Fatal("JMESPath accepted a body that is not exactly one JSON document")
+			}
+		})
+	}
+}
+
+func TestJSONExtractorsAllowTrailingWhitespace(t *testing.T) {
+	body := []byte("{\"field\":\"ok\"}\n\t ")
+	if got, err := extractJSONPath("$.field", body); err != nil || got != "ok" {
+		t.Fatalf("JSONPath trailing whitespace = %q, %v", got, err)
+	}
+	if got, err := extractJMESPath("field", body); err != nil || got != "ok" {
+		t.Fatalf("JMESPath trailing whitespace = %q, %v", got, err)
+	}
+}
+
+func TestJSONExtractorsRejectInvalidUTF8(t *testing.T) {
+	body := []byte{'{', '"', 'x', '"', ':', '"', 0xff, '"', '}'}
+	if _, err := extractJSONPath("$.x", body); err == nil || !strings.Contains(err.Error(), "UTF-8") {
+		t.Fatalf("JSONPath invalid UTF-8 error = %v", err)
+	}
+	if _, err := extractJMESPath("x", body); err == nil || !strings.Contains(err.Error(), "UTF-8") {
+		t.Fatalf("JMESPath invalid UTF-8 error = %v", err)
+	}
+}
+
+func TestJSONTreeExtractorsBoundNodeAndDepthAmplification(t *testing.T) {
+	overNodeLimit := []byte("[" + strings.Repeat("0,", maxExtractorStructuredNodes) + "0]")
+	for name, extractValue := range map[string]func([]byte) error{
+		"jsonpath": func(body []byte) error {
+			_, err := extractJSONPath("$[0]", body)
+			return err
+		},
+		"jmespath": func(body []byte) error {
+			_, err := extractJMESPath("[0]", body)
+			return err
+		},
+		"jsonpath all": func(body []byte) error {
+			_, err := extractAllJSONPath("$", body)
+			return err
+		},
+	} {
+		t.Run(name+" nodes", func(t *testing.T) {
+			err := extractValue(overNodeLimit)
+			if !errors.Is(err, errExtractorResourceLimit) || !strings.Contains(err.Error(), "nodes") {
+				t.Fatalf("node-amplification error = %v, want extractor resource node limit", err)
+			}
+		})
+	}
+
+	atNodeLimit := []byte("[" + strings.Repeat("0,", maxExtractorStructuredNodes-2) + "7]")
+	if err := validateExtractorJSONStructure(atNodeLimit); err != nil {
+		t.Fatalf("JSON node boundary preflight: %v", err)
+	}
+
+	atDepthLimit := []byte(strings.Repeat("[", maxExtractorStructuredDepth) + `"ok"` + strings.Repeat("]", maxExtractorStructuredDepth))
+	deepPath := "$" + strings.Repeat("[0]", maxExtractorStructuredDepth)
+	if got, err := extractJSONPath(deepPath, atDepthLimit); err != nil || got != "ok" {
+		t.Fatalf("JSON depth boundary extraction = %q, %v; want ok", got, err)
+	}
+	overDepthLimit := []byte(strings.Repeat("[", maxExtractorStructuredDepth+1) + "0" + strings.Repeat("]", maxExtractorStructuredDepth+1))
+	if _, err := extractJMESPath("[0]", overDepthLimit); !errors.Is(err, errExtractorResourceLimit) || !strings.Contains(err.Error(), "depth") {
+		t.Fatalf("JSON depth-amplification error = %v, want extractor resource depth limit", err)
 	}
 }
 
@@ -393,6 +474,147 @@ func TestExtractXPath_HTMLFallback(t *testing.T) {
 	}
 }
 
+func TestExtractXPathDeclaredXMLDoesNotFallBackToHTML(t *testing.T) {
+	body := []byte(`<?xml version="1.0"?><response><token>abc</token>`)
+	if _, err := extractXPath("//token/text()", body); err == nil || !strings.Contains(err.Error(), "invalid XML body") {
+		t.Fatalf("declared malformed XML error = %v", err)
+	}
+	if _, err := extractAllXPath("//token/text()", body); err == nil || !strings.Contains(err.Error(), "invalid XML body") {
+		t.Fatalf("declared malformed XML save-all error = %v", err)
+	}
+}
+
+func TestXPathXMLTreePreflightBoundsNodesAndDepth(t *testing.T) {
+	atNodeLimit := []byte("<root>" +
+		strings.Repeat("<n/>", maxExtractorStructuredNodes-3) +
+		`<n id="last"/></root>`)
+	if err := validateExtractorXMLStructure(atNodeLimit); err != nil {
+		t.Fatalf("XML node boundary preflight: %v", err)
+	}
+	overNodeLimitByAttribute := []byte("<root>" +
+		strings.Repeat("<n/>", maxExtractorStructuredNodes-3) +
+		`<n id="last" extra="x"/></root>`)
+	if err := validateExtractorXMLStructure(overNodeLimitByAttribute); !errors.Is(err, errExtractorResourceLimit) || !strings.Contains(err.Error(), "nodes") {
+		t.Fatalf("XML retained-attribute node-amplification error = %v, want extractor resource node limit", err)
+	}
+
+	overNodeLimit := []byte("<root>" +
+		strings.Repeat("<n/>", maxExtractorStructuredNodes) +
+		"</root>")
+	for name, extractValues := range map[string]func() error{
+		"single": func() error {
+			_, err := extractXPath("/root/n[1]", overNodeLimit)
+			return err
+		},
+		"all": func() error {
+			_, err := extractAllXPath("/root/n", overNodeLimit)
+			return err
+		},
+	} {
+		t.Run(name+" nodes", func(t *testing.T) {
+			err := extractValues()
+			if !errors.Is(err, errExtractorResourceLimit) || !strings.Contains(err.Error(), "nodes") {
+				t.Fatalf("XML node-amplification error = %v, want extractor resource node limit", err)
+			}
+		})
+	}
+
+	atDepthLimit := []byte(strings.Repeat("<n>", maxExtractorStructuredDepth) +
+		"ok" + strings.Repeat("</n>", maxExtractorStructuredDepth))
+	deepPath := strings.Repeat("/n", maxExtractorStructuredDepth) + "/text()"
+	if got, err := extractXPath(deepPath, atDepthLimit); err != nil || got != "ok" {
+		t.Fatalf("XML depth boundary extraction = %q, %v; want ok", got, err)
+	}
+	overDepthLimit := []byte(strings.Repeat("<n>", maxExtractorStructuredDepth+1) +
+		strings.Repeat("</n>", maxExtractorStructuredDepth+1))
+	if _, err := extractXPath("//n", overDepthLimit); !errors.Is(err, errExtractorResourceLimit) || !strings.Contains(err.Error(), "depth") {
+		t.Fatalf("XML depth-amplification error = %v, want extractor resource depth limit", err)
+	}
+}
+
+func TestHTMLTreePreflightBoundsNodesAndDepthAcrossCSSAndXPath(t *testing.T) {
+	atNodeLimit := []byte("<!doctype html><html><body><input id=\"target\" disabled>" +
+		strings.Repeat("<div></div>", maxExtractorStructuredNodes-6))
+	if err := validateExtractorHTMLStructure(atNodeLimit); err != nil {
+		t.Fatalf("HTML node boundary preflight: %v", err)
+	}
+	overNodeLimitByAttribute := []byte("<!doctype html><html><body><input id=\"target\" disabled title=\"x\">" +
+		strings.Repeat("<div></div>", maxExtractorStructuredNodes-6))
+	if err := validateExtractorHTMLStructure(overNodeLimitByAttribute); !errors.Is(err, errExtractorResourceLimit) || !strings.Contains(err.Error(), "nodes") {
+		t.Fatalf("HTML retained-attribute node-amplification error = %v, want extractor resource node limit", err)
+	}
+
+	overNodeLimit := []byte("<!doctype html><html><body><input disabled>" +
+		strings.Repeat("<div></div>", maxExtractorStructuredNodes-3))
+	for name, extractValues := range map[string]func() error{
+		"css": func() error {
+			_, err := extractCSS("input", overNodeLimit)
+			return err
+		},
+		"xpath single": func() error {
+			_, err := extractXPath("//input", overNodeLimit)
+			return err
+		},
+		"xpath all": func() error {
+			_, err := extractAllXPath("//input", overNodeLimit)
+			return err
+		},
+	} {
+		t.Run(name+" nodes", func(t *testing.T) {
+			err := extractValues()
+			if !errors.Is(err, errExtractorResourceLimit) || !strings.Contains(err.Error(), "nodes") {
+				t.Fatalf("HTML node-amplification error = %v, want extractor resource node limit", err)
+			}
+		})
+	}
+
+	atDepthLimit := []byte("<!doctype html><input id=\"target\" disabled>" +
+		strings.Repeat("<div>", maxExtractorStructuredDepth) +
+		strings.Repeat("</div>", maxExtractorStructuredDepth))
+	if got, err := extractCSS("#target|||id", atDepthLimit); err != nil || got != "target" {
+		t.Fatalf("HTML depth boundary CSS extraction = %q, %v; want target", got, err)
+	}
+	overDepthLimit := []byte("<!doctype html><input disabled>" +
+		strings.Repeat("<div>", maxExtractorStructuredDepth+1) +
+		strings.Repeat("</div>", maxExtractorStructuredDepth+1))
+	if _, err := extractXPath("//input", overDepthLimit); !errors.Is(err, errExtractorResourceLimit) || !strings.Contains(err.Error(), "depth") {
+		t.Fatalf("HTML depth-amplification error = %v, want extractor resource depth limit", err)
+	}
+	slashSuffixedDepth := []byte("<!doctype html><input disabled>" +
+		strings.Repeat("<div/>", maxExtractorStructuredDepth+1))
+	if _, err := extractCSS("input", slashSuffixedDepth); !errors.Is(err, errExtractorResourceLimit) || !strings.Contains(err.Error(), "depth") {
+		t.Fatalf("HTML slash-suffixed depth-amplification error = %v, want extractor resource depth limit", err)
+	}
+}
+
+func TestStructuredTreePreflightBoundsElementAttributes(t *testing.T) {
+	buildAttributes := func(count int) string {
+		var attributes strings.Builder
+		for index := 0; index < count; index++ {
+			fmt.Fprintf(&attributes, ` a%d="x"`, index)
+		}
+		return attributes.String()
+	}
+
+	xmlAtLimit := []byte("<root" + buildAttributes(maxExtractorAttributesPerElement) + "/>")
+	if err := validateExtractorXMLStructure(xmlAtLimit); err != nil {
+		t.Fatalf("XML attribute boundary preflight: %v", err)
+	}
+	xmlOverLimit := []byte("<root" + buildAttributes(maxExtractorAttributesPerElement+1) + "/>")
+	if _, err := extractXPath("/root", xmlOverLimit); !errors.Is(err, errExtractorResourceLimit) || !strings.Contains(err.Error(), "attributes") {
+		t.Fatalf("XML attribute-amplification error = %v, want extractor resource attribute limit", err)
+	}
+
+	htmlAtLimit := []byte("<!doctype html><input disabled" + buildAttributes(maxExtractorAttributesPerElement-1) + ">")
+	if err := validateExtractorHTMLStructure(htmlAtLimit); err != nil {
+		t.Fatalf("HTML attribute boundary preflight: %v", err)
+	}
+	htmlOverLimit := []byte("<!doctype html><input disabled" + buildAttributes(maxExtractorAttributesPerElement) + ">")
+	if _, err := extractCSS("input", htmlOverLimit); !errors.Is(err, errExtractorResourceLimit) || !strings.Contains(err.Error(), "attributes") {
+		t.Fatalf("HTML attribute-amplification error = %v, want extractor resource attribute limit", err)
+	}
+}
+
 func TestExtractXPath_XMLFragment(t *testing.T) {
 	val, err := extractFromBody(protocol.Extractor{Type: "xpath", Expression: xpathFragmentExpressionPrefix + "/response/page"}, []byte(`<response><page>two</page></response>`))
 	if err != nil {
@@ -487,6 +709,28 @@ func TestExtractRegex_NoMatch(t *testing.T) {
 	_, err := extractRegex(`xyz=([^&]+)`, []byte(`token=abc`))
 	if err == nil {
 		t.Fatal("expected error for no match")
+	}
+}
+
+func TestExtractorPostProcessingBoundsTransformInputAndOutput(t *testing.T) {
+	tooLargeInput := strings.Repeat("a", maxExtractorTransformInputBytes+1)
+	if _, err := postProcessExtractedValue(protocol.Extractor{Convert: "url_decode"}, tooLargeInput); !errors.Is(err, errExtractorResourceLimit) || !strings.Contains(err.Error(), "transform input") {
+		t.Fatalf("oversized transform input error = %v, want resource limit", err)
+	}
+
+	expanded := strings.Repeat("?", maxAllExtractorBytes)
+	if _, err := postProcessExtractedValue(protocol.Extractor{Convert: "url_encode"}, expanded); !errors.Is(err, errExtractorResourceLimit) || !strings.Contains(err.Error(), "output") {
+		t.Fatalf("expanded transform output error = %v, want resource limit", err)
+	}
+
+	trimmed, err := postProcessExtractedValue(protocol.Extractor{SaveLength: 4}, tooLargeInput)
+	if err != nil || trimmed != "aaaa" {
+		t.Fatalf("bounded save_length result = %q, %v; want aaaa", trimmed, err)
+	}
+
+	oversizedCapture := []byte("token=" + strings.Repeat("x", maxExtractorTransformInputBytes+1))
+	if _, err := extractRegex(`token=(.+)`, oversizedCapture); !errors.Is(err, errExtractorResourceLimit) || !strings.Contains(err.Error(), "capture") {
+		t.Fatalf("oversized regex capture error = %v, want resource limit before string materialization", err)
 	}
 }
 
@@ -765,6 +1009,37 @@ func TestExtractAll_Regex(t *testing.T) {
 	}
 }
 
+func TestExtractAll_DirectHeaderPreservesOccurrences(t *testing.T) {
+	headers := http.Header{}
+	headers.Add("Set-Cookie", "first=one")
+	headers.Add("Set-Cookie", "second=two")
+
+	vals, err := extractAll(protocol.Extractor{
+		Source:     "header",
+		Type:       "header",
+		Expression: "set-cookie",
+		Mode:       "all",
+	}, headers, nil)
+	if err != nil {
+		t.Fatalf("extractAll direct header: %v", err)
+	}
+	if len(vals) != 2 || vals[0] != "first=one" || vals[1] != "second=two" {
+		t.Fatalf("vals = %v, want both Set-Cookie occurrences", vals)
+	}
+
+	vals, err = extractAll(protocol.Extractor{
+		Source:     "header",
+		Expression: "X-Missing",
+		Mode:       "all",
+	}, headers, nil)
+	if err != nil {
+		t.Fatalf("extractAll missing direct header: %v", err)
+	}
+	if len(vals) != 0 {
+		t.Fatalf("missing header vals = %v, want empty", vals)
+	}
+}
+
 func TestExtractAll_BoundaryWithConfig(t *testing.T) {
 	body := []byte(`ID=x1; id=x2; Id=x3;`)
 	expr := boundaryExpressionConfigPrefix + `{"left":"id=","right":";","case_insensitive":true}`
@@ -957,6 +1232,81 @@ func TestCompileRegexCached_InvalidNotCached(t *testing.T) {
 	}
 	if _, err := compileRegexCached(expr); err == nil {
 		t.Fatal("expected the invalid regex to keep erroring on repeat calls")
+	}
+}
+
+func TestCompiledExtractorCacheBoundsRetainedKeyBytes(t *testing.T) {
+	cache := compiledExtractorCache[int]{maxKeyBytes: 10}
+	cache.put("123456", 1)
+	cache.put("abcdef", 2)
+	if _, ok := cache.Load("123456"); ok {
+		t.Fatal("oldest key was retained after the byte budget was exceeded")
+	}
+	if value, ok := cache.Load("abcdef"); !ok || value != 2 {
+		t.Fatalf("new key = %d, %t; want retained value 2", value, ok)
+	}
+	if cache.keyBytes != len("abcdef") {
+		t.Fatalf("retained key bytes = %d, want %d", cache.keyBytes, len("abcdef"))
+	}
+
+	cache.put("this-key-is-too-large", 3)
+	if _, ok := cache.Load("this-key-is-too-large"); ok {
+		t.Fatal("a key larger than the cache byte budget was retained")
+	}
+	if cache.keyBytes != len("abcdef") {
+		t.Fatalf("oversized uncached key changed retained bytes to %d", cache.keyBytes)
+	}
+}
+
+func TestCompileRegexCachedRejectsOversizedExpression(t *testing.T) {
+	expr := strings.Repeat("x", MaxExtractorExpressionBytes+1)
+	if _, err := compileRegexCached(expr); !errors.Is(err, errExtractorResourceLimit) {
+		t.Fatalf("compile oversized regex error = %v, want extractor resource limit", err)
+	}
+	if _, ok := compiledRegexCache.Load(expr); ok {
+		t.Fatal("oversized regex expression must not be cached")
+	}
+}
+
+func TestCompiledExpressionCachesRejectOversizedKeys(t *testing.T) {
+	expr := strings.Repeat("x", MaxExtractorExpressionBytes+1)
+	tests := []struct {
+		name    string
+		compile func() error
+		cached  func() bool
+	}{
+		{
+			name: "jmespath",
+			compile: func() error {
+				_, err := compileJMESPathCached(expr)
+				return err
+			},
+			cached: func() bool {
+				_, ok := compiledJMESPathCache.Load(expr)
+				return ok
+			},
+		},
+		{
+			name: "xpath",
+			compile: func() error {
+				_, err := compileXPathSelector(expr, nil)
+				return err
+			},
+			cached: func() bool {
+				_, ok := compiledXPathCache.Load(expr)
+				return ok
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.compile(); !errors.Is(err, errExtractorResourceLimit) {
+				t.Fatalf("compile oversized expression error = %v, want extractor resource limit", err)
+			}
+			if test.cached() {
+				t.Fatal("oversized expression must not be cached")
+			}
+		})
 	}
 }
 

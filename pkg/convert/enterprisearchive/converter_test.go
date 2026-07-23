@@ -2211,39 +2211,20 @@ Format=%H:%M:%S
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	if result.Script.Protocol != "jms-solace" {
-		t.Fatalf("protocol = %q, want jms-solace", result.Script.Protocol)
+	if result.Script.Protocol != "java_vuser" || len(result.Scripts) != 1 || result.Scripts[0] != result.Script {
+		t.Fatalf("result = %#v, want one combined java_vuser", result)
 	}
-	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "java_vuser" || result.DetectedProtocol.ImportMode != ImportModeExecutable || result.DetectedProtocol.APEXLoadProtocol != "jms-solace" {
-		t.Fatalf("detected protocol = %#v, want executable Java JMS/Solace draft", result.DetectedProtocol)
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "java_vuser" || result.DetectedProtocol.ImportMode != ImportModeExternalRunnerRequired || result.DetectedProtocol.APEXLoadProtocol != "java_vuser" {
+		t.Fatalf("detected protocol = %#v, want external-runner Java draft", result.DetectedProtocol)
 	}
-	if result.ReviewArtifact != nil {
-		t.Fatalf("review artifact = %#v, want nil for fully mapped Java JMS/Solace import", result.ReviewArtifact)
+	if result.ReviewArtifact == nil {
+		t.Fatal("review artifact is nil, want governed Java source review")
 	}
-	var publish *dsl.Action
-	for i := range result.Script.Actions {
-		if result.Script.Actions[i].Type == "jms_publish" {
-			publish = &result.Script.Actions[i]
-			break
-		}
-	}
-	if publish == nil {
-		t.Fatalf("actions = %#v, want jms_publish", result.Script.Actions)
-	}
-	if !strings.Contains(publish.Body, "{{param.date}}") || !strings.Contains(publish.Body, "{{param.time}}") || !strings.Contains(publish.Body, "{{param.ctn}}") {
-		t.Fatalf("JMS body = %q, want XML sidecar with parameter references", publish.Body)
-	}
-	if publish.Headers["subscriberNumber"] != "{{param.ctn}}" || publish.Headers["guid"] != "{{param.guid}}" {
-		t.Fatalf("JMS headers = %#v, want message properties", publish.Headers)
-	}
-	if result.Script.Config.JMS.TLS == nil || result.Script.Config.JMS.TLS.TrustStoreRef != "gddnsolace.perf.truststore" {
-		t.Fatalf("JMS TLS = %#v, want truststore metadata", result.Script.Config.JMS.TLS)
+	if len(result.Script.Init) != 0 || len(result.Script.Actions) != 1 || result.Script.Actions[0].Type != "java_vuser_run" {
+		t.Fatalf("lifecycle = init %#v actions %#v, want Actions-owned Java phases", result.Script.Init, result.Script.Actions)
 	}
 	if len(result.Script.Parameters) != 13 {
 		t.Fatalf("parameters = %d, want 13", len(result.Script.Parameters))
-	}
-	if result.FidelityReport == nil || result.FidelityReport.PromotionStatus != ImportPromotionPromotable {
-		t.Fatalf("fidelity report = %#v, want promotable Java JMS mapping", result.FidelityReport)
 	}
 }
 
@@ -4308,31 +4289,14 @@ public class Actions {
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	if result.Script == nil || result.Script.Protocol != "jms-solace" {
-		t.Fatalf("script = %#v, want jms-solace script", result.Script)
+	if result.Script == nil || result.Script.Protocol != "java_vuser" || len(result.Scripts) != 1 || result.Scripts[0] != result.Script {
+		t.Fatalf("script = %#v scripts=%#v, want combined java_vuser script", result.Script, result.Scripts)
 	}
-	if result.DetectedProtocol == nil || result.DetectedProtocol.ImportMode != ImportModeExecutable || result.DetectedProtocol.APEXLoadProtocol != "jms-solace" {
-		t.Fatalf("detected = %#v, want executable Java JMS mapping", result.DetectedProtocol)
+	if result.DetectedProtocol == nil || result.DetectedProtocol.ImportMode != ImportModeExternalRunnerRequired || result.DetectedProtocol.APEXLoadProtocol != "java_vuser" {
+		t.Fatalf("detected = %#v, want external-runner Java mapping", result.DetectedProtocol)
 	}
-	if result.Script.Config.JMS.BrokerURL != "smf://broker.example.test:55555" ||
-		result.Script.Config.JMS.Username != "{{secret.jms_username}}" ||
-		result.Script.Config.JMS.Password != "{{secret.jms_password}}" ||
-		result.Script.Config.JMS.MessageVPN != "ordersvpn" ||
-		result.Script.Config.JMS.Properties["recorded_username"] != "perfuser" {
-		t.Fatalf("jms config = %#v, want broker/user/vpn mapped", result.Script.Config.JMS)
-	}
-	var publish *dsl.Action
-	for i := range result.Script.Actions {
-		if result.Script.Actions[i].Type == "jms_publish" {
-			publish = &result.Script.Actions[i]
-			break
-		}
-	}
-	if publish == nil {
-		t.Fatalf("actions = %#v, want jms_publish", result.Script.Actions)
-	}
-	if publish.Target != "ORDERS.IN" || !strings.Contains(publish.Body, "{{var.date}}") || publish.Headers["eventType"] != "order" {
-		t.Fatalf("publish = %#v, want mapped destination/body/property", publish)
+	if len(result.Script.Init) != 1 || len(result.Script.Actions) != 1 || result.Script.Actions[0].Type != "java_vuser_run" {
+		t.Fatalf("lifecycle = init %#v actions %#v, want combined Java phases", result.Script.Init, result.Script.Actions)
 	}
 	if result.SourceReview == nil || len(result.SourceReview.Mappings) == 0 {
 		t.Fatalf("source review = %#v, want Java mappings", result.SourceReview)

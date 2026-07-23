@@ -37,7 +37,7 @@ export function useCorrelationRulesetApi() {
   )
 
   const updateCorrelationRuleset = useCallback(
-    (id: string, body: Partial<CorrelationRuleset>) =>
+    (id: string, body: Partial<CorrelationRuleset> & { expected_updated_at: string }) =>
       request<CorrelationRuleset>(`/correlation-rulesets/${id}`, { method: 'PUT', body: JSON.stringify(body) }),
     [],
   )
@@ -54,7 +54,7 @@ export function useCorrelationRulesetApi() {
   )
 
   const applyCorrelationRulesetToScript = useCallback(
-    (id: string, body: { script_id: string; apply?: boolean }) =>
+    (id: string, body: { script_id: string; apply?: boolean; preview_token?: string }) =>
       request<CorrelationRulesetApplyResponse>(`/correlation-rulesets/${id}/apply-to-script`, { method: 'POST', body: JSON.stringify(body) }),
     [],
   )

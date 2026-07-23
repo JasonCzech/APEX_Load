@@ -28,6 +28,9 @@ func ApplySuggestions(script *dsl.Script, suggestions []Suggestion, selected map
 	if script == nil {
 		return nil, nil, fmt.Errorf("script is required")
 	}
+	if err := validateSelectedSuggestionApplication(script, suggestions, selected); err != nil {
+		return nil, nil, err
+	}
 	clone, err := cloneScript(script)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to clone script: %w", err)
@@ -69,21 +72,386 @@ func ApplySuggestions(script *dsl.Script, suggestions []Suggestion, selected map
 	return clone, diffs, nil
 }
 
-func applyReplacements(script *dsl.Script, suggestion Suggestion) []Diff {
-	diffs := make([]Diff, 0, len(suggestion.Locations))
-	for _, location := range suggestion.Locations {
-		action := actionAt(script, location.Section, location.ActionIndex)
-		if action == nil || location.SearchText == "" {
+// validateSelectedSuggestionApplication preflights every selected correlation
+// before the clone is mutated and prevents order-dependent application when
+// any two selected suggestion kinds claim overlapping literals on one concrete
+// request surface. This guarantees that an extractor is never added without
+// all of its reviewed replacements, and that a secret/data replacement cannot
+// silently consume text owned by a correlation (or vice versa).
+func validateSelectedSuggestionApplication(script *dsl.Script, suggestions []Suggestion, selected map[string]bool) error {
+	type source struct {
+		section     string
+		actionIndex int
+	}
+	type surface struct {
+		section     string
+		actionIndex int
+		field       string
+	}
+	type owner struct {
+		suggestionIndex int
+		literal         string
+		replacement     string
+	}
+	owners := make(map[surface][]owner)
+	pendingExtractors := make(map[source]map[string]dsl.Extractor)
+	overlapBudget := NewLiteralOverlapSearchBudget()
+	for index, suggestion := range suggestions {
+		if suggestion.PreApplied || !selected[suggestion.ID] {
 			continue
 		}
-		before, after, ok := replaceInField(action, location)
+		if suggestion.Kind == KindCorrelation {
+			if suggestion.Extractor == nil || suggestion.FoundInAction == nil || strings.TrimSpace(suggestion.Extractor.Name) == "" {
+				return fmt.Errorf("selected correlation %q is missing its extractor or source action", suggestion.ID)
+			}
+			sourceAction := actionAt(script, suggestion.FoundInAction.Section, suggestion.FoundInAction.ActionIndex)
+			if sourceAction == nil {
+				return fmt.Errorf("selected correlation %q references an unavailable source action", suggestion.ID)
+			}
+			extractorExists := false
+			for _, existing := range sourceAction.Extractors {
+				if existing.Name != suggestion.Extractor.Name {
+					continue
+				}
+				if existing != *suggestion.Extractor {
+					return fmt.Errorf("selected correlation %q conflicts with the existing extractor %q", suggestion.ID, existing.Name)
+				}
+				extractorExists = true
+			}
+			sourceKey := source{
+				section:     suggestion.FoundInAction.Section,
+				actionIndex: suggestion.FoundInAction.ActionIndex,
+			}
+			pending := pendingExtractors[sourceKey]
+			if !extractorExists {
+				if pending == nil {
+					pending = make(map[string]dsl.Extractor)
+					pendingExtractors[sourceKey] = pending
+				}
+				if sibling, exists := pending[suggestion.Extractor.Name]; exists {
+					if sibling != *suggestion.Extractor {
+						return fmt.Errorf("selected correlation %q conflicts with another selected extractor %q", suggestion.ID, suggestion.Extractor.Name)
+					}
+				} else {
+					pending[suggestion.Extractor.Name] = *suggestion.Extractor
+				}
+			}
+			if len(sourceAction.Extractors)+len(pending) > dsl.MaxActionExtractors {
+				return fmt.Errorf("selected correlations for source action %q would exceed the maximum of %d extractors", sourceAction.Name, dsl.MaxActionExtractors)
+			}
+			if len(suggestion.Locations) == 0 {
+				return fmt.Errorf("selected correlation %q has no request locations to replace", suggestion.ID)
+			}
+		}
+		for _, location := range suggestion.Locations {
+			literal := location.SearchText
+			if literal == "" {
+				if suggestion.Kind == KindCorrelation {
+					return fmt.Errorf("selected correlation %q has an empty request literal", suggestion.ID)
+				}
+				continue
+			}
+			if !locationContainsOutsideTemplates(script, location, literal) {
+				if suggestion.Kind == KindCorrelation {
+					return fmt.Errorf("selected correlation %q no longer matches its reviewed request location", suggestion.ID)
+				}
+				continue
+			}
+			field := location.Field
+			if strings.HasPrefix(strings.ToLower(field), "headers.") {
+				field = strings.ToLower(field)
+			}
+			key := surface{section: location.Section, actionIndex: location.ActionIndex, field: field}
+			current := owner{suggestionIndex: index, literal: literal, replacement: location.ReplaceText}
+			for _, existing := range owners[key] {
+				if existing.suggestionIndex == index {
+					continue
+				}
+				contains := overlapBudget.Contains(existing.literal, current.literal) || overlapBudget.Contains(current.literal, existing.literal)
+				if overlapBudget.Exhausted() {
+					return fmt.Errorf("ambiguous selected correlation replacements: overlap analysis exceeded its deterministic work limit")
+				}
+				if contains && existing.replacement != current.replacement {
+					return fmt.Errorf("ambiguous selected correlation replacements: multiple variables claim overlapping request literals")
+				}
+				// Partially-overlapping literals (a suffix of one is a prefix of the
+				// other and the merged spelling really occurs in this field) never
+				// survive the single-pass replacer: the leftmost literal consumes the
+				// shared bytes, the other suggestion's replacement silently does not
+				// happen, and its extractor would still be appended. Equal replacements
+				// do not make this safe — the merged region keeps a stale tail.
+				if !contains && literalsPartiallyOverlapInLocation(script, location, existing.literal, current.literal, overlapBudget) {
+					if overlapBudget.Exhausted() {
+						return fmt.Errorf("ambiguous selected correlation replacements: overlap analysis exceeded its deterministic work limit")
+					}
+					return fmt.Errorf("ambiguous selected correlation replacements: multiple variables claim partially overlapping request literals")
+				}
+			}
+			owners[key] = append(owners[key], current)
+		}
+	}
+	return nil
+}
+
+func locationContainsOutsideTemplates(script *dsl.Script, location Location, literal string) bool {
+	action := actionAt(script, location.Section, location.ActionIndex)
+	if action == nil || literal == "" {
+		return false
+	}
+	contains := func(value string) bool { return containsOutsideTemplates(value, literal) }
+	switch location.Field {
+	case "target":
+		return contains(action.Target)
+	case "body":
+		return contains(action.Body)
+	case "value":
+		return contains(action.Value)
+	}
+	if paramKey, isParam := strings.CutPrefix(location.Field, "params."); isParam {
+		value, ok := action.Params[paramKey].(string)
+		return ok && contains(value)
+	}
+	headerKey, isHeader := strings.CutPrefix(strings.ToLower(location.Field), "headers.")
+	if !isHeader {
+		return false
+	}
+	for key, value := range action.Headers {
+		if strings.EqualFold(key, headerKey) && contains(value) {
+			return true
+		}
+	}
+	for _, header := range action.HeaderList {
+		if strings.EqualFold(header.Name, headerKey) && contains(header.Value) {
+			return true
+		}
+	}
+	return false
+}
+
+// literalsPartiallyOverlapInLocation reports whether two distinct literals can
+// occupy one merged region in the addressed request field. A bare
+// suffix/prefix character match without a real merged occurrence is not a
+// collision: single-pass replacement rewrites disjoint occurrences correctly.
+func literalsPartiallyOverlapInLocation(script *dsl.Script, location Location, left, right string, budget *LiteralOverlapSearchBudget) bool {
+	for _, value := range locationStringValues(script, location) {
+		remaining := value
+		for remaining != "" {
+			start := strings.Index(remaining, "{{")
+			if start < 0 {
+				if budget.LiteralsPartiallyOverlapInSurface(remaining, left, right) {
+					return true
+				}
+				break
+			}
+			if budget.LiteralsPartiallyOverlapInSurface(remaining[:start], left, right) {
+				return true
+			}
+			endOffset := strings.Index(remaining[start+2:], "}}")
+			if endOffset < 0 {
+				break
+			}
+			remaining = remaining[start+2+endOffset+2:]
+		}
+	}
+	return false
+}
+
+func locationStringValues(script *dsl.Script, location Location) []string {
+	action := actionAt(script, location.Section, location.ActionIndex)
+	if action == nil {
+		return nil
+	}
+	switch location.Field {
+	case "target":
+		return []string{action.Target}
+	case "body":
+		return []string{action.Body}
+	case "value":
+		return []string{action.Value}
+	}
+	if paramKey, isParam := strings.CutPrefix(location.Field, "params."); isParam {
+		if value, ok := action.Params[paramKey].(string); ok {
+			return []string{value}
+		}
+		return nil
+	}
+	headerKey, isHeader := strings.CutPrefix(strings.ToLower(location.Field), "headers.")
+	if !isHeader {
+		return nil
+	}
+	values := make([]string, 0, 1)
+	for key, value := range action.Headers {
+		if strings.EqualFold(key, headerKey) {
+			values = append(values, value)
+		}
+	}
+	for _, header := range action.HeaderList {
+		if strings.EqualFold(header.Name, headerKey) {
+			values = append(values, header.Value)
+		}
+	}
+	return values
+}
+
+const maxLiteralOverlapSearchWork int64 = 64 << 20
+
+// LiteralOverlapSearchBudget bounds aggregate suffix comparisons and request
+// surface searches across a collision-analysis pass. Exhaustion is fail-closed:
+// LiteralsPartiallyOverlapInSurface returns true so callers suppress automatic
+// rewrites rather than accepting an incompletely checked pair.
+type LiteralOverlapSearchBudget struct {
+	remaining int64
+	exhausted bool
+}
+
+func NewLiteralOverlapSearchBudget() *LiteralOverlapSearchBudget {
+	return &LiteralOverlapSearchBudget{remaining: maxLiteralOverlapSearchWork}
+}
+
+func (budget *LiteralOverlapSearchBudget) Exhausted() bool {
+	return budget == nil || budget.exhausted
+}
+
+func (budget *LiteralOverlapSearchBudget) charge(work int) bool {
+	if budget == nil || work < 0 || int64(work) > budget.remaining {
+		if budget != nil {
+			budget.exhausted = true
+			budget.remaining = 0
+		}
+		return false
+	}
+	budget.remaining -= int64(work)
+	return true
+}
+
+// Contains performs a budgeted containment check. Exhaustion returns true so
+// collision callers fail closed, matching the partial-overlap predicate.
+func (budget *LiteralOverlapSearchBudget) Contains(haystack, needle string) bool {
+	if !budget.charge(len(haystack)) {
+		return true
+	}
+	return strings.Contains(haystack, needle)
+}
+
+// LiteralsPartiallyOverlapInSurface reports whether either literal begins
+// inside the other and both occupy one real merged region in surface. It does
+// not materialize the potentially quadratic set of merged spellings.
+func (budget *LiteralOverlapSearchBudget) LiteralsPartiallyOverlapInSurface(surface, left, right string) bool {
+	if left == "" || right == "" || surface == "" {
+		return false
+	}
+	return budget.mergedLiteralOccurs(surface, left, right) || budget.mergedLiteralOccurs(surface, right, left)
+}
+
+func (budget *LiteralOverlapSearchBudget) mergedLiteralOccurs(surface, first, second string) bool {
+	limit := len(first)
+	if len(second) < limit {
+		limit = len(second)
+	}
+	for overlap := 1; overlap < limit; overlap++ {
+		if !budget.charge(overlap) {
+			return true
+		}
+		if first[len(first)-overlap:] != second[:overlap] {
+			continue
+		}
+		if budget.surfaceContainsConcatenation(surface, first, second[overlap:]) {
+			return true
+		}
+	}
+	return false
+}
+
+func (budget *LiteralOverlapSearchBudget) surfaceContainsConcatenation(surface, first, tail string) bool {
+	if len(first) > len(surface) || len(tail) > len(surface)-len(first) {
+		return false
+	}
+	maxStart := len(surface) - len(first) - len(tail)
+	searchOffset := 0
+	searchEnd := maxStart + len(first)
+	for searchOffset <= maxStart {
+		window := surface[searchOffset:searchEnd]
+		if !budget.charge(len(window)) {
+			return true
+		}
+		relative := strings.Index(window, first)
+		if relative < 0 {
+			return false
+		}
+		start := searchOffset + relative
+		if !budget.charge(len(tail)) {
+			return true
+		}
+		if surface[start+len(first):start+len(first)+len(tail)] == tail {
+			return true
+		}
+		searchOffset = start + 1
+	}
+	return false
+}
+
+func containsOutsideTemplates(value, literal string) bool {
+	remaining := value
+	for remaining != "" {
+		start := strings.Index(remaining, "{{")
+		if start < 0 {
+			return strings.Contains(remaining, literal)
+		}
+		if strings.Contains(remaining[:start], literal) {
+			return true
+		}
+		endOffset := strings.Index(remaining[start+2:], "}}")
+		if endOffset < 0 {
+			return false
+		}
+		remaining = remaining[start+2+endOffset+2:]
+	}
+	return false
+}
+
+func applyReplacements(script *dsl.Script, suggestion Suggestion) []Diff {
+	type fieldKey struct {
+		section     string
+		actionIndex int
+		field       string
+	}
+	type fieldReplacements struct {
+		location     Location
+		replacements map[string]string
+	}
+	groups := make(map[fieldKey]*fieldReplacements, len(suggestion.Locations))
+	order := make([]fieldKey, 0, len(suggestion.Locations))
+	for _, location := range suggestion.Locations {
+		if location.SearchText == "" {
+			continue
+		}
+		key := fieldKey{section: location.Section, actionIndex: location.ActionIndex, field: location.Field}
+		group, exists := groups[key]
+		if !exists {
+			group = &fieldReplacements{location: location, replacements: make(map[string]string)}
+			groups[key] = group
+			order = append(order, key)
+		}
+		if _, exists := group.replacements[location.SearchText]; !exists {
+			group.replacements[location.SearchText] = location.ReplaceText
+		}
+	}
+
+	diffs := make([]Diff, 0, len(order))
+	for _, key := range order {
+		group := groups[key]
+		action := actionAt(script, group.location.Section, group.location.ActionIndex)
+		if action == nil {
+			continue
+		}
+		before, after, ok := replaceInFieldValues(action, group.location, group.replacements)
 		if !ok {
 			continue
 		}
 		diffs = append(diffs, Diff{
 			SuggestionID: suggestion.ID,
 			Kind:         "value_replaced",
-			Path:         fmt.Sprintf("/%s/%d/%s", location.Section, location.ActionIndex, strings.ReplaceAll(location.Field, ".", "/")),
+			Path:         fmt.Sprintf("/%s/%d/%s", group.location.Section, group.location.ActionIndex, strings.ReplaceAll(group.location.Field, ".", "/")),
 			Before:       truncateValue(before),
 			After:        truncateValue(after),
 		})
@@ -95,11 +463,13 @@ func applyReplacements(script *dsl.Script, suggestion Suggestion) []Diff {
 // ("target", "body", "value", or "headers.<Name>") and reports the before and
 // after values when a replacement happened.
 func replaceInField(action *dsl.Action, location Location) (before, after string, ok bool) {
+	return replaceInFieldValues(action, location, map[string]string{location.SearchText: location.ReplaceText})
+}
+
+func replaceInFieldValues(action *dsl.Action, location Location, replacements map[string]string) (before, after string, ok bool) {
 	replace := func(current string) (string, bool) {
-		if !strings.Contains(current, location.SearchText) {
-			return current, false
-		}
-		return strings.ReplaceAll(current, location.SearchText, location.ReplaceText), true
+		updated := replaceOutsideTemplates(current, replacements)
+		return updated, updated != current
 	}
 	switch location.Field {
 	case "target":
@@ -145,35 +515,111 @@ func replaceInField(action *dsl.Action, location Location) (before, after string
 	return "", "", false
 }
 
+// replaceOutsideTemplates applies every literal mapping in one non-recursive
+// pass and never scans existing {{...}} expressions. This prevents one encoded
+// spelling from rewriting output inserted for another spelling, and prevents a
+// later accepted suggestion from corrupting a variable template added earlier.
+func replaceOutsideTemplates(value string, replacements map[string]string) string {
+	if value == "" || len(replacements) == 0 {
+		return value
+	}
+	searches := make([]string, 0, len(replacements))
+	for search := range replacements {
+		if search != "" {
+			searches = append(searches, search)
+		}
+	}
+	if len(searches) == 0 {
+		return value
+	}
+	sort.Slice(searches, func(i, j int) bool {
+		if len(searches[i]) != len(searches[j]) {
+			return len(searches[i]) > len(searches[j])
+		}
+		return searches[i] < searches[j]
+	})
+	pairs := make([]string, 0, len(searches)*2)
+	for _, search := range searches {
+		pairs = append(pairs, search, replacements[search])
+	}
+	replacer := strings.NewReplacer(pairs...)
+
+	var result strings.Builder
+	remaining := value
+	for remaining != "" {
+		start := strings.Index(remaining, "{{")
+		if start < 0 {
+			result.WriteString(replacer.Replace(remaining))
+			break
+		}
+		result.WriteString(replacer.Replace(remaining[:start]))
+		endOffset := strings.Index(remaining[start+2:], "}}")
+		if endOffset < 0 {
+			// Preserve an unterminated template-like suffix. Rewriting it is more
+			// likely to corrupt author input than to parameterize a request literal.
+			result.WriteString(remaining[start:])
+			break
+		}
+		end := start + 2 + endOffset + 2
+		result.WriteString(remaining[start:end])
+		remaining = remaining[end:]
+	}
+	return result.String()
+}
+
 func replaceHeader(action *dsl.Action, headerKey string, replace func(string) (string, bool)) (before, after string, ok bool) {
 	if action == nil {
 		return "", "", false
 	}
 	firstBefore := ""
 	lastAfter := ""
+	mapKey := headerKey
 	changed := false
 	if action.Headers != nil {
-		if current, exists := action.Headers[headerKey]; exists {
+		matchingKeys := make([]string, 0, 1)
+		for _, candidate := range sortedKeys(action.Headers) {
+			if strings.EqualFold(candidate, headerKey) {
+				matchingKeys = append(matchingKeys, candidate)
+			}
+		}
+		for _, candidate := range matchingKeys {
+			if candidate == headerKey {
+				mapKey = candidate
+				break
+			}
+			if mapKey == headerKey {
+				mapKey = candidate
+			}
+		}
+		for _, candidate := range matchingKeys {
+			current := action.Headers[candidate]
 			if updated, didChange := replace(current); didChange {
-				action.Headers[headerKey] = updated
-				firstBefore = current
+				action.Headers[candidate] = updated
+				if firstBefore == "" {
+					firstBefore = current
+				}
 				lastAfter = updated
 				changed = true
 			}
 		}
 	}
+	matchedHeaderList := false
 	for i := range action.HeaderList {
 		if !strings.EqualFold(action.HeaderList[i].Name, headerKey) {
 			continue
 		}
+		matchedHeaderList = true
 		if updated, didChange := replace(action.HeaderList[i].Value); didChange {
 			if firstBefore == "" {
 				firstBefore = action.HeaderList[i].Value
 			}
 			action.HeaderList[i].Value = updated
-			lastAfter = updated
 			changed = true
 		}
+		// Headers is only a compatibility summary of HeaderList. Keep it equal
+		// to the last wire-order entry even when this particular replacement
+		// changed an earlier duplicate and left the final duplicate untouched.
+		lastAfter = action.HeaderList[i].Value
 	}
 	if changed {
 		// An empty replacement is still a real change: the loops above already
@@ -183,7 +629,21 @@ func replaceHeader(action *dsl.Action, headerKey string, replace func(string) (s
 		if action.Headers == nil {
 			action.Headers = map[string]string{}
 		}
-		action.Headers[headerKey] = lastAfter
+		if !matchedHeaderList && lastAfter == "" {
+			lastAfter = action.Headers[mapKey]
+		}
+		if !matchedHeaderList {
+			return firstBefore, lastAfter, true
+		}
+		// HeaderList is authoritative. Collapse any case-only compatibility map
+		// variants to one summary instead of leaving a stale duplicate that a
+		// downstream map consumer could select nondeterministically.
+		for candidate := range action.Headers {
+			if strings.EqualFold(candidate, headerKey) && candidate != mapKey {
+				delete(action.Headers, candidate)
+			}
+		}
+		action.Headers[mapKey] = lastAfter
 		return firstBefore, lastAfter, true
 	}
 	return "", "", false

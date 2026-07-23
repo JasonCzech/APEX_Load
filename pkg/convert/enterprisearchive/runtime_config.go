@@ -3,8 +3,10 @@ package enterprisearchive
 // runtime_config.go — split from converter.go (same package, behavior-preserving).
 
 import (
+	"bufio"
 	"fmt"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -14,69 +16,85 @@ import (
 
 // RuntimeConfig holds parsed source runtime settings from a .cfg file.
 type RuntimeConfig struct {
-	ConnectTimeoutSec            int
-	ReceiveTimeoutSec            int
-	StepTimeoutSec               int
-	HTTPVersion                  string // "1.0" or "1.1"
-	KeepAlive                    bool
-	MaxConnsPerHost              int
-	ProxyMode                    string
-	ProxyURL                     string
-	ProxyUser                    string
-	ProxyPass                    string
-	UserAgent                    string
-	AcceptLanguage               string
-	UseGzip                      bool
-	SSLVersion                   string
-	AuthUser                     string
-	AuthPass                     string
-	MaxRedirects                 int
-	Iterations                   int
-	AutoTransactions             string
-	BlockScheduling              string
-	ActionSequence               []string
-	PacingType                   string
-	DelayMs                      int
-	MinDelayMs                   int
-	MaxDelayMs                   int
-	IntervalMs                   int
-	MinIntervalMs                int
-	MaxIntervalMs                int
-	ThinkTimeIgnore              bool
-	ThinkTimeMultiplier          float64
-	ThinkTimeLimitMs             float64
-	LogLevel                     string
-	OnErrorOnly                  bool
-	LogExtendedOptions           []string
-	ContinueOnError              bool
-	SnapshotOnError              bool
-	CacheEnabled                 bool
-	CacheContentURLs             bool
-	CheckNewerVersions           bool
-	NewUserPerIteration          bool
-	BrowserEngine                string
-	BrowserDeviceProfile         string
-	BrowserTouchMode             bool
-	BrowserOrientation           string
-	BrowserClientMetrics         bool
-	BrowserSlowMoMs              int
-	BrowserViewportWidth         int
-	BrowserViewportHeight        int
-	DownloadResources            string
-	AdditionalAttributes         map[string]string
-	DownloadFilterMode           string
-	DownloadFilterHosts          []string
-	ContentChecks                []dsl.ContentCheckConfig
-	NetworkSimulationMode        string
-	NetworkSimulationPreset      string
-	NetworkBandwidthKbps         int
-	NetworkLatencyMs             int
-	StreamingMode                string
-	StreamingBufferSizeSeconds   int
-	StreamingFixedBitrateKbps    int
-	StreamingBandwidthEstimation string
-	DataFormattingAutoDetect     bool
-	DataFormattingChain          []dsl.DFETransform
+	ConnectTimeoutSec             int
+	ReceiveTimeoutSec             int
+	StepTimeoutSec                int
+	HTTPVersion                   string // "1.0" or "1.1"
+	KeepAlive                     bool
+	MaxConnsPerHost               int
+	ProxyMode                     string
+	ProxyURL                      string
+	ProxyUser                     string
+	ProxyPass                     string
+	UserAgent                     string
+	AcceptLanguage                string
+	UseGzip                       bool
+	SSLVersion                    string
+	AuthUser                      string
+	AuthPass                      string
+	MaxRedirects                  int
+	Iterations                    int
+	AutoTransactions              string
+	BlockScheduling               string
+	ActionSequence                []string
+	PacingType                    string
+	DelayMs                       int
+	MinDelayMs                    int
+	MaxDelayMs                    int
+	IntervalMs                    int
+	MinIntervalMs                 int
+	MaxIntervalMs                 int
+	ThinkTimeIgnore               bool
+	ThinkTimeMultiplier           float64
+	ThinkTimeLimitMs              float64
+	LogLevel                      string
+	OnErrorOnly                   bool
+	LogExtendedOptions            []string
+	ContinueOnError               bool
+	SnapshotOnError               bool
+	CacheEnabled                  bool
+	CacheContentURLs              bool
+	CheckNewerVersions            bool
+	NewUserPerIteration           bool
+	BrowserEngine                 string
+	BrowserDeviceProfile          string
+	BrowserTouchMode              bool
+	BrowserOrientation            string
+	BrowserClientMetrics          bool
+	BrowserSlowMoMs               int
+	BrowserViewportWidth          int
+	BrowserViewportHeight         int
+	DownloadResources             string
+	AdditionalAttributes          map[string]string
+	DownloadFilterMode            string
+	DownloadFilterHosts           []string
+	ContentChecks                 []dsl.ContentCheckConfig
+	NetworkSimulationMode         string
+	NetworkSimulationPreset       string
+	NetworkBandwidthKbps          int
+	NetworkLatencyMs              int
+	StreamingMode                 string
+	StreamingBufferSizeSeconds    int
+	StreamingFixedBitrateKbps     int
+	StreamingBandwidthEstimation  string
+	DataFormattingAutoDetect      bool
+	DataFormattingChain           []dsl.DFETransform
+	JavaVMJDKSelection            string
+	JavaVMJDKSelectionRaw         string
+	JavaVMJDKSelectionParseError  string
+	JavaVMJDKHome                 string
+	JavaVMAdditionalParameters    []string
+	JavaVMParametersRaw           string
+	JavaVMParametersParseError    string
+	JavaVMUseXBootClasspath       *bool
+	JavaVMUseXBootClasspathRaw    string
+	JavaVMUseXBootParseError      string
+	JavaVMDedicatedClassLoader    *bool
+	JavaVMDedicatedClassLoaderRaw string
+	JavaVMDedicatedParseError     string
+	JavaVMClasspath               []string
+	JavaVMClasspathRaw            string
+	JavaVMClasspathParseError     string
 }
 
 // ParseRuntimeCfg parses a source default.cfg / runtime settings .cfg file.
@@ -234,6 +252,68 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 		rc.DataFormattingChain = append(rc.DataFormattingChain, transform)
 	}
 
+	javaVMSectionAliases := []string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings"}
+	javaVMSection := findSection(sections, javaVMSectionAliases...)
+	// Parse executable list values from the original CFG text. The general
+	// config parser decodes adjacent C string literals for source-code fields;
+	// applying that normalization here would concatenate separately quoted JVM
+	// arguments and could silently change the imported command line.
+	rawJavaVMSection := findSection(parseRawRuntimeConfigSections(content), javaVMSectionAliases...)
+	javaVMJDKSelectionExplicit := false
+	if selection, ok := sectionValueCaseInsensitive(javaVMSection, "use_jdk", "jdk_selection", "UseSpecifiedJdk"); ok {
+		javaVMJDKSelectionExplicit = true
+		rc.JavaVMJDKSelectionRaw = selection
+		rc.JavaVMJDKSelection = normalizeJavaVMJDKSelection(selection)
+		if rc.JavaVMJDKSelection == "" {
+			rc.JavaVMJDKSelectionParseError = "unsupported Java VM JDK selector"
+		}
+	}
+	if home, ok := sectionValueCaseInsensitive(rawJavaVMSection, "jdk_home", "JdkPath", "JavaVmJdkPath", "UserJdkPath", "JdkHome"); ok {
+		rc.JavaVMJDKHome = cleanRawRuntimeScalar(home)
+	}
+	// A home without an explicit selector is actionable source evidence. An
+	// explicit search_jdk/internal selector wins while the stale home remains
+	// preserved for round-trip review.
+	if !javaVMJDKSelectionExplicit && rc.JavaVMJDKHome != "" {
+		rc.JavaVMJDKSelection = "specified"
+	}
+	if raw, ok := sectionValueCaseInsensitive(rawJavaVMSection, "Java_VM_Params", "java_vm_parameters", "AdditionalVmParams", "ExtraVmParams", "VmParams"); ok {
+		rc.JavaVMParametersRaw = raw
+		if strings.TrimSpace(raw) != "" {
+			parameters, err := splitQuotedRuntimeArguments(raw)
+			if err != nil {
+				rc.JavaVMParametersParseError = err.Error()
+			} else {
+				rc.JavaVMAdditionalParameters = parameters
+			}
+		}
+	}
+	if value, ok := sectionValueCaseInsensitive(javaVMSection, "Use_Xboot", "use_xboot", "UseXbootClasspath"); ok {
+		rc.JavaVMUseXBootClasspathRaw = value
+		if parsed, valid := parseBoolExplicit(value); valid {
+			rc.JavaVMUseXBootClasspath = &parsed
+		} else {
+			rc.JavaVMUseXBootParseError = "invalid Java VM Xboot boolean"
+		}
+	}
+	if value, ok := sectionValueCaseInsensitive(javaVMSection, "enable_CL_per_vuser", "enable_classloader_per_vuser", "DedicatedClassLoader", "ClassLoaderPerVuser"); ok {
+		rc.JavaVMDedicatedClassLoaderRaw = value
+		if parsed, valid := parseBoolExplicit(value); valid {
+			rc.JavaVMDedicatedClassLoader = &parsed
+		} else {
+			rc.JavaVMDedicatedParseError = "invalid Java VM dedicated-class-loader boolean"
+		}
+	}
+	if value, ok := sectionValueCaseInsensitive(rawJavaVMSection, "Java_Env_ClassPath", "java_env_class_paths"); ok {
+		rc.JavaVMClasspathRaw = value
+		classpath, err := splitJavaVMClasspath(value)
+		if err != nil {
+			rc.JavaVMClasspathParseError = err.Error()
+		} else {
+			rc.JavaVMClasspath = classpath
+		}
+	}
+
 	return rc
 }
 
@@ -340,6 +420,14 @@ func (rc *RuntimeConfig) ToScriptConfig() *dsl.ScriptConfig {
 			},
 		}
 	}
+	if rc.JavaVMJDKSelection != "" || rc.JavaVMJDKHome != "" || len(rc.JavaVMAdditionalParameters) > 0 || rc.JavaVMUseXBootClasspath != nil || rc.JavaVMDedicatedClassLoader != nil || len(rc.JavaVMClasspath) > 0 {
+		config.JavaVuser.JDKSelection = rc.JavaVMJDKSelection
+		config.JavaVuser.JDKHome = rc.JavaVMJDKHome
+		config.JavaVuser.AdditionalVMParameters = append([]string(nil), rc.JavaVMAdditionalParameters...)
+		config.JavaVuser.UseXBootClasspath = cloneRuntimeBoolPointer(rc.JavaVMUseXBootClasspath)
+		config.JavaVuser.DedicatedClassLoader = cloneRuntimeBoolPointer(rc.JavaVMDedicatedClassLoader)
+		config.JavaVuser.Classpath = append([]string(nil), rc.JavaVMClasspath...)
+	}
 	return config
 }
 
@@ -437,13 +525,226 @@ func (rc *RuntimeConfig) ToHTTPConfig() *dsl.HTTPConfig {
 
 func findSection(sections map[string]map[string]string, aliases ...string) map[string]string {
 	for _, alias := range aliases {
-		for name, values := range sections {
+		if values, ok := sections[alias]; ok {
+			return values
+		}
+		matchingNames := make([]string, 0, 1)
+		for name := range sections {
 			if strings.EqualFold(name, alias) {
-				return values
+				matchingNames = append(matchingNames, name)
 			}
+		}
+		if len(matchingNames) > 0 {
+			sort.Strings(matchingNames)
+			return sections[matchingNames[0]]
 		}
 	}
 	return map[string]string{}
+}
+
+// sectionValueCaseInsensitive selects the first alias deterministically while
+// tolerating the inconsistent key casing emitted across runtime.cfg versions.
+func sectionValueCaseInsensitive(section map[string]string, aliases ...string) (string, bool) {
+	for _, alias := range aliases {
+		if value, ok := section[alias]; ok {
+			return value, true
+		}
+		matchingKeys := make([]string, 0, 1)
+		for key := range section {
+			if strings.EqualFold(strings.TrimSpace(key), strings.TrimSpace(alias)) {
+				matchingKeys = append(matchingKeys, key)
+			}
+		}
+		if len(matchingKeys) > 0 {
+			sort.Strings(matchingKeys)
+			return section[matchingKeys[0]], true
+		}
+	}
+	return "", false
+}
+
+// parseRawRuntimeConfigSections preserves values exactly apart from the
+// whitespace around the key/value delimiter. ParseConfigSections intentionally
+// performs C-string normalization that is useful for most source settings but
+// unsafe for argv and classpath lists.
+func parseRawRuntimeConfigSections(content string) map[string]map[string]string {
+	sections := make(map[string]map[string]string)
+	scanner := bufio.NewScanner(strings.NewReader(content))
+	scanner.Buffer(make([]byte, 4096), 1<<20)
+	section := ""
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ";") {
+			continue
+		}
+		if match := reSectionHeader.FindStringSubmatch(line); len(match) > 1 {
+			section = match[1]
+			if _, ok := sections[section]; !ok {
+				sections[section] = make(map[string]string)
+			}
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		if _, ok := sections[section]; !ok {
+			sections[section] = make(map[string]string)
+		}
+		sections[section][strings.TrimSpace(parts[0])] = strings.TrimSpace(parts[1])
+	}
+	if len(sections[""]) == 0 {
+		delete(sections, "")
+	}
+	return sections
+}
+
+// cleanRawRuntimeScalar removes optional grouping quotes without interpreting
+// C escapes. Runtime CFG path values are literal platform paths, so decoding a
+// quoted Windows path such as C:\tools would corrupt "\t" into a tab.
+func cleanRawRuntimeScalar(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) < 2 {
+		return trimmed
+	}
+	first := trimmed[0]
+	last := trimmed[len(trimmed)-1]
+	if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+		return strings.TrimSpace(trimmed[1 : len(trimmed)-1])
+	}
+	return trimmed
+}
+
+func normalizeJavaVMJDKSelection(value string) string {
+	switch normalizeEnum(value) {
+	case "search_jdk", "search", "internal", "internal_logic", "false", "0":
+		return "internal"
+	case "specified_jdk", "specified", "user_specified", "true", "1":
+		return "specified"
+	default:
+		return ""
+	}
+}
+
+// splitQuotedRuntimeArguments tokenizes the source JVM parameter string
+// without shell expansion. Quotes group spaces and are removed; backslashes
+// only escape whitespace or quotes so UNC paths and Java escape sequences
+// retain every path separator.
+func splitQuotedRuntimeArguments(value string) ([]string, error) {
+	arguments := make([]string, 0)
+	var token strings.Builder
+	var quote byte
+	tokenStarted := false
+	flush := func() {
+		if !tokenStarted {
+			return
+		}
+		arguments = append(arguments, token.String())
+		token.Reset()
+		tokenStarted = false
+	}
+
+	for index := 0; index < len(value); index++ {
+		character := value[index]
+		if quote != 0 {
+			if character == quote {
+				quote = 0
+				continue
+			}
+			if character == '\\' && quote != '\'' && index+1 < len(value) && runtimeArgumentEscapable(value[index+1]) {
+				index++
+				token.WriteByte(value[index])
+				tokenStarted = true
+				continue
+			}
+			token.WriteByte(character)
+			tokenStarted = true
+			continue
+		}
+
+		switch {
+		case character == '\'' || character == '"':
+			quote = character
+			tokenStarted = true
+		case character == '\\' && index+1 < len(value) && runtimeArgumentEscapable(value[index+1]):
+			index++
+			token.WriteByte(value[index])
+			tokenStarted = true
+		case character == ' ' || character == '\t' || character == '\r' || character == '\n':
+			flush()
+		default:
+			token.WriteByte(character)
+			tokenStarted = true
+		}
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("unterminated quoted JVM parameter")
+	}
+	flush()
+	return arguments, nil
+}
+
+func runtimeArgumentEscapable(value byte) bool {
+	return value == '\'' || value == '"' || value == ' ' || value == '\t' || value == '\r' || value == '\n'
+}
+
+func splitJavaVMClasspath(value string) ([]string, error) {
+	classpath := make([]string, 0)
+	var entry strings.Builder
+	var quote byte
+	flush := func() {
+		if trimmed := strings.TrimSpace(entry.String()); trimmed != "" {
+			classpath = append(classpath, trimmed)
+		}
+		entry.Reset()
+	}
+	for index := 0; index < len(value); index++ {
+		character := value[index]
+		if quote != 0 {
+			if character == quote {
+				quote = 0
+				continue
+			}
+			if character == '\\' && index+1 < len(value) && value[index+1] == quote {
+				index++
+				entry.WriteByte(value[index])
+				continue
+			}
+			entry.WriteByte(character)
+			continue
+		}
+		switch character {
+		case '"':
+			quote = character
+		case '\'':
+			// Apostrophes are valid path characters. Treat a single quote as
+			// grouping syntax only at the beginning of a delimited entry.
+			if strings.TrimSpace(entry.String()) == "" {
+				quote = character
+			} else {
+				entry.WriteByte(character)
+			}
+		case ';', '\r', '\n':
+			// LoadRunner Java Vuser classpaths are Windows-semicolon-delimited.
+			// Deliberately do not split ':' so drive letters survive Linux import.
+			flush()
+		default:
+			entry.WriteByte(character)
+		}
+	}
+	if quote != 0 {
+		return nil, fmt.Errorf("unterminated quoted Java VM classpath entry")
+	}
+	flush()
+	return classpath, nil
+}
+
+func cloneRuntimeBoolPointer(value *bool) *bool {
+	if value == nil {
+		return nil
+	}
+	cloned := *value
+	return &cloned
 }
 
 func parseInt(value string) int {

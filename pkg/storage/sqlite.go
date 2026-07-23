@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -58,7 +59,7 @@ const (
 	intervalSummarySchemaVersionV1 = "apexload.interval-summary.v1"
 	intervalSummarySchemaVersion   = "apexload.interval-summary.v4"
 	archiveRecordSchemaVersion     = "apexload.archive.v1"
-	scriptRecordingSchemaVersion   = "apexload.recording.v1"
+	scriptRecordingSchemaVersion   = "apexload.recording.v2"
 )
 
 type BrowserMetricsSummaryRecord struct {
@@ -323,6 +324,14 @@ func (db *storeDB) Begin() (*storeTx, error) {
 	return &storeTx{tx: tx, dialect: db.dialect}, nil
 }
 
+func (db *storeDB) BeginTx(ctx context.Context, opts *sql.TxOptions) (*storeTx, error) {
+	tx, err := db.db.BeginTx(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	return &storeTx{tx: tx, dialect: db.dialect}, nil
+}
+
 func (db *storeDB) Close() error {
 	return db.db.Close()
 }
@@ -335,12 +344,20 @@ func (tx *storeTx) Exec(query string, args ...any) (sql.Result, error) {
 	return tx.tx.Exec(rewriteSQL(query, tx.dialect), args...)
 }
 
+func (tx *storeTx) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
+	return tx.tx.ExecContext(ctx, rewriteSQL(query, tx.dialect), args...)
+}
+
 func (tx *storeTx) Query(query string, args ...any) (*sql.Rows, error) {
 	return tx.tx.Query(rewriteSQL(query, tx.dialect), args...)
 }
 
 func (tx *storeTx) QueryRow(query string, args ...any) *sql.Row {
 	return tx.tx.QueryRow(rewriteSQL(query, tx.dialect), args...)
+}
+
+func (tx *storeTx) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	return tx.tx.QueryRowContext(ctx, rewriteSQL(query, tx.dialect), args...)
 }
 
 func (tx *storeTx) Commit() error {

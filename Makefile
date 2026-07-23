@@ -78,8 +78,9 @@ clients-release: desktop-release
 java-vuser-runner:
 	mkdir -p bin/java_vuser
 	rm -rf bin/java_vuser/classes bin/java_vuser/apexload-java-vuser-runner.jar
-	javac -d bin/java_vuser/classes runners/java_vuser/lrapi/lr.java runners/java_vuser/Harness.java
+	javac --release 17 -d bin/java_vuser/classes runners/java_vuser/lrapi/lr.java runners/java_vuser/Harness.java
 	jar --create --file bin/java_vuser/apexload-java-vuser-runner.jar --main-class Harness -C bin/java_vuser/classes .
+	go build $(GOFLAGS) $(LDFLAGS) -o bin/apexload-java-vuser-runner ./cmd/apexload-java-vuser-runner
 
 test:
 	go test -race -count=1 ./...

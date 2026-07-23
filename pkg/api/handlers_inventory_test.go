@@ -97,6 +97,27 @@ func TestHandleGetSystemInventoryReturnsControllerAndGenerators(t *testing.T) {
 	}
 }
 
+func TestNormalizeGeneratorInventoryPreservesFreshEmptyCapabilities(t *testing.T) {
+	fresh := normalizeGeneratorInventoryEntry(GeneratorInventoryEntry{
+		Target:             "gen-jvm:9090",
+		Status:             "connected",
+		SupportedProtocols: []string{},
+		CompatibleFeatures: []string{},
+		Labels:             map[string]string{"runtime": "java_vuser"},
+	})
+	if len(fresh.SupportedProtocols) != 0 || len(fresh.CompatibleFeatures) != 0 {
+		t.Fatalf("fresh capabilities = protocols:%#v features:%#v, want authoritative empties", fresh.SupportedProtocols, fresh.CompatibleFeatures)
+	}
+
+	provisional := normalizeGeneratorInventoryEntry(GeneratorInventoryEntry{
+		Target: "gen-jvm:9090",
+		Status: "unreachable",
+	})
+	if len(provisional.SupportedProtocols) == 0 || len(provisional.CompatibleFeatures) == 0 {
+		t.Fatalf("provisional capabilities = protocols:%#v features:%#v, want controller bootstrap defaults", provisional.SupportedProtocols, provisional.CompatibleFeatures)
+	}
+}
+
 func TestHandleGetSystemServicesReturnsApexSurfaces(t *testing.T) {
 	server := NewServer(ServerConfig{MaxConcurrent: 2, Addr: ":8080", ProxyAddr: ":8081"})
 	server.runner.setExecutionBackend(stubInventoryBackend{entries: []GeneratorInventoryEntry{{

@@ -111,6 +111,7 @@ type oasParameter struct {
 	Name        string         `yaml:"name"`
 	In          string         `yaml:"in"`
 	Description string         `yaml:"description,omitempty"`
+	Deprecated  bool           `yaml:"deprecated,omitempty"`
 	Required    bool           `yaml:"required"`
 	Schema      oasParamSchema `yaml:"schema"`
 }
@@ -135,6 +136,7 @@ type oasSchema struct {
 	Type                 string               `yaml:"type,omitempty"`
 	Format               string               `yaml:"format,omitempty"`
 	Description          string               `yaml:"description,omitempty"`
+	Deprecated           bool                 `yaml:"deprecated,omitempty"`
 	Properties           map[string]oasSchema `yaml:"properties,omitempty"`
 	Items                *oasSchema           `yaml:"items,omitempty"`
 	AdditionalProperties *bool                `yaml:"additionalProperties,omitempty"`
@@ -551,10 +553,40 @@ func openAPIComponentSchemas() map[string]oasSchema {
 			},
 			Required: []string{"break_on_failure"},
 		},
+		"AuthoringSessionCreateRequest": {
+			Type: "object",
+			Properties: map[string]oasSchema{
+				"project_id": {Type: "string"},
+				"source":     {Type: "string"},
+				"name":       {Type: "string"},
+				"status": {
+					Type: "string",
+					Enum: []string{"reviewing", "editing", "blocked", "ready"},
+				},
+				"draft": {
+					Type:                 "object",
+					Description:          "APEX Load script draft retained for review and approval.",
+					AdditionalProperties: boolPointer(true),
+				},
+				"review_state": {
+					Type:                 "object",
+					Description:          "Client-extensible review evidence and workflow state.",
+					AdditionalProperties: boolPointer(true),
+				},
+				"idempotency_key": {
+					Type:        "string",
+					Description: "Optional project-scoped retry key (maximum 256 bytes). Reusing it with the same request returns the original session; reusing it with different content returns 409.",
+				},
+			},
+			Required: []string{"source"},
+		},
 	}
 }
 
 func requestBodyForRoute(method, path string) *oasRequestBody {
+	if method == http.MethodPost && path == "/api/v1/scripts/authoring/sessions" {
+		return jsonRequestBody("AuthoringSessionCreateRequest", true)
+	}
 	if method == http.MethodPost && strings.HasSuffix(path, "/step") && replaySessionControlPath(path) {
 		return jsonRequestBody("ScriptDebugStepRequest", false)
 	}
@@ -565,6 +597,10 @@ func requestBodyForRoute(method, path string) *oasRequestBody {
 		return jsonRequestBody("ScriptDebugOptionsRequest", true)
 	}
 	return nil
+}
+
+func boolPointer(value bool) *bool {
+	return &value
 }
 
 func replaySessionControlPath(path string) bool {

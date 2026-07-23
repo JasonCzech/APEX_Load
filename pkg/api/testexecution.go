@@ -552,6 +552,24 @@ func (tr *TestRunner) evaluateStartGatesLocked(id string, test *ManagedTest, opt
 	if err := buildStartGovernanceError(id, test.CapacityAdvisory, effectiveOpts); err != nil {
 		return false, err
 	}
+	// Runtime availability and generator eligibility can change after a queued
+	// or scheduled test was created. Revalidate at the actual start boundary so
+	// an approved combined Java script never launches on a phase-only runner, or
+	// because an unrelated capable generator exists outside its assignment.
+	if conflicts := tr.javaVuserRunnerLaunchConflictsForManagedTestLocked(test); len(conflicts) > 0 {
+		conflict := conflicts[0]
+		return false, fmt.Errorf("%s: %s", conflict.Code, conflict.Message)
+	}
+	// The Java runner gate above checks one group at a time. Project placement
+	// across every group as a second step so two individually-valid groups
+	// cannot both claim the same advertised JVM process slots. Re-run this at
+	// StartTest because generator occupancy may have changed since preflight.
+	if groupsUseJavaVuserProtocol(test.Groups) {
+		if conflicts := tr.generatorPlacementLaunchConflictsLocked(test); len(conflicts) > 0 {
+			conflict := conflicts[0]
+			return false, fmt.Errorf("%s: %s", conflict.Code, conflict.Message)
+		}
+	}
 	if !opts.SkipLaunchWindowPreflight {
 		if err := tr.launchStartWindowErrorLocked(test, time.Now().UTC(), id, ""); err != nil {
 			return false, err
@@ -2930,6 +2948,7 @@ func (tr *TestRunner) buildRunEngine(test *ManagedTest, resultSink engine.Result
 	}
 	projectResolvers := make(map[string]engine.SecretResolver)
 	for index := range groups {
+		groups[index].ScenarioID = strings.TrimSpace(test.ScenarioID)
 		projectID := test.ProjectID
 		if groups[index].Script != nil && strings.TrimSpace(groups[index].Script.ProjectID) != "" {
 			projectID = groups[index].Script.ProjectID
@@ -3050,7 +3069,6 @@ func (tr *TestRunner) requestStopIfRunning(test *ManagedTest, warningMessage str
 }
 
 func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGroupEngine, artifacts *runArtifacts) (context.Context, chan struct{}, chan time.Time, bool, error) {
-	now := time.Now()
 	tr.mu.Lock()
 	previousExecutionCtx := test.executionCtx
 	previousCancel := test.cancel
@@ -3059,6 +3077,30 @@ func (tr *TestRunner) startManagedTestRun(test *ManagedTest, mge *engine.MultiGr
 		ctx, test.cancel = tr.executionOperationContext(context.Background())
 		test.executionCtx = ctx
 	}
+	if tr.shuttingDown || test.Status != "INITIALIZING" || ctx.Err() != nil || !tr.isExecutionLeader() {
+		tr.mu.Unlock()
+		return ctx, nil, nil, false, nil
+	}
+	tr.mu.Unlock()
+
+	// Local runtime preflight must complete while the durable state is still
+	// INITIALIZING. MultiGroupEngine caches the successful result, so its
+	// defensive Run-time check is a no-op and cannot allocate a VUser twice.
+	if err := mge.PreflightRuntime(ctx); err != nil {
+		if previousExecutionCtx == nil || previousCancel == nil {
+			tr.mu.Lock()
+			if test.executionCtx == ctx && test.Status == "INITIALIZING" {
+				test.cancel()
+				test.executionCtx = previousExecutionCtx
+				test.cancel = previousCancel
+			}
+			tr.mu.Unlock()
+		}
+		return ctx, nil, nil, false, fmt.Errorf("local runtime preflight: %w", err)
+	}
+
+	now := time.Now()
+	tr.mu.Lock()
 	if tr.shuttingDown || test.Status != "INITIALIZING" || ctx.Err() != nil || !tr.isExecutionLeader() {
 		tr.mu.Unlock()
 		return ctx, nil, nil, false, nil
@@ -3495,6 +3537,32 @@ func (tr *TestRunner) promotePendingTestsWithTerm(leaseTerm executionLeaseTerm) 
 				return terminalErr
 			}
 			continue
+		}
+		if conflicts := tr.javaVuserRunnerLaunchConflictsForManagedTestLocked(pending); len(conflicts) > 0 {
+			conflict := conflicts[0]
+			tr.mu.Unlock()
+			message := "pending test promotion Java Vuser launch gate failed: " + conflict.Code + ": " + conflict.Message
+			if conflict.Code == "java_vuser_runner_required" {
+				if deferErr := tr.deferPendingPromotionGateWithTerm(pendingID, message, leaseTerm); deferErr != nil {
+					return deferErr
+				}
+				deferredPending[pendingID] = struct{}{}
+			} else if terminalErr := tr.failPendingPromotionGateWithTerm(pendingID, message, leaseTerm); terminalErr != nil {
+				return terminalErr
+			}
+			continue
+		}
+		if groupsUseJavaVuserProtocol(pending.Groups) {
+			if conflicts := tr.generatorPlacementLaunchConflictsLocked(pending); len(conflicts) > 0 {
+				conflict := conflicts[0]
+				tr.mu.Unlock()
+				message := "pending test promotion Java Vuser placement gate failed: " + conflict.Code + ": " + conflict.Message
+				if deferErr := tr.deferPendingPromotionGateWithTerm(pendingID, message, leaseTerm); deferErr != nil {
+					return deferErr
+				}
+				deferredPending[pendingID] = struct{}{}
+				continue
+			}
 		}
 		if blocked, reason := tr.evaluateQuotaBlockLocked(pending, ""); blocked {
 			// Quota pressure is transient. Keep the row durably queued with the

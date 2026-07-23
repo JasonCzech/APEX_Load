@@ -35,33 +35,39 @@ func init() {
 }
 
 type HTTP struct {
-	client                   *http.Client
-	oauthClient              *http.Client
-	transport                *http.Transport
-	oauthTransport           *http.Transport
-	allowedTargetHosts       []string
-	baseURL                  string
-	bufPool                  *httpBufferPool
-	contentChecks            []contentCheck
-	dataFormattingAutoDetect bool
-	dataFormattingChain      []dataFormattingTransform
-	streaming                *streamingProfile
-	defaultHeaders           map[string]string
-	authType                 string
-	authHeader               string // pre-computed Authorization header value
-	maxRedirects             int    // <=0 = no follow, unset/default = 10
-	requestTimeout           time.Duration
-	networkProfile           string // assigned network-profile label (population mix)
-	traceparentEnabled       bool
-	traceparentSampled       bool
-	authConfig               *protocol.AuthConfig
-	cache                    *httpResponseCache
+	client                     *http.Client
+	oauthClient                *http.Client
+	transport                  *http.Transport
+	oauthTransport             *http.Transport
+	allowedTargetHosts         []string
+	baseURL                    string
+	bufPool                    *httpBufferPool
+	contentChecks              []contentCheck
+	dataFormattingAutoDetect   bool
+	dataFormattingChain        []dataFormattingTransform
+	streaming                  *streamingProfile
+	defaultHeaders             map[string]string
+	authType                   string
+	authHeader                 string // pre-computed Authorization header value
+	maxRedirects               int    // <=0 = no follow, unset/default = 10
+	requestTimeout             time.Duration
+	networkProfile             string // assigned network-profile label (population mix)
+	traceparentEnabled         bool
+	traceparentSampled         bool
+	authConfig                 *protocol.AuthConfig
+	cache                      *httpResponseCache
+	captureCorrelationEvidence bool
 }
 
 const (
 	maxPooledHTTPBuffers             = 32
 	maxPooledHTTPBufferSize          = 256 << 10
 	maxHTTPResponseHeaderBytes int64 = 64 << 10
+	// Keep direct protocol callers under the same ceiling as authored DSL
+	// actions. Input-byte charging alone is insufficient for empty responses,
+	// where an attacker-controlled extractor list would otherwise perform an
+	// unbounded number of expression parses/lookups at zero charged bytes.
+	maxHTTPActionExtractors = protocol.MaxExtractionEntries
 )
 
 // httpBufferPool is deliberately count- and capacity-bounded. sync.Pool can
@@ -113,6 +119,7 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 		return err
 	}
 	h.baseURL, _ = config["base_url"].(string)
+	h.captureCorrelationEvidence, _ = config[protocol.CorrelationEvidenceCaptureConfigKey].(bool)
 	h.allowedTargetHosts = protocol.TargetPolicyHosts(config)
 	h.networkProfile, _ = config["web_network_profile_label"].(string)
 	h.traceparentEnabled = parseTraceparentEnabled(config)
@@ -387,6 +394,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
 			result.ErrorMessage = err.Error()
 			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
+			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
 			return result, nil
 		}
 	}
@@ -400,6 +408,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
 			result.ErrorMessage = retryErr.Error()
 			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
+			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
 			return result, nil
 		}
 		if digestRetried {
@@ -468,6 +477,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, n, reused, rCount, rDur)
 			result.ErrorMessage = err.Error()
 			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, cloneHTTPHeaders(resp.Header), buf.Bytes())
+			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, buf.Bytes(), false)
 			return result, nil
 		}
 	}
@@ -506,6 +516,7 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.Success = false
 		result.ErrorMessage = err.Error()
 		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, buf.Bytes())
+		h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, buf.Bytes(), false)
 		return result, nil
 	}
 	formattedBody, err := applyDataFormattingChain(respBody, h.dataFormattingAutoDetect, h.dataFormattingChain, maxBody)
@@ -514,14 +525,25 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		result.Success = false
 		result.ErrorMessage = err.Error()
 		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
+		h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, respBody, false)
 		return result, nil
 	}
 	respBody = formattedBody
 	if !result.Success && bodyReadErr == nil && result.ErrorMessage == "" && responseStatusExplicitlyAccepted(action.Assertions, result) {
 		result.Success = true
 	}
+	// Snapshot the response/transport outcome before extractors, content checks,
+	// and non-status assertions can change the overall action outcome.
+	h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, respBody, result.Success)
+	extractorWork := newExtractorInputWorkBudget(resp.Header, respBody)
 extractors:
 	for _, ext := range action.Extractors {
+		if err := extractorWork.charge(ext); err != nil {
+			result.Success = false
+			result.Extractions = nil
+			result.ErrorMessage = fmt.Sprintf("extractor %q input rejected: %v", ext.Name, err)
+			break
+		}
 		if ext.Mode == "all" {
 			values, err := extractAll(ext, resp.Header, respBody)
 			if errors.Is(err, errExtractorResourceLimit) {
@@ -640,6 +662,14 @@ func validateHTTPActionBounds(action *protocol.Action) error {
 	}
 	if action.MaxRedirects != nil && (*action.MaxRedirects < -1 || *action.MaxRedirects > MaxConfiguredRedirects) {
 		return fmt.Errorf("http max_redirects must be between -1 and %d", MaxConfiguredRedirects)
+	}
+	if len(action.Extractors) > maxHTTPActionExtractors {
+		return fmt.Errorf("http extractors must not exceed %d", maxHTTPActionExtractors)
+	}
+	for index, extractor := range action.Extractors {
+		if err := validateExtractorExpressionSize(extractor.Expression); err != nil {
+			return fmt.Errorf("http extractors[%d] %q: %w", index, extractor.Name, err)
+		}
 	}
 	if action.Params != nil {
 		if raw, present := action.Params["stream_timeout_ms"]; present {
@@ -1085,12 +1115,125 @@ func cloneHTTPHeaders(headers http.Header) map[string]string {
 		if len(values) == 0 {
 			continue
 		}
-		cloned[key] = strings.Join(values, ", ")
+		// Preserve occurrence boundaries. Comma folding changes the value of
+		// non-list headers (and Set-Cookie in particular) and prevents correlation
+		// diagnosis from matching an ordinal extractor against replay evidence.
+		cloned[key] = strings.Join(values, "\n")
 	}
 	if len(cloned) == 0 {
 		return nil
 	}
 	return cloned
+}
+
+// attachCorrelationEvidence exposes one raw HTTP exchange only to the replay
+// engine's pre-scrub observer. Load runs never allocate this side channel. The
+// response body passed here is the decoded/formatted body used by extractors;
+// repeated header occurrences remain newline-delimited instead of comma-folded.
+func (h *HTTP) attachCorrelationEvidence(result *protocol.Result, action *protocol.Action, request *http.Request, fallbackURL string, fallbackBody []byte, response *http.Response, responseBody []byte, responseSuccess bool) {
+	if h == nil || !h.captureCorrelationEvidence || result == nil {
+		return
+	}
+	// response.Request is the final redirect-hop request. Repair locations must
+	// instead describe the initial request represented by this editable action;
+	// otherwise a POST that follows a redirect appears as the final GET and loses
+	// the stale URL/body that the user can actually fix.
+	wireRequest := request
+	requestURL := fallbackURL
+	if wireRequest != nil && wireRequest.URL != nil {
+		requestURL = wireRequest.URL.String()
+	}
+	if !httpCorrelationEvidenceFitsCaptureLimit(requestURL, fallbackBody, wireRequest, responseBody, response) {
+		result.CorrelationEvidence = protocol.UnavailableCorrelationEvidence(protocol.CorrelationEvidenceTooLargeReason)
+		return
+	}
+	responseOutcome := responseSuccess
+	var responseHeaders map[string]string
+	responseStatus := 0
+	if response != nil {
+		responseHeaders = cloneHTTPHeaders(response.Header)
+		responseStatus = response.StatusCode
+	}
+	result.CorrelationEvidence = &protocol.CorrelationEvidence{
+		RequestURL:             requestURL,
+		RequestBody:            string(fallbackBody),
+		RequestBodyTransformed: action != nil && strings.EqualFold(strings.TrimSpace(action.BodyEncoding), "base64"),
+		RequestHeaders:         correlationEvidenceRequestHeaders(wireRequest),
+		ResponseBody:           string(responseBody),
+		ResponseHeaders:        responseHeaders,
+		ResponseStatus:         responseStatus,
+		ResponseSuccess:        &responseOutcome,
+	}
+}
+
+func httpCorrelationEvidenceFitsCaptureLimit(requestURL string, requestBody []byte, request *http.Request, responseBody []byte, response *http.Response) bool {
+	remaining := protocol.MaxCorrelationEvidenceBytes
+	consume := func(size int) bool {
+		if size < 0 || size > remaining {
+			return false
+		}
+		remaining -= size
+		return true
+	}
+	consumeHeaders := func(headers http.Header, skipHost bool) bool {
+		for key, values := range headers {
+			if len(values) == 0 || (skipHost && strings.EqualFold(key, "Host")) {
+				continue
+			}
+			if !consume(len(key)) {
+				return false
+			}
+			for index, value := range values {
+				if index > 0 && !consume(1) {
+					return false
+				}
+				if !consume(len(value)) {
+					return false
+				}
+			}
+		}
+		return true
+	}
+	if !consume(len(requestURL)) || !consume(len(requestBody)) || !consume(len(responseBody)) {
+		return false
+	}
+	if request != nil {
+		host := strings.TrimSpace(request.Host)
+		if host == "" && request.URL != nil {
+			host = strings.TrimSpace(request.URL.Host)
+		}
+		if !consumeHeaders(request.Header, host != "") {
+			return false
+		}
+		if host != "" && (!consume(len("Host")) || !consume(len(host))) {
+			return false
+		}
+	}
+	return response == nil || consumeHeaders(response.Header, false)
+}
+
+func correlationEvidenceRequestHeaders(request *http.Request) map[string]string {
+	if request == nil {
+		return nil
+	}
+	headers := cloneHTTPHeaders(request.Header)
+	host := strings.TrimSpace(request.Host)
+	if host == "" && request.URL != nil {
+		host = strings.TrimSpace(request.URL.Host)
+	}
+	if host == "" {
+		return headers
+	}
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+	for key := range headers {
+		if strings.EqualFold(key, "Host") {
+			delete(headers, key)
+		}
+	}
+	headers["Host"] = host
+	return headers
 }
 
 func redactedRequestHeadersForSnapshot(headers http.Header, redactedHeaders map[string]string, redactAuthorization bool, redactedAuthorization string) map[string]string {
@@ -1139,16 +1282,37 @@ func requestHeadersWithRedactedHeaderList(snapshotHeaders map[string]string, red
 	if out == nil {
 		out = map[string]string{}
 	}
+	type headerGroup struct {
+		name   string
+		values []string
+	}
+	groups := make(map[string]*headerGroup, len(redactedHeaderList))
+	order := make([]string, 0, len(redactedHeaderList))
 	for _, header := range redactedHeaderList {
 		name := strings.TrimSpace(header.Name)
 		if name == "" {
 			continue
 		}
-		if existing := out[name]; existing != "" {
-			out[name] = existing + ", " + header.Value
-		} else {
-			out[name] = header.Value
+		normalized := strings.ToLower(name)
+		group := groups[normalized]
+		if group == nil {
+			group = &headerGroup{name: name}
+			groups[normalized] = group
+			order = append(order, normalized)
 		}
+		group.values = append(group.values, header.Value)
+	}
+	for _, normalized := range order {
+		group := groups[normalized]
+		// HeaderList has wire-level precedence over the summary map. Remove an
+		// existing case variant instead of appending it, which otherwise duplicates
+		// the first occurrence in snapshots.
+		for existingName := range out {
+			if strings.EqualFold(existingName, group.name) {
+				delete(out, existingName)
+			}
+		}
+		out[group.name] = strings.Join(group.values, "\n")
 	}
 	return out
 }

@@ -1,6 +1,31 @@
 package protocol
 
-import "testing"
+import (
+	"context"
+	"strings"
+	"testing"
+)
+
+type panickingRuntimeExtensionProtocol struct{}
+
+func (*panickingRuntimeExtensionProtocol) Name() string { return "panicking_runtime_extension_test" }
+func (*panickingRuntimeExtensionProtocol) Init(context.Context, map[string]any) error {
+	return nil
+}
+func (*panickingRuntimeExtensionProtocol) Execute(context.Context, *Action) (*Result, error) {
+	return &Result{Success: true}, nil
+}
+func (*panickingRuntimeExtensionProtocol) Teardown(context.Context) error    { return nil }
+func (*panickingRuntimeExtensionProtocol) HealthCheck(context.Context) error { return nil }
+func (*panickingRuntimeExtensionProtocol) RuntimeCapabilities() RuntimeCapabilities {
+	panic("resolved-capability-secret")
+}
+func (*panickingRuntimeExtensionProtocol) RuntimeHealthy(context.Context) bool {
+	panic("resolved-health-secret")
+}
+func (*panickingRuntimeExtensionProtocol) PreflightRuntime(context.Context, RuntimePreflightRequest) (RuntimePreflightResult, error) {
+	panic("resolved-preflight-secret")
+}
 
 func TestClassifyPayloadSize(t *testing.T) {
 	testCases := []struct {
@@ -110,3 +135,91 @@ func TestBuildProtocolEvidenceRecognizesSOAPAndRedactsMetadata(t *testing.T) {
 		t.Fatalf("params = %#v, want redacted lr parameter", metadata["params"])
 	}
 }
+
+func TestRuntimeFeaturesSatisfyNormalizedMembership(t *testing.T) {
+	tests := []struct {
+		name     string
+		features []string
+		required string
+		want     bool
+	}{
+		{name: "phase exact", features: []string{FeatureJavaVuserPhaseLifecycleV1}, required: FeatureJavaVuserPhaseLifecycleV1, want: true},
+		{name: "governed persistent satisfies phase", features: []string{FeatureJavaVuserPersistentLifecycleV1, FeatureJavaVuserSessionFrameTokenV1}, required: FeatureJavaVuserPhaseLifecycleV1, want: true},
+		{name: "tokenless persistent does not satisfy phase", features: []string{FeatureJavaVuserPersistentLifecycleV1}, required: FeatureJavaVuserPhaseLifecycleV1},
+		{name: "phase does not satisfy persistent", features: []string{FeatureJavaVuserPhaseLifecycleV1}, required: FeatureJavaVuserPersistentLifecycleV1},
+		{name: "governed persistent exact", features: []string{FeatureJavaVuserPersistentLifecycleV1, FeatureJavaVuserSessionFrameTokenV1}, required: FeatureJavaVuserPersistentLifecycleV1, want: true},
+		{name: "tokenless persistent rejected", features: []string{FeatureJavaVuserPersistentLifecycleV1}, required: FeatureJavaVuserPersistentLifecycleV1},
+		{name: "frame token alone rejected", features: []string{FeatureJavaVuserSessionFrameTokenV1}, required: FeatureJavaVuserPersistentLifecycleV1},
+		{name: "case and whitespace normalized", features: []string{" JAVA_VUSER_PHASE_LIFECYCLE_V1 "}, required: FeatureJavaVuserPhaseLifecycleV1, want: true},
+		{name: "unrelated", features: []string{"java_vuser_validation_only_v1"}, required: FeatureJavaVuserPhaseLifecycleV1},
+		{name: "empty requirement", required: "", want: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := RuntimeFeaturesSatisfy(test.features, test.required); got != test.want {
+				t.Fatalf("RuntimeFeaturesSatisfy(%v, %q) = %v, want %v", test.features, test.required, got, test.want)
+			}
+		})
+	}
+}
+
+func TestMissingJavaVuserPersistentRuntimeFeature(t *testing.T) {
+	if got := MissingJavaVuserPersistentRuntimeFeature(nil); got != FeatureJavaVuserPersistentLifecycleV1 {
+		t.Fatalf("missing feature for empty capabilities = %q", got)
+	}
+	if got := MissingJavaVuserPersistentRuntimeFeature([]string{FeatureJavaVuserPersistentLifecycleV1}); got != FeatureJavaVuserSessionFrameTokenV1 {
+		t.Fatalf("missing feature for tokenless persistent capabilities = %q", got)
+	}
+	if got := MissingJavaVuserPersistentRuntimeFeature([]string{
+		FeatureJavaVuserPersistentLifecycleV1,
+		FeatureJavaVuserSessionFrameTokenV1,
+	}); got != "" {
+		t.Fatalf("missing feature for governed persistent capabilities = %q", got)
+	}
+}
+
+func TestRuntimeExtensionBoundariesRecoverWithoutLeakingPanicValues(t *testing.T) {
+	instance := &panickingRuntimeExtensionProtocol{}
+	if _, supported, err := ReadRuntimeCapabilities(instance); !supported || err == nil {
+		t.Fatalf("ReadRuntimeCapabilities supported=%v error=%v, want recovered failure", supported, err)
+	} else if strings.Contains(err.Error(), "resolved-capability-secret") {
+		t.Fatalf("capability error leaked panic value: %v", err)
+	}
+	if healthy, supported, err := CheckRuntimeHealth(context.Background(), instance); healthy || !supported || err == nil {
+		t.Fatalf("CheckRuntimeHealth healthy=%v supported=%v error=%v, want recovered failure", healthy, supported, err)
+	} else if strings.Contains(err.Error(), "resolved-health-secret") {
+		t.Fatalf("health error leaked panic value: %v", err)
+	}
+	if _, supported, err := RunRuntimePreflight(context.Background(), instance, RuntimePreflightRequest{}); !supported || err == nil {
+		t.Fatalf("RunRuntimePreflight supported=%v error=%v, want recovered failure", supported, err)
+	} else if strings.Contains(err.Error(), "resolved-preflight-secret") {
+		t.Fatalf("preflight error leaked panic value: %v", err)
+	}
+}
+
+func TestRuntimeExtensionBoundariesReportUnsupportedProtocol(t *testing.T) {
+	instance := &unsupportedRuntimeExtensionProtocol{}
+	if _, supported, err := ReadRuntimeCapabilities(instance); supported || err != nil {
+		t.Fatalf("ReadRuntimeCapabilities supported=%v error=%v", supported, err)
+	}
+	if _, supported, err := CheckRuntimeHealth(context.Background(), instance); supported || err != nil {
+		t.Fatalf("CheckRuntimeHealth supported=%v error=%v", supported, err)
+	}
+	if _, supported, err := RunRuntimePreflight(context.Background(), instance, RuntimePreflightRequest{}); supported || err != nil {
+		t.Fatalf("RunRuntimePreflight supported=%v error=%v", supported, err)
+	}
+}
+
+type unsupportedRuntimeExtensionProtocol struct{}
+
+func (*unsupportedRuntimeExtensionProtocol) Name() string {
+	return "unsupported_runtime_extension_test"
+}
+func (*unsupportedRuntimeExtensionProtocol) Init(context.Context, map[string]any) error {
+	return nil
+}
+func (*unsupportedRuntimeExtensionProtocol) Execute(context.Context, *Action) (*Result, error) {
+	return &Result{Success: true}, nil
+}
+func (*unsupportedRuntimeExtensionProtocol) Teardown(context.Context) error    { return nil }
+func (*unsupportedRuntimeExtensionProtocol) HealthCheck(context.Context) error { return nil }

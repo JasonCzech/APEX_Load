@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
+	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -34,6 +35,30 @@ func paramizeTestScript() *dsl.Script {
 				Target: "/orders?customer_id=42",
 			},
 		},
+	}
+}
+
+func TestSampleCorrelationsToPreAppliedSkipsManualCandidates(t *testing.T) {
+	converted := sampleCorrelationsToPreApplied([]sample.Correlation{
+		{
+			Name:        "corr_applied",
+			Source:      "body",
+			Expression:  "$.token",
+			FoundInStep: 1,
+			UsedInSteps: []int{2},
+			PreApplied:  true,
+		},
+		{
+			Name:         "corr_manual_encoding",
+			Source:       "body",
+			Expression:   "$.other",
+			FoundInStep:  1,
+			UsedInSteps:  []int{2},
+			ReviewAction: "manual_value_replacement_required",
+		},
+	})
+	if len(converted) != 1 || converted[0].Name != "corr_applied" {
+		t.Fatalf("pre-applied correlations = %#v, want only executable correlation", converted)
 	}
 }
 

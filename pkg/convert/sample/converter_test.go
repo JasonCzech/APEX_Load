@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/base64"
+	"fmt"
 	"mime"
+	"net/url"
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -28,6 +31,99 @@ func headerListContentType(t *testing.T, list dsl.HeaderList) string {
 		t.Fatalf("HeaderList has no Content-Type entry: %#v", list)
 	}
 	return value
+}
+
+func TestApplyCorrelationVarsToHeaderListPreservesHeaderNames(t *testing.T) {
+	const token = "dynamic-token-123456"
+	headers := dsl.HeaderList{{Name: "X-" + token, Value: "Bearer " + token}}
+	got := applyCorrelationVarsToHeaderList(headers, map[string]string{token: "{{var.corr_token}}"})
+	if len(got) != 1 {
+		t.Fatalf("headers = %#v, want one entry", got)
+	}
+	if got[0].Name != "X-"+token {
+		t.Fatalf("header name = %q, want authored name preserved", got[0].Name)
+	}
+	if got[0].Value != "Bearer {{var.corr_token}}" {
+		t.Fatalf("header value = %q, want correlation replacement", got[0].Value)
+	}
+}
+
+func TestSanitizeSensitiveHeadersRequiresFullyGovernedCredentials(t *testing.T) {
+	tests := []struct {
+		name   string
+		header string
+		value  string
+		want   string
+	}{
+		{
+			name:   "authorization template plus residual literal",
+			header: "Authorization",
+			value:  "Bearer {{var.corr_token}} residual-secret",
+			want:   "{{secret.authorization}}",
+		},
+		{
+			name:   "cookie template plus residual literal",
+			header: "Cookie",
+			value:  "session={{var.corr_session}}; admin=literal-credential",
+			want:   "{{secret.cookie}}",
+		},
+		{
+			name:   "authorization scheme plus governed token",
+			header: "Authorization",
+			value:  "Bearer {{var.corr_token}}",
+			want:   "Bearer {{var.corr_token}}",
+		},
+		{
+			name:   "all cookie values governed",
+			header: "Cookie",
+			value:  "session={{var.corr_session}}; csrf={{secret.csrf}}",
+			want:   "session={{var.corr_session}}; csrf={{secret.csrf}}",
+		},
+		{
+			name:   "whole value governed",
+			header: "X-API-Key",
+			value:  "{{secret.api_key}}",
+			want:   "{{secret.api_key}}",
+		},
+		{
+			name:   "authorization malformed builtin arguments",
+			header: "Authorization",
+			value:  "Bearer {{fn.random(1,literal-secret)}}",
+			want:   "{{secret.authorization}}",
+		},
+		{
+			name:   "cookie unsupported builtin call",
+			header: "Cookie",
+			value:  "session={{fake.email(literal-secret)}}",
+			want:   "{{secret.cookie}}",
+		},
+		{
+			name:   "authorization supported random string builtin",
+			header: "Authorization",
+			value:  "Bearer {{fn.random_string(32)}}",
+			want:   "Bearer {{fn.random_string(32)}}",
+		},
+		{
+			name:   "cookie supported builtins",
+			header: "Cookie",
+			value:  "nonce={{fn.uuid()}}; shard={{fn.random(1,4)}}",
+			want:   "nonce={{fn.uuid()}}; shard={{fn.random(1,4)}}",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			headers := sanitizeHeaders(map[string]string{test.header: test.value})
+			if got := headers[test.header]; got != test.want {
+				t.Fatalf("map header = %q, want %q", got, test.want)
+			}
+
+			list := sanitizeHeaderList(dsl.HeaderList{{Name: test.header, Value: test.value}})
+			if len(list) != 1 || list[0].Value != test.want {
+				t.Fatalf("header list = %#v, want value %q", list, test.want)
+			}
+		})
+	}
 }
 
 func TestConvertRESTJSON(t *testing.T) {
@@ -106,6 +202,29 @@ func TestConvertRESTJSON(t *testing.T) {
 	assertSampleSourceMapping(t, result.SourceReview.Mappings, "response_status", "actions[0].assertions[0]", "contributor")
 	if strings.Contains(result.SourceReview.SourceFiles[0].Content, "top-secret") || strings.Contains(result.SourceReview.SourceFiles[0].Content, "secret\"") {
 		t.Fatalf("source review leaked sensitive content: %s", result.SourceReview.SourceFiles[0].Content)
+	}
+}
+
+func TestConvertRESTJSONRedactsEscapedAndNumericSecretsFromSourceReview(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Format: "rest_json",
+		Content: `{"request":{"method":"POST","url":"https://api.example.com/login",
+			"body":{"password":"abc\"residual-secret","passcode":123456}},
+			"response":{"status":200}}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert REST secrets: %v", err)
+	}
+	body := result.Script.Actions[0].Body
+	if strings.Contains(body, "residual-secret") || strings.Contains(body, "123456") {
+		t.Fatalf("generated body leaked secret values: %s", body)
+	}
+	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 {
+		t.Fatalf("source review = %#v", result.SourceReview)
+	}
+	source := result.SourceReview.SourceFiles[0].Content
+	if strings.Contains(source, "residual-secret") || strings.Contains(source, "123456") {
+		t.Fatalf("source review leaked secret values: %s", source)
 	}
 }
 
@@ -474,6 +593,90 @@ func TestConvertBatchRawHTTP(t *testing.T) {
 	}
 }
 
+func TestConvertRawHTTPPreservesBinaryRequestBodyAndCaseInsensitiveScheme(t *testing.T) {
+	rawBody := string([]byte{'a', 0xff, 'b'})
+	result, err := Convert(ImportRequest{
+		Format:  "raw_http",
+		Content: "POST HTTP://example.com/upload HTTP/1.1\r\nContent-Type: application/octet-stream\r\n\r\n" + rawBody,
+	})
+	if err != nil {
+		t.Fatalf("Convert raw binary request: %v", err)
+	}
+	action := result.Script.Actions[0]
+	if action.Target != "/upload" {
+		t.Fatalf("uppercase absolute-form target = %q, want /upload", action.Target)
+	}
+	if action.BodyEncoding != "base64" {
+		t.Fatalf("binary raw body encoding = %q, want base64", action.BodyEncoding)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(action.Body)
+	if err != nil || string(decoded) != rawBody {
+		t.Fatalf("binary raw body round trip = %q, %v", decoded, err)
+	}
+}
+
+func TestConvertRawHTTPUsesFirstHeaderBodyBoundary(t *testing.T) {
+	const body = "prefix\r\n\r\nsuffix"
+	result, err := Convert(ImportRequest{
+		Format:  "raw_http",
+		Content: "POST https://example.test/upload HTTP/1.1\nContent-Type: text/plain\n\n" + body,
+	})
+	if err != nil {
+		t.Fatalf("Convert raw HTTP with CRLF sequence in body: %v", err)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions = %#v, want one", result.Script.Actions)
+	}
+	if got := result.Script.Actions[0].Body; got != body {
+		t.Fatalf("body = %q, want earliest LF header boundary to preserve %q", got, body)
+	}
+}
+
+func TestConvertRawHTTPAcceptsMixedHeaderBodyLineEndings(t *testing.T) {
+	for _, boundary := range []string{"\r\n\n", "\n\r\n"} {
+		t.Run(fmt.Sprintf("%q", boundary), func(t *testing.T) {
+			result, err := Convert(ImportRequest{
+				Format:  "raw_http",
+				Content: "POST https://example.test/upload HTTP/1.1\nContent-Type: text/plain" + boundary + "payload",
+			})
+			if err != nil {
+				t.Fatalf("Convert mixed-line-ending raw HTTP: %v", err)
+			}
+			if got := result.Script.Actions[0].Body; got != "payload" {
+				t.Fatalf("body = %q, want payload after mixed boundary", got)
+			}
+		})
+	}
+}
+
+func TestConvertRawHTTPPreservesRepeatedResponseHeaderOrdinalForCorrelation(t *testing.T) {
+	const secondToken = "raw-session-token-second-123456"
+	result, err := Convert(ImportRequest{
+		Format: "raw_http",
+		Content: strings.Join([]string{
+			"GET /bootstrap HTTP/1.1\nHost: api.example.com",
+			"GET /use?echo=" + secondToken + " HTTP/1.1\nHost: api.example.com",
+		}, rawHTTPRequestDelimiter),
+		ResponseContent: strings.Join([]string{
+			"HTTP/1.1 200 OK\nX-Session-Token: raw-session-token-first-123456\nX-Session-Token: " + secondToken + "\n\n{}",
+			"HTTP/1.1 200 OK\nContent-Type: application/json\n\n{}",
+		}, rawHTTPResponseDelimiter),
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Correlations) != 1 || !result.Correlations[0].PreApplied {
+		t.Fatalf("correlations = %#v, want the reused second header occurrence applied", result.Correlations)
+	}
+	extractors := result.Script.Actions[0].Extractors
+	if len(extractors) != 1 || extractors[0].Type != "regex" || !strings.Contains(extractors[0].Expression, "{1}") || extractors[0].OnMiss != "fail" {
+		t.Fatalf("source extractors = %#v, want fail-closed second-occurrence header regex", extractors)
+	}
+	if got := result.Script.Actions[1].Target; got != "/use?echo={{var.corr_x_session_token}}" {
+		t.Fatalf("consumer target = %q, want second header token correlated", got)
+	}
+}
+
 func TestConvertRawHTTPUnfoldsHeadersAndDecodesChunkedBody(t *testing.T) {
 	inferExtractors := false
 	result, err := Convert(ImportRequest{
@@ -484,6 +687,7 @@ func TestConvertRawHTTPUnfoldsHeadersAndDecodesChunkedBody(t *testing.T) {
 			"X-Trace: first",
 			"\tsecond",
 			"Transfer-Encoding: chunked",
+			"Content-Length: 999",
 			"",
 			"4",
 			"Wiki",
@@ -515,6 +719,9 @@ func TestConvertRawHTTPUnfoldsHeadersAndDecodesChunkedBody(t *testing.T) {
 	if action.Headers["Transfer-Encoding"] != "" {
 		t.Fatalf("Transfer-Encoding header should be removed after decoding: %#v", action.Headers)
 	}
+	if action.Headers["Content-Length"] != "" {
+		t.Fatalf("stale Content-Length header should be removed after decoding: %#v", action.Headers)
+	}
 	if action.Headers["X-Trace"] != "first second" {
 		t.Fatalf("X-Trace = %q, want unfolded value", action.Headers["X-Trace"])
 	}
@@ -526,6 +733,89 @@ func TestConvertRawHTTPUnfoldsHeadersAndDecodesChunkedBody(t *testing.T) {
 	}
 	if got := action.Assertions[0].Expected; got != 200 {
 		t.Fatalf("assertion expected = %#v, want 200 from decoded response", got)
+	}
+}
+
+func TestConvertRawHTTPParsingIsBoundedAndFailClosed(t *testing.T) {
+	inferExtractors := false
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{
+			name:    "malformed header",
+			content: "GET / HTTP/1.1\nHost: api.example.test\nnot-a-header\n\n",
+		},
+		{
+			name:    "orphan continuation",
+			content: "GET / HTTP/1.1\n continuation\n\n",
+		},
+		{
+			name:    "extra request-line field",
+			content: "GET / HTTP/1.1 unexpected\nHost: api.example.test\n\n",
+		},
+		{
+			name: "too many header lines",
+			content: "GET / HTTP/1.1\nHost: api.example.test\n" +
+				strings.Repeat("X-Test: value\n", maxRawHTTPHeaderLines) + "\n",
+		},
+		{
+			name: "too many messages",
+			content: "GET / HTTP/1.1\nHost: api.example.test\n\n" +
+				strings.Repeat(rawHTTPRequestDelimiter, maxRawHTTPMessages),
+		},
+		{
+			name: "unsupported coding before chunked",
+			content: "POST / HTTP/1.1\nHost: api.example.test\nTransfer-Encoding: gzip, chunked\n\n" +
+				"4\r\ntest\r\n0\r\n\r\n",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if _, err := Convert(ImportRequest{
+				Format:  "raw_http",
+				Content: test.content,
+				Options: ConvertOptions{InferExtractors: &inferExtractors},
+			}); err == nil {
+				t.Fatal("Convert accepted malformed or over-budget raw HTTP input")
+			}
+		})
+	}
+}
+
+func TestConvertRawHTTPTransferEncodingTokenAndHeaderCaseHandling(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format: "raw_http",
+		Content: strings.Join([]string{
+			"POST /upload HTTP/1.1",
+			"Host: ignored.example.test",
+			"host: api.example.test",
+			"Transfer-Encoding: xchunked",
+			"",
+			"not-a-chunked-body",
+		}, "\r\n"),
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert raw HTTP token/header case input: %v", err)
+	}
+	action := result.Script.Actions[0]
+	if action.Body != "not-a-chunked-body" {
+		t.Fatalf("non-token xchunked body = %q, want unchanged", action.Body)
+	}
+	if action.Headers["Transfer-Encoding"] != "xchunked" {
+		t.Fatalf("Transfer-Encoding summary = %#v, want xchunked preserved", action.Headers)
+	}
+	if result.Script.Config.BaseURL != "https://api.example.test" {
+		t.Fatalf("case-variant Host summary selected nondeterministically: base URL = %q", result.Script.Config.BaseURL)
+	}
+	if _, exists := action.Headers["Host"]; exists {
+		t.Fatalf("case-variant compatibility summary retained stale Host entry: %#v", action.Headers)
+	}
+	if action.Headers["host"] != "api.example.test" {
+		t.Fatalf("case-variant compatibility summary = %#v, want last wire value", action.Headers)
 	}
 }
 
@@ -553,6 +843,74 @@ func TestConvertRawHTTPPreservesDuplicateRequestHeaders(t *testing.T) {
 	got := headerListValues(action.HeaderList, "X-Duplicate")
 	if strings.Join(got, ",") != "one,two" {
 		t.Fatalf("header_list X-Duplicate = %#v, want one/two", got)
+	}
+}
+
+// Regression for the review finding that one standard 2000-record JSON page
+// (paginated REST/SOQL-style, every record carrying an Id field) made
+// sample.Convert fail with a correlation work-limit error: the import must
+// succeed, with correlation inference bounded internally.
+func TestConvertHARWithLargeRecordPageSucceeds(t *testing.T) {
+	var records strings.Builder
+	for index := 0; index < 2000; index++ {
+		if index > 0 {
+			records.WriteByte(',')
+		}
+		fmt.Fprintf(&records, `{\"Id\":\"001xx%011d\",\"Name\":\"Account %d\"}`, index, index)
+	}
+	content := `{
+		"log": {
+			"entries": [
+				{
+					"request": {"method": "GET", "url": "https://api.example.com/v1/query?q=SELECT", "headers": []},
+					"response": {"status": 200, "headers": [], "content": {"text": "{\"totalSize\":2000,\"done\":true,\"records\":[` + records.String() + `]}"}}
+				},
+				{
+					"request": {"method": "GET", "url": "https://api.example.com/v1/orders", "headers": []},
+					"response": {"status": 200, "headers": [], "content": {"text": "{}"}}
+				}
+			]
+		}
+	}`
+	result, err := Convert(ImportRequest{Format: "har", Content: content})
+	if err != nil {
+		t.Fatalf("Convert large record page returned error: %v", err)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("action count = %d, want 2", len(result.Script.Actions))
+	}
+}
+
+// Residual hard work-limit errors (e.g. observation counts beyond the
+// documented analysis cap) must degrade to a conversion warning: the script
+// still imports, correlations are simply best-effort.
+func TestConvertDegradesCorrelationWorkLimitToWarning(t *testing.T) {
+	var entries strings.Builder
+	for index := 0; index < 4097; index++ {
+		if index > 0 {
+			entries.WriteByte(',')
+		}
+		fmt.Fprintf(&entries, `{"request": {"method": "GET", "url": "https://api.example.com/v1/item/%d", "headers": []}, "response": {"status": 200, "headers": [], "content": {"text": "{}"}}}`, index)
+	}
+	result, err := Convert(ImportRequest{
+		Format:  "har",
+		Content: `{"log": {"entries": [` + entries.String() + `]}}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert must degrade the work-limit error, got: %v", err)
+	}
+	found := false
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "correlation analysis was not completed") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("warnings = %#v, want a correlation-analysis degradation warning", result.Warnings)
+	}
+	if len(result.Correlations) != 0 {
+		t.Fatalf("correlations = %d, want none after degraded analysis", len(result.Correlations))
 	}
 }
 
@@ -1087,6 +1445,79 @@ func TestConvertHARDetectsHTMLHiddenTokenCorrelation(t *testing.T) {
 	}
 }
 
+func TestConvertHARPreservesRepeatedResponseHeaderOrdinalForCorrelation(t *testing.T) {
+	const secondToken = "session-token-second-123456"
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log":{"entries":[
+				{
+					"request":{"method":"GET","url":"https://api.example.com/bootstrap","headers":[]},
+					"response":{"status":200,"headers":[
+						{"name":"X-Session-Token","value":"session-token-first-123456"},
+						{"name":"X-Session-Token","value":"` + secondToken + `"}
+					],"content":{"text":"{}"}}
+				},
+				{
+					"request":{"method":"GET","url":"https://api.example.com/use?echo=` + secondToken + `","headers":[]},
+					"response":{"status":200,"headers":[],"content":{"text":"{}"}}
+				}
+			]}
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Correlations) != 1 || !result.Correlations[0].PreApplied {
+		t.Fatalf("correlations = %#v, want the reused second header occurrence applied", result.Correlations)
+	}
+	extractors := result.Script.Actions[0].Extractors
+	if len(extractors) != 1 || extractors[0].Type != "regex" || !strings.Contains(extractors[0].Expression, "{1}") || extractors[0].OnMiss != "fail" {
+		t.Fatalf("source extractors = %#v, want fail-closed second-occurrence header regex", extractors)
+	}
+	if got := result.Script.Actions[1].Target; got != "/use?echo={{var.corr_x_session_token}}" {
+		t.Fatalf("consumer target = %q, want second header token correlated", got)
+	}
+}
+
+func TestConvertHARDoesNotRewriteLiteralBeforeCorrelationSource(t *testing.T) {
+	const token = "source-ordered-token-abcdef123456"
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {"entries": [
+				{
+					"request": {"method":"GET","url":"https://api.example.com/before?echo=` + token + `","headers":[]},
+					"response": {"status":200,"headers":[],"content":{"text":"{}"}}
+				},
+				{
+					"request": {"method":"GET","url":"https://api.example.com/bootstrap","headers":[]},
+					"response": {"status":200,"headers":[],"content":{"mimeType":"application/json","text":"{\"access_token\":\"` + token + `\"}"}}
+				},
+				{
+					"request": {"method":"GET","url":"https://api.example.com/after?access_token=` + token + `","headers":[]},
+					"response": {"status":200,"headers":[],"content":{"text":"{}"}}
+				}
+			]}
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if result.Stats.CorrelationsDetected != 1 {
+		t.Fatalf("correlations = %d, want 1: %#v", result.Stats.CorrelationsDetected, result.Correlations)
+	}
+	if got := result.Script.Actions[0].Target; got != "/before?echo="+token {
+		t.Fatalf("pre-source target = %q, want literal preserved", got)
+	}
+	if len(result.Script.Actions[1].Extractors) != 1 {
+		t.Fatalf("source extractors = %#v, want one", result.Script.Actions[1].Extractors)
+	}
+	if got := result.Script.Actions[2].Target; got != "/after?access_token={{var.corr_access_token}}" {
+		t.Fatalf("post-source target = %q, want correlation variable", got)
+	}
+}
+
 func TestConvertHARRewritesEncodedCorrelationValues(t *testing.T) {
 	result, err := Convert(ImportRequest{
 		Format: "har",
@@ -1142,8 +1573,729 @@ func TestConvertHARRewritesEncodedCorrelationValues(t *testing.T) {
 		t.Fatalf("header_list X-Access-Token = %#v, want encoded token rewritten", got)
 	}
 	ext := result.Script.Actions[0].Extractors[0]
-	if ext.Expression != "$.auth.access_token" || ext.OnMiss != "fail" {
-		t.Fatalf("extractor = %#v, want nested JSONPath and fail-closed", ext)
+	if ext.Expression != "$.auth.access_token" || ext.OnMiss != "fail" || ext.Convert != "url_encode" {
+		t.Fatalf("extractor = %#v, want nested JSONPath, url_encode, and fail-closed", ext)
+	}
+}
+
+func TestConvertHAREncodedCorrelationWithAmpersandUsesURLEncodedVariable(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {"entries": [
+				{
+					"request": {"method":"GET","url":"https://api.example.com/bootstrap","headers":[]},
+					"response": {"status":200,"headers":[],"content":{"mimeType":"application/json","text":"{\"access_token\":\"tok&branch/123456\"}"}}
+				},
+				{
+					"request": {"method":"GET","url":"https://api.example.com/callback?access_token=tok%26branch%2F123456","headers":[]},
+					"response": {"status":200,"headers":[],"content":{"text":"{}"}}
+				}
+			]}
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions[0].Extractors) != 1 {
+		t.Fatalf("source extractors = %#v", result.Script.Actions[0].Extractors)
+	}
+	ext := result.Script.Actions[0].Extractors[0]
+	if ext.Convert != "url_encode" {
+		t.Fatalf("extractor = %#v, want url_encode so '&' cannot split the replay query", ext)
+	}
+	if got := result.Script.Actions[1].Target; got != "/callback?access_token={{var.corr_access_token}}" {
+		t.Fatalf("target = %q, want encoded literal routed through extracted variable", got)
+	}
+}
+
+func TestConvertHAREncodedSourceDoesNotDoubleEncodeEncodedReuse(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {"entries": [
+				{
+					"request": {"method":"GET","url":"https://api.example.com/bootstrap","headers":[]},
+					"response": {"status":200,"headers":[],"content":{"mimeType":"application/x-www-form-urlencoded","text":"aura.token=tok%26branch%2F123456"}}
+				},
+				{
+					"request": {"method":"POST","url":"https://api.example.com/aura","headers":[],"postData":{"mimeType":"application/x-www-form-urlencoded","text":"aura.token=tok%26branch%2F123456"}},
+					"response": {"status":200,"headers":[],"content":{"text":"{}"}}
+				}
+			]}
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Actions[0].Extractors) != 1 {
+		t.Fatalf("source extractors = %#v", result.Script.Actions[0].Extractors)
+	}
+	ext := result.Script.Actions[0].Extractors[0]
+	if ext.Convert != "" {
+		t.Fatalf("extractor = %#v, want encoded source captured as-is for encoded reuse", ext)
+	}
+	if got := result.Script.Actions[1].Body; got != "aura.token={{var.corr_salesforce_aura_token}}" {
+		t.Fatalf("body = %q, want encoded literal routed through captured encoded variable", got)
+	}
+	if len(result.Correlations) != 1 || !result.Correlations[0].PreApplied || result.Correlations[0].ReviewAction != "" {
+		t.Fatalf("correlations = %#v, want executable correlation classified pre-applied", result.Correlations)
+	}
+}
+
+func TestConvertHARLocationQuerySourcePreservesPlusWireSpelling(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {"entries": [
+				{
+					"request": {"method":"GET","url":"https://api.example.com/bootstrap","headers":[]},
+					"response": {"status":302,"headers":[{"name":"Location","value":"https://api.example.com/callback?state=space+token%2F123456"}],"content":{"text":""}}
+				},
+				{
+					"request": {"method":"GET","url":"https://api.example.com/use?state=space+token%2F123456","headers":[]},
+					"response": {"status":200,"headers":[],"content":{"text":"{}"}}
+				}
+			]}
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	extractors := result.Script.Actions[0].Extractors
+	if len(extractors) != 1 {
+		t.Fatalf("Location source extractors = %#v, want one", extractors)
+	}
+	if extractor := extractors[0]; extractor.Source != "header" || extractor.Type != "regex" || extractor.Convert != "" {
+		t.Fatalf("Location source extractor = %#v, want exact wire capture without a second encoding pass", extractor)
+	}
+	if got := result.Script.Actions[1].Target; got != "/use?state={{var.corr_location_state}}" {
+		t.Fatalf("target = %q, want encoded Location value routed through its wire-spelling variable", got)
+	}
+	if len(result.Correlations) != 1 || result.Correlations[0].SampleValue != "space token/123456" || !result.Correlations[0].PreApplied {
+		t.Fatalf("correlations = %#v, want decoded Location value safely pre-applied", result.Correlations)
+	}
+}
+
+func TestConvertHARLocationQuerySourceValidatesAuthoritativeDuplicateOccurrence(t *testing.T) {
+	const decodedValue = "space token/123456"
+	const canonicalValue = "space+token%2F123456"
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {"entries": [
+				{
+					"request": {"method":"GET","url":"https://api.example.com/bootstrap","headers":[]},
+					"response": {"status":302,"headers":[
+						{"name":"Location","value":"https://api.example.com/callback?state=space%20token%2F123456"},
+						{"name":"Location","value":"https://api.example.com/callback?state=space+token%2F123456"}
+					],"content":{"text":""}}
+				},
+				{
+					"request": {"method":"GET","url":"https://api.example.com/use?state=space+token%2F123456","headers":[]},
+					"response": {"status":200,"headers":[],"content":{"text":"{}"}}
+				}
+			]}
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if got := result.Script.Actions[0].Extractors; len(got) != 0 {
+		t.Fatalf("source extractors = %#v, want no automatic extractor for the non-canonical first Location occurrence", got)
+	}
+	if got := result.Script.Actions[1].Target; got != "/use?state="+canonicalValue {
+		t.Fatalf("consumer target = %q, want canonical literal left for review", got)
+	}
+	if len(result.Correlations) != 1 || result.Correlations[0].SampleValue != decodedValue ||
+		result.Correlations[0].PreApplied || result.Correlations[0].ReviewAction != manualCorrelationValueReplacement {
+		t.Fatalf("correlations = %#v, want the first duplicate source occurrence left for manual review", result.Correlations)
+	}
+}
+
+func TestConvertHAREncodedSourceRequiresExactConsumerSpelling(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {"entries": [
+				{
+					"request": {"method":"GET","url":"https://api.example.com/bootstrap","headers":[]},
+					"response": {"status":200,"headers":[],"content":{"mimeType":"application/x-www-form-urlencoded","text":"aura.token=tok%20branch%2F123456"}}
+				},
+				{
+					"request": {"method":"POST","url":"https://api.example.com/aura","headers":[],"postData":{"mimeType":"application/x-www-form-urlencoded","text":"aura.token=tok+branch%2F123456"}},
+					"response": {"status":200,"headers":[],"content":{"text":"{}"}}
+				}
+			]}
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if got := result.Script.Actions[1].Body; got != "aura.token=tok+branch%2F123456" {
+		t.Fatalf("body = %q, want consumer spelling preserved for manual replacement", got)
+	}
+	if got := result.Script.Actions[0].Extractors; len(got) != 0 {
+		t.Fatalf("source extractors = %#v, want none because %%20 source cannot supply '+' consumer", got)
+	}
+	if len(result.Correlations) != 1 || result.Correlations[0].PreApplied || result.Correlations[0].ReviewAction != "manual_value_replacement_required" {
+		t.Fatalf("correlations = %#v, want manual non-pre-applied candidate", result.Correlations)
+	}
+}
+
+func TestConvertHARMixedRawAndEncodedCorrelationUsesSiblingVariables(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {"entries": [
+				{
+					"request": {"method":"GET","url":"https://api.example.com/bootstrap","headers":[]},
+					"response": {"status":200,"headers":[],"content":{"mimeType":"application/json","text":"{\"access_token\":\"tok abc/123456\"}"}}
+				},
+				{
+					"request": {
+						"method":"POST",
+						"url":"https://api.example.com/callback?access_token=tok+abc%2F123456",
+						"headers":[{"name":"X-Raw-Correlation","value":"tok abc/123456"}]
+					},
+					"response": {"status":200,"headers":[],"content":{"text":"{}"}}
+				}
+			]}
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	extractors := result.Script.Actions[0].Extractors
+	if len(extractors) != 2 {
+		t.Fatalf("source extractors = %#v, want raw and encoded siblings", extractors)
+	}
+	byName := map[string]dsl.Extractor{}
+	for _, extractor := range extractors {
+		byName[extractor.Name] = extractor
+	}
+	if byName["corr_access_token"].Convert != "" || byName["corr_access_token_encoded"].Convert != "url_encode" {
+		t.Fatalf("source extractors = %#v, want raw base and url_encode sibling", extractors)
+	}
+	second := result.Script.Actions[1]
+	if second.Target != "/callback?access_token={{var.corr_access_token_encoded}}" {
+		t.Fatalf("encoded target = %q, want encoded sibling variable", second.Target)
+	}
+	if second.Headers["X-Raw-Correlation"] != "{{var.corr_access_token}}" {
+		t.Fatalf("raw header = %q, want raw variable", second.Headers["X-Raw-Correlation"])
+	}
+	if result.Stats.Extractors != 2 {
+		t.Fatalf("extractor stats = %d, want 2", result.Stats.Extractors)
+	}
+}
+
+func TestPrepareCorrelationApplicationRejectsEncodedRawLiteralCollision(t *testing.T) {
+	const rawValue = "opaque token/123456"
+	encodedValue := url.QueryEscape(rawValue)
+	exchanges := []exchange{
+		{URL: "https://api.example.test/source-a"},
+		{URL: "https://api.example.test/source-b"},
+		{URL: "https://api.example.test/use?token=" + encodedValue},
+	}
+	correlations := []Correlation{
+		{
+			Name:        "corr_a",
+			Source:      "body",
+			ExtractType: "regex",
+			Expression:  `(opaque token/123456)`,
+			Value:       rawValue,
+			FoundInStep: 1,
+			UsedInSteps: []int{3},
+		},
+		{
+			Name:        "corr_b",
+			Source:      "body",
+			ExtractType: "regex",
+			Expression:  `(opaque\+token%2F123456)`,
+			Value:       encodedValue,
+			FoundInStep: 2,
+			UsedInSteps: []int{3},
+		},
+	}
+
+	vars, sourceSteps, extraExtractors := prepareCorrelationApplication(exchanges, correlations)
+	if len(vars) != 0 || len(sourceSteps) != 0 || len(extraExtractors) != 0 {
+		t.Fatalf("ambiguous collision application = vars %#v, sources %#v, extractors %#v; want no automatic rewrite", vars, sourceSteps, extraExtractors)
+	}
+	for _, correlation := range correlations {
+		if correlation.PreApplied || correlation.ReviewAction != manualCorrelationValueReplacement {
+			t.Fatalf("collision correlation = %#v, want manual and not pre-applied", correlation)
+		}
+	}
+}
+
+func TestPrepareCorrelationApplicationNeverRewritesEncodedRequestBodies(t *testing.T) {
+	const encodedBody = "YWJjZGVm"
+	exchanges := []exchange{
+		{
+			URL: "https://api.example.test/source",
+			Response: &response{
+				Body: `{"token":"` + encodedBody + `"}`,
+			},
+		},
+		{
+			URL:          "https://api.example.test/use",
+			Body:         encodedBody,
+			BodyEncoding: "base64",
+		},
+	}
+	correlations, err := detectCorrelationsChecked(exchanges)
+	if err != nil {
+		t.Fatalf("detectCorrelationsChecked: %v", err)
+	}
+	if len(correlations) != 1 || len(correlations[0].UsedInSteps) != 1 {
+		t.Fatalf("correlations = %#v, want the transformed-body reuse surfaced for review", correlations)
+	}
+	vars, sourceSteps, extraExtractors := prepareCorrelationApplication(exchanges, correlations)
+	if len(vars) != 0 || len(sourceSteps) != 0 || len(extraExtractors) != 0 {
+		t.Fatalf("encoded-body application = vars %#v sources %#v extractors %#v, want no automatic rewrite", vars, sourceSteps, extraExtractors)
+	}
+	if correlations[0].PreApplied || correlations[0].ReviewAction != manualCorrelationValueReplacement {
+		t.Fatalf("encoded-body correlation = %#v, want manual review", correlations[0])
+	}
+}
+
+func TestPrepareCorrelationApplicationMarksTransformedBodyRemainderForReview(t *testing.T) {
+	const encodedBody = "YWJjZGVm"
+	exchanges := []exchange{
+		{
+			URL: "https://api.example.test/source",
+			Response: &response{
+				Body: `{"token":"` + encodedBody + `"}`,
+			},
+		},
+		{
+			URL:          "https://api.example.test/use?token=" + encodedBody,
+			Body:         encodedBody,
+			BodyEncoding: "base64",
+		},
+	}
+	correlations, err := detectCorrelationsChecked(exchanges)
+	if err != nil {
+		t.Fatalf("detectCorrelationsChecked: %v", err)
+	}
+	if len(correlations) != 1 {
+		t.Fatalf("correlations = %#v, want one transformed-body correlation", correlations)
+	}
+	vars, sourceSteps, extraExtractors := prepareCorrelationApplication(exchanges, correlations)
+	if vars[encodedBody] != "{{var.corr_token}}" || sourceSteps[encodedBody] != 1 || len(extraExtractors) != 0 {
+		t.Fatalf("partial application = vars %#v sources %#v extractors %#v, want only the editable URL mapped", vars, sourceSteps, extraExtractors)
+	}
+	if !correlations[0].PreApplied || correlations[0].ReviewAction != manualCorrelationValueReplacement {
+		t.Fatalf("partial transformed-body correlation = %#v, want pre-applied URL plus explicit manual remainder", correlations[0])
+	}
+}
+
+func TestPrepareCorrelationApplicationRejectsEncodedValueBeyondRuntimeResultLimit(t *testing.T) {
+	// Raw value fits the 16 KiB per-extraction ceiling, while QueryEscape
+	// expands it beyond that ceiling.
+	value := strings.Repeat("?", 6_000)
+	encoded := url.QueryEscape(value)
+	exchanges := []exchange{
+		{URL: "https://api.example.test/source"},
+		{URL: "https://api.example.test/use?token=" + encoded},
+	}
+	correlations := []Correlation{{
+		Name:        "corr_token",
+		Source:      "body",
+		ExtractType: "regex",
+		Expression:  `(token)`,
+		Value:       value,
+		FoundInStep: 1,
+		UsedInSteps: []int{2},
+	}}
+	vars, sourceSteps, extraExtractors := prepareCorrelationApplication(exchanges, correlations)
+	if len(vars) != 0 || len(sourceSteps) != 0 || len(extraExtractors) != 0 {
+		t.Fatalf("oversized encoded application = vars %#v sources %#v extractors %#v, want none", vars, sourceSteps, extraExtractors)
+	}
+	if correlations[0].PreApplied || correlations[0].ReviewAction != manualCorrelationValueReplacement {
+		t.Fatalf("oversized encoded correlation = %#v, want manual review", correlations[0])
+	}
+}
+
+func TestPrepareCorrelationApplicationRespectsAggregateRuntimeResultLimit(t *testing.T) {
+	exchanges := []exchange{{URL: "https://api.example.test/source"}}
+	correlations := make([]Correlation, 0, 5)
+	extractionLimit := 0
+	for index := 0; index < 5; index++ {
+		value := fmt.Sprintf("token-%d-%s", index, strings.Repeat(string(rune('a'+index)), 12))
+		name := fmt.Sprintf("corr_token_%d", index)
+		if index < 4 {
+			entryBytes, ok := correlate.CorrelationExtractionEntryBytes(name, value)
+			if !ok {
+				t.Fatalf("test entry %d unexpectedly exceeds the per-entry runtime limit", index)
+			}
+			extractionLimit += entryBytes
+		}
+		exchanges = append(exchanges, exchange{URL: "https://api.example.test/use?token=" + value})
+		correlations = append(correlations, Correlation{
+			Name:        name,
+			Source:      "body",
+			ExtractType: "regex",
+			Expression:  `(token)`,
+			Value:       value,
+			FoundInStep: 1,
+			UsedInSteps: []int{index + 2},
+		})
+	}
+
+	vars, sourceSteps, extraExtractors := prepareCorrelationApplicationWithExtractionLimit(exchanges, correlations, extractionLimit)
+	if len(vars) != 4 || len(sourceSteps) != 4 || len(extraExtractors) != 0 {
+		t.Fatalf("aggregate-limited application = vars %d sources %d extras %#v, want four raw mappings", len(vars), len(sourceSteps), extraExtractors)
+	}
+	for index := range correlations {
+		if index < 4 {
+			if !correlations[index].PreApplied || correlations[index].ReviewAction != "" {
+				t.Fatalf("correlation %d = %#v, want pre-applied", index, correlations[index])
+			}
+			continue
+		}
+		if correlations[index].PreApplied || correlations[index].ReviewAction != manualCorrelationValueReplacement {
+			t.Fatalf("correlation %d = %#v, want aggregate-budget manual review", index, correlations[index])
+		}
+	}
+}
+
+func TestSampleCorrelationCollisionSurfaceLimitFailsClosed(t *testing.T) {
+	exchanges := []exchange{{
+		URL:     "https://example.test/use?left=TOKEN-left",
+		Headers: map[string]string{"X-Right": "TOKEN-right"},
+	}}
+	plans := []correlationApplicationPlan{
+		{index: 0, value: "TOKEN-left", usage: correlationValueUse{raw: true}},
+		{index: 1, value: "TOKEN-right", usage: correlationValueUse{raw: true}},
+	}
+	literals, planIndexes := sampleCorrelationReplacementCollisionsWithSurfaceLimit(exchanges, plans, 1)
+	if !literals["TOKEN-left"] || !literals["TOKEN-right"] || !planIndexes[0] || !planIndexes[1] {
+		t.Fatalf("surface-limit collision result = literals %#v plans %#v, want every claim suppressed", literals, planIndexes)
+	}
+}
+
+func TestPrepareCorrelationApplicationRejectsSubstringEncodedRawLiteralCollision(t *testing.T) {
+	const rawValue = "opaque token/123456"
+	encodedValue := url.QueryEscape(rawValue)
+	containingRawValue := "prefix-" + encodedValue + "-suffix"
+	exchanges := []exchange{
+		{URL: "https://api.example.test/source-a"},
+		{URL: "https://api.example.test/source-b"},
+		{URL: "https://api.example.test/use?token=" + containingRawValue},
+	}
+	correlations := []Correlation{
+		{
+			Name:        "corr_a",
+			Source:      "body",
+			ExtractType: "regex",
+			Expression:  `(opaque token/123456)`,
+			Value:       rawValue,
+			FoundInStep: 1,
+			UsedInSteps: []int{3},
+		},
+		{
+			Name:        "corr_b",
+			Source:      "body",
+			ExtractType: "regex",
+			Expression:  `(prefix-opaque\+token%2F123456-suffix)`,
+			Value:       containingRawValue,
+			FoundInStep: 2,
+			UsedInSteps: []int{3},
+		},
+	}
+
+	vars, sourceSteps, extraExtractors := prepareCorrelationApplication(exchanges, correlations)
+	if len(vars) != 0 || len(sourceSteps) != 0 || len(extraExtractors) != 0 {
+		t.Fatalf("substring collision application = vars %#v, sources %#v, extractors %#v; want no automatic rewrite", vars, sourceSteps, extraExtractors)
+	}
+	for _, correlation := range correlations {
+		if correlation.PreApplied || correlation.ReviewAction != manualCorrelationValueReplacement {
+			t.Fatalf("substring collision correlation = %#v, want manual and not pre-applied", correlation)
+		}
+	}
+}
+
+func partialOverlapCorrelations() []Correlation {
+	return []Correlation{
+		{
+			Name:        "corr_token",
+			Source:      "body",
+			ExtractType: "regex",
+			Expression:  `(TOKENabc123def456)`,
+			Value:       "TOKENabc123def456",
+			FoundInStep: 1,
+			UsedInSteps: []int{3},
+		},
+		{
+			Name:        "corr_session_id",
+			Source:      "body",
+			ExtractType: "regex",
+			Expression:  `(def456SESSIONxyz789)`,
+			Value:       "def456SESSIONxyz789",
+			FoundInStep: 2,
+			UsedInSteps: []int{3},
+		},
+	}
+}
+
+func TestPrepareCorrelationApplicationRejectsPartialOverlapLiteralCollision(t *testing.T) {
+	// Neither literal contains the other, but the suffix "def456" of the first
+	// is the prefix of the second and the merged region occurs in the step-3
+	// URL. Single-pass replacement would produce the hybrid
+	// "blob={{var.corr_token}}SESSIONxyz789" while corr_session_id is reported
+	// pre-applied with an OnMiss:fail extractor that rewrote nothing.
+	exchanges := []exchange{
+		{URL: "https://api.example.test/source-a"},
+		{URL: "https://api.example.test/source-b"},
+		{URL: "https://api.example.test/use?blob=TOKENabc123def456SESSIONxyz789"},
+	}
+	correlations := partialOverlapCorrelations()
+
+	vars, sourceSteps, extraExtractors := prepareCorrelationApplication(exchanges, correlations)
+	if len(vars) != 0 || len(sourceSteps) != 0 || len(extraExtractors) != 0 {
+		t.Fatalf("partial-overlap collision application = vars %#v, sources %#v, extractors %#v; want no automatic rewrite", vars, sourceSteps, extraExtractors)
+	}
+	for _, correlation := range correlations {
+		if correlation.PreApplied || correlation.ReviewAction != manualCorrelationValueReplacement {
+			t.Fatalf("partial-overlap collision correlation = %#v, want manual and not pre-applied", correlation)
+		}
+	}
+}
+
+func TestPrepareCorrelationApplicationAllowsSuffixPrefixLiteralsUsedDisjointly(t *testing.T) {
+	// The same literal pair shares the boundary substring "def456", but the
+	// merged spelling never occurs on a request surface: disjoint occurrences
+	// replace correctly and must stay automatic.
+	exchanges := []exchange{
+		{URL: "https://api.example.test/source-a"},
+		{URL: "https://api.example.test/source-b"},
+		{URL: "https://api.example.test/use?a=TOKENabc123def456&b=def456SESSIONxyz789"},
+	}
+	correlations := partialOverlapCorrelations()
+
+	vars, sourceSteps, extraExtractors := prepareCorrelationApplication(exchanges, correlations)
+	if len(vars) != 2 || vars["TOKENabc123def456"] != "{{var.corr_token}}" || vars["def456SESSIONxyz789"] != "{{var.corr_session_id}}" {
+		t.Fatalf("disjoint suffix/prefix vars = %#v, want both automatic replacements", vars)
+	}
+	if len(sourceSteps) != 2 || len(extraExtractors) != 0 {
+		t.Fatalf("disjoint suffix/prefix sources = %#v, extractors = %#v", sourceSteps, extraExtractors)
+	}
+	for _, correlation := range correlations {
+		if !correlation.PreApplied || correlation.ReviewAction != "" {
+			t.Fatalf("disjoint suffix/prefix correlation = %#v, want pre-applied without review action", correlation)
+		}
+	}
+}
+
+func TestPrepareCorrelationApplicationRejectsPartialOverlapWithEncodedSpelling(t *testing.T) {
+	// corr_a's raw literal "TOKENabc" partially overlaps corr_b's QueryEscape
+	// spelling "abc+SESSION" in the step-3 URL. The encoded claim must be
+	// dropped for both so no orphaned url_encode sibling extractor is
+	// synthesized, while corr_b's raw header reuse remains safely automatic.
+	exchanges := []exchange{
+		{URL: "https://api.example.test/source-a"},
+		{URL: "https://api.example.test/source-b"},
+		{
+			URL:     "https://api.example.test/use?blob=TOKENabc+SESSION",
+			Headers: map[string]string{"X-Raw-Correlation": "abc SESSION"},
+		},
+	}
+	correlations := []Correlation{
+		{
+			Name:        "corr_a",
+			Source:      "body",
+			ExtractType: "regex",
+			Expression:  `(TOKENabc)`,
+			Value:       "TOKENabc",
+			FoundInStep: 1,
+			UsedInSteps: []int{3},
+		},
+		{
+			Name:        "corr_b",
+			Source:      "body",
+			ExtractType: "regex",
+			Expression:  `(abc SESSION)`,
+			Value:       "abc SESSION",
+			FoundInStep: 2,
+			UsedInSteps: []int{3},
+		},
+	}
+
+	vars, sourceSteps, extraExtractors := prepareCorrelationApplication(exchanges, correlations)
+	if len(vars) != 1 || vars["abc SESSION"] != "{{var.corr_b}}" {
+		t.Fatalf("encoded partial-overlap vars = %#v, want only the raw header replacement", vars)
+	}
+	if len(sourceSteps) != 1 || sourceSteps["abc SESSION"] != 2 {
+		t.Fatalf("encoded partial-overlap sources = %#v, want raw literal only", sourceSteps)
+	}
+	if len(extraExtractors) != 0 {
+		t.Fatalf("encoded partial-overlap sibling extractors = %#v, want no orphaned url_encode sibling", extraExtractors)
+	}
+	if correlations[0].PreApplied || correlations[0].ReviewAction != manualCorrelationValueReplacement {
+		t.Fatalf("corr_a = %#v, want manual and not pre-applied", correlations[0])
+	}
+	// corr_b keeps PreApplied (its raw consumer was rewritten) alongside the
+	// manual review action for the ambiguous encoded spelling.
+	if !correlations[1].PreApplied || correlations[1].ReviewAction != manualCorrelationValueReplacement || correlations[1].Convert != "" {
+		t.Fatalf("corr_b = %#v, want raw pre-applied with manual review for the encoded spelling", correlations[1])
+	}
+}
+
+func TestConvertHARLeavesPartialOverlapLiteralsForManualReview(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{
+			"log": {"entries": [
+				{
+					"request": {"method":"GET","url":"https://app.example.com/login","headers":[]},
+					"response": {"status":200,"headers":[],"content":{"mimeType":"application/json","text":"{\"token\":\"TOKENabc123def456\"}"}}
+				},
+				{
+					"request": {"method":"GET","url":"https://app.example.com/session","headers":[]},
+					"response": {"status":200,"headers":[],"content":{"mimeType":"application/json","text":"{\"session_id\":\"def456SESSIONxyz789\"}"}}
+				},
+				{
+					"request": {"method":"GET","url":"https://app.example.com/step3?blob=TOKENabc123def456SESSIONxyz789","headers":[]},
+					"response": {"status":200,"headers":[],"content":{"text":"{}"}}
+				}
+			]}
+		}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if got := result.Script.Actions[2].Target; !strings.Contains(got, "blob=TOKENabc123def456SESSIONxyz789") || strings.Contains(got, "{{var.") {
+		t.Fatalf("step-3 target = %q, want recorded merged literal preserved without hybrid rewrite", got)
+	}
+	for index := 0; index < 2; index++ {
+		if got := result.Script.Actions[index].Extractors; len(got) != 0 {
+			t.Fatalf("action %d extractors = %#v, want none for ambiguous partial overlap", index, got)
+		}
+	}
+	if len(result.Correlations) != 2 {
+		t.Fatalf("correlations = %#v, want both partial-overlap candidates surfaced", result.Correlations)
+	}
+	for _, correlation := range result.Correlations {
+		if correlation.PreApplied || correlation.ReviewAction != manualCorrelationValueReplacement {
+			t.Fatalf("partial-overlap correlation = %#v, want manual and not pre-applied", correlation)
+		}
+	}
+}
+
+func TestPrepareCorrelationApplicationCapsSourceExtractorsIncludingEncodedSibling(t *testing.T) {
+	const mixedValue = "mixed token/000000"
+	correlations := make([]Correlation, 0, dsl.MaxActionExtractors)
+	correlations = append(correlations, Correlation{
+		Name:        "corr_mixed",
+		Source:      "body",
+		ExtractType: "regex",
+		Expression:  `(mixed token/000000)`,
+		Value:       mixedValue,
+		FoundInStep: 1,
+		UsedInSteps: []int{2},
+	})
+	rawValues := []string{mixedValue}
+	for index := 1; index < dsl.MaxActionExtractors; index++ {
+		value := fmt.Sprintf("value-%06d-abcdef", index)
+		correlations = append(correlations, Correlation{
+			Name:        fmt.Sprintf("corr_value_%06d", index),
+			Source:      "body",
+			ExtractType: "regex",
+			Expression:  `(` + value + `)`,
+			Value:       value,
+			FoundInStep: 1,
+			UsedInSteps: []int{2},
+		})
+		rawValues = append(rawValues, value)
+	}
+	exchanges := []exchange{
+		{URL: "https://api.example.test/source"},
+		{
+			URL:  "https://api.example.test/use?mixed=" + url.QueryEscape(mixedValue),
+			Body: strings.Join(rawValues, "|"),
+		},
+	}
+
+	vars, sourceSteps, extraExtractors := prepareCorrelationApplication(exchanges, correlations)
+	preApplied := 0
+	for _, correlation := range correlations {
+		if correlation.PreApplied {
+			preApplied++
+		}
+	}
+	totalExtractors := preApplied + len(extraExtractors[1])
+	if totalExtractors != dsl.MaxActionExtractors {
+		t.Fatalf("source extractors = %d, want capped at %d", totalExtractors, dsl.MaxActionExtractors)
+	}
+	if len(extraExtractors[1]) != 1 || extraExtractors[1][0].Name != "corr_mixed_encoded" {
+		t.Fatalf("encoded sibling extractors = %#v, want one reserved sibling", extraExtractors[1])
+	}
+	if len(vars) != dsl.MaxActionExtractors || len(sourceSteps) != dsl.MaxActionExtractors {
+		t.Fatalf("replacement maps = %d/%d, want %d safe replacements", len(vars), len(sourceSteps), dsl.MaxActionExtractors)
+	}
+	overflow := correlations[len(correlations)-1]
+	if overflow.PreApplied || overflow.ReviewAction != manualCorrelationValueReplacement {
+		t.Fatalf("overflow correlation = %#v, want manual and not pre-applied", overflow)
+	}
+	if _, exists := vars[overflow.Value]; exists {
+		t.Fatalf("overflow value %q was exposed as an automatic replacement", overflow.Value)
+	}
+}
+
+func TestConvertHARLeavesUnsupportedEncodedCorrelationSpellingsUnchanged(t *testing.T) {
+	const rawValue = "tok +/== recorded"
+	exact := url.QueryEscape(rawValue)
+	tests := []struct {
+		name              string
+		spelling          string
+		expectCorrelation bool
+	}{
+		{name: "path escape", spelling: url.PathEscape(rawValue)},
+		{name: "percent-20 space", spelling: strings.ReplaceAll(exact, "+", "%20"), expectCorrelation: true},
+		{name: "unescaped literal plus", spelling: strings.ReplaceAll(exact, "%2B", "+")},
+		{name: "lowercase percent hex", spelling: strings.NewReplacer("%2B", "%2b", "%2F", "%2f", "%3D", "%3d").Replace(exact), expectCorrelation: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := Convert(ImportRequest{
+				Format: "har",
+				Content: `{
+					"log": {"entries": [
+						{
+							"request": {"method":"GET","url":"https://api.example.com/bootstrap","headers":[]},
+							"response": {"status":200,"headers":[],"content":{"mimeType":"application/json","text":"{\"access_token\":\"` + rawValue + `\"}"}}
+						},
+						{
+							"request": {"method":"GET","url":"https://api.example.com/callback?access_token=` + tt.spelling + `","headers":[]},
+							"response": {"status":200,"headers":[],"content":{"text":"{}"}}
+						}
+					]}
+				}`,
+			})
+			if err != nil {
+				t.Fatalf("Convert returned error: %v", err)
+			}
+			wantTarget := "/callback?access_token=" + tt.spelling
+			if got := result.Script.Actions[1].Target; got != wantTarget {
+				t.Fatalf("target = %q, want unsupported spelling preserved as %q", got, wantTarget)
+			}
+			for _, extractor := range result.Script.Actions[0].Extractors {
+				if extractor.Convert == "url_encode" {
+					t.Fatalf("source extractors = %#v, unsupported spelling must not select url_encode", result.Script.Actions[0].Extractors)
+				}
+			}
+			if len(result.Script.Actions[0].Extractors) != 0 {
+				t.Fatalf("source extractors = %#v, unsupported-only consumer must not add an unused extractor", result.Script.Actions[0].Extractors)
+			}
+			if tt.expectCorrelation {
+				if len(result.Correlations) != 1 || result.Correlations[0].PreApplied || result.Correlations[0].ReviewAction != "manual_value_replacement_required" {
+					t.Fatalf("correlations = %#v, want manual non-pre-applied candidate", result.Correlations)
+				}
+			}
+		})
 	}
 }
 
@@ -1568,5 +2720,63 @@ func TestConvertSourceReviewRedactsSecretsWhenSanitizeDisabled(t *testing.T) {
 				t.Fatal("expected at least one source review file to be flagged as redacted")
 			}
 		})
+	}
+}
+
+func TestConvertRawHTTPSourceReviewRedactsDuplicateSensitiveHeaderListValues(t *testing.T) {
+	const (
+		first  = "Bearer first-duplicate-secret"
+		second = "Bearer second-duplicate-secret"
+	)
+	sanitizeSensitive := false
+	content := "GET /private HTTP/1.1\nHost: api.example.com\nAuthorization: " + first +
+		"\nAuthorization: " + second + "\n\n"
+	result, err := Convert(ImportRequest{
+		Format:  "raw_http",
+		Content: content,
+		Options: ConvertOptions{SanitizeSensitive: &sanitizeSensitive},
+	})
+	if err != nil {
+		t.Fatalf("Convert duplicate sensitive headers: %v", err)
+	}
+	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) == 0 {
+		t.Fatalf("source review = %#v, want files", result.SourceReview)
+	}
+	for _, file := range result.SourceReview.SourceFiles {
+		if strings.Contains(file.Content, first) || strings.Contains(file.Content, second) {
+			t.Fatalf("source review %q retained duplicate sensitive header: %q", file.Path, file.Content)
+		}
+	}
+}
+
+func TestRedactExchangeSecretsAppliesReplacementsNonRecursively(t *testing.T) {
+	exchanges := []exchange{{
+		HeaderList: dsl.HeaderList{
+			{Name: "Authorization", Value: "A"},
+			{Name: "X-Api-Key", Value: "D"},
+		},
+	}}
+	got, changed := redactExchangeSecrets("A D", exchanges)
+	if !changed {
+		t.Fatal("redactExchangeSecrets reported unchanged")
+	}
+	if want := "[REDACTED] [REDACTED]"; got != want {
+		t.Fatalf("redactExchangeSecrets = %q, want non-recursive %q", got, want)
+	}
+}
+
+func TestRedactExchangeSecretsBoundsExpandingSensitiveHeaderReplacement(t *testing.T) {
+	content := strings.Repeat("x", sourceview.MaxFileChars)
+	got, changed := redactExchangeSecrets(content, []exchange{{
+		Headers: map[string]string{"Authorization": "x"},
+	}})
+	if !changed {
+		t.Fatal("redactExchangeSecrets reported unchanged")
+	}
+	if len(got) > sourceview.MaxFileChars+1 {
+		t.Fatalf("redacted source retained %d bytes, want at most %d", len(got), sourceview.MaxFileChars+1)
+	}
+	if strings.Contains(got, "x") {
+		t.Fatal("redacted source retained raw one-byte credential")
 	}
 }

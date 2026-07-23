@@ -176,6 +176,15 @@ func schemaCreateTableStatements() []string {
 			expires_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS replay_session_leases (
+			session_id TEXT PRIMARY KEY,
+			owner_token TEXT NOT NULL,
+			project_id TEXT NOT NULL,
+			state TEXT NOT NULL CHECK (state IN ('active', 'retained')),
+			generation BIGINT NOT NULL DEFAULT 1 CHECK (generation > 0),
+			expires_at DATETIME NOT NULL,
+			updated_at DATETIME NOT NULL
+		)`,
 		`CREATE TABLE IF NOT EXISTS deployment_leases (
 			name TEXT PRIMARY KEY,
 			owner_id TEXT NOT NULL,
@@ -699,12 +708,21 @@ func schemaCreateTableStatements() []string {
 		)`,
 		`CREATE TABLE IF NOT EXISTS script_recordings (
 			script_id TEXT PRIMARY KEY,
+			project_id TEXT,
+			script_incarnation TEXT,
 			schema_version TEXT,
+			action_graph_digest TEXT,
 			source TEXT,
 			sensitivity TEXT,
 			request_count INTEGER,
 			observations_json TEXT,
+			observations_projection_version INTEGER NOT NULL DEFAULT 0,
+			observations_projected_at DATETIME,
 			correlation_observations_json TEXT,
+			correlation_status_version INTEGER NOT NULL DEFAULT 0,
+			correlation_observation_count INTEGER NOT NULL DEFAULT 0,
+			correlation_sidecar_version INTEGER NOT NULL DEFAULT 0,
+			correlation_status_projected_at DATETIME,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
@@ -920,6 +938,8 @@ func schemaCreateTableStatements() []string {
 			description TEXT,
 			source TEXT,
 			rules_json TEXT,
+			rules_projection_version INTEGER NOT NULL DEFAULT 0,
+			rules_projected_at DATETIME,
 			created_at DATETIME NOT NULL,
 			updated_at DATETIME NOT NULL
 		)`,
@@ -1024,6 +1044,17 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "scripts.folder_id", query: `ALTER TABLE scripts ADD COLUMN folder_id TEXT REFERENCES folders(id)`},
 		{name: "scripts.parameters", query: `ALTER TABLE scripts ADD COLUMN parameters TEXT`},
 		{name: "script_recordings.correlation_observations_json", query: `ALTER TABLE script_recordings ADD COLUMN correlation_observations_json TEXT`},
+		{name: "script_recordings.action_graph_digest", query: `ALTER TABLE script_recordings ADD COLUMN action_graph_digest TEXT`},
+		{name: "script_recordings.project_id", query: `ALTER TABLE script_recordings ADD COLUMN project_id TEXT`},
+		{name: "script_recordings.script_incarnation", query: `ALTER TABLE script_recordings ADD COLUMN script_incarnation TEXT`},
+		{name: "script_recordings.observations_projection_version", query: `ALTER TABLE script_recordings ADD COLUMN observations_projection_version INTEGER NOT NULL DEFAULT 0`},
+		{name: "script_recordings.observations_projected_at", query: `ALTER TABLE script_recordings ADD COLUMN observations_projected_at DATETIME`},
+		{name: "script_recordings.correlation_status_version", query: `ALTER TABLE script_recordings ADD COLUMN correlation_status_version INTEGER NOT NULL DEFAULT 0`},
+		{name: "script_recordings.correlation_observation_count", query: `ALTER TABLE script_recordings ADD COLUMN correlation_observation_count INTEGER NOT NULL DEFAULT 0`},
+		{name: "script_recordings.correlation_sidecar_version", query: `ALTER TABLE script_recordings ADD COLUMN correlation_sidecar_version INTEGER NOT NULL DEFAULT 0`},
+		{name: "script_recordings.correlation_status_projected_at", query: `ALTER TABLE script_recordings ADD COLUMN correlation_status_projected_at DATETIME`},
+		{name: "correlation_rulesets.rules_projection_version", query: `ALTER TABLE correlation_rulesets ADD COLUMN rules_projection_version INTEGER NOT NULL DEFAULT 0`},
+		{name: "correlation_rulesets.rules_projected_at", query: `ALTER TABLE correlation_rulesets ADD COLUMN rules_projected_at DATETIME`},
 		{name: "tests.project_id", query: `ALTER TABLE tests ADD COLUMN project_id TEXT REFERENCES projects(id)`},
 		{name: "tests.folder_id", query: `ALTER TABLE tests ADD COLUMN folder_id TEXT REFERENCES folders(id)`},
 		{name: "tests.application_id", query: `ALTER TABLE tests ADD COLUMN application_id TEXT REFERENCES applications(id)`},
@@ -1156,6 +1187,9 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_scenario_schedule_occurrences_test_id ON scenario_schedule_occurrences(test_id)`, "idx_scenario_schedule_occurrences_test_id"},
 	{`CREATE INDEX IF NOT EXISTS idx_execution_plan_schedule_occurrences_schedule_time ON execution_plan_schedule_occurrences(schedule_id, planned_at)`, "idx_execution_plan_schedule_occurrences_schedule_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_execution_plan_schedule_occurrences_project_time ON execution_plan_schedule_occurrences(project_id, planned_at)`, "idx_execution_plan_schedule_occurrences_project_time"},
+	{`CREATE INDEX IF NOT EXISTS idx_replay_session_leases_state_expiry ON replay_session_leases(state, expires_at)`, "idx_replay_session_leases_state_expiry"},
+	{`CREATE INDEX IF NOT EXISTS idx_replay_session_leases_project_state_expiry ON replay_session_leases(project_id, state, expires_at)`, "idx_replay_session_leases_project_state_expiry"},
+	{`CREATE INDEX IF NOT EXISTS idx_replay_session_leases_expiry ON replay_session_leases(expires_at)`, "idx_replay_session_leases_expiry"},
 	{`CREATE INDEX IF NOT EXISTS idx_capacity_reservations_project_time ON capacity_reservations(project_id, start_at, end_at)`, "idx_capacity_reservations_project_time"},
 	{`CREATE INDEX IF NOT EXISTS idx_capacity_reservations_bound_test ON capacity_reservations(bound_test_id)`, "idx_capacity_reservations_bound_test"},
 	{`CREATE INDEX IF NOT EXISTS idx_tests_timeslot ON tests(timeslot_id)`, "idx_tests_timeslot"},
@@ -1213,6 +1247,12 @@ func (s *SQLiteStore) init() error {
 	}
 
 	if err := s.applyOptionalSchemaMigrations(schemaColumnMigrations()); err != nil {
+		return err
+	}
+	if err := s.RepairLegacyScriptRecordings(); err != nil {
+		return err
+	}
+	if err := s.repairLegacyCorrelationRulesets(); err != nil {
 		return err
 	}
 	if err := s.backfillArchiveFinalizationIntentTokens(); err != nil {

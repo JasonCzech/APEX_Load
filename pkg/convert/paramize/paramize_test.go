@@ -1,6 +1,7 @@
 package paramize
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -39,6 +40,44 @@ func TestSuggestNilScript(t *testing.T) {
 	}
 	if result.Summary.Total != 0 {
 		t.Fatalf("expected zero summary total, got %d", result.Summary.Total)
+	}
+}
+
+func TestSuggestSecretRegexWorkLimitFailsClosedWithWarning(t *testing.T) {
+	fields := make([]string, maxSuggestionRegexMatches+1)
+	for index := range fields {
+		fields[index] = fmt.Sprintf(`"token":"secret-value-%06d"`, index)
+	}
+	result := Suggest(httpScript(dsl.Action{
+		Name: "oversized-secrets",
+		Type: "http_request",
+		Body: "{" + strings.Join(fields, ",") + "}",
+	}), Options{EnableSecrets: true})
+
+	if len(result.Suggestions) != 0 {
+		t.Fatalf("secret suggestions = %d, want no partial results", len(result.Suggestions))
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], ErrSuggestionWorkLimit.Error()) {
+		t.Fatalf("secret warnings = %#v, want work-limit warning", result.Warnings)
+	}
+}
+
+func TestSuggestDataParamRegexWorkLimitFailsClosedWithWarning(t *testing.T) {
+	pairs := make([]string, maxSuggestionRegexMatches+1)
+	for index := range pairs {
+		pairs[index] = fmt.Sprintf("user_id_%06d=value-%06d", index, index)
+	}
+	result := Suggest(httpScript(dsl.Action{
+		Name:   "oversized-query",
+		Type:   "http_request",
+		Target: "/search?" + strings.Join(pairs, "&"),
+	}), Options{EnableDataParams: true})
+
+	if len(result.Suggestions) != 0 {
+		t.Fatalf("data-parameter suggestions = %d, want no partial results", len(result.Suggestions))
+	}
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], ErrSuggestionWorkLimit.Error()) {
+		t.Fatalf("data-parameter warnings = %#v, want work-limit warning", result.Warnings)
 	}
 }
 
@@ -168,6 +207,18 @@ func TestSuggestSecrets(t *testing.T) {
 			wantReplacement: "{{env.PASSWORD}}",
 		},
 		{
+			name:            "json escaped string password",
+			action:          dsl.Action{Name: "login", Type: "http_request", Target: "/login", Body: `{"password":"abc\"residual-secret"}`},
+			wantVar:         "PASSWORD",
+			wantReplacement: "{{env.PASSWORD}}",
+		},
+		{
+			name:            "json numeric passcode",
+			action:          dsl.Action{Name: "login", Type: "http_request", Target: "/login", Body: `{"passcode":123456}`},
+			wantVar:         "PASSCODE",
+			wantReplacement: "{{env.PASSCODE}}",
+		},
+		{
 			name:            "browser fill password",
 			action:          dsl.Action{Name: "fill pw", Type: "browser_fill", Selector: "#login_password", Value: "hunter2"},
 			wantVar:         "LOGIN_PASSWORD",
@@ -210,6 +261,118 @@ func TestSuggestSecretSkipsRedactedValues(t *testing.T) {
 	}
 }
 
+func TestSecretHandlingDoesNotTrustPartialTemplates(t *testing.T) {
+	const partial = "{{var.recorded}}residual-secret"
+	if got := SanitizeBodySecrets(`{"password":"` + partial + `"}`); strings.Contains(got, "residual-secret") || !strings.Contains(got, "{{secret.redacted}}") {
+		t.Fatalf("SanitizeBodySecrets partial template = %q, want full-value redaction", got)
+	}
+
+	script := httpScript(
+		dsl.Action{
+			Name:    "partial header",
+			Type:    "http_request",
+			Headers: map[string]string{"Authorization": "Bearer " + partial},
+		},
+		dsl.Action{
+			Name: "partial body",
+			Type: "http_request",
+			Body: `{"password":"` + partial + `"}`,
+		},
+		dsl.Action{
+			Name:     "partial browser fill",
+			Type:     "browser_fill",
+			Selector: "#login_password",
+			Value:    partial,
+		},
+	)
+	result := Suggest(script, Options{EnableSecrets: true})
+	secrets := findByKind(result.Suggestions, KindSecret)
+	if len(secrets) != 3 {
+		t.Fatalf("partial-template secret suggestions = %#v, want header/body/fill suggestions", secrets)
+	}
+}
+
+func TestSuggestSecretSkipsFullyGovernedCredentialSurfaces(t *testing.T) {
+	script := httpScript(
+		dsl.Action{
+			Name: "governed headers",
+			Type: "http_request",
+			Headers: map[string]string{
+				"Authorization": "Bearer {{var.token}}",
+				"Cookie":        "session={{secret.session}}; csrf={{var.csrf}}",
+				"X-API-Key":     "{{fn.random_string(32)}}",
+			},
+		},
+		dsl.Action{
+			Name: "governed body",
+			Type: "http_request",
+			Body: `{"password":"{{secret.password}}","token":"{{fn.uuid()}}"}`,
+		},
+		dsl.Action{
+			Name:     "governed fill",
+			Type:     "browser_fill",
+			Selector: "#password",
+			Value:    "{{fake.uuid()}}",
+		},
+	)
+	result := Suggest(script, Options{EnableSecrets: true})
+	if secrets := findByKind(result.Suggestions, KindSecret); len(secrets) != 0 {
+		t.Fatalf("fully governed credentials produced suggestions: %#v", secrets)
+	}
+	body := `{"token":"{{fn.random(1,4)}}","password":"{{fn.random_string(32)}}"}`
+	if sanitized := SanitizeBodySecrets(body); sanitized != body {
+		t.Fatalf("supported builtin templates were sanitized: %q", sanitized)
+	}
+}
+
+func TestGovernedTemplateRejectsUnsupportedOrMalformedBuiltins(t *testing.T) {
+	for _, value := range []string{
+		"{{fn.random(1,literal-secret)}}",
+		"{{fn.random_string(0)}}",
+		"{{fake.email(literal-secret)}}",
+		"{{fn.unknown()}}",
+		"{{fn.uuid()}}residual-secret",
+	} {
+		if IsGovernedTemplate(value) {
+			t.Fatalf("IsGovernedTemplate(%q) = true, want false", value)
+		}
+	}
+}
+
+func TestSuggestSecretScansHeaderListOnlyValues(t *testing.T) {
+	const credential = "Bearer header-list-only-secret"
+	script := httpScript(dsl.Action{
+		Name: "call",
+		Type: "http_request",
+		HeaderList: dsl.HeaderList{
+			{Name: "Accept", Value: "application/json"},
+			{Name: "Authorization", Value: credential},
+		},
+	})
+
+	result := Suggest(script, Options{EnableSecrets: true})
+	secrets := findByKind(result.Suggestions, KindSecret)
+	if len(secrets) != 1 {
+		t.Fatalf("HeaderList-only secret suggestions = %#v, want one", secrets)
+	}
+	location := secrets[0].Locations[0]
+	if location.Field != "headers.Authorization" || location.SearchText != credential {
+		t.Fatalf("HeaderList-only location = %#v", location)
+	}
+
+	applied, _, err := ApplySuggestions(script, result.Suggestions, map[string]bool{secrets[0].ID: true})
+	if err != nil {
+		t.Fatalf("ApplySuggestions HeaderList-only secret: %v", err)
+	}
+	action := applied.Actions[0]
+	if got := action.HeaderList[1].Value; got != "Bearer {{env.AUTHORIZATION}}" {
+		t.Fatalf("HeaderList authorization = %q, want externalized credential", got)
+	}
+	if got := action.Headers["Authorization"]; got != "Bearer {{env.AUTHORIZATION}}" {
+		t.Fatalf("Headers summary authorization = %q, want synchronized externalized credential", got)
+	}
+}
+
 func TestSuggestCorrelations(t *testing.T) {
 	script := httpScript(
 		dsl.Action{Name: "login", Type: "http_request", Method: "POST", Target: "/login"},
@@ -238,6 +401,9 @@ func TestSuggestCorrelations(t *testing.T) {
 	if got.Extractor == nil {
 		t.Fatal("correlation suggestion must carry an extractor")
 	}
+	if got.Extractor.OnMiss != "fail" {
+		t.Fatalf("correlation extractor on_miss = %q, want fail so an extraction miss cannot reuse a prior iteration's value", got.Extractor.OnMiss)
+	}
 	if got.FoundInAction == nil || got.FoundInAction.ActionIndex != 0 {
 		t.Errorf("found_in_action = %+v, want source action index 0", got.FoundInAction)
 	}
@@ -253,6 +419,95 @@ func TestSuggestCorrelations(t *testing.T) {
 	}
 	if !got.AutoApply {
 		t.Error("high-confidence correlation should be auto-apply eligible")
+	}
+}
+
+func TestSuggestSurfacesCorrelationWorkLimit(t *testing.T) {
+	observations := make([]correlate.Observation, 4097)
+	for index := range observations {
+		observations[index].ID = index + 1
+	}
+	result := Suggest(httpScript(dsl.Action{Name: "one"}), Options{
+		EnableCorrelation: true,
+		Observations:      observations,
+	})
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "Correlation analysis was not completed") {
+		t.Fatalf("warnings = %#v, want explicit correlation work-limit warning", result.Warnings)
+	}
+	if correlations := findByKind(result.Suggestions, KindCorrelation); len(correlations) != 0 {
+		t.Fatalf("correlations = %#v, want no partial suggestions", correlations)
+	}
+}
+
+func TestSuggestRejectsTruncatedCorrelationCandidatePrefix(t *testing.T) {
+	const candidateLimit = 1024
+	var responseBody strings.Builder
+	responseBody.WriteByte('{')
+	for index := 0; index <= candidateLimit; index++ {
+		if index > 0 {
+			responseBody.WriteByte(',')
+		}
+		fmt.Fprintf(&responseBody, `"token_%d":"token-value-%06d"`, index, index)
+	}
+	responseBody.WriteByte('}')
+
+	result := Suggest(httpScript(
+		dsl.Action{Name: "source", Type: "request", Method: "GET", Target: "/source"},
+		dsl.Action{Name: "consumer", Type: "request", Method: "GET", Target: "/use?token=token-value-001024"},
+	), Options{
+		EnableCorrelation: true,
+		Observations: []correlate.Observation{
+			{ID: 1, ResponseBody: responseBody.String()},
+			{ID: 2, RequestURL: "https://api.example.com/use?token=token-value-001024"},
+		},
+	})
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "Correlation analysis was not completed") {
+		t.Fatalf("warnings = %#v, want fail-closed candidate truncation warning", result.Warnings)
+	}
+	if correlations := findByKind(result.Suggestions, KindCorrelation); len(correlations) != 0 {
+		t.Fatalf("correlations = %#v, want no suggestions from a truncated prefix", correlations)
+	}
+}
+
+func TestSuggestSurfacesExactEncodedSourceValidationWorkLimit(t *testing.T) {
+	const candidateCount = 80
+	var location strings.Builder
+	var consumer strings.Builder
+	location.WriteString("https://example.test/callback?")
+	for index := 0; index < candidateCount; index++ {
+		if index > 0 {
+			location.WriteByte('&')
+			consumer.WriteByte('&')
+		}
+		wireValue := fmt.Sprintf("space+token%%2F%06d", index)
+		fmt.Fprintf(&location, "state_%d=%s", index, wireValue)
+		fmt.Fprintf(&consumer, "value_%d=%s", index, wireValue)
+	}
+	// Each Location key has a distinct replay expression. Exact-source
+	// validation must scan the flattened response headers once per candidate;
+	// the padding keeps detection within its evidence/search budgets while the
+	// later 64 MiB exact validator is exhausted.
+	responseHeaders := map[string]string{
+		"Location":  location.String(),
+		"X-Padding": strings.Repeat("x", 1<<20),
+	}
+
+	script := httpScript(
+		dsl.Action{Name: "issue", Type: "http_request", Target: "/issue"},
+		dsl.Action{Name: "use", Type: "http_request", Target: "/use", Body: consumer.String()},
+	)
+	result := Suggest(script, Options{
+		EnableCorrelation: true,
+		Observations: []correlate.Observation{
+			{ID: 1, ResponseHeaders: responseHeaders},
+			{ID: 2, RequestBody: consumer.String()},
+		},
+	})
+	if len(result.Warnings) != 1 || !strings.Contains(result.Warnings[0], "exact encoded-source validation exhausted its budget") {
+		t.Fatalf("warnings = %#v suggestions=%d, want exact encoded-source work-limit warning", result.Warnings, len(result.Suggestions))
+	}
+	if correlations := findByKind(result.Suggestions, KindCorrelation); len(correlations) != 0 {
+		t.Fatalf("correlations = %d, want no partial suggestions", len(correlations))
 	}
 }
 
@@ -389,6 +644,49 @@ func TestSuggestDeterministicOrderingAndIDs(t *testing.T) {
 			t.Errorf("suggestions out of kind order: %v after rank %d", s.Kind, lastKindRank)
 		}
 		lastKindRank = rank
+	}
+}
+
+func TestDuplicateSensitiveHeaderSuggestionsHaveDistinctOpaqueIDs(t *testing.T) {
+	script := httpScript(dsl.Action{
+		Name: "authenticate",
+		Type: "http_request",
+		HeaderList: dsl.HeaderList{
+			{Name: "Authorization", Value: "Bearer first-private-token"},
+			{Name: "Authorization", Value: "Bearer second-private-token"},
+		},
+	})
+
+	result := Suggest(script, Options{EnableSecrets: true})
+	if len(result.Suggestions) != 2 {
+		t.Fatalf("suggestions = %#v, want one per distinct credential", result.Suggestions)
+	}
+	first, second := result.Suggestions[0], result.Suggestions[1]
+	if first.ID == second.ID {
+		t.Fatalf("distinct credentials shared selectable suggestion ID %q", first.ID)
+	}
+	for _, suggestion := range result.Suggestions {
+		if strings.Contains(suggestion.ID, "private-token") {
+			t.Fatalf("suggestion ID leaked credential material: %q", suggestion.ID)
+		}
+	}
+
+	applied, _, err := ApplySuggestions(script, result.Suggestions, map[string]bool{first.ID: true})
+	if err != nil {
+		t.Fatalf("apply one duplicate-header suggestion: %v", err)
+	}
+	templated := 0
+	literal := 0
+	for _, header := range applied.Actions[0].HeaderList {
+		switch {
+		case strings.Contains(header.Value, "{{env.AUTHORIZATION}}"):
+			templated++
+		case strings.Contains(header.Value, "private-token"):
+			literal++
+		}
+	}
+	if templated != 1 || literal != 1 {
+		t.Fatalf("selecting one suggestion rewrote the wrong duplicate-header scope: %#v", applied.Actions[0].HeaderList)
 	}
 }
 

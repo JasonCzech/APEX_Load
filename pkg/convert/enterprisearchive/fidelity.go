@@ -66,9 +66,10 @@ func BuildImportFidelityReport(result *ConvertResult, files map[string]string, p
 		report.ConvertedFunctions = result.Stats.NativeFunctions + result.Stats.ExternalRequiredFunctions
 		report.ConvertedActions = result.Stats.ConvertedActions
 		report.Warnings = append([]string(nil), result.Warnings...)
-		if result.DetectedProtocol != nil && result.DetectedProtocol.ImportMode != ImportModeExecutable {
+		if result.DetectedProtocol != nil && result.DetectedProtocol.ImportMode != ImportModeExecutable && !javaVuserExternalRunnerPreservesSource(result) {
 			report.Blockers = append(report.Blockers, "Source protocol is classified as "+string(result.DetectedProtocol.ImportMode)+" and cannot be promoted as executable.")
 		}
+		report.Blockers = append(report.Blockers, javaVuserLifecycleFidelityBlockers(result)...)
 		if result.Script != nil {
 			report.SecretGated = countSecretGatedActions(result.Script)
 			report.ParameterParity = buildParameterParity(result.Script, files, projectConfig)
@@ -99,6 +100,74 @@ func BuildImportFidelityReport(result *ConvertResult, files map[string]string, p
 		report.PromotionStatus = ImportPromotionBlocked
 	}
 	return report
+}
+
+func javaReviewPathKey(value string) string {
+	value = filepath.ToSlash(filepath.Clean(strings.TrimSpace(value)))
+	return strings.ToLower(strings.TrimPrefix(value, "./"))
+}
+
+func javaVuserLifecycleFidelityBlockers(result *ConvertResult) []string {
+	blockers := javaReviewArtifactBlockers(result, javaLifecycleBlockersKey)
+	blockers = append(blockers, javaReviewArtifactBlockers(result, javaSourceIntegrityKey)...)
+	return append(blockers, javaReviewArtifactBlockers(result, javaRunnerSemanticsKey)...)
+}
+
+func javaReviewArtifactBlockers(result *ConvertResult, key string) []string {
+	if result == nil || result.ReviewArtifact == nil || result.ReviewArtifact.Metadata == nil {
+		return nil
+	}
+	value, ok := result.ReviewArtifact.Metadata[key]
+	if !ok {
+		return nil
+	}
+	switch blockers := value.(type) {
+	case []string:
+		return append([]string(nil), blockers...)
+	case []any:
+		out := make([]string, 0, len(blockers))
+		for _, blocker := range blockers {
+			if text, ok := blocker.(string); ok && strings.TrimSpace(text) != "" {
+				out = append(out, text)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+// javaVuserExternalRunnerPreservesSource distinguishes execution posture from
+// import fidelity. A complete Java Vuser draft intentionally delegates the
+// preserved lifecycle to the governed JVM runner; needing that runner is not a
+// dropped-source condition. Other external-runner protocols and all concrete
+// fidelity blockers continue to block promotion normally.
+func javaVuserExternalRunnerPreservesSource(result *ConvertResult) bool {
+	if result == nil || result.DetectedProtocol == nil || result.Script == nil {
+		return false
+	}
+	detected := result.DetectedProtocol
+	if detected.ImportMode != ImportModeExternalRunnerRequired ||
+		!strings.EqualFold(strings.TrimSpace(detected.APEXLoadProtocol), "java_vuser") ||
+		!strings.EqualFold(strings.TrimSpace(detected.RunnerRequirement), javaVuserRunnerRequirement) ||
+		!strings.EqualFold(strings.TrimSpace(result.Script.Protocol), "java_vuser") {
+		return false
+	}
+	return fidelityHasJavaVuserRun(result.Script.Init) ||
+		fidelityHasJavaVuserRun(result.Script.Actions) ||
+		fidelityHasJavaVuserRun(result.Script.Teardown)
+}
+
+func fidelityHasJavaVuserRun(actions []dsl.Action) bool {
+	for _, action := range actions {
+		if strings.EqualFold(strings.TrimSpace(action.Type), "java_vuser_run") {
+			return true
+		}
+		if action.Control != nil && (fidelityHasJavaVuserRun(action.Control.Steps) || fidelityHasJavaVuserRun(action.Control.Else)) {
+			return true
+		}
+	}
+	return false
 }
 
 func buildFidelitySourceFiles(files map[string]string, projectConfig *ProjectConfig) []ImportFidelitySourceFile {

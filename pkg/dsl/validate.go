@@ -754,6 +754,9 @@ func validateExtractorIssues(protocol string, path string, action Action) []stri
 	}
 	enforceSourceType := extractorSourceTypeAllowlistApplies(protocol)
 	for i, ext := range action.Extractors {
+		if len(ext.Expression) > httpprotocol.MaxExtractorExpressionBytes && enforceSourceType {
+			issues = append(issues, fmt.Sprintf("%s: extractors[%d] expression must not exceed %d bytes", label, i, httpprotocol.MaxExtractorExpressionBytes))
+		}
 		switch ext.OnMiss {
 		case "", "ignore", "fail", "empty":
 		default:

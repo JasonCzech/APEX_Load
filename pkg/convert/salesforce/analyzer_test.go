@@ -2,12 +2,15 @@ package salesforce
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/url"
 	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jmespath/go-jmespath"
 )
 
 func TestAnalyzeBuildsSalesforceNativePreviewFromHAR(t *testing.T) {
@@ -69,11 +72,107 @@ func TestAnalyzeBuildsSalesforceNativePreviewFromHAR(t *testing.T) {
 	if len(preview.Actions[0].Extractors) != 1 || preview.Actions[0].Extractors[0].Name != "corr_access_token" {
 		t.Fatalf("login extractors = %#v, want access token correlation", preview.Actions[0].Extractors)
 	}
+	if preview.Actions[0].Extractors[0].OnMiss != "fail" {
+		t.Fatalf("login correlation on_miss = %q, want fail so a later iteration cannot reuse a stale token", preview.Actions[0].Extractors[0].OnMiss)
+	}
 	if !strings.Contains(preview.Actions[1].Body, "{{var.corr_access_token}}") {
 		t.Fatalf("aura body = %q, want correlated token variable", preview.Actions[1].Body)
 	}
 	if len(preview.Actions[1].Assertions) != 2 {
 		t.Fatalf("aura assertions = %#v, want Aura state assertions", preview.Actions[1].Assertions)
+	}
+}
+
+// Regression for the review finding that a standard 2000-record SOQL page in
+// the HAR made Analyze return a nil review: the review (detection, coverage,
+// endpoints) must survive, with correlation analysis bounded internally.
+func TestAnalyzeSurvivesLargeSOQLRecordPage(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "SF Query",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{{
+			Name:   "Query",
+			Type:   "GET",
+			Method: "GET",
+			Target: "/services/data/v60.0/query?q=SELECT+Id+FROM+Account",
+		}},
+	}
+	var records strings.Builder
+	for index := 0; index < 2000; index++ {
+		if index > 0 {
+			records.WriteByte(',')
+		}
+		fmt.Fprintf(&records, `{\"Id\":\"001xx%011d\"}`, index)
+	}
+	har := []byte(`{
+	  "log": {
+	    "entries": [
+	      {
+	        "request": {"method": "GET", "url": "https://acme.my.salesforce.com/services/data/v60.0/query?q=SELECT+Id+FROM+Account", "headers": []},
+	        "response": {"headers": [], "content": {"text": "{\"totalSize\":2000,\"done\":true,\"records\":[` + records.String() + `]}"}}
+	      }
+	    ]
+	  }
+	}`)
+
+	review, err := Analyze(script, AnalyzeOptions{HARData: har})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if review == nil {
+		t.Fatal("Analyze returned a nil review for a standard SOQL page")
+	}
+	if !review.Detected {
+		t.Fatal("Salesforce traffic was not detected")
+	}
+}
+
+func TestNativeCorrelationCollisionsFlagPartialOverlapWithMergedOccurrence(t *testing.T) {
+	plans := []nativeCorrelationPlan{
+		{correlation: correlate.Correlation{Name: "corr_a", FoundInID: 1, Expression: "$.a"}, automatic: true, usage: correlationUse{raw: true}, value: "abcdef"},
+		{correlation: correlate.Correlation{Name: "corr_b", FoundInID: 2, Expression: "$.b"}, automatic: true, usage: correlationUse{raw: true}, value: "defghi"},
+	}
+	// The suffix/prefix merge "abcdefghi" really occurs on a rewrite-target
+	// surface, so single-pass replacement would corrupt the merged region.
+	surfaces := "https://example.test/use?v=abcdefghi\x00"
+	ambiguousLiterals, ambiguousPlans := nativeCorrelationReplacementCollisions(plans, surfaces)
+	if !ambiguousLiterals["abcdef"] || !ambiguousLiterals["defghi"] {
+		t.Fatalf("ambiguous literals = %#v, want both partially-overlapping literals flagged", ambiguousLiterals)
+	}
+	if len(ambiguousPlans) != 2 {
+		t.Fatalf("ambiguous plans = %#v, want both plans flagged", ambiguousPlans)
+	}
+}
+
+func TestNativeCorrelationCollisionsKeepDisjointOverlapCandidatesAutomatic(t *testing.T) {
+	plans := []nativeCorrelationPlan{
+		{correlation: correlate.Correlation{Name: "corr_a", FoundInID: 1, Expression: "$.a"}, automatic: true, usage: correlationUse{raw: true}, value: "abcdef"},
+		{correlation: correlate.Correlation{Name: "corr_b", FoundInID: 2, Expression: "$.b"}, automatic: true, usage: correlationUse{raw: true}, value: "defghi"},
+	}
+	// The literals share suffix/prefix characters but only occur disjointly, so
+	// single-pass replacement rewrites both correctly and must stay automatic.
+	surfaces := "https://example.test/use?a=abcdef&b=defghi\x00"
+	ambiguousLiterals, ambiguousPlans := nativeCorrelationReplacementCollisions(plans, surfaces)
+	if len(ambiguousLiterals) != 0 || len(ambiguousPlans) != 0 {
+		t.Fatalf("disjoint usage flagged as ambiguous: literals %#v plans %#v", ambiguousLiterals, ambiguousPlans)
+	}
+}
+
+func TestDetectCorrelationsCheckedDegradesWorkLimitToWarning(t *testing.T) {
+	entries := make([]harEntry, 4097)
+	for index := range entries {
+		entries[index].ID = index + 1
+	}
+	correlations, warnings, err := detectCorrelationsChecked(entries)
+	if err != nil {
+		t.Fatalf("detectCorrelationsChecked must degrade the work limit, got error %v", err)
+	}
+	if len(correlations) != 0 {
+		t.Fatalf("correlations = %#v, want none for pathological input", correlations)
+	}
+	if len(warnings) == 0 {
+		t.Fatal("degraded analysis must record a warning")
 	}
 }
 
@@ -210,18 +309,24 @@ func TestAnalyzeClassifiesSalesforceObjectFlowsAndNestedJMESPath(t *testing.T) {
 	if workOrderMetadata["flow_kind"] != "work_order" || workOrderMetadata["object"] != "WorkOrder" {
 		t.Fatalf("work order metadata = %#v, want work_order WorkOrder", workOrderMetadata)
 	}
-	foundJMES := false
-	for _, extractor := range preview.Actions[1].Extractors {
-		if extractor.Type == "jmespath" && extractor.Expression == `actions[0].returnValue."record-id"` {
-			foundJMES = true
+	foundJMESCandidate := false
+	for _, candidate := range review.NativePreview.Correlations {
+		if candidate.Expression == `actions[0].returnValue."record-id"` {
+			foundJMESCandidate = true
+			if candidate.Confidence >= 0.8 {
+				t.Fatalf("nested record-id candidate confidence = %.2f, want review-only confidence", candidate.Confidence)
+			}
 			break
 		}
 	}
-	if !foundJMES {
-		t.Fatalf("work order extractors = %#v, want nested JMESPath extractor", preview.Actions[1].Extractors)
+	if !foundJMESCandidate {
+		t.Fatalf("correlations = %#v, want nested JMESPath review candidate", review.NativePreview.Correlations)
 	}
-	if !strings.Contains(preview.Actions[4].Body, "{{var.corr_record_id}}") {
-		t.Fatalf("correlated body = %q, want nested record id variable", preview.Actions[4].Body)
+	if len(preview.Actions[1].Extractors) != 0 {
+		t.Fatalf("work order extractors = %#v, want low-confidence candidate left unwired", preview.Actions[1].Extractors)
+	}
+	if !strings.Contains(preview.Actions[4].Body, "a0WSANITIZED123") || strings.Contains(preview.Actions[4].Body, "{{var.") {
+		t.Fatalf("record-id body = %q, want low-confidence literal preserved for review", preview.Actions[4].Body)
 	}
 }
 
@@ -274,6 +379,893 @@ func TestAnalyzeFlattensHTTPSequenceChildren(t *testing.T) {
 	}
 	if !containsString(transaction.FlowKinds, "service") || !containsString(transaction.FlowKinds, "record") {
 		t.Fatalf("flow kinds = %#v, want service and record child classifications", transaction.FlowKinds)
+	}
+}
+
+func TestBuildNativePreviewSkipsCorrelationWithUnmatchedSource(t *testing.T) {
+	const token = "source-only-token-123456"
+	script := &dsl.Script{
+		Name:     "SF unmatched source",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{{
+			Name:   "Use token",
+			Type:   "POST",
+			Method: "POST",
+			Target: "/services/data/v60.0/composite",
+			Body:   `{"token":"` + token + `"}`,
+		}},
+	}
+	refs := flattenRequestActions(script)
+	preview, err := buildNativePreview(
+		script,
+		refs,
+		[]harEntry{
+			{ID: 1, Method: "GET", URL: "https://acme.my.salesforce.com/bootstrap", ResponseBody: `{"access_token":"` + token + `"}`},
+			{ID: 2, Method: "POST", URL: "https://acme.my.salesforce.com/services/data/v60.0/composite", RequestBody: `{"token":"` + token + `"}`},
+		},
+		map[int]int{0: 2},
+		[]correlate.Correlation{{
+			Name:        "corr_access_token",
+			Source:      "body",
+			Expression:  "$.access_token",
+			ExtractType: "jsonpath",
+			FoundInID:   1,
+			UsedInIDs:   []int{2},
+			Value:       token,
+			Confidence:  0.9,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("buildNativePreview returned error: %v", err)
+	}
+	if got := preview.Script.Actions[0].Body; got != `{"token":"`+token+`"}` {
+		t.Fatalf("body = %q, want unmatched-source literal left intact", got)
+	}
+	if len(preview.Script.Actions[0].Extractors) != 0 {
+		t.Fatalf("use-action extractors = %#v, want none", preview.Script.Actions[0].Extractors)
+	}
+	if len(preview.Correlations) != 0 {
+		t.Fatalf("correlation summaries = %#v, want unmatched source omitted", preview.Correlations)
+	}
+}
+
+func TestBuildNativePreviewDoesNotRewriteBeforeMappedExtractorSource(t *testing.T) {
+	const token = "source-ordered-salesforce-token-123456"
+	script := &dsl.Script{
+		Name:     "SF source order",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{
+			{Name: "Before", Type: "GET", Method: "GET", Target: "/before?echo=" + token},
+			{Name: "Bootstrap", Type: "GET", Method: "GET", Target: "/bootstrap"},
+			{Name: "Use token", Type: "POST", Method: "POST", Target: "/services/data/v60.0/composite", Body: `{"token":"` + token + `"}`},
+		},
+	}
+	refs := flattenRequestActions(script)
+	preview, err := buildNativePreview(
+		script,
+		refs,
+		[]harEntry{
+			{ID: 1, Method: "GET", URL: "https://acme.my.salesforce.com/before?echo=" + token},
+			{ID: 2, Method: "GET", URL: "https://acme.my.salesforce.com/bootstrap", ResponseBody: `{"access_token":"` + token + `"}`},
+			{ID: 3, Method: "POST", URL: "https://acme.my.salesforce.com/services/data/v60.0/composite", RequestBody: `{"token":"` + token + `"}`},
+		},
+		map[int]int{0: 1, 1: 2, 2: 3},
+		[]correlate.Correlation{{
+			Name:        "corr_access_token",
+			Source:      "body",
+			Expression:  "$.access_token",
+			ExtractType: "jsonpath",
+			FoundInID:   2,
+			UsedInIDs:   []int{3},
+			Value:       token,
+			Confidence:  0.9,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("buildNativePreview returned error: %v", err)
+	}
+	if got := preview.Script.Actions[0].Target; got != "/before?echo="+token {
+		t.Fatalf("pre-source target = %q, want literal preserved", got)
+	}
+	if len(preview.Script.Actions[1].Extractors) != 1 {
+		t.Fatalf("source extractors = %#v, want one", preview.Script.Actions[1].Extractors)
+	}
+	if got := preview.Script.Actions[2].Body; got != `{"token":"{{var.corr_access_token}}"}` {
+		t.Fatalf("post-source body = %q, want correlation variable", got)
+	}
+}
+
+func TestBuildNativePreviewPersistsHTTPSequenceCorrelationMutations(t *testing.T) {
+	const token = "sequence-token-123456"
+	script := &dsl.Script{
+		Name:     "SF sequence correlation",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{{
+			Name:   "Grouped requests",
+			Type:   "http_sequence",
+			Method: "SEQUENCE",
+			Params: map[string]any{
+				"requests": []map[string]any{
+					{
+						"name":   "Bootstrap",
+						"type":   "GET",
+						"method": "GET",
+						"target": "https://acme.my.salesforce.com/bootstrap",
+					},
+					{
+						"name":   "Use token",
+						"type":   "POST",
+						"method": "POST",
+						"target": "https://acme.my.salesforce.com/services/data/v60.0/composite",
+						"body":   `{"token":"` + token + `"}`,
+					},
+				},
+			},
+		}},
+	}
+	refs := flattenRequestActions(script)
+	preview, err := buildNativePreview(
+		script,
+		refs,
+		[]harEntry{
+			{ID: 1, Method: "GET", URL: "https://acme.my.salesforce.com/bootstrap", ResponseBody: `{"access_token":"` + token + `"}`},
+			{ID: 2, Method: "POST", URL: "https://acme.my.salesforce.com/services/data/v60.0/composite", RequestBody: `{"token":"` + token + `"}`},
+		},
+		map[int]int{0: 1, 1: 2},
+		[]correlate.Correlation{{
+			Name:        "corr_access_token",
+			Source:      "body",
+			Expression:  "$.access_token",
+			ExtractType: "jsonpath",
+			FoundInID:   1,
+			UsedInIDs:   []int{2},
+			Value:       token,
+			Confidence:  0.9,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("buildNativePreview returned error: %v", err)
+	}
+	children := salesforceSequenceChildren(preview.Script.Actions[0])
+	if len(children) != 2 {
+		t.Fatalf("sequence children = %#v, want two", children)
+	}
+	if len(children[0].Extractors) != 1 || children[0].Extractors[0].Name != "corr_access_token" {
+		t.Fatalf("bootstrap extractors = %#v, want persisted token extractor", children[0].Extractors)
+	}
+	if got := children[1].Body; strings.Contains(got, token) || !strings.Contains(got, "{{var.corr_access_token}}") {
+		t.Fatalf("use-token body = %q, want persisted correlation rewrite", got)
+	}
+	for index, child := range children {
+		salesforceMetadata, ok := child.Metadata["salesforce"].(map[string]any)
+		if !ok || salesforceMetadata["har_match_id"] != index+1 {
+			t.Fatalf("child %d metadata = %#v, want persisted HAR match %d", index, child.Metadata, index+1)
+		}
+	}
+}
+
+func TestBuildNativePreviewDetectsAndRewritesEncodedHeaderListCorrelation(t *testing.T) {
+	const (
+		token        = "tok+/=="
+		encodedToken = "tok%2B%2F%3D%3D"
+		headerName   = "X-" + encodedToken
+	)
+	script := &dsl.Script{
+		Name:     "SF header-list correlation",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{
+			{Name: "Bootstrap", Type: "GET", Method: "GET", Target: "/bootstrap"},
+			{
+				Name:       "Use token",
+				Type:       "GET",
+				Method:     "GET",
+				Target:     "/services/data/v60.0/limits",
+				HeaderList: dsl.HeaderList{{Name: headerName, Value: encodedToken}},
+			},
+		},
+	}
+	refs := flattenRequestActions(script)
+	preview, err := buildNativePreview(
+		script,
+		refs,
+		[]harEntry{
+			{ID: 1, Method: "GET", URL: "https://acme.my.salesforce.com/bootstrap"},
+			{ID: 2, Method: "GET", URL: "https://acme.my.salesforce.com/services/data/v60.0/limits"},
+		},
+		map[int]int{0: 1, 1: 2},
+		[]correlate.Correlation{{
+			Name:        "corr_access_token",
+			Source:      "body",
+			Expression:  "$.access_token",
+			ExtractType: "jsonpath",
+			FoundInID:   1,
+			UsedInIDs:   []int{2},
+			Value:       token,
+			Confidence:  0.9,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("buildNativePreview returned error: %v", err)
+	}
+	bootstrap := preview.Script.Actions[0]
+	if len(bootstrap.Extractors) != 1 || bootstrap.Extractors[0].Convert != "url_encode" {
+		t.Fatalf("bootstrap extractors = %#v, want encoded-only HeaderList usage to select url_encode", bootstrap.Extractors)
+	}
+	got := preview.Script.Actions[1].HeaderList
+	if len(got) != 1 || strings.Contains(got[0].Value, encodedToken) || got[0].Value != "{{var.corr_access_token}}" {
+		t.Fatalf("rewritten HeaderList = %#v, want encoded literal replaced", got)
+	}
+	if got[0].Name != headerName {
+		t.Fatalf("rewritten HeaderList name = %q, want original %q preserved byte-for-byte", got[0].Name, headerName)
+	}
+}
+
+func TestBuildNativePreviewLeavesUnsupportedEncodedSpellingsForReview(t *testing.T) {
+	const rawValue = "tok +/== recorded"
+	exact := url.QueryEscape(rawValue)
+	tests := []struct {
+		name     string
+		spelling string
+	}{
+		{name: "path escape", spelling: url.PathEscape(rawValue)},
+		{name: "percent-20 space", spelling: strings.ReplaceAll(exact, "+", "%20")},
+		{name: "unescaped literal plus", spelling: strings.ReplaceAll(exact, "%2B", "+")},
+		{name: "lowercase percent hex", spelling: strings.NewReplacer("%2B", "%2b", "%2F", "%2f", "%3D", "%3d").Replace(exact)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			target := "/callback?access_token=" + tt.spelling
+			script := &dsl.Script{
+				Name:     "SF unsupported encoding",
+				Protocol: "http",
+				Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+				Actions: []dsl.Action{
+					{Name: "Bootstrap", Type: "GET", Method: "GET", Target: "/bootstrap"},
+					{Name: "Use token", Type: "GET", Method: "GET", Target: target},
+				},
+			}
+			preview, err := buildNativePreview(
+				script,
+				flattenRequestActions(script),
+				[]harEntry{
+					{ID: 1, Method: "GET", URL: "https://acme.my.salesforce.com/bootstrap"},
+					{ID: 2, Method: "GET", URL: "https://acme.my.salesforce.com" + target},
+				},
+				map[int]int{0: 1, 1: 2},
+				[]correlate.Correlation{{
+					Name:        "corr_access_token",
+					Source:      "body",
+					Expression:  "$.access_token",
+					ExtractType: "jsonpath",
+					FoundInID:   1,
+					UsedInIDs:   []int{2},
+					Value:       rawValue,
+					Confidence:  0.9,
+				}},
+			)
+			if err != nil {
+				t.Fatalf("buildNativePreview returned error: %v", err)
+			}
+			if got := preview.Script.Actions[1].Target; got != target {
+				t.Fatalf("target = %q, want unsupported spelling preserved as %q", got, target)
+			}
+			for _, extractor := range preview.Script.Actions[0].Extractors {
+				if extractor.Convert == "url_encode" {
+					t.Fatalf("source extractors = %#v, unsupported spelling must not select url_encode", preview.Script.Actions[0].Extractors)
+				}
+			}
+			if len(preview.Script.Actions[0].Extractors) != 0 {
+				t.Fatalf("source extractors = %#v, unsupported-only consumer must not add an unused extractor", preview.Script.Actions[0].Extractors)
+			}
+			if len(preview.Correlations) != 1 {
+				t.Fatalf("correlation review rows = %#v, want the unsupported occurrence retained for review", preview.Correlations)
+			}
+			if preview.Correlations[0].PreApplied || preview.Correlations[0].ReviewAction != "manual_value_replacement_required" {
+				t.Fatalf("correlation review row = %#v, want manual non-pre-applied candidate", preview.Correlations[0])
+			}
+		})
+	}
+}
+
+func TestBuildNativePreviewEncodedSourceDoesNotDoubleEncodeReuse(t *testing.T) {
+	const (
+		token        = "tok&branch/123456"
+		encodedToken = "tok%26branch%2F123456"
+	)
+	script := &dsl.Script{
+		Name:     "SF encoded source correlation",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{
+			{Name: "Bootstrap", Type: "GET", Method: "GET", Target: "/bootstrap"},
+			{Name: "Use token", Type: "POST", Method: "POST", Target: "/aura", Body: "aura.token=" + encodedToken},
+		},
+	}
+	preview, err := buildNativePreview(
+		script,
+		flattenRequestActions(script),
+		[]harEntry{
+			{ID: 1, Method: "GET", URL: "https://acme.my.salesforce.com/bootstrap", ResponseBody: "aura.token=" + encodedToken},
+			{ID: 2, Method: "POST", URL: "https://acme.my.salesforce.com/aura", RequestBody: "aura.token=" + encodedToken},
+		},
+		map[int]int{0: 1, 1: 2},
+		[]correlate.Correlation{{
+			Name:        "corr_salesforce_aura_token",
+			Source:      "body",
+			Expression:  `(?i)(?:^|&)aura\.token=([^&]*)`,
+			ExtractType: "regex",
+			Convert:     "url_decode",
+			FoundInID:   1,
+			UsedInIDs:   []int{2},
+			Value:       token,
+			Confidence:  0.95,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("buildNativePreview returned error: %v", err)
+	}
+	extractors := preview.Script.Actions[0].Extractors
+	if len(extractors) != 1 || extractors[0].Convert != "" {
+		t.Fatalf("bootstrap extractors = %#v, want encoded source captured without a second encoding pass", extractors)
+	}
+	if got := preview.Script.Actions[1].Body; got != "aura.token={{var.corr_salesforce_aura_token}}" {
+		t.Fatalf("rewritten body = %q, want encoded variable", got)
+	}
+	if len(preview.Correlations) != 1 || !preview.Correlations[0].PreApplied || preview.Correlations[0].ReviewAction != "" {
+		t.Fatalf("correlations = %#v, want executable correlation classified pre-applied", preview.Correlations)
+	}
+}
+
+func TestBuildNativePreviewEncodedSourceRequiresExactConsumerSpelling(t *testing.T) {
+	const (
+		token          = "tok branch/123456"
+		sourceSpelling = "tok%20branch%2F123456"
+		consumer       = "tok+branch%2F123456"
+	)
+	script := &dsl.Script{
+		Name:     "SF encoded source spelling mismatch",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{
+			{Name: "Bootstrap", Type: "GET", Method: "GET", Target: "/bootstrap"},
+			{Name: "Use token", Type: "POST", Method: "POST", Target: "/aura", Body: "aura.token=" + consumer},
+		},
+	}
+	preview, err := buildNativePreview(
+		script,
+		flattenRequestActions(script),
+		[]harEntry{
+			{ID: 1, Method: "GET", URL: "https://acme.my.salesforce.com/bootstrap", ResponseBody: "aura.token=" + sourceSpelling},
+			{ID: 2, Method: "POST", URL: "https://acme.my.salesforce.com/aura", RequestBody: "aura.token=" + consumer},
+		},
+		map[int]int{0: 1, 1: 2},
+		[]correlate.Correlation{{
+			Name:        "corr_salesforce_aura_token",
+			Source:      "body",
+			Expression:  `(?i)(?:^|&)aura\.token=([^&]*)`,
+			ExtractType: "regex",
+			Convert:     "url_decode",
+			FoundInID:   1,
+			UsedInIDs:   []int{2},
+			Value:       token,
+			Confidence:  0.95,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("buildNativePreview returned error: %v", err)
+	}
+	if got := preview.Script.Actions[1].Body; got != "aura.token="+consumer {
+		t.Fatalf("body = %q, want consumer spelling preserved for manual replacement", got)
+	}
+	if got := preview.Script.Actions[0].Extractors; len(got) != 0 {
+		t.Fatalf("source extractors = %#v, want none because %%20 source cannot supply '+' consumer", got)
+	}
+	if len(preview.Correlations) != 1 || preview.Correlations[0].PreApplied || preview.Correlations[0].ReviewAction != "manual_value_replacement_required" {
+		t.Fatalf("correlations = %#v, want manual non-pre-applied candidate", preview.Correlations)
+	}
+}
+
+func TestBuildNativePreviewRejectsEncodedRawLiteralCollision(t *testing.T) {
+	const rawValue = "opaque token/123456"
+	encodedValue := url.QueryEscape(rawValue)
+	script := &dsl.Script{
+		Name:     "SF correlation literal collision",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{
+			{Name: "Source A", Type: "GET", Method: "GET", Target: "/source-a"},
+			{Name: "Source B", Type: "GET", Method: "GET", Target: "/source-b"},
+			{Name: "Use", Type: "GET", Method: "GET", Target: "/use?token=" + encodedValue},
+		},
+	}
+	preview, err := buildNativePreview(
+		script,
+		flattenRequestActions(script),
+		[]harEntry{
+			{ID: 1, URL: "https://acme.my.salesforce.com/source-a"},
+			{ID: 2, URL: "https://acme.my.salesforce.com/source-b"},
+			{ID: 3, URL: "https://acme.my.salesforce.com/use?token=" + encodedValue},
+		},
+		map[int]int{0: 1, 1: 2, 2: 3},
+		[]correlate.Correlation{
+			{
+				Name:        "corr_a",
+				Source:      "body",
+				ExtractType: "regex",
+				Expression:  `(opaque token/123456)`,
+				Value:       rawValue,
+				FoundInID:   1,
+				UsedInIDs:   []int{3},
+				Confidence:  0.9,
+			},
+			{
+				Name:        "corr_b",
+				Source:      "body",
+				ExtractType: "regex",
+				Expression:  `(opaque\+token%2F123456)`,
+				Value:       encodedValue,
+				FoundInID:   2,
+				UsedInIDs:   []int{3},
+				Confidence:  0.9,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("buildNativePreview returned error: %v", err)
+	}
+	if got := preview.Script.Actions[2].Target; got != "/use?token="+encodedValue {
+		t.Fatalf("collision target = %q, want ambiguous literal preserved", got)
+	}
+	for index := 0; index < 2; index++ {
+		if len(preview.Script.Actions[index].Extractors) != 0 {
+			t.Fatalf("source %d extractors = %#v, want none for ambiguous collision", index, preview.Script.Actions[index].Extractors)
+		}
+	}
+	if len(preview.Correlations) != 2 {
+		t.Fatalf("correlation summaries = %#v, want both owners retained for review", preview.Correlations)
+	}
+	for _, correlation := range preview.Correlations {
+		if correlation.PreApplied || correlation.ReviewAction != "manual_value_replacement_required" {
+			t.Fatalf("collision correlation = %#v, want manual and not pre-applied", correlation)
+		}
+	}
+}
+
+func TestBuildNativePreviewRejectsSubstringEncodedRawLiteralCollision(t *testing.T) {
+	const rawValue = "opaque token/123456"
+	encodedValue := url.QueryEscape(rawValue)
+	containingRawValue := "prefix-" + encodedValue + "-suffix"
+	script := &dsl.Script{
+		Name:     "SF substring correlation literal collision",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{
+			{Name: "Source A", Type: "GET", Method: "GET", Target: "/source-a"},
+			{Name: "Source B", Type: "GET", Method: "GET", Target: "/source-b"},
+			{Name: "Use", Type: "GET", Method: "GET", Target: "/use?token=" + containingRawValue},
+		},
+	}
+	preview, err := buildNativePreview(
+		script,
+		flattenRequestActions(script),
+		[]harEntry{
+			{ID: 1, URL: "https://acme.my.salesforce.com/source-a"},
+			{ID: 2, URL: "https://acme.my.salesforce.com/source-b"},
+			{ID: 3, URL: "https://acme.my.salesforce.com/use?token=" + containingRawValue},
+		},
+		map[int]int{0: 1, 1: 2, 2: 3},
+		[]correlate.Correlation{
+			{
+				Name:        "corr_a",
+				Source:      "body",
+				ExtractType: "regex",
+				Expression:  `(opaque token/123456)`,
+				Value:       rawValue,
+				FoundInID:   1,
+				UsedInIDs:   []int{3},
+				Confidence:  0.9,
+			},
+			{
+				Name:        "corr_b",
+				Source:      "body",
+				ExtractType: "regex",
+				Expression:  `(prefix-opaque\+token%2F123456-suffix)`,
+				Value:       containingRawValue,
+				FoundInID:   2,
+				UsedInIDs:   []int{3},
+				Confidence:  0.9,
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("buildNativePreview returned error: %v", err)
+	}
+	if got := preview.Script.Actions[2].Target; got != "/use?token="+containingRawValue {
+		t.Fatalf("substring collision target = %q, want ambiguous literal preserved", got)
+	}
+	for index := 0; index < 2; index++ {
+		if len(preview.Script.Actions[index].Extractors) != 0 {
+			t.Fatalf("source %d extractors = %#v, want none for ambiguous substring collision", index, preview.Script.Actions[index].Extractors)
+		}
+	}
+	if len(preview.Correlations) != 2 {
+		t.Fatalf("correlation summaries = %#v, want both substring owners retained for review", preview.Correlations)
+	}
+	for _, correlation := range preview.Correlations {
+		if correlation.PreApplied || correlation.ReviewAction != "manual_value_replacement_required" {
+			t.Fatalf("substring collision correlation = %#v, want manual and not pre-applied", correlation)
+		}
+	}
+}
+
+func TestBuildNativePreviewIncludesReviewOnlyOwnersInCollisionCheck(t *testing.T) {
+	const shortValue = "token-123456"
+	const longValue = "token-123456-extra"
+	script := &dsl.Script{
+		Name: "SF mixed-confidence collision", Protocol: "http",
+		Config: dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{
+			{Name: "Source A", Type: "GET", Method: "GET", Target: "/source-a"},
+			{Name: "Source B", Type: "GET", Method: "GET", Target: "/source-b"},
+			{Name: "Use", Type: "GET", Method: "GET", Target: "/use?token=" + longValue},
+		},
+	}
+	preview, err := buildNativePreview(
+		script,
+		flattenRequestActions(script),
+		[]harEntry{
+			{ID: 1, URL: "https://acme.my.salesforce.com/source-a"},
+			{ID: 2, URL: "https://acme.my.salesforce.com/source-b"},
+			{ID: 3, URL: "https://acme.my.salesforce.com/use?token=" + longValue},
+		},
+		map[int]int{0: 1, 1: 2, 2: 3},
+		[]correlate.Correlation{
+			{Name: "corr_short", Source: "body", ExtractType: "regex", Expression: `(token-123456)`, Value: shortValue, FoundInID: 1, UsedInIDs: []int{3}, Confidence: 0.9},
+			{Name: "corr_long", Source: "body", ExtractType: "regex", Expression: `(token-123456-extra)`, Value: longValue, FoundInID: 2, UsedInIDs: []int{3}, Confidence: 0.6},
+		},
+	)
+	if err != nil {
+		t.Fatalf("buildNativePreview returned error: %v", err)
+	}
+	if got := preview.Script.Actions[2].Target; got != "/use?token="+longValue {
+		t.Fatalf("mixed-confidence target = %q, want review-only owner preserved", got)
+	}
+	for index := 0; index < 2; index++ {
+		if len(preview.Script.Actions[index].Extractors) != 0 {
+			t.Fatalf("source %d extractors = %#v, want no partial automatic owner", index, preview.Script.Actions[index].Extractors)
+		}
+	}
+	for _, correlation := range preview.Correlations {
+		if correlation.PreApplied || correlation.ReviewAction != "manual_value_replacement_required" {
+			t.Fatalf("mixed-confidence correlation = %#v, want manual value replacement", correlation)
+		}
+	}
+}
+
+func TestPrepareCorrelationNamesAvoidsExistingAndEncodedSiblingCollisions(t *testing.T) {
+	refs := []actionRef{{Action: &dsl.Action{Extractors: []dsl.Extractor{{Name: "corr_token"}}}}}
+	named, registry := prepareCorrelationNames([]correlate.Correlation{
+		{Name: "corr_token"},
+		{Name: "corr_token_2_encoded"},
+		{Name: "corr_token"},
+	}, refs)
+
+	seen := map[string]bool{"corr_token": true}
+	for _, corr := range named {
+		if seen[corr.Name] {
+			t.Fatalf("correlation name %q collides: %#v", corr.Name, named)
+		}
+		seen[corr.Name] = true
+	}
+	encodedSibling := registry.claim(named[0].Name + "_encoded")
+	if seen[encodedSibling] {
+		t.Fatalf("synthesized encoded name %q collides with existing names %#v", encodedSibling, seen)
+	}
+	if encodedSibling != "corr_token_2_encoded_2" {
+		t.Fatalf("encoded sibling = %q, want deterministic collision suffix", encodedSibling)
+	}
+}
+
+func TestBuildNativePreviewReservesCorrelationExtractorCapacityBeforeRewriting(t *testing.T) {
+	const value = "capacity token/123456"
+	encoded := url.QueryEscape(value)
+	tests := []struct {
+		name               string
+		existingExtractors int
+		consumerTarget     string
+		consumerBody       string
+	}{
+		{
+			name:               "single raw extractor at full source",
+			existingExtractors: dsl.MaxActionExtractors,
+			consumerTarget:     "/use",
+			consumerBody:       "token=" + value,
+		},
+		{
+			name:               "mixed raw and encoded needs two free slots",
+			existingExtractors: dsl.MaxActionExtractors - 1,
+			consumerTarget:     "/use?encoded=" + encoded,
+			consumerBody:       "raw=" + value,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			existing := make([]dsl.Extractor, tc.existingExtractors)
+			for index := range existing {
+				existing[index] = dsl.Extractor{
+					Name:       fmt.Sprintf("existing_%03d", index),
+					Source:     "body",
+					Type:       "regex",
+					Expression: `(existing)`,
+				}
+			}
+			script := &dsl.Script{
+				Name:     "capacity preview",
+				Protocol: "http",
+				Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+				Actions: []dsl.Action{
+					{Name: "Source", Type: "GET", Method: "GET", Target: "/source", Extractors: existing},
+					{Name: "Consumer", Type: "POST", Method: "POST", Target: tc.consumerTarget, Body: tc.consumerBody},
+				},
+			}
+			preview, err := buildNativePreview(
+				script,
+				flattenRequestActions(script),
+				[]harEntry{
+					{ID: 1, Method: "GET", URL: "https://acme.my.salesforce.com/source", ResponseBody: "token=" + value},
+					{ID: 2, Method: "POST", URL: "https://acme.my.salesforce.com" + tc.consumerTarget, RequestBody: tc.consumerBody},
+				},
+				map[int]int{0: 1, 1: 2},
+				[]correlate.Correlation{{
+					Name:        "corr_capacity_token",
+					Source:      "body",
+					Expression:  `(capacity token/123456)`,
+					ExtractType: "regex",
+					FoundInID:   1,
+					UsedInIDs:   []int{2},
+					Value:       value,
+					Confidence:  0.95,
+				}},
+			)
+			if err != nil {
+				t.Fatalf("buildNativePreview returned error: %v", err)
+			}
+			if got := len(preview.Script.Actions[0].Extractors); got != tc.existingExtractors {
+				t.Fatalf("source extractors = %d, want unchanged %d", got, tc.existingExtractors)
+			}
+			consumer := preview.Script.Actions[1]
+			if consumer.Target != tc.consumerTarget || consumer.Body != tc.consumerBody {
+				t.Fatalf("capacity-rejected consumer was partially rewritten: target=%q body=%q", consumer.Target, consumer.Body)
+			}
+			if len(preview.Correlations) != 1 || preview.Correlations[0].PreApplied || preview.Correlations[0].ReviewAction != "manual_value_replacement_required" {
+				t.Fatalf("correlation status = %#v, want manual and not pre-applied", preview.Correlations)
+			}
+		})
+	}
+}
+
+func TestBuildNativePreviewLeavesLowConfidenceCorrelationForReviewOnly(t *testing.T) {
+	const value = "static-product-123456"
+	script := &dsl.Script{
+		Name:     "SF low-confidence candidate",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{
+			{Name: "Product", Type: "GET", Method: "GET", Target: "/services/data/v60.0/product"},
+			{Name: "Use product", Type: "POST", Method: "POST", Target: "/services/data/v60.0/composite", Body: `{"product_id":"` + value + `"}`},
+		},
+	}
+	refs := flattenRequestActions(script)
+	preview, err := buildNativePreview(
+		script,
+		refs,
+		[]harEntry{
+			{ID: 1, Method: "GET", URL: "https://acme.my.salesforce.com/services/data/v60.0/product"},
+			{ID: 2, Method: "POST", URL: "https://acme.my.salesforce.com/services/data/v60.0/composite", RequestBody: `{"product_id":"` + value + `"}`},
+		},
+		map[int]int{0: 1, 1: 2},
+		[]correlate.Correlation{{
+			Name:        "corr_product_id",
+			Source:      "body",
+			Expression:  "product_id",
+			ExtractType: "jmespath",
+			FoundInID:   1,
+			UsedInIDs:   []int{2},
+			Value:       value,
+			RuleID:      correlate.RuleJSONDynamicID,
+			Confidence:  0.62,
+		}},
+	)
+	if err != nil {
+		t.Fatalf("buildNativePreview returned error: %v", err)
+	}
+	if len(preview.Correlations) != 1 || preview.Correlations[0].Confidence != 0.62 {
+		t.Fatalf("correlation summaries = %#v, want low-confidence review candidate", preview.Correlations)
+	}
+	if len(preview.Script.Actions[0].Extractors) != 0 {
+		t.Fatalf("source extractors = %#v, want no low-confidence auto-wiring", preview.Script.Actions[0].Extractors)
+	}
+	if got := preview.Script.Actions[1].Body; !strings.Contains(got, value) || strings.Contains(got, "{{var.") {
+		t.Fatalf("use-product body = %q, want recorded literal left for review", got)
+	}
+}
+
+func TestCollapseCometdConnectRunDoesNotMoveLaterExtractorEarlier(t *testing.T) {
+	cometdMetadata := func() map[string]any {
+		return map[string]any{"salesforce": map[string]any{"classification": "cometd"}}
+	}
+	actions := []dsl.Action{
+		{
+			Name:     "Connect 1",
+			Type:     "POST",
+			Method:   "POST",
+			Target:   "https://acme.my.salesforce.com/cometd/60.0",
+			Body:     `message=[{"id":"1","channel":"/meta/connect","clientId":"abc"}]`,
+			Metadata: cometdMetadata(),
+		},
+		{
+			Name:     "Connect 2",
+			Type:     "POST",
+			Method:   "POST",
+			Target:   "https://acme.my.salesforce.com/cometd/60.0",
+			Body:     `message=[{"id":"2","channel":"/meta/connect","clientId":"abc"}]`,
+			Metadata: cometdMetadata(),
+			Extractors: []dsl.Extractor{{
+				Name:       "corr_late_connect_token",
+				Source:     "body",
+				Type:       "jsonpath",
+				Expression: "$.token",
+				OnMiss:     "fail",
+			}},
+		},
+	}
+
+	collapsed := collapseCometdConnectRun(actions)
+	if len(collapsed) != 2 {
+		t.Fatalf("collapsed actions = %#v, want later-only extractor timing kept as two actions", collapsed)
+	}
+	if len(collapsed[0].Extractors) != 0 {
+		t.Fatalf("first connect extractors = %#v, want later extractor kept off the first response", collapsed[0].Extractors)
+	}
+	if len(collapsed[1].Extractors) != 1 || collapsed[1].Extractors[0].Name != "corr_late_connect_token" || collapsed[1].Extractors[0].OnMiss != "fail" {
+		t.Fatalf("second connect extractors = %#v, want fail-closed later response extractor preserved", collapsed[1].Extractors)
+	}
+}
+
+func TestCollapseCometdConnectRunDoesNotUnionExtractorsPastDSLMaximum(t *testing.T) {
+	cometdMetadata := func() map[string]any {
+		return map[string]any{"salesforce": map[string]any{"classification": "cometd"}}
+	}
+	extractors := func(prefix string, count int) []dsl.Extractor {
+		out := make([]dsl.Extractor, 0, count)
+		for index := 0; index < count; index++ {
+			out = append(out, dsl.Extractor{
+				Name:       fmt.Sprintf("%s_%d", prefix, index),
+				Source:     "body",
+				Type:       "jsonpath",
+				Expression: fmt.Sprintf("$.%s_%d", prefix, index),
+				OnMiss:     "fail",
+			})
+		}
+		return out
+	}
+	actions := []dsl.Action{
+		{
+			Name:       "Connect 1",
+			Type:       "POST",
+			Method:     "POST",
+			Target:     "https://acme.my.salesforce.com/cometd/60.0",
+			Body:       `message=[{"id":"1","channel":"/meta/connect","clientId":"abc"}]`,
+			Metadata:   cometdMetadata(),
+			Extractors: extractors("first", dsl.MaxActionExtractors-1),
+		},
+		{
+			Name:       "Connect 2",
+			Type:       "POST",
+			Method:     "POST",
+			Target:     "https://acme.my.salesforce.com/cometd/60.0",
+			Body:       `message=[{"id":"2","channel":"/meta/connect","clientId":"abc"}]`,
+			Metadata:   cometdMetadata(),
+			Extractors: extractors("later", 2),
+		},
+	}
+
+	collapsed := collapseCometdConnectRun(actions)
+	if len(collapsed) != 2 {
+		t.Fatalf("collapsed actions = %d, want unsafe extractor union left discrete", len(collapsed))
+	}
+	for index := range collapsed {
+		if len(collapsed[index].Extractors) > dsl.MaxActionExtractors {
+			t.Fatalf("action %d has %d extractors, max %d", index, len(collapsed[index].Extractors), dsl.MaxActionExtractors)
+		}
+	}
+}
+
+func TestCorrelationSummariesUseMappedNativeSequenceIDs(t *testing.T) {
+	refs := map[int]*actionRef{
+		4:  {Sequence: 1, Action: &dsl.Action{}},
+		9:  {Sequence: 2, Action: &dsl.Action{}},
+		12: {Sequence: 2, Action: &dsl.Action{}},
+	}
+	summaries := correlationSummaries([]correlate.Correlation{{
+		Name:      "corr_token",
+		FoundInID: 4,
+		UsedInIDs: []int{9, 12, 99},
+	}}, refs, nil)
+	if len(summaries) != 1 {
+		t.Fatalf("summaries = %#v, want one", summaries)
+	}
+	if summaries[0].FoundInSeq != 1 || len(summaries[0].UsedInSeqs) != 1 || summaries[0].UsedInSeqs[0] != 2 {
+		t.Fatalf("summary IDs = %#v, want mapped native sequences 1 -> 2", summaries[0])
+	}
+}
+
+func TestAnalyzePreservesRepeatedSetCookieHeadersForCorrelation(t *testing.T) {
+	const cookieValue = "abcd1234efgh5678"
+	script := &dsl.Script{
+		Name:     "SF repeated cookies",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://acme.my.salesforce.com"},
+		Actions: []dsl.Action{
+			{Name: "Login", Type: "GET", Method: "GET", Target: "/login"},
+			{Name: "Home", Type: "GET", Method: "GET", Target: "/home", Headers: map[string]string{"Cookie": "JSESSIONID=" + cookieValue}},
+		},
+	}
+	har := []byte(`{
+	  "log": {
+	    "entries": [
+	      {
+	        "request": {"method": "GET", "url": "https://acme.my.salesforce.com/login", "headers": []},
+	        "response": {"headers": [
+	          {"name":"Set-Cookie","value":"JSESSIONID=` + cookieValue + `; Path=/; HttpOnly"},
+	          {"name":"set-cookie","value":"theme=darkmode; Path=/"}
+	        ], "content": {"text": "ok"}}
+	      },
+	      {
+	        "request": {"method": "GET", "url": "https://acme.my.salesforce.com/home", "headers": [{"name":"Cookie","value":"JSESSIONID=` + cookieValue + `"}]},
+	        "response": {"headers": [], "content": {"text": "ok"}}
+	      }
+	    ]
+	  }
+	}`)
+
+	entries, err := parseHAR(har)
+	if err != nil {
+		t.Fatalf("parseHAR returned error: %v", err)
+	}
+	combined := entries[0].ResponseHeaders["Set-Cookie"]
+	if !strings.Contains(combined, "JSESSIONID="+cookieValue) || !strings.Contains(combined, "theme=darkmode") {
+		t.Fatalf("combined Set-Cookie = %q, want both repeated header values", combined)
+	}
+
+	review, err := Analyze(script, AnalyzeOptions{BuildNative: true, HARData: har})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if review.NativePreview == nil || review.NativePreview.Script == nil {
+		t.Fatal("NativePreview = nil, want script")
+	}
+	var cookieCorrelation *CorrelationCandidate
+	for index := range review.NativePreview.Correlations {
+		if review.NativePreview.Correlations[index].RuleID == correlate.RuleSetCookieSession {
+			cookieCorrelation = &review.NativePreview.Correlations[index]
+			break
+		}
+	}
+	if cookieCorrelation == nil {
+		t.Fatalf("correlations = %#v, want session-cookie correlation", review.NativePreview.Correlations)
+	}
+	if len(review.NativePreview.Script.Actions[0].Extractors) == 0 {
+		t.Fatal("login action is missing the Set-Cookie extractor")
+	}
+	if got := review.NativePreview.Script.Actions[1].Headers["Cookie"]; strings.Contains(got, cookieValue) || !strings.Contains(got, "{{var."+cookieCorrelation.Name+"}}") {
+		t.Fatalf("Cookie header = %q, want repeated Set-Cookie value correlated", got)
 	}
 }
 
@@ -570,7 +1562,10 @@ func TestDetectBulkQueryLocatorCorrelationFromHeader(t *testing.T) {
 		},
 	}
 
-	correlations := detectBulkQueryLocatorCorrelations(observations, map[string]bool{})
+	correlations, err := detectBulkQueryLocatorCorrelations(observations, map[string]bool{}, newSalesforceCorrelationBudget())
+	if err != nil {
+		t.Fatalf("detectBulkQueryLocatorCorrelations returned error: %v", err)
+	}
 	if len(correlations) != 1 {
 		t.Fatalf("correlations = %#v, want one non-terminal locator", correlations)
 	}
@@ -580,6 +1575,27 @@ func TestDetectBulkQueryLocatorCorrelationFromHeader(t *testing.T) {
 	}
 	if got.Value != "locator-page-2" || len(got.UsedInIDs) != 2 || got.UsedInIDs[0] != 2 || got.UsedInIDs[1] != 3 {
 		t.Fatalf("locator reuse = value %q ids %#v, want page-2 reused in requests 2 and 3", got.Value, got.UsedInIDs)
+	}
+}
+
+func TestBulkQueryLocatorCorrelationFailsClosedOnSearchBudget(t *testing.T) {
+	observations := []correlate.Observation{
+		{
+			ID:              1,
+			RequestURL:      "https://acme.my.salesforce.com/services/data/v60.0/jobs/query/750ABC/results",
+			ResponseHeaders: map[string]string{"Sforce-Locator": "locator-page-2"},
+		},
+		{
+			ID:         2,
+			RequestURL: "https://acme.my.salesforce.com/services/data/v60.0/jobs/query/750ABC/results?locator=locator-page-2",
+		},
+	}
+	budget := newSalesforceCorrelationBudget()
+	budget.maxSearchBytes = 1
+	// The phase reports the work limit and returns the (empty) partial result;
+	// the caller records the truncation warning.
+	if correlations, err := detectBulkQueryLocatorCorrelations(observations, map[string]bool{}, budget); !errors.Is(err, correlate.ErrCorrelationWorkLimit) || len(correlations) != 0 {
+		t.Fatalf("budgeted bulk correlations = %#v, error %v; want empty partial with ErrCorrelationWorkLimit", correlations, err)
 	}
 }
 
@@ -626,8 +1642,18 @@ func TestAnalyzeNativePreviewCorrelatesBulkQueryLocatorAndPollLoop(t *testing.T)
 		t.Fatalf("query status action = %#v, want a control_loop", poll)
 	}
 	step := poll.Control.Steps[0]
-	if !strings.Contains(step.Target, "{{var.corr_id}}") {
-		t.Fatalf("poll step target = %q, want correlated query job id", step.Target)
+	if !strings.Contains(step.Target, jobID) || strings.Contains(step.Target, "{{var.corr_id}}") {
+		t.Fatalf("poll step target = %q, want low-confidence query job id left for review", step.Target)
+	}
+	foundJobIDReview := false
+	for _, candidate := range review.NativePreview.Correlations {
+		if candidate.Name == "corr_id" && candidate.Confidence < 0.8 {
+			foundJobIDReview = true
+			break
+		}
+	}
+	if !foundJobIDReview {
+		t.Fatalf("correlations = %#v, want low-confidence query job id review candidate", review.NativePreview.Correlations)
 	}
 
 	results := actions[2]
@@ -814,8 +1840,18 @@ func TestAnalyzeNativePreviewSynthesizesBulkPollLoop(t *testing.T) {
 	if !step.ThinkTimeAfter || step.ThinkTime.Type == "" {
 		t.Fatalf("loop step = %#v, want a poll-interval think time (think_time_after)", step)
 	}
-	if strings.Contains(step.Target, jobID) {
-		t.Fatalf("loop step target = %q, still carries the recorded job id literal", step.Target)
+	if !strings.Contains(step.Target, jobID) || strings.Contains(step.Target, "{{var.corr_id}}") {
+		t.Fatalf("loop step target = %q, want low-confidence job id left for review", step.Target)
+	}
+	foundJobIDReview := false
+	for _, candidate := range review.NativePreview.Correlations {
+		if candidate.Name == "corr_id" && candidate.Confidence < 0.8 {
+			foundJobIDReview = true
+			break
+		}
+	}
+	if !foundJobIDReview {
+		t.Fatalf("correlations = %#v, want low-confidence ingest job id review candidate", review.NativePreview.Correlations)
 	}
 
 	// The result download is NOT wrapped in a loop.
@@ -856,6 +1892,109 @@ func TestCompositeCandidatesParsesReferenceIds(t *testing.T) {
 	}
 	if expr["003BBB000222"] != "compositeResponse[?referenceId=='NewContact'].body.id | [0]" {
 		t.Fatalf("NewContact expr = %q", expr["003BBB000222"])
+	}
+}
+
+func TestCompositeCandidatesSuppressDuplicateRuntimeExpressions(t *testing.T) {
+	body := `{"compositeResponse":[
+	  {"referenceId":"Duplicate","httpStatusCode":201,"body":{"id":"001AAA000111"}},
+	  {"referenceId":"Duplicate","httpStatusCode":201,"body":{"id":"001BBB000222"}}
+	]}`
+	candidates := compositeCandidates(body)
+	if len(candidates) != 1 || candidates[0].Value != "001AAA000111" {
+		t.Fatalf("duplicate-reference candidates = %#v, want only the value selected by JMESPath [0]", candidates)
+	}
+}
+
+func TestCompositeCandidatesCheckedEnforcesPreAppendBudgets(t *testing.T) {
+	body := `{"compositeResponse":[
+	  {"referenceId":"First","httpStatusCode":201,"body":{"id":"001AAA000111"}},
+	  {"referenceId":"Second","httpStatusCode":201,"body":{"id":"001BBB000222"}}
+	]}`
+	budget := newSalesforceCorrelationBudget()
+	budget.maxCandidates = 1
+	if candidates, err := compositeCandidatesChecked(body, budget); !errors.Is(err, correlate.ErrCorrelationWorkLimit) || candidates != nil {
+		t.Fatalf("candidate-limited composite = %#v, error %v; want nil ErrCorrelationWorkLimit", candidates, err)
+	}
+
+	budget = newSalesforceCorrelationBudget()
+	budget.maxConstructionBytes = 16
+	if candidates, err := compositeCandidatesChecked(body, budget); !errors.Is(err, correlate.ErrCorrelationWorkLimit) || candidates != nil {
+		t.Fatalf("construction-limited composite = %#v, error %v; want nil ErrCorrelationWorkLimit", candidates, err)
+	}
+}
+
+func TestNestedJSONCandidatesCheckedBoundsTraversalAndPreservesNumbers(t *testing.T) {
+	const largeInteger = "9007199254740993"
+	candidates, err := nestedJSONCandidatesChecked(`{"outer":{"recordId":`+largeInteger+`}}`, newSalesforceCorrelationBudget())
+	if err != nil {
+		t.Fatalf("nestedJSONCandidatesChecked returned error: %v", err)
+	}
+	if len(candidates) != 1 || candidates[0].Value != largeInteger || candidates[0].Expression != "outer.recordId" {
+		t.Fatalf("numeric candidates = %#v, want lexical integer %s", candidates, largeInteger)
+	}
+
+	budget := newSalesforceCorrelationBudget()
+	budget.maxCandidates = 1
+	if candidates, err := nestedJSONCandidatesChecked(`{"firstId":"first-value-123456","secondId":"second-value-654321"}`, budget); !errors.Is(err, correlate.ErrCorrelationWorkLimit) || candidates != nil {
+		t.Fatalf("candidate-limited nested JSON = %#v, error %v; want nil ErrCorrelationWorkLimit", candidates, err)
+	}
+
+	// Beyond the structural caps the response's shape pass is skipped (not an
+	// analysis failure): no candidates, no error.
+	deep := strings.Repeat(`{"x":`, maxSalesforceJSONDepth+1) + `"leaf"` + strings.Repeat(`}`, maxSalesforceJSONDepth+1)
+	if candidates, err := nestedJSONCandidatesChecked(deep, newSalesforceCorrelationBudget()); err != nil || candidates != nil {
+		t.Fatalf("deep nested JSON = %#v, error %v; want skipped response", candidates, err)
+	}
+}
+
+func TestNestedJSONCorrelationDedupChoosesDeterministicPath(t *testing.T) {
+	const reusedValue = "same-value-123456"
+	observations := []correlate.Observation{
+		{ID: 1, ResponseBody: `{"zId":"` + reusedValue + `","aId":"` + reusedValue + `"}`},
+		{ID: 2, RequestURL: "https://example.test/use?id=" + reusedValue},
+	}
+
+	for run := 0; run < 100; run++ {
+		correlations, err := detectNestedJSONCorrelations(observations, map[string]bool{}, newSalesforceCorrelationBudget())
+		if err != nil {
+			t.Fatalf("run %d: detectNestedJSONCorrelations returned error: %v", run, err)
+		}
+		if len(correlations) != 1 {
+			t.Fatalf("run %d: correlations = %#v, want one same-value correlation", run, correlations)
+		}
+		if got := correlations[0].Expression; got != "aId" {
+			t.Fatalf("run %d: extractor expression = %q, want deterministic lexicographically-first path aId", run, got)
+		}
+	}
+}
+
+func TestNestedJSONCandidatesQuoteControlCharacterKeysAsJSON(t *testing.T) {
+	const body = `{"outer":{"token\u0007":"token-value-123456"}}`
+	candidates, err := nestedJSONCandidatesChecked(body, newSalesforceCorrelationBudget())
+	if err != nil {
+		t.Fatalf("nestedJSONCandidatesChecked returned error: %v", err)
+	}
+	if len(candidates) != 1 {
+		t.Fatalf("candidates = %#v, want one control-character key candidate", candidates)
+	}
+	if got, want := candidates[0].Expression, `outer."token\u0007"`; got != want {
+		t.Fatalf("JMESPath expression = %q, want JSON-safe %q", got, want)
+	}
+	compiled, err := jmespath.Compile(candidates[0].Expression)
+	if err != nil {
+		t.Fatalf("compile generated JMESPath: %v", err)
+	}
+	var decoded any
+	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
+		t.Fatalf("decode test JSON: %v", err)
+	}
+	got, err := compiled.Search(decoded)
+	if err != nil {
+		t.Fatalf("evaluate generated JMESPath: %v", err)
+	}
+	if got != "token-value-123456" {
+		t.Fatalf("generated JMESPath returned %#v, want token-value-123456", got)
 	}
 }
 

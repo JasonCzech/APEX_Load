@@ -94,6 +94,7 @@ type Summary struct {
 type Result struct {
 	Suggestions []Suggestion `json:"suggestions"`
 	Summary     Summary      `json:"summary"`
+	Warnings    []string     `json:"warnings,omitempty"`
 }
 
 // PreAppliedCorrelation describes a correlation a converter already applied to
@@ -141,19 +142,45 @@ func Suggest(script *dsl.Script, opts Options) Result {
 	suggestions := make([]Suggestion, 0)
 
 	if opts.EnableCorrelation {
-		suggestions = append(suggestions, correlationSuggestions(script, opts.Observations, names, opts.ObservationIDsZeroBased)...)
+		correlationAdvice, err := correlationSuggestions(script, opts.Observations, names, opts.ObservationIDsZeroBased)
+		if err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("Correlation analysis was not completed and no correlation suggestions were produced: %v", err))
+		} else {
+			suggestions = append(suggestions, correlationAdvice...)
+		}
 	}
 	suggestions = append(suggestions, preAppliedSuggestions(opts.PreApplied)...)
 	if opts.EnableSecrets {
-		suggestions = append(suggestions, secretSuggestions(script)...)
+		secretAdvice, err := secretSuggestions(script)
+		if err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("Secret analysis was not completed and no secret suggestions were produced: %v", err))
+		} else {
+			suggestions = append(suggestions, secretAdvice...)
+		}
 	}
 	if opts.EnableDataParams {
-		suggestions = append(suggestions, dataParamSuggestions(script, names, claimedValues(suggestions))...)
+		dataAdvice, err := dataParamSuggestions(script, names, claimedValues(suggestions))
+		if err != nil {
+			result.Warnings = append(result.Warnings, fmt.Sprintf("Data-parameter analysis was not completed and no data-parameter suggestions were produced: %v", err))
+		} else {
+			suggestions = append(suggestions, dataAdvice...)
+		}
 	}
 
 	sortSuggestions(suggestions)
+	idOccurrences := make(map[string]int, len(suggestions))
 	for i := range suggestions {
-		suggestions[i].ID = suggestionID(suggestions[i])
+		baseID := suggestionID(suggestions[i])
+		idOccurrences[baseID]++
+		suggestions[i].ID = baseID
+		if idOccurrences[baseID] > 1 {
+			// The public structural descriptor deliberately excludes literal and
+			// sample values so an ID cannot become a credential oracle. Duplicate
+			// sensitive headers can therefore share a descriptor even though they
+			// are independently selectable suggestions. Add a deterministic public
+			// occurrence suffix so selecting one row never selects its siblings.
+			suggestions[i].ID = fmt.Sprintf("%s_%d", baseID, idOccurrences[baseID])
+		}
 		suggestions[i].AutoApply = suggestions[i].Confidence >= autoApplyConfidence &&
 			!suggestions[i].HighRisk && !suggestions[i].PreApplied
 	}

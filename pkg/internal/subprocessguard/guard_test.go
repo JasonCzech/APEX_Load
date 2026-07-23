@@ -46,6 +46,23 @@ func TestEnvironmentUsesAllowlistAndExplicitExtras(t *testing.T) {
 	}
 }
 
+func TestEnvironmentDropsJavaOptionInjectionNames(t *testing.T) {
+	environment := Environment(map[string]string{
+		"JAVA_TOOL_OPTIONS":              "-javaagent:/tmp/evil.jar",
+		"jdk_java_options":               "-Xbootclasspath/a:/tmp/x",
+		"CLASSPATH":                      "/tmp/evil",
+		"APEXLOAD_JAVA_VUSER_EVENT_FILE": "/tmp/events",
+	})
+	joined := strings.Join(environment, "\n")
+	if strings.Contains(joined, "JAVA_TOOL_OPTIONS") || strings.Contains(joined, "JDK_JAVA_OPTIONS") ||
+		strings.Contains(joined, "jdk_java_options") || strings.Contains(joined, "CLASSPATH") {
+		t.Fatalf("environment forwarded a JVM-option injection variable: %v", environment)
+	}
+	if !strings.Contains(joined, "APEXLOAD_JAVA_VUSER_EVENT_FILE=/tmp/events") {
+		t.Fatalf("environment dropped a legitimate explicit value: %v", environment)
+	}
+}
+
 func TestCredentialExposureRejectsSamePodKubernetesExecution(t *testing.T) {
 	environment, paths := credentialExposure([]string{
 		"KUBERNETES_SERVICE_HOST=10.0.0.1",

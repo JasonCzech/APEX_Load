@@ -283,6 +283,30 @@ func TestVUser_RecordResultScrubsSensitivePayloads(t *testing.T) {
 	}
 }
 
+func TestVUserRecordResultNeverPublishesCorrelationEvidence(t *testing.T) {
+	sink := &captureResultSink{}
+	vu := &VUser{
+		Metrics:    NewMetricsCollector(1),
+		ResultSink: sink,
+		Variables:  map[string]string{},
+	}
+	result := &protocol.Result{
+		Success: true,
+		CorrelationEvidence: &protocol.CorrelationEvidence{
+			ResponseBody: `{"csrf_token":"raw-token-must-not-reach-sink"}`,
+		},
+	}
+
+	vu.recordResult(result, dsl.ErrorHandlingConfig{}, dsl.LogConfig{})
+
+	if sink.result == nil {
+		t.Fatal("result sink was not invoked")
+	}
+	if sink.result.CorrelationEvidence != nil {
+		t.Fatal("result sink retained raw correlation evidence")
+	}
+}
+
 func TestVUserRecordResultScrubsMetricAndArchiveMetadata(t *testing.T) {
 	const secret = "customer-secret-42"
 	config, err := NewRedactionConfig([]RedactionRule{{Pattern: secret}})

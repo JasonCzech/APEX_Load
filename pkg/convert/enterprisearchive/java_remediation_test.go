@@ -37,7 +37,7 @@ func javaFindAction(result *ConvertResult, actionType string) (dsl.Action, bool)
 // JAVA-HTTP-1: a bare receiver.send(...) in an archive with NO JMS evidence must
 // not be fabricated into a jms_publish to {{env.JMS_DESTINATION}}.
 func TestJavaBareSendWithoutJMSEvidenceIsNotPublish(t *testing.T) {
-	result, err := ConvertZip(buildJavaReplayArchive(t, "BareSend", "Java Vuser", `public class Actions {
+	result, err := convertZipJavaNativeAnalysisForTest(buildJavaReplayArchive(t, "BareSend", "Java Vuser", `public class Actions {
   public int action() throws Throwable {
     foo.send(payload);
     return 0;
@@ -54,7 +54,7 @@ func TestJavaBareSendWithoutJMSEvidenceIsNotPublish(t *testing.T) {
 // JAVA-HTTP-3: in a mixed HTTP+JMS archive a single lr transaction/think must be
 // counted once, not double-emitted across the HTTP and JMS lanes.
 func TestJavaMixedHTTPJMSDoesNotDoubleCountTransactions(t *testing.T) {
-	result, err := ConvertZip(buildJavaReplayArchive(t, "MixedTx", "Java Vuser", `import javax.jms.*;
+	result, err := convertZipJavaNativeAnalysisForTest(buildJavaReplayArchive(t, "MixedTx", "Java Vuser", `import javax.jms.*;
 public class Actions {
   public int action() throws Throwable {
     lr.start_transaction("T1");
@@ -81,7 +81,7 @@ public class Actions {
 // DB-1 + DB-2: a literal (uppercase) prepared SELECT executed via the assignment
 // form must convert to an executable db_query, and its setXxx binds captured.
 func TestJavaPreparedStatementProducesExecutableQueryWithBinds(t *testing.T) {
-	result, err := ConvertZip(buildJavaReplayArchive(t, "Prepared", "Java Vuser", `import java.sql.*;
+	result, err := convertZipJavaNativeAnalysisForTest(buildJavaReplayArchive(t, "Prepared", "Java Vuser", `import java.sql.*;
 public class Actions {
   public int action() throws Throwable {
     String sql = "SELECT * FROM orders WHERE id = ?";
@@ -107,7 +107,7 @@ public class Actions {
 }
 
 func TestJavaJDBCLRTransactionDoesNotBecomeDatabaseBegin(t *testing.T) {
-	result, err := ConvertZip(buildJavaReplayArchive(t, "JDBCLRTransaction", "Java Vuser", `import java.sql.*;
+	result, err := convertZipJavaNativeAnalysisForTest(buildJavaReplayArchive(t, "JDBCLRTransaction", "Java Vuser", `import java.sql.*;
 public class Actions {
   public int action() throws Throwable {
     lr.start_transaction("T1");
@@ -129,7 +129,7 @@ public class Actions {
 }
 
 func TestJavaDetectedButUnconvertedHTTPLaneStaysReviewVisible(t *testing.T) {
-	result, err := ConvertZip(buildJavaReplayArchive(t, "IncompleteHTTPAndJMS", "Java Vuser", `import java.net.*;
+	result, err := convertZipJavaNativeAnalysisForTest(buildJavaReplayArchive(t, "IncompleteHTTPAndJMS", "Java Vuser", `import java.net.*;
 import javax.jms.*;
 public class Actions {
   public int action() throws Throwable {
@@ -169,7 +169,7 @@ func actionSQLText(action dsl.Action) string {
 // JMS-3: a jms_publish whose body could not be resolved is downgraded to review,
 // not shipped as an executable empty-body publish.
 func TestJavaUnresolvableJMSBodyIsReviewed(t *testing.T) {
-	result, err := ConvertZip(buildJavaReplayArchive(t, "JMSBody", "Java Vuser", `import javax.jms.*;
+	result, err := convertZipJavaNativeAnalysisForTest(buildJavaReplayArchive(t, "JMSBody", "Java Vuser", `import javax.jms.*;
 public class Actions {
   public int action() throws Throwable {
     Queue q = session.createQueue("orders.in");
@@ -189,7 +189,7 @@ public class Actions {
 // JMS-4: a single-arg String.replace(..., lr.eval_string("{p}")) templates the
 // JMS body (the capability the deleted lane had, now ported via the regex).
 func TestJavaJMSBodyReplaceTemplating(t *testing.T) {
-	result, err := ConvertZip(buildJavaReplayArchive(t, "JMSReplace", "Java Vuser", `import javax.jms.*;
+	result, err := convertZipJavaNativeAnalysisForTest(buildJavaReplayArchive(t, "JMSReplace", "Java Vuser", `import javax.jms.*;
 public class Actions {
   public int action() throws Throwable {
     String envelope = "<order>PLACEHOLDER</order>";
@@ -232,7 +232,7 @@ public class Actions {
     return 0;
   }
 }`
-			result, err := ConvertZip(buildJavaReplayArchive(t, "Driver", "Java Vuser", src), ConvertOptions{})
+			result, err := convertZipJavaNativeAnalysisForTest(buildJavaReplayArchive(t, "Driver", "Java Vuser", src), ConvertOptions{})
 			if err != nil {
 				t.Fatalf("ConvertZip error: %v", err)
 			}
@@ -308,6 +308,8 @@ public class Actions {
 	for name, fx := range fixtures {
 		t.Run(name, func(t *testing.T) {
 			files := map[string]string{"Actions.java": fx.source}
+			// Conservation guardrail runs against the production import entry
+			// path, not the test-only replica of the retired lane pipeline.
 			result, err := ConvertZip(buildJavaReplayArchive(t, "Conserve", fx.scriptType, fx.source), ConvertOptions{})
 			if err != nil {
 				t.Fatalf("ConvertZip error: %v", err)

@@ -1051,3 +1051,12 @@ func TestServiceHeartbeatReadPathIsRaceFree(t *testing.T) {
 	close(done)
 	writerWG.Wait()
 }
+
+func TestCollectSystemResourcesSafelyContainsCollectorPanic(t *testing.T) {
+	got := collectSystemResourcesSafely(func() *engine.SystemResources {
+		panic("malformed platform metrics")
+	})
+	if got != nil {
+		t.Fatalf("resources after collector panic = %#v, want nil degraded sample", got)
+	}
+}

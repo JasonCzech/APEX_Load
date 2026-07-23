@@ -682,9 +682,9 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		ProjectID string     `json:"project_id,omitempty"`
 		FolderID  *string    `json:"folder_id,omitempty"`
 		Script    dsl.Script `json:"script"`
-		// SourceRecordingSessionID, when set, captures the recorded baseline from
-		// the still-live recording session this script was generated from, for
-		// later record-vs-replay correlation diagnosis.
+		// SourceRecordingSessionID requests correlation-baseline capture. The
+		// server accepts it only when the submitted action graph is an exact
+		// deterministic conversion of that recording snapshot.
 		SourceRecordingSessionID string `json:"source_recording_session_id,omitempty"`
 	}
 	if !decodeJSONBody(w, r, &wrapper) {
@@ -734,22 +734,29 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
 		return
 	}
+	if scriptRequiresJavaVuserAuthoringApproval(script) {
+		writeError(w, http.StatusConflict, "Java Vuser scripts must be saved through authoring-session review and approval")
+		return
+	}
+	baseline, err := s.attestRecordingBaselineCapture(script.ProjectID, script, wrapper.SourceRecordingSessionID)
+	if err != nil {
+		switch {
+		case errors.Is(err, errRecordingCaptureSourceNotFound):
+			writeError(w, http.StatusNotFound, err.Error())
+		default:
+			writeError(w, http.StatusConflict, err.Error())
+		}
+		return
+	}
 
 	stored, err := s.runner.StoreScriptDurable(script)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to save script: "+err.Error())
 		return
 	}
-	s.captureRecordingBaseline(stored.ID, stored.ProjectID, wrapper.SourceRecordingSessionID)
-	if wrapper.SourceRecordingSessionID != "" && s.browserRecording != nil {
-		if recording, ok := s.browserRecording.Get(wrapper.SourceRecordingSessionID); ok &&
-			normalizeProjectID(recording.ProjectID) == normalizeProjectID(stored.ProjectID) {
-			s.browserRecording.NotifyConverted(wrapper.SourceRecordingSessionID, stored.ID, stored.Name)
-			s.recordAuditEvent(r, "browser_recording.convert", "success", "script", stored.ID, stored.ProjectID, map[string]any{
-				"recording_session_id": wrapper.SourceRecordingSessionID,
-				"name":                 stored.Name,
-				"guided_save":          true,
-			})
+	if baseline != nil {
+		if err := s.persistRecordedBaseline(stored.ID, baseline.source, stored.Script, baseline.observations); err != nil {
+			slog.Warn("failed to persist attested recorded baseline", "script_id", stored.ID, "error", err)
 		}
 	}
 	s.recordAuditEvent(r, "script.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": stored.Name, "folder_id": stored.FolderID})
@@ -1216,6 +1223,9 @@ func buildScriptValidationResponse(scriptID string, script *dsl.Script, resolver
 
 func buildScriptValidationResponseWithVariables(scriptID string, script *dsl.Script, variables map[string]string, resolvers ...engine.SecretResolver) scriptValidationResponse {
 	issues := validateScript(script)
+	for _, blocker := range scriptImportPromotionBlockers(script) {
+		issues = append(issues, "import fidelity blocker: "+blocker)
+	}
 	warnings := validationWarnings(script)
 	preflight := buildReplayPreflight(script, variables, issues, warnings, resolvers...)
 	parity := buildValidationRuntimeSettingsParity(script)

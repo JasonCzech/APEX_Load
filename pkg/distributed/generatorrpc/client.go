@@ -31,6 +31,7 @@ const DistributedVUserIDNamespaceSize = uint64(^uint32(0) >> 1)
 type Assignment struct {
 	TestID                string
 	ExecutionGeneration   uint64
+	ScenarioID            string
 	GroupName             string
 	TargetDuration        time.Duration
 	TargetDurationSeconds int64
@@ -285,6 +286,26 @@ type Heartbeat struct {
 	Stats           GeneratorStats
 }
 
+// Runtime occupancy modes distinguish mutually exclusive users of a shared
+// protocol-specific process pool.
+const (
+	RuntimeOccupancyModeIdle       = "idle"
+	RuntimeOccupancyModePersistent = "persistent"
+	RuntimeOccupancyModeLegacy     = "legacy"
+)
+
+// ProtocolRuntimeCapacity is a heartbeat snapshot of a protocol-specific
+// external runtime. It is independent from the generator's general MaxVUsers:
+// a JVM sidecar may have substantially fewer process slots than the Go engine.
+type ProtocolRuntimeCapacity struct {
+	Protocol        string   `json:"protocol"`
+	Available       bool     `json:"available"`
+	MaxVUsers       int64    `json:"max_vusers"`
+	AvailableVUsers int64    `json:"available_vusers"`
+	Features        []string `json:"features,omitempty"`
+	OccupancyMode   string   `json:"occupancy_mode,omitempty"`
+}
+
 type HeartbeatResponse struct {
 	GeneratorID        string
 	TimestampUnixMs    int64
@@ -297,6 +318,7 @@ type HeartbeatResponse struct {
 	Version            string
 	SupportedProtocols []string
 	CompatibleFeatures []string
+	RuntimeCapacities  []ProtocolRuntimeCapacity
 }
 
 // FeatureEvacuationAssignmentStateV1 means AssignWork understands the
@@ -763,7 +785,32 @@ func (s *HeartbeatStream) Receive() (HeartbeatResponse, error) {
 		Version:            pong.GetVersion(),
 		SupportedProtocols: append([]string(nil), pong.GetSupportedProtocols()...),
 		CompatibleFeatures: append([]string(nil), pong.GetCompatibleFeatures()...),
+		RuntimeCapacities:  protocolRuntimeCapacitiesFromProto(pong.GetRuntimeCapacities()),
 	}, nil
+}
+
+func protocolRuntimeCapacitiesFromProto(values []*pb.ProtocolRuntimeCapacity) []ProtocolRuntimeCapacity {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]ProtocolRuntimeCapacity, 0, len(values))
+	for _, value := range values {
+		if value == nil {
+			continue
+		}
+		out = append(out, ProtocolRuntimeCapacity{
+			Protocol:        value.GetProtocol(),
+			Available:       value.GetAvailable(),
+			MaxVUsers:       value.GetMaxVusers(),
+			AvailableVUsers: value.GetAvailableVusers(),
+			Features:        append([]string(nil), value.GetFeatures()...),
+			OccupancyMode:   value.GetOccupancyMode(),
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (s *HeartbeatStream) CloseSend() error {
@@ -933,6 +980,7 @@ func toProtoAssignment(assignment Assignment) *pb.WorkAssignment {
 	return &pb.WorkAssignment{
 		TestId:                assignment.TestID,
 		ExecutionGeneration:   assignment.ExecutionGeneration,
+		ScenarioId:            assignment.ScenarioID,
 		GroupName:             assignment.GroupName,
 		TargetDurationSeconds: compatibilityDurationSeconds(targetDuration),
 		TargetDuration:        preciseDurationProto(targetDuration, 0),

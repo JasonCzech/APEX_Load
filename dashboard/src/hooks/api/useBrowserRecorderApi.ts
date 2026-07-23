@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
+import { type StoredScript } from '../../types'
 import { type RecorderImportResult } from '../../types/scriptImports'
-import { apiFetch, request } from '../apiClient'
+import { API_ORIGIN, apiFetch, request, trimTrailingSlash } from '../apiClient'
 import {
   bridgeFetch,
   bridgeRequest,
@@ -133,6 +134,15 @@ export type BrowserRecorderConvertRequest = {
   parameterize?: boolean
 }
 
+// The server-side convert endpoint persists the converted script(s) inside one
+// transaction and returns them in their masked stored form. The optional
+// HAR-derived HTTP script, when persisted, is appended last to `scripts`.
+export type BrowserRecorderConvertResponse = Omit<RecorderImportResult, 'script' | 'scripts'> & {
+  script?: StoredScript
+  scripts?: StoredScript[]
+  http_script?: StoredScript
+}
+
 type BrowserRecorderSessionEnvelope = {
   session: BrowserRecorderSession
 }
@@ -142,11 +152,34 @@ type BrowserRecorderMarkerEnvelope = {
   marker: BrowserRecorderMarker
 }
 
+function recorderRequestScope(
+  bridge: BrowserRecorderBridgeConnection | null,
+  apiOrigin = API_ORIGIN,
+): string {
+  return bridge
+    ? `bridge:${trimTrailingSlash(bridge.origin)}:${bridge.session_id}`
+    : `api:${trimTrailingSlash(apiOrigin)}`
+}
+
 export function useBrowserRecorderApi() {
-  const [browserRecorderBridge, setBrowserRecorderBridge] = useState<BrowserRecorderBridgeConnection | null>(() => readBrowserRecorderBridge())
+  const [recorderEndpoint, setRecorderEndpoint] = useState(() => {
+    const bridge = readBrowserRecorderBridge()
+    return {
+      bridge,
+      requestScope: recorderRequestScope(bridge),
+    }
+  })
+  const browserRecorderBridge = recorderEndpoint.bridge
+  const browserRecorderRequestScope = recorderEndpoint.requestScope
 
   useEffect(() => {
-    const refreshBridge = () => setBrowserRecorderBridge(readBrowserRecorderBridge())
+    const refreshBridge = () => {
+      const bridge = readBrowserRecorderBridge()
+      setRecorderEndpoint({
+        bridge,
+        requestScope: recorderRequestScope(bridge),
+      })
+    }
     return subscribeBrowserRecorderBridgeChanges(refreshBridge)
   }, [])
 
@@ -266,7 +299,7 @@ export function useBrowserRecorderApi() {
 
   const convertBrowserRecording = useCallback(
     (id: string, req: BrowserRecorderConvertRequest = {}) =>
-      recorderRequest<RecorderImportResult & { http_script?: { id: string; name: string } }>(
+      recorderRequest<BrowserRecorderConvertResponse>(
         `/browser-recorder/sessions/${id}/convert`,
         { method: 'POST', body: JSON.stringify(req) },
       ),
@@ -315,10 +348,13 @@ export function useBrowserRecorderApi() {
   )
 
   const verifyBrowserRecording = useCallback(
-    (id: string) =>
+    (id: string, replaySessionId?: string) =>
       recorderRequest<{ replay_session_id: string; replay_session: unknown; warnings: string[] }>(
         `/browser-recorder/sessions/${id}/verify`,
-        { method: 'POST' },
+        {
+          method: 'POST',
+          body: JSON.stringify({ replay_session_id: replaySessionId || undefined }),
+        },
       ),
     [recorderRequest],
   )
@@ -353,7 +389,10 @@ export function useBrowserRecorderApi() {
   const clearBrowserRecorderBridgeConnection = useCallback(
     () => {
       clearBrowserRecorderBridge()
-      setBrowserRecorderBridge(null)
+      setRecorderEndpoint({
+        bridge: null,
+        requestScope: recorderRequestScope(null),
+      })
     },
     [],
   )
@@ -371,6 +410,7 @@ export function useBrowserRecorderApi() {
   return useMemo(
     () => ({
       browserRecorderBridge,
+      browserRecorderRequestScope,
       getBrowserRecorderBridgeStatus,
       pairBrowserRecorderBridge: pairBrowserRecorderBridgeTo,
       verifyBrowserRecorderBridgeAgent: verifyBrowserRecorderBridgeAgentAt,
@@ -403,6 +443,7 @@ export function useBrowserRecorderApi() {
     }),
     [
       browserRecorderBridge,
+      browserRecorderRequestScope,
       getBrowserRecorderBridgeStatus,
       pairBrowserRecorderBridgeTo,
       verifyBrowserRecorderBridgeAgentAt,

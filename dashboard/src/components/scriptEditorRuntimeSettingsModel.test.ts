@@ -7,11 +7,14 @@ import {
   formatContentChecks,
   formatDFEChain,
   formatKeyValueLines,
+  formatLineList,
   formatRuntimeSettingStatusLabel,
+  formatScriptProtocolLabel,
   getImportedRuntimeSectionId,
   getRuntimeProtocolCapabilities,
   parseContentChecks,
   parseDFEChain,
+  parseExactLineList,
   parseKeyValueLines,
   resetScriptRuntimeConfig,
   runtimeOverrideFromScriptConfig,
@@ -58,11 +61,14 @@ describe('scriptEditorRuntimeSettingsModel', () => {
   it('derives protocol capabilities and section availability from one registry', () => {
     expect(getRuntimeProtocolCapabilities('browser')).toMatchObject({ browser: true, httpTransport: true, http: false })
     expect(getRuntimeProtocolCapabilities('java_http')).toMatchObject({ javaHttp: true, httpTransport: true })
+    expect(getRuntimeProtocolCapabilities('java_vuser')).toMatchObject({ javaVuser: true, httpTransport: false, requiresBaseURL: false })
     expect(getRuntimeProtocolCapabilities('jms-solace')).toMatchObject({ jms: true, httpTransport: false })
     expect(runtimeSettingsSectionIsAvailable('http', 'soap')).toBe(true)
     expect(runtimeSettingsSectionIsAvailable('web_runtime', 'https')).toBe(false)
     expect(runtimeSettingsSectionIsAvailable('web_runtime', 'http')).toBe(true)
     expect(runtimeSettingsSectionIsAvailable('grpc', 'http')).toBe(false)
+    expect(runtimeSettingsSectionIsAvailable('java_vuser', 'java_vuser')).toBe(true)
+    expect(runtimeSettingsSectionIsAvailable('java_vuser', 'http')).toBe(false)
     expect(runtimeSettingsSectionIsAvailable('errors', 'grpc')).toBe(true)
   })
 
@@ -129,6 +135,9 @@ describe('scriptEditorRuntimeSettingsModel', () => {
     const values = { env: 'perf', empty: '', region: 'east' }
     expect(parseKeyValueLines(formatKeyValueLines(values))).toEqual(values)
 
+    const exactTokens = ['-Xmx512m', '-Dlabel=hello world ']
+    expect(parseExactLineList(formatLineList(exactTokens))).toEqual(exactTokens)
+
     expect(syncSOAPEnvelopeNamespace('1.2', {
       soapenv: 'http://schemas.xmlsoap.org/soap/envelope/',
       custom: 'urn:custom',
@@ -174,8 +183,11 @@ describe('scriptEditorRuntimeSettingsModel', () => {
     expect(summary.warnings).toEqual(['Imported timeout was clamped'])
 
     expect(getImportedRuntimeSectionId('Java over HTTP')).toBe('java_http')
+    expect(getImportedRuntimeSectionId('Java VM')).toBe('java_vuser')
+    expect(getImportedRuntimeSectionId('Java Environment Settings')).toBe('java_vuser')
     expect(getImportedRuntimeSectionId('Web HTTP/HTML')).toBe('web_runtime')
     expect(getImportedRuntimeSectionId('unknown')).toBeNull()
     expect(formatRuntimeSettingStatusLabel('compatibility_only')).toBe('Compatibility-only')
+    expect(formatScriptProtocolLabel('java_vuser')).toBe('Java Vuser')
   })
 })

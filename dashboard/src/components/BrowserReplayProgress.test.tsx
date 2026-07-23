@@ -5,9 +5,24 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import BrowserReplayProgress from './BrowserReplayProgress'
+import { ApiError } from '../hooks/apiClient'
 import { type WSMessage } from '../types'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
+
+const { requestMock, bridgeRequestMock } = vi.hoisted(() => ({
+  requestMock: vi.fn(),
+  bridgeRequestMock: vi.fn(),
+}))
+
+vi.mock('../hooks/apiClient', async importOriginal => ({
+  ...await importOriginal<typeof import('../hooks/apiClient')>(),
+  request: requestMock,
+}))
+
+vi.mock('../hooks/api/browserRecorderBridge', () => ({
+  bridgeRequest: bridgeRequestMock,
+}))
 
 // Capture the onMessage handler the component registers so the test can push
 // browser_replay_* events through the real reducer logic.
@@ -28,6 +43,24 @@ describe('BrowserReplayProgress', () => {
     document.body.appendChild(container)
     root = createRoot(container)
     lastOnMessage = undefined
+    requestMock.mockImplementation(async (path: string) => ({
+      session: {
+        id: decodeURIComponent(path.split('/').pop() || ''),
+        status: 'running',
+        group: 'Replay verification',
+        protocol: 'browser',
+        current_event_index: -1,
+      },
+    }))
+    bridgeRequestMock.mockImplementation(async (_bridge: unknown, path: string) => ({
+      session: {
+        id: decodeURIComponent(path.split('/').pop() || ''),
+        status: 'running',
+        group: 'Replay verification',
+        protocol: 'browser',
+        current_event_index: -1,
+      },
+    }))
   })
 
   afterEach(async () => {
@@ -171,6 +204,278 @@ describe('BrowserReplayProgress', () => {
     )
   })
 
+  it('replaces provisional WebSocket events with the authoritative terminal report', async () => {
+    const onComplete = vi.fn()
+    await act(async () => {
+      root.render(<BrowserReplayProgress replaySessionId="rep-authoritative" onComplete={onComplete} />)
+    })
+    await send({
+      type: 'browser_replay_event',
+      replay_session_id: 'rep-authoritative',
+      event: {
+        event_index: 0,
+        phase: 'action',
+        action_name: 'Provisional click',
+        action_type: 'browser_click',
+        target: '#old',
+        success: true,
+      },
+    } as any)
+    await send({
+      type: 'browser_replay_event',
+      replay_session_id: 'rep-authoritative',
+      event: {
+        event_index: 1,
+        phase: 'action',
+        action_name: 'Stale trailing event',
+        action_type: 'browser_click',
+        target: '#stale',
+        success: false,
+      },
+    } as any)
+
+    const report = {
+      replay_session_id: 'rep-authoritative',
+      group: 'Recorder replay',
+      protocol: 'browser',
+      started_at: '2026-06-22T00:00:00Z',
+      completed_at: '2026-06-22T00:00:01Z',
+      success: true,
+      events: [{
+        event_index: 0,
+        phase: 'action',
+        action_name: 'Final click',
+        action_type: 'browser_click',
+        target: '#final',
+        success: true,
+      }],
+    }
+    await send({ type: 'browser_replay_completed', replay_session_id: 'rep-authoritative', report } as any)
+
+    expect(container.querySelectorAll('.brp-replay-event')).toHaveLength(1)
+    expect(container.textContent).toContain('Final click')
+    expect(container.textContent).not.toContain('Provisional click')
+    expect(container.textContent).not.toContain('Stale trailing event')
+    expect(onComplete).toHaveBeenCalledWith(report, report.events)
+  })
+
+  it('accepts an empty terminal report as authoritative', async () => {
+    const onComplete = vi.fn()
+    await act(async () => {
+      root.render(<BrowserReplayProgress replaySessionId="rep-authoritative-empty" onComplete={onComplete} />)
+    })
+    await send({
+      type: 'browser_replay_event',
+      replay_session_id: 'rep-authoritative-empty',
+      event: {
+        event_index: 0,
+        phase: 'action',
+        action_name: 'Provisional event',
+        action_type: 'browser_click',
+        target: '#old',
+        success: true,
+      },
+    } as any)
+    const report = {
+      replay_session_id: 'rep-authoritative-empty',
+      group: 'Recorder replay',
+      protocol: 'browser',
+      started_at: '2026-06-22T00:00:00Z',
+      completed_at: '2026-06-22T00:00:01Z',
+      success: true,
+      events: [],
+    }
+
+    await send({ type: 'browser_replay_completed', replay_session_id: 'rep-authoritative-empty', report } as any)
+
+    expect(container.querySelectorAll('.brp-replay-event')).toHaveLength(0)
+    expect(container.textContent).not.toContain('Provisional event')
+    expect(onComplete).toHaveBeenCalledWith(report, [])
+  })
+
+  it('backfills a replay that completed before the WebSocket subscribed and stops polling', async () => {
+    vi.useFakeTimers()
+    const onComplete = vi.fn()
+    const report = {
+      replay_session_id: 'rep-rest-terminal',
+      group: 'Recorder replay',
+      protocol: 'browser',
+      started_at: '2026-06-22T00:00:00Z',
+      completed_at: '2026-06-22T00:00:01Z',
+      success: true,
+      events: [{
+        event_index: 0,
+        phase: 'action',
+        action_name: 'Fast click',
+        action_type: 'browser_click',
+        target: '#go',
+        success: true,
+        started_at: '2026-06-22T00:00:00Z',
+        completed_at: '2026-06-22T00:00:01Z',
+        duration_ms: 10,
+      }],
+    }
+    requestMock.mockResolvedValueOnce({
+      session: {
+        id: 'rep-rest-terminal',
+        status: 'completed',
+        group: 'Recorder replay',
+        protocol: 'browser',
+        current_event_index: 0,
+        completed_at: report.completed_at,
+        events: report.events,
+        report,
+      },
+    })
+
+    await act(async () => {
+      root.render(<BrowserReplayProgress replaySessionId="rep-rest-terminal" onComplete={onComplete} />)
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Verified ✓')
+    expect(container.textContent).toContain('Fast click')
+    expect(onComplete).toHaveBeenCalledTimes(1)
+    expect(onComplete).toHaveBeenCalledWith(report, report.events)
+    expect(requestMock).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      root.render(
+        <BrowserReplayProgress
+          replaySessionId="rep-rest-terminal"
+          onComplete={(nextReport, events) => onComplete(nextReport, events)}
+        />,
+      )
+      vi.advanceTimersByTime(10_000)
+      await Promise.resolve()
+    })
+    expect(requestMock).toHaveBeenCalledTimes(1)
+    expect(onComplete).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails a permanently missing client-selected replay after a bounded reconciliation window', async () => {
+    vi.useFakeTimers()
+    const onComplete = vi.fn()
+    requestMock.mockRejectedValue(new ApiError('not found', 404))
+
+    await act(async () => {
+      root.render(<BrowserReplayProgress replaySessionId="rep-never-accepted" onComplete={onComplete} />)
+      await Promise.resolve()
+    })
+
+    expect(onComplete).not.toHaveBeenCalled()
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      await act(async () => {
+        vi.advanceTimersByTime(1500)
+        await Promise.resolve()
+      })
+    }
+
+    expect(requestMock).toHaveBeenCalledTimes(5)
+    expect(onComplete).toHaveBeenCalledTimes(1)
+    expect(onComplete).toHaveBeenCalledWith(null, [])
+    expect(container.textContent).toContain('Replay session could not be confirmed')
+    expect(container.textContent).toContain('Issues found')
+  })
+
+  it('does not let an older status response overwrite a newer terminal WebSocket result', async () => {
+    const onComplete = vi.fn()
+    let resolveStatus: ((value: unknown) => void) | undefined
+    requestMock.mockReturnValueOnce(new Promise(resolve => { resolveStatus = resolve }))
+
+    await act(async () => {
+      root.render(<BrowserReplayProgress replaySessionId="rep-ws-wins" onComplete={onComplete} />)
+    })
+
+    const wsReport = {
+      replay_session_id: 'rep-ws-wins',
+      group: 'Recorder replay',
+      protocol: 'browser',
+      started_at: '2026-06-22T00:00:00Z',
+      completed_at: '2026-06-22T00:00:01Z',
+      success: true,
+      events: [],
+    }
+    await send({ type: 'browser_replay_completed', replay_session_id: 'rep-ws-wins', report: wsReport } as any)
+    await act(async () => {
+      resolveStatus?.({
+        session: {
+          id: 'rep-ws-wins',
+          status: 'failed',
+          group: 'Recorder replay',
+          protocol: 'browser',
+          current_event_index: -1,
+          error: 'stale status',
+          report: { ...wsReport, success: false, error: 'stale status' },
+        },
+      })
+      await Promise.resolve()
+    })
+
+    expect(container.textContent).toContain('Verified ✓')
+    expect(container.textContent).not.toContain('Issues found')
+    expect(onComplete).toHaveBeenCalledTimes(1)
+    expect(onComplete).toHaveBeenCalledWith(wsReport, [])
+  })
+
+  it('keeps polling an unfinalized bridge stop until the final WebSocket result arrives', async () => {
+    vi.useFakeTimers()
+    const onComplete = vi.fn()
+    const bridge = {
+      origin: 'http://127.0.0.1:27777',
+      token: 'bridge-token',
+      session_id: 'bridge-session',
+      paired_at: '2026-06-22T00:00:00Z',
+    }
+    bridgeRequestMock.mockResolvedValueOnce({
+      session: {
+        id: 'rep-bridge',
+        status: 'stopped',
+        group: 'Recorder replay',
+        protocol: 'browser',
+        current_event_index: -1,
+      },
+    })
+
+    await act(async () => {
+      root.render(<BrowserReplayProgress replaySessionId="rep-bridge" bridge={bridge} onComplete={onComplete} />)
+      await Promise.resolve()
+    })
+
+    expect(bridgeRequestMock).toHaveBeenCalledWith(
+      bridge,
+      '/browser-replay/sessions/rep-bridge',
+      expect.objectContaining({ signal: expect.any(AbortSignal) }),
+    )
+    expect(requestMock).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Verifying…')
+    expect(onComplete).not.toHaveBeenCalled()
+
+    await act(async () => {
+      vi.advanceTimersByTime(1500)
+      await Promise.resolve()
+    })
+    expect(bridgeRequestMock).toHaveBeenCalledTimes(2)
+
+    const finalReport = {
+      replay_session_id: 'rep-bridge',
+      group: 'Recorder replay',
+      protocol: 'browser',
+      started_at: '2026-06-22T00:00:00Z',
+      completed_at: '2026-06-22T00:00:01Z',
+      success: false,
+      events: [],
+    }
+    await send({
+      type: 'browser_replay_stopped',
+      replay_session_id: 'rep-bridge',
+      report: finalReport,
+    } as any)
+
+    expect(container.textContent).toContain('Stopped')
+    expect(onComplete).toHaveBeenCalledWith(finalReport, [])
+  })
+
   it('accepts and rejects replay repair suggestions', async () => {
     const onApplySuggestion = vi.fn()
     await act(async () => {
@@ -214,5 +519,71 @@ describe('BrowserReplayProgress', () => {
       reject?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
     })
     expect(container.textContent).not.toContain('Promote selector')
+  })
+
+  it('deduplicates rapid accepts for the same replay repair suggestion', async () => {
+    let resolveApply!: () => void
+    const onApplySuggestion = vi.fn().mockReturnValue(new Promise<void>(resolve => { resolveApply = resolve }))
+    await act(async () => {
+      root.render(<BrowserReplayProgress replaySessionId="rep-rapid-apply" onApplySuggestion={onApplySuggestion} />)
+    })
+    await send({
+      type: 'browser_replay_event',
+      replay_session_id: 'rep-rapid-apply',
+      event: {
+        event_index: 0,
+        action_name: 'Click checkout',
+        action_type: 'browser_click',
+        success: true,
+        repair_suggestions: [{
+          id: 'promote-rapid',
+          title: 'Promote selector',
+          description: 'Use healed selector',
+          confidence: 0.95,
+        }],
+      },
+    } as any)
+    await act(async () => {
+      Array.from(container.querySelectorAll('button')).find(button => button.textContent === '1 fix')?.click()
+    })
+    const accept = Array.from(container.querySelectorAll('button')).find(button => button.textContent === 'Accept')
+    expect(accept).toBeTruthy()
+    act(() => {
+      accept?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      accept?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    expect(onApplySuggestion).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      resolveApply()
+      await Promise.resolve()
+    })
+  })
+
+  it('resets terminal replay evidence when the project scope changes', async () => {
+    await act(async () => {
+      root.render(<BrowserReplayProgress replaySessionId="shared-replay-id" projectId="project-1" />)
+    })
+    await send({
+      type: 'browser_replay_completed',
+      replay_session_id: 'shared-replay-id',
+      report: {
+        replay_session_id: 'shared-replay-id',
+        success: true,
+        events: [{
+          event_index: 0,
+          action_name: 'Project one action',
+          action_type: 'browser_click',
+          success: true,
+        }],
+      },
+    } as any)
+    expect(container.textContent).toContain('Verified ✓')
+    expect(container.textContent).toContain('Project one action')
+
+    await act(async () => {
+      root.render(<BrowserReplayProgress replaySessionId="shared-replay-id" projectId="project-2" />)
+    })
+    expect(container.textContent).toContain('Verifying…')
+    expect(container.textContent).not.toContain('Project one action')
   })
 })

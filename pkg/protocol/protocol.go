@@ -20,6 +20,7 @@ package protocol
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"time"
 )
@@ -75,10 +76,168 @@ type RuntimeCapabilityProvider interface {
 
 type RuntimeHealthChecker interface{ RuntimeHealthy(context.Context) bool }
 
+// RuntimePreflightProvider performs script-specific runtime validation before
+// an engine allocates any VUsers. Unlike RuntimeHealthChecker, this receives
+// the secret-resolved protocol configuration and the unique executable targets
+// required by the script. Implementations must return only redaction-safe
+// errors and stable warning codes.
+type RuntimePreflightProvider interface {
+	PreflightRuntime(context.Context, RuntimePreflightRequest) (RuntimePreflightResult, error)
+}
+
+type RuntimePreflightRequest struct {
+	Config  map[string]any           `json:"config,omitempty"`
+	Targets []RuntimePreflightTarget `json:"targets,omitempty"`
+}
+
+type RuntimePreflightTarget struct {
+	ClassName string `json:"class_name"`
+	Method    string `json:"method"`
+}
+
+type RuntimePreflightResult struct {
+	Warnings []string `json:"warnings,omitempty"`
+}
+
 type RuntimeCapabilities struct {
 	Available bool
 	Features  []string
 	MaxVUsers int64
+}
+
+// ReadRuntimeCapabilities invokes the optional runtime-capability extension
+// behind a process-protection boundary. Runtime adapters are allowed to inspect
+// external runner state, so a panic must fail the capability check rather than
+// crash the controller or generator.
+func ReadRuntimeCapabilities(instance Protocol) (capabilities RuntimeCapabilities, supported bool, err error) {
+	provider, supported := instance.(RuntimeCapabilityProvider)
+	if !supported {
+		return RuntimeCapabilities{}, false, nil
+	}
+	defer func() {
+		if recover() != nil {
+			capabilities = RuntimeCapabilities{}
+			err = errors.New("runtime capability provider panicked")
+		}
+	}()
+	return provider.RuntimeCapabilities(), true, nil
+}
+
+// CheckRuntimeHealth invokes the optional runtime-health extension without
+// exposing a recovered panic value, which may contain resolved configuration.
+func CheckRuntimeHealth(ctx context.Context, instance Protocol) (healthy bool, supported bool, err error) {
+	checker, supported := instance.(RuntimeHealthChecker)
+	if !supported {
+		return false, false, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return false, true, err
+	}
+	defer func() {
+		if recover() != nil {
+			healthy = false
+			err = errors.New("runtime health checker panicked")
+		}
+	}()
+	return checker.RuntimeHealthy(ctx), true, nil
+}
+
+// RunRuntimePreflight invokes the optional script-aware preflight extension
+// behind the same process-protection boundary as other protocol lifecycle
+// calls. Panic values are deliberately omitted from the returned error.
+func RunRuntimePreflight(ctx context.Context, instance Protocol, request RuntimePreflightRequest) (result RuntimePreflightResult, supported bool, err error) {
+	provider, supported := instance.(RuntimePreflightProvider)
+	if !supported {
+		return RuntimePreflightResult{}, false, nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return RuntimePreflightResult{}, true, err
+	}
+	defer func() {
+		if recover() != nil {
+			result = RuntimePreflightResult{}
+			err = errors.New("runtime preflight provider panicked")
+		}
+	}()
+	result, err = provider.PreflightRuntime(ctx, request)
+	return result, true, err
+}
+
+// FeatureJavaVuserPersistentLifecycleV1 identifies a Java Vuser runtime that
+// keeps one JVM and one Actions instance alive for the full VUser lifecycle.
+const FeatureJavaVuserPersistentLifecycleV1 = "java_vuser_persistent_lifecycle_v1"
+
+// FeatureJavaVuserSessionFrameTokenV1 identifies a persistent Java Vuser
+// runtime whose per-invocation result frames are bound to an unpredictable
+// engine-generated token. Persistent lifecycle execution is admitted only
+// when this feature is advertised alongside PersistentLifecycleV1.
+const FeatureJavaVuserSessionFrameTokenV1 = "java_vuser_session_frame_token_v1"
+
+// FeatureJavaVuserPhaseLifecycleV1 identifies the legacy capability to invoke
+// separate init/action/end methods. It does not guarantee that those calls
+// share an Actions instance and therefore is insufficient for combined imports.
+const FeatureJavaVuserPhaseLifecycleV1 = "java_vuser_phase_lifecycle_v1"
+
+// RuntimeFeaturesSatisfy reports whether advertised runtime features satisfy
+// the requested capability after whitespace and case normalization. Governed
+// persistent lifecycle support requires authenticated result framing, and is a
+// strict superset of legacy phase invocation only when both features exist.
+func RuntimeFeaturesSatisfy(features []string, required string) bool {
+	required = strings.TrimSpace(required)
+	if required == "" {
+		return true
+	}
+	hasRequired := false
+	hasPersistentLifecycle := false
+	hasSessionFrameToken := false
+	for _, feature := range features {
+		feature = strings.TrimSpace(feature)
+		if strings.EqualFold(feature, required) {
+			hasRequired = true
+		}
+		if strings.EqualFold(feature, FeatureJavaVuserPersistentLifecycleV1) {
+			hasPersistentLifecycle = true
+		}
+		if strings.EqualFold(feature, FeatureJavaVuserSessionFrameTokenV1) {
+			hasSessionFrameToken = true
+		}
+	}
+	if strings.EqualFold(required, FeatureJavaVuserPersistentLifecycleV1) {
+		return hasPersistentLifecycle && hasSessionFrameToken
+	}
+	if strings.EqualFold(required, FeatureJavaVuserPhaseLifecycleV1) {
+		return hasRequired || (hasPersistentLifecycle && hasSessionFrameToken)
+	}
+	return hasRequired
+}
+
+// MissingJavaVuserPersistentRuntimeFeature returns the first missing feature
+// from the governed persistent Java Vuser contract. It is intended for stable
+// diagnostics at admission and placement boundaries.
+func MissingJavaVuserPersistentRuntimeFeature(features []string) string {
+	hasPersistentLifecycle := false
+	hasSessionFrameToken := false
+	for _, feature := range features {
+		switch {
+		case strings.EqualFold(strings.TrimSpace(feature), FeatureJavaVuserPersistentLifecycleV1):
+			hasPersistentLifecycle = true
+		case strings.EqualFold(strings.TrimSpace(feature), FeatureJavaVuserSessionFrameTokenV1):
+			hasSessionFrameToken = true
+		}
+	}
+	if !hasPersistentLifecycle {
+		return FeatureJavaVuserPersistentLifecycleV1
+	}
+	if !hasSessionFrameToken {
+		return FeatureJavaVuserSessionFrameTokenV1
+	}
+	return ""
 }
 
 // TextRedactor is a runtime-only projection used by protocol implementations
@@ -421,6 +580,12 @@ type Result struct {
 	Success             bool
 	ErrorMessage        string
 	ResponseBody        string
+	// CorrelationEvidence carries the raw request/response exchange needed for
+	// server-side record-vs-replay diagnosis. It is deliberately excluded from
+	// every JSON boundary and must be consumed only by the replay engine's
+	// pre-scrub correlation observer. Public replay events, reports, snapshots,
+	// exports, and WebSocket messages must never retain it.
+	CorrelationEvidence *CorrelationEvidence `json:"-"`
 	Extractions         map[string]string
 	PageURL             string
 	PageTitle           string
@@ -443,6 +608,60 @@ type Result struct {
 	SourceUID           string
 	RequestType         string
 	OperationKind       string
+}
+
+const (
+	// CorrelationEvidenceCaptureConfigKey is an internal runtime capability flag.
+	// Replay alone is not sufficient to enable raw exchange capture: the engine
+	// sets this only when a private pre-scrub correlation observer is present.
+	CorrelationEvidenceCaptureConfigKey = "apexload_internal_capture_correlation_evidence"
+	// MaxCorrelationEvidenceBytes bounds the aggregate private request/response
+	// exchange before it is copied into replay-only correlation evidence.
+	MaxCorrelationEvidenceBytes = 12 << 20
+	// CorrelationEvidenceTooLargeReason is retained only in the private evidence
+	// sentinel so downstream consumers can fail closed without retaining a
+	// truncated or partially copied exchange.
+	CorrelationEvidenceTooLargeReason = "raw correlation evidence exceeds the capture byte limit"
+)
+
+// CorrelationEvidence is an ephemeral, raw protocol exchange used only for
+// server-side correlation diagnosis. Every field is independently excluded
+// from JSON as defense in depth in case the value is ever detached from Result.
+// Protocol implementations should populate the actual wire request and decoded
+// response where available; callers must treat every value as sensitive.
+type CorrelationEvidence struct {
+	// UnavailableReason marks an exchange that was deliberately not retained.
+	// When set, every raw field must remain empty and consumers must fail closed.
+	UnavailableReason      string            `json:"-"`
+	RequestURL             string            `json:"-"`
+	RequestBody            string            `json:"-"`
+	RequestBodyTransformed bool              `json:"-"`
+	RequestHeaders         map[string]string `json:"-"`
+	// Authored request fields are the private, unresolved DSL surfaces. They are
+	// compared once inside the replay session to prove whether a wire offset maps
+	// exactly to editable source, then discarded with the rest of the evidence.
+	AuthoredRequestURL     string            `json:"-"`
+	AuthoredRequestBody    string            `json:"-"`
+	AuthoredRequestHeaders map[string]string `json:"-"`
+	ResponseBody           string            `json:"-"`
+	ResponseHeaders        map[string]string `json:"-"`
+	ResponseStatus         int               `json:"-"`
+	// ResponseSuccess is the protocol's response/transport outcome before
+	// extractors, content checks, or non-status assertions can fail the action.
+	// Nil lets non-HTTP protocols fall back to the overall action outcome.
+	ResponseSuccess *bool `json:"-"`
+}
+
+// UnavailableCorrelationEvidence returns an explicit, raw-data-free sentinel.
+// It is preferable to nil for a requested capture that could not be retained:
+// nil means no exchange existed, while this marker forces diagnosis to reject
+// incomplete evidence.
+func UnavailableCorrelationEvidence(reason string) *CorrelationEvidence {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "raw correlation evidence is unavailable"
+	}
+	return &CorrelationEvidence{UnavailableReason: reason}
 }
 
 // ErrorSnapshot captures full request/response data for post-test debugging.

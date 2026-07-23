@@ -2,7 +2,11 @@ package enterprisearchive
 
 // config_merge.go — split from converter.go (same package, behavior-preserving).
 
-import "github.com/jasonczech/apexload/pkg/dsl"
+import (
+	"strings"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
+)
 
 func mergeScriptConfig(dst *dsl.ScriptConfig, src *dsl.ScriptConfig) {
 	if dst == nil || src == nil {
@@ -54,6 +58,45 @@ func mergeScriptConfig(dst *dsl.ScriptConfig, src *dsl.ScriptConfig) {
 	}
 	if !isEmptyWebRuntimeConfig(src.WebRuntime) {
 		dst.WebRuntime = src.WebRuntime
+	}
+}
+
+// mergeJavaVuserVMSettings copies only source-owned Java VM settings. Runner
+// enablement, command, harness, work directory, and capacity remain operator
+// owned, and imported settings must not replace the runner draft defaults.
+func mergeJavaVuserVMSettings(dst *dsl.JavaVuserConfig, src dsl.JavaVuserConfig) {
+	if dst == nil {
+		return
+	}
+	if src.JDKSelection != "" {
+		dst.JDKSelection = src.JDKSelection
+	}
+	if src.JDKHome != "" {
+		dst.JDKHome = src.JDKHome
+	}
+	if len(src.AdditionalVMParameters) > 0 {
+		dst.AdditionalVMParameters = append([]string(nil), src.AdditionalVMParameters...)
+	}
+	if src.UseXBootClasspath != nil {
+		dst.UseXBootClasspath = cloneRuntimeBoolPointer(src.UseXBootClasspath)
+	}
+	if src.DedicatedClassLoader != nil {
+		dst.DedicatedClassLoader = cloneRuntimeBoolPointer(src.DedicatedClassLoader)
+	}
+	if len(src.Classpath) > 0 {
+		dst.Classpath = append([]string(nil), src.Classpath...)
+	}
+}
+
+func mergeJavaVuserRuntimeSettingsIntoResult(result *ConvertResult, src *dsl.ScriptConfig) {
+	if result == nil || src == nil {
+		return
+	}
+	for _, script := range result.effectiveScripts() {
+		if script == nil || !strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") {
+			continue
+		}
+		mergeJavaVuserVMSettings(&script.Config.JavaVuser, src.JavaVuser)
 	}
 }
 

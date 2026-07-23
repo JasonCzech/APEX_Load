@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -43,27 +44,37 @@ type BrowserToHTTPPreviewResponse struct {
 }
 
 type BrowserToHTTPReview struct {
-	Status                string                   `json:"status"`
-	PromotionStatus       string                   `json:"promotion_status"`
-	SourceBrowserActions  int                      `json:"source_browser_actions"`
-	CapturedRequests      int                      `json:"captured_requests"`
-	GeneratedHTTPActions  int                      `json:"generated_http_actions"`
-	SkippedStaticAssets   int                      `json:"skipped_static_assets"`
-	CorrelationEngine     string                   `json:"correlation_engine,omitempty"`
-	CorrelationCandidates []BrowserToHTTPCandidate `json:"correlation_candidates,omitempty"`
-	DataSourceCandidates  []BrowserToHTTPCandidate `json:"data_source_candidates,omitempty"`
-	AuthFindings          []BrowserToHTTPFinding   `json:"auth_findings,omitempty"`
-	CookieFindings        []BrowserToHTTPFinding   `json:"cookie_findings,omitempty"`
-	BlockingFindings      []BrowserToHTTPFinding   `json:"blocking_findings,omitempty"`
-	Findings              []string                 `json:"findings,omitempty"`
-	NextActions           []string                 `json:"next_actions,omitempty"`
-	Evidence              BrowserToHTTPEvidence    `json:"evidence"`
+	Status                string                              `json:"status"`
+	PromotionStatus       string                              `json:"promotion_status"`
+	SourceBrowserActions  int                                 `json:"source_browser_actions"`
+	CapturedRequests      int                                 `json:"captured_requests"`
+	GeneratedHTTPActions  int                                 `json:"generated_http_actions"`
+	SkippedStaticAssets   int                                 `json:"skipped_static_assets"`
+	CorrelationEngine     string                              `json:"correlation_engine,omitempty"`
+	CorrelationCandidates []BrowserToHTTPCorrelationCandidate `json:"correlation_candidates,omitempty"`
+	DataSourceCandidates  []BrowserToHTTPCandidate            `json:"data_source_candidates,omitempty"`
+	AuthFindings          []BrowserToHTTPFinding              `json:"auth_findings,omitempty"`
+	CookieFindings        []BrowserToHTTPFinding              `json:"cookie_findings,omitempty"`
+	BlockingFindings      []BrowserToHTTPFinding              `json:"blocking_findings,omitempty"`
+	Findings              []string                            `json:"findings,omitempty"`
+	NextActions           []string                            `json:"next_actions,omitempty"`
+	Evidence              BrowserToHTTPEvidence               `json:"evidence"`
 }
 
 type BrowserToHTTPCandidate struct {
 	Name     string `json:"name"`
 	Source   string `json:"source"`
 	Value    string `json:"value,omitempty"`
+	Evidence string `json:"evidence,omitempty"`
+	Action   string `json:"action,omitempty"`
+}
+
+// BrowserToHTTPCorrelationCandidate intentionally omits the captured value.
+// Correlation evidence can contain credentials and session tokens, so preview
+// responses identify a candidate structurally without echoing its literal.
+type BrowserToHTTPCorrelationCandidate struct {
+	Name     string `json:"name"`
+	Source   string `json:"source"`
 	Evidence string `json:"evidence,omitempty"`
 	Action   string `json:"action,omitempty"`
 }
@@ -77,6 +88,14 @@ type BrowserToHTTPFinding struct {
 
 type BrowserToHTTPEvidence struct {
 	ReplaySessionID         string   `json:"replay_session_id,omitempty"`
+	ReplaySessionResolved   bool     `json:"replay_session_resolved"`
+	ReplaySessionStatus     string   `json:"replay_session_status,omitempty"`
+	ReplaySessionSuccessful bool     `json:"replay_session_successful"`
+	ReplayNetworkEntries    int      `json:"replay_network_entries,omitempty"`
+	NetworkDurable          bool     `json:"network_durable"`
+	CorrelationDurable      bool     `json:"correlation_durable"`
+	Durable                 bool     `json:"durable"`
+	VerificationStatus      string   `json:"verification_status"`
 	NetworkEntries          int      `json:"network_entries"`
 	CorrelationObservations int      `json:"correlation_observations,omitempty"`
 	SourceBrowserScriptID   string   `json:"source_browser_script_id,omitempty"`
@@ -149,12 +168,27 @@ func (s *Server) handlePreviewBrowserToHTTP(w http.ResponseWriter, r *http.Reque
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	if err := s.bindBrowserToHTTPProject(&req); err != nil {
+	var replaySession *BrowserReplaySession
+	if replayID := strings.TrimSpace(req.ReplaySessionID); replayID != "" && s.browserReplay != nil {
+		replaySession, _ = s.browserReplay.Get(replayID)
+		// The route is authorized against the declared/source project before the
+		// handler runs. Treat a session from any other project exactly like an
+		// unknown ID so the body reference cannot be used as an existence oracle.
+		sourceProjectID := ""
+		if req.SourceBrowserScript != nil {
+			sourceProjectID = req.SourceBrowserScript.ProjectID
+		}
+		requestProjectID, projectErr := reconcileProjectIDCandidates(req.ProjectID, sourceProjectID)
+		if projectErr == nil && replaySession != nil && normalizeProjectID(replaySession.ProjectID) != normalizeProjectID(requestProjectID) {
+			replaySession = nil
+		}
+	}
+	if err := s.bindBrowserToHTTPProject(&req, replaySession); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
 
-	entries, skippedStatic, err := s.browserToHTTPNetworkEntries(req)
+	entries, skippedStatic, replayEvidence, err := s.browserToHTTPNetworkEntries(req, replaySession)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -162,6 +196,18 @@ func (s *Server) handlePreviewBrowserToHTTP(w http.ResponseWriter, r *http.Reque
 	if len(entries) == 0 {
 		writeError(w, http.StatusBadRequest, "browser-to-HTTP preview requires replay network entries")
 		return
+	}
+	uploadedCorrelationCandidates, err := browserToHTTPCorrelateCandidates(req)
+	var correlationWarnings []string
+	if err != nil {
+		if !errors.Is(err, correlate.ErrCorrelationWorkLimit) {
+			writeError(w, http.StatusInternalServerError, "failed to analyze browser-to-HTTP correlation evidence")
+			return
+		}
+		// A deterministic work limit must not kill the conversion preview:
+		// proceed without correlation hints and surface the degradation.
+		uploadedCorrelationCandidates = nil
+		correlationWarnings = append(correlationWarnings, "browser-to-HTTP correlation evidence exceeded deterministic work limits; correlation candidate analysis was skipped")
 	}
 
 	harData, err := browserNetworkEntriesToHAR(entries)
@@ -186,10 +232,12 @@ func (s *Server) handlePreviewBrowserToHTTP(w http.ResponseWriter, r *http.Reque
 		result.Script.ProjectID = normalizeProjectID(firstNonEmpty(req.ProjectID, sourceScriptProjectID(req.SourceBrowserScript)))
 		result.Script.GeneratedBy = "apexload-browser-to-http-converter"
 		result.Script.GeneratedFrom = "browser_replay"
+		protectBrowserToHTTPCorrelationQueryValues(result.Script)
 	}
 	warnings := append([]string(nil), result.Warnings...)
+	warnings = append(warnings, correlationWarnings...)
 	warnings = append(warnings, validateScript(result.Script)...)
-	review := buildBrowserToHTTPReview(req, result.Script, entries, skippedStatic)
+	review := buildBrowserToHTTPReview(req, result.Script, entries, skippedStatic, replayEvidence, uploadedCorrelationCandidates)
 	governance := buildBrowserToHTTPGovernance(req, review)
 	diff := buildBrowserToHTTPDraftDiff(req.SourceBrowserScript, result.Script, entries)
 	if result.Script != nil {
@@ -210,7 +258,7 @@ func (s *Server) handlePreviewBrowserToHTTP(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, response)
 }
 
-func (s *Server) bindBrowserToHTTPProject(req *BrowserToHTTPPreviewRequest) error {
+func (s *Server) bindBrowserToHTTPProject(req *BrowserToHTTPPreviewRequest, replaySession *BrowserReplaySession) error {
 	if req == nil {
 		return nil
 	}
@@ -219,10 +267,8 @@ func (s *Server) bindBrowserToHTTPProject(req *BrowserToHTTPPreviewRequest) erro
 		sourceProjectID = req.SourceBrowserScript.ProjectID
 	}
 	replayProjectID := ""
-	if replayID := strings.TrimSpace(req.ReplaySessionID); replayID != "" {
-		if session, ok := s.browserReplay.Get(replayID); ok && session != nil {
-			replayProjectID = session.ProjectID
-		}
+	if replaySession != nil {
+		replayProjectID = replaySession.ProjectID
 	}
 	projectID, err := reconcileProjectIDCandidates(req.ProjectID, sourceProjectID, replayProjectID)
 	if err != nil {
@@ -236,23 +282,74 @@ func (s *Server) bindBrowserToHTTPProject(req *BrowserToHTTPPreviewRequest) erro
 	return nil
 }
 
-func (s *Server) browserToHTTPNetworkEntries(req BrowserToHTTPPreviewRequest) ([]protocol.NetworkEntry, int, error) {
-	entries := append([]protocol.NetworkEntry(nil), req.NetworkEntries...)
+type browserToHTTPReplayEvidence struct {
+	SessionResolved   bool
+	SessionStatus     string
+	SessionSuccessful bool
+	NetworkEntries    int
+	AllEntriesBound   bool
+}
+
+func (s *Server) browserToHTTPNetworkEntries(req BrowserToHTTPPreviewRequest, session *BrowserReplaySession) ([]protocol.NetworkEntry, int, browserToHTTPReplayEvidence, error) {
+	postedEntries := append([]protocol.NetworkEntry(nil), req.NetworkEntries...)
+	sessionEntries := make([]protocol.NetworkEntry, 0)
+	replayEvidence := browserToHTTPReplayEvidence{}
 	if strings.TrimSpace(req.ReplaySessionID) != "" {
-		session, ok := s.browserReplay.Get(strings.TrimSpace(req.ReplaySessionID))
-		if !ok {
-			if len(entries) == 0 {
-				return nil, 0, fmt.Errorf("browser replay session not found")
+		if session == nil {
+			if len(postedEntries) == 0 {
+				return nil, 0, replayEvidence, fmt.Errorf("browser replay session not found")
 			}
 		} else {
+			replayEvidence.SessionResolved = true
+			replayEvidence.SessionStatus = strings.TrimSpace(session.Status)
+			replayEvidence.SessionSuccessful = session.Status == BrowserReplayCompleted && session.FinalReport != nil && session.FinalReport.Success
 			for _, event := range session.Events {
-				entries = append(entries, event.Network...)
+				sessionEntries = append(sessionEntries, event.Network...)
 				if event.Snapshot != nil {
-					entries = append(entries, event.Snapshot.NetworkEntries...)
+					sessionEntries = append(sessionEntries, event.Snapshot.NetworkEntries...)
 				}
 			}
 		}
 	}
+	filteredSessionEntries, skippedSessionStatic := filterBrowserToHTTPNetworkEntries(sessionEntries, req.IncludeStaticAssets)
+	filteredPostedEntries, skippedPostedStatic := filterBrowserToHTTPNetworkEntries(postedEntries, req.IncludeStaticAssets)
+	replayEvidence.NetworkEntries = len(filteredSessionEntries)
+
+	// Session evidence is canonical. Uploaded entries with the same request
+	// fingerprint are discarded rather than allowed to replace the session's
+	// status/headers/timing/truncation fields. Uploaded requests that are absent
+	// from the session remain available for an explicitly unverified preview.
+	sessionRequestKeys := make(map[string]struct{}, len(filteredSessionEntries))
+	for _, entry := range filteredSessionEntries {
+		sessionRequestKeys[browserNetworkRequestKey(entry)] = struct{}{}
+	}
+	unboundPosted := make([]protocol.NetworkEntry, 0, len(filteredPostedEntries))
+	for _, entry := range filteredPostedEntries {
+		if _, shadowsSession := sessionRequestKeys[browserNetworkRequestKey(entry)]; shadowsSession {
+			continue
+		}
+		unboundPosted = append(unboundPosted, entry)
+	}
+	entries := append(append([]protocol.NetworkEntry(nil), filteredSessionEntries...), unboundPosted...)
+	filtered, _ := filterBrowserToHTTPNetworkEntries(entries, req.IncludeStaticAssets)
+	skippedStatic := skippedSessionStatic + skippedPostedStatic
+	if replayEvidence.SessionResolved && len(filtered) > 0 && len(filteredSessionEntries) > 0 {
+		sessionKeys := make(map[string]struct{}, len(filteredSessionEntries))
+		for _, entry := range filteredSessionEntries {
+			sessionKeys[browserNetworkDedupeKey(entry)] = struct{}{}
+		}
+		replayEvidence.AllEntriesBound = true
+		for _, entry := range filtered {
+			if _, ok := sessionKeys[browserNetworkDedupeKey(entry)]; !ok {
+				replayEvidence.AllEntriesBound = false
+				break
+			}
+		}
+	}
+	return filtered, skippedStatic, replayEvidence, nil
+}
+
+func filterBrowserToHTTPNetworkEntries(entries []protocol.NetworkEntry, includeStaticAssets bool) ([]protocol.NetworkEntry, int) {
 	filtered := make([]protocol.NetworkEntry, 0, len(entries))
 	skippedStatic := 0
 	seen := make(map[string]struct{})
@@ -265,7 +362,7 @@ func (s *Server) browserToHTTPNetworkEntries(req BrowserToHTTPPreviewRequest) ([
 		if entry.URL == "" || !isHTTPURL(entry.URL) {
 			continue
 		}
-		if !req.IncludeStaticAssets && isStaticBrowserResource(entry.ResourceType, entry.URL) {
+		if !includeStaticAssets && isStaticBrowserResource(entry.ResourceType, entry.URL) {
 			skippedStatic++
 			continue
 		}
@@ -276,7 +373,7 @@ func (s *Server) browserToHTTPNetworkEntries(req BrowserToHTTPPreviewRequest) ([
 		seen[key] = struct{}{}
 		filtered = append(filtered, entry)
 	}
-	return filtered, skippedStatic, nil
+	return filtered, skippedStatic
 }
 
 func browserNetworkEntriesToHAR(entries []protocol.NetworkEntry) ([]byte, error) {
@@ -354,12 +451,18 @@ func browserNetworkEntriesToHAR(entries []protocol.NetworkEntry) ([]byte, error)
 }
 
 func browserNetworkDedupeKey(entry protocol.NetworkEntry) string {
+	payload, _ := json.Marshal(entry)
+	return string(payload)
+}
+
+func browserNetworkRequestKey(entry protocol.NetworkEntry) string {
 	headersJSON, _ := json.Marshal(entry.RequestHeaders)
 	return strings.Join([]string{
 		strings.ToUpper(strings.TrimSpace(entry.Method)),
 		strings.TrimSpace(entry.URL),
 		entry.RequestBody,
 		entry.RequestBodyEncoding,
+		fmt.Sprint(entry.RequestBodyTruncated),
 		string(headersJSON),
 	}, "\x00")
 }
@@ -392,7 +495,19 @@ func browserHeaderValue(headers map[string]string, name string) string {
 	return ""
 }
 
-func buildBrowserToHTTPReview(req BrowserToHTTPPreviewRequest, generated *dsl.Script, entries []protocol.NetworkEntry, skippedStatic int) BrowserToHTTPReview {
+func buildBrowserToHTTPReview(req BrowserToHTTPPreviewRequest, generated *dsl.Script, entries []protocol.NetworkEntry, skippedStatic int, replayEvidence browserToHTTPReplayEvidence, uploadedCorrelationCandidates []BrowserToHTTPCorrelationCandidate) BrowserToHTTPReview {
+	networkDurable := replayEvidence.SessionResolved && replayEvidence.SessionSuccessful && replayEvidence.AllEntriesBound
+	correlationDurable := false // No server-held browser correlation artifact exists yet.
+	verificationStatus := "unverified_uploaded_evidence"
+	if networkDurable {
+		verificationStatus = "unverified_correlation_evidence"
+	} else if strings.TrimSpace(req.ReplaySessionID) != "" && !replayEvidence.SessionResolved {
+		verificationStatus = "unverified_replay_session_unresolved"
+	} else if replayEvidence.SessionResolved && !replayEvidence.SessionSuccessful {
+		verificationStatus = "unverified_replay_session_incomplete_or_failed"
+	} else if replayEvidence.SessionResolved && replayEvidence.NetworkEntries > 0 {
+		verificationStatus = "unverified_mixed_evidence"
+	}
 	review := BrowserToHTTPReview{
 		Status:               "ready_for_review",
 		PromotionStatus:      "draft_requires_approval",
@@ -403,6 +518,14 @@ func buildBrowserToHTTPReview(req BrowserToHTTPPreviewRequest, generated *dsl.Sc
 		CorrelationEngine:    "apexload-correlate",
 		Evidence: BrowserToHTTPEvidence{
 			ReplaySessionID:         strings.TrimSpace(req.ReplaySessionID),
+			ReplaySessionResolved:   replayEvidence.SessionResolved,
+			ReplaySessionStatus:     replayEvidence.SessionStatus,
+			ReplaySessionSuccessful: replayEvidence.SessionSuccessful,
+			ReplayNetworkEntries:    replayEvidence.NetworkEntries,
+			NetworkDurable:          networkDurable,
+			CorrelationDurable:      correlationDurable,
+			Durable:                 networkDurable && correlationDurable,
+			VerificationStatus:      verificationStatus,
 			NetworkEntries:          len(entries),
 			CorrelationObservations: len(req.CorrelationObservations),
 			SourceBrowserScriptID:   sourceScriptID(req.SourceBrowserScript),
@@ -425,7 +548,7 @@ func buildBrowserToHTTPReview(req BrowserToHTTPPreviewRequest, generated *dsl.Sc
 			"Approve the draft only after correlation and authentication handling are reviewed.",
 		},
 	}
-	review.CorrelationCandidates = uniqueBrowserToHTTPCandidates(append(browserToHTTPCorrelationCandidates(entries), browserToHTTPCorrelateCandidates(req)...))
+	review.CorrelationCandidates = uniqueBrowserToHTTPCorrelationCandidates(append(browserToHTTPCorrelationCandidates(entries), uploadedCorrelationCandidates...))
 	review.DataSourceCandidates = browserToHTTPDataSourceCandidates(entries)
 	review.AuthFindings = []BrowserToHTTPFinding{{
 		Severity: "info",
@@ -459,13 +582,41 @@ func buildBrowserToHTTPReview(req BrowserToHTTPPreviewRequest, generated *dsl.Sc
 			Evidence: "replay_session_id",
 			Action:   "Run or attach a browser replay session before approving the generated HTTP draft.",
 		})
+	} else if !replayEvidence.SessionResolved {
+		review.BlockingFindings = append(review.BlockingFindings, BrowserToHTTPFinding{
+			Severity: "blocker",
+			Summary:  "The attached browser replay session could not be resolved; posted network evidence is unverified.",
+			Evidence: "replay_session_id",
+			Action:   "Run a new browser replay and attach its live session evidence before approving the generated HTTP draft.",
+		})
+	} else if !replayEvidence.SessionSuccessful {
+		review.BlockingFindings = append(review.BlockingFindings, BrowserToHTTPFinding{
+			Severity: "blocker",
+			Summary:  "The browser replay session is not a completed successful replay.",
+			Evidence: "replay_session_id",
+			Action:   "Complete a successful browser replay before approving the generated HTTP draft.",
+		})
+	} else if !replayEvidence.AllEntriesBound {
+		review.BlockingFindings = append(review.BlockingFindings, BrowserToHTTPFinding{
+			Severity: "blocker",
+			Summary:  "One or more converted network entries are not bound to the resolved browser replay session.",
+			Evidence: "network_entries",
+			Action:   "Use network evidence retained by the resolved browser replay session before approving the generated HTTP draft.",
+		})
 	}
 	if len(req.CorrelationObservations) == 0 {
 		review.BlockingFindings = append(review.BlockingFindings, BrowserToHTTPFinding{
-			Severity: "warning",
-			Summary:  "No request/response bodies were provided for deterministic correlation detection.",
+			Severity: "blocker",
+			Summary:  "No durable request/response correlation evidence is attached.",
 			Evidence: "correlation_observations",
-			Action:   "Attach detailed HAR or replay observations so APEX can run the correlation engine before approval.",
+			Action:   "Capture correlation observations in a server-held browser replay artifact before approval.",
+		})
+	} else {
+		review.BlockingFindings = append(review.BlockingFindings, BrowserToHTTPFinding{
+			Severity: "blocker",
+			Summary:  "Uploaded correlation observations are advisory and are not bound to the browser replay session.",
+			Evidence: "correlation_observations",
+			Action:   "Use server-held correlation evidence bound to the completed replay before approval.",
 		})
 	}
 	if len(review.BlockingFindings) > 0 && review.PromotionStatus == "draft_requires_approval" {
@@ -477,7 +628,7 @@ func buildBrowserToHTTPReview(req BrowserToHTTPPreviewRequest, generated *dsl.Sc
 	return review
 }
 
-func browserToHTTPCorrelateCandidates(req BrowserToHTTPPreviewRequest) []BrowserToHTTPCandidate {
+func browserToHTTPCorrelateCandidates(req BrowserToHTTPPreviewRequest) ([]BrowserToHTTPCorrelationCandidate, error) {
 	observations := make([]correlate.Observation, 0, len(req.CorrelationObservations))
 	for index, observation := range req.CorrelationObservations {
 		id := observation.ID
@@ -493,22 +644,24 @@ func browserToHTTPCorrelateCandidates(req BrowserToHTTPPreviewRequest) []Browser
 			ResponseHeaders: observation.ResponseHeaders,
 		})
 	}
-	correlations := correlate.Detect(observations)
-	candidates := make([]BrowserToHTTPCandidate, 0, len(correlations))
+	correlations, err := correlate.DetectChecked(observations)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]BrowserToHTTPCorrelationCandidate, 0, len(correlations))
 	for _, correlation := range correlations {
-		candidates = append(candidates, BrowserToHTTPCandidate{
+		candidates = append(candidates, BrowserToHTTPCorrelationCandidate{
 			Name:     correlation.Name,
 			Source:   correlation.Source,
-			Value:    correlation.SampleValue,
 			Evidence: fmt.Sprintf("response %d reused by request(s) %v via %s confidence %.2f", correlation.FoundInID, correlation.UsedInIDs, correlation.RuleID, correlation.Confidence),
 			Action:   "Add an extractor at the source response and replace downstream uses with " + "{{var." + correlation.Name + "}} before approval.",
 		})
 	}
-	return candidates
+	return candidates, nil
 }
 
-func browserToHTTPCorrelationCandidates(entries []protocol.NetworkEntry) []BrowserToHTTPCandidate {
-	candidates := make([]BrowserToHTTPCandidate, 0)
+func browserToHTTPCorrelationCandidates(entries []protocol.NetworkEntry) []BrowserToHTTPCorrelationCandidate {
+	candidates := make([]BrowserToHTTPCorrelationCandidate, 0)
 	for _, entry := range entries {
 		parsed, err := url.Parse(entry.URL)
 		if err != nil {
@@ -517,10 +670,9 @@ func browserToHTTPCorrelationCandidates(entries []protocol.NetworkEntry) []Brows
 		for key, values := range parsed.Query() {
 			for _, value := range values {
 				if looksDynamicValue(key, value) {
-					candidates = append(candidates, BrowserToHTTPCandidate{
+					candidates = append(candidates, BrowserToHTTPCorrelationCandidate{
 						Name:     key,
 						Source:   "query",
-						Value:    value,
 						Evidence: entry.Method + " " + parsed.Path,
 						Action:   "Promote this value into a correlation extractor or data-source parameter before approving the HTTP draft.",
 					})
@@ -528,7 +680,73 @@ func browserToHTTPCorrelationCandidates(entries []protocol.NetworkEntry) []Brows
 			}
 		}
 	}
-	return uniqueBrowserToHTTPCandidates(candidates)
+	return uniqueBrowserToHTTPCorrelationCandidates(candidates)
+}
+
+// protectBrowserToHTTPCorrelationQueryValues prevents a generated, persistable
+// draft from carrying live session/CSRF/nonce literals copied from replay
+// traffic. The structural review still identifies the candidate, while the
+// draft requires an explicit governed secret binding until an extractor is
+// added from full response evidence.
+func protectBrowserToHTTPCorrelationQueryValues(script *dsl.Script) {
+	if script == nil {
+		return
+	}
+	protect := func(actions []dsl.Action) {
+		for index := range actions {
+			action := &actions[index]
+			parsed, err := url.Parse(action.Target)
+			if err != nil || parsed.RawQuery == "" {
+				continue
+			}
+			parts := strings.Split(parsed.RawQuery, "&")
+			changed := false
+			for partIndex, part := range parts {
+				rawKey, rawValue, found := strings.Cut(part, "=")
+				if !found {
+					continue
+				}
+				key, keyErr := url.QueryUnescape(rawKey)
+				value, valueErr := url.QueryUnescape(rawValue)
+				if keyErr != nil || valueErr != nil || !looksDynamicValue(key, value) {
+					continue
+				}
+				name := correlate.Slug(key)
+				if name == "" {
+					name = "correlation_value"
+				}
+				parts[partIndex] = rawKey + "={{secret." + name + "}}"
+				changed = true
+			}
+			if changed {
+				parsed.RawQuery = strings.Join(parts, "&")
+				action.Target = parsed.String()
+			}
+		}
+	}
+	protect(script.Init)
+	protect(script.Actions)
+	protect(script.Teardown)
+}
+
+func uniqueBrowserToHTTPCorrelationCandidates(candidates []BrowserToHTTPCorrelationCandidate) []BrowserToHTTPCorrelationCandidate {
+	seen := make(map[string]struct{})
+	out := make([]BrowserToHTTPCorrelationCandidate, 0, len(candidates))
+	for _, candidate := range candidates {
+		key := candidate.Source + ":" + candidate.Name + ":" + candidate.Evidence
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, candidate)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Name == out[j].Name {
+			return out[i].Evidence < out[j].Evidence
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
 }
 
 func browserToHTTPDataSourceCandidates(entries []protocol.NetworkEntry) []BrowserToHTTPCandidate {
@@ -543,6 +761,13 @@ func browserToHTTPDataSourceCandidates(entries []protocol.NetworkEntry) []Browse
 				continue
 			}
 			for _, value := range values {
+				// A field can look like both business data (for example
+				// session_id) and a live correlation value. Correlation wins:
+				// returning the same literal in this value-bearing list would bypass
+				// the disclosure-safe correlation-candidate projection above.
+				if looksDynamicValue(key, value) {
+					continue
+				}
 				candidates = append(candidates, BrowserToHTTPCandidate{
 					Name:     key,
 					Source:   "query",
@@ -604,12 +829,18 @@ func buildBrowserToHTTPScenarioTemplate(source *dsl.Script, generated *dsl.Scrip
 }
 
 func buildBrowserToHTTPGovernance(req BrowserToHTTPPreviewRequest, review BrowserToHTTPReview) BrowserToHTTPGovernance {
+	clientApprovalClaim := strings.TrimSpace(req.Approval.Status) != "" ||
+		strings.TrimSpace(req.Approval.ApprovedBy) != "" ||
+		strings.TrimSpace(req.Approval.ApprovedAt) != "" ||
+		strings.TrimSpace(req.Approval.Notes) != "" || len(req.Approval.EvidenceIDs) > 0
+	approvalStatus := "not_requested"
+	if clientApprovalClaim {
+		approvalStatus = "unverified_client_claim"
+	}
 	governance := BrowserToHTTPGovernance{
 		Status:           "approval_required",
 		ApprovalRequired: true,
-		ApprovalStatus:   firstNonEmpty(strings.ToLower(strings.TrimSpace(req.Approval.Status)), "not_requested"),
-		ApprovedBy:       strings.TrimSpace(req.Approval.ApprovedBy),
-		ApprovedAt:       strings.TrimSpace(req.Approval.ApprovedAt),
+		ApprovalStatus:   approvalStatus,
 		RequiredEvidence: append([]string(nil), review.Evidence.RequiredArtifacts...),
 		Blockers:         append([]BrowserToHTTPFinding(nil), review.BlockingFindings...),
 		NextActions: []string{
@@ -634,29 +865,19 @@ func buildBrowserToHTTPGovernance(req BrowserToHTTPPreviewRequest, review Browse
 			Action:   "Bind user/order/customer values to governed data sources before scale-out.",
 		})
 	}
-	switch strings.ToLower(strings.TrimSpace(req.Approval.Status)) {
-	case "approved":
-		if governance.ApprovedBy == "" {
-			governance.Status = "approval_invalid"
-			governance.Blockers = append(governance.Blockers, BrowserToHTTPFinding{
-				Severity: "blocker",
-				Summary:  "Approval status is approved but approved_by is missing.",
-				Evidence: "approval.approved_by",
-				Action:   "Record the approving reviewer before promotion.",
-			})
-		} else if len(governance.Blockers) == 0 {
-			governance.Status = "approved_for_validation"
-			governance.ApprovalRequired = false
-			governance.NextActions = []string{"Run the approved HTTP draft in a protocol validation scenario before density use."}
-		} else {
-			governance.Status = "approved_with_blockers"
-		}
-	case "rejected":
-		governance.Status = "rejected"
-	default:
-		if len(governance.Blockers) > 0 {
-			governance.Status = "blocked"
-		}
+	if clientApprovalClaim {
+		// Preview payloads are editor-controlled and are not an approval ledger.
+		// Never copy claimed identity/timestamps into durable script metadata or
+		// allow them to clear approval_required.
+		governance.Blockers = append(governance.Blockers, BrowserToHTTPFinding{
+			Severity: "blocker",
+			Summary:  "The submitted approval is not backed by authenticated server approval state.",
+			Evidence: "approval",
+			Action:   "Record approval through a server-managed approval workflow before promotion.",
+		})
+		governance.Status = "approval_unverified"
+	} else if len(governance.Blockers) > 0 {
+		governance.Status = "blocked"
 	}
 	return governance
 }

@@ -9,6 +9,7 @@ import (
 
 	pb "github.com/jasonczech/apexload/api/proto"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	apptelemetry "github.com/jasonczech/apexload/pkg/telemetry"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -128,7 +129,150 @@ type commitTransition struct {
 	lifecycle    *pb.MetricsBatch
 }
 
+type commitRuntimeValidation struct {
+	generation        uint64
+	executions        map[string]*groupExecution
+	javaCapacity      javaVuserCapacityObservation
+	javaCapacityValid bool
+}
+
+func (service *Service) revalidateCommitRuntime(ctx context.Context, request *pb.WorkCommitRequest) (*commitRuntimeValidation, error) {
+	service.mu.RLock()
+	assignment, exists := service.assignments[request.GetTestId()]
+	if !exists || assignment.executionGeneration != request.GetExecutionGeneration() {
+		service.mu.RUnlock()
+		return nil, nil
+	}
+	executions := service.executions[request.GetTestId()]
+	type runtimeCandidate struct {
+		groupName string
+		execution *groupExecution
+	}
+	candidates := make([]runtimeCandidate, 0, len(executions))
+	for groupName, execution := range executions {
+		if execution == nil || execution.engine == nil || execution.started.Load() {
+			continue
+		}
+		scriptID := assignment.groupScripts[groupName]
+		cached, ok := service.scriptCache.get(scriptID)
+		if !ok || !cached.requiresPhaseLifecycle {
+			continue
+		}
+		candidates = append(candidates, runtimeCandidate{groupName: groupName, execution: execution})
+	}
+	generation := assignment.executionGeneration
+	service.mu.RUnlock()
+
+	sort.Slice(candidates, func(left, right int) bool {
+		return candidates[left].groupName < candidates[right].groupName
+	})
+	validation := &commitRuntimeValidation{
+		generation: generation,
+		executions: make(map[string]*groupExecution, len(candidates)),
+	}
+	for _, candidate := range candidates {
+		if ctx != nil {
+			if err := ctx.Err(); err != nil {
+				return nil, status.FromContextError(err).Err()
+			}
+		}
+		if err := candidate.execution.engine.RevalidateRuntime(ctx); err != nil {
+			if ctx != nil {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return nil, status.FromContextError(ctxErr).Err()
+				}
+			}
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return nil, status.FromContextError(err).Err()
+			}
+			message := err.Error()
+			if candidate.execution.redactionConfig != nil {
+				message = candidate.execution.redactionConfig.ScrubText(message)
+			}
+			const maxCommitRuntimePreflightMessageBytes = 16 << 10
+			if len(message) > maxCommitRuntimePreflightMessageBytes {
+				message = boundedtext.TruncateUTF8(message, maxCommitRuntimePreflightMessageBytes-len("...[truncated]")) + "...[truncated]"
+			}
+			return nil, status.Errorf(codes.FailedPrecondition, "group %q runtime revalidation failed: %s", candidate.groupName, message)
+		}
+		validation.executions[candidate.groupName] = candidate.execution
+	}
+	if len(candidates) > 0 {
+		// Probe capacity after target validation so the locked commit decision
+		// uses the freshest available aggregate limit. Per-group validation alone
+		// cannot detect a sidecar restart that lowers MaxVUsers below the sum of
+		// independently valid groups.
+		validation.javaCapacity = observeJavaVuserCapacity()
+		if runtimeErr := validation.javaCapacity.persistentRuntimeError(); runtimeErr != nil {
+			return nil, status.Error(codes.FailedPrecondition, runtimeErr.Error())
+		}
+		validation.javaCapacityValid = true
+	}
+	return validation, nil
+}
+
+// revalidateScaleRuntime refreshes a persistent Java group's runner target and
+// capability observation before a scale-up reservation is decided. The Java
+// sidecar publishes this fresh preflight into its short-lived capability cache,
+// so the immediately following aggregate capacity check cannot use a previous
+// sidecar process's larger MaxVUsers value.
+func (service *Service) revalidateScaleRuntime(ctx context.Context, request *pb.VUserAdjustment) error {
+	if request == nil {
+		return nil
+	}
+	service.mu.RLock()
+	assignment, exists := service.assignments[request.GetTestId()]
+	if !exists || assignment.executionGeneration != request.GetExecutionGeneration() {
+		service.mu.RUnlock()
+		return nil
+	}
+	currentVUsers, exists := assignment.groups[request.GetGroupName()]
+	if !exists || request.GetTargetVusers() <= currentVUsers {
+		service.mu.RUnlock()
+		return nil
+	}
+	scriptID := assignment.groupScripts[request.GetGroupName()]
+	cached, cachedOK := service.scriptCache.get(scriptID)
+	var execution *groupExecution
+	if executions := service.executions[request.GetTestId()]; executions != nil {
+		execution = executions[request.GetGroupName()]
+	}
+	service.mu.RUnlock()
+	if !cachedOK || !cached.requiresPhaseLifecycle || execution == nil || execution.engine == nil {
+		return nil
+	}
+	if ctx != nil {
+		if err := ctx.Err(); err != nil {
+			return status.FromContextError(err).Err()
+		}
+	}
+	if err := execution.engine.RevalidateRuntime(ctx); err != nil {
+		if ctx != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return status.FromContextError(ctxErr).Err()
+			}
+		}
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return status.FromContextError(err).Err()
+		}
+		message := err.Error()
+		if execution.redactionConfig != nil {
+			message = execution.redactionConfig.ScrubText(message)
+		}
+		const maxScaleRuntimePreflightMessageBytes = 16 << 10
+		if len(message) > maxScaleRuntimePreflightMessageBytes {
+			message = boundedtext.TruncateUTF8(message, maxScaleRuntimePreflightMessageBytes-len("...[truncated]")) + "...[truncated]"
+		}
+		return status.Errorf(codes.FailedPrecondition, "group %q runtime revalidation failed before scale-up: %s", request.GetGroupName(), message)
+	}
+	return nil
+}
+
 func (coordinator *assignmentLifecycleCoordinator) commitWorkLocked(service *Service, ctx context.Context, request *pb.WorkCommitRequest, now time.Time) commitTransition {
+	return coordinator.commitWorkValidatedLocked(service, ctx, request, now, nil)
+}
+
+func (coordinator *assignmentLifecycleCoordinator) commitWorkValidatedLocked(service *Service, ctx context.Context, request *pb.WorkCommitRequest, now time.Time, runtimeValidation *commitRuntimeValidation) commitTransition {
 	testID := request.GetTestId()
 	if stage := coordinator.pendingStages[testID]; stage != nil {
 		return commitTransition{kind: commitTransitionWait, wait: stage.done}
@@ -168,10 +312,41 @@ func (coordinator *assignmentLifecycleCoordinator) commitWorkLocked(service *Ser
 			groupNames = append(groupNames, groupName)
 		}
 		sort.Strings(groupNames)
+		persistentJavaStarting := false
 		for _, groupName := range groupNames {
 			execution := executions[groupName]
 			if execution == nil || execution.engine == nil {
 				return commitTransition{err: status.Errorf(codes.FailedPrecondition, "group %q is not in a committable staged state", groupName)}
+			}
+			if execution.started.Load() {
+				continue
+			}
+			scriptID := assignment.groupScripts[groupName]
+			cached, cachedOK := service.scriptCache.get(scriptID)
+			if cachedOK && cached.requiresPhaseLifecycle &&
+				(runtimeValidation == nil ||
+					runtimeValidation.generation != assignment.executionGeneration ||
+					runtimeValidation.executions[groupName] != execution) {
+				return commitTransition{err: status.Errorf(codes.Aborted, "group %q Java runtime validation is stale; retry commit", groupName)}
+			}
+			persistentJavaStarting = persistentJavaStarting || (cachedOK && cached.requiresPhaseLifecycle)
+		}
+		if persistentJavaStarting {
+			if runtimeValidation == nil || !runtimeValidation.javaCapacityValid {
+				return commitTransition{err: status.Error(codes.Aborted, "Java runtime capacity validation is stale; retry commit")}
+			}
+			maxVUsers, available := runtimeValidation.javaCapacity.persistentMaxVUsers()
+			if !available {
+				return commitTransition{err: status.Error(codes.FailedPrecondition, runtimeValidation.javaCapacity.persistentRuntimeError().Error())}
+			}
+			projected := service.activePersistentJavaVusersLocked() + coordinator.pendingPersistentJavaVusersLocked()
+			if projected > maxVUsers {
+				return commitTransition{err: status.Errorf(
+					codes.ResourceExhausted,
+					"insufficient java_vuser runtime capacity at commit: requires %d VUsers, maximum %d",
+					projected,
+					maxVUsers,
+				)}
 			}
 		}
 		if assignment.committed {
@@ -241,6 +416,10 @@ func (service *Service) CommitWork(ctx context.Context, request *pb.WorkCommitRe
 
 func (service *Service) commitValidatedWork(ctx context.Context, request *pb.WorkCommitRequest) (*pb.WorkCommitAck, error) {
 	for {
+		runtimeValidation, validationErr := service.revalidateCommitRuntime(ctx, request)
+		if validationErr != nil {
+			return nil, validationErr
+		}
 		service.metricsBroker.lockPublication()
 		service.mu.Lock()
 		if ctx != nil && ctx.Err() != nil {
@@ -248,7 +427,7 @@ func (service *Service) commitValidatedWork(ctx context.Context, request *pb.Wor
 			service.metricsBroker.unlockPublication()
 			return nil, status.FromContextError(ctx.Err()).Err()
 		}
-		transition := service.lifecycleCoordinator.commitWorkLocked(service, ctx, request, time.Now())
+		transition := service.lifecycleCoordinator.commitWorkValidatedLocked(service, ctx, request, time.Now(), runtimeValidation)
 		service.mu.Unlock()
 		if transition.lifecycle != nil {
 			service.publishLifecycleTransitionLocked(transition.lifecycle)
@@ -328,17 +507,18 @@ const (
 )
 
 type stopTransitionPlan struct {
-	kind           stopTransitionKind
-	testID         string
-	assignment     assignedTest
-	executions     []*groupExecution
-	staged         []*groupExecution
-	running        []*groupExecution
-	wait           <-chan struct{}
-	retryAfterWait bool
-	acknowledged   bool
-	pendingVUsers  int32
-	err            error
+	kind                     stopTransitionKind
+	testID                   string
+	assignment               assignedTest
+	executions               []*groupExecution
+	staged                   []*groupExecution
+	running                  []*groupExecution
+	wait                     <-chan struct{}
+	retryAfterWait           bool
+	acknowledged             bool
+	pendingVUsers            int32
+	persistentJavaDrainToken uint64
+	err                      error
 }
 
 func (coordinator *assignmentLifecycleCoordinator) planStopLocked(service *Service, request *pb.StopRequest, bypassExecutionFence bool, enforceMaximumGeneration bool, maximumGeneration uint64) stopTransitionPlan {
@@ -422,6 +602,7 @@ func (coordinator *assignmentLifecycleCoordinator) planStopLocked(service *Servi
 		}
 	}
 
+	persistentJavaDrainToken := service.reserveAssignmentJavaDrainLocked(assignment)
 	delete(service.assignments, testID)
 	service.stopCompletionTimerLocked(testID)
 	coordinator.stopStageTimerLocked(testID)
@@ -432,12 +613,13 @@ func (coordinator *assignmentLifecycleCoordinator) planStopLocked(service *Servi
 		executions = append(executions, execution)
 	}
 	return stopTransitionPlan{
-		kind:          stopTransitionDetached,
-		testID:        testID,
-		assignment:    assignment,
-		executions:    executions,
-		acknowledged:  true,
-		pendingVUsers: assignment.vuserCount,
+		kind:                     stopTransitionDetached,
+		testID:                   testID,
+		assignment:               assignment,
+		executions:               executions,
+		acknowledged:             true,
+		pendingVUsers:            assignment.vuserCount,
+		persistentJavaDrainToken: persistentJavaDrainToken,
 	}
 }
 
@@ -506,6 +688,7 @@ func (service *Service) finishDetachedStop(ctx context.Context, plan stopTransit
 		if !trackedFinalizer {
 			go func() {
 				_ = waitForGeneratorExecutions(context.Background(), plan.executions)
+				service.releaseStopDrain(plan.persistentJavaDrainToken)
 				service.captureStoppedExecutionMetrics(&plan.assignment, plan.executions)
 				service.finishStoppedTest(plan.testID, plan.assignment, writer)
 			}()
@@ -514,6 +697,7 @@ func (service *Service) finishDetachedStop(ctx context.Context, plan stopTransit
 		go func() {
 			defer service.archiveManager.finalizerDone()
 			_ = waitForGeneratorExecutions(context.Background(), plan.executions)
+			service.releaseStopDrain(plan.persistentJavaDrainToken)
 			service.captureStoppedExecutionMetrics(&plan.assignment, plan.executions)
 			service.finishStoppedTest(plan.testID, plan.assignment, writer)
 		}()
@@ -522,12 +706,22 @@ func (service *Service) finishDetachedStop(ctx context.Context, plan stopTransit
 	if trackedFinalizer {
 		defer service.archiveManager.finalizerDone()
 	}
+	service.releaseStopDrain(plan.persistentJavaDrainToken)
 	service.captureStoppedExecutionMetrics(&plan.assignment, plan.executions)
 	_, finalError := service.finishStoppedTest(plan.testID, plan.assignment, writer)
 	if finalError != "" {
 		return nil, status.Error(codes.Internal, finalError)
 	}
 	return &pb.StopAck{Acknowledged: true, PendingVusers: plan.pendingVUsers}, nil
+}
+
+func (service *Service) releaseStopDrain(token uint64) {
+	if token == 0 {
+		return
+	}
+	service.mu.Lock()
+	service.releasePersistentJavaDrainLocked(token)
+	service.mu.Unlock()
 }
 
 type enginePauseParticipant struct {
@@ -794,14 +988,18 @@ func (service *Service) setPaused(ctx context.Context, testID string, paused boo
 }
 
 type scaleTransitionPlan struct {
-	control             *pendingAssignmentControl
-	testID              string
-	groupName           string
-	generation          uint64
-	previousGroupVUsers int32
-	targetGroupVUsers   int32
-	reservedTotalVUsers int32
-	engine              *engine.MultiGroupEngine
+	control                      *pendingAssignmentControl
+	testID                       string
+	groupName                    string
+	generation                   uint64
+	previousGroupVUsers          int32
+	targetGroupVUsers            int32
+	reservedTotalVUsers          int32
+	persistentJavaPreviousDemand int64
+	persistentJavaTargetDemand   int64
+	persistentJavaDrainToken     uint64
+	legacyJavaLifecycle          bool
+	engine                       *engine.MultiGroupEngine
 }
 
 type scaleTransitionDecision struct {
@@ -810,7 +1008,7 @@ type scaleTransitionDecision struct {
 	err  error
 }
 
-func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Service, request *pb.VUserAdjustment) scaleTransitionDecision {
+func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Service, request *pb.VUserAdjustment, javaCapacity javaVuserCapacityObservation) scaleTransitionDecision {
 	testID := request.GetTestId()
 	if stage := coordinator.pendingStages[testID]; stage != nil {
 		return scaleTransitionDecision{wait: stage.done}
@@ -841,6 +1039,38 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 	if service.draining && request.GetTargetVusers() > currentGroupVUsers {
 		return scaleTransitionDecision{err: status.Error(codes.Unavailable, "generator is draining and cannot increase vusers")}
 	}
+	var persistentJavaCurrentDemand int64
+	var persistentJavaTargetDemand int64
+	legacyJavaLifecycle := false
+	if scriptID := assignment.groupScripts[request.GetGroupName()]; scriptID != "" {
+		cached, cachedOK := service.scriptCache.get(scriptID)
+		if !cachedOK {
+			return scaleTransitionDecision{err: status.Error(codes.FailedPrecondition, "group script is no longer available in the generator cache")}
+		}
+		if cached.requiresPhaseLifecycle {
+			persistentJavaCurrentDemand = cached.javaVuserCapacity.Demand(int(currentGroupVUsers))
+			persistentJavaTargetDemand = cached.javaVuserCapacity.Demand(int(request.GetTargetVusers()))
+			if persistentJavaTargetDemand > persistentJavaCurrentDemand {
+				if service.legacyJavaRuntimeOccupiedLocked() {
+					return scaleTransitionDecision{err: status.Error(codes.ResourceExhausted, "persistent java_vuser lifecycle cannot share generator process slots with an active legacy full_lifecycle assignment")}
+				}
+				if runtimeErr := javaCapacity.persistentRuntimeError(); runtimeErr != nil {
+					return scaleTransitionDecision{err: status.Error(codes.FailedPrecondition, runtimeErr.Error())}
+				}
+				maxVUsers, _ := javaCapacity.persistentMaxVUsers()
+				projectedPersistent := service.activePersistentJavaVusersLocked() - persistentJavaCurrentDemand + persistentJavaTargetDemand
+				if projectedPersistent > maxVUsers {
+					return scaleTransitionDecision{err: status.Errorf(codes.ResourceExhausted, "insufficient java_vuser runtime capacity: maximum %d", maxVUsers)}
+				}
+			}
+		} else if strings.EqualFold(cached.protocol, "java_vuser") {
+			legacyJavaLifecycle = true
+			if request.GetTargetVusers() > currentGroupVUsers &&
+				service.persistentJavaRuntimeOccupiedLocked() {
+				return scaleTransitionDecision{err: status.Error(codes.ResourceExhausted, "legacy java_vuser full_lifecycle cannot share generator process slots with an active persistent lifecycle assignment")}
+			}
+		}
+	}
 
 	updatedTotal64 := int64(assignment.vuserCount) - int64(currentGroupVUsers) + int64(request.GetTargetVusers())
 	projected := service.activeVUsers64Locked() - int64(assignment.vuserCount) + updatedTotal64
@@ -863,6 +1093,12 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 	if wait != nil {
 		return scaleTransitionDecision{wait: wait}
 	}
+	persistentJavaDrainToken := uint64(0)
+	if persistentJavaCurrentDemand > persistentJavaTargetDemand {
+		persistentJavaDrainToken = service.reservePersistentJavaDrainLocked(persistentJavaCurrentDemand - persistentJavaTargetDemand)
+	} else if legacyJavaLifecycle && currentGroupVUsers > 0 && request.GetTargetVusers() == 0 {
+		persistentJavaDrainToken = service.reserveLegacyJavaDrainLocked()
+	}
 	updatedTotal := int32(updatedTotal64)
 	assignment.groups[request.GetGroupName()] = request.GetTargetVusers()
 	if assignment.activeGroups == nil {
@@ -872,14 +1108,18 @@ func (coordinator *assignmentLifecycleCoordinator) planScaleLocked(service *Serv
 	assignment.vuserCount = updatedTotal
 	service.assignments[testID] = assignment
 	return scaleTransitionDecision{plan: &scaleTransitionPlan{
-		control:             control,
-		testID:              testID,
-		groupName:           request.GetGroupName(),
-		generation:          request.GetExecutionGeneration(),
-		previousGroupVUsers: currentGroupVUsers,
-		targetGroupVUsers:   request.GetTargetVusers(),
-		reservedTotalVUsers: updatedTotal,
-		engine:              executionEngine,
+		control:                      control,
+		testID:                       testID,
+		groupName:                    request.GetGroupName(),
+		generation:                   request.GetExecutionGeneration(),
+		previousGroupVUsers:          currentGroupVUsers,
+		targetGroupVUsers:            request.GetTargetVusers(),
+		reservedTotalVUsers:          updatedTotal,
+		persistentJavaPreviousDemand: persistentJavaCurrentDemand,
+		persistentJavaTargetDemand:   persistentJavaTargetDemand,
+		persistentJavaDrainToken:     persistentJavaDrainToken,
+		legacyJavaLifecycle:          legacyJavaLifecycle,
+		engine:                       executionEngine,
 	}}
 }
 
@@ -944,6 +1184,71 @@ func (coordinator *assignmentLifecycleCoordinator) releaseScaleWithoutRollbackLo
 	return reservationCurrent
 }
 
+func (service *Service) ensureScaleRollbackDrainLocked(plan *scaleTransitionPlan) {
+	if plan == nil || plan.persistentJavaDrainToken != 0 {
+		return
+	}
+	if plan.legacyJavaLifecycle && plan.targetGroupVUsers > 0 && plan.previousGroupVUsers == 0 {
+		plan.persistentJavaDrainToken = service.reserveLegacyJavaDrainLocked()
+		return
+	}
+	if plan.persistentJavaTargetDemand <= plan.persistentJavaPreviousDemand {
+		return
+	}
+	plan.persistentJavaDrainToken = service.reservePersistentJavaDrainLocked(
+		plan.persistentJavaTargetDemand - plan.persistentJavaPreviousDemand,
+	)
+}
+
+func (service *Service) prepareScaleRollbackOverlapLocked(plan *scaleTransitionPlan) {
+	if plan == nil || plan.persistentJavaDrainToken == 0 ||
+		plan.persistentJavaPreviousDemand <= plan.persistentJavaTargetDemand {
+		return
+	}
+	delta := plan.persistentJavaPreviousDemand - plan.persistentJavaTargetDemand
+	drain := service.persistentJavaDrains[plan.persistentJavaDrainToken]
+	drain.persistentDemand = 2 * delta
+	service.persistentJavaDrains[plan.persistentJavaDrainToken] = drain
+}
+
+func (service *Service) normalizeScaleRollbackDrainLocked(plan *scaleTransitionPlan) {
+	if plan == nil || plan.persistentJavaDrainToken == 0 ||
+		plan.persistentJavaPreviousDemand <= plan.persistentJavaTargetDemand {
+		return
+	}
+	drain := service.persistentJavaDrains[plan.persistentJavaDrainToken]
+	drain.persistentDemand = plan.persistentJavaPreviousDemand - plan.persistentJavaTargetDemand
+	service.persistentJavaDrains[plan.persistentJavaDrainToken] = drain
+}
+
+func (service *Service) releaseScaleDrainLocked(plan *scaleTransitionPlan) {
+	if plan == nil || plan.persistentJavaDrainToken == 0 {
+		return
+	}
+	service.releasePersistentJavaDrainLocked(plan.persistentJavaDrainToken)
+	plan.persistentJavaDrainToken = 0
+}
+
+func (service *Service) releaseScaleDrainAfterReap(plan *scaleTransitionPlan, maxLive int32) {
+	if plan == nil || plan.persistentJavaDrainToken == 0 {
+		return
+	}
+	if plan.engine == nil {
+		service.mu.Lock()
+		service.releaseScaleDrainLocked(plan)
+		service.mu.Unlock()
+		return
+	}
+	token := plan.persistentJavaDrainToken
+	plan.persistentJavaDrainToken = 0
+	go func() {
+		_ = plan.engine.WaitForGroupVUsers(context.Background(), plan.groupName, int(maxLive))
+		service.mu.Lock()
+		service.releasePersistentJavaDrainLocked(token)
+		service.mu.Unlock()
+	}()
+}
+
 func (service *Service) waitForControlDecision(ctx context.Context, wait <-chan struct{}) error {
 	if ctx == nil {
 		<-wait
@@ -982,8 +1287,12 @@ func (service *Service) applyVUserAdjustment(ctx context.Context, request *pb.VU
 		if ctx != nil && ctx.Err() != nil {
 			return nil, status.FromContextError(ctx.Err()).Err()
 		}
+		if err := service.revalidateScaleRuntime(ctx, request); err != nil {
+			return nil, err
+		}
+		javaCapacity := service.adjustmentJavaVuserCapacityObservation(request)
 		service.mu.Lock()
-		decision := service.lifecycleCoordinator.planScaleLocked(service, request)
+		decision := service.lifecycleCoordinator.planScaleLocked(service, request, javaCapacity)
 		service.mu.Unlock()
 		if decision.err != nil {
 			return nil, decision.err
@@ -1004,6 +1313,7 @@ func (service *Service) applyVUserAdjustment(ctx context.Context, request *pb.VU
 				case <-ctx.Done():
 					service.mu.Lock()
 					service.lifecycleCoordinator.rollbackScaleLocked(service, plan)
+					service.releaseScaleDrainLocked(plan)
 					service.mu.Unlock()
 					return nil, status.FromContextError(ctx.Err()).Err()
 				case <-plan.engine.Ready():
@@ -1011,14 +1321,17 @@ func (service *Service) applyVUserAdjustment(ctx context.Context, request *pb.VU
 				if err := ctx.Err(); err != nil {
 					service.mu.Lock()
 					service.lifecycleCoordinator.rollbackScaleLocked(service, plan)
+					service.releaseScaleDrainLocked(plan)
 					service.mu.Unlock()
 					return nil, status.FromContextError(err).Err()
 				}
 			}
 			if err := plan.engine.ScaleVUsers(plan.groupName, int(plan.targetGroupVUsers)); err != nil {
 				service.mu.Lock()
+				service.ensureScaleRollbackDrainLocked(plan)
 				service.lifecycleCoordinator.rollbackScaleLocked(service, plan)
 				service.mu.Unlock()
+				service.releaseScaleDrainAfterReap(plan, plan.previousGroupVUsers)
 				return nil, status.Errorf(codes.FailedPrecondition, "scale running group: %v", err)
 			}
 		}
@@ -1034,15 +1347,20 @@ func (service *Service) applyVUserAdjustment(ctx context.Context, request *pb.VU
 		}
 		service.mu.Unlock()
 		if commitErr == nil {
+			service.releaseScaleDrainAfterReap(plan, plan.targetGroupVUsers)
 			service.broadcastMetrics(batch)
 			return &pb.AdjustmentAck{Accepted: true, CurrentVusers: currentVUsers}, nil
 		}
 
 		if plan.engine != nil {
+			service.mu.Lock()
+			service.prepareScaleRollbackOverlapLocked(plan)
+			service.mu.Unlock()
 			if rollbackErr := plan.engine.ScaleVUsers(plan.groupName, int(plan.previousGroupVUsers)); rollbackErr != nil {
 				service.mu.Lock()
 				reservationCurrent := service.lifecycleCoordinator.releaseScaleWithoutRollbackLocked(service, plan)
 				service.mu.Unlock()
+				service.releaseScaleDrainAfterReap(plan, plan.targetGroupVUsers)
 				if !reservationCurrent {
 					return nil, commitErr
 				}
@@ -1050,8 +1368,19 @@ func (service *Service) applyVUserAdjustment(ctx context.Context, request *pb.VU
 			}
 		}
 		service.mu.Lock()
+		if plan.engine != nil {
+			service.normalizeScaleRollbackDrainLocked(plan)
+			service.ensureScaleRollbackDrainLocked(plan)
+		}
 		service.lifecycleCoordinator.rollbackScaleLocked(service, plan)
 		service.mu.Unlock()
+		if plan.engine == nil {
+			service.mu.Lock()
+			service.releaseScaleDrainLocked(plan)
+			service.mu.Unlock()
+		} else {
+			service.releaseScaleDrainAfterReap(plan, plan.previousGroupVUsers)
+		}
 		return nil, commitErr
 	}
 }

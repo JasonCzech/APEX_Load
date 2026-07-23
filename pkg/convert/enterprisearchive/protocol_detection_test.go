@@ -305,7 +305,7 @@ func TestConvertZipReturnsReviewArtifactForExternalRunnerProtocol(t *testing.T) 
 	}
 }
 
-func TestConvertZipReturnsExecutableDraftForMappedJavaVuser(t *testing.T) {
+func TestConvertZipBlocksJavaLifecycleMethodsOutsideSelectedActionsClass(t *testing.T) {
 	actionsJava := `import lrapi.lr;
 import javax.jms.ConnectionFactory;
 import javax.jms.TextMessage;
@@ -342,25 +342,38 @@ vuser_end=vuser_end.java
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	if result.Script == nil || result.Script.Protocol != "jms-solace" {
-		t.Fatalf("script = %#v, want executable Java JMS draft", result.Script)
+	if result.Script == nil || result.Script.Protocol != "java_vuser" || len(result.Scripts) != 1 || result.Scripts[0] != result.Script {
+		t.Fatalf("script = %#v scripts=%#v, want combined Java draft", result.Script, result.Scripts)
 	}
-	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "java_vuser" || result.DetectedProtocol.ImportMode != ImportModeExecutable || result.DetectedProtocol.APEXLoadProtocol != "jms-solace" {
-		t.Fatalf("detected protocol = %#v, want executable Java Vuser JMS mapping", result.DetectedProtocol)
+	if result.DetectedProtocol == nil || result.DetectedProtocol.CanonicalSourceProtocol != "java_vuser" || result.DetectedProtocol.ImportMode != ImportModeExternalRunnerRequired || result.DetectedProtocol.APEXLoadProtocol != "java_vuser" {
+		t.Fatalf("detected protocol = %#v, want external-runner Java Vuser mapping", result.DetectedProtocol)
 	}
-	if result.ReviewArtifact != nil {
-		t.Fatalf("review artifact = %#v, want nil for fully mapped Java Vuser", result.ReviewArtifact)
+	if result.ReviewArtifact == nil {
+		t.Fatal("review artifact is nil, want governed Java source review")
 	}
-	var sawPublish bool
-	for _, action := range result.Script.Actions {
-		if action.Type == "jms_publish" && action.Body == `{"order":1}` {
-			sawPublish = true
-			break
-		}
+	if len(result.Script.Init) != 0 || len(result.Script.Actions) != 1 || result.Script.Actions[0].Params["method"] != "action" || len(result.Script.Teardown) != 0 {
+		t.Fatalf("lifecycle = init %#v actions %#v teardown %#v, want only methods owned by Actions", result.Script.Init, result.Script.Actions, result.Script.Teardown)
 	}
-	if !sawPublish {
-		t.Fatalf("actions = %#v, want mapped jms_publish action", result.Script.Actions)
+	if emits, _ := result.Script.Actions[0].Metadata["emits_business_transactions"].(bool); !emits {
+		t.Fatalf("action metadata = %#v, want transaction event marker", result.Script.Actions[0].Metadata)
 	}
+	if result.FidelityReport == nil || result.FidelityReport.PromotionStatus != ImportPromotionBlocked {
+		t.Fatalf("fidelity report = %#v, want promotion blocked for lifecycle methods outside Actions", result.FidelityReport)
+	}
+	blockers := strings.Join(result.FidelityReport.Blockers, "\n")
+	if !strings.Contains(blockers, "vuser_init.init") || !strings.Contains(blockers, "vuser_end.end") || !strings.Contains(blockers, "merge all lifecycle methods into one Actions class") {
+		t.Fatalf("fidelity blockers = %#v, want concrete init/end merge remediation", result.FidelityReport.Blockers)
+	}
+	metadata, ok := result.ReviewArtifact.Metadata[javaExternalLifecycleKey].([]map[string]any)
+	if !ok || len(metadata) != 2 {
+		t.Fatalf("external lifecycle metadata = %#v, want two preserved lifecycle methods", result.ReviewArtifact.Metadata[javaExternalLifecycleKey])
+	}
+	preserved := strings.Join(result.ReviewArtifact.PreservedFunctions, "\n")
+	if !strings.Contains(preserved, "vuser_init.init") || !strings.Contains(preserved, "vuser_end.end") {
+		t.Fatalf("preserved functions = %#v, want external init/end evidence", result.ReviewArtifact.PreservedFunctions)
+	}
+	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "init", SourceFunctionSupportReviewOnly)
+	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "end", SourceFunctionSupportReviewOnly)
 }
 
 func TestDetectProtocolJavaVuserFromScriptLanguageAndRunType(t *testing.T) {
@@ -476,9 +489,13 @@ public class Actions {
 			name: "soap",
 			source: `import lrapi.lr;
 import javax.xml.soap.SOAPMessage;
+import javax.xml.soap.SOAPConnection;
+import javax.xml.soap.SOAPConnectionFactory;
 public class Actions {
     public int action() throws Exception {
         SOAPMessage message = null;
+        SOAPConnection connection = SOAPConnectionFactory.newInstance().createConnection();
+        connection.call(message, "https://example.test/service");
         return 0;
     }
 }
@@ -498,6 +515,25 @@ public class Actions {
 				t.Fatalf("signals = %#v, want %q", detected.Signals, tt.signal)
 			}
 		})
+	}
+}
+
+func TestJavaVuserJMSReviewKeepsMessagingInCombinedRunner(t *testing.T) {
+	detected := DetectedProtocol{
+		CanonicalSourceProtocol: "java_vuser",
+		APEXLoadProtocol:        "java_vuser",
+		ImportMode:              ImportModeExternalRunnerRequired,
+		Signals:                 []string{"javax.jms API usage in Java Vuser source"},
+	}
+	actions := reviewArtifactNextActions(detected)
+	joined := strings.ToLower(strings.Join(actions, "\n"))
+	if strings.Contains(joined, "native jms") || strings.Contains(joined, "target for mapping") {
+		t.Fatalf("review actions recommend native JMS lane extraction: %#v", actions)
+	}
+	for _, want := range []string{"governed java runner classpath", "broker connectivity", "remain inside the combined java vuser"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("review actions = %#v, want %q guidance", actions, want)
+		}
 	}
 }
 

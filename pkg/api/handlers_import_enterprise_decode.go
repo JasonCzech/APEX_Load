@@ -166,10 +166,12 @@ func sourceReviewValue(value any) *enterprisearchive.SourceReview {
 		return &clone
 	case map[string]any:
 		review := &enterprisearchive.SourceReview{
-			SourceFiles: sourceReviewFilesValue(typed["source_files"]),
-			Mappings:    sourceReviewMappingsValue(typed["mappings"]),
+			SourceFiles:        sourceReviewFilesValue(typed["source_files"]),
+			Mappings:           sourceReviewMappingsValue(typed["mappings"]),
+			TotalSourceFiles:   intValue(typed["total_source_files"]),
+			OmittedSourceFiles: stringSliceValue(typed["omitted_source_files"]),
 		}
-		if len(review.SourceFiles) == 0 && len(review.Mappings) == 0 {
+		if len(review.SourceFiles) == 0 && len(review.Mappings) == 0 && review.TotalSourceFiles == 0 && len(review.OmittedSourceFiles) == 0 {
 			return nil
 		}
 		return review

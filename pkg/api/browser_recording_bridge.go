@@ -116,6 +116,7 @@ func NewBrowserRecorderBridgeServer(cfg BrowserRecorderBridgeConfig) *Server {
 		mux:              http.NewServeMux(),
 		bridgeMode:       true,
 	}
+	s.configureReplaySessionReservations()
 	bridge := &BrowserRecordingBridge{
 		token:          token,
 		startedAt:      time.Now().UTC(),
@@ -173,6 +174,7 @@ func (s *Server) bridgeRoutes() {
 	s.mux.Handle("POST "+bridgePairPath, cors(log(http.HandlerFunc(bridge.handlePair))))
 	s.mux.Handle("GET "+bridgeStatusPath, cors(log(auth(http.HandlerFunc(bridge.handleStatus)))))
 	s.mux.Handle("GET "+bridgeWebSocketPath, log(auth(http.HandlerFunc(s.handleWebSocket))))
+	s.mux.Handle("GET /api/v1/browser-replay/sessions/{session_id}", cors(log(auth(http.HandlerFunc(s.handleGetBrowserReplaySession)))))
 
 	s.mux.Handle("GET /api/v1/browser-recorder/sessions", cors(log(auth(http.HandlerFunc(s.handleListBrowserRecordings)))))
 	s.mux.Handle("POST /api/v1/browser-recorder/sessions", cors(log(auth(http.HandlerFunc(s.handleStartBrowserRecording)))))

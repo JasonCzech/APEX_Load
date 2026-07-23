@@ -127,6 +127,60 @@ func TestBrowserRecorderBridgeRejectsUnpairedAccess(t *testing.T) {
 	}
 }
 
+func TestBrowserRecorderBridgeGetsBrowserReplaySession(t *testing.T) {
+	server := newBrowserRecorderBridgeTestServer(t, newFakeBrowserRecorder(nil))
+	bridgeSessionID := pairBridgeForTest(t, server, bridgeTestOrigin)
+	replaySession := &BrowserReplaySession{
+		ID:       "bridge-replay-1",
+		Status:   BrowserReplayCompleted,
+		Group:    "browser",
+		Protocol: "browser",
+	}
+	server.browserReplay.mu.Lock()
+	server.browserReplay.sessions[replaySession.ID] = replaySession
+	server.browserReplay.mu.Unlock()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/browser-replay/sessions/"+replaySession.ID, nil)
+	req.Header.Set("Origin", bridgeTestOrigin)
+	req.Header.Set(bridgeTokenHeader, bridgeTestToken)
+	req.Header.Set(bridgeSessionHeader, bridgeSessionID)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("browser replay status = %d, want 200 body=%s", resp.Code, resp.Body.String())
+	}
+	if got := resp.Header().Get("Access-Control-Allow-Origin"); got != bridgeTestOrigin {
+		t.Errorf("allow-origin = %q, want %q", got, bridgeTestOrigin)
+	}
+	var payload struct {
+		Session BrowserReplaySession `json:"session"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("unmarshal browser replay response: %v", err)
+	}
+	if payload.Session.ID != replaySession.ID || payload.Session.Status != BrowserReplayCompleted {
+		t.Fatalf("browser replay session id=%q status=%q, want id=%q status=%q", payload.Session.ID, payload.Session.Status, replaySession.ID, BrowserReplayCompleted)
+	}
+}
+
+func TestBrowserRecorderBridgeRejectsUnauthenticatedBrowserReplaySessionGet(t *testing.T) {
+	server := newBrowserRecorderBridgeTestServer(t, newFakeBrowserRecorder(nil))
+	pairBridgeForTest(t, server, bridgeTestOrigin)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/browser-replay/sessions/bridge-replay-1", nil)
+	req.Header.Set("Origin", bridgeTestOrigin)
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated browser replay status = %d, want 401 body=%s", resp.Code, resp.Body.String())
+	}
+	if got := resp.Header().Get("Access-Control-Allow-Origin"); got != bridgeTestOrigin {
+		t.Errorf("allow-origin = %q, want %q", got, bridgeTestOrigin)
+	}
+}
+
 func TestBrowserRecorderBridgeSessionAccessOutlivesPairingWindow(t *testing.T) {
 	server := newBrowserRecorderBridgeTestServer(t, newFakeBrowserRecorder(nil))
 	sessionID := pairBridgeForTest(t, server, bridgeTestOrigin)

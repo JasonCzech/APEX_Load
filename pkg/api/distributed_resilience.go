@@ -13,6 +13,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 type GeneratorEvacuationImpact struct {
@@ -288,6 +289,14 @@ func (b *distributedExecutionBackend) EvacuateGenerator(tr *TestRunner, test *Ma
 			}
 			snapshot := loadByTarget[candidate]
 			if !snapshot.HeartbeatOK || snapshot.AvailableCapacity < int32(evacuated) {
+				continue
+			}
+			if groupRequiresJavaVuserPhaseLifecycle(group) &&
+				(!stringSliceContainsEqualFold(snapshot.SupportedProtocols, "java_vuser") ||
+					!protocol.RuntimeFeaturesSatisfy(snapshot.CompatibleFeatures, protocol.FeatureJavaVuserPersistentLifecycleV1)) {
+				continue
+			}
+			if !runtimeCapacityAllowsGroup(group, snapshot, evacuated) {
 				continue
 			}
 			if replacementTarget == "" || snapshot.AvailableCapacity > bestCapacity {
@@ -620,6 +629,10 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 		parent = context.Background()
 	}
 	_, postBaseline := testexec.ResourceBaselineWindows(managedTest != nil && managedTest.ResourceBaseline)
+	scenarioID := ""
+	if managedTest != nil {
+		scenarioID = managedTest.ScenarioID
+	}
 	type appliedChange struct {
 		target        string
 		group         string
@@ -756,6 +769,7 @@ func (b *distributedExecutionBackend) applyEvacuationShardAdjustments(parent con
 				assignment, assignErr := client.AssignWork(ctx, generatorrpc.Assignment{
 					TestID:                testID,
 					ExecutionGeneration:   executionGeneration,
+					ScenarioID:            scenarioID,
 					GroupName:             groupName,
 					TargetDuration:        remainingDuration,
 					TargetDurationSeconds: distributedCompatibilityDurationSeconds(remainingDuration),

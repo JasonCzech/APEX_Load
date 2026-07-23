@@ -607,6 +607,7 @@ export default function RecordingStudio({
   const [browserPanelSessionId, setBrowserPanelSessionId] = useState<
     string | null
   >(null);
+  const [browserStartInProgress, setBrowserStartInProgress] = useState(false);
   const [browserName, setBrowserName] = useState("");
   const [browserStartScheme, setBrowserStartScheme] = useState<HttpURLScheme>(
     DEFAULT_HTTP_URL_SCHEME,
@@ -672,7 +673,6 @@ export default function RecordingStudio({
   // selecting that session in the request-detail panel. Keep provenance with
   // the review result instead of deriving it later from selectedSession.
   const convertedSourceRecordingSessionIDRef = useRef<string | null>(null);
-  const salesforceSourceRecordingSessionIDRef = useRef<string | null>(null);
   const [convertedPreparedSecrets, setConvertedPreparedSecrets] =
     useState<PreparedSecretBindings | null>(null);
   const [salesforcePreparedSecrets, setSalesforcePreparedSecrets] =
@@ -702,17 +702,28 @@ export default function RecordingStudio({
   const resetSalesforceTask = salesforceTask.reset;
   const refreshInFlightRef = useRef<{
     projectId?: string;
+    recorderRequestScope: string;
     request: Promise<void>;
   } | null>(null);
+  const recorderRequestScope = api.browserRecorderRequestScope;
   const refreshScopeRef = useRef({
     projectId: activeProject?.id,
+    recorderRequestScope,
     generation: 0,
   });
+  const browserStartScopeRef = useRef<typeof refreshScopeRef.current | null>(
+    null,
+  );
+  const previousRecorderRequestScopeRef = useRef(recorderRequestScope);
   const feedbackTimerRef = useRef<number | null>(null);
 
-  if (refreshScopeRef.current.projectId !== activeProject?.id) {
+  if (
+    refreshScopeRef.current.projectId !== activeProject?.id ||
+    refreshScopeRef.current.recorderRequestScope !== recorderRequestScope
+  ) {
     refreshScopeRef.current = {
       projectId: activeProject?.id,
+      recorderRequestScope,
       generation: refreshScopeRef.current.generation + 1,
     };
   }
@@ -1054,11 +1065,18 @@ export default function RecordingStudio({
   const refresh = useCallback(async () => {
     const projectId = activeProject?.id;
     const inFlight = refreshInFlightRef.current;
-    if (inFlight && inFlight.projectId === projectId) return inFlight.request;
+    if (
+      inFlight &&
+      inFlight.projectId === projectId &&
+      inFlight.recorderRequestScope === recorderRequestScope
+    )
+      return inFlight.request;
     if (typeof document !== "undefined" && document.hidden) return;
     const scope = { ...refreshScopeRef.current };
     const isCurrentScope = () =>
       refreshScopeRef.current.projectId === scope.projectId &&
+      refreshScopeRef.current.recorderRequestScope ===
+        scope.recorderRequestScope &&
       refreshScopeRef.current.generation === scope.generation;
     const request = (async () => {
       try {
@@ -1130,16 +1148,19 @@ export default function RecordingStudio({
         /* API not ready */
       }
     })();
-    refreshInFlightRef.current = { projectId, request };
+    refreshInFlightRef.current = { projectId, recorderRequestScope, request };
     try {
       await request;
     } finally {
       if (refreshInFlightRef.current?.request === request)
         refreshInFlightRef.current = null;
     }
-  }, [api, activeProject?.id]);
+  }, [api, activeProject?.id, recorderRequestScope]);
 
   useLayoutEffect(() => {
+    const recorderEndpointChanged =
+      previousRecorderRequestScopeRef.current !== recorderRequestScope;
+    previousRecorderRequestScopeRef.current = recorderRequestScope;
     void convertedCredentialReviewRef.current?.discardSourceSession();
     void salesforceCredentialReviewRef.current?.discardSourceSession();
     if (feedbackTimerRef.current !== null) {
@@ -1152,6 +1173,20 @@ export default function RecordingStudio({
     setSelectedRequest(null);
     setBrowserSessions([]);
     setBrowserPanelSessionId(null);
+    browserStartScopeRef.current = null;
+    setBrowserStartInProgress(false);
+    if (recorderEndpointChanged) {
+      setProxyAddr("");
+      setProxyAuthToken("");
+      setCaCertPath("");
+      setBrowserAvailability(null);
+      setInstallState(null);
+      setBrowserDevices([]);
+      setBridgePairing(false);
+      setBridgeVerifying(false);
+      setBridgeStatus("");
+      setBridgeStatusTone("info");
+    }
     setFeedback("");
     setConvertedParameterizationApplying(false);
     setSalesforceParameterizationApplying(false);
@@ -1162,9 +1197,9 @@ export default function RecordingStudio({
     resetConvertTask();
     resetSalesforceTask();
     convertedSourceRecordingSessionIDRef.current = null;
-    salesforceSourceRecordingSessionIDRef.current = null;
   }, [
     activeProject?.id,
+    recorderRequestScope,
     advanceConvertedReviewGeneration,
     advanceSalesforceReviewGeneration,
     resetConvertTask,
@@ -1200,27 +1235,41 @@ export default function RecordingStudio({
 
   // Load device presets once for the launcher.
   useEffect(() => {
+    const scope = refreshScopeRef.current;
+    let cancelled = false;
     api
       .listBrowserRecorderDevices()
-      .then((res) => setBrowserDevices(res.devices || []))
+      .then((res) => {
+        if (!cancelled && refreshScopeRef.current === scope) {
+          setBrowserDevices(res.devices || []);
+        }
+      })
       .catch(() => {
         /* devices are optional */
       });
-  }, [api]);
+    return () => {
+      cancelled = true;
+    };
+  }, [api, recorderRequestScope]);
 
   const handleInstallBrowsers = async () => {
+    const sourceRecorderScope = refreshScopeRef.current;
     try {
       const res = await api.installBrowserRecorder();
+      if (refreshScopeRef.current !== sourceRecorderScope) return;
       setInstallState(res.install);
       showFeedback(
         "Installing the recording browser — this can take a few minutes",
       );
     } catch (e: any) {
-      showFeedback(e.message, "error");
+      if (refreshScopeRef.current === sourceRecorderScope) {
+        showFeedback(e.message, "error");
+      }
     }
   };
 
   const handlePairBridge = async () => {
+    const sourceRecorderScope = refreshScopeRef.current;
     const origin = bridgeOrigin.trim().replace(/\/+$/, "");
     if (!/^https?:\/\/.+/i.test(origin)) {
       const message = `Enter the local bridge URL used by ${RECORDING_AGENT_COMMAND}`;
@@ -1236,22 +1285,39 @@ export default function RecordingStudio({
     setBridgeStatus("");
     try {
       const paired = await api.pairBrowserRecorderBridge(origin, token);
+      // A successful pair deliberately changes the recorder request scope from
+      // the controller to the newly paired bridge before this promise resumes.
+      // Accept that exact transition, but reject a project/origin change or a
+      // different bridge pairing that completed while this request was live.
+      const pairedRequestScope = `bridge:${paired.origin.replace(/\/+$/, "")}:${paired.session_id}`;
+      const currentScope = refreshScopeRef.current;
+      if (
+        currentScope.projectId !== sourceRecorderScope.projectId ||
+        (currentScope !== sourceRecorderScope &&
+          currentScope.recorderRequestScope !== pairedRequestScope)
+      ) {
+        return;
+      }
       setBridgeStatusTone("success");
       setBridgeStatus(`Connected to ${origin}`);
       setBrowserAvailability(paired.status.availability);
       setInstallState(null);
       showFeedback("Local browser recording bridge paired");
     } catch (e: any) {
+      if (refreshScopeRef.current !== sourceRecorderScope) return;
       const message = bridgePairingErrorMessage(e, origin);
       setBridgeStatusTone("error");
       setBridgeStatus(message);
       showFeedback(message, "error");
     } finally {
-      setBridgePairing(false);
+      if (refreshScopeRef.current === sourceRecorderScope) {
+        setBridgePairing(false);
+      }
     }
   };
 
   const handleVerifyBridgeAgent = async () => {
+    const sourceRecorderScope = refreshScopeRef.current;
     const origin = bridgeOrigin.trim().replace(/\/+$/, "");
     if (!/^https?:\/\/.+/i.test(origin)) {
       setBridgeStatusTone("error");
@@ -1265,6 +1331,7 @@ export default function RecordingStudio({
     setBridgeStatus(`Checking APEX Load Recording Agent at ${origin}...`);
     try {
       await api.verifyBrowserRecorderBridgeAgent(origin);
+      if (refreshScopeRef.current !== sourceRecorderScope) return;
       setBridgeOrigin(origin);
       setBridgeStatusTone("success");
       setBridgeStatus(
@@ -1272,12 +1339,15 @@ export default function RecordingStudio({
       );
       showFeedback("APEX Load Recording Agent verified");
     } catch (e: any) {
+      if (refreshScopeRef.current !== sourceRecorderScope) return;
       const message = bridgeVerificationErrorMessage(e, origin);
       setBridgeStatusTone("error");
       setBridgeStatus(message);
       showFeedback(message, "error");
     } finally {
-      setBridgeVerifying(false);
+      if (refreshScopeRef.current === sourceRecorderScope) {
+        setBridgeVerifying(false);
+      }
     }
   };
 
@@ -1286,7 +1356,6 @@ export default function RecordingStudio({
     setBridgeStatusTone("info");
     setBridgeStatus("");
     showFeedback("Local recording bridge disconnected");
-    refresh();
   };
 
   const handleBrowserStartAddressChange = (value: string) => {
@@ -1296,16 +1365,20 @@ export default function RecordingStudio({
   };
 
   const handleStartBrowserRecording = async () => {
+    const sourceRecorderScope = refreshScopeRef.current;
+    if (browserStartScopeRef.current === sourceRecorderScope) return;
     const startURL = composeHttpURL(browserStartScheme, browserStartAddress);
     if (!startURL) {
       showFeedback("Enter an http(s) URL to record", "error");
       return;
     }
+    browserStartScopeRef.current = sourceRecorderScope;
+    setBrowserStartInProgress(true);
     try {
       const res = await api.startBrowserRecording({
         name: browserName.trim() || "Browser Recording",
         start_url: startURL,
-        project_id: activeProject?.id,
+        project_id: sourceRecorderScope.projectId,
         capture_har: browserCaptureHAR,
         device_preset: browserDevice || undefined,
         capture_screenshots: browserScreenshots,
@@ -1319,19 +1392,19 @@ export default function RecordingStudio({
               .filter(Boolean)
           : undefined,
       });
-      if (!isCurrentProject()) return;
+      if (refreshScopeRef.current !== sourceRecorderScope) return;
       const sessionId = res.session.id;
       setBrowserPanelSessionId(sessionId);
       const panelURL = browserRecorderPanelURL(sessionId);
       if (!isWailsShell()) {
         try {
           await api.openBrowserRecordingControlPanel(sessionId, panelURL);
-          if (!isCurrentProject()) return;
+          if (refreshScopeRef.current !== sourceRecorderScope) return;
           showFeedback(
             "Recording browser launched — control panel opened beside it",
           );
         } catch {
-          if (!isCurrentProject()) return;
+          if (refreshScopeRef.current !== sourceRecorderScope) return;
           // Older agents/controllers do not expose the same-browser companion
           // tab endpoint. Keep the separate popup as a fallback.
           try {
@@ -1354,7 +1427,13 @@ export default function RecordingStudio({
         );
       }
     } catch (e: any) {
-      if (isCurrentProject()) showFeedback(e.message, "error");
+      if (refreshScopeRef.current === sourceRecorderScope)
+        showFeedback(e.message, "error");
+    } finally {
+      if (browserStartScopeRef.current === sourceRecorderScope) {
+        browserStartScopeRef.current = null;
+        setBrowserStartInProgress(false);
+      }
     }
   };
 
@@ -1606,7 +1685,6 @@ export default function RecordingStudio({
       setSalesforceCredentialActionInProgress(false);
       advanceSalesforceReviewGeneration();
       salesforcePreparedScriptRef.current = null;
-      salesforceSourceRecordingSessionIDRef.current = session.id;
       setSalesforcePreparedSecrets(null);
       const result = await salesforceTask.run(
         async () => {
@@ -1687,11 +1765,11 @@ export default function RecordingStudio({
     const script = buildReviewedScript();
     if (!result || !script) return;
     const sourceGeneration = convertedReviewGenerationRef.current;
-    const sourceProjectId = refreshScopeRef.current.projectId;
+    const sourceRecorderScope = refreshScopeRef.current;
     const resolved = await api.applySecretBindings({ script, bindings });
     if (
       convertedReviewGenerationRef.current !== sourceGeneration ||
-      refreshScopeRef.current.projectId !== sourceProjectId
+      refreshScopeRef.current !== sourceRecorderScope
     ) {
       throw new Error(
         "The recording conversion changed while credentials were being prepared. Review the current draft and try again.",
@@ -1743,12 +1821,12 @@ export default function RecordingStudio({
     const requirements = convertTask.value?.secret_binding_requirements || [];
     if (requirements.length === 0) return buildReviewedScript();
     const sourceGeneration = convertedReviewGenerationRef.current;
-    const sourceProjectId = refreshScopeRef.current.projectId;
+    const sourceRecorderScope = refreshScopeRef.current;
     convertedPreparedScriptRef.current = null;
     const committed = await convertedCredentialReviewRef.current?.commit();
     return committed &&
       convertedReviewGenerationRef.current === sourceGeneration &&
-      refreshScopeRef.current.projectId === sourceProjectId
+      refreshScopeRef.current === sourceRecorderScope
       ? convertedPreparedScriptRef.current
       : null;
   };
@@ -1769,12 +1847,13 @@ export default function RecordingStudio({
     convertedSaveInFlightRef.current = true;
     setConvertedSaveInProgress(true);
     const sourceGeneration = convertedReviewGenerationRef.current;
-    const sourceProjectId = refreshScopeRef.current.projectId;
+    const sourceRecorderScope = refreshScopeRef.current;
+    const sourceProjectId = sourceRecorderScope.projectId;
     const sourceRecordingSessionId =
       convertedSourceRecordingSessionIDRef.current || undefined;
     const requestIsCurrent = () =>
       convertedReviewGenerationRef.current === sourceGeneration &&
-      refreshScopeRef.current.projectId === sourceProjectId;
+      refreshScopeRef.current === sourceRecorderScope;
     try {
       const hasSecretRequirements =
         (convertTask.value?.secret_binding_requirements?.length || 0) > 0;
@@ -1829,11 +1908,11 @@ export default function RecordingStudio({
     const script = result?.script || result?.scripts?.[0];
     if (!result || !script) return;
     const sourceGeneration = salesforceReviewGenerationRef.current;
-    const sourceProjectId = refreshScopeRef.current.projectId;
+    const sourceRecorderScope = refreshScopeRef.current;
     const resolved = await api.applySecretBindings({ script, bindings });
     if (
       salesforceReviewGenerationRef.current !== sourceGeneration ||
-      refreshScopeRef.current.projectId !== sourceProjectId
+      refreshScopeRef.current !== sourceRecorderScope
     ) {
       throw new Error(
         "The Salesforce draft changed while credentials were being prepared. Review the current draft and try again.",
@@ -1879,12 +1958,12 @@ export default function RecordingStudio({
       if ((result?.secret_binding_requirements?.length || 0) === 0)
         return script;
       const sourceGeneration = salesforceReviewGenerationRef.current;
-      const sourceProjectId = refreshScopeRef.current.projectId;
+      const sourceRecorderScope = refreshScopeRef.current;
       salesforcePreparedScriptRef.current = null;
       const committed = await salesforceCredentialReviewRef.current?.commit();
       return committed &&
         salesforceReviewGenerationRef.current === sourceGeneration &&
-        refreshScopeRef.current.projectId === sourceProjectId
+        refreshScopeRef.current === sourceRecorderScope
         ? salesforcePreparedScriptRef.current
         : null;
     };
@@ -1905,21 +1984,18 @@ export default function RecordingStudio({
     salesforceSaveInFlightRef.current = true;
     setSalesforceSaveInProgress(true);
     const sourceGeneration = salesforceReviewGenerationRef.current;
-    const sourceProjectId = refreshScopeRef.current.projectId;
-    const sourceRecordingSessionId =
-      salesforceSourceRecordingSessionIDRef.current || undefined;
+    const sourceRecorderScope = refreshScopeRef.current;
+    const sourceProjectId = sourceRecorderScope.projectId;
     const requestIsCurrent = () =>
       salesforceReviewGenerationRef.current === sourceGeneration &&
-      refreshScopeRef.current.projectId === sourceProjectId;
+      refreshScopeRef.current === sourceRecorderScope;
     try {
       const script = await prepareSalesforceScript();
       if (!script || !requestIsCurrent()) return;
-      const savedScript = await api.createScript(
-        script,
-        sourceProjectId,
-        undefined,
-        sourceRecordingSessionId,
-      );
+      // The Salesforce-analyzed draft is not a verbatim conversion of the
+      // recording, so it can never pass the server's provenance attestation —
+      // save it without claiming the recording session as its source.
+      const savedScript = await api.createScript(script, sourceProjectId);
       if (!requestIsCurrent()) return;
       showFeedback(
         `Salesforce HTTP script "${script.name}" saved to the script library`,
@@ -2461,7 +2537,7 @@ export default function RecordingStudio({
                 aria-label="Start browser recording"
                 className="btn btn-primary rec-start-btn"
                 onClick={handleStartBrowserRecording}
-                disabled={!!browserPanelSessionId}
+                disabled={!!browserPanelSessionId || browserStartInProgress}
               >
                 <svg
                   width="14"
@@ -2471,7 +2547,7 @@ export default function RecordingStudio({
                 >
                   <circle cx="12" cy="12" r="10" />
                 </svg>
-                Record Browser
+                {browserStartInProgress ? "Starting Browser…" : "Record Browser"}
               </button>
               <div className="rec-browser-unavailable">
                 A Chromium window opens on this machine with an in-page

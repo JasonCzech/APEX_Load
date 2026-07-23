@@ -132,6 +132,18 @@ describe('RepositoryGuidePage', () => {
     return Array.from(topbar?.querySelectorAll('button') || []).find(button => button.textContent?.trim() === label)
   }
 
+  it('documents the persistent Java Vuser lifecycle contract used by the packaged guide', async () => {
+    // @ts-expect-error Vitest runs in Node, but the dashboard app tsconfig intentionally omits Node types.
+    const { readFileSync } = await import('node:fs')
+    const cwd = (globalThis as typeof globalThis & { process: { cwd: () => string } }).process.cwd()
+    const source = readFileSync(`${cwd}/../docs/API_USER_GUIDE.md`, 'utf8') as string
+
+    expect(source).toContain('java_vuser_persistent_lifecycle_v1')
+    expect(source).toContain('one JVM and one `Actions` instance alive per VUser')
+    expect(source).not.toContain('launch requires an enabled runner advertising `java_vuser_phase_lifecycle_v1`')
+    expect(source).not.toContain('start a fresh JVM and `Actions` instance for each requested phase')
+  })
+
   it('renders the in-repository guide with retained API Guide title toggles', async () => {
     await renderRepositoryGuidePage()
 

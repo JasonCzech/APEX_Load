@@ -143,6 +143,9 @@ func (s *metricsStoreSpy) SaveScriptRecording(record *storage.ScriptRecordingRec
 func (s *metricsStoreSpy) GetScriptRecording(scriptID string) (*storage.ScriptRecordingRecord, error) {
 	return nil, nil
 }
+func (s *metricsStoreSpy) GetScriptRecordingStatus(scriptID string) (*storage.ScriptRecordingStatusRecord, error) {
+	return nil, nil
+}
 func (s *metricsStoreSpy) DeleteScriptRecording(scriptID string) error { return nil }
 func (s *metricsStoreSpy) SaveTest(test *storage.TestRecord) error {
 	s.savedTests = append(s.savedTests, test)

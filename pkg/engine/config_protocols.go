@@ -231,13 +231,32 @@ func appendJavaHTTPConfig(cfg map[string]any, script *dsl.Script) {
 
 func appendJavaVuserConfig(cfg map[string]any, script *dsl.Script) {
 	javaVuserCfg := script.Config.JavaVuser
-	// Java Vuser enablement and the runner command/classpath/working-directory
+	// Java Vuser enablement and the runner command/harness/working-directory
 	// are operator-owned: the protocol resolves them from process environment
 	// (APEXLOAD_JAVA_VUSER_*), never from uploaded script DSL. Deliberately do
-	// NOT flatten javaVuserCfg.Enabled/RunnerCommand/HarnessJar/Classpath/
-	// WorkDir/MaxProcesses here — doing so would let a script author enable and
-	// steer local process execution on the generator. Only the non-privileged
-	// per-action timeouts remain script-controlled.
+	// NOT flatten javaVuserCfg.Enabled/RunnerCommand/HarnessJar/WorkDir/
+	// MaxProcesses here. Reviewed Java scripts may select a JDK home, add JVM
+	// options, and script-controlled path references to operator-provisioned
+	// precompiled artifacts,
+	// but they cannot enable execution or replace the runner/harness.
+	if javaVuserCfg.JDKSelection != "" {
+		cfg["java_vuser_jdk_selection"] = javaVuserCfg.JDKSelection
+	}
+	if javaVuserCfg.JDKHome != "" {
+		cfg["java_vuser_jdk_home"] = javaVuserCfg.JDKHome
+	}
+	if len(javaVuserCfg.AdditionalVMParameters) > 0 {
+		cfg["java_vuser_additional_vm_parameters"] = javaVuserCfg.AdditionalVMParameters
+	}
+	if len(javaVuserCfg.Classpath) > 0 {
+		cfg["java_vuser_classpath"] = javaVuserCfg.Classpath
+	}
+	if javaVuserCfg.UseXBootClasspath != nil {
+		cfg["java_vuser_use_xbootclasspath"] = *javaVuserCfg.UseXBootClasspath
+	}
+	if javaVuserCfg.DedicatedClassLoader != nil {
+		cfg["java_vuser_dedicated_class_loader"] = *javaVuserCfg.DedicatedClassLoader
+	}
 	if javaVuserCfg.StartupTimeoutMs > 0 {
 		cfg["java_vuser_startup_timeout_ms"] = float64(javaVuserCfg.StartupTimeoutMs)
 	}

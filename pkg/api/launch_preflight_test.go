@@ -7,7 +7,9 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/config"
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	_ "github.com/jasonczech/apexload/pkg/protocol/java_vuser"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -58,8 +60,9 @@ func storePreflightSAPGUIScript(runner *TestRunner, id string, projectID string)
 	})
 }
 
-func storePreflightJavaVuserScript(runner *TestRunner, id string, projectID string, enabled bool) {
-	runner.StoreScript(&dsl.Script{
+func storePreflightJavaVuserScript(t *testing.T, runner *TestRunner, id string, projectID string, enabled bool) {
+	t.Helper()
+	if _, err := runner.storeScriptDurableForRestore(&dsl.Script{
 		ID:        id,
 		Name:      id,
 		Protocol:  "java_vuser",
@@ -74,7 +77,64 @@ func storePreflightJavaVuserScript(runner *TestRunner, id string, projectID stri
 			},
 		},
 		Actions: []dsl.Action{{Name: "Run Java", Type: "java_vuser_run", Target: "Actions", Params: map[string]any{"method": "full_lifecycle"}}},
-	})
+	}); err != nil {
+		t.Fatalf("restore pre-existing Java Vuser script: %v", err)
+	}
+}
+
+func storePreflightCombinedJavaVuserScript(t *testing.T, runner *TestRunner, id string, projectID string) {
+	t.Helper()
+	if _, err := runner.storeScriptDurableForRestore(&dsl.Script{
+		ID:        id,
+		Name:      id,
+		Protocol:  "java_vuser",
+		Version:   "1.0.0",
+		ProjectID: projectID,
+		Init:      []dsl.Action{{Name: "Java init", Type: "java_vuser_run", Target: "Actions", Params: map[string]any{"method": "init"}}},
+		Actions:   []dsl.Action{{Name: "Java action", Type: "java_vuser_run", Target: "Actions", Params: map[string]any{"method": "action"}}},
+		Teardown:  []dsl.Action{{Name: "Java end", Type: "java_vuser_run", Target: "Actions", Params: map[string]any{"method": "end"}}},
+	}); err != nil {
+		t.Fatalf("restore pre-existing combined Java Vuser script: %v", err)
+	}
+}
+
+func setPreflightJavaVuserInventory(runner *TestRunner, features ...string) {
+	if protocol.RuntimeFeaturesSatisfy(features, protocol.FeatureJavaVuserPersistentLifecycleV1) {
+		// Already a complete governed persistent feature set.
+	} else if stringSliceContainsEqualFold(features, protocol.FeatureJavaVuserPersistentLifecycleV1) {
+		features = append(features, protocol.FeatureJavaVuserSessionFrameTokenV1)
+	}
+	entry := GeneratorInventoryEntry{
+		Target:             "gen-jvm:9090",
+		GeneratorID:        "gen-jvm",
+		Status:             "connected",
+		SupportedProtocols: []string{"java_vuser"},
+		CompatibleFeatures: append([]string(nil), features...),
+		DrainState:         "active",
+		AvailableCapacity:  25,
+		MaxVUsers:          25,
+	}
+	if protocol.RuntimeFeaturesSatisfy(features, protocol.FeatureJavaVuserPersistentLifecycleV1) {
+		entry.RuntimeCapacities = []generatorrpc.ProtocolRuntimeCapacity{{
+			Protocol:        "java_vuser",
+			Available:       true,
+			MaxVUsers:       25,
+			AvailableVUsers: 25,
+			Features:        append([]string(nil), features...),
+			OccupancyMode:   generatorrpc.RuntimeOccupancyModeIdle,
+		}}
+	}
+	runner.liveInventoryMu.Lock()
+	runner.liveInventory = []GeneratorInventoryEntry{entry}
+	runner.liveInventoryAt = time.Now().UTC()
+	runner.liveInventoryMu.Unlock()
+}
+
+func setPreflightJavaVuserInventoryEntries(runner *TestRunner, entries ...GeneratorInventoryEntry) {
+	runner.liveInventoryMu.Lock()
+	runner.liveInventory = cloneGeneratorInventoryEntries(entries)
+	runner.liveInventoryAt = time.Now().UTC()
+	runner.liveInventoryMu.Unlock()
 }
 
 func storePreflightJavaReviewScript(runner *TestRunner, id string, projectID string) {
@@ -159,7 +219,7 @@ func TestPreflightLaunchBlocksJavaVuserWithoutRunnerCapability(t *testing.T) {
 	// regardless of any config.java_vuser.enabled flag in the uploaded script.
 	t.Setenv(config.EnvJavaVuserRunnerEnabled, "false")
 	runner := NewTestRunner(10, NewHub(), nil)
-	storePreflightJavaVuserScript(runner, "script-preflight-java-vuser", "", true)
+	storePreflightJavaVuserScript(t, runner, "script-preflight-java-vuser", "", true)
 
 	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
 		CreateTestRequest: CreateTestRequest{
@@ -181,7 +241,7 @@ func TestPreflightLaunchBlocksJavaVuserWithoutRunnerCapability(t *testing.T) {
 	if !strings.Contains(preflight.BlockingConflicts[0].Message, config.EnvJavaVuserRunnerEnabled) {
 		t.Fatalf("conflict message = %q, want operator-enablement guidance referencing %s", preflight.BlockingConflicts[0].Message, config.EnvJavaVuserRunnerEnabled)
 	}
-	if !strings.Contains(preflight.BlockingConflicts[0].Message, "java_vuser_run") || !strings.Contains(preflight.BlockingConflicts[0].Message, "Review-only Java Vuser imports do not require this runner") {
+	if !strings.Contains(preflight.BlockingConflicts[0].Message, "java_vuser_run") || !strings.Contains(preflight.BlockingConflicts[0].Message, "Import review and authoring approval do not require this runner") {
 		t.Fatalf("conflict message = %q, want sidecar-action-specific guidance", preflight.BlockingConflicts[0].Message)
 	}
 	if preflight.RecommendedAssignment == nil {
@@ -189,7 +249,7 @@ func TestPreflightLaunchBlocksJavaVuserWithoutRunnerCapability(t *testing.T) {
 	}
 }
 
-func TestPreflightLaunchAllowsJavaVuserReviewOnlyWithoutRunnerCapability(t *testing.T) {
+func TestPreflightLaunchBlocksJavaVuserReviewOnlyAtExecutionBoundary(t *testing.T) {
 	t.Setenv(config.EnvJavaVuserRunnerEnabled, "false")
 	runner := NewTestRunner(10, NewHub(), nil)
 	storePreflightJavaReviewScript(runner, "script-preflight-java-review", "")
@@ -205,13 +265,40 @@ func TestPreflightLaunchAllowsJavaVuserReviewOnlyWithoutRunnerCapability(t *test
 	if err != nil {
 		t.Fatalf("PreflightLaunch returned error: %v", err)
 	}
-	for _, conflict := range preflight.BlockingConflicts {
-		if conflict.Code == "java_vuser_runner_required" {
-			t.Fatalf("blocking conflicts = %#v, did not expect runner gate for source_review-only Java script", preflight.BlockingConflicts)
-		}
+	if preflight.StartNowAllowed || preflight.Decision != "blocked" {
+		t.Fatalf("preflight = %#v, want review-only Java source blocked from execution", preflight)
 	}
-	if !preflight.StartNowAllowed || preflight.Decision != "start_now" {
-		t.Fatalf("preflight = %#v, want start_now for review-only Java script without sidecar action", preflight)
+	if len(preflight.BlockingConflicts) == 0 || preflight.BlockingConflicts[0].Code != "java_vuser_executable_action_required" {
+		t.Fatalf("blocking conflicts = %#v, want executable Java lifecycle action requirement", preflight.BlockingConflicts)
+	}
+}
+
+func TestCreateTestBlocksJavaVuserReviewOnlyAtExecutionBoundary(t *testing.T) {
+	runner := NewTestRunner(10, NewHub(), nil)
+	storePreflightJavaReviewScript(runner, "script-create-java-review", "")
+
+	_, err := runner.CreateTest(CreateTestRequest{
+		Name: "Java Vuser Review", Duration: "5m", ScriptID: "script-create-java-review", VUsers: 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "java_vuser_executable_action_required") {
+		t.Fatalf("CreateTest error = %v, want review-only Java execution rejection", err)
+	}
+}
+
+func TestCreateTestBlocksApprovedCombinedJavaVuserWithoutLocalRunner(t *testing.T) {
+	t.Setenv(config.EnvJavaVuserRunnerEnabled, "false")
+	const projectID = "project-java-approved-no-local-runner"
+	server := newJavaVuserGovernanceServer(t, projectID)
+	approved := approveCombinedJavaVuserThroughAPI(t, server, projectID)
+
+	_, err := server.runner.CreateTest(CreateTestRequest{
+		Name: "Approved combined Java", ProjectID: projectID, Duration: "5m", ScriptID: approved.Script.ID, VUsers: 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "java_vuser_runner_required") {
+		t.Fatalf("CreateTest error = %v, want governed local runner rejection", err)
+	}
+	if strings.Contains(err.Error(), "authoring_approval_required") {
+		t.Fatalf("CreateTest error = %v, authoring approval should remain valid without a runner", err)
 	}
 }
 
@@ -254,7 +341,7 @@ func TestCreateTestBlocksJavaVuserWithoutRunnerCapability(t *testing.T) {
 	// the gate: only the operator env enables the runner.
 	t.Setenv(config.EnvJavaVuserRunnerEnabled, "false")
 	runner := NewTestRunner(10, NewHub(), nil)
-	storePreflightJavaVuserScript(runner, "script-create-java-vuser", "", true)
+	storePreflightJavaVuserScript(t, runner, "script-create-java-vuser", "", true)
 
 	_, err := runner.CreateTest(CreateTestRequest{
 		Name:     "Java Vuser",
@@ -271,7 +358,7 @@ func TestPreflightLaunchAllowsJavaVuserWithRunnerCapability(t *testing.T) {
 	// The operator has enabled the runner on this fleet; the gate clears.
 	t.Setenv(config.EnvJavaVuserRunnerEnabled, "true")
 	runner := NewTestRunner(10, NewHub(), nil)
-	storePreflightJavaVuserScript(runner, "script-preflight-java-vuser-enabled", "", false)
+	storePreflightJavaVuserScript(t, runner, "script-preflight-java-vuser-enabled", "", false)
 
 	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
 		CreateTestRequest: CreateTestRequest{
@@ -289,25 +376,379 @@ func TestPreflightLaunchAllowsJavaVuserWithRunnerCapability(t *testing.T) {
 	}
 }
 
-func TestPreflightLaunchAllowsJavaVuserWithDistributedRunnerCapability(t *testing.T) {
+func TestPreflightLaunchBlocksUnapprovedCombinedJavaVuserWithDistributedRunnerCapability(t *testing.T) {
 	t.Setenv(config.EnvJavaVuserRunnerEnabled, "false")
-	runner := NewTestRunner(10, NewHub(), nil)
-	runner.setExecutionBackend(newDistributedExecutionBackend([]string{"gen-jvm:9090|protocols=java_vuser|labels=runtime:java_vuser"}, time.Second, nil))
-	storePreflightJavaVuserScript(runner, "script-preflight-java-vuser-fleet", "", false)
+	for _, feature := range []string{protocol.FeatureJavaVuserPersistentLifecycleV1} {
+		t.Run(feature, func(t *testing.T) {
+			runner := NewTestRunner(10, NewHub(), nil)
+			runner.setExecutionBackend(newDistributedExecutionBackend([]string{"gen-jvm:9090|protocols=java_vuser|labels=runtime:java_vuser"}, time.Second, nil))
+			setPreflightJavaVuserInventory(runner, feature)
+			storePreflightCombinedJavaVuserScript(t, runner, "script-preflight-java-vuser-fleet", "")
 
-	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
-		CreateTestRequest: CreateTestRequest{
-			Name:     "Java Vuser",
-			Duration: "5m",
-			ScriptID: "script-preflight-java-vuser-fleet",
-			VUsers:   1,
+			preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{CreateTestRequest: CreateTestRequest{
+				Name: "Java Vuser", Duration: "5m", ScriptID: "script-preflight-java-vuser-fleet", VUsers: 1,
+			}})
+			if err != nil {
+				t.Fatalf("PreflightLaunch returned error: %v", err)
+			}
+			if preflight.StartNowAllowed || preflight.Decision != "blocked" ||
+				len(preflight.BlockingConflicts) == 0 ||
+				preflight.BlockingConflicts[0].Code != "java_vuser_authoring_approval_required" {
+				t.Fatalf("preflight = %#v, want authoring approval block with %s runner available", preflight, feature)
+			}
+		})
+	}
+}
+
+func TestPreflightLaunchBlocksCombinedJavaVuserWithoutPersistentRunnerCapability(t *testing.T) {
+	const projectID = "project-java-no-persistent-runner"
+	server := newJavaVuserGovernanceServer(t, projectID)
+	approved := approveCombinedJavaVuserThroughAPI(t, server, projectID)
+	server.runner.setExecutionBackend(newDistributedExecutionBackend([]string{"gen-jvm:9090|protocols=java_vuser|labels=runtime:java_vuser"}, time.Second, nil))
+	setPreflightJavaVuserInventory(server.runner, protocol.FeatureJavaVuserPhaseLifecycleV1)
+
+	preflight, err := server.runner.PreflightLaunch(LaunchPreflightRequest{CreateTestRequest: CreateTestRequest{
+		Name: "Combined Java Vuser", ProjectID: projectID, Duration: "5m", ScriptID: approved.Script.ID, VUsers: 1,
+	}})
+	if err != nil {
+		t.Fatalf("PreflightLaunch returned error: %v", err)
+	}
+	if preflight.Decision != "blocked" || len(preflight.BlockingConflicts) == 0 {
+		t.Fatalf("preflight = %#v, want persistent-runner capability block", preflight)
+	}
+	conflict := preflight.BlockingConflicts[0]
+	if conflict.Code != "java_vuser_runner_required" ||
+		!strings.Contains(conflict.Message, protocol.FeatureJavaVuserPersistentLifecycleV1) ||
+		!strings.Contains(conflict.Message, protocol.FeatureJavaVuserSessionFrameTokenV1) {
+		t.Fatalf("conflict = %#v, want missing persistent lifecycle capability", conflict)
+	}
+}
+
+func TestPreflightLaunchRejectsTokenlessPersistentJavaVuserRunner(t *testing.T) {
+	const projectID = "project-java-tokenless-runner"
+	server := newJavaVuserGovernanceServer(t, projectID)
+	approved := approveCombinedJavaVuserThroughAPI(t, server, projectID)
+	server.runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"gen-jvm:9090|protocols=java_vuser|labels=runtime:java_vuser"},
+		time.Second,
+		nil,
+	))
+	setPreflightJavaVuserInventoryEntries(server.runner, GeneratorInventoryEntry{
+		Target: "gen-jvm:9090", GeneratorID: "gen-jvm", Status: "connected", DrainState: "active",
+		SupportedProtocols: []string{"java_vuser"},
+		CompatibleFeatures: []string{protocol.FeatureJavaVuserPersistentLifecycleV1},
+		AvailableCapacity:  25,
+		MaxVUsers:          25,
+	})
+
+	preflight, err := server.runner.PreflightLaunch(LaunchPreflightRequest{CreateTestRequest: CreateTestRequest{
+		Name: "Combined Java Vuser", ProjectID: projectID, Duration: "5m", ScriptID: approved.Script.ID, VUsers: 1,
+	}})
+	if err != nil {
+		t.Fatalf("PreflightLaunch: %v", err)
+	}
+	if preflight.Decision != "blocked" || len(preflight.BlockingConflicts) == 0 {
+		t.Fatalf("preflight = %#v, want tokenless-runner block", preflight)
+	}
+	conflict := preflight.BlockingConflicts[0]
+	if conflict.Code != "java_vuser_runner_required" ||
+		!strings.Contains(conflict.Message, protocol.FeatureJavaVuserSessionFrameTokenV1) {
+		t.Fatalf("conflict = %#v, want authenticated frame-token requirement", conflict)
+	}
+}
+
+func TestPreflightLaunchDoesNotUsePersistentRunnerOutsideRootAssignment(t *testing.T) {
+	const projectID = "project-java-pinned-runtime"
+	server := newJavaVuserGovernanceServer(t, projectID)
+	approved := approveCombinedJavaVuserThroughAPI(t, server, projectID)
+	server.runner.setExecutionBackend(newDistributedExecutionBackend([]string{
+		"gen-persistent:9090|protocols=java_vuser|labels=runtime:java_vuser",
+		"gen-pinned:9090|protocols=java_vuser|labels=runtime:java_vuser",
+	}, time.Second, nil))
+	for _, tc := range []struct {
+		name       string
+		status     string
+		drainState string
+		features   []string
+	}{
+		{name: "phase only", status: "connected", drainState: "active", features: []string{protocol.FeatureJavaVuserPhaseLifecycleV1}},
+		{name: "unreachable", status: "unreachable", drainState: "active", features: []string{protocol.FeatureJavaVuserPersistentLifecycleV1}},
+		{name: "draining", status: "connected", drainState: "draining", features: []string{protocol.FeatureJavaVuserPersistentLifecycleV1}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			setPreflightJavaVuserInventoryEntries(server.runner,
+				GeneratorInventoryEntry{
+					Target: "gen-persistent:9090", GeneratorID: "gen-persistent", Status: "connected", DrainState: "active",
+					SupportedProtocols: []string{"java_vuser"}, CompatibleFeatures: governedPersistentJavaRuntimeFeatures(),
+					AvailableCapacity: 25, MaxVUsers: 25,
+				},
+				GeneratorInventoryEntry{
+					Target: "gen-pinned:9090", GeneratorID: "gen-pinned", Status: tc.status, DrainState: tc.drainState,
+					SupportedProtocols: []string{"java_vuser"}, CompatibleFeatures: tc.features,
+					AvailableCapacity: 25, MaxVUsers: 25,
+				},
+			)
+
+			preflight, err := server.runner.PreflightLaunch(LaunchPreflightRequest{CreateTestRequest: CreateTestRequest{
+				Name: "Pinned combined Java", ProjectID: projectID, Duration: "5m", ScriptID: approved.Script.ID, VUsers: 1,
+				Assignment: &GeneratorAssignmentSettings{
+					Mode:            generatorAssignmentModeSpecificHosts,
+					SelectedTargets: []string{"gen-pinned:9090"},
+				},
+			}})
+			if err != nil {
+				t.Fatalf("PreflightLaunch: %v", err)
+			}
+			if preflight.StartNowAllowed || preflight.Decision != "blocked" {
+				t.Fatalf("preflight = %#v, want ineligible assigned target to block launch", preflight)
+			}
+			if len(preflight.BlockingConflicts) == 0 || preflight.BlockingConflicts[0].Code != "java_vuser_runner_required" {
+				t.Fatalf("blocking conflicts = %#v, want Java runner conflict", preflight.BlockingConflicts)
+			}
+		})
+	}
+}
+
+func TestPreflightLaunchDoesNotUsePersistentRunnerOutsideGroupLabels(t *testing.T) {
+	const projectID = "project-java-labelled-runtime"
+	server := newJavaVuserGovernanceServer(t, projectID)
+	approved := approveCombinedJavaVuserThroughAPI(t, server, projectID)
+	server.runner.setExecutionBackend(newDistributedExecutionBackend([]string{
+		"gen-general:9090|protocols=java_vuser|labels=runtime:java_vuser,pool:general",
+		"gen-isolated:9090|protocols=java_vuser|labels=runtime:java_vuser,pool:isolated",
+	}, time.Second, nil))
+	setPreflightJavaVuserInventoryEntries(server.runner,
+		GeneratorInventoryEntry{
+			Target: "gen-general:9090", GeneratorID: "gen-general", Status: "connected", DrainState: "active",
+			SupportedProtocols: []string{"java_vuser"}, CompatibleFeatures: governedPersistentJavaRuntimeFeatures(),
+			AvailableCapacity: 25, MaxVUsers: 25,
+		},
+		GeneratorInventoryEntry{
+			Target: "gen-isolated:9090", GeneratorID: "gen-isolated", Status: "connected", DrainState: "active",
+			SupportedProtocols: []string{"java_vuser"}, CompatibleFeatures: []string{protocol.FeatureJavaVuserPhaseLifecycleV1},
+			AvailableCapacity: 25, MaxVUsers: 25,
+		},
+	)
+
+	preflight, err := server.runner.PreflightLaunch(LaunchPreflightRequest{CreateTestRequest: CreateTestRequest{
+		Name: "Labelled combined Java", ProjectID: projectID, Duration: "5m",
+		Groups: []CreateGroupEntry{{
+			Name: "java", ScriptID: approved.Script.ID, VUsers: 1,
+			Assignment: &GeneratorAssignmentSettings{Mode: generatorAssignmentModeAuto, RequiredLabels: map[string]string{"pool": "isolated"}},
+		}},
+	}})
+	if err != nil {
+		t.Fatalf("PreflightLaunch: %v", err)
+	}
+	if preflight.StartNowAllowed || preflight.Decision != "blocked" {
+		t.Fatalf("preflight = %#v, want labelled phase-only target to block launch", preflight)
+	}
+	if len(preflight.BlockingConflicts) == 0 || preflight.BlockingConflicts[0].Code != "java_vuser_runner_required" {
+		t.Fatalf("blocking conflicts = %#v, want Java runner conflict", preflight.BlockingConflicts)
+	}
+}
+
+func TestStartTestRevalidatesPersistentJavaRunnerCapability(t *testing.T) {
+	const projectID = "project-java-start-revalidation"
+	server := newJavaVuserGovernanceServer(t, projectID)
+	approved := approveCombinedJavaVuserThroughAPI(t, server, projectID)
+	server.runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"gen-jvm:9090|protocols=java_vuser|labels=runtime:java_vuser"},
+		time.Second,
+		nil,
+	))
+	setPreflightJavaVuserInventory(server.runner, protocol.FeatureJavaVuserPersistentLifecycleV1)
+	test, err := server.runner.CreateTest(CreateTestRequest{
+		Name: "Combined Java", ProjectID: projectID, Duration: "5m", ScriptID: approved.Script.ID, VUsers: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+
+	// The queued test was valid when created, but the generator subsequently
+	// downgraded to phase-only execution. Start must fail before backend dispatch.
+	setPreflightJavaVuserInventory(server.runner, protocol.FeatureJavaVuserPhaseLifecycleV1)
+	err = server.runner.StartTest(test.ID)
+	if err == nil || !strings.Contains(err.Error(), "java_vuser_runner_required") {
+		t.Fatalf("StartTest error = %v, want persistent Java runtime rejection", err)
+	}
+}
+
+func TestStartTestRevalidatesAggregatePersistentJavaRunnerCapacity(t *testing.T) {
+	const projectID = "project-java-start-capacity"
+	server := newJavaVuserGovernanceServer(t, projectID)
+	first := approveCombinedJavaVuserThroughAPI(t, server, projectID)
+	second := approveCombinedJavaVuserThroughAPI(t, server, projectID)
+	server.runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"gen-jvm:9090|protocols=java_vuser|labels=runtime:java_vuser"},
+		time.Second,
+		nil,
+	))
+	features := governedPersistentJavaRuntimeFeatures()
+	setPreflightJavaVuserInventoryEntries(server.runner, GeneratorInventoryEntry{
+		Target:             "gen-jvm:9090",
+		GeneratorID:        "gen-jvm",
+		Status:             "connected",
+		DrainState:         "active",
+		AvailableCapacity:  100,
+		MaxVUsers:          100,
+		SupportedProtocols: []string{"java_vuser"},
+		CompatibleFeatures: features,
+		RuntimeCapacities: []generatorrpc.ProtocolRuntimeCapacity{{
+			Protocol:        "java_vuser",
+			Available:       true,
+			MaxVUsers:       6,
+			AvailableVUsers: 6,
+			Features:        features,
+			OccupancyMode:   generatorrpc.RuntimeOccupancyModeIdle,
+		}},
+	})
+	test, err := server.runner.CreateTest(CreateTestRequest{
+		Name:      "Combined Java aggregate capacity",
+		ProjectID: projectID,
+		Duration:  "5m",
+		Groups: []CreateGroupEntry{
+			{Name: "first-java", ScriptID: first.Script.ID, VUsers: 4},
+			{Name: "second-java", ScriptID: second.Script.ID, VUsers: 3},
 		},
 	})
+	if err != nil {
+		t.Fatalf("CreateTest: %v", err)
+	}
+
+	err = server.runner.StartTest(test.ID)
+	if err == nil || !strings.Contains(err.Error(), "generator_placement") ||
+		!strings.Contains(err.Error(), "available java_vuser runtime slots") {
+		t.Fatalf("StartTest error = %v, want aggregate Java runtime-capacity rejection", err)
+	}
+	if got, _ := server.runner.GetTest(test.ID); got == nil || got.Status == "INITIALIZING" || got.Status == "RUNNING" {
+		t.Fatalf("test status after rejected start = %#v, want pre-initialization rejection", got)
+	}
+}
+
+func TestStartTestReservesPersistentJavaCapacityAcrossInitializingTests(t *testing.T) {
+	const projectID = "project-java-cross-test-capacity"
+	server := newJavaVuserGovernanceServer(t, projectID)
+	approved := approveCombinedJavaVuserThroughAPI(t, server, projectID)
+	server.runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"gen-jvm:9090|protocols=java_vuser|labels=runtime:java_vuser"},
+		time.Second,
+		nil,
+	))
+	features := governedPersistentJavaRuntimeFeatures()
+	server.runner.setCachedGeneratorInventory([]GeneratorInventoryEntry{{
+		Target:             "gen-jvm:9090",
+		GeneratorID:        "gen-jvm",
+		Status:             "connected",
+		DrainState:         "active",
+		AvailableCapacity:  100,
+		MaxVUsers:          100,
+		SupportedProtocols: []string{"java_vuser"},
+		CompatibleFeatures: features,
+		RuntimeCapacities: []generatorrpc.ProtocolRuntimeCapacity{{
+			Protocol:        "java_vuser",
+			Available:       true,
+			MaxVUsers:       6,
+			AvailableVUsers: 6,
+			Features:        features,
+			OccupancyMode:   generatorrpc.RuntimeOccupancyModeIdle,
+		}},
+	}}, time.Now())
+	first, err := server.runner.CreateTest(CreateTestRequest{
+		Name: "First combined Java", ProjectID: projectID, Duration: "5m", ScriptID: approved.Script.ID, VUsers: 4,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(first): %v", err)
+	}
+	second, err := server.runner.CreateTest(CreateTestRequest{
+		Name: "Second combined Java", ProjectID: projectID, Duration: "5m", ScriptID: approved.Script.ID, VUsers: 3,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(second): %v", err)
+	}
+	server.runner.mu.Lock()
+	server.runner.tests[first.ID].Status = "INITIALIZING"
+	server.runner.mu.Unlock()
+
+	err = server.runner.StartTest(second.ID)
+	if err == nil || !strings.Contains(err.Error(), "generator_placement") ||
+		!strings.Contains(err.Error(), "available java_vuser runtime slots") {
+		t.Fatalf("StartTest(second) error = %v, want capacity reserved by initializing first test", err)
+	}
+}
+
+func TestJavaPlacementUsesFreshPostStartCapacityWithoutDoubleReservation(t *testing.T) {
+	const projectID = "project-java-fresh-capacity"
+	server := newJavaVuserGovernanceServer(t, projectID)
+	approved := approveCombinedJavaVuserThroughAPI(t, server, projectID)
+	server.runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"gen-jvm:9090|protocols=java_vuser|labels=runtime:java_vuser"},
+		time.Second,
+		nil,
+	))
+	features := governedPersistentJavaRuntimeFeatures()
+	setCapacity := func(available int64, capturedAt time.Time) {
+		server.runner.setCachedGeneratorInventory([]GeneratorInventoryEntry{{
+			Target:             "gen-jvm:9090",
+			GeneratorID:        "gen-jvm",
+			Status:             "connected",
+			DrainState:         "active",
+			AvailableCapacity:  100,
+			MaxVUsers:          100,
+			SupportedProtocols: []string{"java_vuser"},
+			CompatibleFeatures: features,
+			RuntimeCapacities: []generatorrpc.ProtocolRuntimeCapacity{{
+				Protocol:        "java_vuser",
+				Available:       true,
+				MaxVUsers:       6,
+				AvailableVUsers: available,
+				Features:        features,
+				OccupancyMode:   generatorrpc.RuntimeOccupancyModePersistent,
+			}},
+		}}, capturedAt)
+	}
+	setCapacity(6, time.Now())
+	first, err := server.runner.CreateTest(CreateTestRequest{
+		Name: "Running combined Java", ProjectID: projectID, Duration: "5m", ScriptID: approved.Script.ID, VUsers: 1,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(first): %v", err)
+	}
+	second, err := server.runner.CreateTest(CreateTestRequest{
+		Name: "Next combined Java", ProjectID: projectID, Duration: "5m", ScriptID: approved.Script.ID, VUsers: 5,
+	})
+	if err != nil {
+		t.Fatalf("CreateTest(second): %v", err)
+	}
+	startedAt := time.Now().Add(-2 * time.Second)
+	server.runner.mu.Lock()
+	server.runner.tests[first.ID].Status = "RUNNING"
+	server.runner.tests[first.ID].StartedAt = &startedAt
+	server.runner.mu.Unlock()
+	setCapacity(5, time.Now())
+
+	server.runner.mu.RLock()
+	conflicts := server.runner.evaluateGeneratorPlacementConflictsLocked(second)
+	server.runner.mu.RUnlock()
+	if len(conflicts) != 0 {
+		t.Fatalf("fresh generator capacity was double-reserved: %#v", conflicts)
+	}
+}
+
+func TestPreflightLaunchPreservesLegacyJavaVuserOneShotRunnerGate(t *testing.T) {
+	runner := NewTestRunner(10, NewHub(), nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend([]string{"gen-jvm:9090|protocols=java_vuser|labels=runtime:java_vuser"}, time.Second, nil))
+	setPreflightJavaVuserInventory(runner)
+	storePreflightJavaVuserScript(t, runner, "script-preflight-java-vuser-legacy", "", false)
+
+	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{CreateTestRequest: CreateTestRequest{
+		Name: "Legacy Java Vuser", Duration: "5m", ScriptID: "script-preflight-java-vuser-legacy", VUsers: 1,
+	}})
 	if err != nil {
 		t.Fatalf("PreflightLaunch returned error: %v", err)
 	}
 	if !preflight.StartNowAllowed || preflight.Decision != "start_now" {
-		t.Fatalf("preflight = %#v, want start_now from distributed runner capability", preflight)
+		t.Fatalf("preflight = %#v, want legacy one-shot runner compatibility", preflight)
 	}
 }
 
@@ -315,7 +756,7 @@ func TestPreflightLaunchBlocksJavaVuserWhenOnlyControllerEnvEnabled(t *testing.T
 	t.Setenv(config.EnvJavaVuserRunnerEnabled, "true")
 	runner := NewTestRunner(10, NewHub(), nil)
 	runner.setExecutionBackend(newDistributedExecutionBackend([]string{"gen-http:9090|protocols=http"}, time.Second, nil))
-	storePreflightJavaVuserScript(runner, "script-preflight-java-vuser-controller-only", "", false)
+	storePreflightJavaVuserScript(t, runner, "script-preflight-java-vuser-controller-only", "", false)
 
 	preflight, err := runner.PreflightLaunch(LaunchPreflightRequest{
 		CreateTestRequest: CreateTestRequest{

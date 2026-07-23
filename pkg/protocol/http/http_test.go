@@ -968,6 +968,36 @@ func TestHTTP_Execute_HeaderListPreservesDuplicateHeaders(t *testing.T) {
 	}
 }
 
+func TestCloneHTTPHeadersPreservesRepeatedOccurrenceBoundaries(t *testing.T) {
+	headers := http.Header{}
+	headers.Add("X-Request-ID", "first")
+	headers.Add("X-Request-ID", "second")
+
+	got := cloneHTTPHeaders(headers)["X-Request-Id"]
+	if got != "first\nsecond" {
+		t.Fatalf("flattened repeated header = %q, want newline-separated occurrences", got)
+	}
+}
+
+func TestRequestHeadersWithRedactedHeaderListReplacesSummaryLosslessly(t *testing.T) {
+	got := requestHeadersWithRedactedHeaderList(
+		map[string]string{"X-Duplicate": "summary", "X-Other": "kept"},
+		protocol.HeaderList{
+			{Name: "x-duplicate", Value: "first-redacted"},
+			{Name: "X-Duplicate", Value: "second-redacted"},
+		},
+	)
+	if got["x-duplicate"] != "first-redacted\nsecond-redacted" {
+		t.Fatalf("redacted HeaderList projection = %#v, want lossless repeated values", got)
+	}
+	if _, exists := got["X-Duplicate"]; exists {
+		t.Fatalf("redacted HeaderList projection retained shadowed summary: %#v", got)
+	}
+	if got["X-Other"] != "kept" {
+		t.Fatalf("unrelated header = %q, want kept", got["X-Other"])
+	}
+}
+
 func TestHTTP_Execute_UnsupportedActionAuthFailsBeforeSend(t *testing.T) {
 	called := false
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -2334,6 +2364,198 @@ func TestHTTPCanDiscardOnlySuccessfulResponseBodies(t *testing.T) {
 				t.Fatalf("response body present = %t, want %t", got, test.wantBody)
 			}
 		})
+	}
+}
+
+func TestHTTPCorrelationEvidenceIsReplayOnlyAndWireFaithful(t *testing.T) {
+	const (
+		wireRequestBody = "wire-request-token"
+		decodedResponse = "decoded-response-token"
+	)
+	var compressed bytes.Buffer
+	gzipWriter := gzip.NewWriter(&compressed)
+	if _, err := gzipWriter.Write([]byte(decodedResponse)); err != nil {
+		t.Fatalf("gzip response: %v", err)
+	}
+	if err := gzipWriter.Close(); err != nil {
+		t.Fatalf("close gzip response: %v", err)
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip")
+		w.Header().Add("Set-Cookie", "session=first")
+		w.Header().Add("Set-Cookie", "session=second")
+		if r.URL.Path == "/error" {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+		_, _ = w.Write(compressed.Bytes())
+	}))
+	defer server.Close()
+
+	actionFor := func(target string) *protocol.Action {
+		return &protocol.Action{
+			Name:         "replay evidence",
+			Type:         "request",
+			Method:       http.MethodPost,
+			Target:       target,
+			Body:         []byte(base64.StdEncoding.EncodeToString([]byte(wireRequestBody))),
+			BodyEncoding: "base64",
+			Headers: map[string]string{
+				"Accept-Encoding": "gzip",
+				"X-Repeated":      "summary-must-not-shadow-list",
+			},
+			HeaderList: protocol.HeaderList{
+				{Name: "X-Repeated", Value: "first"},
+				{Name: "X-Repeated", Value: "second"},
+			},
+			DiscardResponseBodyOnSuccess: true,
+		}
+	}
+
+	replay := initHTTP(t, map[string]any{
+		"base_url":          server.URL,
+		"apexload_run_mode": "replay",
+		protocol.CorrelationEvidenceCaptureConfigKey: true,
+	})
+	defer replay.Teardown(context.Background())
+	for _, test := range []struct {
+		target string
+		status int
+	}{
+		{target: "/ok?attempt=1", status: http.StatusOK},
+		{target: "/error?attempt=2", status: http.StatusInternalServerError},
+	} {
+		result, err := replay.Execute(context.Background(), actionFor(test.target))
+		if err != nil {
+			t.Fatalf("Execute(%s): %v", test.target, err)
+		}
+		evidence := result.CorrelationEvidence
+		if evidence == nil {
+			t.Fatalf("Execute(%s) correlation evidence is nil", test.target)
+		}
+		if evidence.RequestURL != server.URL+test.target || evidence.RequestBody != wireRequestBody {
+			t.Fatalf("Execute(%s) request evidence = %#v", test.target, evidence)
+		}
+		if got := evidence.RequestHeaders["X-Repeated"]; got != "first\nsecond" {
+			t.Fatalf("Execute(%s) repeated request header = %q, want lossless occurrences", test.target, got)
+		}
+		if evidence.RequestHeaders["Host"] != strings.TrimPrefix(server.URL, "http://") {
+			t.Fatalf("Execute(%s) Host = %q", test.target, evidence.RequestHeaders["Host"])
+		}
+		if evidence.ResponseStatus != test.status || evidence.ResponseBody != decodedResponse {
+			t.Fatalf("Execute(%s) response evidence = %#v", test.target, evidence)
+		}
+		wantResponseSuccess := test.status == http.StatusOK
+		if evidence.ResponseSuccess == nil || *evidence.ResponseSuccess != wantResponseSuccess {
+			t.Fatalf("Execute(%s) response success = %#v, want %t", test.target, evidence.ResponseSuccess, wantResponseSuccess)
+		}
+		if got := evidence.ResponseHeaders["Set-Cookie"]; got != "session=first\nsession=second" {
+			t.Fatalf("Execute(%s) repeated response header = %q, want lossless occurrences", test.target, got)
+		}
+		if result.Success && result.ResponseBody != "" {
+			t.Fatalf("Execute(%s) successful public body = %q, want discarded while raw evidence remains", test.target, result.ResponseBody)
+		}
+	}
+
+	for _, config := range []map[string]any{
+		{"base_url": server.URL},
+		{"base_url": server.URL, "apexload_run_mode": "replay"},
+	} {
+		withoutObserver := initHTTP(t, config)
+		result, err := withoutObserver.Execute(context.Background(), actionFor("/ok"))
+		_ = withoutObserver.Teardown(context.Background())
+		if err != nil {
+			t.Fatalf("Execute without private observer: %v", err)
+		}
+		if result.CorrelationEvidence != nil {
+			t.Fatalf("run without private observer retained correlation evidence: %#v", result.CorrelationEvidence)
+		}
+	}
+}
+
+func TestHTTPCorrelationResponseOutcomePrecedesExtractorFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = io.WriteString(w, `{"message":"expected miss"}`)
+	}))
+	defer server.Close()
+
+	replay := initHTTP(t, map[string]any{
+		"base_url": server.URL,
+		protocol.CorrelationEvidenceCaptureConfigKey: true,
+	})
+	defer replay.Teardown(context.Background())
+	result, err := replay.Execute(context.Background(), &protocol.Action{
+		Name:   "accepted 404 with failed extraction",
+		Type:   "GET",
+		Method: http.MethodGet,
+		Target: "/missing",
+		Assertions: []protocol.Assertion{{
+			Type: "status_code", Expected: http.StatusNotFound,
+		}},
+		Extractors: []protocol.Extractor{{
+			Name: "token", Source: "body", Type: "regex", Expression: `"token":"([^"]+)"`, OnMiss: "fail",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || !strings.Contains(result.ErrorMessage, "found no match") {
+		t.Fatalf("overall result = success:%t error:%q, want extractor failure", result.Success, result.ErrorMessage)
+	}
+	if result.CorrelationEvidence == nil || result.CorrelationEvidence.ResponseSuccess == nil || !*result.CorrelationEvidence.ResponseSuccess {
+		t.Fatalf("correlation response outcome = %#v, want explicitly accepted status", result.CorrelationEvidence)
+	}
+}
+
+func TestHTTPCorrelationResponseOutcomeFailsOnBodyDecodeError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Encoding", "gzip")
+		_, _ = io.WriteString(w, "not-a-gzip-stream")
+	}))
+	defer server.Close()
+
+	replay := initHTTP(t, map[string]any{
+		"base_url": server.URL,
+		protocol.CorrelationEvidenceCaptureConfigKey: true,
+	})
+	defer replay.Teardown(context.Background())
+	result, err := replay.Execute(context.Background(), &protocol.Action{Name: "decode failure", Type: "GET", Method: http.MethodGet, Target: "/"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Success || result.CorrelationEvidence == nil || result.CorrelationEvidence.ResponseSuccess == nil || *result.CorrelationEvidence.ResponseSuccess {
+		t.Fatalf("decode-failed response outcome = result:%#v evidence:%#v, want false", result, result.CorrelationEvidence)
+	}
+}
+
+func TestHTTPCorrelationEvidenceFailsClosedBeforeOversizedCopy(t *testing.T) {
+	payload := bytes.Repeat([]byte("x"), protocol.MaxCorrelationEvidenceBytes+1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write(payload)
+	}))
+	defer server.Close()
+
+	replay := initHTTP(t, map[string]any{
+		"base_url": server.URL,
+		protocol.CorrelationEvidenceCaptureConfigKey: true,
+	})
+	defer replay.Teardown(context.Background())
+	result, err := replay.Execute(context.Background(), &protocol.Action{
+		Name: "oversized", Type: "GET", Method: http.MethodGet, Target: "/", DiscardResponseBodyOnSuccess: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidence := result.CorrelationEvidence
+	if evidence == nil || evidence.UnavailableReason != protocol.CorrelationEvidenceTooLargeReason {
+		t.Fatalf("oversized evidence = %#v, want explicit unavailable marker", evidence)
+	}
+	if evidence.RequestURL != "" || evidence.RequestBody != "" || len(evidence.RequestHeaders) != 0 || evidence.ResponseBody != "" || len(evidence.ResponseHeaders) != 0 {
+		t.Fatalf("oversized evidence retained partial raw data: %#v", evidence)
+	}
+	if result.ResponseBody != "" {
+		t.Fatalf("oversized successful response allocated public response body of %d bytes", len(result.ResponseBody))
 	}
 }
 

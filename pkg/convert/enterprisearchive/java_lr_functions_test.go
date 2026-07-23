@@ -173,9 +173,29 @@ func TestJavaLRSupplementDisjointFromCRegistry(t *testing.T) {
 	}
 }
 
-// convertJavaLRBody wraps a Java action-method body in a minimal Java Vuser archive
-// and runs it through the real ConvertZip Java import path.
+// convertJavaLRBody exercises the retained native-analysis pass directly. That
+// pass supplies review evidence and transaction detection to the combined
+// importer, but is no longer an executable import path.
 func convertJavaLRBody(t *testing.T, body string) *ConvertResult {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	addJavaZipFile(t, zw, "JavaLR/JavaLR.usr", "[General]\nType=Java Vuser\nScriptLanguage=JAVA\n[Actions]\nAction=Actions.java\n")
+	addJavaZipFile(t, zw, "JavaLR/Actions.java", "import lrapi.lr;\npublic class Actions {\n  public int action() throws Throwable {\n    "+body+"\n    return 0;\n  }\n}\n")
+	if err := zw.Close(); err != nil {
+		t.Fatalf("close zip: %v", err)
+	}
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip: %v", err)
+	}
+	return result
+}
+
+// convertCombinedJavaLRBody runs the production singleton Java import path.
+// Coverage dispositions must describe the governed shim, not the retained
+// native-analysis implementation used only to derive review evidence.
+func convertCombinedJavaLRBody(t *testing.T, body string) *ConvertResult {
 	t.Helper()
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
@@ -193,13 +213,14 @@ func convertJavaLRBody(t *testing.T, body string) *ConvertResult {
 
 // TestJavaLRResolvesEveryPublishedFunction is the closure backbone: every published
 // Java lr method, driven through the real Java import path, must classify to a
-// concrete disposition (never a custom_call stub) with the registry's support mode.
+// concrete disposition (never a custom_call stub) with the combined runner's
+// descriptor- and semantics-aware support mode.
 func TestJavaLRResolvesEveryPublishedFunction(t *testing.T) {
-	for name, want := range publishedJavaLRFunctionExpectations {
-		name, want := name, want
+	for name := range publishedJavaLRFunctionExpectations {
+		name := name
 		t.Run(name, func(t *testing.T) {
 			call := "lr." + strings.TrimPrefix(name, "lr_") + "(\"arg\");"
-			result := convertJavaLRBody(t, call)
+			result := convertCombinedJavaLRBody(t, call)
 			if result.Stats.CustomCallFunctions != 0 {
 				t.Fatalf("%s produced %d custom_call stubs, want 0", name, result.Stats.CustomCallFunctions)
 			}
@@ -216,7 +237,14 @@ func TestJavaLRResolvesEveryPublishedFunction(t *testing.T) {
 			if result.SourceReview == nil {
 				t.Fatalf("%s: missing source review", name)
 			}
-			assertSourceReviewSupportMode(t, result.SourceReview.Mappings, name, want.mode)
+			want, _, known := javaLRRunnerCallDisposition(ParsedFunction{
+				Name:    name,
+				RawArgs: []string{`"arg"`},
+			})
+			if !known {
+				t.Fatalf("%s: missing runner disposition", name)
+			}
+			assertSourceReviewSupportMode(t, result.SourceReview.Mappings, name, want.SupportMode)
 		})
 	}
 }

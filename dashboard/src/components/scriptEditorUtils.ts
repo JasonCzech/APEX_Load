@@ -684,11 +684,33 @@ export function hasBrowserReplayArtifacts(event: ReplayActionEvent): boolean {
   )
 }
 
-export function createReplaySessionId(): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return crypto.randomUUID()
+export function createReplaySessionId(cryptoSource: Crypto | null | undefined = typeof globalThis !== 'undefined' ? globalThis.crypto : undefined): string {
+  if (typeof cryptoSource?.randomUUID === 'function') {
+    return cryptoSource.randomUUID()
   }
-  return `replay-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+  if (typeof cryptoSource?.getRandomValues === 'function') {
+    const bytes = cryptoSource.getRandomValues(new Uint8Array(16))
+    bytes[6] = (bytes[6] & 0x0f) | 0x40
+    bytes[8] = (bytes[8] & 0x3f) | 0x80
+    const hex = Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('')
+    return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+  }
+  // Without a cryptographically secure source, let the server allocate the
+  // capability instead of sending a predictable client-selected identifier.
+  return ''
+}
+
+export function isDefiniteReplayStartRejection(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false
+  const candidate = error as { status?: unknown; payload?: unknown }
+  if (typeof candidate.status === 'number') {
+    // A gateway/request timeout does not prove the upstream rejected the
+    // idempotent start request; reconcile the client-selected session ID just
+    // like a transport error or 5xx response.
+    return candidate.status >= 400 && candidate.status < 500 && candidate.status !== 408
+  }
+  const payload = candidate.payload
+  return typeof payload === 'object' && payload !== null && Array.isArray((payload as { issues?: unknown }).issues)
 }
 
 export function parseReplayVariablesText(text: string): Record<string, string> | undefined {

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -16,8 +17,10 @@ import (
 )
 
 const (
-	defaultAuthoringSessionListLimit = 25
-	maxAuthoringSessionListLimit     = 100
+	defaultAuthoringSessionListLimit        = 25
+	maxAuthoringSessionListLimit            = 100
+	maxAuthoringSessionIdempotencyKeyLength = 256
+	authoringSessionIdempotencyReviewKey    = "_apexload_create_idempotency"
 )
 
 type authoringSessionPersistence interface {
@@ -32,17 +35,22 @@ type authoringSessionCASPersistence interface {
 	DeleteAuthoringSessionUnlessApproving(id string) (bool, error)
 }
 
+type authoringSessionCreatePersistence interface {
+	CreateAuthoringSession(session *storage.AuthoringSession) (bool, error)
+}
+
 type authoringSessionAccessPersistence interface {
 	TouchAuthoringSessionAccess(id string, accessedAt time.Time) (bool, error)
 }
 
 type authoringSessionRequest struct {
-	ProjectID   string         `json:"project_id,omitempty"`
-	Source      string         `json:"source"`
-	Name        string         `json:"name"`
-	Status      string         `json:"status,omitempty"`
-	Draft       dsl.Script     `json:"draft"`
-	ReviewState map[string]any `json:"review_state,omitempty"`
+	ProjectID      string         `json:"project_id,omitempty"`
+	Source         string         `json:"source"`
+	Name           string         `json:"name"`
+	Status         string         `json:"status,omitempty"`
+	Draft          dsl.Script     `json:"draft"`
+	ReviewState    map[string]any `json:"review_state,omitempty"`
+	IdempotencyKey string         `json:"idempotency_key,omitempty"`
 }
 
 type authoringSessionApprovalResponse struct {
@@ -77,6 +85,11 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
+	req.IdempotencyKey = strings.TrimSpace(req.IdempotencyKey)
+	if len(req.IdempotencyKey) > maxAuthoringSessionIdempotencyKeyLength {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("idempotency_key must be at most %d bytes", maxAuthoringSessionIdempotencyKeyLength))
+		return
+	}
 	if err := validateClientAuthoringSessionStatus(req.Status); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -90,11 +103,12 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 		return
 	}
 	req.Draft = *safeDraft
+	sessionSource := normalizeAuthoringSessionSource(req.Source)
+	markImportedJavaVuserAuthoringDraft(&req.Draft, sessionSource)
 	now := time.Now()
 	session := &storage.AuthoringSession{
-		ID:             uuid.New().String(),
 		ProjectID:      normalizeProjectID(req.Draft.ProjectID),
-		Source:         normalizeAuthoringSessionSource(req.Source),
+		Source:         sessionSource,
 		Name:           authoringSessionName(req.Name, &req.Draft),
 		Status:         normalizeAuthoringSessionStatus(req.Status),
 		Draft:          &req.Draft,
@@ -103,9 +117,49 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 		UpdatedAt:      now,
 		LastAccessedAt: now,
 	}
-	if err := s.saveAuthoringSession(session); err != nil {
-		writeError(w, http.StatusInternalServerError, err.Error())
-		return
+	// Reserve the internal review-state namespace for server-authored
+	// idempotency evidence. A client cannot hide arbitrary state behind the
+	// response projection or forge the envelope preserved by later edits.
+	delete(session.ReviewState, authoringSessionIdempotencyReviewKey)
+	if req.IdempotencyKey == "" {
+		session.ID = uuid.New().String()
+		if err := s.saveAuthoringSession(session); err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+	} else {
+		// A deterministic ID plus an insert-only storage operation makes a
+		// retried save converge on one governed review session across controller
+		// replicas. The request fingerprint rejects accidental key reuse for a
+		// different draft while still returning the original response after a
+		// lost network reply.
+		session.ID = authoringSessionIdempotentID(session.ProjectID, req.IdempotencyKey)
+		requestHash := authoringSessionCreateRequestHash(session)
+		stampAuthoringSessionCreateIdempotency(session, req.IdempotencyKey)
+		created, err := s.createAuthoringSession(session)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if !created {
+			existing, err := s.loadAuthoringSession(session.ID)
+			if err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					writeError(w, http.StatusConflict, "idempotent authoring-session save raced with a deletion; retry the request")
+					return
+				}
+				writeError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			if !authoringSessionCreateIdempotencyMatches(existing, req.IdempotencyKey, requestHash) {
+				writeError(w, http.StatusConflict, "idempotency_key was already used for a different authoring-session request")
+				return
+			}
+			enrichAuthoringSession(existing)
+			s.recordAuditEvent(r, "script.authoring_session.create", "replayed", "authoring_session", existing.ID, existing.ProjectID, map[string]any{"name": existing.Name, "source": existing.Source})
+			writeJSON(w, http.StatusOK, maskAuthoringSession(existing))
+			return
+		}
 	}
 	enrichAuthoringSession(session)
 	s.recordAuditEvent(r, "script.authoring_session.create", "success", "authoring_session", session.ID, session.ProjectID, map[string]any{"name": session.Name, "source": session.Source})
@@ -144,11 +198,11 @@ func (s *Server) handleUpdateAuthoringSession(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	if existing.Status == "approved" {
+	if authoringSessionStatusEqual(existing.Status, "approved") {
 		writeError(w, http.StatusConflict, "approved authoring sessions are immutable")
 		return
 	}
-	if existing.Status == "approving" {
+	if authoringSessionStatusEqual(existing.Status, "approving") {
 		writeError(w, http.StatusConflict, "authoring session approval is in progress")
 		return
 	}
@@ -171,11 +225,20 @@ func (s *Server) handleUpdateAuthoringSession(w http.ResponseWriter, r *http.Req
 		return
 	}
 	req.Draft = *safeDraft
-	existing.Source = normalizeAuthoringSessionSource(firstNonEmpty(req.Source, existing.Source))
+	nextSource := normalizeAuthoringSessionSource(firstNonEmpty(req.Source, existing.Source))
+	if importedJavaVuserAuthoringSource(existing.Source) {
+		// The session's imported origin is server-persisted review context. Do
+		// not let draft updates relabel it as manual; otherwise a Java draft
+		// could temporarily change protocol, discard import evidence, then
+		// change back and bypass the fidelity/source-review gate.
+		nextSource = existing.Source
+	}
+	markImportedJavaVuserAuthoringDraft(&req.Draft, nextSource)
+	existing.Source = nextSource
 	existing.Name = authoringSessionName(firstNonEmpty(req.Name, existing.Name), &req.Draft)
 	existing.Status = normalizeAuthoringSessionStatus(firstNonEmpty(req.Status, existing.Status))
 	existing.Draft = &req.Draft
-	existing.ReviewState = cloneReviewState(req.ReviewState)
+	existing.ReviewState = preserveAuthoringSessionCreateIdempotency(existing.ReviewState, cloneReviewState(req.ReviewState))
 	existing.UpdatedAt = time.Now()
 	existing.LastAccessedAt = existing.UpdatedAt
 	saved, err := s.compareAndSwapAuthoringSession(existing, expectedUpdatedAt, expectedStatus)
@@ -200,8 +263,12 @@ func (s *Server) handleDeleteAuthoringSession(w http.ResponseWriter, r *http.Req
 	if !ok {
 		return
 	}
-	if session.Status == "approving" {
+	if authoringSessionStatusEqual(session.Status, "approving") {
 		writeError(w, http.StatusConflict, "authoring session approval is in progress")
+		return
+	}
+	if authoringSessionStatusEqual(session.Status, "approved") {
+		writeError(w, http.StatusConflict, "approved authoring sessions are immutable and retained for approval verification")
 		return
 	}
 	deleted, err := s.deleteAuthoringSessionUnlessApproving(id)
@@ -233,7 +300,7 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if session.Status == "approved" {
+	if authoringSessionStatusEqual(session.Status, "approved") {
 		scriptID, _ := session.ReviewState["approved_script_id"].(string)
 		if strings.TrimSpace(scriptID) == "" {
 			scriptID = authoringApprovalScriptID(session.ID)
@@ -246,6 +313,16 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 		if !found || stored == nil || normalizeProjectID(stored.ProjectID) != normalizeProjectID(session.ProjectID) {
 			writeError(w, http.StatusConflict, "approved authoring session has no matching library script")
 			return
+		}
+		if scriptRequiresJavaVuserAuthoringApproval(session.Draft) {
+			// The deterministic approval ID may become reusable if the approved
+			// script is later deleted. Never let an unrelated replacement at that
+			// ID satisfy an idempotent approval retry: the stored Java approval
+			// envelope must still hash to this immutable approved session.
+			if conflict := s.runner.javaVuserApprovalConflict(stored.Script); conflict != "" {
+				writeError(w, http.StatusConflict, "approved authoring session no longer matches its Java Vuser library script: "+conflict)
+				return
+			}
 		}
 		validation := buildScriptValidationResponse("", session.Draft)
 		enrichAuthoringSession(session)
@@ -290,6 +367,15 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 	// Approval always promotes to the ID owned by this durable session, so neither
 	// retries nor two different sessions can overwrite another script.
 	session.Draft.ID = authoringApprovalScriptID(session.ID)
+	if scriptRequiresJavaVuserAuthoringApproval(session.Draft) {
+		// createScriptDurable applies this storage default after approval. Apply it
+		// before hashing as well so an optional blank version cannot make the
+		// newly-created Java script's approval evidence stale immediately.
+		if strings.TrimSpace(session.Draft.Version) == "" {
+			session.Draft.Version = "1"
+		}
+		stampJavaVuserAuthoringApproval(session.Draft, session.ID)
+	}
 	previousStatus := session.Status
 	previousReviewState := cloneReviewState(session.ReviewState)
 	previousUpdatedAt := session.UpdatedAt
@@ -315,7 +401,7 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 		return
 	}
 	intentUpdatedAt := session.UpdatedAt
-	stored, err := s.runner.CreateScriptDurable(session.Draft)
+	stored, err := s.runner.createAuthoringApprovedScriptDurable(session.Draft)
 	if err != nil {
 		session.Status = previousStatus
 		session.ReviewState = previousReviewState
@@ -377,14 +463,14 @@ func enrichAuthoringSession(session *storage.AuthoringSession) {
 	if session == nil {
 		return
 	}
-	if session.Status == "approved" {
+	if authoringSessionStatusEqual(session.Status, "approved") {
 		session.ApprovalReady = false
 		if len(session.NextActions) == 0 {
 			session.NextActions = []string{"Session is already approved and promoted to a stored script."}
 		}
 		return
 	}
-	if session.Status == "approving" {
+	if authoringSessionStatusEqual(session.Status, "approving") {
 		session.ApprovalReady = false
 		session.NextActions = []string{"Retry approval to finish the durable script promotion."}
 		return
@@ -490,6 +576,22 @@ func (s *Server) saveAuthoringSession(session *storage.AuthoringSession) error {
 	defer s.authoringMu.Unlock()
 	s.authoring[session.ID] = cloneAuthoringSession(session)
 	return nil
+}
+
+func (s *Server) createAuthoringSession(session *storage.AuthoringSession) (bool, error) {
+	if err := prepareAuthoringSessionForPersistence(session); err != nil {
+		return false, err
+	}
+	if store, ok := s.store.(authoringSessionCreatePersistence); ok {
+		return store.CreateAuthoringSession(session)
+	}
+	s.authoringMu.Lock()
+	defer s.authoringMu.Unlock()
+	if s.authoring[session.ID] != nil {
+		return false, nil
+	}
+	s.authoring[session.ID] = cloneAuthoringSession(session)
+	return true, nil
 }
 
 func (s *Server) compareAndSwapAuthoringSession(session *storage.AuthoringSession, expectedUpdatedAt time.Time, expectedStatus string) (bool, error) {
@@ -638,7 +740,9 @@ func (s *Server) deleteAuthoringSessionUnlessApproving(id string) (bool, error) 
 	s.authoringMu.Lock()
 	defer s.authoringMu.Unlock()
 	session := s.authoring[id]
-	if session == nil || session.Status == "approving" {
+	if session == nil ||
+		authoringSessionStatusEqual(session.Status, "approving") ||
+		authoringSessionStatusEqual(session.Status, "approved") {
 		return false, nil
 	}
 	delete(s.authoring, id)
@@ -649,6 +753,117 @@ func normalizeAuthoringSessionSource(source string) string {
 	return strings.ToLower(strings.TrimSpace(source))
 }
 
+func authoringSessionIdempotentID(projectID, idempotencyKey string) string {
+	scope := normalizeProjectID(projectID) + "\x00" + strings.TrimSpace(idempotencyKey)
+	return uuid.NewSHA1(uuid.NameSpaceURL, []byte("apexload:authoring-session-create:"+scope)).String()
+}
+
+func authoringSessionCreateRequestHash(session *storage.AuthoringSession) string {
+	if session == nil {
+		return ""
+	}
+	reviewState := cloneReviewState(session.ReviewState)
+	delete(reviewState, authoringSessionIdempotencyReviewKey)
+	payload, err := json.Marshal(struct {
+		ProjectID   string         `json:"project_id"`
+		Source      string         `json:"source"`
+		Name        string         `json:"name"`
+		Status      string         `json:"status"`
+		Draft       *dsl.Script    `json:"draft"`
+		ReviewState map[string]any `json:"review_state,omitempty"`
+	}{
+		ProjectID:   normalizeProjectID(session.ProjectID),
+		Source:      normalizeAuthoringSessionSource(session.Source),
+		Name:        strings.TrimSpace(session.Name),
+		Status:      normalizeAuthoringSessionStatus(session.Status),
+		Draft:       session.Draft,
+		ReviewState: reviewState,
+	})
+	if err != nil {
+		return ""
+	}
+	digest := sha256.Sum256(payload)
+	return fmt.Sprintf("%x", digest[:])
+}
+
+func authoringSessionIdempotencyKeyHash(idempotencyKey string) string {
+	digest := sha256.Sum256([]byte(strings.TrimSpace(idempotencyKey)))
+	return fmt.Sprintf("%x", digest[:])
+}
+
+func stampAuthoringSessionCreateIdempotency(session *storage.AuthoringSession, idempotencyKey string) {
+	if session == nil {
+		return
+	}
+	requestHash := authoringSessionCreateRequestHash(session)
+	if session.ReviewState == nil {
+		session.ReviewState = map[string]any{}
+	}
+	session.ReviewState[authoringSessionIdempotencyReviewKey] = map[string]any{
+		"key_hash":     authoringSessionIdempotencyKeyHash(idempotencyKey),
+		"request_hash": requestHash,
+	}
+}
+
+func authoringSessionCreateIdempotencyMatches(session *storage.AuthoringSession, idempotencyKey, requestHash string) bool {
+	if session == nil || session.ReviewState == nil {
+		return false
+	}
+	envelope, ok := session.ReviewState[authoringSessionIdempotencyReviewKey].(map[string]any)
+	if !ok {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(fmt.Sprint(envelope["key_hash"])), authoringSessionIdempotencyKeyHash(idempotencyKey)) &&
+		strings.EqualFold(strings.TrimSpace(fmt.Sprint(envelope["request_hash"])), strings.TrimSpace(requestHash))
+}
+
+func preserveAuthoringSessionCreateIdempotency(current, next map[string]any) map[string]any {
+	delete(next, authoringSessionIdempotencyReviewKey)
+	envelope, ok := current[authoringSessionIdempotencyReviewKey]
+	if !ok {
+		return next
+	}
+	if next == nil {
+		next = map[string]any{}
+	}
+	next[authoringSessionIdempotencyReviewKey] = envelope
+	return next
+}
+
+func importedJavaVuserAuthoringSource(source string) bool {
+	switch normalizeAuthoringSessionSource(source) {
+	case "enterprise_script_archive", "source_review_artifact":
+		return true
+	default:
+		return false
+	}
+}
+
+func markImportedJavaVuserAuthoringDraft(draft *dsl.Script, source string) {
+	if draft == nil || !scriptRequiresJavaVuserAuthoringApproval(draft) || !importedJavaVuserAuthoringSource(source) {
+		return
+	}
+	// GeneratedFrom is part of the approved content hash and survives storage.
+	// Stamp it from the durable session source so removing client-editable
+	// metadata.import evidence cannot turn an imported combined draft into an
+	// apparently hand-authored one.
+	draft.GeneratedFrom = "enterprise_script_archive"
+	if draft.Metadata == nil {
+		draft.Metadata = &dsl.ScriptMetadata{}
+	}
+	if draft.Metadata.Import == nil {
+		draft.Metadata.Import = &dsl.ImportMetadata{}
+	}
+	if draft.Metadata.Import.Preserved == nil {
+		draft.Metadata.Import.Preserved = map[string]any{}
+	}
+	// This server-owned marker distinguishes new combined-import authoring
+	// sessions from already-saved legacy full_lifecycle scripts. Re-stamping it
+	// on every imported-session update prevents changing the mutable method
+	// field to full_lifecycle from discarding the combined-review requirement.
+	draft.Metadata.Import.Preserved[javaVuserCombinedImportReviewKey] = true
+}
+
 func normalizeAuthoringSessionStatus(status string) string {
 	status = strings.ToLower(strings.TrimSpace(status))
 	switch status {
@@ -657,6 +872,10 @@ func normalizeAuthoringSessionStatus(status string) string {
 	default:
 		return "editing"
 	}
+}
+
+func authoringSessionStatusEqual(status, want string) bool {
+	return strings.EqualFold(strings.TrimSpace(status), strings.TrimSpace(want))
 }
 
 func validateClientAuthoringSessionStatus(status string) error {

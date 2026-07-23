@@ -144,6 +144,7 @@ func resolveActionObjectRef(action *dsl.Action, label string, byName map[string]
 	if ref == "" {
 		return
 	}
+	clearResolvedObjectBindingMetadata(action)
 	hasInline := strings.TrimSpace(action.Selector) != "" || strings.TrimSpace(action.Target) != ""
 	degrade := func(reason string) {
 		if hasInline {
@@ -167,6 +168,21 @@ func resolveActionObjectRef(action *dsl.Action, label string, byName map[string]
 	}
 	action.Selector = primary
 	applyResolvedObjectBinding(action, candidates, primary, foundRepoID, logicalName)
+}
+
+// clearResolvedObjectBindingMetadata removes every controller-owned resolution
+// product before a fresh lookup. Keeping stale candidates/fallbacks after an
+// object disappears would let browser self-heal execute locators from an old
+// repository generation even though the action explicitly degraded to its
+// inline fallback.
+func clearResolvedObjectBindingMetadata(action *dsl.Action) {
+	if action == nil || action.Metadata == nil {
+		return
+	}
+	delete(action.Metadata, objectRefRepositoryMetadataKey)
+	delete(action.Metadata, objectRefLogicalNameMetadataKey)
+	delete(action.Metadata, selector.MetadataCandidatesKey)
+	delete(action.Metadata, selector.MetadataFallbacksKey)
 }
 
 // splitObjectRef parses a qualified "repoID:name" reference. Only a prefix that
@@ -285,10 +301,10 @@ func applyResolvedObjectBinding(action *dsl.Action, candidates []selector.Candid
 	} else {
 		delete(action.Metadata, selector.MetadataFallbacksKey)
 	}
-	if repoID != "" {
+	repoID = strings.TrimSpace(repoID)
+	logicalName = strings.TrimSpace(logicalName)
+	if repoID != "" && logicalName != "" {
 		action.Metadata[objectRefRepositoryMetadataKey] = repoID
-	}
-	if strings.TrimSpace(logicalName) != "" {
-		action.Metadata[objectRefLogicalNameMetadataKey] = strings.TrimSpace(logicalName)
+		action.Metadata[objectRefLogicalNameMetadataKey] = logicalName
 	}
 }

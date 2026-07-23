@@ -125,7 +125,7 @@ func (tr *TestRunner) PreflightLaunch(req LaunchPreflightRequest) (*LaunchPrefli
 	if conflicts := externalRunnerLaunchConflicts(preview.Groups); len(conflicts) > 0 {
 		blocking = append(blocking, conflicts...)
 	}
-	if conflicts := tr.javaVuserRunnerLaunchConflictsLocked(preview.Groups); len(conflicts) > 0 {
+	if conflicts := tr.javaVuserRunnerLaunchConflictsForManagedTestLocked(preview); len(conflicts) > 0 {
 		blocking = append(blocking, conflicts...)
 	}
 	if conflicts := importPromotionLaunchConflicts(preview.Groups); len(conflicts) > 0 {
@@ -255,30 +255,143 @@ func (tr *TestRunner) evaluateGeneratorPlacementConflictsLocked(test *ManagedTes
 		}
 		activeTargets[spec.Address] = generatorLoadSnapshot{Target: spec.Address}
 	}
-	defaultLoad := loadSnapshotsForTargets(activeTargets, defaultTargets)
-	compatibility := newGeneratorCompatibilityIndex(specs, activeTargets)
+	inventory, inventoryCapturedAt := tr.cachedGeneratorInventorySnapshot()
+	for _, entry := range inventory {
+		if snapshot, ok := activeTargets[entry.Target]; ok {
+			snapshot.HeartbeatOK = generatorInventoryEntryReachable(entry)
+			snapshot.SupportedProtocols = append([]string(nil), entry.SupportedProtocols...)
+			snapshot.CompatibleFeatures = append([]string(nil), entry.CompatibleFeatures...)
+			snapshot.AvailableCapacity = entry.AvailableCapacity
+			snapshot.RuntimeCapacities = cloneProtocolRuntimeCapacities(entry.RuntimeCapacities)
+			activeTargets[entry.Target] = snapshot
+		}
+	}
+	projected := make(map[string]generatorLoadSnapshot, len(activeTargets))
+	for target, snapshot := range activeTargets {
+		snapshot.RuntimeCapacities = cloneProtocolRuntimeCapacities(snapshot.RuntimeCapacities)
+		projected[target] = snapshot
+	}
+	tr.reserveUnreflectedJavaVuserCapacityLocked(test, projected, specs, inventoryCapturedAt)
+	defaultLoad := loadSnapshotsForTargets(projected, defaultTargets)
+	compatibility := newGeneratorCompatibilityIndex(specs, projected)
 	conflicts := make([]groupPlacementConflict, 0)
 	for _, group := range test.Groups {
-		if group.Assignment != nil && group.Assignment.Mode == generatorAssignmentModeSpecificHosts {
-			shards := chooseGeneratorShardsForGroup(group, activeTargets, defaultLoad, orderedUniqueTargets(mapKeys(activeTargets)), defaultTargets, rootAssignment, nil, compatibility)
-			if len(shards) == 0 {
-				conflicts = append(conflicts, groupPlacementConflict{Group: group.Name, Message: generatorPlacementRejectionMessage(group, activeTargets, specs, rootAssignment)})
-			}
-			continue
-		}
-		candidateLoad := defaultLoad
-		candidatePreferred := defaultTargets
+		shards := chooseGeneratorShardsForGroup(
+			group,
+			projected,
+			defaultLoad,
+			orderedUniqueTargets(mapKeys(projected)),
+			defaultTargets,
+			rootAssignment,
+			nil,
+			compatibility,
+		)
+		rejectionLoad := defaultLoad
 		effectiveAssignment := rootAssignment
-		if group.Assignment != nil && group.Assignment.Mode == generatorAssignmentModeAuto {
-			candidateLoad = activeTargets
-			candidatePreferred = orderedUniqueTargets(mapKeys(activeTargets))
+		if group.Assignment != nil &&
+			(group.Assignment.Mode == generatorAssignmentModeAuto || group.Assignment.Mode == generatorAssignmentModeSpecificHosts) {
+			rejectionLoad = projected
 			effectiveAssignment = group.Assignment
 		}
-		if target := chooseGeneratorTargetForGroup(group, candidateLoad, candidatePreferred, nil, compatibility, effectiveGroupRequiredLabels(group, effectiveAssignment)); target == "" {
-			conflicts = append(conflicts, groupPlacementConflict{Group: group.Name, Message: generatorPlacementRejectionMessage(group, candidateLoad, specs, effectiveAssignment)})
+		if len(shards) == 0 {
+			conflicts = append(conflicts, groupPlacementConflict{Group: group.Name, Message: generatorPlacementRejectionMessage(group, rejectionLoad, specs, effectiveAssignment)})
+			continue
+		}
+		for _, shard := range shards {
+			if shard.Target == "" {
+				continue
+			}
+			snapshot := projected[shard.Target]
+			if shard.VUsers > 0 {
+				snapshot.AvailableCapacity -= int32(shard.VUsers)
+				snapshot.Stats.ActiveVUsers += int32(shard.VUsers)
+			}
+			consumeGroupRuntimeCapacity(&snapshot, group, shard.VUsers)
+			projected[shard.Target] = snapshot
+			if _, ok := defaultLoad[shard.Target]; ok {
+				defaultLoad[shard.Target] = snapshot
+			}
 		}
 	}
 	return conflicts
+}
+
+// reserveUnreflectedJavaVuserCapacityLocked overlays controller admissions that
+// a cached generator heartbeat cannot yet contain. StartTest serializes the
+// INITIALIZING transition under tr.mu, so a second Java run sees the first
+// admission immediately instead of assigning against the same stale JVM slots.
+// Once a post-start inventory snapshot exists, its AvailableVUsers is
+// authoritative and the overlay stops, avoiding double-accounting long-running
+// sessions already reflected by the generator.
+func (tr *TestRunner) reserveUnreflectedJavaVuserCapacityLocked(candidate *ManagedTest, projected map[string]generatorLoadSnapshot, specs []generatorTargetSpec, inventoryCapturedAt time.Time) {
+	if len(projected) == 0 || inventoryCapturedAt.IsZero() {
+		return
+	}
+	active := make([]*ManagedTest, 0)
+	for _, test := range tr.tests {
+		if test == nil || test == candidate ||
+			(candidate != nil && strings.TrimSpace(test.ID) != "" && test.ID == candidate.ID) ||
+			!testReservesRuntimeCapacity(test) ||
+			!groupsUseJavaVuserProtocol(test.Groups) {
+			continue
+		}
+		if test.StartedAt != nil && !test.StartedAt.IsZero() &&
+			inventoryCapturedAt.After(test.StartedAt.UTC().Add(time.Second)) {
+			continue
+		}
+		active = append(active, test)
+	}
+	sort.Slice(active, func(i, j int) bool {
+		if active[i].CreatedAt.Equal(active[j].CreatedAt) {
+			return active[i].ID < active[j].ID
+		}
+		return active[i].CreatedAt.Before(active[j].CreatedAt)
+	})
+	compatibility := newGeneratorCompatibilityIndex(specs, projected)
+	preferredAll := orderedUniqueTargets(mapKeys(projected))
+	for _, test := range active {
+		rootAssignment, err := normalizeGeneratorAssignmentSettings(test.Assignment)
+		if err != nil {
+			continue
+		}
+		backend, ok := tr.execution.(*distributedExecutionBackend)
+		if !ok {
+			continue
+		}
+		defaultTargets, err := backend.allowedTargetsForTest(test)
+		if err != nil {
+			continue
+		}
+		defaultLoad := loadSnapshotsForTargets(projected, defaultTargets)
+		for _, group := range test.Groups {
+			if !groupUsesJavaVuserProtocol(group) {
+				continue
+			}
+			// Reserve the configured peak, not merely the current shard count:
+			// a ramped persistent VUser still needs a JVM slot when it starts.
+			shards := chooseGeneratorShardsForGroup(
+				group,
+				projected,
+				defaultLoad,
+				preferredAll,
+				defaultTargets,
+				rootAssignment,
+				nil,
+				compatibility,
+			)
+			for _, shard := range shards {
+				snapshot, ok := projected[shard.Target]
+				if !ok {
+					continue
+				}
+				consumeGroupRuntimeCapacity(&snapshot, group, shard.VUsers)
+				projected[shard.Target] = snapshot
+				if _, ok := defaultLoad[shard.Target]; ok {
+					defaultLoad[shard.Target] = snapshot
+				}
+			}
+		}
+	}
 }
 
 func (tr *TestRunner) generatorPlacementLaunchConflictsLocked(test *ManagedTest) []LaunchConflict {

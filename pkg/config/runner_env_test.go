@@ -35,10 +35,14 @@ func TestLoadJavaVuserOperatorConfig(t *testing.T) {
 	t.Run("defaults when unset", func(t *testing.T) {
 		t.Setenv(EnvJavaVuserRunnerEnabled, "")
 		t.Setenv(EnvJavaVuserRunnerCommand, "")
+		t.Setenv(EnvJavaVuserRunnerMode, "")
+		t.Setenv(EnvJavaVuserRunnerURL, "")
+		t.Setenv(EnvJavaVuserDefaultJDKHome, "")
 		t.Setenv(EnvJavaVuserHarnessJar, "")
 		t.Setenv(EnvJavaVuserClasspath, "")
 		t.Setenv(EnvJavaVuserWorkDir, "")
 		t.Setenv(EnvJavaVuserMaxProcesses, "")
+		t.Setenv(EnvJavaVuserRunnerAuthToken, "")
 
 		cfg := LoadJavaVuserOperatorConfig()
 		if cfg.Enabled {
@@ -47,23 +51,42 @@ func TestLoadJavaVuserOperatorConfig(t *testing.T) {
 		if cfg.RunnerCommand != DefaultJavaVuserRunnerCommand {
 			t.Errorf("RunnerCommand = %q, want %q", cfg.RunnerCommand, DefaultJavaVuserRunnerCommand)
 		}
+		if cfg.RunnerCommandExplicit {
+			t.Error("RunnerCommandExplicit = true, want false when unset")
+		}
+		if cfg.RunnerMode != DefaultJavaVuserRunnerMode {
+			t.Errorf("RunnerMode = %q, want %q", cfg.RunnerMode, DefaultJavaVuserRunnerMode)
+		}
+		if cfg.RunnerURL != DefaultJavaVuserRunnerURL {
+			t.Errorf("RunnerURL = %q, want %q", cfg.RunnerURL, DefaultJavaVuserRunnerURL)
+		}
+		if cfg.DefaultJDKHome != "" {
+			t.Errorf("DefaultJDKHome = %q, want empty", cfg.DefaultJDKHome)
+		}
 		if cfg.MaxProcesses != DefaultJavaVuserMaxProcesses {
 			t.Errorf("MaxProcesses = %d, want %d", cfg.MaxProcesses, DefaultJavaVuserMaxProcesses)
 		}
 		if len(cfg.Classpath) != 0 {
 			t.Errorf("Classpath = %#v, want empty", cfg.Classpath)
 		}
+		if cfg.AuthToken != "" {
+			t.Errorf("AuthToken = %q, want empty", cfg.AuthToken)
+		}
 	})
 
 	t.Run("operator overrides", func(t *testing.T) {
 		t.Setenv(EnvJavaVuserRunnerEnabled, "true")
 		t.Setenv(EnvJavaVuserRunnerCommand, "/opt/java")
+		t.Setenv(EnvJavaVuserRunnerMode, " SIDECAR ")
+		t.Setenv(EnvJavaVuserRunnerURL, " http://127.0.0.1:18098 ")
+		t.Setenv(EnvJavaVuserDefaultJDKHome, " /opt/jdk-21 ")
 		t.Setenv(EnvJavaVuserHarnessJar, "/opt/harness.jar")
 		t.Setenv(EnvJavaVuserWorkDir, "/work")
 		t.Setenv(EnvJavaVuserMaxProcesses, "8")
+		t.Setenv(EnvJavaVuserRunnerAuthToken, " sidecar-loopback-secret ")
 
 		cfg := LoadJavaVuserOperatorConfig()
-		if !cfg.Enabled || cfg.RunnerCommand != "/opt/java" || cfg.HarnessJar != "/opt/harness.jar" || cfg.WorkDir != "/work" || cfg.MaxProcesses != 8 {
+		if !cfg.Enabled || cfg.RunnerCommand != "/opt/java" || !cfg.RunnerCommandExplicit || cfg.RunnerMode != "sidecar" || cfg.RunnerURL != "http://127.0.0.1:18098" || cfg.DefaultJDKHome != "/opt/jdk-21" || cfg.HarnessJar != "/opt/harness.jar" || cfg.WorkDir != "/work" || cfg.MaxProcesses != 8 || cfg.AuthToken != "sidecar-loopback-secret" {
 			t.Fatalf("operator config = %#v, want overrides applied", cfg)
 		}
 	})
@@ -72,6 +95,20 @@ func TestLoadJavaVuserOperatorConfig(t *testing.T) {
 		t.Setenv(EnvJavaVuserMaxProcesses, "0")
 		if got := LoadJavaVuserOperatorConfig().MaxProcesses; got != DefaultJavaVuserMaxProcesses {
 			t.Fatalf("MaxProcesses = %d, want default %d", got, DefaultJavaVuserMaxProcesses)
+		}
+	})
+
+	t.Run("excessive max processes is bounded", func(t *testing.T) {
+		t.Setenv(EnvJavaVuserMaxProcesses, "1000000000")
+		if got := LoadJavaVuserOperatorConfig().MaxProcesses; got != MaxJavaVuserMaxProcesses {
+			t.Fatalf("MaxProcesses = %d, want upper bound %d", got, MaxJavaVuserMaxProcesses)
+		}
+	})
+
+	t.Run("maximum process bound is accepted", func(t *testing.T) {
+		t.Setenv(EnvJavaVuserMaxProcesses, "10000")
+		if got := LoadJavaVuserOperatorConfig().MaxProcesses; got != MaxJavaVuserMaxProcesses {
+			t.Fatalf("MaxProcesses = %d, want configured maximum %d", got, MaxJavaVuserMaxProcesses)
 		}
 	})
 }

@@ -146,47 +146,43 @@ func (s *Server) handleEnterpriseArchiveSupportMatrix(w http.ResponseWriter, r *
 		"java_jdbc_idiom_matrix":     enterprisearchive.JavaJDBCIdiomCoverage(),
 		"source_protocol_matrix": []map[string]any{
 			{
-				"canonical_source_protocol": "java_over_http",
-				"display_name":              "Java Vuser HTTP",
-				"apexload_protocol":         "http",
-				"status":                    "supported",
-				"promotion_gate":            "static Java web/HTTP idioms recognized by the importer",
-				"notes":                     "Recorded Java-over-HTTP traffic targets native http_request actions, not the java_http serialized-object codec.",
-			},
-			{
 				"canonical_source_protocol": "java_vuser",
-				"display_name":              "Java Vuser JMS",
-				"apexload_protocol":         "jms-solace / jms-ibmmq / jms-servicebus",
-				"status":                    "supported",
-				"promotion_gate":            "JMS provider, destination, and broker runtime configuration verified",
-				"notes":                     "JMS idioms convert to native JMS DSL with mock enabled until real broker settings are supplied.",
-			},
-			{
-				"canonical_source_protocol": "java_jdbc",
-				"display_name":              "Java Vuser JDBC",
-				"apexload_protocol":         "database",
-				"status":                    "supported",
-				"promotion_gate":            "database DSN secret and SQL intent verified",
-				"notes":                     "Recoverable JDBC statements convert to native database actions; dynamic SQL remains review-only.",
-			},
-			{
-				"canonical_source_protocol": "java_soap",
-				"display_name":              "Java Vuser SOAP",
-				"apexload_protocol":         "soap",
-				"status":                    "partial",
-				"promotion_gate":            "static endpoint and SOAP envelope recovered",
-				"notes":                     "Recoverable Java SOAP calls promote to the native SOAP/HTTP runtime; dynamic clients remain named review.",
-			},
-			{
-				"canonical_source_protocol": "java_jms_solace",
-				"display_name":              "Java JMS/Solace",
-				"apexload_protocol":         "jms-solace",
-				"status":                    "supported",
-				"promotion_gate":            "approved Solace JMS runtime settings or governed sidecar runner policy",
-				"notes":                     "Legacy Java_protocols Solace projects route through the unified Java JMS lane and preserve XML-body templating.",
+				"display_name":              "LoadRunner Java Vuser",
+				"apexload_protocol":         "java_vuser",
+				"status":                    "external_runner_required",
+				"promotion_gate":            "authoring approval plus an enabled governed java_vuser_jvm_runner advertising java_vuser_persistent_lifecycle_v1 and java_vuser_session_frame_token_v1 with the required classpath",
+				"notes":                     "HTTP, JDBC, JMS, SOAP, LoadRunner utility calls, and custom Java remain together in one lifecycle-preserving Java Vuser draft.",
 			},
 		},
 	})
+}
+
+// normalizeCombinedJavaVuserImport keeps the public import envelope stable for
+// Java archives: script and the sole scripts item always identify the same
+// combined draft. Import fidelity is computed by the converter, while runtime
+// availability is enforced independently by the Java Vuser launch preflight.
+func normalizeCombinedJavaVuserImport(result *enterprisearchive.ConvertResult) {
+	if result == nil || result.DetectedProtocol == nil ||
+		result.DetectedProtocol.ImportMode != enterprisearchive.ImportModeExternalRunnerRequired {
+		return
+	}
+
+	combined := result.Script
+	if !isGovernedJavaVuserDraft(combined) {
+		combined = nil
+		for _, candidate := range result.Scripts {
+			if isGovernedJavaVuserDraft(candidate) {
+				combined = candidate
+				break
+			}
+		}
+	}
+	if combined == nil {
+		return
+	}
+
+	result.Script = combined
+	result.Scripts = []*dsl.Script{combined}
 }
 
 func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) (*enterpriseArchiveImportRequest, bool) {
@@ -238,6 +234,10 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 		return nil, false
 	}
 
+	// Deprecated compatibility input. Java archives now always produce one
+	// governed java_vuser draft, so true and false intentionally behave alike.
+	_ = parseBoolDefault(firstNonEmpty(r.FormValue("allow_java_vuser_runner"), r.URL.Query().Get("allow_java_vuser_runner")), true)
+
 	return &enterpriseArchiveImportRequest{
 		Data:             data,
 		HARData:          harData,
@@ -248,7 +248,6 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 			BaseURL:              r.FormValue("base_url"),
 			IncludeAssertions:    r.FormValue("include_assertions") == "true",
 			PreserveTransactions: parseBoolDefault(r.FormValue("preserve_transactions"), true),
-			AllowJavaVuserRunner: parseBoolDefault(firstNonEmpty(r.FormValue("allow_java_vuser_runner"), r.URL.Query().Get("allow_java_vuser_runner")), false),
 		},
 		ReadinessPolicy: enterprisearchive.ParseRuntimeSettingMigrationPolicy(r.FormValue("migration_block_statuses")),
 	}, true
@@ -259,6 +258,7 @@ func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *
 		writeJSON(w, status, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{}))
 		return
 	}
+	normalizeCombinedJavaVuserImport(result)
 	unsupportedElements := uniqueSortedStrings(result.Stats.UnsupportedFuncs)
 	warnings := enterpriseArchiveImportWarnings(result)
 	summary := buildEnterpriseArchiveImportSummary(result, unsupportedElements, readinessPolicy)
@@ -270,9 +270,9 @@ func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *
 	for _, script := range result.Scripts {
 		report := protocolCompat
 		if len(result.Scripts) > 1 {
-			// Each split script (HTTP / JDBC / JMS / SOAP) gets its own
-			// step/data-source/runtime-parity counts instead of the aggregate
-			// first-lane report being copied onto every script.
+			// Import formats that intentionally return multiple scripts get
+			// per-script counts instead of the aggregate first-script report.
+			// Java imports are normalized to one combined script above.
 			report = protocolCompatReportForScript(protocolCompat, script)
 		}
 		persistProtocolCompatReport(script, "enterprise_script_archive", report)
@@ -353,14 +353,44 @@ func buildEnterpriseArchiveImportRepairSuggestions(result *enterprisearchive.Con
 	}
 
 	if result.DetectedProtocol != nil && result.DetectedProtocol.ImportMode != enterprisearchive.ImportModeExecutable {
-		suggestions = append(suggestions, scriptImportRepairSuggestion{
-			ID:          "protocol:review-artifact",
-			Category:    "protocol",
-			Severity:    "blocker",
-			Title:       "Resolve protocol import gate",
-			Description: fmt.Sprintf("%s was classified as %s and is not ready to save as an executable APEX Load script.", firstNonEmpty(result.DetectedProtocol.DisplayName, result.DetectedProtocol.CanonicalSourceProtocol), result.DetectedProtocol.ImportMode),
-			Action:      "Save the review artifact, collect the required protocol evidence, and rerun import after the protocol is confirmed or a runner bridge is available.",
-		})
+		combinedJavaVuser := result.DetectedProtocol.ImportMode == enterprisearchive.ImportModeExternalRunnerRequired &&
+			isGovernedJavaVuserDraft(result.Script)
+		fidelityReport := result.FidelityReport
+		if fidelityReport == nil {
+			fidelityReport = summary.FidelityReport
+		}
+		javaVuserApprovalReady := combinedJavaVuser &&
+			fidelityReport != nil &&
+			fidelityReport.PromotionStatus == enterprisearchive.ImportPromotionPromotable &&
+			len(fidelityReport.Blockers) == 0
+		if javaVuserApprovalReady {
+			suggestions = append(suggestions, scriptImportRepairSuggestion{
+				ID:          "protocol:java-vuser-approval",
+				Category:    "protocol",
+				Severity:    "warning",
+				Title:       "Approve the combined Java Vuser draft",
+				Description: "The Java archive is represented by one external-runner draft rather than split native lanes. This runner posture is not conversion loss, but launch requires authoring approval and a compatible governed JVM runner.",
+				Action:      "Save the combined draft to an authoring session, review and approve it, then enable a runner advertising java_vuser_persistent_lifecycle_v1 and java_vuser_session_frame_token_v1 before launch.",
+			})
+		} else if combinedJavaVuser {
+			suggestions = append(suggestions, scriptImportRepairSuggestion{
+				ID:          "protocol:java-vuser-fidelity",
+				Category:    "protocol",
+				Severity:    "blocker",
+				Title:       "Resolve combined Java Vuser fidelity blockers",
+				Description: "The archive remains preserved as one combined Java Vuser draft, but its source or lifecycle fidelity is blocked and the draft is not ready for authoring approval.",
+				Action:      "Save the combined draft as a review artifact, resolve every named fidelity blocker, then re-import and approve the promotable draft.",
+			})
+		} else {
+			suggestions = append(suggestions, scriptImportRepairSuggestion{
+				ID:          "protocol:review-artifact",
+				Category:    "protocol",
+				Severity:    "blocker",
+				Title:       "Resolve protocol import gate",
+				Description: fmt.Sprintf("%s was classified as %s and is not ready to save as an executable APEX Load script.", firstNonEmpty(result.DetectedProtocol.DisplayName, result.DetectedProtocol.CanonicalSourceProtocol), result.DetectedProtocol.ImportMode),
+				Action:      "Save the review artifact, collect the required protocol evidence, and rerun import after the protocol is confirmed or a runner bridge is available.",
+			})
+		}
 	}
 
 	if len(summary.RuntimeFiles) > 0 || summary.MappedRuntimeFile != "" {
@@ -817,8 +847,8 @@ func persistEnterpriseArchiveImportSummary(result *enterprisearchive.ConvertResu
 
 // protocolCompatReportForScript returns a copy of the aggregate report with the
 // per-script-shaped fields (step / data-source / runtime-parity counts) recomputed
-// from the given split script, so a JDBC/JMS script does not carry the first
-// (HTTP) lane's counts in a multi-script import.
+// from the given script so multi-script formats do not copy the first script's
+// counts into every protocol-compatibility report.
 func protocolCompatReportForScript(base *protocolCompatReport, script *dsl.Script) *protocolCompatReport {
 	if base == nil || script == nil {
 		return base

@@ -3394,7 +3394,7 @@ func TestHandleValidateJMeterImportMatchesImportEnvelope(t *testing.T) {
 	}
 }
 
-func TestHandleEnterpriseArchiveImportJavaMixedArchiveReturnsMultipleScripts(t *testing.T) {
+func TestHandleEnterpriseArchiveImportJavaMixedArchiveReturnsOneCombinedDraft(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	archive := buildJavaEnterpriseArchive(t, "JavaMixed", "Java Vuser", `import lrapi.lr;
 import javax.jms.*;
@@ -3411,7 +3411,7 @@ public class Actions {
     return 0;
   }
 }`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive?project_id=proj-java-mixed", bytes.NewReader(archive))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive?project_id=proj-java-mixed&allow_java_vuser_runner=false", bytes.NewReader(archive))
 	req.Header.Set("Content-Type", "application/zip")
 	resp := httptest.NewRecorder()
 
@@ -3426,52 +3426,48 @@ public class Actions {
 		Stats   struct {
 			ConvertedActions int `json:"converted_actions"`
 		} `json:"stats"`
-		Parameterization struct {
-			Suggestions []struct {
-				ScriptName string `json:"script_name"`
-			} `json:"suggestions"`
-		} `json:"parameterization"`
 		DetectedProtocol struct {
-			APEXLoadProtocol string `json:"apexload_protocol"`
+			APEXLoadProtocol  string `json:"apexload_protocol"`
+			ImportMode        string `json:"import_mode"`
+			RunnerRequirement string `json:"runner_requirement"`
 		} `json:"detected_protocol"`
+		FidelityReport struct {
+			PromotionStatus string   `json:"promotion_status"`
+			Blockers        []string `json:"blockers"`
+		} `json:"fidelity_report"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
 	}
-	if len(result.Scripts) < 3 {
-		t.Fatalf("scripts = %#v, want HTTP + database + JMS scripts", result.Scripts)
+	if len(result.Scripts) != 1 {
+		t.Fatalf("scripts = %#v, want one combined Java Vuser draft", result.Scripts)
 	}
-	protocols := map[string]int{}
-	for _, script := range result.Scripts {
-		protocols[script.Protocol]++
-		if script.ProjectID != "proj-java-mixed" {
-			t.Fatalf("script %q project_id = %q, want proj-java-mixed", script.Name, script.ProjectID)
-		}
-		if script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved["source_review"] == nil {
-			t.Fatalf("script %q metadata = %#v, want attached source_review", script.Name, script.Metadata)
-		}
+	combined := result.Scripts[0]
+	if combined.Protocol != "java_vuser" || result.Script.Protocol != "java_vuser" {
+		t.Fatalf("scripts = %#v, want java_vuser protocol", result.Scripts)
 	}
-	for _, protocol := range []string{"http", "database", "jms-solace"} {
-		if protocols[protocol] == 0 {
-			t.Fatalf("protocols = %#v, missing %s", protocols, protocol)
-		}
+	if !reflect.DeepEqual(result.Script, combined) {
+		t.Fatalf("script = %#v, want same item as scripts[0] %#v", result.Script, combined)
 	}
-	if result.Script.Protocol != "http" {
-		t.Fatalf("primary script protocol = %q, want http", result.Script.Protocol)
+	if combined.ProjectID != "proj-java-mixed" {
+		t.Fatalf("project_id = %q, want proj-java-mixed", combined.ProjectID)
 	}
-	if result.DetectedProtocol.APEXLoadProtocol != "multi" {
-		t.Fatalf("detected protocol = %#v, want multi", result.DetectedProtocol)
+	if combined.Metadata == nil || combined.Metadata.Import == nil || combined.Metadata.Import.Preserved["source_review"] == nil {
+		t.Fatalf("metadata = %#v, want attached source_review", combined.Metadata)
 	}
-	if result.Stats.ConvertedActions < 3 {
-		t.Fatalf("stats = %#v, want converted HTTP/JMS/JDBC actions", result.Stats)
+	if len(combined.Actions) != 1 || combined.Actions[0].Type != "java_vuser_run" {
+		t.Fatalf("actions = %#v, want one Java action lifecycle call", combined.Actions)
 	}
-	if len(result.Parameterization.Suggestions) == 0 {
-		t.Fatalf("parameterization suggestions = %#v, want script-scoped suggestions", result.Parameterization.Suggestions)
+	if result.DetectedProtocol.APEXLoadProtocol != "java_vuser" ||
+		result.DetectedProtocol.ImportMode != "external_runner_required" ||
+		result.DetectedProtocol.RunnerRequirement != "java_vuser_jvm_runner" {
+		t.Fatalf("detected protocol = %#v, want governed Java Vuser runner draft", result.DetectedProtocol)
 	}
-	for _, suggestion := range result.Parameterization.Suggestions {
-		if suggestion.ScriptName == "" {
-			t.Fatalf("parameterization suggestions = %#v, want script_name populated for multi-script Java imports", result.Parameterization.Suggestions)
-		}
+	if result.Stats.ConvertedActions < 1 {
+		t.Fatalf("stats = %#v, want converted Java lifecycle action", result.Stats)
+	}
+	if result.FidelityReport.PromotionStatus != enterprisearchive.ImportPromotionPromotable || len(result.FidelityReport.Blockers) != 0 {
+		t.Fatalf("fidelity_report = %#v, runner posture must not be reported as fidelity loss", result.FidelityReport)
 	}
 }
 
@@ -3563,6 +3559,12 @@ func TestHandleEnterpriseArchiveSupportMatrix(t *testing.T) {
 			ID              string `json:"id"`
 			ExecutionStatus string `json:"execution_status"`
 		} `json:"java_jdbc_idiom_matrix"`
+		SourceProtocolMatrix []struct {
+			CanonicalSourceProtocol string `json:"canonical_source_protocol"`
+			APEXLoadProtocol        string `json:"apexload_protocol"`
+			Status                  string `json:"status"`
+			Notes                   string `json:"notes"`
+		} `json:"source_protocol_matrix"`
 	}
 	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
@@ -3600,17 +3602,22 @@ func TestHandleEnterpriseArchiveSupportMatrix(t *testing.T) {
 	if !containsEnterpriseArchiveWeb2Fixture(result.Web2FixtureContract, "web2_spa_checkout", true, "supported") {
 		t.Fatalf("web2_fixture_contract = %#v, want required SPA checkout fixture", result.Web2FixtureContract)
 	}
-	if !containsEnterpriseArchiveJavaSurface(result.JavaImportSurfaceMatrix, "java-web-http", "executable") {
-		t.Fatalf("java_import_surface_matrix = %#v, want executable java-web-http row", result.JavaImportSurfaceMatrix)
+	if !containsEnterpriseArchiveJavaSurface(result.JavaImportSurfaceMatrix, "java-web-http", "external_runner_required") {
+		t.Fatalf("java_import_surface_matrix = %#v, want combined-runner java-web-http row", result.JavaImportSurfaceMatrix)
 	}
-	if !containsEnterpriseArchiveJavaIdiom(result.JavaHTTPIdiomMatrix, "java-web-custom-request", "executable") {
-		t.Fatalf("java_http_idiom_matrix = %#v, want executable custom request row", result.JavaHTTPIdiomMatrix)
+	if !containsEnterpriseArchiveJavaIdiom(result.JavaHTTPIdiomMatrix, "java-web-custom-request", "external_runner_required") {
+		t.Fatalf("java_http_idiom_matrix = %#v, want combined-runner custom request row", result.JavaHTTPIdiomMatrix)
 	}
-	if !containsEnterpriseArchiveJavaIdiom(result.JavaJMSIdiomMatrix, "java-jms-publish-consume", "executable") {
-		t.Fatalf("java_jms_idiom_matrix = %#v, want executable JMS publish/consume row", result.JavaJMSIdiomMatrix)
+	if !containsEnterpriseArchiveJavaIdiom(result.JavaJMSIdiomMatrix, "java-jms-publish-consume", "external_runner_required") {
+		t.Fatalf("java_jms_idiom_matrix = %#v, want combined-runner JMS publish/consume row", result.JavaJMSIdiomMatrix)
 	}
-	if !containsEnterpriseArchiveJavaIdiom(result.JavaJDBCIdiomMatrix, "java-jdbc-query", "executable") {
-		t.Fatalf("java_jdbc_idiom_matrix = %#v, want executable JDBC query row", result.JavaJDBCIdiomMatrix)
+	if !containsEnterpriseArchiveJavaIdiom(result.JavaJDBCIdiomMatrix, "java-jdbc-query", "external_runner_required") {
+		t.Fatalf("java_jdbc_idiom_matrix = %#v, want combined-runner JDBC query row", result.JavaJDBCIdiomMatrix)
+	}
+	if len(result.SourceProtocolMatrix) != 1 || result.SourceProtocolMatrix[0].CanonicalSourceProtocol != "java_vuser" ||
+		result.SourceProtocolMatrix[0].APEXLoadProtocol != "java_vuser" || result.SourceProtocolMatrix[0].Status != "external_runner_required" ||
+		!strings.Contains(result.SourceProtocolMatrix[0].Notes, "remain together") {
+		t.Fatalf("source_protocol_matrix = %#v, want one combined Java Vuser entry", result.SourceProtocolMatrix)
 	}
 }
 
@@ -4236,6 +4243,19 @@ func TestApproveAuthoringSessionPromotesDraftToScriptLibrary(t *testing.T) {
 	}
 	if persisted.Status != "approved" || persisted.ReviewState["approved_script_id"] != approved.Script.ID {
 		t.Fatalf("persisted session = %#v, want approval state", persisted)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/v1/scripts/authoring/sessions/"+created.ID, nil)
+	deleteResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(deleteResp, deleteReq)
+	if deleteResp.Code != http.StatusConflict {
+		t.Fatalf("delete approved status = %d, want %d body=%s", deleteResp.Code, http.StatusConflict, deleteResp.Body.String())
+	}
+	if !strings.Contains(deleteResp.Body.String(), "retained for approval verification") {
+		t.Fatalf("delete approved body = %s, want retained-evidence explanation", deleteResp.Body.String())
+	}
+	if _, err := store.GetAuthoringSession(created.ID); err != nil {
+		t.Fatalf("approved authoring evidence was removed: %v", err)
 	}
 }
 

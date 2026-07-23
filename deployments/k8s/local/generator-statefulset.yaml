@@ -39,6 +39,8 @@ spec:
           env:
             - name: APEXLOAD_GENERATOR_MAX_VUSERS
               value: "1000"
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_ENABLED
+              value: "false"
           volumeMounts:
             - name: tmp
               mountPath: /tmp

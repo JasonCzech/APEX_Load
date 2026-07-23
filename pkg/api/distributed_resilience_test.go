@@ -53,6 +53,7 @@ type stagedEvacuationFaultClient struct {
 	generatorClient
 	mu                  sync.Mutex
 	assignCalls         int
+	scenarioIDs         []string
 	stopCalls           int
 	loseAssignResponses int
 	loseStopResponses   int
@@ -112,6 +113,7 @@ func (c *stagedEvacuationFaultClient) AssignWork(ctx context.Context, assignment
 	result, err := c.generatorClient.AssignWork(ctx, assignment)
 	c.mu.Lock()
 	c.assignCalls++
+	c.scenarioIDs = append(c.scenarioIDs, assignment.ScenarioID)
 	call := c.assignCalls
 	c.mu.Unlock()
 	if err == nil && call <= c.loseAssignResponses {
@@ -143,6 +145,12 @@ func (c *stagedEvacuationFaultClient) stops() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.stopCalls
+}
+
+func (c *stagedEvacuationFaultClient) assignedScenarioIDs() []string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return append([]string(nil), c.scenarioIDs...)
 }
 
 func (c *commitFailingEvacuationClient) CommitWork(context.Context, string, uint64) (generatorrpc.WorkCommitResult, error) {
@@ -570,6 +578,7 @@ func TestDistributedEvacuationResponseLossAndRollbackFailureStopsWholeRun(t *tes
 	script := &dsl.Script{ID: "buyers-script", Name: "Buyers", Protocol: "http"}
 	test := &ManagedTest{
 		ID:         "run-evacuation-rollback-uncertain",
+		ScenarioID: "managed-evacuation-scenario",
 		Status:     "RUNNING",
 		Duration:   time.Minute,
 		StartedAt:  &started,
@@ -596,6 +605,9 @@ func TestDistributedEvacuationResponseLossAndRollbackFailureStopsWholeRun(t *tes
 	}
 	if source.faultStops() == 0 || replacement.stops() <= durableTransitionAttempts {
 		t.Fatalf("whole-run cleanup did not stop every participant: source=%d replacement=%d", source.faultStops(), replacement.stops())
+	}
+	if got := replacement.assignedScenarioIDs(); len(got) == 0 || got[0] != test.ScenarioID {
+		t.Fatalf("evacuation assignment scenario identities = %v, want %q", got, test.ScenarioID)
 	}
 }
 

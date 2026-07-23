@@ -851,8 +851,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: [controller, generator]
-        profile: [standard, enterprise]
+        include:
+          - component: controller
+            profile: standard
+            dockerfile: Dockerfile
+            binary: controller
+          - component: controller
+            profile: enterprise
+            dockerfile: Dockerfile
+            binary: controller
+          - component: generator
+            profile: standard
+            dockerfile: Dockerfile
+            binary: generator
+          - component: generator
+            profile: enterprise
+            dockerfile: Dockerfile
+            binary: generator
+          - component: java-vuser-runner
+            profile: standard
+            dockerfile: runners/java_vuser/Dockerfile
+            binary: apexload-java-vuser-runner
     steps:
       - name: Checkout release source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -952,14 +971,14 @@ jobs:
         with:
           builder: apexload-release-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.component }}-${{ matrix.profile }}
           context: .
-          file: Dockerfile
+          file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: true
           provenance: mode=max
           sbom: false
           tags: ${{ steps.image.outputs.tag }}
           build-args: |
-            BINARY=${{ matrix.component }}
+            BINARY=${{ matrix.binary }}
             GO_BUILD_TAGS=${{ matrix.profile }}
             VERSION=${{ needs.metadata.outputs.version }}
             COMMIT=${{ needs.metadata.outputs.commit }}
@@ -1366,8 +1385,9 @@ jobs:
           set -euo pipefail
           public_key="$RUNNER_TEMP/cosign.pub"
           printf '%s' "$COSIGN_PUBLIC_KEY" > "$public_key"
-          for component in controller generator; do
-            for profile in standard enterprise; do
+          for coordinate in controller:standard controller:enterprise generator:standard generator:enterprise java-vuser-runner:standard; do
+              component="${coordinate%%:*}"
+              profile="${coordinate#*:}"
               ./scripts/release/verify-image-evidence.sh \
                 release/release-manifest.json "$component" "$profile" "$public_key" >/dev/null
               row="$(jq -cer --arg component "$component" --arg profile "$profile" '
@@ -1387,7 +1407,6 @@ jobs:
               else
                 [[ "$tag_state" == absent ]]
               fi
-            done
           done
 
       - name: Reverify frozen signed tag immediately before image exposure
@@ -1421,8 +1440,9 @@ jobs:
           RELEASE_TAG: ${{ needs.metadata.outputs.tag }}
         run: |
           set -euo pipefail
-          for component in controller generator; do
-            for profile in standard enterprise; do
+          for coordinate in controller:standard controller:enterprise generator:standard generator:enterprise java-vuser-runner:standard; do
+              component="${coordinate%%:*}"
+              profile="${coordinate#*:}"
               row="$(jq -cer --arg component "$component" --arg profile "$profile" '
                 [.images[] | select(.component == $component and .profile == $profile)]
                 | if length == 1 then .[0] else error("missing image") end
@@ -1441,7 +1461,6 @@ jobs:
                 printf 'semantic tag %s resolved to %s, expected %s\n' "$final_tag" "$resolved" "$digest" >&2
                 exit 1
               }
-            done
           done
 
       - name: Confirm signed tag remained frozen through image exposure

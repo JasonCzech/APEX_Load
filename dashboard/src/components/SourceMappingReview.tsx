@@ -1,19 +1,29 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { useVirtualizer, type VirtualItem } from '@tanstack/react-virtual'
 
-import { type ScriptDefinition, type SourceReview, type SourceReviewFile, type SourceReviewMapping } from '../types/scripts'
+import {
+  type JavaVuserSourceManifest,
+  type ScriptDefinition,
+  type SourceReview,
+  type SourceReviewFile,
+  type SourceReviewMapping,
+} from '../types/scripts'
 import { canCopyTextToClipboard, copyTextToClipboard } from '../utils/clipboardUtils'
 import { downloadTextFile } from '../utils/fileUtils'
 import { scrollMappingRowIntoTableView } from './sourceMappingScroll'
 import { buildDslDocument, lineRangeForTargetPath } from './dslJsonPointers'
 import {
   type MappingCategory,
+  type SourceFilePathResolver,
   computeCoverage,
+  createSourceFilePathResolver,
   dslLineStatus,
   lineStatusForSource,
   mappingForDslLine,
   mappingForSourceLine,
   mappingMatchesFile,
+  resolveSourceFilePath,
+  sourceFilePathCandidates,
   statusCategory,
 } from './sourceMappingModel'
 import './SourceMappingReview.css'
@@ -53,19 +63,49 @@ function normalizeFiles(sourceReview?: SourceReview | null): SourceReviewFile[] 
   return (sourceReview?.source_files || []).filter(file => file && file.path)
 }
 
-function fileMatchesPath(file: SourceReviewFile, path?: string) {
-  if (!path) return false
-  const filePath = file.path.toLowerCase()
-  const requested = path.toLowerCase()
-  return filePath === requested || filePath.endsWith(`/${requested}`) || filePath.split('/').pop() === requested.split('/').pop()
+function objectValue(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === 'object' && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null
 }
 
-function findSourceFile(files: SourceReviewFile[], path?: string) {
-  return files.find(file => fileMatchesPath(file, path)) || files[0] || null
+function javaVuserSourceManifest(script?: ScriptDefinition | null): JavaVuserSourceManifest | null {
+  const preserved = script?.metadata?.import?.preserved
+  const reviewArtifact = objectValue(preserved?.review_artifact)
+  const metadata = objectValue(reviewArtifact?.metadata)
+  const manifest = objectValue(metadata?.java_source_manifest)
+  if (
+    manifest?.contract !== 'apexload.java_vuser.source_manifest.v1' ||
+    typeof manifest.digest !== 'string' ||
+    typeof manifest.file_count !== 'number' ||
+    typeof manifest.total_bytes !== 'number'
+  ) {
+    return null
+  }
+  return manifest as unknown as JavaVuserSourceManifest
 }
 
-function findFirstMappingForFile(mappings: SourceReviewMapping[], filePath?: string) {
-  return mappings.find(mapping => mappingMatchesFile(mapping, filePath)) || null
+function findSourceFile(
+  files: SourceReviewFile[],
+  path: string | undefined,
+  pathResolver: SourceFilePathResolver,
+) {
+  if (!path) return files[0] || null
+  const resolvedPath = resolveSourceFilePath(path, pathResolver)
+  return resolvedPath ? files.find(file => file.path === resolvedPath) || null : null
+}
+
+function findExactSourceFile(files: SourceReviewFile[], path: string | undefined) {
+  if (!path) return null
+  return files.find(file => file.path === path) || null
+}
+
+function findFirstMappingForFile(
+  mappings: SourceReviewMapping[],
+  filePath: string | undefined,
+  pathResolver: SourceFilePathResolver,
+) {
+  return mappings.find(mapping => mappingMatchesFile(mapping, filePath, pathResolver)) || null
 }
 
 function compareText(a: string, b: string, direction: SortDirection) {
@@ -145,12 +185,52 @@ export default function SourceMappingReview({
 }: Props) {
   const files = useMemo(() => normalizeFiles(sourceReview), [sourceReview])
   const mappings = useMemo(() => normalizeMappings(sourceReview), [sourceReview])
+  const omittedFiles = useMemo(
+    () => (sourceReview?.omitted_source_files || []).filter(path => path),
+    [sourceReview],
+  )
+  const truncatedFiles = files.filter(file => file.truncated)
+  const isJavaVuserReview = script?.protocol?.trim().toLowerCase() === 'java_vuser'
+  const javaSourceManifest = javaVuserSourceManifest(script)
+  const sourceFilePaths = useMemo(() => files.map(file => file.path), [files])
+  // Omitted paths still participate in identity resolution. Otherwise a
+  // mapping whose canonical file was omitted from the bounded preview could
+  // basename-fallback to a captured backup and display the wrong source.
+  const resolutionFilePaths = useMemo(
+    () => [...sourceFilePaths, ...omittedFiles],
+    [omittedFiles, sourceFilePaths],
+  )
+  const sourcePathResolver = useMemo(
+    () => createSourceFilePathResolver(resolutionFilePaths),
+    [resolutionFilePaths],
+  )
+  const omittedJavaFiles = omittedFiles.filter(path => path.trim().toLowerCase().endsWith('.java'))
+  const truncatedJavaFiles = truncatedFiles.filter(file => file.path.trim().toLowerCase().endsWith('.java'))
+  const unaccountedFiles = Math.max(0, (sourceReview?.total_source_files || 0) - files.length - omittedFiles.length)
+  const isBoundedJavaPreview = isJavaVuserReview && (
+    omittedJavaFiles.length > 0 ||
+    truncatedJavaFiles.length > 0
+  )
   const sourceFileOptions = useMemo(() => {
-    const mappedFiles = files.filter(file => mappings.some(mapping => mappingMatchesFile(mapping, file.path)))
-    return mappedFiles.length > 0 ? mappedFiles : files
-  }, [files, mappings])
+    const relevantPaths = new Set<string>()
+    let hasSourceMapping = false
+    for (const mapping of mappings) {
+      if (!mapping.source_file) continue
+      hasSourceMapping = true
+      for (const candidate of sourceFilePathCandidates(mapping.source_file, sourcePathResolver)) {
+        relevantPaths.add(candidate)
+      }
+    }
+    if (!hasSourceMapping) return files
+    return files.filter(file => relevantPaths.has(file.path))
+  }, [files, mappings, sourcePathResolver])
   const [selectedMappingId, setSelectedMappingId] = useState('')
   const [selectedFilePath, setSelectedFilePath] = useState('')
+  // A reviewer may explicitly inspect a captured file even when an ambiguous
+  // mapping cannot be attributed to it. Keep that choice separate from the
+  // mapping-driven selection so the synchronization effect does not
+  // immediately snap back to the first unresolved mapping.
+  const [inspectedUnmappedFilePath, setInspectedUnmappedFilePath] = useState('')
   const [filter, setFilter] = useState('')
   const [categoryFilter, setCategoryFilter] = useState<MappingCategory | ''>('')
   const [sortField, setSortField] = useState<SortField>('source')
@@ -170,8 +250,10 @@ export default function SourceMappingReview({
     [mappings, selectedMappingId],
   )
   const selectedFile = useMemo(
-    () => findSourceFile(files, selectedFilePath || selectedMapping?.source_file),
-    [files, selectedFilePath, selectedMapping?.source_file],
+    () => selectedFilePath
+      ? findExactSourceFile(files, selectedFilePath)
+      : findSourceFile(files, selectedMapping?.source_file, sourcePathResolver),
+    [files, selectedFilePath, selectedMapping?.source_file, sourcePathResolver],
   )
 
   const dslDocument = useMemo(() => (script ? buildDslDocument(script) : null), [script])
@@ -183,26 +265,65 @@ export default function SourceMappingReview({
     () => computeCoverage(mappings, dslStatus.withoutOrigin.length),
     [mappings, dslStatus.withoutOrigin.length],
   )
-  const sourceGutter = useMemo(() => lineStatusForSource(mappings, selectedFile?.path), [mappings, selectedFile])
+  const sourceGutter = useMemo(
+    () => lineStatusForSource(mappings, selectedFile?.path, sourcePathResolver),
+    [mappings, selectedFile, sourcePathResolver],
+  )
 
   useEffect(() => {
+    const inspectedFile = inspectedUnmappedFilePath
+      ? findExactSourceFile(sourceFileOptions, inspectedUnmappedFilePath)
+      : null
+    const inspectedFileMapping = inspectedFile
+      ? findFirstMappingForFile(mappings, inspectedFile.path, sourcePathResolver)
+      : null
+
+    if (inspectedFile && !inspectedFileMapping) {
+      if (selectedMappingId) {
+        setSelectedMappingId('')
+      }
+      if (selectedFilePath !== inspectedFile.path) {
+        setSelectedFilePath(inspectedFile.path)
+      }
+      return
+    }
+
+    if (inspectedUnmappedFilePath) {
+      setInspectedUnmappedFilePath('')
+    }
+
     const selectedStillExists = selectedMappingId && mappings.some(mapping => mapping.id === selectedMappingId)
-    const nextMapping = selectedStillExists
+    const nextMapping = inspectedFileMapping || (selectedStillExists
       ? mappings.find(mapping => mapping.id === selectedMappingId) || null
-      : mappings[0] || null
+      : mappings[0] || null)
 
     if ((nextMapping?.id || '') !== selectedMappingId) {
       setSelectedMappingId(nextMapping?.id || '')
     }
 
-    const fileStillExists = selectedFilePath && sourceFileOptions.some(file => fileMatchesPath(file, selectedFilePath))
-    if (!fileStillExists) {
+    const selectedOption = selectedFilePath
+      ? findExactSourceFile(sourceFileOptions, selectedFilePath)
+      : null
+    const nextMappingFile = nextMapping?.source_file
+      ? findSourceFile(sourceFileOptions, nextMapping.source_file, sourcePathResolver)
+      : null
+    const selectionIsAligned = nextMapping
+      ? selectedOption !== null && nextMappingFile !== null && selectedOption.path === nextMappingFile.path
+      : selectedOption !== null
+    if (!selectionIsAligned) {
       const nextFile = nextMapping?.source_file
-        ? sourceFileOptions.find(file => fileMatchesPath(file, nextMapping.source_file)) || sourceFileOptions[0]
+        ? nextMappingFile || undefined
         : sourceFileOptions[0]
-      setSelectedFilePath(nextFile?.path || nextMapping?.source_file || '')
+      setSelectedFilePath(nextFile?.path || '')
     }
-  }, [mappings, selectedFilePath, selectedMappingId, sourceFileOptions])
+  }, [
+    inspectedUnmappedFilePath,
+    mappings,
+    selectedFilePath,
+    selectedMappingId,
+    sourcePathResolver,
+    sourceFileOptions,
+  ])
 
   useEffect(() => {
     if (!focusedMappingId) return
@@ -210,12 +331,16 @@ export default function SourceMappingReview({
     const nextMapping = mappings.find(mapping => mapping.id === focusedMappingId)
     if (!nextMapping) return
     lastAppliedFocusRequestRef.current = focusRequestId
+    setInspectedUnmappedFilePath('')
     setSelectedMappingId(nextMapping.id)
-    if (nextMapping.source_file) setSelectedFilePath(nextMapping.source_file)
+    if (nextMapping.source_file) {
+      const nextFile = findSourceFile(files, nextMapping.source_file, sourcePathResolver)
+      setSelectedFilePath(nextFile?.path || '')
+    }
     setCategoryFilter('')
     setFilter('')
     setCopied('')
-  }, [focusedMappingId, focusRequestId, mappings])
+  }, [files, focusedMappingId, focusRequestId, mappings, sourcePathResolver])
 
   const filteredMappings = useMemo(() => {
     const needle = filter.trim().toLowerCase()
@@ -282,8 +407,12 @@ export default function SourceMappingReview({
 
   const selectMapping = (mapping: SourceReviewMapping | null) => {
     if (!mapping) return
+    setInspectedUnmappedFilePath('')
     setSelectedMappingId(mapping.id)
-    if (mapping.source_file) setSelectedFilePath(mapping.source_file)
+    if (mapping.source_file) {
+      const nextFile = findSourceFile(files, mapping.source_file, sourcePathResolver)
+      setSelectedFilePath(nextFile?.path || '')
+    }
     setCopied('')
   }
 
@@ -292,7 +421,8 @@ export default function SourceMappingReview({
   }
 
   const selectSourceFile = (filePath: string) => {
-    const nextMapping = findFirstMappingForFile(mappings, filePath)
+    const nextMapping = findFirstMappingForFile(mappings, filePath, sourcePathResolver)
+    setInspectedUnmappedFilePath(nextMapping ? '' : filePath)
     setSelectedFilePath(filePath)
     setSelectedMappingId(nextMapping?.id || '')
     setCopied('')
@@ -400,7 +530,8 @@ export default function SourceMappingReview({
     }
   }
 
-  const sourceActiveRange = selectedMapping && selectedFile && mappingMatchesFile(selectedMapping, selectedFile.path)
+  const sourceActiveRange = selectedMapping && selectedFile &&
+    mappingMatchesFile(selectedMapping, selectedFile.path, sourcePathResolver)
     ? { startLine: selectedMapping.start_line, endLine: selectedMapping.end_line || selectedMapping.start_line }
     : null
   const dslActiveRange = dslDocument ? lineRangeForTargetPath(dslDocument.ranges, selectedMapping?.target_path) : null
@@ -425,7 +556,7 @@ export default function SourceMappingReview({
   }
 
   const handleSourceLineClick = (line: number) => {
-    selectMapping(mappingForSourceLine(mappings, selectedFile?.path, line))
+    selectMapping(mappingForSourceLine(mappings, selectedFile?.path, line, sourcePathResolver))
   }
   const handleDslLineClick = (line: number) => {
     if (!dslDocument) return
@@ -494,10 +625,42 @@ export default function SourceMappingReview({
         </div>
       </div>
 
+      {(omittedFiles.length > 0 || truncatedFiles.length > 0 || unaccountedFiles > 0) && (
+        <div className="source-map-incomplete" role="alert">
+          Source review is a bounded redacted preview.
+          {omittedFiles.length > 0
+            ? ` ${omittedFiles.length} source file${omittedFiles.length === 1 ? ' is' : 's are'} omitted from this bounded review payload.`
+            : ''}
+          {truncatedFiles.length > 0
+            ? ` ${truncatedFiles.length} source file${truncatedFiles.length === 1 ? ' is' : 's are'} truncated.`
+            : ''}
+          {unaccountedFiles > 0
+            ? ` ${unaccountedFiles} source file${unaccountedFiles === 1 ? ' is' : 's are'} not accounted for by the review payload.`
+            : ''}
+          {unaccountedFiles > 0
+            ? ' Review file counts are inconsistent; re-import before approval.'
+            : isBoundedJavaPreview
+              ? javaSourceManifest
+                ? ' Approval is bound to the immutable full Java source manifest. Omitted or truncated bytes require out-of-band review of the governed original archive before approval.'
+                : ' The immutable full Java source manifest is missing; re-import before approval.'
+              : ' Consult the original archive for content outside this bounded review payload.'}
+        </div>
+      )}
+
+      {isJavaVuserReview && javaSourceManifest && (
+        <div className="source-map-manifest" aria-label="Java full-source manifest">
+          <strong>Full-source manifest</strong>
+          <span>{javaSourceManifest.file_count} Java file{javaSourceManifest.file_count === 1 ? '' : 's'}</span>
+          <span>{javaSourceManifest.total_bytes.toLocaleString()} bytes</span>
+          <code title={javaSourceManifest.digest}>{javaSourceManifest.digest}</code>
+        </div>
+      )}
+
       <div className="source-map-toolbar">
         <label>
           <span>Source File</span>
           <select value={selectedFile?.path || ''} onChange={event => selectSourceFile(event.target.value)}>
+            {!selectedFile && <option value="">No unambiguous source file</option>}
             {sourceFileOptions.map(file => (
               <option key={file.path} value={file.path}>
                 {file.path}{file.truncated ? ' (truncated)' : ''}

@@ -39,6 +39,9 @@ func TestReleaseWorkflowBuildsAndPublishesVerifiedImmutableContract(t *testing.T
 		"APEXLOAD_GITHUB_ATTESTATIONS_TOKEN",
 		"github-token: ${{ secrets.APEXLOAD_GITHUB_ATTESTATIONS_TOKEN }}",
 		"Reverify frozen signed tag immediately before image exposure",
+		"component: java-vuser-runner",
+		"dockerfile: runners/java_vuser/Dockerfile",
+		"java-vuser-runner:standard",
 	} {
 		if !strings.Contains(workflow, required) {
 			t.Errorf("release workflow missing required contract fragment %q", required)

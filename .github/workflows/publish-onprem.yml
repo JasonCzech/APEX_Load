@@ -67,8 +67,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        component: [controller, generator]
-        profile: [standard, enterprise]
+        include:
+          - component: controller
+            profile: standard
+          - component: controller
+            profile: enterprise
+          - component: generator
+            profile: standard
+          - component: generator
+            profile: enterprise
+          - component: java-vuser-runner
+            profile: standard
     steps:
       - name: Initialize isolated registry credential paths
         run: |
@@ -421,8 +430,9 @@ jobs:
           set -euo pipefail
           public_key="$RUNNER_TEMP/onprem-cosign.pub"
           printf '%s' "$ONPREM_COSIGN_PUBLIC_KEY" > "$public_key"
-          for component in controller generator; do
-            for profile in standard enterprise; do
+          for coordinate in controller:standard controller:enterprise generator:standard generator:enterprise java-vuser-runner:standard; do
+              component="${coordinate%%:*}"
+              profile="${coordinate#*:}"
               repository="${REGISTRY_HOST}/${REGISTRY_NAMESPACE}/apexload-${component}"
               candidate_tag="${RELEASE_TAG}-${profile}-candidate-${WORKFLOW_RUN_ID}"
               release_tag="${RELEASE_TAG}-${profile}"
@@ -449,10 +459,10 @@ jobs:
               else
                 [[ "$tag_state" == absent ]]
               fi
-            done
           done
-          for component in controller generator; do
-            for profile in standard enterprise; do
+          for coordinate in controller:standard controller:enterprise generator:standard generator:enterprise java-vuser-runner:standard; do
+              component="${coordinate%%:*}"
+              profile="${coordinate#*:}"
               repository="${REGISTRY_HOST}/${REGISTRY_NAMESPACE}/apexload-${component}"
               candidate_tag="${RELEASE_TAG}-${profile}-candidate-${WORKFLOW_RUN_ID}"
               release_tag="${RELEASE_TAG}-${profile}"
@@ -474,7 +484,6 @@ jobs:
               promoted_digest="$(skopeo inspect --format '{{.Digest}}' "docker://${repository}:${release_tag}")"
               [[ "$promoted_digest" == "$digest" ]]
               printf '%s:%s -> %s@%s\n' "$repository" "$release_tag" "$repository" "$digest" >> "$GITHUB_STEP_SUMMARY"
-            done
           done
 
       - name: Remove registry credentials
