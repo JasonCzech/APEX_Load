@@ -1,12 +1,15 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"io"
 	"mime"
 	"net/http"
 	neturl "net/url"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -35,11 +38,45 @@ const (
 	// connection behavior (6 per host, 8 total in flight per VUser).
 	maxResourceConcurrency        = 8
 	maxResourcePerHostConcurrency = 6
+	// defaultMaxProcessResourceConcurrency bounds in-flight resource fetches
+	// across the WHOLE generator, not just per VUser-page. The per-VUser cap
+	// alone multiplies by fleet size (1k VUsers x 8 = 8k concurrent requests on
+	// top of the configured load), which exhausts file descriptors and inflates
+	// the offered load well past what the operator asked for. Operators can
+	// raise or lower it with APEXLOAD_MAX_RESOURCE_CONCURRENCY.
+	//
+	// Trade-off worth knowing: because the resource phase is folded into page
+	// time (LR parity), saturating this budget shows up as higher reported page
+	// time. The wait is excluded from each resource's own DurationMs, but not
+	// from the parent step. Size it above your expected concurrent-page count if
+	// you need page time to reflect only the target.
+	defaultMaxProcessResourceConcurrency = 256
 	// maxResourceCountedBytes stops counting/draining a single resource body
 	// beyond this point. Bodies up to httpCacheMaxBodyBytes are buffered for
 	// the cache; the remainder is drained (and counted) up to this ceiling.
 	maxResourceCountedBytes = 8 * 1024 * 1024
 )
+
+// processResourceSlots bounds concurrent resource fetches per generator
+// process. Sized once from the operator-owned APEXLOAD_MAX_RESOURCE_CONCURRENCY
+// so one generator-wide cap applies across every VUser and script.
+var (
+	processResourceSlotsChan chan struct{}
+	processResourceSlotsOnce sync.Once
+)
+
+func processResourceSlots() chan struct{} {
+	processResourceSlotsOnce.Do(func() {
+		limit := defaultMaxProcessResourceConcurrency
+		if raw := strings.TrimSpace(os.Getenv("APEXLOAD_MAX_RESOURCE_CONCURRENCY")); raw != "" {
+			if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+				limit = parsed
+			}
+		}
+		processResourceSlotsChan = make(chan struct{}, limit)
+	})
+	return processResourceSlotsChan
+}
 
 type resourceRef struct {
 	url          string
@@ -66,7 +103,9 @@ func newResourceFetcher(h *HTTP, config map[string]any) *resourceFetcher {
 	if mode, ok := config["web_download_filters_mode"].(string); ok {
 		fetcher.filterMode = strings.ToLower(strings.TrimSpace(mode))
 	}
-	if hosts, ok := config["web_download_filters_hosts"].([]string); ok {
+	// ConfigStringSlice (not a bare []string assertion) so the filter survives a
+	// config that reached this generator as JSON, where []string decodes to []any.
+	if hosts := protocol.ConfigStringSlice(config, "web_download_filters_hosts"); len(hosts) > 0 {
 		fetcher.filterHosts = normalizeResourceFilterHosts(hosts)
 	}
 	return fetcher
@@ -275,7 +314,6 @@ func (f *resourceFetcher) fetchResourceWave(ctx context.Context, refs []resource
 	}
 	var (
 		wg        sync.WaitGroup
-		globalSem = make(chan struct{}, maxResourceConcurrency)
 		hostMu    sync.Mutex
 		hostSems  = map[string]chan struct{}{}
 		cssMu     sync.Mutex
@@ -295,38 +333,59 @@ func (f *resourceFetcher) fetchResourceWave(ctx context.Context, refs []resource
 		}
 		return sem
 	}
-	for _, ref := range refs {
-		if ctx.Err() != nil {
-			break
-		}
-		wg.Add(1)
-		go func(ref resourceRef) {
-			defer wg.Done()
-			hostSem := hostSemFor(ref.url)
-			select {
-			case globalSem <- struct{}{}:
-			case <-ctx.Done():
-				return
-			}
-			defer func() { <-globalSem }()
-			select {
-			case hostSem <- struct{}{}:
-			case <-ctx.Done():
-				return
-			}
-			defer func() { <-hostSem }()
-
-			entry, bytes, css, failed, cacheHit := f.h.fetchResource(ctx, ref, pageURL)
-			stats.record(entry, bytes, failed, cacheHit)
-			if collectCSS && css != nil {
-				cssMu.Lock()
-				if len(cssBodies) < maxResourceCSSRefs {
-					cssBodies = append(cssBodies, *css)
-				}
-				cssMu.Unlock()
-			}
-		}(ref)
+	// Fixed worker pool rather than a goroutine per ref: a resource-dense page
+	// would otherwise spawn up to maxPageResources+maxPrefetchResources (~80)
+	// goroutines per VUser that immediately park on a semaphore. Worker count is
+	// the per-VUser in-flight cap, so no separate global semaphore is needed.
+	workers := maxResourceConcurrency
+	if len(refs) < workers {
+		workers = len(refs)
 	}
+	queue := make(chan resourceRef)
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			defer wg.Done()
+			for ref := range queue {
+				// Drain without fetching once the action context is done, so the
+				// producer never blocks on an abandoned queue.
+				if ctx.Err() != nil {
+					continue
+				}
+				// Body in a closure so the per-host slot is released by defer:
+				// releasing inline would leak the slot if a fetch panicked, and a
+				// bare defer would instead hold every slot until the worker exits.
+				func() {
+					hostSem := hostSemFor(ref.url)
+					select {
+					case hostSem <- struct{}{}:
+					case <-ctx.Done():
+						return
+					}
+					defer func() { <-hostSem }()
+
+					entry, bytes, css, failed, cacheHit := f.h.fetchResource(ctx, ref, pageURL)
+					stats.record(entry, bytes, failed, cacheHit)
+					if collectCSS && css != nil {
+						cssMu.Lock()
+						if len(cssBodies) < maxResourceCSSRefs {
+							cssBodies = append(cssBodies, *css)
+						}
+						cssMu.Unlock()
+					}
+				}()
+			}
+		}()
+	}
+producer:
+	for _, ref := range refs {
+		select {
+		case queue <- ref:
+		case <-ctx.Done():
+			break producer
+		}
+	}
+	close(queue)
 	wg.Wait()
 	return cssBodies
 }
@@ -343,8 +402,20 @@ type fetchedCSS struct {
 // simulated browser cache. css is non-nil only for a successfully fetched
 // text/css response small enough to have been fully buffered.
 func (h *HTTP) fetchResource(ctx context.Context, ref resourceRef, pageURL string) (entry protocol.NetworkEntry, bytes int64, css *fetchedCSS, failed, cacheHit bool) {
-	start := time.Now()
 	entry = protocol.NetworkEntry{URL: ref.url, Method: http.MethodGet, ResourceType: ref.resourceType}
+
+	// Generator-wide admission. Acquired before the clock starts so time spent
+	// queueing behind other VUsers never lands in this resource's own DurationMs.
+	slots := processResourceSlots()
+	select {
+	case slots <- struct{}{}:
+	case <-ctx.Done():
+		failed = true
+		return
+	}
+	defer func() { <-slots }()
+
+	start := time.Now()
 	finish := func() {
 		entry.DurationMs = float64(time.Since(start)) / float64(time.Millisecond)
 		entry.BytesReceived = bytes
@@ -367,7 +438,7 @@ func (h *HTTP) fetchResource(ctx context.Context, ref resourceRef, pageURL strin
 	if lang := h.defaultHeaders["Accept-Language"]; lang != "" {
 		setRequestHeader(req, "Accept-Language", lang)
 	}
-	if referer := refererFromPageURL(pageURL); referer != "" {
+	if referer := refererForResource(pageURL, ref.url); referer != "" {
 		req.Header.Set("Referer", referer)
 	}
 
@@ -465,18 +536,40 @@ func (h *HTTP) fetchResource(ctx context.Context, ref resourceRef, pageURL strin
 	return
 }
 
-// refererFromPageURL returns a Referer value for the page, stripping any
-// user:pass@ userinfo (browsers never leak credentials in Referer).
-func refererFromPageURL(pageURL string) string {
+// refererForResource returns the Referer a browser would send when fetching
+// resourceURL from pageURL, following the modern default referrer policy
+// (strict-origin-when-cross-origin):
+//
+//   - same origin      -> full URL, minus userinfo and fragment
+//   - cross origin     -> origin only, so page paths and query strings (which
+//     routinely carry session ids and tokens) never reach third-party asset
+//     hosts
+//   - https -> http    -> no Referer at all
+//
+// Sending the full page URL everywhere, as the naive version did, leaks
+// in-URL credentials to every CDN the page references.
+func refererForResource(pageURL, resourceURL string) string {
 	if pageURL == "" {
 		return ""
 	}
-	parsed, err := neturl.Parse(pageURL)
-	if err != nil {
+	page, err := neturl.Parse(pageURL)
+	if err != nil || page.Scheme == "" || page.Host == "" {
 		return ""
 	}
-	parsed.User = nil
-	return parsed.String()
+	page.User = nil
+	page.Fragment = ""
+
+	target, err := neturl.Parse(resourceURL)
+	if err != nil || target.Scheme == "" || target.Host == "" {
+		return ""
+	}
+	if strings.EqualFold(page.Scheme, "https") && strings.EqualFold(target.Scheme, "http") {
+		return "" // never downgrade
+	}
+	if strings.EqualFold(page.Scheme, target.Scheme) && strings.EqualFold(page.Host, target.Host) {
+		return page.String()
+	}
+	return page.Scheme + "://" + page.Host + "/"
 }
 
 // maxExtractedRefs caps how many raw refs the tokenizer collects before the
@@ -490,7 +583,9 @@ const maxExtractedRefs = 4096
 // resolved against base; unresolvable or non-http(s) refs are dropped later by
 // filterResourceRefs.
 func extractResourceRefs(body []byte, base *neturl.URL) (resources, prefetch []resourceRef) {
-	tokenizer := html.NewTokenizer(strings.NewReader(string(body)))
+	// bytes.NewReader, not strings.NewReader(string(body)): the string conversion
+	// copied every HTML body on a per-page, per-VUser path.
+	tokenizer := html.NewTokenizer(bytes.NewReader(body))
 	resolve := func(raw string) string {
 		raw = strings.TrimSpace(raw)
 		if raw == "" || strings.HasPrefix(raw, "#") || strings.HasPrefix(strings.ToLower(raw), "data:") || strings.HasPrefix(strings.ToLower(raw), "javascript:") {

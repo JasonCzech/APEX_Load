@@ -1229,6 +1229,41 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(cacheWritten?.browser_emulation?.cache).toMatchObject({ simulate_cache: true })
   })
 
+  it('keeps this group cache and language edits when browser emulation mode returns to Inherit', () => {
+    const onChange = vi.fn()
+    const groupOverride: ScenarioRuntimeSettingsDraft = {
+      log_level: '',
+      auto_transactions: '',
+      browser_emulation: {
+        mode: 'specific',
+        browser_type: 'chrome',
+        browser_version: '126',
+        language: 'de-DE',
+        cache: { simulate_cache: true },
+      },
+    }
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor groups={GROUPS} focusedIndex={0} onFocusChange={() => {}} overrides={[groupOverride, undefined]} onChange={onChange} onApplyToGroups={() => {}} />,
+      )
+    })
+    clickTab('Browser Emulation')
+    const modeSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Browser emulation mode"]')
+    expect(modeSelect).toBeTruthy()
+    act(() => {
+      modeSelect!.value = ''
+      modeSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const written = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    // Identity goes back to the inherited layer...
+    expect(written?.browser_emulation?.mode).toBeUndefined()
+    expect(written?.browser_emulation?.browser_type).toBeUndefined()
+    // ...but language and cache are not mode-dependent at replay, so the group's
+    // own edits to them must survive rather than be silently discarded.
+    expect(written?.browser_emulation?.language).toBe('de-DE')
+    expect(written?.browser_emulation?.cache).toMatchObject({ simulate_cache: true })
+  })
+
   it('hides the Browser Emulation tab for browser-protocol groups', () => {
     act(() => {
       root.render(

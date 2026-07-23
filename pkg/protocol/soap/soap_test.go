@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -572,5 +573,82 @@ func TestSOAPExecuteBuildsProtocolEvidence(t *testing.T) {
 	}
 	if metadata["status_code"] != 200 {
 		t.Fatalf("status_code = %#v, want 200", metadata["status_code"])
+	}
+}
+
+// TestSOAPClearCookiesDelegatesToWrappedHTTP covers the CookieController
+// delegation browser emulation's "simulate a new user on each iteration" relies
+// on. The compile-time interface assertion only proves the method exists; this
+// proves it reaches the wrapped HTTP instance that owns the jar.
+//
+// ClearCache has no equivalent behavioral assertion here because the simulated
+// response cache only stores GETs and SOAP always POSTs, so a SOAP session can
+// never accumulate a cache entry to observe. Its delegation is covered
+// end-to-end by the java_http suite, which shares the same wrapped HTTP.
+func TestSOAPClearCookiesDelegatesToWrappedHTTP(t *testing.T) {
+	var (
+		mu         sync.Mutex
+		sawCookies []string
+	)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		sawCookies = append(sawCookies, r.Header.Get("Cookie"))
+		mu.Unlock()
+		http.SetCookie(w, &http.Cookie{Name: "sid", Value: "soap", Path: "/"})
+		_, _ = w.Write([]byte(`<Envelope><Body><ok/></Body></Envelope>`))
+	}))
+	defer ts.Close()
+
+	s := &SOAP{}
+	if err := s.Init(context.Background(), map[string]any{
+		"base_url":           ts.URL,
+		"soap_version":       "1.1",
+		"request_timeout_ms": float64(1000),
+	}); err != nil {
+		t.Fatalf("Init returned error: %v", err)
+	}
+	defer func() { _ = s.Teardown(context.Background()) }()
+
+	call := func() {
+		t.Helper()
+		if _, err := s.Execute(context.Background(), &protocol.Action{
+			Name:   "op",
+			Target: "/Service",
+			Body:   []byte(`<Envelope><Body><Op/></Body></Envelope>`),
+			SOAP:   &protocol.SOAPActionConfig{Action: "urn:svc#Op"},
+		}); err != nil {
+			t.Fatalf("Execute returned error: %v", err)
+		}
+	}
+	lastCookie := func() string {
+		mu.Lock()
+		defer mu.Unlock()
+		return sawCookies[len(sawCookies)-1]
+	}
+
+	call()
+	call()
+	if !strings.Contains(lastCookie(), "sid=soap") {
+		t.Fatalf("expected the jar to replay the cookie, got %q", lastCookie())
+	}
+
+	if err := s.ClearCookies(context.Background()); err != nil {
+		t.Fatalf("ClearCookies: %v", err)
+	}
+	call()
+	if got := lastCookie(); got != "" {
+		t.Fatalf("cookie header after ClearCookies = %q, want empty", got)
+	}
+}
+
+// Nil inner protocol must not panic: the engine may clear before Init on an
+// aborted VUser start.
+func TestSOAPClearCacheAndCookiesNilInnerAreSafe(t *testing.T) {
+	s := &SOAP{}
+	if err := s.ClearCache(context.Background()); err != nil {
+		t.Fatalf("ClearCache on uninitialized protocol: %v", err)
+	}
+	if err := s.ClearCookies(context.Background()); err != nil {
+		t.Fatalf("ClearCookies on uninitialized protocol: %v", err)
 	}
 }

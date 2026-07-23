@@ -73,17 +73,14 @@ func validateBrowserEmulationIssues(script *Script) []string {
 		}
 	}
 
-	if cache := cfg.Cache; cache != nil {
-		simulateOff := cache.SimulateCache != nil && !*cache.SimulateCache
-		if simulateOff {
-			if cache.CacheContentURLs != nil && *cache.CacheContentURLs {
-				issues = append(issues, "config.browser_emulation.cache.cache_content_urls has no effect while simulate_cache is false")
-			}
-			if cache.CheckNewerVersions != nil && *cache.CheckNewerVersions {
-				issues = append(issues, "config.browser_emulation.cache.check_newer_versions has no effect while simulate_cache is false")
-			}
-		}
-	}
+	// cache_content_urls / check_newer_versions while simulate_cache is false is
+	// deliberately NOT an issue. The pairing is inert — with the cache disabled
+	// the protocol leaves h.cache nil and both flags are only ever read inside
+	// h.cache != nil guards — and ValidateScriptIssues has no warning severity,
+	// so flagging it here hard-blocks save/run. Both editors already disable the
+	// child controls when the cache is off; the only remaining producers are API
+	// / CLI / IaC clients, for whom a save-blocking error on a no-op setting is
+	// the bug rather than the protection.
 	return issues
 }
 

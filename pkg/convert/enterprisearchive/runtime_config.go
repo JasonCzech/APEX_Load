@@ -556,8 +556,15 @@ func (rc *RuntimeConfig) ToHTTPConfig() *dsl.HTTPConfig {
 	// When browser emulation resolves a mode, the User-Agent lives in
 	// config.browser_emulation (authoritative at replay); duplicating it here
 	// would leave two editable sources of the same header.
+	//
+	// An explicit UseCustomAgent=0 also suppresses the fallback: the source is
+	// saying "do not present this custom agent". Without this guard, a cfg
+	// carrying UseCustomAgent=0 alongside a CustomUserAgent value and no
+	// recognized BrowserType resolves to mode "" and then applies the very agent
+	// the source disabled.
 	emulation := rc.ToBrowserEmulationConfig()
-	if rc.UserAgent != "" && (emulation == nil || emulation.Mode == "") {
+	customUASuppressed := rc.BEUseCustomUA != nil && !*rc.BEUseCustomUA
+	if rc.UserAgent != "" && !customUASuppressed && (emulation == nil || emulation.Mode == "") {
 		cfg.UserAgent = rc.UserAgent
 	}
 	if rc.AcceptLanguage != "" {
@@ -822,10 +829,10 @@ func (rc *RuntimeConfig) ToBrowserEmulationConfig() *dsl.BrowserEmulationConfig 
 		}
 		// Stock VuGen cfgs emit the cache child keys unconditionally, so an
 		// unchecked "Simulate browser cache" (SimulateCache=0) arrives alongside
-		// CacheHtmlPages=1 / CacheAlwaysCheckForNewerPages=1. Those children have
-		// no effect while the cache is off and the validator rejects the pairing,
-		// so drop them when the cache is explicitly disabled (raw values stay in
-		// preserved metadata).
+		// CacheHtmlPages=1 / CacheAlwaysCheckForNewerPages=1. Those children are
+		// inert while the cache is off, so normalize them away rather than import
+		// settings that read as active but do nothing (raw values stay in
+		// preserved metadata). The validator accepts either shape.
 		if cache.SimulateCache != nil && !*cache.SimulateCache {
 			cache.CacheContentURLs = nil
 			cache.CheckNewerVersions = nil

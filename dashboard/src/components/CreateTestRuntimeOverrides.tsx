@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ScenarioDraft } from '../types'
 import { JavaEnvSettingsFields, type JavaEnvSettingsValue } from './JavaEnvSettingsFields'
-import { FALLBACK_BROWSER_EMULATION_CATALOG } from './scriptEditorRuntimeSettingsModel'
+import { useBrowserEmulationCatalog } from '../hooks/useBrowserEmulationCatalog'
 
 type RuntimeSettingsState = ScenarioDraft['runtimeSettings']
 type BrowserRuntimeSettings = NonNullable<RuntimeSettingsState['browser']>
@@ -109,7 +109,10 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
 
   const [browserEmulationOpen, setBrowserEmulationOpen] = useState(Boolean(runtimeSettings.browser_emulation))
   const browserEmulation = runtimeSettings.browser_emulation
-  const selectedEmulationBrowser = FALLBACK_BROWSER_EMULATION_CATALOG.browsers.find(
+  // Live catalog (bundled fallback until it resolves) so this editor offers the
+  // same browsers the engine can actually resolve — see useBrowserEmulationCatalog.
+  const browserEmulationCatalog = useBrowserEmulationCatalog(browserEmulationOpen)
+  const selectedEmulationBrowser = browserEmulationCatalog.browsers.find(
     (browser) => browser.type === browserEmulation?.browser_type,
   )
   const updateBrowserEmulation = (patch: Partial<BrowserEmulationSettings>) => {
@@ -443,7 +446,7 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
                   })}
                 >
                   <option value="">Engine default</option>
-                  {FALLBACK_BROWSER_EMULATION_CATALOG.browsers.map((browser) => (
+                  {browserEmulationCatalog.browsers.map((browser) => (
                     <option key={browser.type} value={browser.type}>{browser.label}</option>
                   ))}
                 </select>
@@ -473,7 +476,7 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
                   <option value="">Browser default</option>
                   {(selectedEmulationBrowser?.platforms || []).map((platform) => (
                     <option key={platform} value={platform}>
-                      {FALLBACK_BROWSER_EMULATION_CATALOG.platforms.find((candidate) => candidate.id === platform)?.label || platform}
+                      {browserEmulationCatalog.platforms.find((candidate) => candidate.id === platform)?.label || platform}
                     </option>
                   ))}
                 </select>
@@ -486,7 +489,7 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
                   onChange={(event) => updateBrowserEmulation({ language: event.target.value || undefined })}
                 >
                   <option value="">Engine default</option>
-                  {FALLBACK_BROWSER_EMULATION_CATALOG.languages.map((language) => (
+                  {browserEmulationCatalog.languages.map((language) => (
                     <option key={language.tag} value={language.tag}>{language.label}</option>
                   ))}
                 </select>

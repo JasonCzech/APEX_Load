@@ -3,6 +3,7 @@ package engine
 // vuser_execute.go — split from vuser.go (same package, behavior-preserving).
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -303,20 +304,170 @@ func (vu *VUser) safeProtoExecuteStream(ctx context.Context, action *protocol.Ac
 	return vu.Proto.Execute(ctx, action)
 }
 
+const unresolvedParamToken = "{{param."
+
+// containsUnresolvedParamToken reports whether s contains "{{param." in any
+// letter case. Allocation-free by design: this runs on every action of every
+// iteration of every VUser, so the obvious strings.Contains(strings.ToLower(s))
+// would copy each multi-KB request body on the hot path.
+func containsUnresolvedParamToken(s string) bool {
+	for i := 0; i+len(unresolvedParamToken) <= len(s); {
+		next := strings.Index(s[i:], "{{")
+		if next < 0 {
+			return false
+		}
+		i += next
+		if i+len(unresolvedParamToken) <= len(s) && strings.EqualFold(s[i:i+len(unresolvedParamToken)], unresolvedParamToken) {
+			return true
+		}
+		i += 2
+	}
+	return false
+}
+
+var (
+	unresolvedParamOpenBytes  = []byte("{{")
+	unresolvedParamTokenBytes = []byte(unresolvedParamToken)
+)
+
+// bytesContainUnresolvedParamToken is the []byte twin of the scan above, used
+// for request bodies so the hot path never converts a multi-KB body to string.
+func bytesContainUnresolvedParamToken(b []byte) bool {
+	for i := 0; i+len(unresolvedParamTokenBytes) <= len(b); {
+		next := bytes.Index(b[i:], unresolvedParamOpenBytes)
+		if next < 0 {
+			return false
+		}
+		i += next
+		if i+len(unresolvedParamTokenBytes) <= len(b) && bytes.EqualFold(b[i:i+len(unresolvedParamTokenBytes)], unresolvedParamTokenBytes) {
+			return true
+		}
+		i += 2
+	}
+	return false
+}
+
+func anyStringContainsUnresolvedParam(values ...string) bool {
+	for _, value := range values {
+		if containsUnresolvedParamToken(value) {
+			return true
+		}
+	}
+	return false
+}
+
+func stringMapContainsUnresolvedParam(values map[string]string) bool {
+	for key, value := range values {
+		if containsUnresolvedParamToken(key) || containsUnresolvedParamToken(value) {
+			return true
+		}
+	}
+	return false
+}
+
+// anyValueContainsUnresolvedParam walks the dynamically-typed params/metadata
+// containers. Depth is bounded by the DSL's own nesting limits.
+func anyValueContainsUnresolvedParam(value any) bool {
+	switch typed := value.(type) {
+	case nil:
+		return false
+	case string:
+		return containsUnresolvedParamToken(typed)
+	case []byte:
+		return containsUnresolvedParamToken(string(typed))
+	case map[string]any:
+		for key, item := range typed {
+			if containsUnresolvedParamToken(key) || anyValueContainsUnresolvedParam(item) {
+				return true
+			}
+		}
+	case map[string]string:
+		return stringMapContainsUnresolvedParam(typed)
+	case []any:
+		for _, item := range typed {
+			if anyValueContainsUnresolvedParam(item) {
+				return true
+			}
+		}
+	case []string:
+		return anyStringContainsUnresolvedParam(typed...)
+	}
+	return false
+}
+
+// actionContainsUnresolvedParameter fails an action closed when interpolation
+// left a literal {{param.*}} reference behind, rather than sending the template
+// text to the target.
+//
+// Every string-bearing field is walked explicitly. The previous json.Marshal
+// catch-all was both slower (a full encode plus two whole-body lowercase copies
+// per action — measured at ~15.7us and 21KB allocated for a 3KB body) and
+// blind to the nine `json:"-"` fields, so unresolved refs in RedactedHeaders /
+// RedactedParams / RedactedAuth / RedactedSOAP slipped through. Coverage is
+// held to the struct by TestActionUnresolvedParameterScanCoversEveryStringField,
+// which fails if protocol.Action grows a string-bearing field this misses.
 func actionContainsUnresolvedParameter(action *protocol.Action) bool {
 	if action == nil {
 		return false
 	}
-	for _, value := range []string{
-		action.Target, action.Selector, action.Value, string(action.Body),
-		action.RedactedTarget, action.RedactedSelector, action.RedactedValue, string(action.RedactedBody),
-	} {
-		if strings.Contains(strings.ToLower(value), "{{param.") {
+	if anyStringContainsUnresolvedParam(
+		action.Name, action.Type, action.Method, action.BodyEncoding,
+		action.Target, action.RedactedTarget,
+		action.Selector, action.RedactedSelector,
+		action.Value, action.RedactedValue,
+		action.ThinkTime.Type,
+	) {
+		return true
+	}
+	if bytesContainUnresolvedParamToken(action.Body) || bytesContainUnresolvedParamToken(action.RedactedBody) {
+		return true
+	}
+	if stringMapContainsUnresolvedParam(action.Headers) || stringMapContainsUnresolvedParam(action.RedactedHeaders) {
+		return true
+	}
+	for _, list := range []protocol.HeaderList{action.HeaderList, action.RedactedHeaderList} {
+		for _, entry := range list {
+			if anyStringContainsUnresolvedParam(entry.Name, entry.Value) {
+				return true
+			}
+		}
+	}
+	for _, values := range []map[string]any{action.Params, action.RedactedParams, action.Metadata} {
+		for key, item := range values {
+			if containsUnresolvedParamToken(key) || anyValueContainsUnresolvedParam(item) {
+				return true
+			}
+		}
+	}
+	if action.WaitFor != nil && anyStringContainsUnresolvedParam(action.WaitFor.Type, action.WaitFor.Value) {
+		return true
+	}
+	if action.Sync != nil && anyStringContainsUnresolvedParam(action.Sync.Type, action.Sync.Value) {
+		return true
+	}
+	for _, auth := range []*protocol.AuthConfig{action.Auth, action.RedactedAuth} {
+		if auth != nil && anyStringContainsUnresolvedParam(auth.Type, auth.Username, auth.Password, auth.Token, auth.Domain) {
 			return true
 		}
 	}
-	encoded, err := json.Marshal(action)
-	return err != nil || strings.Contains(strings.ToLower(string(encoded)), "{{param.")
+	for _, soap := range []*protocol.SOAPActionConfig{action.SOAP, action.RedactedSOAP} {
+		if soap != nil && anyStringContainsUnresolvedParam(soap.Action, soap.Operation, soap.BodyMode) {
+			return true
+		}
+	}
+	for _, extractor := range action.Extractors {
+		if anyStringContainsUnresolvedParam(extractor.Name, extractor.Source, extractor.Type,
+			extractor.Expression, extractor.OnMiss, extractor.Mode, extractor.Convert) {
+			return true
+		}
+	}
+	for _, assertion := range action.Assertions {
+		if anyStringContainsUnresolvedParam(assertion.Type, assertion.Value) || anyValueContainsUnresolvedParam(assertion.Expected) {
+			return true
+		}
+	}
+	// BrowserCaptureOptions is all bools — nothing to scan.
+	return false
 }
 
 // executeWithRetry wraps a single action execution with retry logic.

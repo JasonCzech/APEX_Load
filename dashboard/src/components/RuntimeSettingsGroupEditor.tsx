@@ -15,7 +15,7 @@ import {
   type RuntimeFieldKey,
 } from './runtimeSettingsModel'
 import { materializeRuntimeSettingsForApply } from './runtimeSettingsApply'
-import { FALLBACK_BROWSER_EMULATION_CATALOG } from './scriptEditorRuntimeSettingsModel'
+import { useBrowserEmulationCatalog } from '../hooks/useBrowserEmulationCatalog'
 import WebHttpTab from './runtimeTabs/WebHttpTab'
 import { JavaEnvSettingsFields, type JavaEnvSettingsValue } from './JavaEnvSettingsFields'
 import { type RuntimeJavaVuserSettings } from '../types'
@@ -153,6 +153,16 @@ export default function RuntimeSettingsGroupEditor({
   const [rawActiveTab, setRawActiveTab] = useState<RuntimeTabId>('summary')
   const [rawHttpSubTab, setRawHttpSubTab] = useState<HttpSubTabId>('timeouts')
 
+  // Derived above the empty-groups early return below, because the catalog hook
+  // that depends on them must run on every render (Rules of Hooks).
+  const index = groups.length > 0 ? Math.min(focusedIndex, groups.length - 1) : 0
+  const focusGroup = groups[index]
+  // Live catalog (bundled fallback until it resolves) so this editor offers the
+  // same browsers the engine can actually resolve — see useBrowserEmulationCatalog.
+  const browserEmulationCatalog = useBrowserEmulationCatalog(
+    isRuntimeFieldApplicable('browser_emulation', focusGroup?.protocol),
+  )
+
   if (groups.length === 0) {
     return (
       <div className="scenario-subpanel">
@@ -166,8 +176,6 @@ export default function RuntimeSettingsGroupEditor({
     )
   }
 
-  const index = Math.min(focusedIndex, groups.length - 1)
-  const focusGroup = groups[index]
   const draft = overrides[index] ?? EMPTY_RUNTIME_DRAFT
   const groupOverride = overrideFromRuntimeDraft(overrides[index])
   const scriptDefault = runtimeOverrideFromScriptConfig(focusGroup.scriptConfig)
@@ -251,6 +259,9 @@ export default function RuntimeSettingsGroupEditor({
   // Browser emulation replaces as a whole section (mirrors the Go controller).
   const inheritedBrowserEmulation: BrowserEmulationSettings = structuredClone(inheritedOverride?.browser_emulation ?? {})
   const effectiveBrowserEmulation: BrowserEmulationSettings = draft.browser_emulation ?? inheritedBrowserEmulation
+  const selectedEmulationBrowser = browserEmulationCatalog.browsers.find(
+    browser => browser.type === effectiveBrowserEmulation.browser_type,
+  )
 
   // The Java Env override replaces the whole section: seed the editor from the
   // group override when present, else from the inherited (script/scenario) value.
@@ -995,6 +1006,15 @@ export default function RuntimeSettingsGroupEditor({
                   <label><span>User agent</span><input className="settings-input" type="text" value={draft.http?.user_agent || ''} onChange={event => patchHttp({ user_agent: event.target.value || undefined })} placeholder={inh(inheritedHttp.user_agent)} /></label>
                   <label><span>Accept-Encoding</span><input className="settings-input" type="text" value={draft.http?.accept_encoding || ''} onChange={event => patchHttp({ accept_encoding: event.target.value || undefined })} placeholder={inh(inheritedHttp.accept_encoding)} /></label>
                   <label><span>Accept-Language</span><input className="settings-input" type="text" value={draft.http?.accept_language || ''} onChange={event => patchHttp({ accept_language: event.target.value || undefined })} placeholder={inh(inheritedHttp.accept_language)} /></label>
+                  {/* Mirror the author page's disclosure: browser emulation is
+                      authoritative for both headers at replay, so a value typed
+                      here would otherwise silently never reach the wire. */}
+                  {Boolean(effectiveBrowserEmulation.mode) && (
+                    <div className="form-hint">User agent is overridden by the Browser Emulation tab while a browser selection is active.</div>
+                  )}
+                  {Boolean(effectiveBrowserEmulation.language) && (
+                    <div className="form-hint">Accept-Language is overridden by the Browser Emulation tab while a language is selected.</div>
+                  )}
                 </div>
               )}
 
@@ -1177,11 +1197,17 @@ export default function RuntimeSettingsGroupEditor({
                   onChange={event => {
                     const mode = event.target.value
                     if (!mode) {
-                      // Inherit identity but preserve any cache override this group
-                      // already set — only clear the whole section when there is
-                      // nothing else to keep (avoids silently discarding edits).
+                      // Inherit browser identity, but keep this group's cache AND
+                      // language overrides. Neither is mode-dependent at replay —
+                      // the engine derives Accept-Language from `language` whether
+                      // or not a mode is set — so dropping them here would silently
+                      // discard edits made on this same tab.
+                      const kept: BrowserEmulationSettings = {}
                       const currentCache = draft.browser_emulation?.cache
-                      patch({ browser_emulation: currentCache ? { cache: currentCache } : undefined })
+                      if (currentCache) kept.cache = currentCache
+                      const currentLanguage = draft.browser_emulation?.language
+                      if (currentLanguage) kept.language = currentLanguage
+                      patch({ browser_emulation: Object.keys(kept).length > 0 ? kept : undefined })
                       return
                     }
                     if (mode === 'custom') {
@@ -1206,7 +1232,7 @@ export default function RuntimeSettingsGroupEditor({
                   onChange={event => patchBrowserEmulation({ mode: event.target.value ? 'specific' : undefined, browser_type: event.target.value || undefined, browser_version: undefined, platform: undefined })}
                 >
                   <option value="">Engine default</option>
-                  {FALLBACK_BROWSER_EMULATION_CATALOG.browsers.map(browser => (
+                  {browserEmulationCatalog.browsers.map(browser => (
                     <option key={browser.type} value={browser.type}>{browser.label}</option>
                   ))}
                 </select>
@@ -1221,7 +1247,7 @@ export default function RuntimeSettingsGroupEditor({
                   onChange={event => patchBrowserEmulation({ browser_version: event.target.value || undefined })}
                 >
                   <option value="">Latest</option>
-                  {(FALLBACK_BROWSER_EMULATION_CATALOG.browsers.find(browser => browser.type === effectiveBrowserEmulation.browser_type)?.versions || []).map(version => (
+                  {(selectedEmulationBrowser?.versions || []).map(version => (
                     <option key={version} value={version}>{version}</option>
                   ))}
                 </select>
@@ -1236,9 +1262,9 @@ export default function RuntimeSettingsGroupEditor({
                   onChange={event => patchBrowserEmulation({ platform: event.target.value || undefined })}
                 >
                   <option value="">Browser default</option>
-                  {(FALLBACK_BROWSER_EMULATION_CATALOG.browsers.find(browser => browser.type === effectiveBrowserEmulation.browser_type)?.platforms || []).map(platform => (
+                  {(selectedEmulationBrowser?.platforms || []).map(platform => (
                     <option key={platform} value={platform}>
-                      {FALLBACK_BROWSER_EMULATION_CATALOG.platforms.find(candidate => candidate.id === platform)?.label || platform}
+                      {browserEmulationCatalog.platforms.find(candidate => candidate.id === platform)?.label || platform}
                     </option>
                   ))}
                 </select>
@@ -1252,7 +1278,7 @@ export default function RuntimeSettingsGroupEditor({
                   onChange={event => patchBrowserEmulation({ language: event.target.value || undefined })}
                 >
                   <option value="">Engine default</option>
-                  {FALLBACK_BROWSER_EMULATION_CATALOG.languages.map(language => (
+                  {browserEmulationCatalog.languages.map(language => (
                     <option key={language.tag} value={language.tag}>{language.label}</option>
                   ))}
                 </select>

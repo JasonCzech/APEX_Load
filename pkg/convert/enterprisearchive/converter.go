@@ -699,6 +699,30 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	return result, nil
 }
 
+// enterpriseTemplatePattern mirrors pkg/engine's templatePattern. The engine
+// matches {{ ... }} and TrimSpaces the inner expression, so "{{ var.token }}"
+// is a live reference that resolves at replay. Detecting references by the bare
+// literal "{{var.token}}" would therefore prune an extractor the script really
+// uses, silently breaking correlation at import time.
+var enterpriseTemplatePattern = regexp.MustCompile(`\{\{([^{}]+)\}\}`)
+
+// referencedVariableNames collects the {{var.NAME}} names referenced anywhere in
+// text, applying the engine's whitespace-tolerant parsing.
+func referencedVariableNames(text string) map[string]struct{} {
+	names := map[string]struct{}{}
+	for _, match := range enterpriseTemplatePattern.FindAllStringSubmatch(text, -1) {
+		expr := strings.TrimSpace(match[1])
+		rest, ok := strings.CutPrefix(expr, "var.")
+		if !ok {
+			continue
+		}
+		if name := strings.TrimSpace(rest); name != "" {
+			names[name] = struct{}{}
+		}
+	}
+	return names
+}
+
 // Whole-response captures are expensive and can exceed the engine's bounded
 // extraction budget. Importers may emit them defensively even when no later
 // executable field consumes the value, so retain only structurally referenced
@@ -713,22 +737,30 @@ func pruneUnusedWholeBodyExtractors(script *dsl.Script) int {
 	clone.Teardown = append([]dsl.Action(nil), script.Teardown...)
 	for _, actions := range [][]dsl.Action{clone.Init, clone.Actions, clone.Teardown} {
 		for i := range actions {
-			actions[i].Extractors = nil
+			// Keep extractor expressions in the reference text — a later
+			// extractor may consume an earlier capture — but blank the Names,
+			// which are definitions rather than uses and would otherwise make
+			// every extractor look self-referencing.
+			stripped := append([]dsl.Extractor(nil), actions[i].Extractors...)
+			for j := range stripped {
+				stripped[j].Name = ""
+			}
+			actions[i].Extractors = stripped
 		}
 	}
 	references, err := json.Marshal(&clone)
 	if err != nil {
 		return 0
 	}
-	refText := string(references)
+	referenced := referencedVariableNames(string(references))
 	removed := 0
 	prune := func(actions []dsl.Action) {
 		for i := range actions {
 			kept := actions[i].Extractors[:0]
 			for _, extractor := range actions[i].Extractors {
 				wholeBody := extractor.Type == "regex" && extractor.Expression == "(?s)^(.*)$"
-				referenced := strings.Contains(refText, "{{var."+extractor.Name+"}}")
-				if wholeBody && !referenced {
+				_, used := referenced[extractor.Name]
+				if wholeBody && !used {
 					removed++
 					continue
 				}

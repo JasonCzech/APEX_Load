@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
@@ -348,5 +349,100 @@ func TestJavaHTTPInitRejectsSidecarHelperMode(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "sidecar is not wired") {
 		t.Fatalf("Init error = %v, want sidecar rejection", err)
+	}
+}
+
+// TestJavaHTTPClearCacheAndCookiesDelegateToWrappedHTTP covers the
+// protocol.CacheController / CookieController delegation that browser
+// emulation's "simulate a new user on each iteration" relies on. The compile
+// -time interface assertions only prove the methods exist; this proves they
+// actually reach the wrapped HTTP instance that owns the cache and cookie jar.
+func TestJavaHTTPClearCacheAndCookiesDelegateToWrappedHTTP(t *testing.T) {
+	var (
+		mu         sync.Mutex
+		requests   int
+		sawCookies []string
+	)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requests++
+		sawCookies = append(sawCookies, r.Header.Get("Cookie"))
+		mu.Unlock()
+		http.SetCookie(w, &http.Cookie{Name: "sid", Value: "abc", Path: "/"})
+		w.Header().Set("Cache-Control", "max-age=60")
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer ts.Close()
+
+	p := &JavaHTTP{}
+	if err := p.Init(context.Background(), map[string]any{
+		"base_url":           ts.URL,
+		"http_cache_enabled": true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = p.Teardown(context.Background()) }()
+
+	get := func() {
+		t.Helper()
+		if _, err := p.Execute(context.Background(), &protocol.Action{Name: "page", Method: "GET", Target: "/"}); err != nil {
+			t.Fatalf("execute: %v", err)
+		}
+	}
+	countRequests := func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return requests
+	}
+
+	get()
+	if countRequests() != 1 {
+		t.Fatalf("first GET reached server %d times, want 1", countRequests())
+	}
+	// Second GET is served from the simulated cache, so the server sees nothing.
+	get()
+	if countRequests() != 1 {
+		t.Fatalf("cached GET reached server %d times, want 1", countRequests())
+	}
+
+	if err := p.ClearCache(context.Background()); err != nil {
+		t.Fatalf("ClearCache: %v", err)
+	}
+	get()
+	if countRequests() != 2 {
+		t.Fatalf("after ClearCache the GET reached server %d times, want 2", countRequests())
+	}
+
+	mu.Lock()
+	lastCookie := sawCookies[len(sawCookies)-1]
+	mu.Unlock()
+	if !strings.Contains(lastCookie, "sid=abc") {
+		t.Fatalf("expected the jar to replay the cookie, got %q", lastCookie)
+	}
+
+	if err := p.ClearCookies(context.Background()); err != nil {
+		t.Fatalf("ClearCookies: %v", err)
+	}
+	if err := p.ClearCache(context.Background()); err != nil {
+		t.Fatalf("ClearCache: %v", err)
+	}
+	get()
+	mu.Lock()
+	afterClear := sawCookies[len(sawCookies)-1]
+	mu.Unlock()
+	if afterClear != "" {
+		t.Fatalf("cookie header after ClearCookies = %q, want empty", afterClear)
+	}
+}
+
+// Nil inner protocol must not panic: the engine may clear before Init on an
+// aborted VUser start.
+func TestJavaHTTPClearCacheAndCookiesNilInnerAreSafe(t *testing.T) {
+	p := &JavaHTTP{}
+	if err := p.ClearCache(context.Background()); err != nil {
+		t.Fatalf("ClearCache on uninitialized protocol: %v", err)
+	}
+	if err := p.ClearCookies(context.Background()); err != nil {
+		t.Fatalf("ClearCookies on uninitialized protocol: %v", err)
 	}
 }

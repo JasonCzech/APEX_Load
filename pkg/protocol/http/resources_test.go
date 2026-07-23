@@ -681,3 +681,41 @@ func TestHTTPClearCacheNilCacheIsSafe(t *testing.T) {
 		t.Fatalf("ClearCache on nil cache: %v", err)
 	}
 }
+
+func TestRefererForResourceFollowsStrictOriginWhenCrossOrigin(t *testing.T) {
+	const page = "https://site.test/dir/page.html?session=secret#frag"
+	tests := []struct {
+		name     string
+		pageURL  string
+		resource string
+		want     string
+	}{
+		{"same origin keeps full path and query", page, "https://site.test/css/app.css", "https://site.test/dir/page.html?session=secret"},
+		{"cross origin is reduced to origin", page, "https://cdn.other/app.js", "https://site.test/"},
+		{"cross port is cross origin", page, "https://site.test:8443/app.js", "https://site.test/"},
+		{"https to http sends nothing", page, "http://cdn.other/app.js", ""},
+		{"http page to http cdn is origin only", "http://site.test/a/b?x=1", "http://cdn.other/app.js", "http://site.test/"},
+		{"userinfo never leaks", "https://user:pw@site.test/a?x=1", "https://site.test/app.js", "https://site.test/a?x=1"},
+		{"blank page url", "", "https://cdn.other/app.js", ""},
+		{"unparseable resource", page, "::not a url::", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := refererForResource(tt.pageURL, tt.resource); got != tt.want {
+				t.Errorf("refererForResource(%q, %q) = %q, want %q", tt.pageURL, tt.resource, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestProcessResourceSlotsBoundsConcurrency(t *testing.T) {
+	slots := processResourceSlots()
+	if cap(slots) <= 0 {
+		t.Fatalf("process resource slots cap = %d, want > 0", cap(slots))
+	}
+	// Sized once per process, so repeat calls must hand back the same channel
+	// rather than silently widening the generator-wide budget.
+	if again := processResourceSlots(); again != slots {
+		t.Error("processResourceSlots returned a different channel on second call")
+	}
+}

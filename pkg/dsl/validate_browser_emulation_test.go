@@ -40,6 +40,12 @@ func TestValidateBrowserEmulationNilAndValid(t *testing.T) {
 		{Mode: "specific"},
 		{Mode: "custom", CustomUserAgent: "MyAgent/1.0"},
 		{Cache: &BrowserCacheSimulationConfig{SimulateCache: boolPtrForTest(true), CacheContentURLs: boolPtrForTest(true)}},
+		// Child flags left on while the cache is off are inert, not invalid: the
+		// protocol never reads them with h.cache nil. Blocking save here would
+		// break API/CLI/IaC clients that toggle simulate_cache without also
+		// clearing the children.
+		{Cache: &BrowserCacheSimulationConfig{SimulateCache: boolPtrForTest(false), CacheContentURLs: boolPtrForTest(true)}},
+		{Cache: &BrowserCacheSimulationConfig{SimulateCache: boolPtrForTest(false), CheckNewerVersions: boolPtrForTest(true)}},
 	}
 	for i, cfg := range valid {
 		if issues := browserEmulationIssues(t, cfg); len(issues) != 0 {
@@ -64,8 +70,6 @@ func TestValidateBrowserEmulationRejections(t *testing.T) {
 		{"bad language", &BrowserEmulationConfig{Language: "not a tag!"}, "BCP-47"},
 		{"control chars in ua", &BrowserEmulationConfig{Mode: "custom", CustomUserAgent: "bad\x00agent"}, "control characters"},
 		{"oversize ua", &BrowserEmulationConfig{Mode: "custom", CustomUserAgent: strings.Repeat("a", 1025)}, "must not exceed 1024 bytes"},
-		{"cache contradiction content", &BrowserEmulationConfig{Cache: &BrowserCacheSimulationConfig{SimulateCache: boolPtrForTest(false), CacheContentURLs: boolPtrForTest(true)}}, "cache_content_urls has no effect"},
-		{"cache contradiction newer", &BrowserEmulationConfig{Cache: &BrowserCacheSimulationConfig{SimulateCache: boolPtrForTest(false), CheckNewerVersions: boolPtrForTest(true)}}, "check_newer_versions has no effect"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

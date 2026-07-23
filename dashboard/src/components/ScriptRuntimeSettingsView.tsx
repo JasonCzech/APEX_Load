@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 
-import type { BrowserEmulationCatalog, ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
-import { useSystemApi } from '../hooks/api/useSystemApi'
+import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
+import { useBrowserEmulationCatalog } from '../hooks/useBrowserEmulationCatalog'
 import { jmsProviderForProtocol } from './scriptEditorHelpers'
 import { JavaEnvSettingsFields } from './JavaEnvSettingsFields'
 import { readImportedJavaVMParameters } from './scriptEditorImportModel'
@@ -11,7 +11,6 @@ import {
   lookupBrowserDeviceProfile,
 } from './scriptEditorWorkbench'
 import {
-  FALLBACK_BROWSER_EMULATION_CATALOG,
   HTTP_TRANSPORT_TAB_OPTIONS,
   SCRIPT_PROTOCOL_OPTIONS,
   buildScriptRuntimeSummary,
@@ -424,20 +423,7 @@ export function ScriptRuntimeSettingsView({
 
   // Browser-emulation catalog: seeded with the bundled fallback, refreshed from
   // the controller so dropdowns stay in lockstep with replay UA resolution.
-  const [browserEmulationCatalog, setBrowserEmulationCatalog] = useState<BrowserEmulationCatalog>(FALLBACK_BROWSER_EMULATION_CATALOG)
-  const { getBrowserEmulationCatalog } = useSystemApi()
-  useEffect(() => {
-    if (!supportsBrowserEmulation) return
-    let cancelled = false
-    try {
-      getBrowserEmulationCatalog()
-        .then((catalog) => {
-          if (!cancelled && catalog?.browsers?.length) setBrowserEmulationCatalog(catalog)
-        })
-        .catch(() => { /* keep the bundled fallback */ })
-    } catch { /* keep the bundled fallback */ }
-    return () => { cancelled = true }
-  }, [supportsBrowserEmulation, getBrowserEmulationCatalog])
+  const browserEmulationCatalog = useBrowserEmulationCatalog(supportsBrowserEmulation)
 
   const browserEmulation = script.config.browser_emulation
   const browserEmulationMode = browserEmulation?.mode === 'custom' ? 'custom' : browserEmulation?.mode === 'specific' ? 'specific' : ''
@@ -1371,6 +1357,12 @@ export function ScriptRuntimeSettingsView({
             <label><span>Accept-Language</span>
               <input value={script.config.http?.accept_language || ''} placeholder="en-US,en;q=0.9"
                 onChange={e => updateField('config.http', { ...script.config.http, accept_language: e.target.value })} /></label>
+            {/* Unlike User-Agent, the engine derives Accept-Language from
+                browser_emulation.language regardless of mode, so this hint keys
+                off the language field rather than the mode. */}
+            {supportsBrowserEmulation && Boolean(browserEmulation?.language) && (
+              <div className="form-hint full-width">Overridden by the Browser Emulation tab while a language is selected.</div>
+            )}
           </div>
         </div>}
         {effectiveHTTPTransportTab === 'tls' && <div
