@@ -1490,8 +1490,6 @@ type RuntimeSettingsOverride struct {
 	HTTP          *dsl.HTTPConfig           `json:"http,omitempty"`
 	WebRuntime    *dsl.WebRuntimeConfig     `json:"web_runtime,omitempty"`
 	JavaVuser     *RuntimeJavaVuserOverride `json:"java_vuser,omitempty"`
-	// BrowserConfig is the full browser section (whole-section replace); it wins over
-	// the legacy 4-field Browser partial-merge below when both are present.
 	BrowserConfig *dsl.BrowserConfig      `json:"browser_config,omitempty"`
 	Browser       *RuntimeBrowserOverride `json:"browser,omitempty"`
 	// BrowserEmulation is the HTTP-transport browser-emulation section
