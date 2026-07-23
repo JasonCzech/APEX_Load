@@ -120,6 +120,18 @@ export const DEFAULT_SETTINGS: DashboardSystemSettings = {
     service_account_token_env_var: '',
     timeout_seconds: 10,
   },
+  powerbi: {
+    enabled: false,
+    tenant_id: '',
+    client_id: '',
+    client_secret_env_var: '',
+    workspace_id: '',
+    dataset_name: '',
+    auth_base_url: '',
+    api_base_url: '',
+    scope: '',
+    timeout_seconds: 30,
+  },
   client_app: {
     availability: 'disabled',
   },
@@ -460,6 +472,21 @@ export function validateSettings(settings: DashboardSystemSettings): string[] {
   if (settings.grafana && (!Number.isInteger(settings.grafana.timeout_seconds) || settings.grafana.timeout_seconds < 1 || settings.grafana.timeout_seconds > 60)) {
     errors.push('Grafana timeout must be an integer between 1 and 60 seconds.')
   }
+  if (settings.powerbi?.enabled) {
+    if (!settings.powerbi.tenant_id?.trim() || !settings.powerbi.client_id?.trim() || !settings.powerbi.client_secret_env_var?.trim() || !settings.powerbi.workspace_id?.trim()) {
+      errors.push('Power BI publishing requires a tenant ID, client ID, client secret environment variable, and workspace ID.')
+    }
+    const workspaceId = settings.powerbi.workspace_id?.trim() || ''
+    if (workspaceId && !/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(workspaceId)) {
+      errors.push('Power BI workspace ID must be a GUID.')
+    }
+  }
+  if (settings.powerbi) {
+    const timeout = settings.powerbi.timeout_seconds ?? 30
+    if (!Number.isInteger(timeout) || timeout < 1 || timeout > 60) {
+      errors.push('Power BI timeout must be an integer between 1 and 60 seconds.')
+    }
+  }
   const clientAppAvailability = settings.client_app?.availability || 'disabled'
   if (clientAppAvailability !== 'enabled' && clientAppAvailability !== 'disabled') {
     errors.push('Desktop client availability must be enabled or disabled.')
@@ -561,6 +588,14 @@ export function normalizeDashboardSystemSettings(settings: DashboardSystemSettin
       base_url: settings.grafana?.base_url || '',
       service_account_token_env_var: settings.grafana?.service_account_token_env_var || '',
       timeout_seconds: Number(settings.grafana?.timeout_seconds || DEFAULT_SETTINGS.grafana!.timeout_seconds),
+    },
+    // Dropping this key would silently wipe the stored Power BI configuration
+    // on the next settings save (the backend zero value validates clean).
+    powerbi: {
+      ...DEFAULT_SETTINGS.powerbi!,
+      ...settings.powerbi,
+      enabled: Boolean(settings.powerbi?.enabled),
+      timeout_seconds: Number(settings.powerbi?.timeout_seconds || DEFAULT_SETTINGS.powerbi!.timeout_seconds),
     },
     client_app: {
       ...DEFAULT_SETTINGS.client_app,

@@ -37,6 +37,7 @@ type SystemSettings struct {
 	GitHub           GitHubSettings           `json:"github"`
 	Prometheus       PrometheusSettings       `json:"prometheus"`
 	Grafana          GrafanaSettings          `json:"grafana"`
+	PowerBI          PowerBISettings          `json:"powerbi"`
 	ClientApp        ClientAppSettings        `json:"client_app"`
 	ClientDownloads  ClientDownloadsSettings  `json:"client_downloads"`
 	ScriptImports    ScriptImportSettings     `json:"script_imports"`
@@ -653,6 +654,7 @@ func defaultSystemSettings(maxConcurrent int) SystemSettings {
 		GitHub:           defaultGitHubSettings(),
 		Prometheus:       defaultPrometheusSettings(),
 		Grafana:          normalizeGrafanaSettings(GrafanaSettings{}),
+		PowerBI:          defaultPowerBISettings(),
 		ClientApp:        defaultClientAppSettings(),
 		ClientDownloads:  defaultClientDownloadsSettings(),
 		ScriptImports:    ScriptImportSettings{},
@@ -723,6 +725,7 @@ func cloneSystemSettings(in SystemSettings) SystemSettings {
 	}
 	out.Prometheus = in.Prometheus
 	out.Grafana = in.Grafana
+	out.PowerBI = in.PowerBI
 	out.ClientApp = in.ClientApp
 	out.ClientDownloads = in.ClientDownloads
 	out.ScriptImports = in.ScriptImports
@@ -772,6 +775,7 @@ func normalizeLoadedSystemSettings(in SystemSettings, defaultMaxConcurrent int) 
 	out.GitHub = normalizeGitHubSettings(out.GitHub)
 	out.Prometheus = normalizePrometheusSettings(out.Prometheus)
 	out.Grafana = normalizeGrafanaSettings(out.Grafana)
+	out.PowerBI = normalizePowerBISettings(out.PowerBI)
 	out.ClientApp = normalizeClientAppSettings(out.ClientApp)
 	out.ClientDownloads = normalizeClientDownloadsSettings(out.ClientDownloads)
 
@@ -925,6 +929,9 @@ func validateSystemSettings(settings SystemSettings) error {
 		return err
 	}
 	if err := validateGrafanaSettings(settings.Grafana); err != nil {
+		return err
+	}
+	if err := validatePowerBISettings(settings.PowerBI); err != nil {
 		return err
 	}
 	if err := validateClientAppSettings(settings.ClientApp); err != nil {
@@ -1697,6 +1704,7 @@ func (tr *TestRunner) updateSystemSettings(settings SystemSettings, expectedRevi
 	normalized.Auth = normalizeAuthSettings(normalized.Auth)
 	normalized.Prometheus = normalizePrometheusSettings(normalized.Prometheus)
 	normalized.Grafana = normalizeGrafanaSettings(normalized.Grafana)
+	normalized.PowerBI = normalizePowerBISettings(normalized.PowerBI)
 	normalized.ClientApp = normalizeClientAppSettings(normalized.ClientApp)
 	normalized.ClientDownloads = normalizeClientDownloadsSettings(normalized.ClientDownloads)
 	if err := validateSystemSettings(normalized); err != nil {

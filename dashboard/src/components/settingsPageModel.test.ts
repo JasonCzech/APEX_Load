@@ -65,4 +65,61 @@ describe('settingsPageModel', () => {
   it('usesDefaultGeneratorCapacity is true for the defaults', () => {
     expect(usesDefaultGeneratorCapacity(DEFAULT_SETTINGS)).toBe(true)
   })
+
+  it('normalize preserves a configured powerbi section (dropping it would wipe the stored config on save)', () => {
+    const normalized = normalizeDashboardSystemSettings({
+      ...DEFAULT_SETTINGS,
+      powerbi: {
+        enabled: true,
+        tenant_id: 'tenant-1',
+        client_id: 'client-1',
+        client_secret_env_var: 'APEXLOAD_POWERBI_CLIENT_SECRET',
+        workspace_id: '11111111-2222-3333-4444-555555555555',
+        dashboard_base_url: 'https://apexload.example.com',
+      },
+    })
+    expect(normalized.powerbi?.enabled).toBe(true)
+    expect(normalized.powerbi?.tenant_id).toBe('tenant-1')
+    expect(normalized.powerbi?.workspace_id).toBe('11111111-2222-3333-4444-555555555555')
+    expect(normalized.powerbi?.timeout_seconds).toBe(30)
+    // Fields absent from DEFAULT_SETTINGS.powerbi must still round-trip; a
+    // refactor to an explicit field-list normalize would wipe them silently.
+    expect(normalized.powerbi?.dashboard_base_url).toBe('https://apexload.example.com')
+  })
+
+  it('normalize tolerates a missing powerbi section', () => {
+    const normalized = normalizeDashboardSystemSettings({
+      ...DEFAULT_SETTINGS,
+      powerbi: undefined,
+    })
+    expect(normalized.powerbi?.enabled).toBe(false)
+  })
+
+  it('validates enabled powerbi settings', () => {
+    const invalid = validateSettings({
+      ...DEFAULT_SETTINGS,
+      powerbi: { ...DEFAULT_SETTINGS.powerbi!, enabled: true, workspace_id: 'not-a-guid' },
+    })
+    expect(invalid.some(error => error.includes('Power BI publishing requires'))).toBe(true)
+    expect(invalid.some(error => error.includes('workspace ID must be a GUID'))).toBe(true)
+
+    const badTimeout = validateSettings({
+      ...DEFAULT_SETTINGS,
+      powerbi: { ...DEFAULT_SETTINGS.powerbi!, timeout_seconds: -5 },
+    })
+    expect(badTimeout.some(error => error.includes('Power BI timeout'))).toBe(true)
+
+    const valid = validateSettings({
+      ...DEFAULT_SETTINGS,
+      powerbi: {
+        ...DEFAULT_SETTINGS.powerbi!,
+        enabled: true,
+        tenant_id: 'tenant-1',
+        client_id: 'client-1',
+        client_secret_env_var: 'APEXLOAD_POWERBI_CLIENT_SECRET',
+        workspace_id: '11111111-2222-3333-4444-555555555555',
+      },
+    })
+    expect(valid).toEqual([])
+  })
 })

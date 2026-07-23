@@ -750,6 +750,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/tests/{id}/errors/evidence", cors(log(auth(http.HandlerFunc(s.handleGetLiveErrorEvidence)))))
 	s.registerAPIRouteCatalog(runArchiveAPIRouteCatalog, standardRouteMiddleware)
 	s.registerAPIRouteCatalog(archiveRetentionAPIRouteCatalog, standardRouteMiddleware)
+	s.registerAPIRouteCatalog(powerBIAPIRouteCatalog, standardRouteMiddleware)
 
 	// Reusable scenario definitions.
 	s.mux.Handle("POST /api/v1/scenarios", cors(log(auth(http.HandlerFunc(s.handleCreateScenario)))))

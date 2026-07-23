@@ -93,6 +93,16 @@ func mergeOmittedSystemSettingsSections(requested SystemSettings, current System
 	if !rawJSONHasKey(raw, "script_imports") {
 		merged.ScriptImports = current.ScriptImports
 	}
+	// A client that omits an integration section (e.g. one predating the
+	// feature) must not zero out its stored configuration: the zero values
+	// normalize to disabled defaults and validate clean, so without these
+	// merges the wipe would be silent.
+	if !rawJSONHasKey(raw, "powerbi") {
+		merged.PowerBI = current.PowerBI
+	}
+	if !rawJSONHasKey(raw, "grafana") {
+		merged.Grafana = current.Grafana
+	}
 	return merged
 }
 

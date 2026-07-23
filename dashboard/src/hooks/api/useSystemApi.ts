@@ -56,7 +56,7 @@ import type {
   UsageAccountingSnapshotsResponse,
   VersionResponse,
 } from '../../types/system'
-import type { DashboardSystemSettings } from '../../types/settings'
+import type { DashboardSystemSettings, PowerBIDatasetRecreateResponse, PowerBITestConnectionResponse } from '../../types/settings'
 import { apiFetch, request } from '../apiClient'
 
 function buildQuery(params: Record<string, string | number | undefined>) {
@@ -258,6 +258,16 @@ export function useSystemApi() {
     [],
   )
 
+  const testPowerBIConnection = useCallback(
+    () => request<PowerBITestConnectionResponse>('/integrations/powerbi/test-connection', { method: 'POST' }),
+    [],
+  )
+
+  const recreatePowerBIDataset = useCallback(
+    () => request<PowerBIDatasetRecreateResponse>('/integrations/powerbi/dataset/recreate', { method: 'POST' }),
+    [],
+  )
+
   return useMemo(
     () => ({
       getAuthEffectiveAccess,
@@ -326,7 +336,9 @@ export function useSystemApi() {
       applyArchiveRetention,
       getSystemSettings,
       updateSystemSettings,
+      testPowerBIConnection,
+      recreatePowerBIDataset,
     }),
-    [getAuthEffectiveAccess, getAuthEffectiveAccessForPrincipal, getAuthAccessMatrix, getAuthPolicy, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, onboardAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, revokeAuthUserSessions, deleteAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, getAccessReview, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getConfigDefaults, getSystemInventory, getRestartCapabilities, executeRestart, getSystemReadiness, getSystemServices, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getPrometheusGraphs, getImportedDashboardGraphs, listImportedDashboards, importGrafanaDashboard, importGrafanaDashboardByUID, commitGrafanaDashboardImport, previewGrafanaDashboardImport, resolveGrafanaImportLabelValues, getImportedDashboardPanels, patchImportedDashboard, deleteImportedDashboard, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, ackFleetAlert, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings],
+    [getAuthEffectiveAccess, getAuthEffectiveAccessForPrincipal, getAuthAccessMatrix, getAuthPolicy, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, onboardAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, revokeAuthUserSessions, deleteAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, getAccessReview, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getConfigDefaults, getSystemInventory, getRestartCapabilities, executeRestart, getSystemReadiness, getSystemServices, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getPrometheusGraphs, getImportedDashboardGraphs, listImportedDashboards, importGrafanaDashboard, importGrafanaDashboardByUID, commitGrafanaDashboardImport, previewGrafanaDashboardImport, resolveGrafanaImportLabelValues, getImportedDashboardPanels, patchImportedDashboard, deleteImportedDashboard, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, ackFleetAlert, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings, testPowerBIConnection, recreatePowerBIDataset],
   )
 }

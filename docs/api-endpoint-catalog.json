@@ -1913,6 +1913,26 @@
       "access": "Requires authentication; global roles: SystemAdmin; service-account scope: read"
     },
     {
+      "method": "POST",
+      "path": "/api/v1/integrations/powerbi/dataset/recreate",
+      "operationId": "handleRecreatePowerBIDataset",
+      "summary": "Recreate Power BI Dataset",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: write"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/integrations/powerbi/test-connection",
+      "operationId": "handleTestPowerBIConnection",
+      "summary": "Test Power BI Connection",
+      "category": "Integrations \u0026 Protocols",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: SystemAdmin; service-account scope: write"
+    },
+    {
       "method": "GET",
       "path": "/api/v1/library/capabilities",
       "operationId": "handleLibraryCapabilities",
@@ -4771,6 +4791,26 @@
       "public": false,
       "authenticated": true,
       "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/tests/{id}/publish/powerbi",
+      "operationId": "handleGetPowerBIPublishStatus",
+      "summary": "Get Power BI Publish Status",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: results:read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/tests/{id}/publish/powerbi",
+      "operationId": "handlePublishRunToPowerBI",
+      "summary": "Publish Run To Power BI",
+      "category": "Test Execution",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: tests:run"
     },
     {
       "method": "GET",

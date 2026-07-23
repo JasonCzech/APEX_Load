@@ -11287,6 +11287,39 @@ export interface operations {
       };
     };
   };
+  "handleGetPowerBIPublishStatus": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetProject": {
     parameters: {
       "path": {
@@ -23746,6 +23779,58 @@ export interface operations {
       };
     };
   };
+  "handlePublishRunToPowerBI": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": Record<string, unknown>;
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "502": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handlePushScriptGitHub": {
     parameters: {
       "path": {
@@ -23958,6 +24043,40 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleRecreatePowerBIDataset": {
+    parameters?: never;
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "502": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -31301,6 +31420,35 @@ export interface operations {
       };
     };
   };
+  "handleTestPowerBIConnection": {
+    parameters?: never;
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleTestStream": {
     parameters: {
       "path": {
@@ -35687,6 +35835,12 @@ export interface paths {
   "/api/v1/integrations/github/webhooks": {
     "get": operations["handleListGitHubWebhookDeliveries"];
   };
+  "/api/v1/integrations/powerbi/dataset/recreate": {
+    "post": operations["handleRecreatePowerBIDataset"];
+  };
+  "/api/v1/integrations/powerbi/test-connection": {
+    "post": operations["handleTestPowerBIConnection"];
+  };
   "/api/v1/library/capabilities": {
     "get": operations["handleLibraryCapabilities"];
   };
@@ -36464,6 +36618,10 @@ export interface paths {
   };
   "/api/v1/tests/{id}/pause": {
     "post": operations["handlePauseTest"];
+  };
+  "/api/v1/tests/{id}/publish/powerbi": {
+    "get": operations["handleGetPowerBIPublishStatus"];
+    "post": operations["handlePublishRunToPowerBI"];
   };
   "/api/v1/tests/{id}/report": {
     "get": operations["handleGetTestHTMLReport"];

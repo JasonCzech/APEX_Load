@@ -89,6 +89,7 @@ import { downloadBlob } from '../utils/fileUtils'
 import LibraryFederationPanel from './LibraryFederationPanel'
 import GitHubIntegrationPanel from './GitHubIntegrationPanel'
 import ImportedDashboardsPanel from './ImportedDashboardsPanel'
+import PowerBIIntegrationPanel from './PowerBIIntegrationPanel'
 import PageViewToggle from './PageViewToggle'
 import DesktopNotificationsToggle from './DesktopNotificationsToggle'
 import { isDesktopSurface } from '../desktop/desktopBridge'
@@ -745,8 +746,9 @@ export default function SettingsPage({
     github: settings.github.enabled ? 'Enabled' : 'Disabled',
     prometheus: settings.prometheus.enabled ? 'Enabled' : 'Disabled',
     dashboards: 'Grafana import',
+    powerbi: settings.powerbi?.enabled ? 'Enabled' : 'Disabled',
     notifications: `${notificationWebhookCount} webhook${notificationWebhookCount === 1 ? '' : 's'}`,
-  }), [activeProject?.name, notificationWebhookCount, settings.github.enabled, settings.prometheus.enabled])
+  }), [activeProject?.name, notificationWebhookCount, settings.github.enabled, settings.prometheus.enabled, settings.powerbi?.enabled])
 
   useEffect(() => {
     setSectionOrder(prev => mergeSettingsOrder(prev))
@@ -4614,6 +4616,25 @@ export default function SettingsPage({
                 defaultProjectId={selectedProjectId}
                 prometheusConfigured={(settings.grafana?.enabled && Boolean(settings.grafana.base_url.trim()) && Boolean(settings.grafana.service_account_token_env_var.trim())) || (settings.prometheus.enabled && settings.prometheus.base_url.trim() !== '')}
               />
+            </section>
+
+            <section
+              id="settings-integrations-panel-powerbi"
+              className="settings-subpanel"
+              role="tabpanel"
+              aria-labelledby="settings-integrations-tab-powerbi"
+              hidden={activeIntegrationSubsection !== 'powerbi'}
+            >
+              <div className="settings-group">
+                <PowerBIIntegrationPanel
+                  value={settings.powerbi || { enabled: false }}
+                  onChange={(next) => {
+                    setSettings((prev) => ({ ...prev, powerbi: next }))
+                    setSaveMessage('')
+                    setRequestError('')
+                  }}
+                />
+              </div>
             </section>
 
             <section
