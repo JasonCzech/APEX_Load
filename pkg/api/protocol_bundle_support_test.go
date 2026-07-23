@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func TestProtocolBundleSupportMatrixEndpointCoversRequestedBundles(t *testing.T) {
@@ -60,6 +63,55 @@ func TestTrustedHeaderAuthRequiresViewerForProtocolBundleSupportMatrix(t *testin
 	server.mux.ServeHTTP(viewerResp, viewerReq)
 	if viewerResp.Code != http.StatusOK {
 		t.Fatalf("viewer status = %d, want %d body=%s", viewerResp.Code, http.StatusOK, viewerResp.Body.String())
+	}
+}
+
+func TestProtocolBundleJavaVuserRunnerDescribesQualifiedPersistentPlatforms(t *testing.T) {
+	supportMatrix := protocolBundleSupportMatrix()
+	var javaEntry *ProtocolBundleSupportEntry
+	for index := range supportMatrix {
+		if supportMatrix[index].ID == "template-java-vuser" {
+			javaEntry = &supportMatrix[index]
+			break
+		}
+	}
+	if javaEntry == nil {
+		t.Fatal("Java Vuser support entry is missing")
+	}
+	javaContractParts := append([]string(nil), javaEntry.RuntimeCoverage...)
+	javaContractParts = append(javaContractParts, javaEntry.RemainingGaps...)
+	javaContractParts = append(javaContractParts, javaEntry.RecommendedWorkflow)
+	javaContract := strings.Join(javaContractParts, " ")
+	for _, required := range []string{
+		protocol.FeatureJavaVuserPersistentLifecycleV1,
+		protocol.FeatureJavaVuserSessionFrameTokenV1,
+		"strong descendant-process containment",
+		"stock non-privileged Helm, Kustomize, and Compose sidecars support legacy full_lifecycle only",
+		"qualified Windows runner or delegated-cgroup Linux runner",
+	} {
+		if !strings.Contains(javaContract, required) {
+			t.Errorf("Java Vuser support contract is missing %q: %#v", required, javaEntry)
+		}
+	}
+
+	runnerClasses := protocolBundleRunnerClasses()
+	var runner *ProtocolBundleRunnerClass
+	for index := range runnerClasses {
+		if runnerClasses[index].ID == "java_vuser_jvm_runner" {
+			runner = &runnerClasses[index]
+			break
+		}
+	}
+	if runner == nil {
+		t.Fatal("Java Vuser runner class is missing")
+	}
+	if runner.OS != "linux_or_windows" {
+		t.Errorf("Java Vuser runner OS = %q, want linux_or_windows", runner.OS)
+	}
+	if !strings.Contains(runner.Notes, protocol.FeatureJavaVuserPersistentLifecycleV1) ||
+		!strings.Contains(runner.Notes, protocol.FeatureJavaVuserSessionFrameTokenV1) ||
+		!strings.Contains(runner.Notes, "stock non-privileged sidecars remain legacy-only") {
+		t.Errorf("Java Vuser runner notes = %q, want persistent capability and stock-sidecar boundary", runner.Notes)
 	}
 }
 

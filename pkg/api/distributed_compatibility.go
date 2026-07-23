@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func parseGeneratorTargetSpec(raw string) generatorTargetSpec {
@@ -83,7 +87,11 @@ func generatorSpecVersion(spec generatorTargetSpec) string {
 }
 
 func generatorSpecProtocols(spec generatorTargetSpec) []string {
-	if len(spec.Protocols) == 0 {
+	// A nil protocol slice means the configured target supplied no capability
+	// declaration, so the controller's legacy bootstrap defaults remain a
+	// provisional hint. A non-nil empty slice is an authoritative heartbeat
+	// observation that the generator advertised no protocols.
+	if spec.Protocols == nil {
 		return defaultSupportedProtocols()
 	}
 	protocols := normalizedProtocolList(spec.Protocols)
@@ -115,8 +123,14 @@ func generatorEffectiveSpec(spec generatorTargetSpec, snapshot generatorLoadSnap
 	if version := strings.TrimSpace(snapshot.Version); version != "" {
 		effective.Version = version
 	}
-	if len(snapshot.SupportedProtocols) > 0 {
+	// A successful heartbeat is authoritative even when either advertised list
+	// is empty. The non-nil checks retain compatibility with callers/tests that
+	// provide negotiated lists without setting HeartbeatOK.
+	if snapshot.HeartbeatOK || snapshot.SupportedProtocols != nil {
 		effective.Protocols = normalizedProtocolList(snapshot.SupportedProtocols)
+	}
+	if snapshot.HeartbeatOK || snapshot.CompatibleFeatures != nil {
+		effective.Features = normalizedProtocolList(snapshot.CompatibleFeatures)
 	}
 	return effective
 }
@@ -205,7 +219,7 @@ func newGeneratorCompatibilityIndex(specs []generatorTargetSpec, loadByTarget ma
 	return index
 }
 
-func (i *generatorCompatibilityIndex) targetCanRun(target string, protocolName string, requiredLabels map[string]string) bool {
+func (i *generatorCompatibilityIndex) targetCanRun(target string, protocolName string, requiredFeature string, requiredLabels map[string]string) bool {
 	if i == nil {
 		return true
 	}
@@ -213,7 +227,9 @@ func (i *generatorCompatibilityIndex) targetCanRun(target string, protocolName s
 	if !ok {
 		return true
 	}
-	return generatorCompatibilityState(spec) == "compatible" && targetSupportsProtocol(spec, protocolName) && targetMatchesRequiredLabels(spec, requiredLabels)
+	return generatorCompatibilityState(spec) == "compatible" && targetSupportsProtocol(spec, protocolName) &&
+		protocol.RuntimeFeaturesSatisfy(spec.Features, requiredFeature) &&
+		targetMatchesRequiredLabels(spec, requiredLabels)
 }
 
 // generatorPlacementRejectionMessage explains why a group could not be placed.
@@ -235,12 +251,11 @@ func generatorPlacementRejectionMessage(group TestGroup, loadByTarget map[string
 		}
 	}
 	for _, spec := range specs {
-		if _, reachable := loadByTarget[spec.Address]; !reachable {
+		snapshot, reachable := loadByTarget[spec.Address]
+		if !reachable {
 			continue
 		}
-		if snapshot, ok := loadByTarget[spec.Address]; ok {
-			spec = generatorEffectiveSpec(spec, snapshot)
-		}
+		spec = generatorEffectiveSpec(spec, snapshot)
 		if issues := generatorCompatibilityIssues(spec); len(issues) > 0 {
 			reasons = append(reasons, fmt.Sprintf("%s incompatible: %s", spec.Address, strings.Join(issues, "; ")))
 			continue
@@ -249,9 +264,40 @@ func generatorPlacementRejectionMessage(group TestGroup, loadByTarget map[string
 			reasons = append(reasons, fmt.Sprintf("%s does not support protocol %s", spec.Address, protocolName))
 			continue
 		}
+		if requiredFeature := groupRequiredRuntimeFeature(group); !protocol.RuntimeFeaturesSatisfy(spec.Features, requiredFeature) {
+			missing := requiredFeature
+			if strings.EqualFold(requiredFeature, protocol.FeatureJavaVuserPersistentLifecycleV1) {
+				missing = protocol.MissingJavaVuserPersistentRuntimeFeature(spec.Features)
+			}
+			reasons = append(reasons, fmt.Sprintf("%s does not advertise required runtime feature %s", spec.Address, missing))
+			continue
+		}
 		requiredLabels := effectiveGroupRequiredLabels(group, inherited)
 		if !targetMatchesRequiredLabels(spec, requiredLabels) {
 			reasons = append(reasons, fmt.Sprintf("%s does not match required labels %s", spec.Address, formatRequiredLabels(requiredLabels)))
+			continue
+		}
+		requiredOccupancy := javaVuserOccupancyModeForGroup(group)
+		if occupied, advertised := protocolRuntimeOccupancyMode(snapshot, "java_vuser"); requiredOccupancy != "" &&
+			advertised && occupied != generatorrpc.RuntimeOccupancyModeIdle && occupied != requiredOccupancy {
+			reasons = append(reasons, fmt.Sprintf(
+				"%s java_vuser runtime occupancy %q cannot accept %s lifecycle work",
+				spec.Address,
+				occupied,
+				requiredOccupancy,
+			))
+			continue
+		}
+		if available, advertised := protocolRuntimeAvailableVUsers(snapshot, "java_vuser"); advertised {
+			demand := engine.NewJavaVuserCapacityPlan(group.script).Demand(group.VUsers)
+			if demand > available {
+				reasons = append(reasons, fmt.Sprintf(
+					"%s has %d available java_vuser runtime slots for demand %d",
+					spec.Address,
+					available,
+					demand,
+				))
+			}
 		}
 	}
 	if len(reasons) == 0 {

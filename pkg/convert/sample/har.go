@@ -180,14 +180,16 @@ func parseHARItem(item map[string]any, diagnostics *diag.Collector, index int) (
 	if responseData, ok := item["response"].(map[string]any); ok {
 		ex.Metadata = harEntryMetadata(item, requestData, responseData)
 		responseHeaders := headerListToMap(responseData["headers"], diagnostics, location+" response")
+		responseHeaderList := headerListEntries(responseData["headers"])
 		responseBody := ""
 		if content, ok := responseData["content"].(map[string]any); ok {
 			responseBody = decodeHARText(bodyValue(content["text"]), stringValue(content["encoding"]), responseHeaders, diagnostics, location+" response", "response body")
 		}
 		ex.Response = &response{
-			Status:  intValue(responseData["status"]),
-			Headers: responseHeaders,
-			Body:    responseBody,
+			Status:     intValue(responseData["status"]),
+			Headers:    responseHeaders,
+			HeaderList: responseHeaderList,
+			Body:       responseBody,
 		}
 	} else {
 		diagnostics.Add(diag.Warning, "HAR missing response", location, "entry has no response object; no status assertion or response extractors can be generated for this step")

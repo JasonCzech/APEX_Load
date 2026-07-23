@@ -276,11 +276,17 @@ func TestSQLiteStoreAuthoringSessionsRoundTrip(t *testing.T) {
 }
 
 func TestSQLiteStoreAuthoringSessionCompareAndSwapFencesStaleMutations(t *testing.T) {
-	store, err := NewSQLiteStore(filepath.Join(t.TempDir(), "apexload.db"))
+	path := filepath.Join(t.TempDir(), "apexload.db")
+	store, err := NewSQLiteStore(path)
 	if err != nil {
 		t.Fatalf("NewSQLiteStore: %v", err)
 	}
 	defer store.Close()
+	replica, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore(replica): %v", err)
+	}
+	defer replica.Close()
 	now := time.Now().UTC()
 	if err := store.SaveProject(&Project{ID: "project-1", Name: "Project 1", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatalf("SaveProject: %v", err)
@@ -328,6 +334,39 @@ func TestSQLiteStoreAuthoringSessionCompareAndSwapFencesStaleMutations(t *testin
 	}
 	if persisted.Status != "approving" || persisted.Draft.ID != "approved-script" {
 		t.Fatalf("persisted approval intent = %#v", persisted)
+	}
+	expectedUpdatedAt := persisted.UpdatedAt
+	persisted.Status = "approved"
+	persisted.UpdatedAt = persisted.UpdatedAt.Add(time.Second)
+	persisted.LastAccessedAt = persisted.UpdatedAt
+	won, err = store.CompareAndSwapAuthoringSession(persisted, expectedUpdatedAt, "approving")
+	if err != nil || !won {
+		t.Fatalf("approval finalization CAS: won=%v err=%v", won, err)
+	}
+	forged, err := replica.GetAuthoringSession(session.ID)
+	if err != nil {
+		t.Fatalf("replica GetAuthoringSession(approved): %v", err)
+	}
+	forged.Name = "Cross-replica stale overwrite"
+	if err := replica.SaveAuthoringSession(forged); err == nil || !strings.Contains(err.Error(), "immutable") {
+		t.Fatalf("cross-replica SaveAuthoringSession error = %v, want immutable approved evidence", err)
+	}
+	won, err = replica.CompareAndSwapAuthoringSession(forged, forged.UpdatedAt, "approved")
+	if err != nil || won {
+		t.Fatalf("cross-replica approved CAS: won=%v err=%v, want fenced", won, err)
+	}
+	if err := replica.DeleteAuthoringSession(session.ID); err == nil || !strings.Contains(err.Error(), "immutable") {
+		t.Fatalf("DeleteAuthoringSession(approved) error = %v, want immutable approved evidence", err)
+	}
+	if current, err := store.GetAuthoringSession(session.ID); err != nil || current.Status != "approved" || current.Name == forged.Name {
+		t.Fatalf("approved evidence after direct storage mutations = %#v err=%v", current, err)
+	}
+	deleted, err = replica.DeleteAuthoringSessionUnlessApproving(session.ID)
+	if err != nil {
+		t.Fatalf("DeleteAuthoringSessionUnlessApproving(approved): %v", err)
+	}
+	if deleted {
+		t.Fatal("finalized approval evidence was deleted")
 	}
 }
 

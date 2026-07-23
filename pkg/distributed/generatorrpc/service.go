@@ -103,6 +103,7 @@ const (
 	maxGeneratorVUsers                 = int64(^uint32(0) >> 1)
 	maxGeneratorGroupNameBytes         = 512
 	maxGeneratorScriptIDBytes          = 512
+	maxGeneratorScenarioIDBytes        = 512
 	maxGeneratorHashBytes              = 128
 	maxGeneratorOperationIDBytes       = 512
 	maxAssignmentEnvironmentEntries    = 1024
@@ -123,6 +124,9 @@ func validateAssignmentMetadataBounds(assignment *pb.WorkAssignment) error {
 		return err
 	}
 	if err := validateGeneratorFieldBytes(assignment.GetScriptId(), "script_id", maxGeneratorScriptIDBytes); err != nil {
+		return err
+	}
+	if err := validateGeneratorFieldBytes(assignment.GetScenarioId(), "scenario_id", maxGeneratorScenarioIDBytes); err != nil {
 		return err
 	}
 	if err := validateGeneratorFieldBytes(assignment.GetExpectedScriptHash(), "expected_script_hash", maxGeneratorHashBytes); err != nil {
@@ -587,32 +591,34 @@ func (b *transactionBuffer) DrainWindow() ([]TransactionMetric, *transactionWind
 type Service struct {
 	pb.UnimplementedGeneratorControlServer
 
-	mu                     sync.RWMutex
-	adjustMu               sync.Mutex
-	generatorID            string
-	maxVUsers              int32
-	maxAssignedTests       int
-	maxAssignedGroups      int
-	maxExecutions          int
-	maxHeartbeatStreams    int
-	activeHeartbeatStreams int
-	podResources           podResourceCapacity
-	scriptCache            *scriptCacheManager
-	assignments            map[string]assignedTest
-	executions             map[string]map[string]*groupExecution
-	stoppingTests          map[string]struct{}
-	stoppingGenerations    map[string]uint64
-	stopCompletions        map[string]*stopCompletion
-	resCollector           *engine.ResourceCollector
-	resCollectorMu         sync.Mutex // serializes resCollector.Collect (mutates delta state)
-	executionEnabled       bool
-	draining               bool
-	publishInterval        time.Duration
-	completionTimers       map[string]*time.Timer
-	completionTokens       map[string]uint64
-	nextCompletionToken    uint64
-	stageTimers            map[string]*time.Timer
-	stageTokens            map[string]uint64
+	mu                      sync.RWMutex
+	adjustMu                sync.Mutex
+	generatorID             string
+	maxVUsers               int32
+	maxAssignedTests        int
+	maxAssignedGroups       int
+	maxExecutions           int
+	maxHeartbeatStreams     int
+	activeHeartbeatStreams  int
+	podResources            podResourceCapacity
+	scriptCache             *scriptCacheManager
+	assignments             map[string]assignedTest
+	executions              map[string]map[string]*groupExecution
+	persistentJavaDrains    map[uint64]javaVuserCapacityDrain
+	nextPersistentJavaDrain uint64
+	stoppingTests           map[string]struct{}
+	stoppingGenerations     map[string]uint64
+	stopCompletions         map[string]*stopCompletion
+	resCollector            *engine.ResourceCollector
+	resCollectorMu          sync.Mutex // serializes resCollector.Collect (mutates delta state)
+	executionEnabled        bool
+	draining                bool
+	publishInterval         time.Duration
+	completionTimers        map[string]*time.Timer
+	completionTokens        map[string]uint64
+	nextCompletionToken     uint64
+	stageTimers             map[string]*time.Timer
+	stageTokens             map[string]uint64
 	*executionEpochManager
 	shutdown     chan struct{}
 	shutdownOnce sync.Once
@@ -754,6 +760,7 @@ func NewService(generatorID string, maxVUsers int, opts ...ServiceOption) *Servi
 		scriptCache:           newScriptCacheManager(configuredGeneratorScriptCacheMax(), configuredGeneratorScriptCacheMaxBytes()),
 		assignments:           make(map[string]assignedTest),
 		executions:            make(map[string]map[string]*groupExecution),
+		persistentJavaDrains:  make(map[uint64]javaVuserCapacityDrain),
 		lifecycleCoordinator:  lifecycleCoordinator,
 		stoppingTests:         lifecycleCoordinator.stoppingTests,
 		stoppingGenerations:   lifecycleCoordinator.stoppingGenerations,
@@ -1193,8 +1200,16 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 		s.mu.RLock()
 		active := s.activeVUsersLocked()
 		avail := s.availableCapacityLocked()
+		persistentJavaReserved := s.heartbeatJavaVuserCapacityInUseLocked()
+		javaOccupancyMode := s.heartbeatJavaVuserOccupancyModeLocked()
 		s.mu.RUnlock()
 		stats := generatorStatsFromResources(s.collectResources(), active)
+		supportedProtocols, compatibleFeatures, runtimeCapacities := runtimeAdvertisementWithCapacities(
+			stream.Context(),
+			true,
+			map[string]int64{"java_vuser": persistentJavaReserved},
+			map[string]string{"java_vuser": javaOccupancyMode},
+		)
 		if err := stream.Send(&pb.HeartbeatPong{
 			GeneratorId:        s.generatorID,
 			TimestampUnixMs:    maxInt64(time.Now().UnixMilli(), ping.GetTimestampUnixMs()),
@@ -1205,8 +1220,9 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 			MemoryLimitBytes:   s.podResources.MemoryLimitBytes,
 			MaxVusers:          s.podResources.MaxVUsers,
 			Version:            buildinfo.Get().Version,
-			SupportedProtocols: supportedProtocolNamesForHeartbeat(stream.Context()),
-			CompatibleFeatures: compatibleFeatureNamesForHeartbeat(stream.Context()),
+			SupportedProtocols: supportedProtocols,
+			CompatibleFeatures: compatibleFeatures,
+			RuntimeCapacities:  runtimeCapacities,
 		}); err != nil {
 			return err
 		}
@@ -1214,66 +1230,124 @@ func (s *Service) Heartbeat(stream pb.GeneratorControl_HeartbeatServer) error {
 }
 
 func supportedProtocolNames() []string {
-	names := protocol.List()
-	filtered := names[:0]
-	for _, name := range names {
-		normalized := strings.ToLower(strings.TrimSpace(name))
-		if normalized == "java_vuser" && !config.JavaVuserRunnerEnabled() {
-			continue
-		}
-		if instance, err := protocol.Get(normalized); err == nil {
-			if provider, ok := instance.(protocol.RuntimeCapabilityProvider); ok && !provider.RuntimeCapabilities().Available {
-				continue
-			}
-		}
-		filtered = append(filtered, name)
-	}
-	names = filtered
-	sort.Strings(names)
+	names, _ := runtimeAdvertisement(context.Background(), false)
 	return names
 }
 
 func compatibleFeatureNames() []string {
-	protocols := supportedProtocolNames()
-	features := append(protocols, FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1)
-	for _, name := range protocols {
-		if instance, err := protocol.Get(name); err == nil {
-			if provider, ok := instance.(protocol.RuntimeCapabilityProvider); ok {
-				features = append(features, provider.RuntimeCapabilities().Features...)
-			}
-		}
-	}
-	sort.Strings(features)
+	_, features := runtimeAdvertisement(context.Background(), false)
 	return features
 }
 
 func supportedProtocolNamesForHeartbeat(ctx context.Context) []string {
-	names := supportedProtocolNames()
-	filtered := names[:0]
-	for _, name := range names {
-		if instance, err := protocol.Get(name); err == nil {
-			if checker, ok := instance.(protocol.RuntimeHealthChecker); ok && !checker.RuntimeHealthy(ctx) {
-				continue
-			}
-		}
-		filtered = append(filtered, name)
-	}
-	return filtered
+	names, _ := runtimeAdvertisement(ctx, true)
+	return names
 }
 
 func compatibleFeatureNamesForHeartbeat(ctx context.Context) []string {
-	available := supportedProtocolNamesForHeartbeat(ctx)
-	features := append([]string{}, available...)
-	features = append(features, FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1)
-	for _, name := range available {
-		if instance, err := protocol.Get(name); err == nil {
-			if provider, ok := instance.(protocol.RuntimeCapabilityProvider); ok {
-				features = append(features, provider.RuntimeCapabilities().Features...)
+	_, features := runtimeAdvertisement(ctx, true)
+	return features
+}
+
+// runtimeAdvertisement computes the protocol and feature lists from one
+// capability/health observation per protocol. Heartbeats must not build these
+// lists independently: a runner that changes health between two probes could
+// otherwise advertise a feature without its owning protocol (or vice versa).
+func runtimeAdvertisement(ctx context.Context, requireHealthy bool) ([]string, []string) {
+	protocols, features, _ := runtimeAdvertisementWithCapacities(ctx, requireHealthy, nil, nil)
+	return protocols, features
+}
+
+// runtimeAdvertisementWithCapacities extends runtimeAdvertisement with the
+// protocol-specific ceilings reported by RuntimeCapabilityProvider. inUse is a
+// generator-owned reservation snapshot captured before any external runtime
+// probe, so heartbeat generation never holds the service state lock while
+// invoking sidecars or runner health checks. occupancyModes comes from the same
+// state snapshot and is optional for non-session runtimes.
+func runtimeAdvertisementWithCapacities(ctx context.Context, requireHealthy bool, inUse map[string]int64, occupancyModes map[string]string) ([]string, []string, []*pb.ProtocolRuntimeCapacity) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	names := protocol.List()
+	sort.Strings(names)
+	available := make([]string, 0, len(names))
+	features := []string{FeatureEvacuationAssignmentStateV1, FeatureSecretBundleV1}
+	runtimeCapacities := make([]*pb.ProtocolRuntimeCapacity, 0)
+	for _, name := range names {
+		normalized := strings.ToLower(strings.TrimSpace(name))
+		if normalized == "" {
+			continue
+		}
+		if normalized == "java_vuser" && !config.JavaVuserRunnerEnabled() {
+			runtimeCapacities = append(runtimeCapacities, &pb.ProtocolRuntimeCapacity{
+				Protocol:      normalized,
+				OccupancyMode: occupancyModes[normalized],
+			})
+			continue
+		}
+		instance, err := protocol.Get(normalized)
+		if err != nil {
+			continue
+		}
+		capabilities, capabilitySupported, capabilityErr := protocol.ReadRuntimeCapabilities(instance)
+		runtimeAvailable := !capabilitySupported || capabilities.Available
+		if capabilityErr != nil {
+			runtimeAvailable = false
+		}
+		if requireHealthy && runtimeAvailable {
+			healthy, healthSupported, healthErr := protocol.CheckRuntimeHealth(ctx, instance)
+			if healthErr != nil || healthSupported && !healthy {
+				runtimeAvailable = false
 			}
 		}
+		if capabilitySupported {
+			used := inUse[normalized]
+			if used < 0 {
+				used = 0
+			}
+			maxVUsers := max(capabilities.MaxVUsers, 0)
+			remaining := int64(0)
+			if runtimeAvailable && used < maxVUsers {
+				remaining = maxVUsers - used
+			}
+			runtimeCapacities = append(runtimeCapacities, &pb.ProtocolRuntimeCapacity{
+				Protocol:        normalized,
+				Available:       runtimeAvailable,
+				MaxVusers:       maxVUsers,
+				AvailableVusers: remaining,
+				Features:        sortedUniqueRuntimeNames(capabilities.Features),
+				OccupancyMode:   occupancyModes[normalized],
+			})
+		}
+		if !runtimeAvailable {
+			continue
+		}
+		available = append(available, normalized)
+		features = append(features, normalized)
+		if capabilitySupported {
+			features = append(features, capabilities.Features...)
+		}
 	}
-	sort.Strings(features)
-	return features
+	return sortedUniqueRuntimeNames(available), sortedUniqueRuntimeNames(features), runtimeCapacities
+}
+
+func sortedUniqueRuntimeNames(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		key := strings.ToLower(value)
+		if key == "" {
+			continue
+		}
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func containsProtocolName(values []string, expected string) bool {
@@ -1339,7 +1413,23 @@ func (s *Service) collectResources() *engine.SystemResources {
 	// serialize Collect to avoid a data race (and garbage CPU/GC deltas).
 	s.resCollectorMu.Lock()
 	defer s.resCollectorMu.Unlock()
-	return s.resCollector.Collect()
+	return collectSystemResourcesSafely(s.resCollector.Collect)
+}
+
+// collectSystemResourcesSafely prevents a platform metrics parser panic from
+// terminating the generator's gRPC server. Resource telemetry is advisory; a
+// failed sample degrades to assignment-derived VUser counts and a later
+// heartbeat gets another chance to collect host metrics.
+func collectSystemResourcesSafely(collect func() *engine.SystemResources) (resources *engine.SystemResources) {
+	if collect == nil {
+		return nil
+	}
+	defer func() {
+		if recover() != nil {
+			resources = nil
+		}
+	}()
+	return collect()
 }
 
 func (s *Service) activeTestIDs() []string {
@@ -1387,8 +1477,10 @@ func (s *Service) availableCapacityLocked() int32 {
 func (s *Service) FailTest(testID string, message string) {
 	s.mu.Lock()
 	assignment, ok := s.assignments[testID]
+	persistentJavaDrainToken := uint64(0)
 	if ok {
 		s.markStoppingLocked(testID, assignment.executionGeneration)
+		persistentJavaDrainToken = s.reserveAssignmentJavaDrainLocked(assignment)
 		delete(s.assignments, testID)
 	}
 	execs := s.executions[testID]
@@ -1422,6 +1514,7 @@ func (s *Service) FailTest(testID string, message string) {
 		if !trackedFinalizer {
 			go func() {
 				_ = waitForGeneratorExecutions(context.Background(), executions)
+				s.releaseStopDrain(persistentJavaDrainToken)
 				s.captureStoppedExecutionMetrics(&assignment, executions)
 				s.finishFailedTest(testID, assignment, writer, message)
 			}()
@@ -1430,6 +1523,7 @@ func (s *Service) FailTest(testID string, message string) {
 		go func() {
 			defer s.archiveManager.finalizerDone()
 			_ = waitForGeneratorExecutions(context.Background(), executions)
+			s.releaseStopDrain(persistentJavaDrainToken)
 			s.captureStoppedExecutionMetrics(&assignment, executions)
 			s.finishFailedTest(testID, assignment, writer, message)
 		}()
@@ -1438,6 +1532,7 @@ func (s *Service) FailTest(testID string, message string) {
 	if trackedFinalizer {
 		defer s.archiveManager.finalizerDone()
 	}
+	s.releaseStopDrain(persistentJavaDrainToken)
 	s.captureStoppedExecutionMetrics(&assignment, executions)
 	s.finishFailedTest(testID, assignment, writer, message)
 }

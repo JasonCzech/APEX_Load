@@ -82,17 +82,194 @@ export function computeCoverage(
   return summary
 }
 
-function fileBasename(path?: string): string {
+function normalizeSourcePath(path?: string): string {
   if (!path) return ''
-  return path.toLowerCase().split('/').pop() || ''
+  const parts: string[] = []
+  for (const part of path.trim().replace(/\\/g, '/').split('/')) {
+    if (!part || part === '.') continue
+    if (part === '..' && parts.length > 0 && parts[parts.length - 1] !== '..') {
+      parts.pop()
+      continue
+    }
+    parts.push(part)
+  }
+  return parts.join('/').toLowerCase()
+}
+
+interface SourcePathMatch {
+  paths: string[]
+}
+
+interface SourcePathSuffixNode extends SourcePathMatch {
+  children: Map<string, SourcePathSuffixNode>
+}
+
+export interface SourceFilePathResolver {
+  candidates: (requestedPath?: string) => readonly string[]
+  resolve: (requestedPath?: string) => string | null
+}
+
+type SourceFilePathLookup = readonly string[] | SourceFilePathResolver
+
+function recordPathMatch(
+  index: Map<string, SourcePathMatch>,
+  key: string,
+  path: string,
+) {
+  const existing = index.get(key)
+  if (existing) {
+    existing.paths.push(path)
+  } else {
+    index.set(key, { paths: [path] })
+  }
+}
+
+/**
+ * Build a reusable source-path resolver for one review payload.
+ *
+ * The indexes retain collisions so ambiguous paths fail closed. Resolution
+ * results are cached by normalized request, which keeps files × mappings UI
+ * operations bounded even when a review names thousands of omitted files.
+ */
+export function createSourceFilePathResolver(
+  knownFilePaths: readonly string[],
+): SourceFilePathResolver {
+  const exactIndex = new Map<string, SourcePathMatch>()
+  const suffixRoot: SourcePathSuffixNode = {
+    paths: [],
+    children: new Map(),
+  }
+  const normalizedCandidateCache = new Map<string, readonly string[]>()
+  const requestCandidateCache = new Map<string, readonly string[]>()
+  const normalizedCache = new Map<string, string | null>()
+  const requestCache = new Map<string, string | null>()
+
+  for (const path of knownFilePaths) {
+    const normalized = normalizeSourcePath(path)
+    if (!normalized) continue
+    recordPathMatch(exactIndex, normalized, path)
+
+    const parts = normalized.split('/')
+    let node = suffixRoot
+    for (let index = parts.length - 1; index >= 0; index -= 1) {
+      const part = parts[index]
+      let child = node.children.get(part)
+      if (!child) {
+        child = { paths: [], children: new Map() }
+        node.children.set(part, child)
+      }
+      child.paths.push(path)
+      node = child
+    }
+  }
+
+  const resolver: SourceFilePathResolver = {
+    candidates(requestedPath?: string): readonly string[] {
+      if (!requestedPath) return []
+      const requestCached = requestCandidateCache.get(requestedPath)
+      if (requestCached) return requestCached
+
+      const requested = normalizeSourcePath(requestedPath)
+      if (!requested) return []
+      const normalizedCached = normalizedCandidateCache.get(requested)
+      if (normalizedCached) {
+        requestCandidateCache.set(requestedPath, normalizedCached)
+        return normalizedCached
+      }
+
+      const exact = exactIndex.get(requested)
+      if (exact) {
+        normalizedCandidateCache.set(requested, exact.paths)
+        requestCandidateCache.set(requestedPath, exact.paths)
+        return exact.paths
+      }
+
+      const requestedParts = requested.split('/')
+      let currentNode = suffixRoot
+      let basenameMatch: SourcePathSuffixNode | undefined
+      let deepestSuffixMatch: SourcePathSuffixNode | undefined
+      let depth = 0
+      for (let index = requestedParts.length - 1; index >= 0; index -= 1) {
+        const nextNode = currentNode.children.get(requestedParts[index])
+        if (!nextNode) break
+        currentNode = nextNode
+        depth += 1
+        if (depth === 1) basenameMatch = currentNode
+        if (depth >= 2) deepestSuffixMatch = currentNode
+      }
+
+      const matches = (deepestSuffixMatch || basenameMatch)?.paths || []
+      normalizedCandidateCache.set(requested, matches)
+      requestCandidateCache.set(requestedPath, matches)
+      return matches
+    },
+    resolve(requestedPath?: string): string | null {
+      if (!requestedPath) return null
+      if (requestCache.has(requestedPath)) return requestCache.get(requestedPath) ?? null
+
+      const requested = normalizeSourcePath(requestedPath)
+      if (!requested) return null
+      if (normalizedCache.has(requested)) {
+        const cached = normalizedCache.get(requested) ?? null
+        requestCache.set(requestedPath, cached)
+        return cached
+      }
+
+      const matches = resolver.candidates(requestedPath)
+      const resolved = matches.length === 1 ? matches[0] : null
+      normalizedCache.set(requested, resolved)
+      requestCache.set(requestedPath, resolved)
+      return resolved
+    },
+  }
+  return resolver
+}
+
+function isSourceFilePathResolver(
+  lookup: SourceFilePathLookup,
+): lookup is SourceFilePathResolver {
+  const resolver = lookup as SourceFilePathResolver
+  return typeof resolver.resolve === 'function' && typeof resolver.candidates === 'function'
+}
+
+function sourceFilePathResolver(lookup: SourceFilePathLookup): SourceFilePathResolver {
+  return isSourceFilePathResolver(lookup)
+    ? lookup
+    : createSourceFilePathResolver(lookup)
+}
+
+/**
+ * Resolve a backend source path against all source files in the review.
+ *
+ * Exact/canonical paths win first, followed by the deepest unique path suffix.
+ * A basename-only match is accepted only when that basename occurs once in the
+ * complete source-file set. Ambiguous matches return null instead of depending
+ * on source-file order.
+ */
+export function resolveSourceFilePath(
+  requestedPath: string | undefined,
+  knownFilePaths: SourceFilePathLookup,
+): string | null {
+  return sourceFilePathResolver(knownFilePaths).resolve(requestedPath)
+}
+
+/** Best-tier exact, deepest-suffix, or basename candidates for explicit review. */
+export function sourceFilePathCandidates(
+  requestedPath: string | undefined,
+  knownFilePaths: SourceFilePathLookup,
+): readonly string[] {
+  return sourceFilePathResolver(knownFilePaths).candidates(requestedPath)
 }
 
 /** Whether a mapping's source_file refers to the file at `filePath`. */
-export function mappingMatchesFile(mapping: SourceReviewMapping, filePath?: string): boolean {
+export function mappingMatchesFile(
+  mapping: SourceReviewMapping,
+  filePath?: string,
+  knownFilePaths?: SourceFilePathLookup,
+): boolean {
   if (!filePath || !mapping.source_file) return false
-  const file = filePath.toLowerCase()
-  const source = mapping.source_file.toLowerCase()
-  return file === source || file.endsWith(`/${source}`) || fileBasename(file) === fileBasename(source)
+  const resolved = resolveSourceFilePath(mapping.source_file, knownFilePaths || [filePath])
+  return resolved !== null && normalizeSourcePath(resolved) === normalizeSourcePath(filePath)
 }
 
 function mappingEndLine(mapping: SourceReviewMapping): number {
@@ -110,10 +287,11 @@ function setWithPriority(map: Map<number, MappingCategory>, line: number, catego
 export function lineStatusForSource(
   mappings: SourceReviewMapping[],
   filePath?: string,
+  knownFilePaths?: SourceFilePathLookup,
 ): Map<number, MappingCategory> {
   const result = new Map<number, MappingCategory>()
   for (const mapping of mappings) {
-    if (!mapping || !mapping.start_line || !mappingMatchesFile(mapping, filePath)) continue
+    if (!mapping || !mapping.start_line || !mappingMatchesFile(mapping, filePath, knownFilePaths)) continue
     const category = statusCategory(mapping.status)
     for (let line = mapping.start_line; line <= mappingEndLine(mapping); line += 1) {
       setWithPriority(result, line, category)
@@ -191,11 +369,12 @@ export function mappingForSourceLine(
   mappings: SourceReviewMapping[],
   filePath: string | undefined,
   line: number,
+  knownFilePaths?: SourceFilePathLookup,
 ): SourceReviewMapping | null {
   let best: SourceReviewMapping | null = null
   let bestSpan = Number.POSITIVE_INFINITY
   for (const mapping of mappings) {
-    if (!mapping || !mapping.start_line || !mappingMatchesFile(mapping, filePath)) continue
+    if (!mapping || !mapping.start_line || !mappingMatchesFile(mapping, filePath, knownFilePaths)) continue
     const end = mappingEndLine(mapping)
     if (line < mapping.start_line || line > end) continue
     const span = rangeSpan(mapping.start_line, end)

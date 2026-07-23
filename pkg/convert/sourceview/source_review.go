@@ -22,8 +22,10 @@ var mappingIDUnsafeChars = regexp.MustCompile(`[^a-z0-9_.\[\]-]+`)
 // Review contains redacted source files and source-to-DSL mappings produced by
 // import converters for side-by-side review.
 type Review struct {
-	SourceFiles []SourceFile `json:"source_files,omitempty"`
-	Mappings    []Mapping    `json:"mappings,omitempty"`
+	SourceFiles        []SourceFile `json:"source_files,omitempty"`
+	Mappings           []Mapping    `json:"mappings,omitempty"`
+	TotalSourceFiles   int          `json:"total_source_files,omitempty"`
+	OmittedSourceFiles []string     `json:"omitted_source_files,omitempty"`
 }
 
 type SourceFile struct {
@@ -51,13 +53,15 @@ type Mapping struct {
 
 func Build(files map[string]string, mappings []Mapping) *Review {
 	cleanMappings := NormalizeMappings(mappings)
-	sourceFiles := buildFiles(files, cleanMappings)
+	sourceFiles, totalSourceFiles, omittedSourceFiles := buildFiles(files, cleanMappings)
 	if len(sourceFiles) == 0 && len(cleanMappings) == 0 {
 		return nil
 	}
 	return &Review{
-		SourceFiles: sourceFiles,
-		Mappings:    cleanMappings,
+		SourceFiles:        sourceFiles,
+		Mappings:           cleanMappings,
+		TotalSourceFiles:   totalSourceFiles,
+		OmittedSourceFiles: omittedSourceFiles,
 	}
 }
 
@@ -162,6 +166,8 @@ func Language(path string) string {
 		return "c"
 	case ".js":
 		return "javascript"
+	case ".java":
+		return "java"
 	case ".json", ".har":
 		return "json"
 	case ".yaml", ".yml":
@@ -248,9 +254,9 @@ func reviewSensitiveName(name string) bool {
 	return scrub.SensitiveName(name) || (scrub.Policy{}).SensitiveHeader(name)
 }
 
-func buildFiles(files map[string]string, mappings []Mapping) []SourceFile {
+func buildFiles(files map[string]string, mappings []Mapping) ([]SourceFile, int, []string) {
 	if len(files) == 0 {
-		return nil
+		return nil, 0, nil
 	}
 	referenced := make(map[string]struct{})
 	for _, mapping := range mappings {
@@ -268,7 +274,10 @@ func buildFiles(files map[string]string, mappings []Mapping) []SourceFile {
 		}
 	}
 	sort.Strings(names)
+	totalSourceFiles := len(names)
+	var omittedSourceFiles []string
 	if len(names) > MaxFiles {
+		omittedSourceFiles = append([]string(nil), names[MaxFiles:]...)
 		names = names[:MaxFiles]
 	}
 
@@ -290,7 +299,7 @@ func buildFiles(files map[string]string, mappings []Mapping) []SourceFile {
 			Redacted:      redacted,
 		})
 	}
-	return out
+	return out, totalSourceFiles, omittedSourceFiles
 }
 
 func shouldIncludeFile(name string, referenced map[string]struct{}) bool {
@@ -305,7 +314,7 @@ func shouldIncludeFile(name string, referenced map[string]struct{}) bool {
 		return true
 	}
 	switch filepath.Ext(lower) {
-	case ".c", ".h", ".usr", ".cfg", ".prm", ".dat", ".xml", ".jmx", ".wsdl", ".js", ".json", ".har", ".yaml", ".yml", ".http", ".txt":
+	case ".c", ".h", ".usr", ".cfg", ".prm", ".dat", ".xml", ".jmx", ".wsdl", ".js", ".java", ".json", ".har", ".yaml", ".yml", ".http", ".txt":
 		return true
 	default:
 		return len(referenced) == 0

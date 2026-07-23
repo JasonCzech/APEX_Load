@@ -66,6 +66,8 @@ spec:
               value: production
             - name: APEXLOAD_GENERATOR_MAX_VUSERS
               value: "10000"
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_ENABLED
+              value: "false"
             # The durable generation high-water prevents a replaced pod from
             # accepting work from a controller term that was already fenced.
             - name: APEXLOAD_GENERATOR_STATE_DIR

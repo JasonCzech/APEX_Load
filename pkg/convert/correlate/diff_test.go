@@ -1,6 +1,8 @@
 package correlate
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -112,11 +114,75 @@ func TestDiffRecordingsUnknownWhenStepMissing(t *testing.T) {
 	}
 }
 
+func TestDiffRecordingsUnknownForSameNameAtDifferentPath(t *testing.T) {
+	a := []Observation{
+		{ID: 1, ResponseBody: `{"payment":{"token":"PAYMENT-OLD-111111"}}`},
+		{ID: 2, RequestBody: "token=PAYMENT-OLD-111111"},
+	}
+	b := []Observation{
+		{ID: 1, ResponseBody: `{"token":"UNRELATED-NEW-222222"}`},
+		{ID: 2, RequestBody: "token=UNRELATED-NEW-222222"},
+	}
+
+	results := DiffRecordings(a, b)
+	if len(results) != 1 || results[0].Class != DiffUnknown {
+		t.Fatalf("different-path result = %#v, want unknown", results)
+	}
+}
+
+func TestDiffRecordingsUnknownForAmbiguousExtractorIdentity(t *testing.T) {
+	corr := Correlation{
+		Source:      "body",
+		ExtractType: "xpath",
+		Expression:  "//*[local-name()='token']/text()",
+	}
+	candidates := []Candidate{
+		{Source: "body", ExtractType: "xpath", Expression: corr.Expression, Value: "FIRST-111111"},
+		{Source: "body", ExtractType: "xpath", Expression: corr.Expression, Value: "SECOND-222222"},
+	}
+	if value, found := lookupCandidateValue(candidates, corr); found || value != "" {
+		t.Fatalf("ambiguous extractor lookup = %q/%v, want unknown", value, found)
+	}
+}
+
 func TestDiffRecordingsEmptyInputs(t *testing.T) {
 	if got := DiffRecordings(nil, nil); got != nil {
 		t.Errorf("DiffRecordings(nil, nil) = %v, want nil", got)
 	}
 	if got := DiffRecordings([]Observation{{ID: 1, ResponseBody: "plain"}}, nil); got != nil {
 		t.Errorf("no correlations should yield nil, got %v", got)
+	}
+}
+
+func TestDiffRecordingsCheckedRejectsCandidateOverflowInSourceRecording(t *testing.T) {
+	var body strings.Builder
+	body.WriteByte('[')
+	for index := 0; index <= maxCorrelationCandidatesPerObservation; index++ {
+		if index > 0 {
+			body.WriteByte(',')
+		}
+		fmt.Fprintf(&body, `{"token":"token-%06d"}`, index)
+	}
+	body.WriteByte(']')
+	overflow := []Observation{{ID: 1, ResponseBody: body.String()}}
+
+	if results, err := DiffRecordingsChecked(overflow, []Observation{{ID: 1}}); !errors.Is(err, ErrCorrelationWorkLimit) || results != nil {
+		t.Fatalf("DiffRecordingsChecked overflow = %#v, error %v; want nil results with ErrCorrelationWorkLimit", results, err)
+	}
+
+	// The comparison recording is irrelevant when A contains no correlations;
+	// accepting this case does not present a partial classification as complete.
+	if results, err := DiffRecordingsChecked([]Observation{{ID: 1}}, overflow); err != nil || results != nil {
+		t.Fatalf("empty source diff = %#v, error %v; want empty success", results, err)
+	}
+}
+
+func TestDiffRecordingsCheckedRejectsCounterpartObservationOverflow(t *testing.T) {
+	b := make([]Observation, maxCorrelationObservationsPerAnalysis+1)
+	for index := range b {
+		b[index].ID = index + 1
+	}
+	if _, err := DiffRecordingsChecked([]Observation{{ID: 1}}, b); !errors.Is(err, ErrCorrelationWorkLimit) {
+		t.Fatalf("DiffRecordingsChecked counterpart observation error = %v, want ErrCorrelationWorkLimit", err)
 	}
 }

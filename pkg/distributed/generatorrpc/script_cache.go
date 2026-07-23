@@ -1,15 +1,22 @@
 package generatorrpc
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"sync"
+
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/engine"
 )
 
 type cachedScript struct {
-	content  []byte
-	hash     string
-	protocol string
-	lastUsed uint64
+	content                []byte
+	hash                   string
+	protocol               string
+	requiresPhaseLifecycle bool
+	javaVuserCapacity      engine.JavaVuserCapacityPlan
+	lastUsed               uint64
 }
 
 // scriptCacheManager owns generator script-cache data, bounds, LRU accounting,
@@ -78,6 +85,9 @@ func (cache *scriptCacheManager) put(id string, content []byte, contentHash stri
 		return fmt.Errorf("script %q is %d bytes and exceeds generator cache item limit %d", id, contentBytes, cache.byteLimit)
 	}
 	if existing, ok := cache.entries[id]; ok {
+		if _, active := pinned[id]; active && !bytes.Equal(existing.content, content) {
+			return fmt.Errorf("script %q is pinned by an active assignment and cannot be replaced", id)
+		}
 		requiredBytes := cache.retainedBytes - int64(len(existing.content)) + contentBytes
 		for requiredBytes > cache.byteLimit {
 			if !cache.evictOneExceptLocked(id, pinned) {
@@ -89,7 +99,7 @@ func (cache *scriptCacheManager) put(id string, content []byte, contentHash stri
 		cache.retainedBytes -= int64(len(existing.content))
 		existing.content = append(existing.content[:0], content...)
 		existing.hash = contentHash
-		existing.protocol = scriptProtocol(content)
+		existing.protocol, existing.requiresPhaseLifecycle, existing.javaVuserCapacity = cachedScriptRuntimeProfile(content)
 		existing.lastUsed = cache.useCounter
 		cache.entries[id] = existing
 		cache.retainedBytes += contentBytes
@@ -101,14 +111,27 @@ func (cache *scriptCacheManager) put(id string, content []byte, contentHash stri
 		}
 	}
 	cache.useCounter++
+	protocolName, requiresPhaseLifecycle, javaCapacity := cachedScriptRuntimeProfile(content)
 	cache.entries[id] = cachedScript{
-		content:  append([]byte(nil), content...),
-		hash:     contentHash,
-		protocol: scriptProtocol(content),
-		lastUsed: cache.useCounter,
+		content:                append([]byte(nil), content...),
+		hash:                   contentHash,
+		protocol:               protocolName,
+		requiresPhaseLifecycle: requiresPhaseLifecycle,
+		javaVuserCapacity:      javaCapacity,
+		lastUsed:               cache.useCounter,
 	}
 	cache.retainedBytes += contentBytes
 	return nil
+}
+
+func cachedScriptRuntimeProfile(content []byte) (string, bool, engine.JavaVuserCapacityPlan) {
+	var script dsl.Script
+	if json.Unmarshal(content, &script) != nil {
+		return scriptProtocol(content), false, engine.JavaVuserCapacityPlan{}
+	}
+	protocolName := scriptProtocol(content)
+	plan := engine.NewJavaVuserCapacityPlan(&script)
+	return protocolName, plan.RequiresPersistentLifecycle(), plan
 }
 
 func (cache *scriptCacheManager) touch(id string) (cachedScript, bool) {

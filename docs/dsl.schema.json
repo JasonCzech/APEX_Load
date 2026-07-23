@@ -3576,11 +3576,17 @@
                     "type": "object"
                   },
                   "method": {
-                    "description": "Lifecycle method or full lifecycle sequence to invoke.",
+                    "description": "Source lifecycle method name or legacy full lifecycle sequence to invoke.",
                     "enum": [
                       "init",
+                      "vuser_init",
+                      "initialize",
                       "action",
+                      "Action",
+                      "run",
                       "end",
+                      "vuser_end",
+                      "teardown",
                       "full_lifecycle"
                     ],
                     "type": "string"
@@ -7400,16 +7406,38 @@
           "minimum": 0,
           "type": "integer"
         },
+        "additional_vm_parameters": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 128,
+          "type": "array"
+        },
         "classpath": {
           "items": {
             "type": "string"
           },
+          "maxItems": 256,
           "type": "array"
+        },
+        "dedicated_class_loader": {
+          "type": "boolean"
         },
         "enabled": {
           "type": "boolean"
         },
         "harness_jar": {
+          "type": "string"
+        },
+        "jdk_home": {
+          "maxLength": 4096,
+          "type": "string"
+        },
+        "jdk_selection": {
+          "enum": [
+            "internal",
+            "specified"
+          ],
           "type": "string"
         },
         "max_processes": {
@@ -7422,6 +7450,9 @@
           "maximum": 3600000,
           "minimum": 0,
           "type": "integer"
+        },
+        "use_xbootclasspath": {
+          "type": "boolean"
         },
         "work_dir": {
           "type": "string"

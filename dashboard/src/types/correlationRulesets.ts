@@ -5,7 +5,6 @@ export interface CorrelationRule {
   source: string
   extract_type: string
   expression: string
-  sample_value?: string
   confidence?: number
 }
 
@@ -32,5 +31,6 @@ export interface CorrelationRulesetApplyResponse {
   script_id: string
   matched_rules: number
   applied: boolean
-  diffs?: Array<{ kind: string; path?: string; before?: string; after?: string }>
+  preview_token: string
+  diffs?: Array<{ kind: string; path?: string }>
 }

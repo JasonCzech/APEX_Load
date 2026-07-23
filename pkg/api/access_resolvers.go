@@ -1093,11 +1093,11 @@ func resolveBrowserReplaySessionProjectID(manager *BrowserReplayManager) request
 		if manager == nil {
 			return "", http.StatusServiceUnavailable, "browser replay is not configured"
 		}
-		session, ok := manager.Get(r.PathValue("session_id"))
+		projectID, ok := manager.LookupProjectID(r.PathValue("session_id"))
 		if !ok {
 			return "", http.StatusNotFound, "browser replay session not found"
 		}
-		return normalizeProjectID(session.ProjectID), 0, ""
+		return projectID, 0, ""
 	}
 }
 
@@ -1106,11 +1106,11 @@ func resolveScriptDebugSessionProjectID(manager *ScriptDebugManager) requestProj
 		if manager == nil {
 			return "", http.StatusServiceUnavailable, "script debugger is not configured"
 		}
-		session, ok := manager.Get(r.PathValue("session_id"))
+		projectID, ok := manager.LookupProjectID(r.PathValue("session_id"))
 		if !ok {
 			return "", http.StatusNotFound, "script debug session not found"
 		}
-		return normalizeProjectID(session.ProjectID), 0, ""
+		return projectID, 0, ""
 	}
 }
 

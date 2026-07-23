@@ -1,4 +1,5 @@
 import type * as React from 'react'
+import { useMemo } from 'react'
 import type { ReactNode } from 'react'
 import CodeMirror from '@uiw/react-codemirror'
 import { json } from '@codemirror/lang-json'
@@ -15,13 +16,13 @@ import type {
 import type { useApi } from '../hooks/useApi'
 import type { ScriptRecordingStatus } from '../hooks/api/useScriptApi'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
-import { CorrelationDiagnosePanel } from './CorrelationDiagnosePanel'
+import { CorrelationDiagnosePanel, type RecordingStatusState } from './CorrelationDiagnosePanel'
 import { ExtractorTester } from './ExtractorTester'
 import RepairSuggestionList from './RepairSuggestionList'
 import SnapshotBodyPreview from './SnapshotBodyPreview'
 import SnapshotTextPreview from './SnapshotTextPreview'
 import { apexCodeMirrorTheme } from './codeMirrorTheme'
-import type { CorrelationExtractorRepair } from './scriptCorrelationRepair'
+import type { CorrelationApplyResult, CorrelationExtractorRepair } from './scriptCorrelationRepair'
 import {
   type AuthoringIssue,
 } from './scriptAuthoringAssist'
@@ -81,7 +82,7 @@ interface ReplayVariableTimelineEntry {
 export interface ScriptReplayDebuggerViewProps {
   actionProblemRows: Array<{ issue: AuthoringIssue; row: ScriptPhaseActionRow }>
   activeReplaySessionId: string | null
-  addExtractorDefinition: (actionIndex: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair) => void
+  addExtractorDefinition: (actionIndex: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair) => CorrelationApplyResult
   api: ReplayDebuggerApi
   applyReplaySuggestedLocator: (event: ReplayActionEvent, locator: string) => void
   breakpointSummary: string
@@ -114,6 +115,8 @@ export interface ScriptReplayDebuggerViewProps {
   replayLatestActivity?: ReplayActivityItem
   replayOptions: ReplayOptionsState
   replayReport: BrowserReplayReport | null
+  replayEditableActionsKey: string | null
+  currentEditableActionsKey: string | null
   replayStatusLabel: 'Running' | 'Success' | 'Failed'
   replayVariableDiffs: Array<Record<string, { previous?: string; next: string }>>
   replayVariableInspector: Record<string, string> | null
@@ -123,6 +126,8 @@ export interface ScriptReplayDebuggerViewProps {
   scriptId?: string | null
   scriptLevelIssues: AuthoringIssue[]
   scriptRecordingStatus: ScriptRecordingStatus | null
+  scriptRecordingStatusState: RecordingStatusState
+  retryScriptRecordingStatus: () => void
   selectedOutlineParameterName: string | null
   selectOutlineParameter: (parameterName: string) => void
   setActiveAction: ScriptEditorStateSetter<number | null>
@@ -179,6 +184,8 @@ export function ScriptReplayDebuggerView({
   replayLatestActivity,
   replayOptions,
   replayReport,
+  replayEditableActionsKey,
+  currentEditableActionsKey,
   replayStatusLabel,
   replayVariableDiffs,
   replayVariableInspector,
@@ -188,6 +195,8 @@ export function ScriptReplayDebuggerView({
   scriptId,
   scriptLevelIssues,
   scriptRecordingStatus,
+  scriptRecordingStatusState,
+  retryScriptRecordingStatus,
   selectedOutlineParameterName,
   selectOutlineParameter,
   setActiveAction,
@@ -254,6 +263,28 @@ export function ScriptReplayDebuggerView({
     toggleDebugSequenceExpanded,
   } = controller
   const isReplayPaused = browserReplaySession?.status === 'paused'
+  const replayTerminal = Boolean(replayReport?.completed_at) &&
+    !replaying &&
+    (!browserReplaySession || ['completed', 'failed', 'stopped'].includes(browserReplaySession.status))
+  const replayMatchesCurrentScript = replayEditableActionsKey !== null &&
+    currentEditableActionsKey !== null &&
+    replayEditableActionsKey === currentEditableActionsKey
+  // Identify the diagnosis inputs: the replay session plus the editable-action
+  // snapshot taken when that replay started. The live draft is intentionally
+  // not part of this key — applying a diagnosis fix edits the draft, and that
+  // must not wipe the presented diagnosis (the panel tracks draft drift itself
+  // through currentEditableActionsKey). Memoized: the event list can be large
+  // and grows on every replay progress event.
+  const correlationDiagnosisKey = useMemo(() => JSON.stringify({
+    scriptId,
+    replaySessionId: replayReport?.replay_session_id || activeReplaySessionId,
+    scriptHash: replayReport?.script_hash,
+    scriptRevision: replayReport?.script_revision,
+    startedAt: replayReport?.started_at,
+    completedAt: replayReport?.completed_at,
+    eventCount: replayReport?.events?.length ?? 0,
+    replayEditableActionsKey,
+  }), [scriptId, replayReport, activeReplaySessionId, replayEditableActionsKey])
 
   return (
           <div
@@ -832,11 +863,18 @@ export function ScriptReplayDebuggerView({
                     {!isBrowserScript && debuggerTab !== 'browser' && replayReport && (
                       <CorrelationDiagnosePanel
                         scriptId={scriptId ?? null}
+                        replaySessionId={replayReport.replay_session_id || activeReplaySessionId || undefined}
+                        replayTerminal={replayTerminal}
+                        replayMatchesCurrentScript={replayMatchesCurrentScript}
                         projectId={projectId}
                         events={replayReport.events}
                         recordingStatus={scriptRecordingStatus}
+                        recordingStatusState={scriptRecordingStatusState}
+                        onRetryRecordingStatus={retryScriptRecordingStatus}
+                        diagnosisKey={correlationDiagnosisKey}
+                        currentEditableActionsKey={currentEditableActionsKey}
                         actionCount={script.actions.length}
-                        diagnoseWithBaseline={(id, replay) => api.diagnoseScriptReplay(id, replay)}
+                        diagnoseWithBaseline={(id, replay, replaySessionId) => api.diagnoseScriptReplay(id, replay, replaySessionId)}
                         diagnoseWithUpload={(recorded, replay) => api.diagnoseCorrelations(recorded, replay)}
                         onAddExtractor={addExtractorDefinition}
                       />

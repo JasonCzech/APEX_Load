@@ -32,8 +32,20 @@ func assertIngressActiveControllerRoutes(t *testing.T, input io.Reader) {
 	t.Helper()
 	decoder := yaml.NewDecoder(input)
 	want := map[string]bool{
-		"/api/v1/scenarios":        false,
-		"/api/v1/schedules/health": false,
+		"/api/v1/ci":                         false,
+		"/api/v1/tests":                      false,
+		"/api/v1/scenarios":                  false,
+		"/api/v1/schedules/health":           false,
+		"/api/v1/execution-plans":            false,
+		"/api/v1/capacity/timeslots":         false,
+		"/api/v1/system/execution-readiness": false,
+		"/api/v1/scripts":                    false,
+		"/api/v1/replay":                     false,
+		"/api/v1/script-debug":               false,
+		"/api/v1/browser-replay":             false,
+		"/api/v1/recorder":                   false,
+		"/api/v1/browser-recorder":           false,
+		"/api/v1/ws":                         false,
 	}
 	for {
 		var manifest ingressManifest
@@ -62,7 +74,16 @@ func assertIngressActiveControllerRoutes(t *testing.T, input io.Reader) {
 	}
 }
 
-func TestProductionIngressesRouteScenarioSchedulingAndHealthToActiveController(t *testing.T) {
+func TestProductionIngressesRouteExecutionReplayAndRealtimeLifecyclesToActiveController(t *testing.T) {
+	t.Run("AKS manifest", func(t *testing.T) {
+		file, err := os.Open("aks/controller-ingress.yaml")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer file.Close()
+		assertIngressActiveControllerRoutes(t, file)
+	})
+
 	t.Run("onprem manifest", func(t *testing.T) {
 		file, err := os.Open("onprem/controller-ingress.yaml")
 		if err != nil {

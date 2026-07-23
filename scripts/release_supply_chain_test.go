@@ -675,12 +675,14 @@ func TestReleaseArtifactNormalizationSupportsActualGitHubArtifactLayouts(t *test
 		{
 			name: "GitHub.com upload-artifact v4",
 			files: map[string]string{
-				"staging/release-core-assets/apexload-server_1.2.3_linux_amd64.tar.gz":                                     "server",
-				"staging/release-client-linux-amd64/release/assets/apexctl_1.2.3_linux_amd64":                              "apexctl",
-				"staging/release-client-linux-amd64/dist/desktop/apexload-desktop-1.2.3-linux-amd64.tar.gz":                "desktop",
-				"staging/release-client-linux-amd64/dist/desktop/apexload-desktop-1.2.3-linux-amd64.deb":                   "desktop-deb",
-				"staging/release-image-controller-standard/assets/sbom-apexload-controller-standard-linux-amd64.spdx.json": "sbom",
-				"staging/release-image-controller-standard/image-metadata/controller-standard.json":                        "metadata",
+				"staging/release-core-assets/apexload-server_1.2.3_linux_amd64.tar.gz":                                                   "server",
+				"staging/release-client-linux-amd64/release/assets/apexctl_1.2.3_linux_amd64":                                            "apexctl",
+				"staging/release-client-linux-amd64/dist/desktop/apexload-desktop-1.2.3-linux-amd64.tar.gz":                              "desktop",
+				"staging/release-client-linux-amd64/dist/desktop/apexload-desktop-1.2.3-linux-amd64.deb":                                 "desktop-deb",
+				"staging/release-image-controller-standard/assets/sbom-apexload-controller-standard-linux-amd64.spdx.json":               "sbom",
+				"staging/release-image-controller-standard/image-metadata/controller-standard.json":                                      "metadata",
+				"staging/release-image-java-vuser-runner-standard/assets/sbom-apexload-java-vuser-runner-standard-linux-amd64.spdx.json": "java-sbom",
+				"staging/release-image-java-vuser-runner-standard/image-metadata/java-vuser-runner-standard.json":                        "java-metadata",
 			},
 		},
 		{
@@ -710,6 +712,7 @@ func TestReleaseArtifactNormalizationSupportsActualGitHubArtifactLayouts(t *test
 				"release-image-controller-enterprise",
 				"release-image-generator-standard",
 				"release-image-generator-enterprise",
+				"release-image-java-vuser-runner-standard",
 			} {
 				if err := os.MkdirAll(filepath.Join(workingDir, "staging", artifact), 0o755); err != nil {
 					t.Fatal(err)
@@ -764,6 +767,7 @@ func TestReleaseInputDownloaderKeepsExactArtifactsSeparated(t *testing.T) {
 		"release-image-controller-enterprise",
 		"release-image-generator-standard",
 		"release-image-generator-enterprise",
+		"release-image-java-vuser-runner-standard",
 	} {
 		if got := strings.Count(action, "name: "+name); got != 2 {
 			t.Errorf("exact release input %s is downloaded %d times, want once per platform path", name, got)
@@ -787,6 +791,7 @@ func TestReleaseArtifactNormalizationRejectsDuplicateBasenames(t *testing.T) {
 		"release-image-controller-enterprise",
 		"release-image-generator-standard",
 		"release-image-generator-enterprise",
+		"release-image-java-vuser-runner-standard",
 	} {
 		if err := os.MkdirAll(filepath.Join(workingDir, "staging", artifact), 0o755); err != nil {
 			t.Fatal(err)

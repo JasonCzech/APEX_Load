@@ -416,6 +416,37 @@ func TestPlanDistributedGroupTargetsUsesNegotiatedGeneratorProtocols(t *testing.
 	}
 }
 
+func TestFreshEmptyGeneratorCapabilitiesOverrideConfiguredDefaults(t *testing.T) {
+	spec := generatorTargetSpec{
+		Address:   "gen-jvm",
+		Protocols: []string{"java_vuser"},
+		Features:  []string{protocol.FeatureJavaVuserPhaseLifecycleV1},
+		Labels:    map[string]string{"runtime": "java_vuser"},
+	}
+	if !targetSupportsProtocol(spec, "java_vuser") {
+		t.Fatal("configured protocol should remain a provisional hint before a heartbeat")
+	}
+
+	effective := generatorEffectiveSpec(spec, generatorLoadSnapshot{HeartbeatOK: true})
+	if got := generatorSpecProtocols(effective); len(got) != 0 {
+		t.Fatalf("effective protocols = %#v, want authoritative empty heartbeat advertisement", got)
+	}
+	if targetSupportsProtocol(effective, "java_vuser") {
+		t.Fatal("fresh empty protocol advertisement was replaced by configured/controller defaults")
+	}
+	if protocol.RuntimeFeaturesSatisfy(effective.Features, protocol.FeatureJavaVuserPhaseLifecycleV1) {
+		t.Fatal("fresh empty feature advertisement was replaced by configured features")
+	}
+
+	index := newGeneratorCompatibilityIndex(
+		[]generatorTargetSpec{spec},
+		map[string]generatorLoadSnapshot{"gen-jvm": {HeartbeatOK: true}},
+	)
+	if index.targetCanRun("gen-jvm", "java_vuser", protocol.FeatureJavaVuserPhaseLifecycleV1, nil) {
+		t.Fatal("compatibility index accepted labels/defaults after an authoritative empty heartbeat")
+	}
+}
+
 func TestPlanDistributedGroupShardsSplitsSpecificHostsByCapacity(t *testing.T) {
 	groups := []TestGroup{{
 		Name:     "buyers",

@@ -130,13 +130,14 @@ func (s *Service) forceStopTests(ctx context.Context, testIDs []string, maximumG
 }
 
 type detachedFencedTest struct {
-	testID           string
-	assignment       assignedTest
-	executions       []*groupExecution
-	writer           *archiveRecorder
-	trackedFinalizer bool
-	finalState       string
-	finalError       string
+	testID                   string
+	assignment               assignedTest
+	executions               []*groupExecution
+	writer                   *archiveRecorder
+	trackedFinalizer         bool
+	persistentJavaDrainToken uint64
+	finalState               string
+	finalError               string
 }
 
 func (s *Service) detachFencedTests(testIDs []string, maximumGeneration uint64) []detachedFencedTest {
@@ -153,6 +154,7 @@ func (s *Service) detachFencedTests(testIDs []string, maximumGeneration uint64) 
 			continue
 		}
 		s.markStoppingLocked(testID, assignment.executionGeneration)
+		persistentJavaDrainToken := s.reserveAssignmentJavaDrainLocked(assignment)
 		delete(s.assignments, testID)
 		s.stopCompletionTimerLocked(testID)
 		s.stopStageTimerLocked(testID)
@@ -168,11 +170,12 @@ func (s *Service) detachFencedTests(testIDs []string, maximumGeneration uint64) 
 		// empty assignments map because the detached engine may still be running.
 		s.executionEpochManager.beginDetachedFencesLocked(1)
 		stops = append(stops, detachedFencedTest{
-			testID:           testID,
-			assignment:       assignment,
-			executions:       executions,
-			writer:           writer,
-			trackedFinalizer: writer != nil && s.archiveManager.addFinalizer(),
+			testID:                   testID,
+			assignment:               assignment,
+			executions:               executions,
+			writer:                   writer,
+			trackedFinalizer:         writer != nil && s.archiveManager.addFinalizer(),
+			persistentJavaDrainToken: persistentJavaDrainToken,
 		})
 	}
 	s.mu.Unlock()
@@ -183,6 +186,7 @@ func (s *Service) finishDetachedFencedTest(ctx context.Context, stop detachedFen
 	if err := waitForGeneratorExecutions(ctx, stop.executions); err != nil {
 		finish := func() {
 			_ = waitForGeneratorExecutions(context.Background(), stop.executions)
+			s.releaseStopDrain(stop.persistentJavaDrainToken)
 			s.captureStoppedExecutionMetrics(&stop.assignment, stop.executions)
 			s.finishStoppedTestWithState(stop.testID, stop.assignment, stop.writer, stop.finalState, stop.finalError)
 			s.completeDetachedExecutionFence()
@@ -201,6 +205,7 @@ func (s *Service) finishDetachedFencedTest(ctx context.Context, stop detachedFen
 		defer s.archiveManager.finalizerDone()
 	}
 	defer s.completeDetachedExecutionFence()
+	s.releaseStopDrain(stop.persistentJavaDrainToken)
 	s.captureStoppedExecutionMetrics(&stop.assignment, stop.executions)
 	_, finalError := s.finishStoppedTestWithState(stop.testID, stop.assignment, stop.writer, stop.finalState, stop.finalError)
 	// A FAILED lifecycle reason is expected evidence for a fenced/shutdown test;

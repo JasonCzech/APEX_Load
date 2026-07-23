@@ -40,6 +40,12 @@ The support endpoint publishes six reusable profiles:
 
 Streaming/media runtime settings are `executed` for HTTP scripts. APEX Load maps imported playback mode, buffer, bitrate, and bandwidth-estimation settings into media-like response pacing so fixed bitrate playback, startup buffering, and adaptive bandwidth estimates affect action duration and transfer telemetry.
 
+## Java Vuser Java VM Settings
+
+Imported or existing `java_vuser` scripts expose a protocol-scoped Java VM section. JDK selection/home, exact JVM argument tokens, and script-controlled path references to operator-provisioned precompiled artifacts are `executed`. Dedicated class loading is also `executed`: local and sidecar execution create one child class loader and Actions object per VUser session, retain them across init, action iterations, and end, and close them at teardown. APEX Load does not reproduce every LoadRunner JVM-reuse topology — VUser sessions remain isolated governed processes. `use_xbootclasspath` is `compatibility_only`: on supported Java 17+ runtimes it produces stable fallback evidence and uses the ordinary classpath; APEX Load never emits an `-Xbootclasspath` launcher option.
+
+Execution remains operator-gated. A specified JDK is resolved only on the selected executor, must contain an executable Java 17+ launcher, and never falls back to an internal JDK. Distributed assignments run Java-specific preflight before commit so an unavailable runner, JDK, harness, classpath, or target class fails before VUsers are allocated. See `docs/JAVA_VUSER_RUNTIME.md` for the runtime and deployment contract.
+
 ## Evidence
 
 - Unified support matrix and presets: `pkg/api/runtime_settings_support.go`
@@ -53,3 +59,7 @@ Streaming/media runtime settings are `executed` for HTTP scripts. APEX Load maps
   - WebSocket receive/close/error frames: `pkg/protocol/websocket/websocket_test.go`
   - JMS broker/dead-letter diagnostics: `pkg/protocol/jms/jms_test.go`
   - Java-over-HTTP decode failures: `pkg/protocol/java_http/java_http_test.go`
+- Java Vuser import and runtime evidence:
+  - Canonical Java VM import: `pkg/convert/enterprisearchive/java_runtime_config_test.go`
+  - JDK/VM argument/command enforcement: `pkg/javarunner`
+  - Assignment-time preflight: `pkg/distributed/generatorrpc/runtime_preflight_test.go`

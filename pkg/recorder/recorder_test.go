@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"compress/zlib"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -848,6 +849,7 @@ func TestRecordRequestRichMetadataRedactionAndTruncation(t *testing.T) {
 		Header: http.Header{
 			"Set-Cookie":   []string{"session=secret", "theme=dark"},
 			"Content-Type": []string{"application/json"},
+			"X-Auth-Token": []string{"response-secret"},
 		},
 	}
 	rec.recordRequest(session, req, []byte(`{"request":"abcdefghijklmnopqrstuvwxyz"}`), resp, []byte(`{"payload":"abcdefghijklmnopqrstuvwxyz"}`), 10*time.Millisecond)
@@ -871,6 +873,16 @@ func TestRecordRequestRichMetadataRedactionAndTruncation(t *testing.T) {
 	}
 	if got := recorded.ResponseHeadersMulti["Set-Cookie"]; len(got) != 2 || got[0] != "[redacted]" || got[1] != "[redacted]" {
 		t.Fatalf("expected redacted multi set-cookie values, got %#v", got)
+	}
+	if recorded.ResponseHeaders["X-Auth-Token"] != "[redacted]" || recorded.RawResponseHeaders["X-Auth-Token"] != "response-secret" {
+		t.Fatalf("response correlation header views = scrubbed:%q raw:%q", recorded.ResponseHeaders["X-Auth-Token"], recorded.RawResponseHeaders["X-Auth-Token"])
+	}
+	wire, err := json.Marshal(recorded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(wire), "response-secret") {
+		t.Fatalf("raw response correlation headers leaked through JSON: %s", wire)
 	}
 }
 
@@ -1522,6 +1534,42 @@ func TestDecodeBody(t *testing.T) {
 	// Malformed brotli falls back to raw without panicking.
 	if got, ok := decodeBody([]byte("not actually brotli"), "br", defaultBodyCaptureLimitBytes); ok || string(got) != "not actually brotli" {
 		t.Fatalf("malformed brotli should fall back to raw: ok=%v got=%q", ok, got)
+	}
+}
+
+func TestSanitizeHeadersUsesSharedSensitiveHeaderRules(t *testing.T) {
+	headers := http.Header{
+		"X-Session-Token": {"session-secret"},
+		"X-Credential":    {"credential-secret"},
+		"Set-Cookie":      {"session=captured-cookie"},
+		"X-Safe":          {"safe"},
+	}
+	sanitized := sanitizeHeaders(headers, nil, false, true)
+	if sanitized["X-Session-Token"][0] != "[redacted]" || sanitized["X-Credential"][0] != "[redacted]" {
+		t.Fatalf("custom sensitive headers were disclosed: %#v", sanitized)
+	}
+	if sanitized["Set-Cookie"][0] != "session=captured-cookie" {
+		t.Fatalf("capture_cookies opt-in was ignored: %#v", sanitized["Set-Cookie"])
+	}
+	if sanitized["X-Safe"][0] != "safe" {
+		t.Fatalf("safe header changed: %#v", sanitized)
+	}
+	raw := correlationHeaders(headers, nil, false, true)
+	if raw["X-Session-Token"][0] != "session-secret" {
+		t.Fatalf("private correlation view lost the raw token: %#v", raw)
+	}
+}
+
+func TestCapturedBodyTruncatesAtUTF8BoundaryAndPreservesInvalidBytes(t *testing.T) {
+	body, truncated, encoding := capturedBody([]byte("a€b"), "text/plain", 2)
+	if body != "a" || !truncated || encoding != "" {
+		t.Fatalf("split UTF-8 capture = %q/%t/%q, want valid prefix a", body, truncated, encoding)
+	}
+
+	invalid := []byte{'a', 0xff, 'b'}
+	body, truncated, encoding = capturedBody(invalid, "text/plain", len(invalid))
+	if body != base64.StdEncoding.EncodeToString(invalid) || truncated || encoding != "base64" {
+		t.Fatalf("invalid text capture = %q/%t/%q, want lossless base64", body, truncated, encoding)
 	}
 }
 

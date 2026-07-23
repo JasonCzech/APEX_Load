@@ -1,6 +1,9 @@
 package paramize
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 // Cases ported from the pkg/api browser-to-HTTP conversion tests to lock
 // behavior after lifting the heuristics into this shared package.
@@ -113,6 +116,20 @@ func TestSelectorFieldHint(t *testing.T) {
 	}
 }
 
+func TestSelectorFieldHintFailsClosedOnMatchOverflow(t *testing.T) {
+	selector := strings.Repeat("field ", maxSuggestionRegexMatches+1)
+	if got := SelectorFieldHint(selector); got != "" {
+		t.Fatalf("SelectorFieldHint overflow = %q, want empty", got)
+	}
+}
+
+func TestSelectorFieldHintFailsClosedOnInputByteOverflow(t *testing.T) {
+	selector := strings.Repeat("!", int(maxSuggestionRegexSearchBytes)+1)
+	if got := SelectorFieldHint(selector); got != "" {
+		t.Fatalf("SelectorFieldHint oversized sparse input = %q, want empty", got)
+	}
+}
+
 // Cases ported from the sample importer's sanitize tests.
 func TestSanitizeBodySecrets(t *testing.T) {
 	tests := []struct {
@@ -134,6 +151,16 @@ func TestSanitizeBodySecrets(t *testing.T) {
 			name: "json client secret redacted",
 			body: `{"client_secret": "top-secret"}`,
 			want: `{"client_secret": "{{secret.redacted}}"}`,
+		},
+		{
+			name: "json escaped quote secret redacted atomically",
+			body: `{"password":"abc\"residual-secret","safe":"ok"}`,
+			want: `{"password":"{{secret.redacted}}","safe":"ok"}`,
+		},
+		{
+			name: "json numeric passcode redacted",
+			body: `{"passcode":123456,"safe":1}`,
+			want: `{"passcode":"{{secret.redacted}}","safe":1}`,
 		},
 		{
 			name: "json hyphen api key redacted",

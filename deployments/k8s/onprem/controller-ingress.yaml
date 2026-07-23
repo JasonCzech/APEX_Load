@@ -84,6 +84,63 @@ spec:
                 name: apexload-controller-active
                 port:
                   name: http
+          # Replay and debugger session state lives on its owning controller.
+          # Route both starts and subsequent lifecycle/diagnosis requests to
+          # the admitted leader rather than load-balancing them by request.
+          - path: /api/v1/scripts
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/replay
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/script-debug
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/browser-replay
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          # Recorder sessions and their verification replays share local
+          # manager state and therefore must stay on the admitted controller.
+          - path: /api/v1/recorder
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/browser-recorder
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          # Replay/debug progress is broadcast from the owning controller's
+          # process-local WebSocket hub. Keep the global stream on that same
+          # active endpoint. Per-test streams are covered by /api/v1/tests.
+          - path: /api/v1/ws
+            pathType: Exact
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
           - path: /
             pathType: Prefix
             backend:

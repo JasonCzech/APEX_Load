@@ -40,8 +40,104 @@ spec:
                 name: apexload-controller-active
                 port:
                   name: http
+          # Keep the full execution lifecycle on the admitted controller. The
+          # AKS HA overlay uses the same generation-fenced EndpointSlice as the
+          # on-prem and Helm deployments.
+          - path: /api/v1/tests
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/scenarios
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/schedules/health
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/execution-plans
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/capacity/timeslots
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
           - path: /api/v1/system/execution-readiness
             pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          # Replay and debugger sessions are process-local. Keep creation,
+          # polling, control, and correlation diagnosis on the same admitted
+          # controller for the full session lifecycle.
+          - path: /api/v1/scripts
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/replay
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/script-debug
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/browser-replay
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          # Recorder sessions and the replay verification they launch are
+          # process-local as well, so keep their full lifecycle on the active
+          # controller alongside browser-replay status and progress.
+          - path: /api/v1/recorder
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          - path: /api/v1/browser-recorder
+            pathType: Prefix
+            backend:
+              service:
+                name: apexload-controller-active
+                port:
+                  name: http
+          # Replay/debug progress is broadcast from the owning controller's
+          # process-local WebSocket hub. Keep the global stream on that same
+          # active endpoint. Per-test streams are covered by /api/v1/tests.
+          - path: /api/v1/ws
+            pathType: Exact
             backend:
               service:
                 name: apexload-controller-active

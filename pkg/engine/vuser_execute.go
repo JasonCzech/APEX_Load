@@ -24,6 +24,9 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	if result == nil {
 		return
 	}
+	// CorrelationEvidence is a replay-only, pre-scrub side channel. No metrics or
+	// ResultSink implementation may retain it, even accidentally in-process.
+	result.CorrelationEvidence = nil
 	result.Group = vu.Group
 	if result.NetworkProfile == "" && vu.Script != nil {
 		result.NetworkProfile = networkProfileLabel(vu.Script.Config.WebRuntime.NetworkSimulation)
@@ -41,7 +44,17 @@ func (vu *VUser) recordResult(result *protocol.Result, errCfg dsl.ErrorHandlingC
 	scrubSensitiveStructuredResult(result, vu.RedactionConfig)
 	scrubSensitiveResultWithOptions(result, vu.RedactionConfig, retainResponseBody)
 	boundResultEvidence(result)
-	vu.Metrics.Record(result)
+	if result.BusinessTransaction {
+		// Streamed adapters (notably java_vuser) emit completed business
+		// transactions as child results. Route those through the same cumulative
+		// transaction accounting as synthetic transactions while retaining the
+		// ordinary ResultSink call below exactly once. Some sinks already interpret
+		// BusinessTransaction in RecordResult, so also calling TransactionSink here
+		// would duplicate their transaction records.
+		vu.Metrics.RecordTransactionResult(result)
+	} else {
+		vu.Metrics.Record(result)
+	}
 	vu.handleSnapshot(result, errCfg)
 	if vu.ResultSink != nil {
 		_ = vu.ResultSink.RecordResult(result)
@@ -152,14 +165,33 @@ func scriptHasExplicitTransactions(script *dsl.Script) bool {
 	if script == nil {
 		return false
 	}
-	for _, action := range script.Actions {
+	return actionsHaveExplicitTransactions(script.Actions)
+}
+
+// actionsHaveExplicitTransactions recurses into control-flow bodies
+// (control_if/control_loop steps and else branches) so a transaction-emitting
+// action wrapped in a loop still suppresses the automatic whole-iteration
+// transaction, matching the sibling persistent-lifecycle detectors.
+func actionsHaveExplicitTransactions(actions []dsl.Action) bool {
+	for _, action := range actions {
 		switch dsl.CanonicalActionType(strings.ToLower(strings.TrimSpace(action.Type))) {
 		case "source_transaction", "transaction":
 			return true
+		case "java_vuser_run":
+			// Java Vuser imports execute LoadRunner transaction calls inside the
+			// governed JVM runner. The importer marks actions whose source contains
+			// those calls so their streamed business-transaction samples do not also
+			// acquire an automatic whole-iteration transaction.
+			if emits, _ := action.Metadata["emits_business_transactions"].(bool); emits {
+				return true
+			}
 		case "http_sequence":
 			if sourceTransactionName(action.Metadata) != "" {
 				return true
 			}
+		}
+		if action.Control != nil && (actionsHaveExplicitTransactions(action.Control.Steps) || actionsHaveExplicitTransactions(action.Control.Else)) {
+			return true
 		}
 	}
 	return false
@@ -353,6 +385,15 @@ func (vu *VUser) executeWithRetryStream(
 		return nil, fmt.Errorf("retry_backoff must be fixed or exponential")
 	}
 	maxAttempts := 1 + errCfg.MaxRetries
+	// Persistent Java Vuser lifecycle calls are stateful boundaries, not
+	// idempotent protocol requests. Re-running a failed init/action/end on the
+	// same Actions object can execute HTTP, JDBC, JMS, or SOAP side effects
+	// twice and violates LoadRunner's once-per-lifecycle/iteration semantics.
+	// Keep the legacy full_lifecycle one-shot retry contract unchanged because
+	// every such attempt owns a fresh JVM and Actions instance.
+	if javaVuserPersistentAction(action) {
+		maxAttempts = 1
+	}
 
 	baseRetryDelay := time.Duration(errCfg.RetryDelayMs) * time.Millisecond
 	if baseRetryDelay == 0 {
@@ -378,6 +419,10 @@ func (vu *VUser) executeWithRetryStream(
 				return lastResult, ctx.Err()
 			case <-timer.C:
 			}
+			// The failed attempt will never be returned once its backoff completes.
+			// Zero the raw replay-only exchange before the next protocol call can
+			// overwrite lastResult and leave the discarded evidence reachable.
+			discardCorrelationEvidence(lastResult)
 		}
 
 		streaming := false
@@ -406,6 +451,11 @@ func (vu *VUser) executeWithRetryStream(
 		}
 		result, err := vu.safeProtoExecuteStream(ctx, action, childEmitter)
 		if err != nil {
+			// Adapters are permitted to return diagnostic Result data alongside an
+			// error. The caller intentionally discards that result, so detach and zero
+			// the replay-only raw exchange before an adapter-retained pointer can outlive
+			// this execution boundary.
+			discardCorrelationEvidence(result)
 			return nil, err
 		}
 		if streaming && result != nil {
@@ -428,6 +478,27 @@ func (vu *VUser) executeWithRetryStream(
 	}
 
 	return lastResult, nil
+}
+
+func javaVuserPersistentAction(action *protocol.Action) bool {
+	if action == nil || !strings.EqualFold(strings.TrimSpace(action.Type), "java_vuser_run") {
+		return false
+	}
+	method := ""
+	if action.Params != nil {
+		if value, exists := action.Params["method"]; exists && value != nil {
+			method = strings.TrimSpace(fmt.Sprint(value))
+		}
+	}
+	return method != "" && !strings.EqualFold(method, "full_lifecycle")
+}
+
+func discardCorrelationEvidence(result *protocol.Result) {
+	if result == nil || result.CorrelationEvidence == nil {
+		return
+	}
+	*result.CorrelationEvidence = protocol.CorrelationEvidence{}
+	result.CorrelationEvidence = nil
 }
 
 func actionTypeForTrace(action *protocol.Action) string {

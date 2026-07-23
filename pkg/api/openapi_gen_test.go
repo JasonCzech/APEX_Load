@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"go/ast"
 	"os"
 	"reflect"
 	"strings"
@@ -286,6 +287,20 @@ func TestGeneratedSwaggerIncludesInferredHandlerContracts(t *testing.T) {
 		t.Error("CI run create is missing its handler-declared 202 response")
 	}
 
+	authoringCreate := spec.Paths["/api/v1/scripts/authoring/sessions"]["post"]
+	if authoringCreate.RequestBody == nil || !authoringCreate.RequestBody.Required {
+		t.Fatal("authoring-session create is missing its required request body")
+	}
+	authoringSchema := authoringCreate.RequestBody.Content["application/json"].Schema
+	if got := authoringSchema.Ref; got != "#/components/schemas/AuthoringSessionCreateRequest" {
+		t.Fatalf("authoring-session request schema = %q, want typed component", got)
+	}
+	for _, status := range []string{"200", "201", "409"} {
+		if _, ok := authoringCreate.Responses[status]; !ok {
+			t.Errorf("authoring-session create is missing its handler-declared %s response", status)
+		}
+	}
+
 	scenarioCreate := spec.Paths["/api/v1/scenarios"]["post"]
 	if scenarioCreate.RequestBody == nil || !scenarioCreate.RequestBody.Required {
 		t.Fatal("scenario create is missing its required request body")
@@ -311,6 +326,39 @@ func TestGeneratedSwaggerIncludesInferredHandlerContracts(t *testing.T) {
 	}
 	if openAPIStringSliceContains(previewSchema.Required, "name") {
 		t.Errorf("scenario schedule preview incorrectly requires name: %v", previewSchema.Required)
+	}
+
+	rulesetUpdate := spec.Paths["/api/v1/correlation-rulesets/{id}"]["put"]
+	if rulesetUpdate.RequestBody == nil || !rulesetUpdate.RequestBody.Required {
+		t.Fatal("correlation ruleset update is missing its required request body")
+	}
+	rulesetUpdateSchema := rulesetUpdate.RequestBody.Content["application/json"].Schema
+	for _, name := range []string{"name", "description", "rules", "expected_updated_at"} {
+		if _, ok := rulesetUpdateSchema.Properties[name]; !ok {
+			t.Errorf("correlation ruleset update schema is missing editable/CAS field %q", name)
+		}
+	}
+	for _, immutable := range []string{"id", "project_id", "source", "created_at", "updated_at"} {
+		if _, ok := rulesetUpdateSchema.Properties[immutable]; ok {
+			t.Errorf("correlation ruleset update schema exposes immutable field %q", immutable)
+		}
+	}
+	for _, required := range []string{"name", "expected_updated_at"} {
+		if !openAPIStringSliceContains(rulesetUpdateSchema.Required, required) {
+			t.Errorf("correlation ruleset update required fields %v are missing %q", rulesetUpdateSchema.Required, required)
+		}
+	}
+	rules := rulesetUpdateSchema.Properties["rules"]
+	if rules.Type != "array" || rules.Items == nil {
+		t.Fatalf("correlation ruleset update rules schema = %#v, want array items", rules)
+	}
+	for _, name := range []string{"name", "rule_id", "source", "extract_type", "expression", "confidence"} {
+		if _, ok := rules.Items.Properties[name]; !ok {
+			t.Errorf("correlation ruleset update rule schema is missing %q", name)
+		}
+	}
+	if _, ok := rules.Items.Properties["sample_value"]; ok {
+		t.Error("correlation ruleset update rule schema exposes non-editable sample_value")
 	}
 	scheduleContracts := []struct {
 		name         string
@@ -386,6 +434,41 @@ func TestGeneratedSwaggerIncludesInferredHandlerContracts(t *testing.T) {
 		t.Errorf("scenario create response schema = %#v, want typed StoredScenario object", createdScenarioResponse)
 	}
 
+	inventory := spec.Paths["/api/v1/system/inventory"]["get"]
+	inventorySchema := inventory.Responses["200"].Content["application/json"].Schema
+	generators := inventorySchema.Properties["generators"]
+	if generators.Type != "array" || generators.Items == nil {
+		t.Fatalf("system inventory generators schema = %#v, want array items", generators)
+	}
+	runtimeCapacities := generators.Items.Properties["runtime_capacities"]
+	if runtimeCapacities.Type != "array" || runtimeCapacities.Items == nil {
+		t.Fatalf("runtime_capacities schema = %#v, want typed array items", runtimeCapacities)
+	}
+	runtimeCapacity := runtimeCapacities.Items
+	for name, wantType := range map[string]string{
+		"protocol":         "string",
+		"available":        "boolean",
+		"max_vusers":       "integer",
+		"available_vusers": "integer",
+		"features":         "array",
+		"occupancy_mode":   "string",
+	} {
+		if got := runtimeCapacity.Properties[name].Type; got != wantType {
+			t.Errorf("runtime capacity property %q type = %q, want %q", name, got, wantType)
+		}
+	}
+	if features := runtimeCapacity.Properties["features"]; features.Items == nil || features.Items.Type != "string" {
+		t.Errorf("runtime capacity features schema = %#v, want array of strings", features)
+	}
+	if occupancy := runtimeCapacity.Properties["occupancy_mode"]; !reflect.DeepEqual(occupancy.Enum, []string{"idle", "persistent", "legacy"}) {
+		t.Errorf("runtime capacity occupancy enum = %v, want idle/persistent/legacy", occupancy.Enum)
+	}
+	for _, required := range []string{"protocol", "available", "max_vusers", "available_vusers"} {
+		if !openAPIStringSliceContains(runtimeCapacity.Required, required) {
+			t.Errorf("runtime capacity required fields %v are missing %q", runtimeCapacity.Required, required)
+		}
+	}
+
 	archiveImport := spec.Paths["/api/v1/scripts/import/enterprise-script-archive"]["post"]
 	if archiveImport.RequestBody == nil {
 		t.Fatal("enterprise archive import is missing its multipart request body")
@@ -393,6 +476,37 @@ func TestGeneratedSwaggerIncludesInferredHandlerContracts(t *testing.T) {
 	multipart := archiveImport.RequestBody.Content["multipart/form-data"].Schema
 	if file := multipart.Properties["file"]; file.Type != "string" || file.Format != "binary" {
 		t.Errorf("enterprise archive file schema = %#v, want binary string", file)
+	}
+	for _, path := range []string{
+		"/api/v1/scripts/import/enterprise-script-archive",
+		"/api/v1/scripts/import/enterprise-script-archive/validate",
+	} {
+		operation := spec.Paths[path]["post"]
+		var compatibilityParameter *oasParameter
+		for index := range operation.Parameters {
+			if operation.Parameters[index].In == "query" &&
+				operation.Parameters[index].Name == "allow_java_vuser_runner" {
+				compatibilityParameter = &operation.Parameters[index]
+				break
+			}
+		}
+		if compatibilityParameter == nil {
+			t.Errorf("POST %s is missing allow_java_vuser_runner compatibility query parameter", path)
+		} else if !compatibilityParameter.Deprecated ||
+			!strings.Contains(compatibilityParameter.Description, "accepted but ignored") ||
+			!strings.Contains(compatibilityParameter.Description, "one combined java_vuser draft") {
+			t.Errorf("POST %s compatibility query parameter = %#v, want deprecated no-op contract", path, compatibilityParameter)
+		}
+		if operation.RequestBody == nil {
+			t.Errorf("POST %s is missing multipart request body", path)
+			continue
+		}
+		property := operation.RequestBody.Content["multipart/form-data"].Schema.Properties["allow_java_vuser_runner"]
+		if !property.Deprecated ||
+			!strings.Contains(property.Description, "accepted but ignored") ||
+			!strings.Contains(property.Description, "one combined java_vuser draft") {
+			t.Errorf("POST %s compatibility multipart property = %#v, want deprecated no-op contract", path, property)
+		}
 	}
 
 	for path, methods := range spec.Paths {
@@ -408,6 +522,292 @@ func TestGeneratedSwaggerIncludesInferredHandlerContracts(t *testing.T) {
 	websocket := spec.Paths["/api/v1/ws"]["get"]
 	if _, ok := websocket.Responses["101"]; !ok {
 		t.Error("global WebSocket route is missing the 101 protocol-switch response")
+	}
+}
+
+func TestGeneratedBrowserReplayStartContractsIncludeMappedErrors(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("generated spec is not valid YAML: %v", err)
+	}
+
+	for _, path := range []string{
+		"/api/v1/scripts/browser-replay/sessions",
+		"/api/v1/scripts/{id}/browser-replay/sessions",
+	} {
+		operation := spec.Paths[path]["post"]
+		for _, status := range []string{"409", "500", "503"} {
+			response, ok := operation.Responses[status]
+			if !ok {
+				t.Errorf("POST %s is missing documented %s response", path, status)
+				continue
+			}
+			schema := response.Content["application/json"].Schema
+			if schema.Ref != "#/components/schemas/ErrorResponse" {
+				t.Errorf("POST %s response %s schema = %q, want ErrorResponse", path, status, schema.Ref)
+			}
+		}
+		responseSchema := operation.Responses["200"].Content["application/json"].Schema
+		for _, field := range []string{"script_id", "replay_session_id", "session", "preflight", "warnings"} {
+			if _, ok := responseSchema.Properties[field]; !ok {
+				t.Errorf("POST %s success response is missing typed field %q: %#v", path, field, responseSchema)
+			}
+		}
+	}
+
+	draftStart := spec.Paths["/api/v1/scripts/browser-replay/sessions"]["post"]
+	if draftStart.RequestBody == nil || !draftStart.RequestBody.Required {
+		t.Fatal("draft browser replay start must require a request body")
+	}
+	draftSchema := draftStart.RequestBody.Content["application/json"].Schema
+	if !openAPIStringSliceContains(draftSchema.Required, "script") {
+		t.Errorf("draft browser replay required fields = %v, want script", draftSchema.Required)
+	}
+
+	storedStart := spec.Paths["/api/v1/scripts/{id}/browser-replay/sessions"]["post"]
+	if storedStart.RequestBody == nil || storedStart.RequestBody.Required {
+		t.Fatal("stored-script browser replay overrides must be an optional request body")
+	}
+}
+
+func TestGeneratedReplaySessionResponsesAreTyped(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("generated spec is not valid YAML: %v", err)
+	}
+
+	sessionContracts := []struct {
+		path   string
+		method string
+		fields []string
+	}{
+		{"/api/v1/browser-replay/sessions/{session_id}", "get", []string{"id", "project_id", "status", "events", "report"}},
+		{"/api/v1/browser-replay/sessions/{session_id}/pause", "post", []string{"id", "project_id", "status", "events", "report"}},
+		{"/api/v1/browser-replay/sessions/{session_id}/resume", "post", []string{"id", "project_id", "status", "events", "report"}},
+		{"/api/v1/browser-replay/sessions/{session_id}/stop", "post", []string{"id", "project_id", "status", "events", "report"}},
+		{"/api/v1/replay/sessions/{session_id}", "get", []string{"id", "project_id", "status", "events", "report", "breakpoints"}},
+		{"/api/v1/replay/sessions/{session_id}/pause", "post", []string{"id", "project_id", "status", "events", "report", "breakpoints"}},
+		{"/api/v1/replay/sessions/{session_id}/resume", "post", []string{"id", "project_id", "status", "events", "report", "breakpoints"}},
+		{"/api/v1/replay/sessions/{session_id}/step", "post", []string{"id", "project_id", "status", "events", "report", "breakpoints"}},
+		{"/api/v1/replay/sessions/{session_id}/stop", "post", []string{"id", "project_id", "status", "events", "report", "breakpoints"}},
+		{"/api/v1/replay/sessions/{session_id}/breakpoints", "patch", []string{"id", "project_id", "status", "events", "report", "breakpoints"}},
+		{"/api/v1/replay/sessions/{session_id}/options", "patch", []string{"id", "project_id", "status", "events", "report", "breakpoints"}},
+	}
+	for _, contract := range sessionContracts {
+		responseSchema := spec.Paths[contract.path][contract.method].Responses["200"].Content["application/json"].Schema
+		session, ok := responseSchema.Properties["session"]
+		if !ok {
+			t.Errorf("%s %s response is missing typed session field: %#v", contract.method, contract.path, responseSchema)
+			continue
+		}
+		for _, field := range contract.fields {
+			if _, ok := session.Properties[field]; !ok {
+				t.Errorf("%s %s session response is missing %q: %#v", contract.method, contract.path, field, session)
+			}
+		}
+	}
+
+	for _, path := range []string{
+		"/api/v1/scripts/replay/sessions",
+		"/api/v1/scripts/debug/sessions",
+		"/api/v1/scripts/{id}/replay/sessions",
+		"/api/v1/scripts/{id}/debug/sessions",
+	} {
+		responseSchema := spec.Paths[path]["post"].Responses["200"].Content["application/json"].Schema
+		for _, field := range []string{"script_id", "replay_session_id", "debug_session_id", "session", "preflight", "warnings"} {
+			if _, ok := responseSchema.Properties[field]; !ok {
+				t.Errorf("POST %s success response is missing typed field %q: %#v", path, field, responseSchema)
+			}
+		}
+		if _, ok := responseSchema.Properties["session"].Properties["status"]; !ok {
+			t.Errorf("POST %s session response is opaque: %#v", path, responseSchema.Properties["session"])
+		}
+	}
+}
+
+func TestGeneratedCorrelationDiagnosisRequestIsTyped(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("generated spec is not valid YAML: %v", err)
+	}
+
+	operation := spec.Paths["/api/v1/correlations/diagnose"]["post"]
+	if operation.RequestBody == nil || !operation.RequestBody.Required {
+		t.Fatal("correlation diagnosis must require a request body")
+	}
+	requestSchema := operation.RequestBody.Content["application/json"].Schema
+	for _, field := range []string{"recorded", "replay"} {
+		steps, ok := requestSchema.Properties[field]
+		if !ok || steps.Type != "array" || steps.Items == nil {
+			t.Fatalf("correlation diagnosis %s schema = %#v, want typed step array", field, steps)
+		}
+		for _, stepField := range []string{"id", "request_url", "request_body", "request_headers", "response_body", "response_headers", "response_status"} {
+			if _, ok := steps.Items.Properties[stepField]; !ok {
+				t.Errorf("correlation diagnosis %s step schema is missing %q: %#v", field, stepField, steps.Items)
+			}
+		}
+	}
+}
+
+func TestGeneratedBrowserRecordingVerifyContract(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("generated spec is not valid YAML: %v", err)
+	}
+
+	operation := spec.Paths["/api/v1/browser-recorder/sessions/{id}/verify"]["post"]
+	if operation.RequestBody == nil || operation.RequestBody.Required {
+		t.Fatal("browser recording verification must accept an optional request body")
+	}
+	requestSchema := operation.RequestBody.Content["application/json"].Schema
+	if requestSchema.Properties["replay_session_id"].Type != "string" {
+		t.Errorf("verify replay_session_id schema = %#v, want string", requestSchema.Properties["replay_session_id"])
+	}
+	responseSchema := operation.Responses["201"].Content["application/json"].Schema
+	for _, field := range []string{"replay_session_id", "replay_session", "warnings"} {
+		if _, ok := responseSchema.Properties[field]; !ok {
+			t.Errorf("verify success response is missing typed field %q: %#v", field, responseSchema)
+		}
+	}
+	for _, status := range []string{"409", "500", "503"} {
+		response, ok := operation.Responses[status]
+		if !ok {
+			t.Errorf("verify operation is missing documented %s response", status)
+			continue
+		}
+		if got := response.Content["application/json"].Schema.Ref; got != "#/components/schemas/ErrorResponse" {
+			t.Errorf("verify response %s schema = %q, want ErrorResponse", status, got)
+		}
+	}
+}
+
+func TestGeneratedCorrelationRulesetActionContractsRequireScriptID(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("generated spec is not valid YAML: %v", err)
+	}
+	for _, path := range []string{
+		"/api/v1/correlation-rulesets/discover-from-script",
+		"/api/v1/correlation-rulesets/{id}/apply-to-script",
+	} {
+		operation := spec.Paths[path]["post"]
+		if operation.RequestBody == nil || !operation.RequestBody.Required {
+			t.Errorf("POST %s must require a request body", path)
+			continue
+		}
+		schema := operation.RequestBody.Content["application/json"].Schema
+		if !openAPIStringSliceContains(schema.Required, "script_id") {
+			t.Errorf("POST %s required fields = %v, want script_id", path, schema.Required)
+		}
+	}
+}
+
+func TestGeneratedCorrelationRulesetResponsesAreTypedAndDisclosureSafe(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("generated spec is not valid YAML: %v", err)
+	}
+
+	rulesetResponses := []struct {
+		path   string
+		method string
+		status string
+	}{
+		{"/api/v1/correlation-rulesets", "post", "201"},
+		{"/api/v1/correlation-rulesets/{id}", "get", "200"},
+		{"/api/v1/correlation-rulesets/{id}", "put", "200"},
+		{"/api/v1/correlation-rulesets/discover-from-script", "post", "201"},
+	}
+	for _, contract := range rulesetResponses {
+		schema := spec.Paths[contract.path][contract.method].Responses[contract.status].Content["application/json"].Schema
+		for _, field := range []string{"id", "project_id", "name", "description", "source", "rules", "created_at", "updated_at"} {
+			if _, ok := schema.Properties[field]; !ok {
+				t.Errorf("%s %s response is missing typed field %q: %#v", contract.method, contract.path, field, schema)
+			}
+		}
+		rules := schema.Properties["rules"]
+		if rules.Type != "array" || rules.Items == nil {
+			t.Errorf("%s %s rules schema = %#v, want typed array", contract.method, contract.path, rules)
+			continue
+		}
+		for _, field := range []string{"name", "rule_id", "source", "extract_type", "expression", "confidence"} {
+			if _, ok := rules.Items.Properties[field]; !ok {
+				t.Errorf("%s %s rule response is missing %q", contract.method, contract.path, field)
+			}
+		}
+		if _, ok := rules.Items.Properties["sample_value"]; ok {
+			t.Errorf("%s %s rule response exposes sample_value", contract.method, contract.path)
+		}
+	}
+
+	listSchema := spec.Paths["/api/v1/correlation-rulesets"]["get"].Responses["200"].Content["application/json"].Schema
+	for _, field := range []string{"correlation_rulesets", "count", "limit", "offset"} {
+		if _, ok := listSchema.Properties[field]; !ok {
+			t.Errorf("ruleset list response is missing typed field %q: %#v", field, listSchema)
+		}
+	}
+	listItems := listSchema.Properties["correlation_rulesets"].Items
+	if listItems == nil || listItems.Properties["id"].Type != "string" {
+		t.Errorf("ruleset list item schema = %#v, want typed ruleset", listItems)
+	}
+
+	deleteSchema := spec.Paths["/api/v1/correlation-rulesets/{id}"]["delete"].Responses["200"].Content["application/json"].Schema
+	if deleteSchema.Properties["deleted"].Type != "string" {
+		t.Errorf("ruleset delete response schema = %#v, want typed deleted id", deleteSchema)
+	}
+
+	applySchema := spec.Paths["/api/v1/correlation-rulesets/{id}/apply-to-script"]["post"].Responses["200"].Content["application/json"].Schema
+	for _, field := range []string{"ruleset_id", "script_id", "matched_rules", "applied", "diffs", "preview_token"} {
+		if _, ok := applySchema.Properties[field]; !ok {
+			t.Errorf("ruleset apply response is missing typed field %q: %#v", field, applySchema)
+		}
+	}
+	diffs := applySchema.Properties["diffs"]
+	if diffs.Type != "array" || diffs.Items == nil || diffs.Items.Properties["kind"].Type != "string" || diffs.Items.Properties["path"].Type != "string" {
+		t.Errorf("ruleset apply diffs schema = %#v, want typed kind/path array", diffs)
+	}
+}
+
+func TestAnnotatedOpenAPIResponseStatusesRejectsMalformedStatus(t *testing.T) {
+	doc := &ast.CommentGroup{List: []*ast.Comment{{Text: "// OpenAPI-Responses: 409, five-hundred, 503"}}}
+	if _, err := annotatedOpenAPIResponseStatuses(doc); err == nil {
+		t.Fatal("malformed explicit response status was accepted")
 	}
 }
 

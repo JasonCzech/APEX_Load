@@ -74,6 +74,7 @@ const apiMock = {
   getBrowserRecorderBridgeStatus: vi.fn(),
   exportBrowserRecording: vi.fn(),
   browserRecorderBridge: null as any,
+  browserRecorderRequestScope: "api:http://127.0.0.1:3000",
 };
 
 const clipboardWriteMock = vi.fn();
@@ -125,6 +126,8 @@ describe("RecordingStudio", () => {
     startDesktopBrowserDownloadMock.mockResolvedValue(undefined);
     hasDesktopApiCapabilityMock.mockReset();
     hasDesktopApiCapabilityMock.mockReturnValue(false);
+    apiMock.browserRecorderBridge = null;
+    apiMock.browserRecorderRequestScope = "api:http://127.0.0.1:3000";
     clipboardWriteMock.mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       configurable: true,
@@ -1969,11 +1972,12 @@ describe("RecordingStudio", () => {
         ".rec-convert-result .rec-result-actions .btn-primary",
       )?.disabled,
     ).toBe(true);
+    // The Salesforce-analyzed draft is not a verbatim conversion of the
+    // recording, so the save must not claim the recording session as its
+    // source — the server's provenance attestation would reject it.
     expect(apiMock.createScript).toHaveBeenCalledWith(
       expect.objectContaining({ name: "Salesforce Capture HTTP" }),
       undefined,
-      undefined,
-      "rec-sf",
     );
     await act(async () => {
       resolveSave?.({
@@ -2538,6 +2542,81 @@ describe("RecordingStudio", () => {
       container.querySelector('[data-testid="browser-recorder-panel"]'),
     ).not.toBeNull();
     expect(apiMock.getBrowserRecording).toHaveBeenCalledWith("brec-1");
+  });
+
+  it("deduplicates rapid browser recording starts before the button rerenders", async () => {
+    let resolveStart!: (value: {
+      session: {
+        id: string;
+        name: string;
+        status: string;
+        start_url: string;
+        capture_har: boolean;
+        started_at: string;
+        step_count: number;
+        navigation_count: number;
+        network_request_count: number;
+        websocket_count: number;
+        warning_count: number;
+        har_available: boolean;
+      };
+    }) => void;
+    apiMock.startBrowserRecording.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveStart = resolve;
+      }),
+    );
+    await act(async () => {
+      root.render(
+        <RecordingStudio
+          activeProject={{ id: "proj-1", name: "Web" } as any}
+        />,
+      );
+    });
+    await flushPromises();
+
+    const urlInput = container.querySelector(
+      'input[aria-label="Start URL address"]',
+    ) as HTMLInputElement;
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )!.set!;
+      setter.call(urlInput, "app.example.com/login");
+      urlInput.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    const recordButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Record Browser"),
+    );
+    act(() => {
+      recordButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+      recordButton?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    expect(apiMock.startBrowserRecording).toHaveBeenCalledTimes(1);
+    expect(container.textContent).toContain("Starting Browser…");
+    await act(async () => {
+      resolveStart({
+        session: {
+          id: "brec-rapid",
+          name: "Browser Recording",
+          status: "recording",
+          start_url: "https://app.example.com/login",
+          capture_har: true,
+          started_at: "2026-05-12T20:00:00Z",
+          step_count: 0,
+          navigation_count: 0,
+          network_request_count: 0,
+          websocket_count: 0,
+          warning_count: 0,
+          har_available: false,
+        },
+      });
+      await Promise.resolve();
+    });
+    await flushPromises();
+    expect(apiMock.openBrowserRecordingControlPanel).toHaveBeenCalledTimes(1);
   });
 
   it("does not launch a companion browser panel from a Wails dev webview", async () => {
@@ -3610,6 +3689,216 @@ describe("RecordingStudio", () => {
     });
     expect(container.textContent).toContain("New Project Capture");
     expect(container.textContent).not.toContain("Old Project Capture");
+  });
+
+  it("starts a fresh refresh and ignores the old response when the recorder API origin changes", async () => {
+    let resolveOld!: (value: { sessions: any[] }) => void;
+    const oldRequest = new Promise<{ sessions: any[] }>((resolve) => {
+      resolveOld = resolve;
+    });
+    apiMock.listRecordings
+      .mockImplementationOnce(() => oldRequest)
+      .mockResolvedValueOnce({
+        sessions: [
+          {
+            id: "rec-bridge",
+            name: "Bridge Origin Capture",
+            status: "stopped",
+            started_at: "2026-05-12T20:00:00Z",
+            requests: [],
+            filters: { exclude_static: true },
+          },
+        ],
+      });
+
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Project" } as any} />);
+      await Promise.resolve();
+    });
+    apiMock.browserRecorderRequestScope =
+      "bridge:http://127.0.0.1:8765:bridge-session-2";
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Project" } as any} />);
+    });
+    await flushPromises();
+
+    expect(apiMock.listRecordings).toHaveBeenCalledTimes(2);
+    expect(container.textContent).toContain("Bridge Origin Capture");
+
+    await act(async () => {
+      resolveOld({
+        sessions: [
+          {
+            id: "rec-controller",
+            name: "Controller Origin Capture",
+            status: "stopped",
+            started_at: "2026-05-12T20:00:00Z",
+            requests: [],
+            filters: { exclude_static: true },
+          },
+        ],
+      });
+      await Promise.resolve();
+    });
+    expect(container.textContent).toContain("Bridge Origin Capture");
+    expect(container.textContent).not.toContain("Controller Origin Capture");
+  });
+
+  it("ignores a bridge pairing result after the recorder API origin changes", async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ":8081",
+      ca_cert_path: "artifacts/recorder/ca-cert.pem",
+      active: null,
+      browser: {
+        availability: {
+          available: false,
+          reason: "browser recording is disabled in production mode",
+        },
+        active: null,
+      },
+    });
+    let resolvePair!: (value: any) => void;
+    apiMock.pairBrowserRecorderBridge.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePair = resolve;
+      }),
+    );
+
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Project" } as any} />);
+    });
+    await flushPromises();
+    const pairButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Pair Local Bridge"),
+    )!;
+    act(() => {
+      pairButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    apiMock.browserRecorderRequestScope =
+      "bridge:http://127.0.0.1:8765:bridge-session-new";
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Project" } as any} />);
+    });
+    await flushPromises();
+    await act(async () => {
+      resolvePair({
+        origin: "http://127.0.0.1:27777",
+        token: "old-token",
+        session_id: "old-session",
+        status: {
+          availability: { available: true },
+          api_origin: "http://127.0.0.1:27777",
+          paired: true,
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).not.toContain("Local browser recording bridge paired");
+    expect(container.textContent).not.toContain("Connected to http://127.0.0.1:27777");
+  });
+
+  it("accepts the recorder scope transition created by its own successful pairing", async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ":8081",
+      ca_cert_path: "artifacts/recorder/ca-cert.pem",
+      active: null,
+      browser: {
+        availability: {
+          available: false,
+          reason: "browser recording is disabled in production mode",
+        },
+        active: null,
+      },
+    });
+    let resolvePair!: (value: any) => void;
+    apiMock.pairBrowserRecorderBridge.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolvePair = resolve;
+      }),
+    );
+
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Project" } as any} />);
+    });
+    await flushPromises();
+    const pairButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Pair Local Bridge"),
+    )!;
+    act(() => {
+      pairButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    apiMock.browserRecorderRequestScope =
+      "bridge:http://127.0.0.1:27777:paired-session";
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Project" } as any} />);
+    });
+    await act(async () => {
+      resolvePair({
+        origin: "http://127.0.0.1:27777",
+        token: "paired-token",
+        session_id: "paired-session",
+        status: {
+          availability: { available: true },
+          api_origin: "http://127.0.0.1:27777",
+          paired: true,
+        },
+      });
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).toContain("Local browser recording bridge paired");
+    expect(container.textContent).toContain("Record Browser");
+  });
+
+  it("ignores an agent verification result after the recorder API origin changes", async () => {
+    apiMock.getRecorderStatus.mockResolvedValue({
+      proxy_addr: ":8081",
+      ca_cert_path: "artifacts/recorder/ca-cert.pem",
+      active: null,
+      browser: {
+        availability: {
+          available: false,
+          reason: "browser recording is disabled in production mode",
+        },
+        active: null,
+      },
+    });
+    let resolveVerify!: (value: { status: string; version: string }) => void;
+    apiMock.verifyBrowserRecorderBridgeAgent.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveVerify = resolve;
+      }),
+    );
+
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Project" } as any} />);
+    });
+    await flushPromises();
+    const verifyButton = Array.from(container.querySelectorAll("button")).find(
+      (button) => button.textContent?.includes("Verify Agent"),
+    )!;
+    act(() => {
+      verifyButton.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    });
+
+    apiMock.browserRecorderRequestScope =
+      "bridge:http://127.0.0.1:8765:bridge-session-new";
+    await act(async () => {
+      root.render(<RecordingStudio activeProject={{ id: "proj-1", name: "Project" } as any} />);
+    });
+    await flushPromises();
+    await act(async () => {
+      resolveVerify({ status: "healthy", version: "old" });
+      await Promise.resolve();
+    });
+
+    expect(container.textContent).not.toContain("APEX Load Recording Agent verified");
+    expect(container.textContent).not.toContain(
+      "APEX Load Recording Agent is running at http://127.0.0.1:27777",
+    );
   });
 
   it("ignores a recorder action that completes after the active project changes", async () => {

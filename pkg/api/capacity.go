@@ -663,11 +663,19 @@ func (tr *TestRunner) refreshPendingQueueMetadataLocked() {
 		blocked, reason := tr.evaluateQuotaBlockLocked(test, "")
 		if blocked {
 			test.PendingReason = reason
-		} else if !strings.HasPrefix(test.PendingReason, pendingSecretRequirementsReasonPrefix) &&
-			!strings.HasPrefix(test.PendingReason, pendingCapacityAuthorizationReasonPrefix) {
+		} else if !pendingPromotionReasonMustRemainVisible(test.PendingReason) {
 			test.PendingReason = "ready to start when the queue advances"
 		}
 	}
+}
+
+// pendingPromotionReasonMustRemainVisible protects the last durable admission
+// failure from the queue-position projection above. Promotion gates run after
+// the ordinary quota check, so replacing their reason with "ready" makes a
+// Java runner/capacity outage (and other correctable promotion failures) look
+// launchable even though the next promotion attempt will reject it again.
+func pendingPromotionReasonMustRemainVisible(reason string) bool {
+	return strings.HasPrefix(strings.TrimSpace(reason), "pending test promotion ")
 }
 
 func buildCapacityShortfallStartError(id string, advisory *CapacityAdvisory, opts StartTestOptions) error {

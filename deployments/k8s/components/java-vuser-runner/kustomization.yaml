@@ -1,0 +1,9 @@
+apiVersion: kustomize.config.k8s.io/v1alpha1
+kind: Component
+resources: []
+patches:
+  - path: generator-java-vuser-patch.yaml
+images:
+  - name: apexload-java-vuser-runner
+    newName: apexload-java-vuser-runner
+    newTag: 0.1.0-standard

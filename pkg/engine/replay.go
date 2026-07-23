@@ -88,6 +88,16 @@ type ReplayDebugControllerAfter interface {
 	AfterAction(context.Context, ReplayDebugAction, *ReplayActionEvent) error
 }
 
+// ReplayDebugControllerCorrelationObserver is an optional, internal-only
+// capability for replay debug controllers. It is invoked after protocol
+// execution but before the replay event is scrubbed. CorrelationEvidence is raw
+// and ephemeral: implementations must copy only bounded data they need and must
+// never publish or retain the event pointer. The engine clears the evidence
+// before the event enters reports, progress callbacks, exports, or WebSockets.
+type ReplayDebugControllerCorrelationObserver interface {
+	ObserveCorrelationEvidence(context.Context, ReplayDebugAction, *ReplayActionEvent)
+}
+
 type ReplayDebugAction struct {
 	EventID      string `json:"event_id,omitempty"`
 	Phase        string `json:"phase"`
@@ -188,6 +198,9 @@ type ReplayActionEvent struct {
 	Iteration        *int     `json:"iteration,omitempty"`
 	IterationPath    []int    `json:"iteration_path,omitempty"`
 	LeafOrdinal      int      `json:"leaf_ordinal,omitempty"`
+	// CorrelationEvidence exists only between protocol execution and the
+	// pre-scrub debug observer. It is cleared before any public replay boundary.
+	CorrelationEvidence *protocol.CorrelationEvidence `json:"-"`
 }
 
 type ReplayRuntimeProfile struct {
@@ -294,8 +307,13 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		return nil, fmt.Errorf("protocol init: %s", scrubSensitiveTextWithConfig(err.Error(), redactionConfig))
 	}
 
+	_, captureCorrelationEvidence := opts.DebugController.(ReplayDebugControllerCorrelationObserver)
+	protoConfig := buildProtoConfigForRunModeWithSecretResolver(script, "replay", secretResolver)
+	if captureCorrelationEvidence {
+		protoConfig[protocol.CorrelationEvidenceCaptureConfigKey] = true
+	}
 	bindProtocolRuntimeRedaction(proto, func() *RedactionConfig { return redactionConfig })
-	if err := callProtocolInit(ctx, proto, buildProtoConfigForRunModeWithSecretResolver(script, "replay", secretResolver), redactionConfig); err != nil {
+	if err := callProtocolInit(ctx, proto, protoConfig, redactionConfig); err != nil {
 		runProtocolTeardown(proto, func() *RedactionConfig { return redactionConfig })
 		return nil, fmt.Errorf("protocol init: %s", err)
 	}
@@ -780,10 +798,14 @@ func runReplayUnit(
 		applyReplaySourceMetadata(&event, unit.action.Metadata)
 		attachReplayDiagnosis(&event)
 	} else {
-		event, shouldContinue = runReplayAction(ctx, vu, unit.action, unit.phase, unit.actionIndex, eventIndex, eventID, ignoreThinkTime, globalThinkCfg, report)
+		_, captureCorrelationEvidence := debugController.(ReplayDebugControllerCorrelationObserver)
+		event, shouldContinue = runReplayAction(ctx, vu, unit.action, unit.phase, unit.actionIndex, eventIndex, eventID, ignoreThinkTime, globalThinkCfg, report, captureCorrelationEvidence)
+	}
+	applyReplayUnitIdentityEvent(&event, unit)
+	if observer, ok := debugController.(ReplayDebugControllerCorrelationObserver); ok {
+		observer.ObserveCorrelationEvidence(ctx, debugAction, &event)
 	}
 	scrubReplayActionEvent(&event, vu.RedactionConfig)
-	applyReplayUnitIdentityEvent(&event, unit)
 	report.Events = append(report.Events, event)
 
 	actionProgressType := ReplayProgressActionCompleted
@@ -899,6 +921,7 @@ func runReplayAction(
 	ignoreThinkTime bool,
 	globalThinkCfg protocol.ThinkTimeConfig,
 	report *ReplayReport,
+	captureCorrelationEvidence bool,
 ) (ReplayActionEvent, bool) {
 	if handled, err := vu.handleEngineAction(ctx, action); handled {
 		now := time.Now()
@@ -945,6 +968,8 @@ func runReplayAction(
 	applyReplaySourceMetadata(&event, action.Metadata)
 
 	if err != nil {
+		event.CorrelationEvidence = replayCorrelationEvidence(resolved, result, action, captureCorrelationEvidence)
+		discardCorrelationEvidence(result)
 		event.Success = false
 		event.ErrorMessage = scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig)
 		if event.ErrorMessage == "" {
@@ -963,12 +988,19 @@ func runReplayAction(
 	}
 
 	if result == nil {
+		event.CorrelationEvidence = replayCorrelationEvidence(resolved, nil, action, captureCorrelationEvidence)
 		event.Success = false
 		event.ErrorMessage = fmt.Sprintf("%s %q returned no result", phase, action.Name)
 		attachReplayDiagnosis(&event)
 		return event, false
 	}
 
+	// Detach the raw diagnosis-only exchange before recordResult. Result sinks are
+	// metrics/publication boundaries and must never receive CorrelationEvidence,
+	// even though the field is JSON-excluded. Capture ResponseBody now as well:
+	// recordResult scrubs and bounds retained result evidence in place.
+	event.CorrelationEvidence = replayCorrelationEvidence(resolved, result, action, captureCorrelationEvidence)
+	discardCorrelationEvidence(result)
 	vu.recordResult(result, vu.Script.Config.ErrorHandling, vu.Script.Config.Log)
 	event.StatusCode = result.StatusCode
 	event.Success = result.Success
@@ -1331,6 +1363,300 @@ func scrubReplayValue(action *protocol.Action, config *RedactionConfig) string {
 	return scrubSensitiveTextWithConfig(value, config)
 }
 
+func replayCorrelationEvidence(action *protocol.Action, result *protocol.Result, authored dsl.Action, enabled bool) *protocol.CorrelationEvidence {
+	if !enabled {
+		return nil
+	}
+	if result != nil && result.CorrelationEvidence != nil && result.CorrelationEvidence.UnavailableReason != "" {
+		return protocol.UnavailableCorrelationEvidence(result.CorrelationEvidence.UnavailableReason)
+	}
+
+	var (
+		requestURL             string
+		requestBody            string
+		requestBodyBytes       []byte
+		requestBodyTransformed bool
+		requestHeaders         map[string]string
+		useActionHeaders       bool
+		responseBody           string
+		responseHeaders        map[string]string
+		responseStatus         int
+		responseSuccess        *bool
+	)
+	if action != nil {
+		requestURL = action.Target
+		requestBodyBytes = action.Body
+		useActionHeaders = true
+	}
+	if result != nil {
+		responseBody = result.ResponseBody
+		responseStatus = result.StatusCode
+		if supplied := result.CorrelationEvidence; supplied != nil {
+			if supplied.RequestURL != "" {
+				requestURL = supplied.RequestURL
+			}
+			if supplied.RequestBody != "" {
+				requestBody = supplied.RequestBody
+				requestBodyBytes = nil
+			}
+			requestBodyTransformed = supplied.RequestBodyTransformed
+			if supplied.RequestHeaders != nil {
+				requestHeaders = supplied.RequestHeaders
+				useActionHeaders = false
+			}
+			// Response fields are authoritative whenever a protocol supplies a
+			// correlation snapshot, including a legitimately empty response body.
+			responseBody = supplied.ResponseBody
+			responseHeaders = supplied.ResponseHeaders
+			if supplied.ResponseStatus != 0 {
+				responseStatus = supplied.ResponseStatus
+			}
+			if supplied.ResponseSuccess != nil {
+				value := *supplied.ResponseSuccess
+				responseSuccess = &value
+			}
+		}
+	}
+	if !correlationEvidenceFitsCaptureLimit(requestURL, requestBody, requestBodyBytes, requestHeaders, action, useActionHeaders, authored, responseBody, responseHeaders) {
+		return protocol.UnavailableCorrelationEvidence(protocol.CorrelationEvidenceTooLargeReason)
+	}
+	if useActionHeaders {
+		requestHeaders = rawReplayRequestHeaders(action)
+	}
+	authoredHeaders := rawAuthoredReplayRequestHeaders(authored)
+	if requestBody == "" && requestBodyBytes != nil {
+		requestBody = string(requestBodyBytes)
+	}
+	evidence := &protocol.CorrelationEvidence{
+		RequestURL:             requestURL,
+		RequestBody:            requestBody,
+		RequestBodyTransformed: requestBodyTransformed,
+		RequestHeaders:         cloneStringMap(requestHeaders),
+		AuthoredRequestURL:     authored.Target,
+		AuthoredRequestBody:    authored.Body,
+		AuthoredRequestHeaders: cloneStringMap(authoredHeaders),
+		ResponseBody:           responseBody,
+		ResponseHeaders:        cloneStringMap(responseHeaders),
+		ResponseStatus:         responseStatus,
+		ResponseSuccess:        responseSuccess,
+	}
+	if evidence.RequestURL == "" && evidence.RequestBody == "" && len(evidence.RequestHeaders) == 0 &&
+		evidence.AuthoredRequestURL == "" && evidence.AuthoredRequestBody == "" && len(evidence.AuthoredRequestHeaders) == 0 &&
+		evidence.ResponseBody == "" && len(evidence.ResponseHeaders) == 0 && evidence.ResponseStatus == 0 && evidence.ResponseSuccess == nil {
+		return nil
+	}
+	return evidence
+}
+
+func correlationEvidenceFitsCaptureLimit(requestURL, requestBody string, requestBodyBytes []byte, requestHeaders map[string]string, action *protocol.Action, useActionHeaders bool, authored dsl.Action, responseBody string, responseHeaders map[string]string) bool {
+	budget := correlationEvidenceCaptureBudget{remaining: protocol.MaxCorrelationEvidenceBytes}
+	if !budget.consume(len(requestURL)) || !budget.consume(len(requestBody)) || !budget.consume(len(requestBodyBytes)) {
+		return false
+	}
+	if useActionHeaders {
+		if !budget.consumeProtocolHeaders(action) {
+			return false
+		}
+	} else if !budget.consumeMap(requestHeaders) {
+		return false
+	}
+	return budget.consume(len(authored.Target)) && budget.consume(len(authored.Body)) && budget.consumeDSLHeaders(authored) &&
+		budget.consume(len(responseBody)) && budget.consumeMap(responseHeaders)
+}
+
+type correlationEvidenceCaptureBudget struct {
+	remaining int
+}
+
+func (b *correlationEvidenceCaptureBudget) consume(size int) bool {
+	if b == nil || size < 0 || size > b.remaining {
+		return false
+	}
+	b.remaining -= size
+	return true
+}
+
+func (b *correlationEvidenceCaptureBudget) consumeMap(values map[string]string) bool {
+	for key, value := range values {
+		if !b.consume(len(key)) || !b.consume(len(value)) {
+			return false
+		}
+	}
+	return true
+}
+
+type correlationHeaderSize struct {
+	name       string
+	valueBytes int
+	count      int
+}
+
+func (b *correlationEvidenceCaptureBudget) consumeProtocolHeaders(action *protocol.Action) bool {
+	if action == nil {
+		return true
+	}
+	groups := make(map[string]*correlationHeaderSize, len(action.HeaderList))
+	for _, header := range action.HeaderList {
+		name := strings.TrimSpace(header.Name)
+		if name == "" {
+			continue
+		}
+		normalized := strings.ToLower(name)
+		group := groups[normalized]
+		if group == nil {
+			group = &correlationHeaderSize{name: name}
+			groups[normalized] = group
+		}
+		if len(header.Value) > protocol.MaxCorrelationEvidenceBytes-group.valueBytes {
+			return false
+		}
+		group.valueBytes += len(header.Value)
+		group.count++
+	}
+	for name, value := range action.Headers {
+		if _, shadowed := groups[strings.ToLower(strings.TrimSpace(name))]; shadowed {
+			continue
+		}
+		if !b.consume(len(name)) || !b.consume(len(value)) {
+			return false
+		}
+	}
+	return b.consumeHeaderGroups(groups)
+}
+
+func (b *correlationEvidenceCaptureBudget) consumeDSLHeaders(action dsl.Action) bool {
+	groups := make(map[string]*correlationHeaderSize, len(action.HeaderList))
+	for _, header := range action.HeaderList {
+		name := strings.TrimSpace(header.Name)
+		if name == "" {
+			continue
+		}
+		normalized := strings.ToLower(name)
+		group := groups[normalized]
+		if group == nil {
+			group = &correlationHeaderSize{name: name}
+			groups[normalized] = group
+		}
+		if len(header.Value) > protocol.MaxCorrelationEvidenceBytes-group.valueBytes {
+			return false
+		}
+		group.valueBytes += len(header.Value)
+		group.count++
+	}
+	for name, value := range action.Headers {
+		if _, shadowed := groups[strings.ToLower(strings.TrimSpace(name))]; shadowed {
+			continue
+		}
+		if !b.consume(len(name)) || !b.consume(len(value)) {
+			return false
+		}
+	}
+	return b.consumeHeaderGroups(groups)
+}
+
+func (b *correlationEvidenceCaptureBudget) consumeHeaderGroups(groups map[string]*correlationHeaderSize) bool {
+	for _, group := range groups {
+		separatorBytes := group.count - 1
+		if !b.consume(len(group.name)) || !b.consume(group.valueBytes) || !b.consume(separatorBytes) {
+			return false
+		}
+	}
+	return true
+}
+
+func rawAuthoredReplayRequestHeaders(action dsl.Action) map[string]string {
+	headers := cloneStringMap(action.Headers)
+	if len(action.HeaderList) == 0 {
+		return headers
+	}
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+	type repeatedHeader struct {
+		name   string
+		values []string
+	}
+	groups := make(map[string]*repeatedHeader, len(action.HeaderList))
+	order := make([]string, 0, len(action.HeaderList))
+	for _, header := range action.HeaderList {
+		name := strings.TrimSpace(header.Name)
+		if name == "" {
+			continue
+		}
+		normalized := strings.ToLower(name)
+		group := groups[normalized]
+		if group == nil {
+			group = &repeatedHeader{name: name}
+			groups[normalized] = group
+			order = append(order, normalized)
+		}
+		group.values = append(group.values, header.Value)
+	}
+	for _, normalized := range order {
+		group := groups[normalized]
+		for existing := range headers {
+			if strings.EqualFold(existing, group.name) {
+				delete(headers, existing)
+			}
+		}
+		headers[group.name] = strings.Join(group.values, "\n")
+	}
+	if len(headers) == 0 {
+		return nil
+	}
+	return headers
+}
+
+// rawReplayRequestHeaders provides a best-effort request-side fallback for
+// protocols that do not yet populate Result.CorrelationEvidence. HeaderList has
+// wire-level precedence over the summary map and repeated occurrences are
+// newline-delimited, matching the correlation engine's observation contract.
+func rawReplayRequestHeaders(action *protocol.Action) map[string]string {
+	if action == nil {
+		return nil
+	}
+	headers := cloneStringMap(action.Headers)
+	if len(action.HeaderList) == 0 {
+		return headers
+	}
+	if headers == nil {
+		headers = make(map[string]string)
+	}
+	type repeatedHeader struct {
+		name   string
+		values []string
+	}
+	groups := make(map[string]*repeatedHeader, len(action.HeaderList))
+	order := make([]string, 0, len(action.HeaderList))
+	for _, header := range action.HeaderList {
+		name := strings.TrimSpace(header.Name)
+		if name == "" {
+			continue
+		}
+		normalized := strings.ToLower(name)
+		group := groups[normalized]
+		if group == nil {
+			group = &repeatedHeader{name: name}
+			groups[normalized] = group
+			order = append(order, normalized)
+		}
+		group.values = append(group.values, header.Value)
+	}
+	for _, normalized := range order {
+		group := groups[normalized]
+		for existing := range headers {
+			if strings.EqualFold(existing, group.name) {
+				delete(headers, existing)
+			}
+		}
+		headers[group.name] = strings.Join(group.values, "\n")
+	}
+	if len(headers) == 0 {
+		return nil
+	}
+	return headers
+}
+
 func scrubReplayActionEvent(event *ReplayActionEvent, config *RedactionConfig) {
 	if event == nil {
 		return
@@ -1366,6 +1692,14 @@ func scrubReplayActionEvent(event *ReplayActionEvent, config *RedactionConfig) {
 	for index := range event.StepPath {
 		event.StepPath[index] = scrubSensitiveTextWithConfig(event.StepPath[index], config)
 	}
+	// Raw correlation evidence has exactly one consumer: the optional observer
+	// called immediately before this scrub. Never retain it in a report or any
+	// downstream clone/publication path. Zero the detached value as well so even
+	// an accidental retained event pointer cannot read it after this boundary.
+	if event.CorrelationEvidence != nil {
+		*event.CorrelationEvidence = protocol.CorrelationEvidence{}
+	}
+	event.CorrelationEvidence = nil
 }
 
 func scrubReplayDebugAction(action *ReplayDebugAction, config *RedactionConfig) {

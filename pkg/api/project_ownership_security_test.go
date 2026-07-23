@@ -412,8 +412,30 @@ func TestBrowserToHTTPRejectsReplaySessionFromAnotherProject(t *testing.T) {
 	})
 	resp := httptest.NewRecorder()
 	server.mux.ServeHTTP(resp, httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-to-http/preview", bytes.NewReader(body)))
-	if resp.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	if resp.Code != http.StatusOK {
+		t.Fatalf("foreign status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	missingBody, _ := json.Marshal(BrowserToHTTPPreviewRequest{
+		ProjectID: "project-a", ReplaySessionID: "missing-replay",
+		SourceBrowserScript: &dsl.Script{Name: "Browser A", ProjectID: "project-a", Protocol: "browser"},
+		NetworkEntries:      []protocol.NetworkEntry{{URL: "https://example.test/api", Method: http.MethodGet}},
+	})
+	missingResp := httptest.NewRecorder()
+	server.mux.ServeHTTP(missingResp, httptest.NewRequest(http.MethodPost, "/api/v1/scripts/browser-to-http/preview", bytes.NewReader(missingBody)))
+	if missingResp.Code != resp.Code {
+		t.Fatalf("missing status = %d, foreign status = %d", missingResp.Code, resp.Code)
+	}
+	var foreignPreview, missingPreview BrowserToHTTPPreviewResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &foreignPreview); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(missingResp.Body.Bytes(), &missingPreview); err != nil {
+		t.Fatal(err)
+	}
+	if foreignPreview.Review.Evidence.ReplaySessionResolved != missingPreview.Review.Evidence.ReplaySessionResolved ||
+		foreignPreview.Review.Evidence.VerificationStatus != missingPreview.Review.Evidence.VerificationStatus ||
+		foreignPreview.Review.Evidence.Durable != missingPreview.Review.Evidence.Durable {
+		t.Fatalf("foreign evidence = %#v, missing evidence = %#v", foreignPreview.Review.Evidence, missingPreview.Review.Evidence)
 	}
 }
 

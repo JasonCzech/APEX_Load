@@ -17,24 +17,40 @@ public final class lr {
     public static final int FAIL = 1;
     public static final int AUTO = 2;
     public static final int STOP = 3;
-    public static final int EXIT_ACTION_AND_CONTINUE = 10;
-    public static final int EXIT_ITERATION_AND_CONTINUE = 11;
-    public static final int EXIT_VUSER = 12;
-    public static final int EXIT_VUSER_AFTER_ITERATION = 13;
+    // Published LoadRunner continuation constants are compile-time inlined into
+    // precompiled Actions classes; these numeric values are therefore part of
+    // the binary compatibility contract.
+    public static final int EXIT_VUSER = 0;
+    public static final int EXIT_ACTION_AND_CONTINUE = 1;
+    public static final int EXIT_ITERATION_AND_CONTINUE = 2;
+    public static final int EXIT_VUSER_AFTER_ITERATION = 3;
+    public static final int EXIT_VUSER_AFTER_ACTION = 4;
+    public static final int EXIT_MAIN_ITERATION_AND_CONTINUE = 5;
 
     private static final Map<String, String> parameters = new ConcurrentHashMap<>();
     private static final Map<String, Long> timers = new ConcurrentHashMap<>();
     // Explicit per-transaction status overrides set via set_transaction /
     // set_transaction_status. An entry here wins over LR_AUTO error inference.
-    private static final Map<String, Integer> transactionStatus = new ConcurrentHashMap<>();
-    // Value of errorCount observed when each still-open transaction started, so
-    // LR_AUTO can fail a transaction that saw an error while it was open.
-    private static final Map<String, Long> transactionStartErrors = new ConcurrentHashMap<>();
-    // Currently-open transactions in start order (top = current transaction),
-    // for lr_set_transaction_status's "current/open transaction" semantics.
-    private static final Deque<String> openTransactions = new ConcurrentLinkedDeque<>();
+    // Each open transaction owns its status. Keeping state by identity avoids
+    // coupling nested transaction bookkeeping to lookup mechanics; LoadRunner
+    // requires names to remain unique while they are open.
+    private static final Deque<TransactionState> openTransactions = new ConcurrentLinkedDeque<>();
     // Monotonic count of errors raised via lr.error_message during this run.
     private static final AtomicLong errorCount = new AtomicLong();
+    private static final AtomicLong eventSequence = new AtomicLong();
+    private static final AtomicLong transactionSequence = new AtomicLong();
+    private static final String EVENT_CONTRACT = "apexload.java_vuser.lrapi_events.v2";
+    private static final long MAX_EVENT_FILE_BYTES = 1024L * 1024L;
+    private static final int MAX_EVENT_TYPE_CHARS = 1024;
+    private static final int MAX_EVENT_NAME_CHARS = 16 * 1024;
+    private static final int MAX_EVENT_MESSAGE_CHARS = 64 * 1024;
+    private static final int MAX_TRANSACTION_NAME_CHARS = 256;
+    // Go protocol.Result durations are time.Duration nanoseconds. Keep manual
+    // transaction timestamps within that exact representable range.
+    private static final long MAX_TRANSACTION_DURATION_MS = Long.MAX_VALUE / 1_000_000L;
+    private static volatile String currentRequestId = "";
+    private static volatile boolean eventFallbackUsed;
+    private static volatile boolean eventCaptureTruncated;
 
     private lr() {
     }
@@ -46,6 +62,65 @@ public final class lr {
         for (Map.Entry<String, String> entry : values.entrySet()) {
             __apexload_set_parameter(entry.getKey(), entry.getValue());
         }
+    }
+
+    // Begins one init/action/end invocation in a persistent Vuser JVM. Saved
+    // parameters intentionally survive; timers, transaction bookkeeping and
+    // LR_AUTO error state are invocation-local and must not leak to the next
+    // iteration.
+    public static void __apexload_begin_invocation(String requestId, Map<String, String> values) {
+        timers.clear();
+        openTransactions.clear();
+        errorCount.set(0L);
+        eventSequence.set(0L);
+        transactionSequence.set(0L);
+        eventFallbackUsed = false;
+        eventCaptureTruncated = false;
+        currentRequestId = requestId == null ? "" : requestId.trim();
+        __apexload_seed_parameters(values);
+    }
+
+    // Closes malformed/open transactions at the invocation boundary. Emitting
+    // an explicit failed terminal event prevents an incomplete Java action from
+    // being reported as a successful business transaction.
+    public static void __apexload_end_invocation() {
+        TransactionState transaction;
+        while ((transaction = openTransactions.poll()) != null) {
+            long endedAt = System.currentTimeMillis();
+            emitTransactionAt(
+                    endedAt,
+                    "transaction_unmatched",
+                    transaction.name,
+                    Integer.toString(FAIL),
+                    transaction.id,
+                    transaction.parentId,
+                    transactionRawDurationMillis(transaction, endedAt),
+                    transaction.thinkTimeMillis,
+                    transaction.wastedTimeMillis);
+        }
+    }
+
+    // lr.exit ignores any transaction it interrupts. Drop those transactions
+    // without fabricating pass/fail children, but retain a structured diagnostic
+    // event so the governed run remains reviewable.
+    public static void __apexload_handle_exit(int continuationOption, int exitStatus) {
+        TransactionState transaction;
+        while ((transaction = openTransactions.poll()) != null) {
+            emitTransaction(
+                    "transaction_ignored",
+                    transaction.name,
+                    continuationOption + " " + exitStatus,
+                    transaction.id,
+                    transaction.parentId);
+        }
+    }
+
+    public static boolean __apexload_event_fallback_used() {
+        return eventFallbackUsed;
+    }
+
+    public static boolean __apexload_event_capture_truncated() {
+        return eventCaptureTruncated;
     }
 
     public static void __apexload_set_parameter(String name, String value) {
@@ -114,11 +189,46 @@ public final class lr {
     }
 
     public static int end_sub_transaction(Object... args) {
-        String name = valueAt(args, 0);
-        int status = resolveTransactionStatus(name, intAt(args, 1, AUTO));
-        emit("transaction_end", name, Integer.toString(status));
-        closeTransaction(name);
-        return status;
+        return endSubTransaction(valueAt(args, 0), intAt(args, 1, AUTO));
+    }
+
+    // Keep the published lrapi.lr descriptor for precompiled LoadRunner
+    // Actions classes. Object... overloads remain only as a source-compatibility
+    // fallback for scripts that call the shim with dynamically typed values.
+    public static int end_sub_transaction(String name, int status) {
+        return endSubTransaction(name, status);
+    }
+
+    public static int end_sub_trans(String name, int status) {
+        return endSubTransaction(name, status);
+    }
+
+    private static int endSubTransaction(String name, int requestedStatus) {
+        if (requestedStatus != AUTO && !isConcreteTransactionStatus(requestedStatus)) {
+            emit("error", name, "lr.end_sub_transaction rejected an invalid status");
+            return -1;
+        }
+        TransactionState transaction = currentTransaction(name, true);
+        if (transaction == null) {
+            warnUnmatchedEnd("end_sub_transaction", name);
+            return -1;
+        }
+        int status = resolveTransactionStatus(transaction, requestedStatus);
+        long endedAt = System.currentTimeMillis();
+        emitTransactionAt(
+                endedAt,
+                "transaction_end",
+                name,
+                Integer.toString(status),
+                transaction.id,
+                transaction.parentId,
+                transactionRawDurationMillis(transaction, endedAt),
+                transaction.thinkTimeMillis,
+                transaction.wastedTimeMillis);
+        openTransactions.remove(transaction);
+        // The API return reports technical success, not the recorded business
+        // transaction status.
+        return PASS;
     }
 
     public static double end_timer(Object... args) {
@@ -131,17 +241,58 @@ public final class lr {
     }
 
     public static int end_transaction(Object... args) {
-        String name = valueAt(args, 0);
-        int status = resolveTransactionStatus(name, intAt(args, 1, AUTO));
-        emit("transaction_end", name, Integer.toString(status));
-        closeTransaction(name);
-        return status;
+        return endTransaction(valueAt(args, 0), intAt(args, 1, AUTO));
+    }
+
+    public static int end_transaction(String name, int status) {
+        return endTransaction(name, status);
+    }
+
+    private static int endTransaction(String name, int requestedStatus) {
+        if (requestedStatus != AUTO && !isConcreteTransactionStatus(requestedStatus)) {
+            emit("error", name, "lr.end_transaction rejected an invalid status");
+            return -1;
+        }
+        TransactionState transaction = currentTransaction(name, false);
+        if (transaction == null) {
+            warnUnmatchedEnd("end_transaction", name);
+            return -1;
+        }
+        int status = resolveTransactionStatus(transaction, requestedStatus);
+        long endedAt = System.currentTimeMillis();
+        emitTransactionAt(
+                endedAt,
+                "transaction_end",
+                name,
+                Integer.toString(status),
+                transaction.id,
+                transaction.parentId,
+                transactionRawDurationMillis(transaction, endedAt),
+                transaction.thinkTimeMillis,
+                transaction.wastedTimeMillis);
+        openTransactions.remove(transaction);
+        return PASS;
     }
 
     public static int error_message(Object... args) {
+        return error_message(join(args));
+    }
+
+    public static int error_message(String message) {
+        if (message == null) {
+            return -1;
+        }
         errorCount.incrementAndGet();
-        emit("error", "", join(args));
-        return FAIL;
+        // OpenText makes this conditional on the runtime setting named "Fail
+        // open transactions on lr.error_message". When enabled it applies to
+        // all currently open LR_AUTO transactions.
+        if (boolFromEnv("APEXLOAD_FAIL_OPEN_TRANSACTIONS_ON_ERROR_MESSAGE")) {
+            for (TransactionState transaction : openTransactions) {
+                transaction.status = FAIL;
+            }
+        }
+        emit("error", "", message);
+        return message.length();
     }
 
     public static byte[] eval_data(Object... args) {
@@ -149,8 +300,12 @@ public final class lr {
     }
 
     public static int eval_int(Object... args) {
+        return eval_int(valueAt(args, 0));
+    }
+
+    public static int eval_int(String name) {
         try {
-            return Integer.parseInt(eval_string(args).trim());
+            return Integer.parseInt(eval_string(name).trim());
         } catch (NumberFormatException ex) {
             return 0;
         }
@@ -172,8 +327,19 @@ public final class lr {
     }
 
     public static int exit(Object... args) {
-        emit("runtime", "exit", join(args));
-        return intAt(args, 0, EXIT_VUSER);
+        int continuationOption = intAt(args, 0, EXIT_VUSER);
+        int exitStatus = intAt(args, 1, FAIL);
+        exit(continuationOption, exitStatus);
+        return PASS; // unreachable; retained for the legacy varargs descriptor.
+    }
+
+    // Official binary descriptor: (II)V. Harness recognizes ExitSignal so an
+    // Actions method is unwound immediately instead of continuing backend work
+    // after lr.exit. Full engine continuation semantics are capability-gated
+    // separately; see the Java support matrix.
+    public static void exit(int continuationOption, int exitStatus) {
+        emit("runtime", "exit", continuationOption + " " + exitStatus);
+        throw new ExitSignal(continuationOption, exitStatus);
     }
 
     public static double get_attrib_double(Object... args) {
@@ -213,19 +379,42 @@ public final class lr {
     }
 
     public static double get_transaction_duration(Object... args) {
-        return 0.0;
+        return get_transaction_duration(valueAt(args, 0));
+    }
+
+    public static double get_transaction_duration(String name) {
+        TransactionState transaction = currentTransaction(name);
+        if (transaction == null) {
+            return 0.0;
+        }
+        return elapsedMillis(transaction.startedAtMillis, System.currentTimeMillis()) / 1000.0;
     }
 
     public static int get_transaction_status(Object... args) {
-        return transactionStatus.getOrDefault(valueAt(args, 0), AUTO);
+        return get_transaction_status(valueAt(args, 0));
+    }
+
+    public static int get_transaction_status(String name) {
+        TransactionState transaction = currentTransaction(name);
+        return transaction == null ? -1 : transaction.status;
     }
 
     public static double get_transaction_think_time(Object... args) {
-        return 0.0;
+        return get_transaction_think_time(valueAt(args, 0));
+    }
+
+    public static double get_transaction_think_time(String name) {
+        TransactionState transaction = currentTransaction(name);
+        return transaction == null ? 0.0 : transaction.thinkTimeMillis / 1000.0;
     }
 
     public static double get_transaction_wasted_time(Object... args) {
-        return 0.0;
+        return get_transaction_wasted_time(valueAt(args, 0));
+    }
+
+    public static double get_transaction_wasted_time(String name) {
+        TransactionState transaction = currentTransaction(name);
+        return transaction == null ? 0.0 : transaction.wastedTimeMillis / 1000.0;
     }
 
     public static int get_vuser_id(Object... args) {
@@ -296,19 +485,26 @@ public final class lr {
     }
 
     public static int save_int(Object... args) {
-        if (args != null && args.length >= 2) {
-            parameters.put(valueAt(args, 1), Integer.toString(intAt(args, 0, 0)));
+        return save_int(intAt(args, 0, 0), valueAt(args, 1));
+    }
+
+    public static int save_int(int value, String paramName) {
+        if (paramName == null || paramName.trim().isEmpty()) {
+            return FAIL;
         }
+        parameters.put(paramName.trim(), Integer.toString(value));
         return PASS;
     }
 
     public static int save_string(Object... args) {
-        if (args != null && args.length >= 2) {
-            String name = valueAt(args, 1);
-            if (!name.isEmpty()) {
-                parameters.put(name, valueAt(args, 0));
-            }
+        return save_string(valueAt(args, 0), valueAt(args, 1));
+    }
+
+    public static int save_string(String value, String paramName) {
+        if (paramName == null || paramName.trim().isEmpty()) {
+            return FAIL;
         }
+        parameters.put(paramName.trim(), value == null ? "" : value);
         return PASS;
     }
 
@@ -318,23 +514,51 @@ public final class lr {
     }
 
     public static int set_transaction(Object... args) {
-        String name = valueAt(args, 0);
-        int status = intAt(args, 2, AUTO);
-        transactionStatus.put(name, status);
-        emit("transaction_set", name, join(args));
-        return status;
+        return set_transaction(valueAt(args, 0), doubleAt(args, 1, Double.NaN), intAt(args, 2, AUTO));
+    }
+
+    public static int set_transaction(String name, double duration, int status) {
+        long durationMillis = transactionDurationMillis(duration);
+        if (!validTransactionName(name) || durationMillis < 0L || !isConcreteTransactionStatus(status)) {
+            emit("error", name, "lr.set_transaction rejected an invalid duration or status");
+            return FAIL;
+        }
+        long endedAt = System.currentTimeMillis();
+        long startedAt = safeSubtract(endedAt, durationMillis);
+        String transactionId = (currentRequestId.isEmpty() ? "legacy" : currentRequestId)
+                + "-tx-" + transactionSequence.incrementAndGet();
+        emitTransactionAt(startedAt, "transaction_start", name, "manual", transactionId, "", -1L);
+        emitTransactionAt(
+                endedAt,
+                "transaction_end",
+                name,
+                Integer.toString(status),
+                transactionId,
+                "",
+                durationMillis,
+                0L,
+                0L);
+        // Like end_transaction, the return value reports API success, not the
+        // supplied business status.
+        return PASS;
     }
 
     public static int set_transaction_status(Object... args) {
-        int status = intAt(args, 0, AUTO);
+        return set_transaction_status(intAt(args, 0, AUTO));
+    }
+
+    public static int set_transaction_status(int status) {
+        if (!isConcreteTransactionStatus(status)) {
+            return -1;
+        }
         // lr_set_transaction_status sets the status of the open transaction(s).
         // Record it as an explicit override so a subsequent end_transaction with
         // LR_AUTO honors it instead of inferring pass/fail from error events.
-        for (String name : openTransactions) {
-            transactionStatus.put(name, status);
+        for (TransactionState transaction : openTransactions) {
+            transaction.status = status;
         }
         emit("transaction_status", "", Integer.toString(status));
-        return status;
+        return PASS;
     }
 
     public static int sleep(Object... args) {
@@ -342,9 +566,20 @@ public final class lr {
     }
 
     public static int start_sub_transaction(Object... args) {
-        String name = valueAt(args, 0);
-        openTransaction(name);
-        emit("transaction_start", name, "sub");
+        return start_sub_transaction(valueAt(args, 0), valueAt(args, 1));
+    }
+
+    public static int start_sub_transaction(String name, String parentName) {
+        TransactionState parent = currentTransaction(parentName, false);
+        if (parent == null) {
+            warnMissingSubTransactionParent(name, parentName);
+            return -1;
+        }
+        TransactionState transaction = openTransaction(name, parent.id, true);
+        if (transaction == null) {
+            return -1;
+        }
+        emitTransaction("transaction_start", name, "sub", transaction.id, transaction.parentId);
         return PASS;
     }
 
@@ -356,27 +591,36 @@ public final class lr {
     }
 
     public static int start_transaction(Object... args) {
-        String name = valueAt(args, 0);
-        openTransaction(name);
-        emit("transaction_start", name, "");
+        return start_transaction(valueAt(args, 0));
+    }
+
+    public static int start_transaction(String name) {
+        TransactionState parent = openTransactions.peek();
+        TransactionState transaction = openTransaction(name, parent == null ? "" : parent.id, false);
+        if (transaction == null) {
+            return -1;
+        }
+        emitTransaction("transaction_start", name, "", transaction.id, transaction.parentId);
         return PASS;
     }
 
-    public static int think_time(double seconds) {
-        long millis = Math.round(Math.max(0.0, seconds) * 1000.0);
+    // Official binary descriptor: (D)V.
+    public static void think_time(double seconds) {
+        long millis = durationMillis(seconds);
         millis = effectiveThinkTimeMillis(millis);
+        addThinkTimeToOpenTransactions(millis);
         emit("think_time", "", Long.toString(millis));
         // The whole Vuser class runs inside a single java_vuser_run protocol
         // action, so the engine cannot re-insert pacing between lr.think_time
         // calls. The pause has to happen here in the JVM or it is lost entirely.
         if (millis > 0L) {
-            return sleepMillis(millis);
+            sleepMillis(millis);
         }
-        return PASS;
     }
 
     public static int think_time(Object... args) {
-        return think_time(doubleAt(args, 0, 0.0));
+        think_time(doubleAt(args, 0, 0.0));
+        return PASS;
     }
 
     public static String unmask(Object... args) {
@@ -400,7 +644,13 @@ public final class lr {
     }
 
     public static int wasted_time(Object... args) {
-        emit("transaction_wasted_time", "", join(args));
+        addWastedTime(intAt(args, 0, 0));
+        return PASS;
+    }
+
+    // Official Java descriptor: (I)I.
+    public static int wasted_time(int wasteTime) {
+        addWastedTime(wasteTime);
         return PASS;
     }
 
@@ -466,41 +716,220 @@ public final class lr {
         }
     }
 
-    private static void openTransaction(String name) {
-        if (name == null) {
-            name = "";
+    private static synchronized TransactionState openTransaction(
+            String name,
+            String parentId,
+            boolean subTransaction) {
+        String normalized = name == null ? "" : name;
+        if (!validTransactionName(normalized) || currentTransaction(normalized) != null) {
+            emit("error", normalized,
+                    "transaction name must be printable, non-empty, at most "
+                            + MAX_TRANSACTION_NAME_CHARS
+                            + " characters, and unique among open transactions");
+            return null;
         }
-        transactionStartErrors.put(name, errorCount.get());
-        transactionStatus.remove(name);
-        openTransactions.push(name);
+        String transactionId = (currentRequestId.isEmpty() ? "legacy" : currentRequestId)
+                + "-tx-" + transactionSequence.incrementAndGet();
+        TransactionState transaction = new TransactionState(
+                normalized,
+                transactionId,
+                parentId,
+                System.currentTimeMillis(),
+                subTransaction);
+        openTransactions.push(transaction);
+        return transaction;
     }
 
-    private static void closeTransaction(String name) {
-        if (name == null) {
-            name = "";
+    private static boolean validTransactionName(String name) {
+        if (name == null || name.trim().isEmpty() || name.length() > MAX_TRANSACTION_NAME_CHARS) {
+            return false;
         }
-        openTransactions.remove(name);
-        transactionStartErrors.remove(name);
-        transactionStatus.remove(name);
+        for (int index = 0; index < name.length(); index++) {
+            if (Character.isISOControl(name.charAt(index))) {
+                return false;
+            }
+        }
+        return true;
     }
 
-    private static int resolveTransactionStatus(String name, int requested) {
+    private static long transactionDurationMillis(double seconds) {
+        if (Double.isNaN(seconds) || Double.isInfinite(seconds) || seconds < 0.0) {
+            return -1L;
+        }
+        double milliseconds = seconds * 1000.0;
+        if (Double.isInfinite(milliseconds) || milliseconds > MAX_TRANSACTION_DURATION_MS) {
+            return -1L;
+        }
+        return Math.min(MAX_TRANSACTION_DURATION_MS, Math.round(milliseconds));
+    }
+
+    private static long durationMillis(double seconds) {
+        if (Double.isNaN(seconds) || seconds <= 0.0) {
+            return 0L;
+        }
+        double milliseconds = seconds * 1000.0;
+        if (Double.isInfinite(milliseconds) || milliseconds >= MAX_TRANSACTION_DURATION_MS) {
+            return MAX_TRANSACTION_DURATION_MS;
+        }
+        return Math.max(0L, Math.round(milliseconds));
+    }
+
+    private static long safeSubtract(long value, long nonnegativeDelta) {
+        if (nonnegativeDelta <= 0L) {
+            return value;
+        }
+        if (value < Long.MIN_VALUE + nonnegativeDelta) {
+            return Long.MIN_VALUE;
+        }
+        return value - nonnegativeDelta;
+    }
+
+    private static long saturatingAddDuration(long current, long delta) {
+        if (delta <= 0L) {
+            return current;
+        }
+        if (current >= MAX_TRANSACTION_DURATION_MS - delta) {
+            return MAX_TRANSACTION_DURATION_MS;
+        }
+        return current + delta;
+    }
+
+    private static long elapsedMillis(long startedAt, long endedAt) {
+        if (endedAt <= startedAt) {
+            return 0L;
+        }
+        // Both values originate from currentTimeMillis in ordinary open
+        // transactions, but keep subtraction safe for hostile clock changes.
+        if (startedAt < 0L && endedAt > Long.MAX_VALUE + startedAt) {
+            return Long.MAX_VALUE;
+        }
+        return endedAt - startedAt;
+    }
+
+    private static long transactionRawDurationMillis(TransactionState transaction, long endedAt) {
+        // Match lr.get_transaction_duration: this is wall-clock duration and
+        // therefore includes both think and wasted time. The raw value remains
+        // available as event evidence, while the reported transaction duration
+        // subtracts lr.wasted_time below to match LoadRunner Analysis.
+        return elapsedMillis(transaction.startedAtMillis, endedAt);
+    }
+
+    private static long reportedTransactionDurationMillis(long rawDurationMs, long wastedTimeMs) {
+        long raw = Math.max(0L, rawDurationMs);
+        long wasted = Math.max(0L, wastedTimeMs);
+        return wasted >= raw ? 0L : raw - wasted;
+    }
+
+    private static void addThinkTimeToOpenTransactions(long millis) {
+        if (millis <= 0L) {
+            return;
+        }
+        for (TransactionState transaction : openTransactions) {
+            transaction.thinkTimeMillis = saturatingAddDuration(transaction.thinkTimeMillis, millis);
+        }
+    }
+
+    private static void addWastedTime(long suppliedMillis) {
+        long millis = Math.max(0L, suppliedMillis);
+        if (millis > 0L) {
+            for (TransactionState transaction : openTransactions) {
+                transaction.wastedTimeMillis = saturatingAddDuration(transaction.wastedTimeMillis, millis);
+            }
+        }
+        emit("transaction_wasted_time", "", Long.toString(millis));
+    }
+
+    // LoadRunner continues after lr_end_transaction on a transaction that was
+    // never started. Preserve that control flow while emitting a failed child
+    // sample: otherwise an ignored FAIL return lets the parent action pass and
+    // silently loses the malformed business transaction.
+    private static void warnUnmatchedEnd(String api, String name) {
+        String transactionId = (currentRequestId.isEmpty() ? "legacy" : currentRequestId)
+                + "-unmatched-" + transactionSequence.incrementAndGet();
+        String parentId = openTransactions.isEmpty() ? "" : openTransactions.peek().id;
+        emitTransaction("transaction_unmatched", name, Integer.toString(FAIL), transactionId, parentId);
+        emit("log", name, "lr." + api + ": transaction \"" + name
+                + "\" was never started; continuing (LoadRunner log-and-continue semantics)");
+    }
+
+    private static void warnMissingSubTransactionParent(String name, String parentName) {
+        String transactionId = (currentRequestId.isEmpty() ? "legacy" : currentRequestId)
+                + "-unmatched-" + transactionSequence.incrementAndGet();
+        emitTransaction("transaction_unmatched", name, Integer.toString(FAIL), transactionId, "");
+        emit("log", name, "lr.start_sub_transaction: parent transaction \"" + parentName
+                + "\" was never started; continuing (LoadRunner log-and-continue semantics)");
+    }
+
+    private static TransactionState currentTransaction(String name) {
+        return currentTransaction(name, null);
+    }
+
+    private static TransactionState currentTransaction(String name, Boolean subTransaction) {
+        String normalized = name == null ? "" : name;
+        for (TransactionState transaction : openTransactions) {
+            if (transaction.name.equals(normalized)
+                    && (subTransaction == null || transaction.subTransaction == subTransaction.booleanValue())) {
+                return transaction;
+            }
+        }
+        return null;
+    }
+
+    private static int resolveTransactionStatus(TransactionState transaction, int requested) {
         // An explicit end status (LR_PASS/LR_FAIL/LR_STOP) always wins.
         if (requested != AUTO) {
             return requested;
         }
-        // LR_AUTO: honor an explicit override from lr_set_transaction[_status]...
-        Integer override = transactionStatus.get(name);
-        if (override != null && override != AUTO) {
-            return override;
+        return transaction.status;
+    }
+
+    private static boolean isConcreteTransactionStatus(int status) {
+        return status == PASS || status == FAIL || status == STOP;
+    }
+
+    private static final class TransactionState {
+        final String name;
+        final String id;
+        final String parentId;
+        final long startedAtMillis;
+        final boolean subTransaction;
+        volatile int status = PASS;
+        volatile long thinkTimeMillis;
+        volatile long wastedTimeMillis;
+
+        TransactionState(String name, String id, String parentId, long startedAtMillis, boolean subTransaction) {
+            this.name = name;
+            this.id = id;
+            this.parentId = parentId == null ? "" : parentId;
+            this.startedAtMillis = startedAtMillis;
+            this.subTransaction = subTransaction;
         }
-        // ...otherwise fail the transaction if an error was raised while it was
-        // open (LoadRunner LR_AUTO semantics), else pass.
-        Long startErrors = transactionStartErrors.get(name);
-        if (startErrors != null && errorCount.get() > startErrors) {
-            return FAIL;
+    }
+
+    // Error (rather than RuntimeException) prevents ordinary user
+    // catch(Exception) handlers from swallowing LoadRunner's control transfer.
+    public static final class ExitSignal extends Error {
+        private final int continuationOption;
+        private final int exitStatus;
+
+        ExitSignal(int continuationOption, int exitStatus) {
+            super("lr.exit(" + continuationOption + ", " + exitStatus + ")");
+            this.continuationOption = continuationOption;
+            this.exitStatus = exitStatus;
         }
-        return PASS;
+
+        public int continuationOption() {
+            return continuationOption;
+        }
+
+        public int exitStatus() {
+            return exitStatus;
+        }
+
+        @Override
+        public synchronized Throwable fillInStackTrace() {
+            return this;
+        }
     }
 
     private static long effectiveThinkTimeMillis(long requestedMillis) {
@@ -573,19 +1002,100 @@ public final class lr {
     }
 
     private static void emit(String type, String name, String message) {
-        String json = "{\"type\":\"" + escape(type) + "\",\"name\":\"" + escape(name) + "\",\"message\":\"" + escape(message) + "\"}";
+        emitEvent(type, name, message, "");
+    }
+
+    private static void emitTransaction(String type, String name, String message, String transactionId) {
+        emitEvent(type, name, message, transactionId, "");
+    }
+
+    private static void emitTransaction(String type, String name, String message, String transactionId, String parentTransactionId) {
+        emitEvent(type, name, message, transactionId, parentTransactionId);
+    }
+
+    private static void emitEvent(String type, String name, String message, String transactionId) {
+        emitEvent(type, name, message, transactionId, "");
+    }
+
+    private static void emitEvent(String type, String name, String message, String transactionId, String parentTransactionId) {
+        emitEventAt(System.currentTimeMillis(), type, name, message, transactionId, parentTransactionId, -1L);
+    }
+
+    private static void emitTransactionAt(long timestampMs, String type, String name, String message,
+                                          String transactionId, String parentTransactionId,
+                                          long durationMs) {
+        emitEventAt(timestampMs, type, name, message, transactionId, parentTransactionId,
+                durationMs, -1L, -1L, -1L);
+    }
+
+    private static void emitTransactionAt(long timestampMs, String type, String name, String message,
+                                          String transactionId, String parentTransactionId,
+                                          long rawDurationMs, long thinkTimeMs, long wastedTimeMs) {
+        emitEventAt(timestampMs, type, name, message, transactionId, parentTransactionId,
+                reportedTransactionDurationMillis(rawDurationMs, wastedTimeMs),
+                rawDurationMs, thinkTimeMs, wastedTimeMs);
+    }
+
+    private static void emitEventAt(long timestampMs, String type, String name, String message,
+                                    String transactionId, String parentTransactionId,
+                                    long durationMs) {
+        emitEventAt(timestampMs, type, name, message, transactionId, parentTransactionId,
+                durationMs, -1L, -1L, -1L);
+    }
+
+    private static void emitEventAt(long timestampMs, String type, String name, String message,
+                                    String transactionId, String parentTransactionId,
+                                    long durationMs, long rawDurationMs,
+                                    long thinkTimeMs, long wastedTimeMs) {
+        long sequence = eventSequence.incrementAndGet();
+        type = boundedEventField(type, MAX_EVENT_TYPE_CHARS);
+        name = boundedEventField(name, MAX_EVENT_NAME_CHARS);
+        message = boundedEventField(message, MAX_EVENT_MESSAGE_CHARS);
+        String json = "{\"contract\":\"" + EVENT_CONTRACT
+                + "\",\"request_id\":\"" + escape(currentRequestId)
+                + "\",\"timestamp_ms\":" + timestampMs
+                + ",\"sequence\":" + sequence
+                + ",\"type\":\"" + escape(type)
+                + "\",\"name\":\"" + escape(name)
+                + "\",\"message\":\"" + escape(message) + "\""
+                + (transactionId == null || transactionId.isEmpty()
+                    ? "" : ",\"transaction_id\":\"" + escape(transactionId) + "\"")
+                + (parentTransactionId == null || parentTransactionId.isEmpty()
+                    ? "" : ",\"parent_transaction_id\":\"" + escape(parentTransactionId) + "\"")
+                + (durationMs < 0L ? "" : ",\"duration_ms\":" + durationMs)
+                + (rawDurationMs < 0L ? "" : ",\"raw_duration_ms\":" + rawDurationMs)
+                + (thinkTimeMs < 0L ? "" : ",\"think_time_ms\":" + thinkTimeMs)
+                + (wastedTimeMs < 0L ? "" : ",\"wasted_time_ms\":" + wastedTimeMs)
+                + "}";
         String eventFile = eventFilePath();
         if (!eventFile.isEmpty()) {
             try {
                 synchronized (lr.class) {
-                    Files.write(Paths.get(eventFile), (json + System.lineSeparator()).getBytes(StandardCharsets.UTF_8), StandardOpenOption.CREATE, StandardOpenOption.APPEND, StandardOpenOption.WRITE);
+                    java.nio.file.Path path = Paths.get(eventFile);
+                    byte[] line = (json + System.lineSeparator()).getBytes(StandardCharsets.UTF_8);
+                    long size = Files.exists(path) ? Files.size(path) : 0L;
+                    if (size >= MAX_EVENT_FILE_BYTES || line.length > MAX_EVENT_FILE_BYTES - size) {
+                        eventCaptureTruncated = true;
+                        return;
+                    }
+                    Files.write(path, line, StandardOpenOption.CREATE, StandardOpenOption.APPEND, StandardOpenOption.WRITE);
                 }
                 return;
             } catch (IOException ex) {
+                eventFallbackUsed = true;
                 System.err.println("{\"type\":\"error\",\"name\":\"event_file\",\"message\":\"" + escape(ex.toString()) + "\"}");
             }
+        } else {
+            eventFallbackUsed = true;
         }
         System.err.println(json);
+    }
+
+    private static String boundedEventField(String value, int maxChars) {
+        if (value == null || value.length() <= maxChars) {
+            return value == null ? "" : value;
+        }
+        return value.substring(0, maxChars) + "...truncated";
     }
 
     private static String eventFilePath() {

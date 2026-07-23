@@ -165,6 +165,19 @@ type generatorLoadSnapshot struct {
 	Version            string
 	SupportedProtocols []string
 	CompatibleFeatures []string
+	RuntimeCapacities  []generatorrpc.ProtocolRuntimeCapacity
+}
+
+func cloneProtocolRuntimeCapacities(values []generatorrpc.ProtocolRuntimeCapacity) []generatorrpc.ProtocolRuntimeCapacity {
+	if len(values) == 0 {
+		return nil
+	}
+	out := make([]generatorrpc.ProtocolRuntimeCapacity, len(values))
+	copy(out, values)
+	for index := range out {
+		out[index].Features = append([]string(nil), values[index].Features...)
+	}
+	return out
 }
 
 type generatorTargetSpec struct {
@@ -172,6 +185,7 @@ type generatorTargetSpec struct {
 	Region    string
 	Version   string
 	Protocols []string
+	Features  []string
 	Labels    map[string]string
 }
 
@@ -827,6 +841,11 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 	preBaseline, postBaseline := testexec.ResourceBaselineWindows(test.ResourceBaseline)
 	preBaseline += testexec.StartDelayWindow(test.StartDelay)
 	activeGroupShards := make(map[string][]GeneratorShardSummary, len(peakGroupShards))
+	initialLoadByTarget := make(map[string]generatorLoadSnapshot, len(loadByTarget))
+	for target, snapshot := range loadByTarget {
+		snapshot.RuntimeCapacities = cloneProtocolRuntimeCapacities(snapshot.RuntimeCapacities)
+		initialLoadByTarget[target] = snapshot
+	}
 	projectSecretResolvers := make(map[string]engine.SecretResolver)
 	var shardNamespaceBase uint64
 	for _, group := range test.Groups {
@@ -844,7 +863,23 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			failStartup(fmt.Sprintf("prepare distributed group %q: %v", group.Name, err))
 			return
 		}
-		shards := initialGroupShardsForRun(group, peakShards, loadByTarget)
+		shards := initialGroupShardsForRun(group, peakShards, initialLoadByTarget)
+		if groupCurrentVUsers(group) > 0 && len(shards) == 0 {
+			failStartup(fmt.Sprintf("prepare distributed group %q: insufficient runtime capacity for initial VUsers", group.Name))
+			return
+		}
+		for _, shard := range shards {
+			if shard.Target == "" {
+				continue
+			}
+			snapshot := initialLoadByTarget[shard.Target]
+			if shard.VUsers > 0 {
+				snapshot.AvailableCapacity -= int32(shard.VUsers)
+				snapshot.Stats.ActiveVUsers += int32(shard.VUsers)
+			}
+			consumeGroupRuntimeCapacity(&snapshot, group, shard.VUsers)
+			initialLoadByTarget[shard.Target] = snapshot
+		}
 		if uint64(len(peakShards)) > ^uint64(0)-shardNamespaceBase {
 			failStartup(fmt.Sprintf("prepare shard coordinates for group %q: namespace index overflow", group.Name))
 			return
@@ -948,6 +983,7 @@ func (b *distributedExecutionBackend) Run(tr *TestRunner, test *ManagedTest) {
 			assignment, err := client.AssignWork(rpcCtx, generatorrpc.Assignment{
 				TestID:              test.ID,
 				ExecutionGeneration: executionGeneration,
+				ScenarioID:          test.ScenarioID,
 				GroupName:           group.Name,
 				TargetDuration:      test.Duration,
 				ScriptID:            group.ScriptID,
@@ -1366,7 +1402,8 @@ func initialGroupShardsForRun(group TestGroup, peakShards []GeneratorShardSummar
 		return cloneGeneratorShardSummaries(peakShards)
 	}
 	targets := shardTargets(peakShards)
-	return capacityWeightedShardsIncludingZero(group.Name, groupCurrentVUsers(group), targets, loadByTarget, shardStrategyForGroupShards(peakShards))
+	group.VUsers = groupCurrentVUsers(group)
+	return capacityWeightedShardsForGroupIncludingZero(group, targets, loadByTarget, shardStrategyForGroupShards(peakShards))
 }
 
 func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedTest, groupName string, targetVUsers int) error {
@@ -1383,9 +1420,11 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 	executionGeneration := test.executionGeneration
 	executionCtx := test.executionCtx
 	groupExists := false
+	var scaleGroup TestGroup
 	for _, group := range test.Groups {
 		if group.Name == groupName {
 			groupExists = true
+			scaleGroup = group
 			break
 		}
 	}
@@ -1486,7 +1525,9 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 			ctx, cancel := context.WithTimeout(executionCtx, b.timeout)
 			defer cancel()
 			snapshot := b.probeGeneratorLoad(ctx, target, client)
-			snapshot.AvailableCapacity += int32(shardVUsersForTarget(shards, target))
+			currentShardVUsers := shardVUsersForTarget(shards, target)
+			snapshot.AvailableCapacity += int32(currentShardVUsers)
+			restoreGroupRuntimeCapacity(&snapshot, scaleGroup, currentShardVUsers)
 			loadCh <- loadProbeResult{target: target, snapshot: snapshot}
 		}()
 	}
@@ -1497,7 +1538,11 @@ func (b *distributedExecutionBackend) ScaleVUsers(tr *TestRunner, test *ManagedT
 		}
 		loadByTarget[result.target] = result.snapshot
 	}
-	nextShards := capacityWeightedShardsIncludingZero(groupName, targetVUsers, targets, loadByTarget, shardStrategyForGroupShards(shards))
+	scaleGroup.VUsers = targetVUsers
+	nextShards := capacityWeightedShardsForGroupIncludingZero(scaleGroup, targets, loadByTarget, shardStrategyForGroupShards(shards))
+	if len(nextShards) == 0 {
+		return fmt.Errorf("no selected generator has sufficient java_vuser runtime capacity for %d VUsers", targetVUsers)
+	}
 	nextShards, err = preserveShardCoordinatesByTarget(nextShards, shards)
 	if err != nil {
 		return fmt.Errorf("preserve distributed shard coordinates: %w", err)

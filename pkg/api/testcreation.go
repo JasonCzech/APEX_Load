@@ -572,7 +572,7 @@ func (tr *TestRunner) buildManagedTestLocked(req CreateTestRequest, id string, s
 		if conflict := externalRunnerLaunchConflict(test.Groups); conflict != nil {
 			return nil, fmt.Errorf("%s: %s", conflict.Code, conflict.Message)
 		}
-		if conflicts := tr.javaVuserRunnerLaunchConflictsLocked(test.Groups); len(conflicts) > 0 {
+		if conflicts := tr.javaVuserRunnerLaunchConflictsForManagedTestLocked(test); len(conflicts) > 0 {
 			conflict := conflicts[0]
 			return nil, fmt.Errorf("%s: %s", conflict.Code, conflict.Message)
 		}
@@ -1611,7 +1611,6 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 	default:
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: initialization must be at_runtime or at_once", index)
 	}
-
 	effectiveRuntimeSettings := mergeRuntimeSettings(runtimeSettings, group.RuntimeSettings)
 	if group.Iterations != nil {
 		effectiveRuntimeSettings = setRuntimeSettingsIteration(effectiveRuntimeSettings, *group.Iterations)

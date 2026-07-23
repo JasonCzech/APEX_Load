@@ -2,7 +2,9 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
@@ -11,9 +13,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/protocol"
+)
+
+const (
+	debugAPITestSessionID   = "11111111-1111-4111-8111-111111111111"
+	unifiedAPITestSessionID = "22222222-2222-4222-8222-222222222222"
 )
 
 func TestScriptDebugManagerBreakpointsAndStep(t *testing.T) {
@@ -319,6 +327,47 @@ func TestNormalizeDebugBreakpointsSubRequest(t *testing.T) {
 	}
 }
 
+func TestScriptDebugSessionSnapshotDetachesCurrentActionAndTimestamps(t *testing.T) {
+	now := time.Now().UTC()
+	originalTimestamp := now
+	requestIndex, iteration := 1, 3
+	session := &ScriptDebugSession{
+		ID:          "debug-detached",
+		Status:      ScriptDebugPaused,
+		StartedAt:   &now,
+		CompletedAt: &now,
+		CurrentAction: &engine.ReplayDebugAction{
+			ActionName:    "request",
+			RequestIndex:  &requestIndex,
+			StepPath:      []string{"requests[1]"},
+			Iteration:     &iteration,
+			IterationPath: []int{3},
+		},
+	}
+
+	snapshot := session.snapshot()
+	if snapshot == nil || snapshot.CurrentAction == nil {
+		t.Fatalf("snapshot = %#v, want current action", snapshot)
+	}
+	*session.StartedAt = now.Add(time.Hour)
+	*session.CompletedAt = now.Add(2 * time.Hour)
+	*session.CurrentAction.RequestIndex = 9
+	session.CurrentAction.StepPath[0] = "updated"
+	*session.CurrentAction.Iteration = 9
+	session.CurrentAction.IterationPath[0] = 9
+
+	if snapshot.StartedAt == nil || !snapshot.StartedAt.Equal(originalTimestamp) ||
+		snapshot.CompletedAt == nil || !snapshot.CompletedAt.Equal(originalTimestamp) {
+		t.Fatalf("snapshot timestamps were not detached: started=%v completed=%v", snapshot.StartedAt, snapshot.CompletedAt)
+	}
+	if snapshot.CurrentAction.RequestIndex == nil || *snapshot.CurrentAction.RequestIndex != 1 ||
+		len(snapshot.CurrentAction.StepPath) != 1 || snapshot.CurrentAction.StepPath[0] != "requests[1]" ||
+		snapshot.CurrentAction.Iteration == nil || *snapshot.CurrentAction.Iteration != 3 ||
+		len(snapshot.CurrentAction.IterationPath) != 1 || snapshot.CurrentAction.IterationPath[0] != 3 {
+		t.Fatalf("snapshot current action was not detached: %#v", snapshot.CurrentAction)
+	}
+}
+
 func TestHasBreakpointLockedSubRequest(t *testing.T) {
 	ri0, ri1 := 0, 1
 
@@ -374,6 +423,87 @@ func TestScriptDebugManagerPrunesTerminalSessions(t *testing.T) {
 	}
 }
 
+// Pruning a retained tombstone must perform the durable lease release after
+// dropping the manager mutex (in HA mode the release is a synchronous store
+// call that would otherwise freeze every handler and progress path).
+func TestScriptDebugManagerPruneReleasesRetainedLeaseOffManagerLock(t *testing.T) {
+	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	terminalAt := now.Add(-2 * time.Hour)
+	manager := NewScriptDebugManager(nil)
+	manager.retention = replaySessionRetentionConfig{
+		terminalTTL: time.Hour,
+		idleCancel:  time.Hour,
+		maxSessions: 250,
+		now:         func() time.Time { return now },
+	}
+	released := false
+	releasedOffLock := false
+	signal := newReplaySessionLeaseSignal()
+	signal.releaseRetainedIDFn = func() {
+		released = true
+		if manager.mu.TryLock() {
+			releasedOffLock = true
+			manager.mu.Unlock()
+		}
+	}
+	manager.sessions["old"] = &ScriptDebugSession{
+		ID:             "old",
+		Status:         ScriptDebugCompleted,
+		StartedAt:      &terminalAt,
+		CompletedAt:    &terminalAt,
+		lastActivityAt: terminalAt,
+		terminalAt:     &terminalAt,
+		reservation:    signal,
+	}
+
+	if removed := manager.PruneExpired(); removed != 1 {
+		t.Fatalf("removed = %d, want 1", removed)
+	}
+	if !released {
+		t.Fatal("retained lease was not released by prune")
+	}
+	if !releasedOffLock {
+		t.Fatal("retained lease release ran while the manager mutex was held")
+	}
+}
+
+// The per-action correlation-evidence hot path must only need the manager read
+// lock so concurrent debug replays do not serialize behind a write lock.
+func TestObserveCorrelationEvidenceRunsUnderManagerReadLock(t *testing.T) {
+	manager := NewScriptDebugManager(nil)
+	session := &ScriptDebugSession{ID: "obs", ProjectID: "project-a", Status: ScriptDebugRunning}
+	manager.sessions["obs"] = session
+	controller := scriptDebugController{manager: manager, session: session}
+
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		controller.ObserveCorrelationEvidence(context.Background(),
+			engine.ReplayDebugAction{Phase: "action", ActionIndex: 0},
+			&engine.ReplayActionEvent{
+				Phase:       "action",
+				ActionIndex: 0,
+				Success:     true,
+				CorrelationEvidence: &protocol.CorrelationEvidence{
+					RequestURL:   "/raw",
+					ResponseBody: "body",
+				},
+			})
+	}()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ObserveCorrelationEvidence blocked behind a concurrent manager reader (write-lock hot path regression)")
+	}
+	session.mu.RLock()
+	defer session.mu.RUnlock()
+	if len(session.correlationObservations) != 1 || session.correlationEvidenceErr != "" {
+		t.Fatalf("observation was not retained: n=%d err=%q", len(session.correlationObservations), session.correlationEvidenceErr)
+	}
+}
+
 func TestScriptDebugManagerSessionCapEvictsOldestTerminal(t *testing.T) {
 	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
 	manager := NewScriptDebugManager(nil)
@@ -406,7 +536,82 @@ func TestScriptDebugManagerSessionCapEvictsOldestTerminal(t *testing.T) {
 	}
 }
 
-func TestScriptDebugManagerSessionCapEvictsOldestNonTerminalWhenNoTerminalExists(t *testing.T) {
+func TestScriptDebugManagerCorrelationEvidenceBudgetsClearOnlyOldestPrivateEvidence(t *testing.T) {
+	now := time.Date(2026, 7, 22, 12, 0, 0, 0, time.UTC)
+	newEvidenceSession := func(id, projectID string, retainedAt time.Time, bytes int) *ScriptDebugSession {
+		return &ScriptDebugSession{
+			ID:                            id,
+			ProjectID:                     projectID,
+			Status:                        ScriptDebugCompleted,
+			correlationObservations:       []correlate.Observation{{ID: 0, RequestURL: "/"}},
+			correlationObservationIDs:     map[int]struct{}{0: {}},
+			correlationEvidenceBytes:      bytes,
+			correlationEvidenceRetainedAt: retainedAt,
+		}
+	}
+
+	t.Run("project budget", func(t *testing.T) {
+		manager := NewScriptDebugManager(nil)
+		manager.correlationEvidenceProjectBytes = 10
+		manager.correlationEvidenceGlobalBytes = 100
+		manager.sessions["project-old"] = newEvidenceSession("project-old", "project-a", now.Add(-time.Minute), 6)
+		manager.sessions["project-new"] = newEvidenceSession("project-new", "project-a", now, 6)
+		manager.sessions["other-project"] = newEvidenceSession("other-project", "project-b", now.Add(-2*time.Minute), 8)
+
+		manager.mu.Lock()
+		manager.enforceCorrelationEvidenceBudgetsLocked()
+		manager.mu.Unlock()
+
+		oldest := manager.sessions["project-old"]
+		if oldest.correlationEvidenceBytes != 0 || len(oldest.correlationObservations) != 0 || !strings.Contains(oldest.correlationEvidenceErr, "project retention") {
+			t.Fatalf("oldest project evidence was not cleared: %#v", oldest)
+		}
+		if manager.sessions["project-new"].correlationEvidenceBytes != 6 || manager.sessions["other-project"].correlationEvidenceBytes != 8 {
+			t.Fatal("project budget cleared newer or differently-owned evidence")
+		}
+		if len(manager.sessions) != 3 {
+			t.Fatalf("public session count = %d, want 3", len(manager.sessions))
+		}
+	})
+
+	t.Run("global budget", func(t *testing.T) {
+		manager := NewScriptDebugManager(nil)
+		manager.correlationEvidenceProjectBytes = 100
+		manager.correlationEvidenceGlobalBytes = 10
+		manager.sessions["global-old"] = newEvidenceSession("global-old", "project-a", now.Add(-time.Minute), 6)
+		manager.sessions["global-new"] = newEvidenceSession("global-new", "project-b", now, 6)
+
+		manager.mu.Lock()
+		manager.enforceCorrelationEvidenceBudgetsLocked()
+		manager.mu.Unlock()
+
+		oldest := manager.sessions["global-old"]
+		if oldest.correlationEvidenceBytes != 0 || !strings.Contains(oldest.correlationEvidenceErr, "global retention") {
+			t.Fatalf("oldest global evidence was not cleared: %#v", oldest)
+		}
+		if manager.sessions["global-new"].correlationEvidenceBytes != 6 || len(manager.sessions) != 2 {
+			t.Fatal("global budget removed the public session or cleared newer evidence")
+		}
+	})
+}
+
+func TestCorrelationObservationHeaderProofIsUnambiguousAndDetached(t *testing.T) {
+	proof := editableRequestHeaderProof(
+		map[string]string{"X-Token": "wire"},
+		map[string]string{"X-Token": "wire", "x-token": "wire"},
+	)
+	if proof["X-Token"] {
+		t.Fatal("ambiguous case-insensitive authored headers were marked editable")
+	}
+	original := correlate.Observation{EditableRequestHeaders: map[string]bool{"X-Token": true}}
+	cloned := cloneCorrelationObservation(original)
+	cloned.EditableRequestHeaders["X-Token"] = false
+	if !original.EditableRequestHeaders["X-Token"] {
+		t.Fatal("cloned editable-header proof aliased the private observation")
+	}
+}
+
+func TestScriptDebugManagerSessionCapPreservesNonTerminalSessionsWhenOverCap(t *testing.T) {
 	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
 	cancelled := make(chan string, 1)
 	manager := NewScriptDebugManager(nil)
@@ -428,19 +633,21 @@ func TestScriptDebugManagerSessionCapEvictsOldestNonTerminalWhenNoTerminalExists
 		}
 	}
 
-	if removed := manager.PruneExpired(); removed != 1 {
-		t.Fatalf("removed = %d, want 1", removed)
+	if removed := manager.PruneExpired(); removed != 0 {
+		t.Fatalf("removed = %d, want 0", removed)
 	}
-	if _, ok := manager.sessions["oldest"]; ok {
-		t.Fatal("expected oldest non-terminal session to be evicted")
+	if len(manager.sessions) != 3 {
+		t.Fatalf("session count = %d, want 3", len(manager.sessions))
+	}
+	for _, id := range []string{"oldest", "middle", "newest"} {
+		if _, ok := manager.sessions[id]; !ok {
+			t.Fatalf("active session %q was evicted", id)
+		}
 	}
 	select {
 	case id := <-cancelled:
-		if id != "oldest" {
-			t.Fatalf("cancelled session = %q, want oldest", id)
-		}
+		t.Fatalf("active session %q was cancelled to enforce the cap", id)
 	default:
-		t.Fatal("expected oldest non-terminal session cancel function to be called")
 	}
 }
 
@@ -554,7 +761,8 @@ func TestScriptDebugManagerDoesNotCancelRecentlyActivePausedSession(t *testing.T
 	}
 }
 
-func TestScriptDebugManagerStartReusedIDCancelsPriorSession(t *testing.T) {
+func TestScriptDebugManagerStartReusedIDRejectsCollision(t *testing.T) {
+	const sessionID = "44444444-4444-4444-8444-444444444444"
 	now := time.Date(2026, 6, 27, 12, 0, 0, 0, time.UTC)
 	cancelled := make(chan struct{})
 	manager := NewScriptDebugManager(nil)
@@ -564,34 +772,35 @@ func TestScriptDebugManagerStartReusedIDCancelsPriorSession(t *testing.T) {
 		maxSessions: 250,
 		now:         func() time.Time { return now },
 	}
-	manager.sessions["reuse"] = &ScriptDebugSession{
-		ID:             "reuse",
+	manager.sessions[sessionID] = &ScriptDebugSession{
+		ID:             sessionID,
+		ProjectID:      "project-a",
 		Status:         ScriptDebugRunning,
 		StartedAt:      &now,
 		lastActivityAt: now,
 		cancel:         func() { close(cancelled) },
 	}
 
-	started := manager.Start("", &dsl.Script{Name: "Replacement", Version: "1.0.0", Protocol: "http"}, ScriptDebugStartRequest{
-		ReplaySessionID: "reuse",
+	started, err := manager.StartChecked("", &dsl.Script{Name: "Replacement", Version: "1.0.0", Protocol: "http"}, ScriptDebugStartRequest{
+		ReplaySessionID: sessionID,
 		StartPaused:     true,
 	})
-	if started.ID != "reuse" {
-		t.Fatalf("started id = %q, want reuse", started.ID)
+	if !errors.Is(err, errScriptDebugSessionIDConflict) || started != nil {
+		t.Fatalf("Start collision = session %#v, error %v", started, err)
 	}
 	select {
 	case <-cancelled:
+		t.Fatal("existing session was cancelled by colliding start")
 	default:
-		t.Fatal("expected prior session cancel function to be called")
 	}
-	session, ok := manager.Get("reuse")
+	session, ok := manager.Get(sessionID)
 	if !ok {
-		t.Fatal("replacement session not found")
+		t.Fatal("existing session not found")
 	}
-	if session.Group != "Replacement-debug" {
-		t.Fatalf("replacement group = %q, want Replacement-debug", session.Group)
+	if session.Status != ScriptDebugRunning {
+		t.Fatalf("existing status = %q, want running", session.Status)
 	}
-	_, _ = manager.Stop("reuse")
+	_, _ = manager.Stop(sessionID)
 }
 
 func TestHandleStartScriptDebugDraftScriptReturnsSession(t *testing.T) {
@@ -602,7 +811,7 @@ func TestHandleStartScriptDebugDraftScriptReturnsSession(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{
 		"group_name":        "debug-editor",
 		"project_id":        "project-debug-draft",
-		"replay_session_id": "debug-api",
+		"replay_session_id": debugAPITestSessionID,
 		"start_paused":      true,
 		"log_level":         "trace",
 		"breakpoints": []map[string]any{{
@@ -641,8 +850,8 @@ func TestHandleStartScriptDebugDraftScriptReturnsSession(t *testing.T) {
 	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
 	}
-	if payload.DebugSessionID != "debug-api" || payload.Session.Status != ScriptDebugPaused || payload.Session.LogLevel != "trace" {
-		t.Fatalf("payload id/status/log_level = %q/%q/%q, want debug-api/%q/trace", payload.DebugSessionID, payload.Session.Status, payload.Session.LogLevel, ScriptDebugPaused)
+	if payload.DebugSessionID != debugAPITestSessionID || payload.Session.Status != ScriptDebugPaused || payload.Session.LogLevel != "trace" {
+		t.Fatalf("payload id/status/log_level = %q/%q/%q, want %s/%q/trace", payload.DebugSessionID, payload.Session.Status, payload.Session.LogLevel, debugAPITestSessionID, ScriptDebugPaused)
 	}
 	if payload.Session.ProjectID != "project-debug-draft" {
 		t.Fatalf("project_id = %q, want project-debug-draft", payload.Session.ProjectID)
@@ -651,7 +860,7 @@ func TestHandleStartScriptDebugDraftScriptReturnsSession(t *testing.T) {
 		t.Fatalf("preflight/runtime = %#v/%#v, want preflight and trace runtime profile", payload.Preflight, payload.Session.RuntimeProfile)
 	}
 
-	exportReq := httptest.NewRequest(http.MethodGet, "/api/v1/script-debug/sessions/debug-api/export?format=log", nil)
+	exportReq := httptest.NewRequest(http.MethodGet, "/api/v1/script-debug/sessions/"+debugAPITestSessionID+"/export?format=log", nil)
 	exportResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(exportResp, exportReq)
 	if exportResp.Code != http.StatusOK {
@@ -661,12 +870,183 @@ func TestHandleStartScriptDebugDraftScriptReturnsSession(t *testing.T) {
 		t.Fatalf("export body = %q, want debugger log", exportResp.Body.String())
 	}
 
-	stopReq := httptest.NewRequest(http.MethodPost, "/api/v1/script-debug/sessions/debug-api/stop", nil)
+	stopReq := httptest.NewRequest(http.MethodPost, "/api/v1/script-debug/sessions/"+debugAPITestSessionID+"/stop", nil)
 	stopResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(stopResp, stopReq)
 	if stopResp.Code != http.StatusOK {
 		t.Fatalf("stop status = %d, want %d body=%s", stopResp.Code, http.StatusOK, stopResp.Body.String())
 	}
+}
+
+func TestSavedScriptDebugStartsResolveRefKeyToCanonicalID(t *testing.T) {
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: http.StatusOK}, nil
+	})
+	server := recordingTestServer(t)
+	stored := server.runner.StoreScript(&dsl.Script{
+		Name:      "Canonical debug identity",
+		Version:   "1.0.0",
+		Protocol:  protocolName,
+		ProjectID: "p1",
+		Config:    dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions:   []dsl.Action{{Name: "load", Type: http.MethodGet, Method: http.MethodGet, Target: "/"}},
+	})
+	if stored == nil || stored.RefKey == "" {
+		t.Fatalf("stored script has no reference key: %#v", stored)
+	}
+
+	tests := []struct {
+		name      string
+		sessionID string
+		handle    func(http.ResponseWriter, *http.Request)
+	}{
+		{name: "debug", sessionID: "33333333-3333-4333-8333-333333333333", handle: server.handleStartScriptDebugScript},
+		{name: "replay", sessionID: "44444444-4444-4444-8444-444444444444", handle: server.handleStartReplaySessionScript},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body, err := json.Marshal(map[string]any{"replay_session_id": test.sessionID, "start_paused": true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.RefKey+"/sessions", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			req.SetPathValue("id", stored.RefKey)
+			resp := httptest.NewRecorder()
+			test.handle(resp, req)
+			if resp.Code != http.StatusOK {
+				t.Fatalf("status = %d body=%s", resp.Code, resp.Body.String())
+			}
+			var payload struct {
+				ScriptID string             `json:"script_id"`
+				Session  ScriptDebugSession `json:"session"`
+			}
+			if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if payload.ScriptID != stored.ID || payload.Session.ScriptID != stored.ID {
+				t.Fatalf("script identities = response:%q session:%q, want canonical %q", payload.ScriptID, payload.Session.ScriptID, stored.ID)
+			}
+			_, _ = server.scriptDebug.Stop(test.sessionID)
+		})
+	}
+}
+
+func TestHandleStartScriptDebugRejectsInvalidAndCrossProjectCollidingSessionIDs(t *testing.T) {
+	t.Run("invalid id", func(t *testing.T) {
+		server := NewServer(ServerConfig{})
+		body, _ := json.Marshal(map[string]any{
+			"replay_session_id": "predictable-debug-id",
+			"project_id":        "project-b",
+			"script":            map[string]any{"name": "Draft", "protocol": "http"},
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/debug/sessions", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusBadRequest || !strings.Contains(resp.Body.String(), "canonical UUID v4") {
+			t.Fatalf("status = %d body=%s, want invalid session-id rejection", resp.Code, resp.Body.String())
+		}
+	})
+
+	t.Run("cross project collision", func(t *testing.T) {
+		const sessionID = "55555555-5555-4555-8555-555555555555"
+		server := NewServer(ServerConfig{})
+		now := time.Now().UTC()
+		cancelled := make(chan struct{})
+		server.scriptDebug.mu.Lock()
+		server.scriptDebug.sessions[sessionID] = &ScriptDebugSession{
+			ID: sessionID, ProjectID: "project-a", Status: ScriptDebugRunning, StartedAt: &now,
+			lastActivityAt: now, cancel: func() { close(cancelled) },
+		}
+		server.scriptDebug.mu.Unlock()
+		body, _ := json.Marshal(map[string]any{
+			"replay_session_id": sessionID,
+			"project_id":        "project-b",
+			"start_paused":      true,
+			"script": map[string]any{
+				"name": "Draft", "version": "1.0.0", "protocol": "http",
+				"config":  map[string]any{"base_url": "https://example.test"},
+				"actions": []map[string]any{{"name": "load", "type": "GET", "method": "GET", "target": "/"}},
+			},
+		})
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/debug/sessions", bytes.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		resp := httptest.NewRecorder()
+		server.mux.ServeHTTP(resp, req)
+		if resp.Code != http.StatusConflict {
+			t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusConflict, resp.Body.String())
+		}
+		select {
+		case <-cancelled:
+			t.Fatal("cross-project colliding start cancelled the established session")
+		default:
+		}
+		existing, ok := server.scriptDebug.Get(sessionID)
+		if !ok || existing.ProjectID != "project-a" || existing.Status != ScriptDebugRunning {
+			t.Fatalf("existing session = %#v, want untouched project-a session", existing)
+		}
+		_, _ = server.scriptDebug.Stop(sessionID)
+	})
+
+	t.Run("cross project capacity", func(t *testing.T) {
+		const (
+			establishedSessionID = "99999999-9999-4999-8999-999999999999"
+			newSessionID         = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+		)
+		server := NewServer(ServerConfig{})
+		now := time.Now().UTC()
+		cancelled := make(chan struct{})
+		server.scriptDebug.mu.Lock()
+		server.scriptDebug.retention.maxSessions = 1
+		server.scriptDebug.sessions[establishedSessionID] = &ScriptDebugSession{
+			ID: establishedSessionID, ProjectID: "project-a", Status: ScriptDebugRunning, StartedAt: &now,
+			lastActivityAt: now, cancel: func() { close(cancelled) }, stateChanged: make(chan struct{}),
+		}
+		server.scriptDebug.mu.Unlock()
+
+		body, _ := json.Marshal(map[string]any{
+			"replay_session_id": newSessionID,
+			"project_id":        "project-b",
+			"start_paused":      true,
+			"script": map[string]any{
+				"name": "Draft", "version": "1.0.0", "protocol": "http",
+				"config":  map[string]any{"base_url": "https://example.test"},
+				"actions": []map[string]any{{"name": "load", "type": "GET", "method": "GET", "target": "/"}},
+			},
+		})
+		start := func() *httptest.ResponseRecorder {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/debug/sessions", bytes.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			resp := httptest.NewRecorder()
+			server.mux.ServeHTTP(resp, req)
+			return resp
+		}
+
+		resp := start()
+		if resp.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status = %d body=%s, want script debug capacity rejection", resp.Code, resp.Body.String())
+		}
+		select {
+		case <-cancelled:
+			t.Fatal("cross-project capacity rejection cancelled the established session")
+		default:
+		}
+		existing, ok := server.scriptDebug.Get(establishedSessionID)
+		if !ok || existing.ProjectID != "project-a" || existing.Status != ScriptDebugRunning {
+			t.Fatalf("existing session = %#v, want untouched project-a session", existing)
+		}
+		if _, ok := server.scriptDebug.Get(newSessionID); ok {
+			t.Fatal("capacity-rejected script debug session was retained")
+		}
+
+		_, _ = server.scriptDebug.Stop(establishedSessionID)
+		resp = start()
+		if resp.Code != http.StatusOK {
+			t.Fatalf("retry status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+		}
+		_, _ = server.scriptDebug.Stop(newSessionID)
+	})
 }
 
 func TestHandleStartScriptDebugDraftScriptRejectsProjectMismatch(t *testing.T) {
@@ -701,7 +1081,7 @@ func TestHandleStartReplaySessionDraftScriptReturnsUnifiedPreflight(t *testing.T
 	})
 	server := NewServer(ServerConfig{})
 	body, _ := json.Marshal(map[string]any{
-		"replay_session_id": "unified-replay-api",
+		"replay_session_id": unifiedAPITestSessionID,
 		"start_paused":      true,
 		"log_level":         "debug",
 		"script": map[string]any{
@@ -736,21 +1116,21 @@ func TestHandleStartReplaySessionDraftScriptReturnsUnifiedPreflight(t *testing.T
 	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("json.Unmarshal returned error: %v", err)
 	}
-	if payload.ReplaySessionID != "unified-replay-api" || payload.Session.Mode != "replay" || payload.Session.Preflight == nil {
-		t.Fatalf("payload id/mode/preflight_nil = %q/%q/%t, want unified-replay-api/replay/false", payload.ReplaySessionID, payload.Session.Mode, payload.Session.Preflight == nil)
+	if payload.ReplaySessionID != unifiedAPITestSessionID || payload.Session.Mode != "replay" || payload.Session.Preflight == nil {
+		t.Fatalf("payload id/mode/preflight_nil = %q/%q/%t, want %s/replay/false", payload.ReplaySessionID, payload.Session.Mode, payload.Session.Preflight == nil, unifiedAPITestSessionID)
 	}
 	if !slices.Contains(payload.Preflight.MissingVariables, "account_id") || payload.Preflight.ActionCount != 1 {
 		t.Fatalf("preflight = %#v, want missing account_id and one action", payload.Preflight)
 	}
 
-	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/replay/sessions/unified-replay-api", nil)
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/replay/sessions/"+unifiedAPITestSessionID, nil)
 	getResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(getResp, getReq)
 	if getResp.Code != http.StatusOK {
 		t.Fatalf("unified get status = %d, want %d body=%s", getResp.Code, http.StatusOK, getResp.Body.String())
 	}
 
-	stopReq := httptest.NewRequest(http.MethodPost, "/api/v1/replay/sessions/unified-replay-api/stop", nil)
+	stopReq := httptest.NewRequest(http.MethodPost, "/api/v1/replay/sessions/"+unifiedAPITestSessionID+"/stop", nil)
 	stopResp := httptest.NewRecorder()
 	server.mux.ServeHTTP(stopResp, stopReq)
 	if stopResp.Code != http.StatusOK {

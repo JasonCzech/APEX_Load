@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { ApiError, request } from '../hooks/apiClient'
 import { useWebSocket } from '../hooks/useWebSocket'
-import { type BrowserRecorderBridgeConnection } from '../hooks/api/browserRecorderBridge'
+import { bridgeRequest, type BrowserRecorderBridgeConnection } from '../hooks/api/browserRecorderBridge'
 import {
   type WSMessage,
   type BrowserReplayEvent,
   type BrowserReplayReport,
+  type BrowserReplaySession,
+  type BrowserReplaySessionResponse,
   type ReplayRepairSuggestion,
 } from '../types'
 import RepairSuggestionList from './RepairSuggestionList'
@@ -21,6 +24,8 @@ export interface BrowserReplayProgressProps {
 
 type Phase = 'running' | 'completed' | 'failed' | 'stopped'
 type TerminalPhase = Exclude<Phase, 'running'>
+const REPLAY_STATUS_POLL_MS = 1500
+const REPLAY_NOT_FOUND_RETRY_LIMIT = 4
 
 // BrowserReplayProgress is a compact, read-only verification view: it replays
 // the just-recorded script and shows per-step pass/fail with selector self-heal
@@ -34,9 +39,15 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
   const [rejected, setRejected] = useState<Record<string, boolean>>({})
   const [applying, setApplying] = useState<Record<string, boolean>>({})
   const [inactive, setInactive] = useState(false)
+  const [unavailable, setUnavailable] = useState(false)
   const timeoutRef = useRef<number | null>(null)
   const eventsRef = useRef<BrowserReplayEvent[]>([])
   const completedRef = useRef(false)
+  const replayScopeGenerationRef = useRef(0)
+  const applyingSuggestionIdsRef = useRef<Set<string>>(new Set())
+  const bridgeScopeKey = bridge
+    ? `${bridge.origin}\u0000${bridge.session_id}\u0000${bridge.token}`
+    : 'controller'
 
   const clearInactivityTimer = useCallback(() => {
     if (timeoutRef.current !== null) {
@@ -53,17 +64,35 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
   }, [clearInactivityTimer])
 
   useEffect(() => {
+    replayScopeGenerationRef.current += 1
+    applyingSuggestionIdsRef.current = new Set()
     setEvents([])
     setPhase('running')
     setReport(null)
     setRejected({})
     setApplying({})
     setInactive(false)
+    setUnavailable(false)
     eventsRef.current = []
     completedRef.current = false
     armInactivityTimer()
     return clearInactivityTimer
-  }, [armInactivityTimer, clearInactivityTimer, replaySessionId])
+  }, [armInactivityTimer, bridgeScopeKey, clearInactivityTimer, projectId, replaySessionId])
+
+  const adoptSessionEvents = useCallback((incoming: BrowserReplayEvent[] | undefined, authoritative = false) => {
+    if (!incoming) return eventsRef.current.filter(Boolean)
+    const next = authoritative ? [] as BrowserReplayEvent[] : eventsRef.current.slice()
+    incoming.forEach((event, position) => {
+      if (!isBrowserReplayEvent(event)) return
+      const index = Number.isInteger(event.event_index) && (event.event_index ?? -1) >= 0
+        ? event.event_index!
+        : position
+      next[index] = event
+    })
+    eventsRef.current = next
+    setEvents(next)
+    return next.filter(Boolean)
+  }, [])
 
   const complete = useCallback((nextPhase: TerminalPhase, nextReport: BrowserReplayReport | null) => {
     if (completedRef.current) return
@@ -74,6 +103,24 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
     if (nextReport) setReport(nextReport)
     onComplete?.(nextReport, eventsRef.current.filter(Boolean))
   }, [clearInactivityTimer, onComplete])
+
+  const reportFromSession = useCallback((session: BrowserReplaySession, nextPhase: TerminalPhase): BrowserReplayReport | null => {
+    if (isBrowserReplayReport(session.report)) return session.report
+    const currentEvents = eventsRef.current.filter(Boolean)
+    if (currentEvents.length === 0 && nextPhase === 'stopped') return null
+    const first = currentEvents[0]
+    const last = currentEvents[currentEvents.length - 1]
+    return {
+      replay_session_id: session.id || replaySessionId,
+      group: session.group || 'Replay verification',
+      protocol: session.protocol || 'browser',
+      started_at: session.started_at || first?.started_at || '',
+      completed_at: session.completed_at || last?.completed_at || new Date().toISOString(),
+      success: nextPhase === 'completed' && currentEvents.every(event => event.success),
+      error: session.error,
+      events: currentEvents,
+    }
+  }, [replaySessionId])
 
   const reportFromMessage = useCallback((msg: WSMessage, nextPhase: TerminalPhase): BrowserReplayReport | null => {
     if (isBrowserReplayReport(msg.report)) return msg.report
@@ -113,17 +160,90 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
         eventsRef.current = next
         setEvents(next)
       } else if (msg.type === 'browser_replay_completed') {
-        complete('completed', reportFromMessage(msg, 'completed'))
+        const finalReport = reportFromMessage(msg, 'completed')
+        adoptSessionEvents(finalReport?.events, true)
+        complete('completed', finalReport)
       } else if (msg.type === 'browser_replay_failed') {
-        complete('failed', reportFromMessage(msg, 'failed'))
+        const finalReport = reportFromMessage(msg, 'failed')
+        adoptSessionEvents(finalReport?.events, true)
+        complete('failed', finalReport)
       } else if (msg.type === 'browser_replay_stopped') {
-        complete('stopped', reportFromMessage(msg, 'stopped'))
+        const finalReport = reportFromMessage(msg, 'stopped')
+        adoptSessionEvents(finalReport?.events, true)
+        complete('stopped', finalReport)
       }
     },
-    [armInactivityTimer, complete, replaySessionId, reportFromMessage],
+    [adoptSessionEvents, armInactivityTimer, complete, replaySessionId, reportFromMessage],
   )
 
   useWebSocket({ projectId, onMessage: handleMessage, bridge })
+
+  const adoptSession = useCallback((session: BrowserReplaySession) => {
+    if (completedRef.current || session.id !== replaySessionId) return
+    const finalReport = isBrowserReplayReport(session.report) ? session.report : null
+    const nextPhase: TerminalPhase | null = session.status === 'completed'
+      ? 'completed'
+      : session.status === 'failed'
+        ? 'failed'
+        : session.status === 'stopped'
+          ? 'stopped'
+          : null
+    // Stop/failure is first recorded as a cancellation request; the worker
+    // publishes completed_at (and, when available, the final report) only
+    // after it has actually exited. Keep polling an early terminal-looking
+    // snapshot so it cannot suppress the authoritative final WebSocket event.
+    const finalized = Boolean(session.completed_at) || finalReport !== null
+    adoptSessionEvents(finalReport?.events ?? session.events, Boolean(nextPhase && finalized))
+    if (nextPhase && finalized) complete(nextPhase, finalReport || reportFromSession(session, nextPhase))
+  }, [adoptSessionEvents, complete, replaySessionId, reportFromSession])
+
+  // The replay can finish before this component's debounced WebSocket opens.
+  // Reconcile immediately and then poll while live so a missed terminal event
+  // cannot leave recorder/import workflows permanently blocked.
+  useEffect(() => {
+    if (completedRef.current) return
+    let cancelled = false
+    let pollTimer: number | null = null
+    let notFoundCount = 0
+    const abortController = new AbortController()
+    const path = `/browser-replay/sessions/${encodeURIComponent(replaySessionId)}`
+
+    const poll = async () => {
+      try {
+        const response = bridge
+          ? await bridgeRequest<BrowserReplaySessionResponse>(bridge, path, { signal: abortController.signal })
+          : await request<BrowserReplaySessionResponse>(path, { signal: abortController.signal })
+        notFoundCount = 0
+        if (!cancelled && !completedRef.current && response?.session) adoptSession(response.session)
+      } catch (cause: unknown) {
+        if (
+          !cancelled
+          && !completedRef.current
+          && cause instanceof ApiError
+          && cause.status === 404
+        ) {
+          notFoundCount += 1
+          if (notFoundCount > REPLAY_NOT_FOUND_RETRY_LIMIT) {
+            setUnavailable(true)
+            complete('failed', null)
+            return
+          }
+        }
+        // WebSocket delivery remains the fast path; transient status failures
+        // are retried while the replay is still live.
+      }
+      if (!cancelled && !completedRef.current) {
+        pollTimer = window.setTimeout(poll, REPLAY_STATUS_POLL_MS)
+      }
+    }
+
+    void poll()
+    return () => {
+      cancelled = true
+      abortController.abort()
+      if (pollTimer !== null) window.clearTimeout(pollTimer)
+    }
+  }, [adoptSession, bridge, complete, replaySessionId])
 
   const real = events.filter(Boolean)
   const passed = real.filter(e => e.success).length
@@ -132,11 +252,21 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
 
   const applySuggestion = async (suggestion: ReplayRepairSuggestion) => {
     if (!onApplySuggestion) return
+    const inFlightSuggestionIds = applyingSuggestionIdsRef.current
+    if (inFlightSuggestionIds.has(suggestion.id)) return
+    const replayScopeGeneration = replayScopeGenerationRef.current
+    // React does not commit the disabled state until after this event turn.
+    // Fence the callback synchronously so rapid clicks (including duplicate
+    // report/event renderings of the same suggestion) cannot apply twice.
+    inFlightSuggestionIds.add(suggestion.id)
     setApplying(prev => ({ ...prev, [suggestion.id]: true }))
     try {
       await onApplySuggestion(suggestion)
     } finally {
-      setApplying(prev => ({ ...prev, [suggestion.id]: false }))
+      inFlightSuggestionIds.delete(suggestion.id)
+      if (replayScopeGenerationRef.current === replayScopeGeneration) {
+        setApplying(prev => ({ ...prev, [suggestion.id]: false }))
+      }
     }
   }
 
@@ -155,6 +285,9 @@ export default function BrowserReplayProgress({ replaySessionId, projectId, onDi
       )}
       {inactive && phase === 'running' && (
         <div className="brp-replay-empty" role="status">Still waiting for replay events…</div>
+      )}
+      {unavailable && (
+        <div className="brp-replay-empty" role="alert">Replay session could not be confirmed. Start verification again.</div>
       )}
 
       <div className="brp-replay-events">

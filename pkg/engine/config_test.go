@@ -736,24 +736,31 @@ func TestBuildProtoConfig_JavaHTTPSidecarHelperMode(t *testing.T) {
 }
 
 func TestBuildProtoConfig_JavaVuser(t *testing.T) {
+	useXBoot := false
+	dedicatedLoader := true
 	script := &dsl.Script{
 		Config: dsl.ScriptConfig{
 			JavaVuser: dsl.JavaVuserConfig{
-				Enabled:          true,
-				RunnerCommand:    "/opt/apexload/bin/java-vuser-runner",
-				HarnessJar:       "/opt/apexload/java/apexload-java-vuser-runner.jar",
-				Classpath:        []string{"/scripts", "/deps/app.jar"},
-				WorkDir:          "/work/script",
-				MaxProcesses:     25,
-				StartupTimeoutMs: 3000,
-				ActionTimeoutMs:  45000,
+				Enabled:                true,
+				RunnerCommand:          "/opt/apexload/bin/java-vuser-runner",
+				HarnessJar:             "/opt/apexload/java/apexload-java-vuser-runner.jar",
+				Classpath:              []string{"/scripts", "/deps/app.jar"},
+				WorkDir:                "/work/script",
+				MaxProcesses:           25,
+				StartupTimeoutMs:       3000,
+				ActionTimeoutMs:        45000,
+				JDKSelection:           "specified",
+				JDKHome:                "/opt/jdks/temurin-21",
+				AdditionalVMParameters: []string{"-Xmx512m", "-Dapp.label=hello world"},
+				UseXBootClasspath:      &useXBoot,
+				DedicatedClassLoader:   &dedicatedLoader,
 			},
 		},
 	}
 
 	cfg := buildProtoConfig(script)
 
-	// Enablement and the runner command/classpath/working-directory are
+	// Enablement and the runner command/harness/working-directory are
 	// operator-owned (resolved from APEXLOAD_JAVA_VUSER_* by the protocol).
 	// They must NOT be flattened from the uploaded script, otherwise a script
 	// author could enable and steer local process execution on the generator.
@@ -761,7 +768,6 @@ func TestBuildProtoConfig_JavaVuser(t *testing.T) {
 		"java_vuser_enabled",
 		"java_vuser_runner_command",
 		"java_vuser_harness_jar",
-		"java_vuser_classpath",
 		"java_vuser_work_dir",
 		"java_vuser_max_processes",
 	} {
@@ -769,12 +775,52 @@ func TestBuildProtoConfig_JavaVuser(t *testing.T) {
 			t.Errorf("%s was flattened from script config (%v); it must be operator-owned and omitted", key, cfg[key])
 		}
 	}
+	if cfg["java_vuser_jdk_selection"] != "specified" || cfg["java_vuser_jdk_home"] != "/opt/jdks/temurin-21" {
+		t.Fatalf("java_vuser JDK config = %#v", cfg)
+	}
+	if got, ok := cfg["java_vuser_additional_vm_parameters"].([]string); !ok || len(got) != 2 || got[1] != "-Dapp.label=hello world" {
+		t.Fatalf("java_vuser_additional_vm_parameters = %#v, want exact argv tokens", cfg["java_vuser_additional_vm_parameters"])
+	}
+	if got, ok := cfg["java_vuser_classpath"].([]string); !ok || len(got) != 2 || got[0] != "/scripts" {
+		t.Fatalf("java_vuser_classpath = %#v, want script classpath", cfg["java_vuser_classpath"])
+	}
+	if cfg["java_vuser_use_xbootclasspath"] != false {
+		t.Errorf("java_vuser_use_xbootclasspath = %#v, want explicit false", cfg["java_vuser_use_xbootclasspath"])
+	}
+	if cfg["java_vuser_dedicated_class_loader"] != true {
+		t.Errorf("java_vuser_dedicated_class_loader = %#v, want true", cfg["java_vuser_dedicated_class_loader"])
+	}
 	// Non-privileged per-action timeouts remain script-controlled.
 	if cfg["java_vuser_action_timeout_ms"] != float64(45000) {
 		t.Errorf("java_vuser_action_timeout_ms = %v, want 45000", cfg["java_vuser_action_timeout_ms"])
 	}
 	if cfg["java_vuser_startup_timeout_ms"] != float64(3000) {
 		t.Errorf("java_vuser_startup_timeout_ms = %v, want 3000", cfg["java_vuser_startup_timeout_ms"])
+	}
+}
+
+func TestBuildProtoConfigJavaVuserNeverResolvesSecretsIntoVMArguments(t *testing.T) {
+	const reference = "-Dservice.password={{secret.java_service_password}}"
+	resolutionCalls := 0
+	resolver := SecretResolverFunc(func(name string) (string, bool) {
+		resolutionCalls++
+		if name != "java_service_password" {
+			t.Fatalf("unexpected secret name %q", name)
+		}
+		return "must-not-appear-in-process-argv", true
+	})
+	script := &dsl.Script{Config: dsl.ScriptConfig{JavaVuser: dsl.JavaVuserConfig{
+		AdditionalVMParameters: []string{reference},
+	}}}
+
+	cfg := buildProtoConfigWithSecretResolver(script, resolver)
+
+	if resolutionCalls != 0 {
+		t.Fatalf("Java VM argument secret resolver calls = %d, want 0", resolutionCalls)
+	}
+	got, ok := cfg["java_vuser_additional_vm_parameters"].([]string)
+	if !ok || len(got) != 1 || got[0] != reference {
+		t.Fatalf("Java VM arguments = %#v, want unresolved reference", cfg["java_vuser_additional_vm_parameters"])
 	}
 }
 
@@ -1192,5 +1238,21 @@ func TestBuildProtoConfig_GRPC(t *testing.T) {
 	}
 	if cfg["grpc_authority"] != "orders.example.test" {
 		t.Errorf("grpc_authority = %v, want orders.example.test", cfg["grpc_authority"])
+	}
+}
+
+func TestBuildGroupProtoConfigUsesManagedScenarioIdentity(t *testing.T) {
+	script := &dsl.Script{ID: "script-artifact", Name: "combined-java", Protocol: "java_vuser"}
+	cfg := buildGroupProtoConfig(GroupConfig{
+		Script:     script,
+		ScenarioID: "scenario-run",
+	}, "load")
+	if got := cfg["scenario_id"]; got != "scenario-run" {
+		t.Fatalf("managed scenario_id = %#v, want scenario-run", got)
+	}
+
+	fallback := buildGroupProtoConfig(GroupConfig{Script: script}, "load")
+	if got := fallback["scenario_id"]; got != "script-artifact" {
+		t.Fatalf("direct-run scenario_id = %#v, want script artifact fallback", got)
 	}
 }

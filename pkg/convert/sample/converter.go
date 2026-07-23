@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -51,6 +52,12 @@ type Correlation struct {
 	SampleValue string `json:"sample_value"`
 	FoundInStep int    `json:"found_in_step"`
 	UsedInSteps []int  `json:"used_in_steps"`
+	// PreApplied is true only when conversion attached an executable extractor
+	// and rewrote at least one supported consumer. Correlations whose only reuse
+	// has an encoding the DSL cannot reproduce remain review candidates instead
+	// of being mislabeled as already applied.
+	PreApplied   bool   `json:"pre_applied,omitempty"`
+	ReviewAction string `json:"review_action,omitempty"`
 }
 
 type ConvertResult struct {
@@ -80,9 +87,10 @@ type exchange struct {
 }
 
 type response struct {
-	Status  int
-	Headers map[string]string
-	Body    string
+	Status     int
+	Headers    map[string]string
+	HeaderList dsl.HeaderList
+	Body       string
 }
 
 // Sensitive header detection is shared with the paramize package so every
@@ -144,17 +152,20 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	correlations := []Correlation{}
 	correlationVars := map[string]string{}
-	encodedCorrelationValues := map[string]bool{}
+	correlationVarSources := map[string]int{}
+	extraCorrelationExtractors := map[int][]dsl.Extractor{}
 	if inferExtractors {
-		correlations = detectCorrelations(exchanges)
-		for _, corr := range correlations {
-			value := corr.Value
-			if value == "" {
-				value = corr.SampleValue
+		correlations, err = detectCorrelationsChecked(exchanges)
+		if err != nil {
+			if !errors.Is(err, correlate.ErrCorrelationWorkLimit) {
+				return nil, fmt.Errorf("detect correlations: %w", err)
 			}
-			correlationVars[value] = "{{var." + corr.Name + "}}"
+			// A deterministic work limit must not fail the import: the script still
+			// converts, just without automatic correlation rewrites.
+			correlations = nil
+			warnings = append(warnings, fmt.Sprintf("correlation analysis was not completed and no automatic correlation rewrites were applied: %v", err))
 		}
-		encodedCorrelationValues = detectEncodedCorrelationValues(exchanges, correlations)
+		correlationVars, correlationVarSources, extraCorrelationExtractors = prepareCorrelationApplication(exchanges, correlations)
 		if len(correlations) == 0 {
 			warnings = append(warnings, "no reusable correlation values were detected across the provided samples")
 		}
@@ -211,6 +222,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	sourceMappings := make([]sourceview.Mapping, 0, len(exchanges))
 
 	for idx, ex := range exchanges {
+		stepVars := correlationVarsAvailableAtStep(correlationVars, correlationVarSources, idx+1)
 		mergeFileAssets(result.Script, ex.FileAssets)
 		target := relativeTarget(ex.URL, baseURL)
 		headers := cloneHeaders(ex.Headers)
@@ -221,14 +233,14 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 		body := ex.Body
 		if ex.BodyEncoding == "" {
-			body = applyCorrelationVars(body, correlationVars, encodedCorrelationValues)
+			body = applyCorrelationVars(body, stepVars)
 			if sanitizeSensitive {
 				body = sanitizeBody(body)
 			}
 		}
-		target = applyCorrelationVars(target, correlationVars, encodedCorrelationValues)
-		headers = applyCorrelationVarsToHeaders(headers, correlationVars, encodedCorrelationValues)
-		headerList = applyCorrelationVarsToHeaderList(headerList, correlationVars, encodedCorrelationValues)
+		target = applyCorrelationVars(target, stepVars)
+		headers = applyCorrelationVarsToHeaders(headers, stepVars)
+		headerList = applyCorrelationVarsToHeaderList(headerList, stepVars)
 		if sanitizeSensitive {
 			headers = sanitizeHeaders(headers)
 			headerList = sanitizeHeaderList(headerList)
@@ -288,7 +300,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			}
 			if inferExtractors {
 				for _, corr := range correlations {
-					if corr.FoundInStep == idx+1 {
+					if corr.PreApplied && corr.FoundInStep == idx+1 {
 						action.Extractors = append(action.Extractors, dsl.Extractor{
 							Name:       corr.Name,
 							Source:     corr.Source,
@@ -312,6 +324,23 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 						}
 						result.Stats.Extractors++
 					}
+				}
+				for _, extractor := range extraCorrelationExtractors[idx+1] {
+					action.Extractors = append(action.Extractors, extractor)
+					if location := responseSourceLocation(sourceLocations, idx); location.SourceFile != "" {
+						sourceMappings = append(sourceMappings, sourceview.Mapping{
+							SourceFile: location.SourceFile,
+							StartLine:  location.StartLine,
+							EndLine:    location.EndLine,
+							Function:   "response_correlation",
+							TargetPath: fmt.Sprintf("actions[%d].extractors[%d]", idx, len(action.Extractors)-1),
+							TargetName: extractor.Name,
+							TargetKind: "extractor",
+							Status:     "contributor",
+							Notes:      "Encoded sample response value was converted into a generated extractor.",
+						})
+					}
+					result.Stats.Extractors++
 				}
 			}
 		}

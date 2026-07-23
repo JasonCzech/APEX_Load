@@ -175,6 +175,42 @@ bruno:
     scratch:
       tmpSizeLimit: 4Gi
 
+javaVuser:
+  # Java Vuser execution is opt-in and uses a credential-minimized same-pod
+  # runner. Java source is never compiled here; classes and JARs must already
+  # exist in the signed runner image or the optional read-only assets claim.
+  # This non-privileged sidecar has no writable cgroup v2 delegation, so the
+  # stock chart supports legacy full_lifecycle execution only. Combined
+  # persistent lifecycles require a separately governed Windows runner or a
+  # Linux runner with a narrowly delegated cgroup subtree; see
+  # docs/JAVA_VUSER_RUNTIME.md.
+  enabled: false
+  runner:
+    image:
+      repository: apexload-java-vuser-runner
+      # Empty derives <base image.tag>-standard. The runner is published only
+      # in the standard coordinate even for enterprise controller/generator
+      # installations. Set an explicit tag for a signed custom runner image.
+      tag: ""
+      pullPolicy: Always
+    maxProcesses: 25
+    resources:
+      requests:
+        cpu: 250m
+        memory: 512Mi
+        ephemeral-storage: 512Mi
+      limits:
+        cpu: "2"
+        memory: 2Gi
+        ephemeral-storage: 4Gi
+    scratch:
+      tmpSizeLimit: 2Gi
+  assets:
+    # Optional ReadOnlyMany/ReadWriteMany PVC containing precompiled classes,
+    # JARs, and operator-approved alternate JDK homes.
+    existingClaim: ""
+    mountPath: /opt/apexload/java-assets
+
 ingress:
   enabled: true
   className: webapprouting.kubernetes.azure.com

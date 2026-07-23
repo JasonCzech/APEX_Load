@@ -35,7 +35,16 @@ import {
   type ReplayPreflight,
 } from '../types/scripts'
 import BrowserReplayDebugger from './BrowserReplayDebugger'
-import { applyCorrelationRepairToAction, type CorrelationExtractorRepair } from './scriptCorrelationRepair'
+import {
+  addCorrelationExtractorIfMissing,
+  applyCorrelationRepairToAction,
+  correlationEditableActionsKey,
+  correlationExtractorScope,
+  currentCorrelationEditableActionsKey,
+  resolveCorrelationExtractorAndRepair,
+  type CorrelationApplyResult,
+  type CorrelationExtractorRepair,
+} from './scriptCorrelationRepair'
 import ParameterizationReview from './ParameterizationReview'
 import type { Parameterization } from '../types/scriptImports'
 import type { ScriptRecordingStatus } from '../hooks/api/useScriptApi'
@@ -88,6 +97,7 @@ import {
   getErrorIssues,
   getErrorMessage,
   getErrorWarnings,
+  isDefiniteReplayStartRejection,
   isLikelyParameterValue,
   mergeReplayVariables,
   normalizeHeaders,
@@ -236,6 +246,29 @@ type ValidationSidebarResult = {
 type ReplayActionEvent = BrowserReplayEvent
 type ReplayReport = BrowserReplayReport
 type WorkbenchMode = 'author' | 'debug'
+
+const DEBUG_TERMINAL_STATUSES = new Set(['completed', 'failed', 'stopped'])
+
+function isFinalizedDebugSession(session: ScriptDebugSession | undefined, report?: ReplayReport | null): boolean {
+  if (!session) return Boolean(report?.completed_at)
+  // Session.CompletedAt is written only after ReplayScript returns and the
+  // worker has drained. A nested/partial report may already carry its own
+  // timestamp in the initial stop acknowledgement, so it is not sufficient
+  // while an authoritative session snapshot is present.
+  return DEBUG_TERMINAL_STATUSES.has(session.status) && Boolean(session.completed_at)
+}
+
+function scopedEditableActionsEvidenceKey(
+  script: ScriptDefinition,
+  projectId?: string | null,
+  scriptId?: string | null,
+): string {
+  return JSON.stringify({
+    project_id: projectId ?? script.project_id ?? null,
+    script_id: scriptId ?? script.id ?? null,
+    actions_key: correlationEditableActionsKey(script),
+  })
+}
 
 interface CenterWorkbenchTabDescriptor {
   id: CenterWorkbenchTabId
@@ -590,7 +623,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         setScriptSecretStatus(null)
       }
     }
-  }, [api, scriptId])
+  }, [api, projectId, scriptId])
   useEffect(() => {
     void refreshScriptSecretStatus()
     return () => {
@@ -598,6 +631,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     }
   }, [refreshScriptSecretStatus])
   const [scriptRecordingStatus, setScriptRecordingStatus] = useState<ScriptRecordingStatus | null>(null)
+  const [scriptRecordingStatusState, setScriptRecordingStatusState] = useState<'idle' | 'loading' | 'ready' | 'error'>('idle')
+  const [scriptRecordingStatusRetryGeneration, setScriptRecordingStatusRetryGeneration] = useState(0)
   // Object-repository logical names for the per-action object_ref autocomplete.
   const [objectRefSuggestions, setObjectRefSuggestions] = useState<string[]>([])
   useEffect(() => {
@@ -710,6 +745,13 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     warnings,
     closeReplayScreenshot,
   } = useScriptEditorState(initialScript)
+  const editorMountedRef = useRef(false)
+  useEffect(() => {
+    editorMountedRef.current = true
+    return () => {
+      editorMountedRef.current = false
+    }
+  }, [])
   const exportGeneratedTextFile = useCallback(async (
     content: string,
     filename: string,
@@ -729,6 +771,14 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     }
   }, [setError, setSuccess])
   const [replayStartPending, setReplayStartPending] = useState(false)
+  const replayStartInFlightRef = useRef<object | null>(null)
+  const replayStartAttemptRef = useRef<{
+    sessionId: string
+    terminalObserved: boolean
+    awaitingReconciliation: boolean
+    notFoundCount: number
+  } | null>(null)
+  const [replayEditableActionsKey, setReplayEditableActionsKey] = useState<string | null>(null)
   const [initialSaveRequired, setInitialSaveRequired] = useState(initiallyDirty)
   const initialSaveSourceRef = useRef({ script: initialScript, initiallyDirty })
   useEffect(() => {
@@ -897,6 +947,29 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const [httpConversionPreview, setHttpConversionPreview] = useState<BrowserToHTTPPreviewResponse | null>(null)
   const [httpConversionGenerating, setHttpConversionGenerating] = useState(false)
   const [httpConversionError, setHttpConversionError] = useState('')
+	const httpConversionRequestRef = useRef(0)
+	const httpConversionBlockingFindings = useMemo(() => {
+	  if (!httpConversionPreview) return []
+	  const findings = [
+		...(httpConversionPreview.review.blocking_findings || []),
+		...(httpConversionPreview.governance.blockers || []),
+	  ]
+	  return findings.filter((finding, index) => findings.findIndex(candidate => (
+		candidate.severity === finding.severity
+		&& candidate.summary === finding.summary
+		&& candidate.action === finding.action
+	  )) === index)
+	}, [httpConversionPreview])
+
+	useEffect(() => {
+	  // A preview is evidence for one exact editable script and replay snapshot.
+	  // Invalidate both completed and in-flight results as soon as any source
+	  // input changes so a late response cannot be presented as current.
+	  httpConversionRequestRef.current += 1
+	  setHttpConversionPreview(null)
+	  setHttpConversionGenerating(false)
+	  setHttpConversionError('')
+	}, [activeReplaySessionId, browserReplaySession, projectId, replayReport, script])
   const [workspaceTab, setWorkspaceTab] = useState<WorkbenchMode>(() => {
     try {
       const value = window.localStorage.getItem('scriptEditorWorkbenchMode') || window.localStorage.getItem('scriptEditorWorkspaceTab')
@@ -1114,6 +1187,23 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     setScript,
     setSuccess,
   })
+  // Serializing the whole editable draft is O(script size); memoize it so the
+  // debug workspace does not re-stringify the entire script on every render
+  // (replay progress events, keystrokes, breakpoint toggles).
+  const currentEditableActionsKey = useMemo(
+    () => {
+      if (workspaceTab !== 'debug' && replayEditableActionsKey === null) return null
+      const actionsKey = currentCorrelationEditableActionsKey(currentDraftScript, jsonDirty, jsonParseMessage)
+      return actionsKey === null
+        ? null
+        : JSON.stringify({
+          project_id: projectId ?? currentDraftScript.project_id ?? null,
+          script_id: scriptId ?? currentDraftScript.id ?? null,
+          actions_key: actionsKey,
+        })
+    },
+    [workspaceTab, replayEditableActionsKey, currentDraftScript, jsonDirty, jsonParseMessage, projectId, scriptId],
+  )
   const openImportedDataSourceReview = useCallback((sourceName?: string | null) => {
     openCenterTab('parameter-data')
     const sourceIndex = findDataSourceIndexByName(script.data_sources, sourceName)
@@ -1142,8 +1232,76 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const [authoringComponents, setAuthoringComponents] = useState<AuthoringComponent[]>([])
   const [, setComponentLibraryStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [validationEvidence, setValidationEvidence] = useState<ValidationEvidence | null>(null)
+  const [validationEditableActionsKey, setValidationEditableActionsKey] = useState<string | null>(null)
   const [validationReplayPreflight, setValidationReplayPreflight] = useState<ReplayPreflight | null>(null)
   const [validationSidebarResult, setValidationSidebarResult] = useState<ValidationSidebarResult | null>(null)
+  const validationRequestRef = useRef(0)
+  const saveRequestRef = useRef(0)
+  const saveInFlightScopeRef = useRef<object | null>(null)
+  const editorResourceScopeRef = useRef({ projectId, folderId, scriptId, initialScript })
+  if (
+    editorResourceScopeRef.current.projectId !== projectId
+    || editorResourceScopeRef.current.folderId !== folderId
+    || editorResourceScopeRef.current.scriptId !== scriptId
+    || editorResourceScopeRef.current.initialScript !== initialScript
+  ) {
+    editorResourceScopeRef.current = { projectId, folderId, scriptId, initialScript }
+  }
+  const validationDocumentKey = useMemo(
+    () => jsonParseMessage ? null : formatScriptJson(currentDraftScript),
+    [currentDraftScript, jsonParseMessage],
+  )
+  const validationDocumentKeyRef = useRef<string | null>(null)
+  validationDocumentKeyRef.current = validationDocumentKey
+  useEffect(() => {
+    // Resource changes reuse this component in the authoring surface. Invalidate
+    // any validation issued for the previous script/project before its response
+    // can update readiness evidence or commit validation-time metadata.
+    validationRequestRef.current += 1
+    saveRequestRef.current += 1
+    saveInFlightScopeRef.current = null
+    replayStartInFlightRef.current = null
+    replayStartAttemptRef.current = null
+    setValidating(false)
+    setSaving(false)
+    setValidationEvidence(null)
+    setValidationEditableActionsKey(null)
+    setValidationReplayPreflight(null)
+    setValidationSidebarResult(null)
+    setReplayStartPending(false)
+    setReplayEditableActionsKey(null)
+    setActiveReplaySessionId(null)
+    setBrowserReplaySession(null)
+    setReplayReport(null)
+    setReplayActivity([])
+    setExpandedReplayEvent(null)
+    setExpandedReplayBrowserArtifacts({})
+    setReplayScreenshotSelection(null)
+    setReplaySeedVariables({})
+    setReplaying(false)
+    setError('')
+    setSuccess('')
+    setWarnings([])
+  }, [
+    folderId,
+    initialScript,
+    projectId,
+    scriptId,
+    setActiveReplaySessionId,
+    setBrowserReplaySession,
+    setError,
+    setExpandedReplayBrowserArtifacts,
+    setExpandedReplayEvent,
+    setReplayActivity,
+    setReplayReport,
+    setReplayScreenshotSelection,
+    setReplaySeedVariables,
+    setReplaying,
+    setSaving,
+    setSuccess,
+    setValidating,
+    setWarnings,
+  ])
   // These derivations scan the full action set (and for imports, run a draft diff
   // against the baseline). On a multi-thousand-action import they are expensive, so
   // they must be memoized — otherwise every render (including scroll-snapshot driven
@@ -1555,7 +1713,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
 
   const handleReplaySocketMessage = useCallback((message: WSMessage) => {
     const msg = message as ReplayWSMessage
-    if (!activeReplaySessionId || (msg.replay_session_id !== activeReplaySessionId && msg.debug_session_id !== activeReplaySessionId)) return
+    const trackedSessionId = activeReplaySessionId || (replayStartPending ? replayStartAttemptRef.current?.sessionId : null)
+    if (!trackedSessionId || (msg.replay_session_id !== trackedSessionId && msg.debug_session_id !== trackedSessionId)) return
 
     if (msg.type === 'script_debug_started' && msg.session) {
       const session = msg.session
@@ -1677,9 +1836,38 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     if ((msg.type === 'script_debug_completed' || msg.type === 'script_debug_failed' || msg.type === 'script_debug_stopped') && (msg.report || msg.session)) {
       if (msg.session) setBrowserReplaySession(msg.session)
       const report = msg.report || msg.session?.report || null
-      const completedAt = msg.session?.completed_at || report?.completed_at || new Date().toISOString()
+      const finalized = isFinalizedDebugSession(msg.session, report)
+      if (!finalized) {
+        // Stop is a two-phase transition: the first event acknowledges the
+        // cancellation request, while the worker is still draining and has no
+        // CompletedAt/final report. Keep tracking the session so polling or the
+        // later terminal event can publish the authoritative result.
+        setReplayReport(prev => prev ? {
+          ...prev,
+          events: msg.session?.events?.length ? msg.session.events : prev.events,
+          error: msg.session?.error || prev.error,
+        } : prev)
+        setReplayActivity(prev => upsertReplayActivity(prev, {
+          id: 'stopping',
+          kind: 'event',
+          title: 'Debugger stopping',
+          detail: msg.session?.error || 'Cancellation requested; waiting for the active action to finish.',
+          timestamp: new Date().toISOString(),
+        }))
+        return
+      }
+      const completedAt = msg.session?.completed_at || report?.completed_at
+      if (!completedAt) return
+      const messageSessionId = msg.session?.id || msg.debug_session_id || msg.replay_session_id || trackedSessionId
+      if (replayStartAttemptRef.current?.sessionId === messageSessionId) {
+        replayStartAttemptRef.current.terminalObserved = true
+      }
       if (report) {
-        setReplayReport(report)
+        setReplayReport({
+          ...report,
+          replay_session_id: report.replay_session_id || msg.session?.id || trackedSessionId,
+          completed_at: report.completed_at || completedAt,
+        })
       } else {
         setReplayReport(prev => prev ? {
           ...prev,
@@ -1854,6 +2042,10 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
 
     if (msg.type === 'replay_complete' && msg.report) {
       const report = msg.report
+      const messageSessionId = report.replay_session_id || msg.replay_session_id || activeReplaySessionId
+      if (replayStartAttemptRef.current?.sessionId === messageSessionId) {
+        replayStartAttemptRef.current.terminalObserved = true
+      }
       setReplayReport(report)
       setReplayActivity(prev => upsertReplayActivity(prev, {
         id: 'complete',
@@ -1875,6 +2067,10 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       if (msg.session) setBrowserReplaySession(msg.session)
       const report = msg.report || msg.session?.report || null
       const completedAt = msg.session?.completed_at || report?.completed_at || new Date().toISOString()
+      const messageSessionId = msg.session?.id || report?.replay_session_id || msg.replay_session_id || activeReplaySessionId
+      if (replayStartAttemptRef.current?.sessionId === messageSessionId) {
+        replayStartAttemptRef.current.terminalObserved = true
+      }
       if (report) {
         setReplayReport(report)
       } else {
@@ -1906,7 +2102,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       setActiveReplaySessionId(null)
       setReplaying(false)
     }
-  }, [activeReplaySessionId, setActiveReplaySessionId, setBrowserReplaySession, setDebugBreakpoints, setDebugDetailCollapsed, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayOptions, setReplayReport, setReplaying])
+  }, [activeReplaySessionId, replayStartPending, setActiveReplaySessionId, setBrowserReplaySession, setDebugBreakpoints, setDebugDetailCollapsed, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayOptions, setReplayReport, setReplaying])
 
   useWebSocket({ onMessage: handleReplaySocketMessage, projectId })
 
@@ -2086,28 +2282,36 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     })
   }
 
-  const addExtractorDefinition = (actionIdx: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair) => {
-    const repairAction = repair &&
-      repair.failingActionIndex >= 0 &&
-      repair.failingActionIndex < script.actions.length
-      ? script.actions[repair.failingActionIndex]
+  const addExtractorDefinition = (actionIdx: number, extractor: ScriptExtractorDefinition, repair?: CorrelationExtractorRepair): CorrelationApplyResult => {
+    const sourceAction = script.actions[actionIdx]
+    if (!sourceAction) return { extractorAdded: false, extractorAvailable: false, requestRepaired: false }
+    const extractorScope = correlationExtractorScope(script)
+    const { extractor: effectiveExtractor, repair: effectiveRepair } = resolveCorrelationExtractorAndRepair(sourceAction, extractorScope, extractor, repair)
+    const repairAction = effectiveRepair &&
+      effectiveRepair.failingActionIndex >= 0 &&
+      effectiveRepair.failingActionIndex < script.actions.length
+      ? script.actions[effectiveRepair.failingActionIndex]
       : undefined
-    const repairWillApply = Boolean(repairAction && repair && applyCorrelationRepairToAction(repairAction, repair) !== repairAction)
-    setScript(prev => {
-      const actions = [...prev.actions]
-      if (actionIdx < 0 || actionIdx >= actions.length) return prev
-      const ext = [...(actions[actionIdx].extractors || []), extractor]
-      actions[actionIdx] = { ...actions[actionIdx], extractors: ext }
-      if (repair && repair.failingActionIndex >= 0 && repair.failingActionIndex < actions.length) {
-        const repaired = applyCorrelationRepairToAction(actions[repair.failingActionIndex], repair)
-        actions[repair.failingActionIndex] = repaired
-      }
-      return { ...prev, actions }
-    })
-    const repairSuffix = repairWillApply && repair
-      ? ` Updated action ${repair.failingActionIndex + 1} to use ${repair.replacement}.`
+    const repairWillApply = Boolean(repairAction && effectiveRepair && applyCorrelationRepairToAction(repairAction, effectiveRepair) !== repairAction)
+    const extractorAlreadyExists = Boolean(sourceAction.extractors?.some(existing => existing.name === effectiveExtractor.name))
+    const actions = [...script.actions]
+    actions[actionIdx] = addCorrelationExtractorIfMissing(actions[actionIdx], effectiveExtractor)
+    if (effectiveRepair && effectiveRepair.failingActionIndex >= 0 && effectiveRepair.failingActionIndex < actions.length) {
+      actions[effectiveRepair.failingActionIndex] = applyCorrelationRepairToAction(actions[effectiveRepair.failingActionIndex], effectiveRepair)
+    }
+    setScript({ ...script, actions })
+    const repairSuffix = repairWillApply && effectiveRepair
+      ? ` Updated action ${effectiveRepair.failingActionIndex + 1} to use ${effectiveRepair.replacement}.`
+      : effectiveRepair
+        ? ' The mapped request value was not found; replace it manually.'
       : ''
-    setSuccess(`Added extractor "${extractor.name}" to ${script.actions[actionIdx]?.name || `action ${actionIdx + 1}`}.${repairSuffix}`)
+    const extractorMessage = extractorAlreadyExists ? `Kept existing extractor "${effectiveExtractor.name}"` : `Added extractor "${effectiveExtractor.name}"`
+    setSuccess(`${extractorMessage} on ${script.actions[actionIdx]?.name || `action ${actionIdx + 1}`}.${repairSuffix}`)
+    return {
+      extractorAdded: !extractorAlreadyExists,
+      extractorAvailable: true,
+      requestRepaired: repairWillApply,
+    }
   }
 
   const updatePhaseExtractor = (phase: ScriptActionPhase, actionIdx: number, extIdx: number, field: string, value: string) => {
@@ -2223,8 +2427,18 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   scriptEditorDirtyRef.current = scriptEditorDirty
 
   const handleSave = async (): Promise<boolean> => {
+    const requestResourceScope = editorResourceScopeRef.current
+    if (saveInFlightScopeRef.current === requestResourceScope) return false
+    const requestID = ++saveRequestRef.current
+    const requestIsCurrent = () => (
+      editorMountedRef.current
+      && editorResourceScopeRef.current === requestResourceScope
+      && saveRequestRef.current === requestID
+    )
+    saveInFlightScopeRef.current = requestResourceScope
     setError(''); setSuccess(''); setWarnings([]); setSaving(true)
     setValidationEvidence(null)
+    setValidationEditableActionsKey(null)
     setValidationReplayPreflight(null)
     try {
       const currentScript = resolveCurrentScript()
@@ -2234,6 +2448,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       } else {
         savedScript = await api.createScript(currentScript, projectId, folderId)
       }
+      if (!requestIsCurrent()) return true
       commitJsonDraft(currentScript)
       markBaseline(currentScript)
       setInitialSaveRequired(false)
@@ -2245,12 +2460,18 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       onSave?.(savedScript)
       return true
     } catch (e: unknown) {
+      if (!requestIsCurrent()) return false
       setError(getErrorMessage(e, 'Failed to save script'))
       if (getErrorMessage(e, '').includes('Script JSON is invalid')) {
         setDebuggerBottomTab('problems')
       }
       return false
-    } finally { setSaving(false) }
+    } finally {
+      if (saveInFlightScopeRef.current === requestResourceScope) {
+        saveInFlightScopeRef.current = null
+      }
+      if (requestIsCurrent()) setSaving(false)
+    }
   }
   handleSaveRef.current = handleSave
   const scriptEditorGuard = useMemo<NavigationGuard>(() => ({
@@ -2266,20 +2487,33 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   }, [onClose, runGuarded])
 
   const handleValidateScript = async () => {
+    const requestID = ++validationRequestRef.current
+    const requestResourceScope = editorResourceScopeRef.current
+    const requestIsCurrent = () => (
+      validationRequestRef.current === requestID
+      && editorResourceScopeRef.current === requestResourceScope
+    )
     setError('')
     setSuccess('')
     setWarnings([])
     setValidationEvidence(null)
+    setValidationEditableActionsKey(null)
     setValidationReplayPreflight(null)
     setValidationSidebarResult(null)
     setValidating(true)
+    const sourceDocumentKey = validationDocumentKeyRef.current
+    const requestDocumentIsCurrent = () => (
+      requestIsCurrent()
+      && validationDocumentKeyRef.current === sourceDocumentKey
+    )
     try {
       const currentScript = resolveCurrentScript()
-      const res = scriptId && !jsonDirty
+      const res = scriptId && !scriptEditorDirty
         ? await api.validateScript(scriptId)
         : replayConfiguredVariables
           ? await api.validateDraftScript(currentScript, projectId, folderId, replayConfiguredVariables)
           : await api.validateDraftScript(currentScript, projectId, folderId)
+      if (!requestDocumentIsCurrent()) return
       const validationScript = applyValidationRuntimeSettingsMetadata(currentScript, res)
       const validationWarnings = normalizeWarnings(res.warnings)
       setValidationReplayPreflight(res.preflight || null)
@@ -2292,6 +2526,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         commitJsonDraft(validationScript)
       }
       if (res.valid) {
+        setValidationEditableActionsKey(scopedEditableActionsEvidenceKey(validationScript, projectId, scriptId))
         setValidationSidebarResult({
           tone: validationWarnings.length > 0 ? 'warning' : 'success',
           message: validationWarnings.length > 0 ? 'Script validation passed with warnings.' : 'Script validation passed.',
@@ -2306,9 +2541,12 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         warnings: validationWarnings,
         issues: res.issues.length > 0 ? res.issues : ['Script validation failed.'],
       })
+      setValidationEditableActionsKey(null)
     } catch (e: unknown) {
+      if (!requestDocumentIsCurrent()) return
       const validationWarnings = normalizeWarnings(getErrorWarnings(e))
       setValidationEvidence(null)
+      setValidationEditableActionsKey(null)
       setValidationReplayPreflight(null)
       setValidationSidebarResult({
         tone: 'error',
@@ -2320,11 +2558,12 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         setDebuggerBottomTab('problems')
       }
     } finally {
-      setValidating(false)
+      if (requestIsCurrent()) setValidating(false)
     }
   }
 
   const handleGenerateBrowserHTTPPreview = async () => {
+	const requestID = ++httpConversionRequestRef.current
     setHttpConversionError('')
     setSuccess('')
     setHttpConversionGenerating(true)
@@ -2338,10 +2577,12 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         source_browser_script: currentScript,
         network_entries: networkEntries,
       })
+	  if (httpConversionRequestRef.current !== requestID) return
       setHttpConversionPreview(res)
       setWarnings(normalizeWarnings(res.warnings))
       setSuccess('Generated HTTP draft preview from browser replay evidence.')
     } catch (e: unknown) {
+	  if (httpConversionRequestRef.current !== requestID) return
       setHttpConversionPreview(null)
       setWarnings(normalizeWarnings(getErrorWarnings(e)))
       setHttpConversionError(getErrorMessage(e, 'Failed to generate HTTP draft preview'))
@@ -2349,7 +2590,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         setDebuggerBottomTab('problems')
       }
     } finally {
-      setHttpConversionGenerating(false)
+	  if (httpConversionRequestRef.current === requestID) setHttpConversionGenerating(false)
     }
   }
 
@@ -2369,6 +2610,12 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   }, [activateWorkspaceTab, setDebuggerSettingsOpen])
 
   const handleReplay = useCallback(async (options?: { startPaused?: boolean }) => {
+    const replayResourceScope = editorResourceScopeRef.current
+    if (replayStartInFlightRef.current === replayResourceScope) return
+    const replayResourceIsCurrent = () => (
+      editorMountedRef.current
+      && editorResourceScopeRef.current === replayResourceScope
+    )
     if (!replaySecretStatusKnownRef.current) {
       setError('Project secret status is not available yet. Wait for the credential check to complete before running this script.')
       return
@@ -2378,6 +2625,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       setError(`Configure missing project secret${missingSecrets.length === 1 ? '' : 's'} before running: ${missingSecrets.join(', ')}.`)
       return
     }
+    replayStartInFlightRef.current = replayResourceScope
     setError('')
     setSuccess('')
     setWarnings([])
@@ -2385,10 +2633,20 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     setReplaying(true)
     setReplayStartPending(true)
     let debugSessionStarted = false
+    let startRequestDispatched = false
+    let requestedReplaySessionId = ''
     try {
       const currentScript = resolveCurrentScript()
+      setReplayEditableActionsKey(scopedEditableActionsEvidenceKey(currentScript, projectId, scriptId))
       const variables = parseReplayVariablesText(replayOptions.variablesText)
       const replaySessionId = createReplaySessionId()
+      requestedReplaySessionId = replaySessionId
+      replayStartAttemptRef.current = {
+        sessionId: replaySessionId,
+        terminalObserved: false,
+        awaitingReconciliation: false,
+        notFoundCount: 0,
+      }
       const startPaused = options?.startPaused ?? replayOptions.startPaused
       const baseReplayPayload = buildReplayStartPayload(currentScript, {
         projectId,
@@ -2433,17 +2691,34 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       })
       setExpandedReplayEvent(null)
 
+      // Replay uses the parsed current JSON draft. Apply that same snapshot to
+      // the structured editor before dispatch so an accepted request with a
+      // lost/408 response can still reconcile against the exact document that
+      // actually ran.
+      if (jsonDirty) commitJsonDraft(currentScript)
+      startRequestDispatched = true
       const res = scriptId
         ? await api.startScriptDebugSession(scriptId, payload)
         : await api.startDraftScriptDebugSession(payload)
-      commitJsonDraft(currentScript)
+      if (!replayResourceIsCurrent()) return
       const replayWarnings = normalizeWarnings(res.warnings)
       setValidationReplayPreflight(res.preflight || res.session?.preflight || null)
+      const responseSessionFinalized = isFinalizedDebugSession(res.session, res.session?.report)
       if (res.session) {
-        setBrowserReplaySession(res.session)
+        setBrowserReplaySession(prev => {
+          // A short replay can publish its terminal WebSocket message before
+          // the start request resolves. Do not let that older start snapshot
+          // move the authoritative terminal session back to "running".
+          const previousTerminal = Boolean(prev && ['completed', 'failed', 'stopped'].includes(prev.status))
+          return prev?.id === res.session!.id && previousTerminal && !responseSessionFinalized
+            ? prev
+            : res.session!
+        })
         if (res.session.report) {
-          setReplayReport(res.session.report)
-          if (['completed', 'failed', 'stopped'].includes(res.session.status)) {
+          setReplayReport(prev => prev?.completed_at && !res.session!.report!.completed_at
+            ? prev
+            : res.session!.report!)
+          if (responseSessionFinalized) {
             setExpandedReplayEvent(res.session.report.events?.length ? res.session.report.events.length - 1 : null)
           }
         }
@@ -2459,9 +2734,12 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
           }))
         }
       }
-      setActiveReplaySessionId(res.debug_session_id || res.replay_session_id || res.session?.id || replaySessionId)
-      if (res.session && ['completed', 'failed', 'stopped'].includes(res.session.status)) {
-        setActiveReplaySessionId(null)
+      const responseSessionId = res.debug_session_id || res.replay_session_id || res.session?.id || replaySessionId
+      if (responseSessionFinalized && replayStartAttemptRef.current?.sessionId === replaySessionId) {
+        replayStartAttemptRef.current.terminalObserved = true
+      }
+      setActiveReplaySessionId(previous => responseSessionFinalized || previous === null ? null : responseSessionId)
+      if (responseSessionFinalized) {
         setReplaying(false)
       }
       setWarnings(replayWarnings)
@@ -2470,20 +2748,59 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         : (currentScript.protocol === 'browser' ? 'Browser replay started.' : 'Debugger started.'))
       debugSessionStarted = true
     } catch (e: unknown) {
+      if (!replayResourceIsCurrent()) return
+      // The start request and WebSocket are independent transports. A short
+      // run can publish its authoritative terminal event before an ambiguous
+      // HTTP/network failure arrives. In that case the live result wins; do
+      // not erase it with stale request-failure cleanup.
+      if (
+        requestedReplaySessionId &&
+        replayStartAttemptRef.current?.sessionId === requestedReplaySessionId &&
+        replayStartAttemptRef.current.terminalObserved
+      ) {
+        debugSessionStarted = true
+        return
+      }
       const issues = getErrorIssues(e).join(' | ')
       const replayWarnings = normalizeWarnings(getErrorWarnings(e))
       const message = getErrorMessage(e, 'Replay failed')
+      const currentAttempt = replayStartAttemptRef.current
+      if (
+        startRequestDispatched &&
+        requestedReplaySessionId &&
+        currentAttempt?.sessionId === requestedReplaySessionId &&
+        !isDefiniteReplayStartRejection(e)
+      ) {
+        // A transport error or 5xx response cannot prove that the controller
+        // rejected the request. Keep the client-generated session id active so
+        // polling and later WebSocket events can reconcile an accepted run.
+        currentAttempt.awaitingReconciliation = true
+        setWarnings(replayWarnings)
+        setReplayActivity(prev => upsertReplayActivity(prev, {
+          id: 'start-reconcile',
+          kind: 'event',
+          title: 'Confirming replay start',
+          detail: 'The start response was interrupted; checking the generated session ID with the controller.',
+          timestamp: new Date().toISOString(),
+        }))
+        debugSessionStarted = true
+        return
+      }
       setWarnings(replayWarnings)
       setError(issues || message)
       if (message.includes('Script JSON is invalid')) {
         setDebuggerBottomTab('problems')
       }
       setReplayReport(null)
+      setReplayEditableActionsKey(null)
       setActiveReplaySessionId(null)
       setBrowserReplaySession(null)
       setExpandedReplayBrowserArtifacts({})
       setReplayScreenshotSelection(null)
       setReplaySeedVariables({})
+      if (replayStartAttemptRef.current?.sessionId === requestedReplaySessionId) {
+        replayStartAttemptRef.current = null
+      }
       setReplayActivity(prev => upsertReplayActivity(prev, {
         id: 'error',
         kind: 'error',
@@ -2493,12 +2810,17 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         success: false,
       }))
     } finally {
-      setReplayStartPending(false)
-      if (!debugSessionStarted) {
-        setReplaying(false)
+      if (replayStartInFlightRef.current === replayResourceScope) {
+        replayStartInFlightRef.current = null
+      }
+      if (replayResourceIsCurrent()) {
+        setReplayStartPending(false)
+        if (!debugSessionStarted) {
+          setReplaying(false)
+        }
       }
     }
-  }, [api, commitJsonDraft, debugBreakpoints, openReplayDebugger, projectId, replayOptions.groupName, replayOptions.ignoreThinkTime, replayOptions.logLevel, replayOptions.startPaused, replayOptions.breakOnFailure, replayOptions.variablesText, resolveCurrentScript, scriptId, setActiveReplaySessionId, setBrowserReplaySession, setDebuggerBottomTab, setError, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplayScreenshotSelection, setReplaySeedVariables, setReplaying, setSuccess, setWarnings])
+  }, [api, commitJsonDraft, debugBreakpoints, jsonDirty, openReplayDebugger, projectId, replayOptions.groupName, replayOptions.ignoreThinkTime, replayOptions.logLevel, replayOptions.startPaused, replayOptions.breakOnFailure, replayOptions.variablesText, resolveCurrentScript, scriptId, setActiveReplaySessionId, setBrowserReplaySession, setDebuggerBottomTab, setError, setExpandedReplayBrowserArtifacts, setExpandedReplayEvent, setReplayActivity, setReplayReport, setReplayScreenshotSelection, setReplaySeedVariables, setReplaying, setSuccess, setWarnings])
 
   const handleStopReplay = useCallback(async () => {
     if (!activeReplaySessionId) return
@@ -2706,14 +3028,30 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   useEffect(() => {
     if (workspaceTab !== 'debug' || !scriptId || isBrowserScript) {
       setScriptRecordingStatus(null)
+      setScriptRecordingStatusState('idle')
       return
     }
     let cancelled = false
+    setScriptRecordingStatus(null)
+    setScriptRecordingStatusState('loading')
     api.getScriptRecordingStatus(scriptId)
-      .then(status => { if (!cancelled) setScriptRecordingStatus(status) })
-      .catch(() => { if (!cancelled) setScriptRecordingStatus(null) })
+      .then(status => {
+        if (!cancelled) {
+          setScriptRecordingStatus(status)
+          setScriptRecordingStatusState('ready')
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setScriptRecordingStatus(null)
+          setScriptRecordingStatusState('error')
+        }
+      })
     return () => { cancelled = true }
-  }, [api, scriptId, workspaceTab, isBrowserScript])
+  }, [api, scriptId, workspaceTab, isBrowserScript, projectId, scriptRecordingStatusRetryGeneration])
+  const retryScriptRecordingStatus = () => {
+    setScriptRecordingStatusRetryGeneration(generation => generation + 1)
+  }
   const replayVariableDiffs = replayReport
     ? buildReplayVariableDiffs(replaySeedVariables, replayReport.events)
     : []
@@ -2817,6 +3155,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   useEffect(() => {
     setValidationReplayPreflight(null)
     setValidationEvidence(null)
+    setValidationEditableActionsKey(null)
     setValidationSidebarResult(null)
   }, [jsonText, replayOptions.variablesText, script.actions, script.data_sources, script.name, script.parameters, script.protocol])
   const replayFailingEventIndex = replayReport?.events.findIndex(event => !event.success) ?? -1
@@ -3055,21 +3394,85 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         const res = await api.getScriptDebugSession(activeReplaySessionId)
         if (cancelled || !res?.session) return
         const session = res.session
+        if (
+          replayStartAttemptRef.current?.sessionId === session.id &&
+          replayStartAttemptRef.current.awaitingReconciliation
+        ) {
+          replayStartAttemptRef.current.awaitingReconciliation = false
+          replayStartAttemptRef.current.notFoundCount = 0
+          setReplayActivity(prev => upsertReplayActivity(prev, {
+            id: 'start-reconcile',
+            kind: 'start',
+            title: 'Replay start confirmed',
+            detail: session.group || 'script debug',
+            timestamp: session.started_at || new Date().toISOString(),
+          }))
+        }
         setBrowserReplaySession(session)
-        const done = session.status === 'completed' || session.status === 'failed' || session.status === 'stopped'
+        const terminalStatus = DEBUG_TERMINAL_STATUSES.has(session.status)
+        const finalized = isFinalizedDebugSession(session, session.report)
+        const terminalReport = finalized && session.report
+          ? {
+              ...session.report,
+              replay_session_id: session.report.replay_session_id || session.id,
+              completed_at: session.report.completed_at || session.completed_at || '',
+            }
+          : null
         setReplayReport(prev => {
-          if (!prev) return done ? (session.report || prev) : prev
+          if (!prev) {
+            return terminalReport || prev
+          }
           // Merge live events while a run is in flight; only adopt the terminal
           // report (completed_at/success) once the session has actually finished.
           return {
             ...prev,
             events: session.events && session.events.length ? session.events : prev.events,
-            ...(done && session.report ? session.report : {}),
+            ...(terminalReport || {}),
+            ...(finalized && !terminalReport
+              ? {
+                  completed_at: session.completed_at || '',
+                  success: session.status === 'completed',
+                  error: session.error || prev.error,
+                }
+              : {}),
           }
         })
+        if (terminalStatus && !finalized) {
+          setReplayActivity(prev => upsertReplayActivity(prev, {
+            id: 'stopping',
+            kind: 'event',
+            title: 'Debugger stopping',
+            detail: session.error || 'Cancellation requested; waiting for the active action to finish.',
+            timestamp: new Date().toISOString(),
+          }))
+        }
+        if (finalized) {
+          // Polling is the loss-recovery path for a missed terminal WebSocket
+          // message. Reconcile the lifecycle flags too, otherwise the UI keeps
+          // showing a live run and correlation diagnosis remains disabled even
+          // though the authoritative session is terminal.
+          if (replayStartAttemptRef.current?.sessionId === session.id) {
+            replayStartAttemptRef.current.terminalObserved = true
+          }
+          setActiveReplaySessionId(null)
+          setReplaying(false)
+        }
       } catch (e: unknown) {
         if (cancelled) return
         if (e instanceof ApiError && e.status === 404) {
+          const pendingAttempt = replayStartAttemptRef.current
+          if (
+            pendingAttempt?.sessionId === activeReplaySessionId &&
+            pendingAttempt.awaitingReconciliation &&
+            pendingAttempt.notFoundCount < 4
+          ) {
+            // A client-selected ID can take a few polling intervals to become
+            // visible after an ambiguous start response (for example through
+            // a load balancer or HA replica). Do not declare it expired on the
+            // first transient miss, but keep the retry window bounded.
+            pendingAttempt.notFoundCount += 1
+            return
+          }
           setActiveReplaySessionId(null)
           setBrowserReplaySession(prev => prev ? { ...prev, status: 'stopped' } : null)
           setReplaying(false)
@@ -4052,15 +4455,31 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const activeScriptJsonSidebarTab = scriptJsonSidebarTab === 'details' && !hasScriptJsonDetailsTab
     ? SCRIPT_JSON_DEFAULT_COMPANION_TAB
     : scriptJsonSidebarTab
+  const replayEvidenceMatchesCurrentDraft = replayEditableActionsKey !== null
+    && currentEditableActionsKey !== null
+    && replayEditableActionsKey === currentEditableActionsKey
+  const validationEvidenceMatchesCurrentDraft = validationEditableActionsKey !== null
+    && currentEditableActionsKey !== null
+    && validationEditableActionsKey === currentEditableActionsKey
   const debugEvidenceStatus = replayReport?.completed_at
-    ? (replayReport.success ? 'passed' : 'failed')
+    ? (!replayEvidenceMatchesCurrentDraft ? 'stale' : replayReport.success ? 'passed' : 'failed')
     : activeReplaySessionId || browserReplaySession
       ? 'in progress'
       : 'missing'
+  const validationPassed = validationSidebarResult?.tone === 'success' || validationSidebarResult?.tone === 'warning'
+  const approvalReady = Boolean(
+    validationEvidence
+    && validationPassed
+    && validationEvidenceMatchesCurrentDraft
+    && replayReport?.completed_at
+    && replayReport.success
+    && replayEvidenceMatchesCurrentDraft
+    && errorCount === 0
+  )
   const debugWorkspaceStatusLabel = replaying
     ? (isReplayPaused ? 'Paused' : 'Running')
     : replayReport?.completed_at
-      ? (replayReport.success ? 'Passed' : 'Failed')
+      ? (!replayEvidenceMatchesCurrentDraft ? 'Stale' : replayReport.success ? 'Passed' : 'Failed')
       : activeReplaySessionId || browserReplaySession
         ? 'Active'
         : ''
@@ -4105,9 +4524,9 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     {
       key: 'save',
       label: 'Approve / Save',
-      status: validationEvidence && replayReport?.completed_at && errorCount === 0 ? 'ready' : 'needs evidence',
+      status: approvalReady ? 'ready' : 'needs evidence',
       action: handleSave,
-      disabled: saveScriptDisabled,
+      disabled: saveScriptDisabled || !approvalReady,
     },
   ]
   const topbarActionHandlersRef = useRef({
@@ -5019,6 +5438,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
             replayLatestActivity={replayLatestActivity}
             replayOptions={replayOptions}
             replayReport={replayReport}
+            replayEditableActionsKey={replayEditableActionsKey}
+            currentEditableActionsKey={currentEditableActionsKey}
             replayStatusLabel={replayStatusLabel}
             replayVariableDiffs={replayVariableDiffs}
             replayVariableInspector={replayVariableInspector}
@@ -5028,6 +5449,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
             scriptId={scriptId}
             scriptLevelIssues={scriptLevelIssues}
             scriptRecordingStatus={scriptRecordingStatus}
+            scriptRecordingStatusState={scriptRecordingStatusState}
+            retryScriptRecordingStatus={retryScriptRecordingStatus}
             selectedOutlineParameterName={selectedOutlineParameterName}
             selectOutlineParameter={selectOutlineParameter}
             setActiveAction={setActiveAction}
@@ -5101,7 +5524,12 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                 {httpConversionPreview && (
                   <div className="import-correlation-section">
                     <h4>Generated HTTP Draft Preview</h4>
-                    <p>{httpConversionPreview.generated_script?.name || 'HTTP draft'} is ready for validation, replay, correlation repair, and approval review.</p>
+					<p>
+					  {httpConversionPreview.generated_script?.name || 'HTTP draft'}{' '}
+					  {httpConversionBlockingFindings.length > 0
+						? 'is blocked from promotion until the findings below are resolved.'
+						: 'is ready for validation, replay, correlation repair, and approval review.'}
+					</p>
                     <div className="import-metadata-grid">
                       <div className="import-metadata-card">
                         <span>Backend Status</span>
@@ -5123,13 +5551,36 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                         <strong>{httpConversionPreview.review.data_source_candidates?.length || 0}</strong>
                         <small>Bind to parameters or data pools</small>
                       </div>
+					  <div className="import-metadata-card">
+						<span>Evidence</span>
+						<strong>{httpConversionPreview.review.evidence.verification_status.replace(/_/g, ' ')}</strong>
+						<small>{httpConversionPreview.review.evidence.durable ? 'Durable replay and correlation evidence' : 'Evidence is not durable'}</small>
+					  </div>
+					  <div className="import-metadata-card">
+						<span>Promotion</span>
+						<strong>{httpConversionPreview.review.promotion_status.replace(/_/g, ' ')}</strong>
+						<small>{httpConversionPreview.governance.status.replace(/_/g, ' ')} · approval {httpConversionPreview.governance.approval_status.replace(/_/g, ' ')}</small>
+					  </div>
                     </div>
+					{httpConversionBlockingFindings.length > 0 && (
+					  <div className="import-correlation-section" aria-label="HTTP draft promotion blockers">
+						<h4>Promotion Blockers</h4>
+						<div className="import-correlation-list">
+						  {httpConversionBlockingFindings.map((finding, index) => (
+							<div key={`${finding.severity}-${finding.summary}-${index}`} className="import-correlation-card">
+							  <strong>{finding.severity.toUpperCase()} · {finding.summary}</strong>
+							  {finding.evidence && <span>{finding.evidence}</span>}
+							  {finding.action && <span>Next: {finding.action}</span>}
+							</div>
+						  ))}
+						</div>
+					  </div>
+					)}
                     <div className="import-correlation-list">
                       {(httpConversionPreview.review.correlation_candidates || []).slice(0, 4).map((candidate, index) => (
-                        <div key={`http-correlation-${candidate.name}-${candidate.value}-${index}`} className="import-correlation-card">
+                        <div key={`http-correlation-${candidate.name}-${candidate.source}-${index}`} className="import-correlation-card">
                           <strong>Correlation · {candidate.name}</strong>
                           <span>{candidate.evidence || candidate.source}</span>
-                          {candidate.value && <code>{candidate.value}</code>}
                         </div>
                       ))}
                       {(httpConversionPreview.review.data_source_candidates || []).slice(0, 4).map((candidate, index) => (

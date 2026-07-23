@@ -35,3 +35,38 @@ func TestJavaLRCoverageCoversEveryMethod(t *testing.T) {
 		}
 	}
 }
+
+func TestJavaLRCoverageDoesNotOverclaimExitContinuationSemantics(t *testing.T) {
+	for _, row := range JavaLRFunctionCoverage() {
+		if row.Function != "lr_exit" {
+			continue
+		}
+		if row.SupportMode != string(SourceFunctionSupportReviewOnly) {
+			t.Fatalf("lr_exit support mode = %q, want review_only until engine continuation semantics have integration coverage", row.SupportMode)
+		}
+		if row.Target != "authoring/fidelity review" {
+			t.Fatalf("lr_exit target = %q, want authoring/fidelity review", row.Target)
+		}
+		return
+	}
+	t.Fatal("lr_exit missing from Java LR coverage")
+}
+
+func TestJavaLRExecutableCoverageHasVerifiedBytecodeDescriptors(t *testing.T) {
+	for _, row := range JavaLRFunctionCoverage() {
+		if row.SupportMode == string(SourceFunctionSupportReviewOnly) {
+			continue
+		}
+		descriptor, ok := javaLRRunnerABIDescriptors[row.Function]
+		if !ok || descriptor == "" {
+			t.Errorf("%s is advertised as %s without a verified JVM descriptor", row.Function, row.SupportMode)
+		}
+	}
+	for function, descriptor := range javaLRRunnerABIDescriptors {
+		if def, _, ok := javaLRRunnerDisposition(function); !ok {
+			t.Errorf("verified descriptor %s %s has no runner disposition", function, descriptor)
+		} else if def.SupportMode != SourceFunctionSupportExecutable {
+			t.Errorf("verified descriptor %s %s resolves as %s", function, descriptor, def.SupportMode)
+		}
+	}
+}

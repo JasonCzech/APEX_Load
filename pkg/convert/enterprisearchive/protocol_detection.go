@@ -152,7 +152,7 @@ func DetectProtocol(files map[string]string, projectConfig *ProjectConfig, actio
 		}
 	}
 
-	contentProfile, contentSignals := profileFromContent(files, actions)
+	contentProfile, contentSignals := profileFromContent(files, actions, projectConfig)
 	signals = append(signals, contentSignals...)
 
 	selected := webHTTPProfile()
@@ -293,7 +293,7 @@ func javaProjectConfigSignals(cfg *ProjectConfig) ([]string, bool) {
 	return signals, len(signals) > 0
 }
 
-func profileFromContent(files map[string]string, actions []*ParsedAction) (*protocolProfile, []string) {
+func profileFromContent(files map[string]string, actions []*ParsedAction, projectConfig *ProjectConfig) (*protocolProfile, []string) {
 	functions := flattenParsedFunctions(actions)
 	signals := make([]string, 0)
 	if len(functions) > 0 {
@@ -343,16 +343,19 @@ func profileFromContent(files map[string]string, actions []*ParsedAction) (*prot
 		}
 	}
 
-	archiveText := strings.ToLower(joinArchiveText(files))
-	if javaSignals, ok := javaVuserContentSignals(files); ok {
+	program, _ := parseJavaProgram(files)
+	program = javaProgramWithProjectVuserClass(program, projectConfig)
+	archiveText := strings.ToLower(protocolEvidenceArchiveText(files, program))
+	if javaSignals, ok := javaVuserContentSignals(files, program); ok {
+		executable := javaExecutableEvidenceText(program)
 		profile := templateProfile("java_vuser", "Java Vuser")
-		if javaArchiveLooksLikeJMS(archiveText) {
+		if javaLooksLikeJMS(executable) {
 			profile = javaJMSSolaceProfile()
-		} else if javaLooksLikeHTTP(archiveText) {
+		} else if javaLooksLikeHTTP(executable) {
 			profile = javaHTTPProfile()
-		} else if javaLooksLikeDatabase(archiveText) {
+		} else if javaLooksLikeDatabase(executable) {
 			profile = javaJDBCProfile()
-		} else if javaLooksLikeSOAP(archiveText) {
+		} else if javaLooksLikeSOAP(executable) {
 			profile = javaSOAPProfile()
 		}
 		return &profile, javaSignals
@@ -405,12 +408,13 @@ func profileFromContent(files map[string]string, actions []*ParsedAction) (*prot
 // importing lrapi.lr instead of .c action files. Native Java API families are
 // reported as extra signals so detection can name the executable target before
 // ConvertJava performs the final per-statement disposition.
-func javaVuserContentSignals(files map[string]string) ([]string, bool) {
+func javaVuserContentSignals(files map[string]string, program javaProgram) ([]string, bool) {
 	signals := make([]string, 0, 2)
-	jms := false
-	http := false
-	database := false
-	soap := false
+	executable := javaExecutableEvidenceText(program)
+	jms := javaLooksLikeJMS(executable)
+	http := javaLooksLikeHTTP(executable)
+	database := javaLooksLikeDatabase(executable)
+	soap := javaLooksLikeSOAP(executable)
 	names := make([]string, 0, len(files))
 	for name := range files {
 		names = append(names, name)
@@ -420,7 +424,7 @@ func javaVuserContentSignals(files map[string]string) ([]string, bool) {
 		if !strings.HasSuffix(strings.ToLower(name), ".java") {
 			continue
 		}
-		content := strings.ToLower(files[name])
+		content := strings.ToLower(javaCodeOnly(files[name]))
 		base := strings.ToLower(filepath.Base(name))
 		switch {
 		case strings.Contains(content, "lrapi"),
@@ -428,18 +432,6 @@ func javaVuserContentSignals(files map[string]string) ([]string, bool) {
 			signals = append(signals, fmt.Sprintf("Java Vuser source file %s", filepath.Base(name)))
 		default:
 			continue
-		}
-		if strings.Contains(content, "javax.jms") || strings.Contains(content, "jakarta.jms") {
-			jms = true
-		}
-		if javaLooksLikeHTTP(content) {
-			http = true
-		}
-		if javaLooksLikeDatabase(content) {
-			database = true
-		}
-		if javaLooksLikeSOAP(content) {
-			soap = true
 		}
 	}
 	if len(signals) == 0 {
@@ -530,7 +522,7 @@ func reviewArtifactNextActions(detected DetectedProtocol) []string {
 	if detected.CanonicalSourceProtocol == "java_vuser" {
 		for _, signal := range detected.Signals {
 			if strings.Contains(strings.ToLower(signal), "javax.jms") {
-				actions = append(actions, "Java source uses JMS APIs; APEX Load's native jms protocol actions are a candidate target for mapping the messaging calls.")
+				actions = append(actions, "Java source uses JMS APIs; verify the governed Java runner classpath, JMS client dependencies, and broker connectivity before promotion. The JMS calls remain inside the combined Java Vuser.")
 				break
 			}
 		}
@@ -656,6 +648,30 @@ func joinArchiveText(files map[string]string) string {
 		b.WriteString(name)
 		b.WriteString("\n")
 		b.WriteString(files[name])
+	}
+	return b.String()
+}
+
+// protocolEvidenceArchiveText keeps the existing raw evidence behavior for
+// non-Java artifacts, but replaces Java files with code reachable from the
+// selected VUser lifecycle. This prevents imports, comments, literal payloads,
+// and uncalled bundled classes from choosing a protocol in the generic content
+// fallback when Java metadata or conventional filenames are absent.
+func protocolEvidenceArchiveText(files map[string]string, program javaProgram) string {
+	var b strings.Builder
+	names := sortedFileNames(files)
+	for _, name := range names {
+		if strings.HasSuffix(strings.ToLower(filepath.Base(name)), ".java") {
+			continue
+		}
+		b.WriteString("\n")
+		b.WriteString(name)
+		b.WriteString("\n")
+		b.WriteString(files[name])
+	}
+	if executable := javaExecutableEvidenceText(program); strings.TrimSpace(executable) != "" {
+		b.WriteString("\n")
+		b.WriteString(executable)
 	}
 	return b.String()
 }

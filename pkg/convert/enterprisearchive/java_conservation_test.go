@@ -82,6 +82,8 @@ public class Actions {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			// Guardrail runs against the production import entry path, not a
+			// test-only replica of the retired multi-lane pipeline.
 			result, err := ConvertZip(buildJavaReplayArchive(t, "JavaConservation"+tc.name, tc.scriptType, tc.source), ConvertOptions{})
 			if err != nil {
 				t.Fatalf("ConvertZip returned error: %v", err)
@@ -91,44 +93,86 @@ public class Actions {
 	}
 }
 
-func TestJavaStatementLaneConservesEveryLeafStatementDisposition(t *testing.T) {
+// TestJavaCombinedImportConservesEveryLeafStatementDisposition is the
+// production no-silent-drop guardrail: every leaf statement of every parsed
+// class — including helper methods reached only through non-simple calls
+// (OrderClient.submit(...)) and statements in classes other than the selected
+// runner class — plus every unparsed region must receive exactly one
+// SourceReview disposition through the real ConvertZip entry path.
+func TestJavaCombinedImportConservesEveryLeafStatementDisposition(t *testing.T) {
 	files := map[string]string{
-		"Actions.java": `import javax.jms.*;
-
+		"Actions.java": `import lrapi.lr;
 public class Actions {
-  public int action() throws Throwable {
-    String body = "order={orderId}";
-    Queue q = session.createQueue("orders.in");
-    TextMessage msg = session.createTextMessage(body);
-    msg.setStringProperty("source", "lr");
-    producer.send(q, msg);
-    session.commit();
+  public int init() {
+    prepare();
     return 0;
   }
+  public int action() {
+    lr.start_transaction("Order");
+    localStep();
+    OrderClient.submit("A-1");
+    lr.end_transaction("Order", lr.AUTO);
+    return 0;
+  }
+  public int end() {
+    cleanup();
+    return 0;
+  }
+  private void localStep() {
+    audit("local");
+  }
 }`,
+		"OrderClient.java": `public class OrderClient {
+  public static int submit(String id) {
+    validate(id);
+    return post(id);
+  }
+  private static void validate(String id) {
+    check(id);
+  }
+}`,
+		"Broken.java": `public class Broken {
+  public int flaky() {
+    dangling();
+`,
 	}
-	program, warnings := parseJavaProgram(files)
-	if len(warnings) > 0 {
-		t.Fatalf("parse warnings = %v", warnings)
-	}
-	profile := classifyJavaArchive(program, &ProjectConfig{ScriptType: "Java Vuser"}, files)
-	result, err := convertJavaStatementLane(files, ConvertOptions{}, DetectedProtocol{
-		CanonicalSourceProtocol: "java_vuser",
-		APEXLoadProtocol:        "jms-solace",
-		ImportMode:              ImportModeExecutable,
-	}, program, nil, profile, false, false, false)
+	result, err := ConvertZip(buildJavaVuserFilesArchive(t, "JavaConserveAll", files), ConvertOptions{})
 	if err != nil {
-		t.Fatalf("convertJavaStatementLane returned error: %v", err)
+		t.Fatalf("ConvertZip returned error: %v", err)
 	}
 	if result.SourceReview == nil {
 		t.Fatal("source review is nil, want one disposition per Java leaf statement")
 	}
+	program, _ := parseJavaProgram(files)
+	if len(program.Classes) != 3 || len(program.Unparsed) != 1 {
+		t.Fatalf("fixture parsed to %d classes / %d unparsed regions, want 3 classes and 1 unparsed region", len(program.Classes), len(program.Unparsed))
+	}
 	counts := javaConservationMappingCounts(result.SourceReview.Mappings)
-	for _, statement := range javaConservationLeafStatements(program) {
+	assertExactlyOneDisposition := func(statement javaStatement) {
+		t.Helper()
+		if javaNormalizeStatementText(statement.Text) == "" {
+			return
+		}
 		key := javaConservationStatementKey{file: statement.File, startLine: statement.StartLine, endLine: statement.EndLine}
 		if counts[key] != 1 {
 			t.Fatalf("statement %s:%d-%d %q mapped %d time(s), want exactly one disposition; mappings=%#v", statement.File, statement.StartLine, statement.EndLine, statement.Text, counts[key], result.SourceReview.Mappings)
 		}
+	}
+	for _, class := range program.Classes {
+		for _, method := range class.Methods {
+			for _, statement := range method.Statements {
+				for _, leaf := range javaConservationLeafStatementList(statement) {
+					assertExactlyOneDisposition(leaf)
+				}
+			}
+		}
+	}
+	for _, statement := range program.Unparsed {
+		assertExactlyOneDisposition(statement)
+	}
+	stats := result.Stats
+	if got := stats.NativeFunctions + stats.ExternalRequiredFunctions + stats.ReviewOnlyFunctions + stats.CustomCallFunctions; got != stats.TotalFunctions {
+		t.Fatalf("support counters = %d, want reconciliation with TotalFunctions=%d (stats=%#v)", got, stats.TotalFunctions, stats)
 	}
 }
 

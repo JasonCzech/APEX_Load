@@ -84,6 +84,12 @@ type ProjectConfig struct {
 	ThinkTimeMax      float64
 }
 
+// VuGen project files are line-oriented and normally contain short settings.
+// Bound individual lines independently from the archive entry limit so an
+// adversarial project file cannot force unbounded scanner growth, while still
+// allowing large run-logic/action lists.
+const maxUSRConfigLineBytes = 1 << 20
+
 // regex patterns for enterprise C/VUser source function parsing.
 var (
 	// Matches C/VUser source calls such as web_url, lrd_stmt, ftp_command, or sapgui_*.
@@ -882,6 +888,7 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 	}
 
 	scanner := bufio.NewScanner(strings.NewReader(content))
+	scanner.Buffer(make([]byte, 64*1024), maxUSRConfigLineBytes)
 	section := ""
 
 	for scanner.Scan() {
@@ -953,6 +960,9 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 				cfg.ExtraFiles = append(cfg.ExtraFiles, value)
 			}
 		}
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("scan LoadRunner project config: %w", err)
 	}
 
 	// Ensure standard action files if none found explicitly

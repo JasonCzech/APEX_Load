@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -17,11 +18,17 @@ import (
 type replayTestProtocol struct {
 	execute    func(action *protocol.Action) (*protocol.Result, error)
 	executeCtx func(ctx context.Context, action *protocol.Action) (*protocol.Result, error)
+	initConfig func(map[string]any)
 	initErr    error
 }
 
-func (p *replayTestProtocol) Name() string                                   { return "replay-test" }
-func (p *replayTestProtocol) Init(_ context.Context, _ map[string]any) error { return p.initErr }
+func (p *replayTestProtocol) Name() string { return "replay-test" }
+func (p *replayTestProtocol) Init(_ context.Context, config map[string]any) error {
+	if p.initConfig != nil {
+		p.initConfig(config)
+	}
+	return p.initErr
+}
 func (p *replayTestProtocol) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
 	if p.executeCtx != nil {
 		return p.executeCtx(ctx, action)
@@ -99,6 +106,265 @@ type replayDebugControllerFunc func(context.Context, ReplayDebugAction) error
 
 func (f replayDebugControllerFunc) BeforeAction(ctx context.Context, action ReplayDebugAction) error {
 	return f(ctx, action)
+}
+
+type replayCorrelationObserver struct {
+	evidence *protocol.CorrelationEvidence
+	event    ReplayActionEvent
+}
+
+func (o *replayCorrelationObserver) BeforeAction(context.Context, ReplayDebugAction) error {
+	return nil
+}
+
+func (o *replayCorrelationObserver) ObserveCorrelationEvidence(_ context.Context, _ ReplayDebugAction, event *ReplayActionEvent) {
+	if event == nil || event.CorrelationEvidence == nil {
+		return
+	}
+	o.event = *event
+	o.evidence = &protocol.CorrelationEvidence{
+		UnavailableReason: event.CorrelationEvidence.UnavailableReason,
+		RequestURL:        event.CorrelationEvidence.RequestURL,
+		RequestBody:       event.CorrelationEvidence.RequestBody,
+		RequestHeaders:    cloneStringMap(event.CorrelationEvidence.RequestHeaders),
+		ResponseBody:      event.CorrelationEvidence.ResponseBody,
+		ResponseHeaders:   cloneStringMap(event.CorrelationEvidence.ResponseHeaders),
+		ResponseStatus:    event.CorrelationEvidence.ResponseStatus,
+	}
+	if event.CorrelationEvidence.ResponseSuccess != nil {
+		value := *event.CorrelationEvidence.ResponseSuccess
+		o.evidence.ResponseSuccess = &value
+	}
+}
+
+func TestReplayCorrelationEvidenceIsObservedBeforeScrubAndNeverPublished(t *testing.T) {
+	const rawToken = "raw-csrf-token-1234567890"
+	var executedResult *protocol.Result
+	var retainedEvidence *protocol.CorrelationEvidence
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		retainedEvidence = &protocol.CorrelationEvidence{
+			RequestURL:      "https://example.test/login",
+			RequestBody:     "csrf=" + rawToken,
+			RequestHeaders:  map[string]string{"X-CSRF-Token": rawToken},
+			ResponseBody:    `{"csrf_token":"` + rawToken + `"}`,
+			ResponseHeaders: map[string]string{"Set-Cookie": "csrf=" + rawToken},
+			ResponseStatus:  200,
+		}
+		executedResult = &protocol.Result{
+			ActionName:          action.Name,
+			Success:             true,
+			StatusCode:          200,
+			ResponseBody:        `{"csrf_token":"fallback-` + rawToken + `"}`,
+			CorrelationEvidence: retainedEvidence,
+		}
+		return executedResult, nil
+	})
+	observer := &replayCorrelationObserver{}
+	var published []*ReplayActionEvent
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name:     "raw correlation evidence",
+		Protocol: protocolName,
+		Actions: []dsl.Action{httpSequenceTestAction("txn",
+			dsl.Action{Name: "login", Type: "POST", Method: "POST", Target: "/login"},
+		)},
+	}, ReplayOptions{
+		IgnoreThinkTime: true,
+		DebugController: observer,
+		OnProgress: func(progress ReplayProgressEvent) {
+			if progress.Event != nil {
+				published = append(published, progress.Event)
+			}
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observer.evidence == nil || !strings.Contains(observer.evidence.ResponseBody, rawToken) || observer.evidence.ResponseHeaders["Set-Cookie"] == "" {
+		t.Fatalf("observer did not receive raw correlation evidence: %#v", observer.evidence)
+	}
+	if executedResult == nil || executedResult.CorrelationEvidence != nil {
+		t.Fatalf("protocol result retained correlation evidence past result recording: %#v", executedResult)
+	}
+	if retainedEvidence == nil || !reflect.DeepEqual(*retainedEvidence, protocol.CorrelationEvidence{}) {
+		t.Fatalf("adapter-retained raw evidence was not zeroed: %#v", retainedEvidence)
+	}
+	if observer.event.ParentActionName != "txn" || observer.event.RequestIndex == nil || *observer.event.RequestIndex != 0 || len(observer.event.StepPath) == 0 {
+		t.Fatalf("observer ran before replay leaf identity was applied: %#v", observer.event)
+	}
+	if len(report.Events) != 1 || report.Events[0].CorrelationEvidence != nil {
+		t.Fatalf("report retained raw correlation evidence: %#v", report.Events)
+	}
+	for _, event := range published {
+		if event.CorrelationEvidence != nil {
+			t.Fatalf("progress event retained raw correlation evidence: %#v", event)
+		}
+	}
+	encoded, err := json.Marshal(report)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), rawToken) {
+		t.Fatalf("public replay report disclosed raw correlation token: %s", encoded)
+	}
+}
+
+func TestReplayRetryZerosDiscardedCorrelationEvidenceAfterBackoff(t *testing.T) {
+	const discardedSecret = "discarded-attempt-secret"
+	var attempts int
+	var discardedResult *protocol.Result
+	var discardedEvidence *protocol.CorrelationEvidence
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		attempts++
+		if attempts == 1 {
+			discardedEvidence = &protocol.CorrelationEvidence{
+				RequestURL:      "https://example.test/first",
+				ResponseBody:    discardedSecret,
+				ResponseHeaders: map[string]string{"X-Secret": discardedSecret},
+			}
+			discardedResult = &protocol.Result{
+				ActionName:          action.Name,
+				Success:             false,
+				ErrorMessage:        "retry",
+				CorrelationEvidence: discardedEvidence,
+			}
+			return discardedResult, nil
+		}
+		return &protocol.Result{
+			ActionName: action.Name,
+			Success:    true,
+			CorrelationEvidence: &protocol.CorrelationEvidence{
+				RequestURL:   "https://example.test/second",
+				ResponseBody: "final-attempt",
+			},
+		}, nil
+	})
+
+	observer := &replayCorrelationObserver{}
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name:     "retry evidence",
+		Protocol: protocolName,
+		Config: dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{
+			MaxRetries:   1,
+			RetryDelayMs: 1,
+		}},
+		Actions: []dsl.Action{{Name: "request", Type: "GET", Method: "GET", Target: "/"}},
+	}, ReplayOptions{IgnoreThinkTime: true, DebugController: observer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report == nil || !report.Success || attempts != 2 {
+		t.Fatalf("report = %#v, attempts = %d", report, attempts)
+	}
+	if discardedResult == nil || discardedResult.CorrelationEvidence != nil {
+		t.Fatalf("discarded result retained correlation evidence: %#v", discardedResult)
+	}
+	if discardedEvidence == nil || !reflect.DeepEqual(*discardedEvidence, protocol.CorrelationEvidence{}) {
+		t.Fatalf("discarded raw evidence was not zeroed: %#v", discardedEvidence)
+	}
+	if observer.evidence == nil || observer.evidence.ResponseBody != "final-attempt" {
+		t.Fatalf("observer evidence = %#v, want final attempt only", observer.evidence)
+	}
+}
+
+func TestReplayZerosCorrelationEvidenceWhenProtocolReturnsResultAndError(t *testing.T) {
+	const rawSecret = "result-plus-error-raw-secret"
+	evidence := &protocol.CorrelationEvidence{
+		RequestURL:   "https://example.test/error",
+		ResponseBody: rawSecret,
+	}
+	retainedResult := &protocol.Result{
+		ActionName:          "request",
+		Success:             false,
+		CorrelationEvidence: evidence,
+	}
+	protocolName := registerReplayProtocol(t, func(*protocol.Action) (*protocol.Result, error) {
+		return retainedResult, errors.New("adapter failed after collecting a result")
+	})
+
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name:     "result and error evidence cleanup",
+		Protocol: protocolName,
+		Actions:  []dsl.Action{{Name: "request", Type: "request", Target: "/error"}},
+	}, ReplayOptions{IgnoreThinkTime: true, DebugController: &replayCorrelationObserver{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report == nil || report.Success {
+		t.Fatalf("report = %#v, want failed replay report", report)
+	}
+	if retainedResult.CorrelationEvidence != nil {
+		t.Fatalf("adapter-retained result kept raw evidence: %#v", retainedResult.CorrelationEvidence)
+	}
+	if !reflect.DeepEqual(*evidence, protocol.CorrelationEvidence{}) {
+		t.Fatalf("adapter-retained evidence was not zeroed: %#v", evidence)
+	}
+}
+
+func TestReplayGenericCorrelationEvidenceOversizeUsesUnavailableMarker(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{
+			ActionName:   action.Name,
+			Success:      true,
+			StatusCode:   200,
+			ResponseBody: strings.Repeat("x", protocol.MaxCorrelationEvidenceBytes+1),
+		}, nil
+	})
+	observer := &replayCorrelationObserver{}
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name:     "oversized generic correlation evidence",
+		Protocol: protocolName,
+		Actions:  []dsl.Action{{Name: "oversized", Type: "request", Target: "/oversized"}},
+	}, ReplayOptions{IgnoreThinkTime: true, DebugController: observer})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if observer.evidence == nil || observer.evidence.UnavailableReason != protocol.CorrelationEvidenceTooLargeReason {
+		t.Fatalf("observed oversized evidence = %#v, want explicit unavailable marker", observer.evidence)
+	}
+	if observer.evidence.RequestURL != "" || observer.evidence.ResponseBody != "" || len(observer.evidence.RequestHeaders) != 0 || len(observer.evidence.ResponseHeaders) != 0 {
+		t.Fatalf("unavailable evidence retained partial raw data: %#v", observer.evidence)
+	}
+	if len(report.Events) != 1 || report.Events[0].CorrelationEvidence != nil {
+		t.Fatalf("public report retained private marker: %#v", report.Events)
+	}
+}
+
+func TestReplayEnablesCorrelationCaptureOnlyForPrivateObserver(t *testing.T) {
+	var captureFlags []bool
+	protocolName := "replay-" + strings.ReplaceAll(strings.ToLower(t.Name()), "/", "-")
+	protocol.Register(protocolName, func() protocol.Protocol {
+		return &replayTestProtocol{
+			initConfig: func(config map[string]any) {
+				value, _ := config[protocol.CorrelationEvidenceCaptureConfigKey].(bool)
+				captureFlags = append(captureFlags, value)
+			},
+			execute: func(action *protocol.Action) (*protocol.Result, error) {
+				return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+			},
+		}
+	})
+	script := &dsl.Script{Name: "capture boundary", Protocol: protocolName, Actions: []dsl.Action{{Name: "request", Type: "request", Target: "/"}}}
+	if _, err := ReplayScript(context.Background(), script, ReplayOptions{IgnoreThinkTime: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReplayScript(context.Background(), script, ReplayOptions{IgnoreThinkTime: true, DebugController: &replayCorrelationObserver{}}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(captureFlags, []bool{false, true}) {
+		t.Fatalf("protocol correlation capture flags = %v, want [false true]", captureFlags)
+	}
+}
+
+func TestReplayCorrelationEvidenceCapIncludesAuthoredProvenance(t *testing.T) {
+	body := strings.Repeat("x", protocol.MaxCorrelationEvidenceBytes/2+1)
+	action := &protocol.Action{Target: "/", Body: []byte(body)}
+	evidence := replayCorrelationEvidence(action, &protocol.Result{Success: true}, dsl.Action{Target: "/", Body: body}, true)
+	if evidence == nil || evidence.UnavailableReason != protocol.CorrelationEvidenceTooLargeReason {
+		t.Fatalf("doubled wire/authored evidence = %#v, want unavailable marker", evidence)
+	}
+	if evidence.RequestBody != "" || evidence.AuthoredRequestBody != "" {
+		t.Fatal("oversized evidence retained wire or authored body")
+	}
 }
 
 func TestReplayDebugActionsAreScrubbedBeforeControllersAndProgressCallbacks(t *testing.T) {

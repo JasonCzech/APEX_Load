@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -37,45 +38,68 @@ type assignmentStageDecision struct {
 	err               error
 }
 
+// assignmentRuntimePreflightError distinguishes a generator-specific runtime
+// incompatibility from ordinary admission rejections. AssignWork exposes this
+// condition as gRPC FailedPrecondition after rolling the staged reservation
+// back, so controllers cannot mistake an incompatible generator for a normal
+// negative-capacity acknowledgement.
+type assignmentRuntimePreflightError struct {
+	message string
+}
+
+func (e *assignmentRuntimePreflightError) Error() string {
+	if e == nil {
+		return "runtime preflight failed"
+	}
+	return e.message
+}
+
 // pendingAssignmentStage is coordinator-owned reservation state. At most one
 // group per test is prepared concurrently, which keeps late-group duration,
 // archive-writer creation, and duplicate retry semantics deterministic.
 type pendingAssignmentStage struct {
-	token               uint64
-	testID              string
-	groupName           string
-	executionGeneration uint64
-	scriptID            string
-	protocol            string
-	vusers              int32
-	done                chan struct{}
+	token                   uint64
+	testID                  string
+	groupName               string
+	executionGeneration     uint64
+	scriptID                string
+	protocol                string
+	vusers                  int32
+	persistentJavaLifecycle bool
+	legacyJavaLifecycle     bool
+	persistentJavaDemand    int64
+	done                    chan struct{}
 }
 
 // assignmentStagePlan is an immutable execution-preparation snapshot. The
 // request is synchronously RPC-owned and read-only; scriptContent is copied out
 // of the mutable cache before the compatibility lock is released.
 type assignmentStagePlan struct {
-	token               uint64
-	validated           validatedWorkAssignment
-	hadCurrent          bool
-	currentGuard        [sha256.Size]byte
-	executionEnabled    bool
-	scriptContent       []byte
-	protocol            string
-	executionDuration   time.Duration
-	durationOffset      time.Duration
-	nextDuration        time.Duration
-	nextDurationSeconds int64
-	nextLifecycle       assignmentLifecycleState
-	nextCommitted       bool
-	startPaused         bool
-	needsArchive        bool
+	token                   uint64
+	validated               validatedWorkAssignment
+	hadCurrent              bool
+	currentGuard            [sha256.Size]byte
+	executionEnabled        bool
+	scriptContent           []byte
+	protocol                string
+	persistentJavaLifecycle bool
+	legacyJavaLifecycle     bool
+	persistentJavaDemand    int64
+	executionDuration       time.Duration
+	durationOffset          time.Duration
+	nextDuration            time.Duration
+	nextDurationSeconds     int64
+	nextLifecycle           assignmentLifecycleState
+	nextCommitted           bool
+	startPaused             bool
+	needsArchive            bool
 }
 
 type preparedAssignmentStage struct {
 	execution     *groupExecution
 	writer        *archiveRecorder
 	createdWriter bool
+	javaCapacity  javaVuserCapacityObservation
 }
 
 // AssignWork is the transport facade for the two-phase staging transition:
@@ -107,8 +131,9 @@ func (service *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssig
 				return nil, status.FromContextError(err).Err()
 			}
 		}
+		javaCapacity := service.assignmentJavaVuserCapacityObservation(validated)
 		service.mu.Lock()
-		decision := service.lifecycleCoordinator.reserveStageLocked(service, validated)
+		decision := service.lifecycleCoordinator.reserveStageLocked(service, validated, javaCapacity)
 		service.mu.Unlock()
 		if decision.err != nil {
 			return nil, decision.err
@@ -141,6 +166,13 @@ func (service *Service) AssignWork(ctx context.Context, assignment *pb.WorkAssig
 			service.lifecycleCoordinator.rollbackStageLocked(assignment.GetTestId(), plan.token)
 			available := service.availableCapacityLocked()
 			service.mu.Unlock()
+			if preflightErr, ok := prepareErr.(*assignmentRuntimePreflightError); ok {
+				return nil, status.Error(codes.FailedPrecondition, preflightErr.Error())
+			}
+			switch status.Code(prepareErr) {
+			case codes.Canceled, codes.DeadlineExceeded:
+				return nil, prepareErr
+			}
 			return &pb.AssignmentAck{Accepted: false, ErrorMessage: prepareErr.Error(), AvailableCapacity: available}, nil
 		}
 		if ctx != nil {
@@ -223,8 +255,12 @@ func (service *Service) waitForAllPendingStages(ctx context.Context) error {
 	}
 }
 
-func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *Service, validated validatedWorkAssignment) assignmentStageDecision {
+func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *Service, validated validatedWorkAssignment, capacityObservations ...javaVuserCapacityObservation) assignmentStageDecision {
 	request := validated.request
+	var javaCapacity javaVuserCapacityObservation
+	if len(capacityObservations) > 0 {
+		javaCapacity = capacityObservations[0]
+	}
 	available := service.availableCapacityLocked()
 	if err := service.validateMutationGenerationLocked(request.GetExecutionGeneration()); err != nil {
 		return assignmentStageDecision{err: err, availableCapacity: available}
@@ -284,12 +320,40 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 	if err := verifyExpectedScriptHash(request.GetExpectedScriptHash(), cached.content); err != nil {
 		return rejectedAssignmentStage(err.Error(), available)
 	}
-	if instance, getErr := protocol.Get(cached.protocol); getErr == nil {
-		if provider, ok := instance.(protocol.RuntimeCapabilityProvider); ok {
-			capabilities := provider.RuntimeCapabilities()
-			projected := int64(request.GetVuserCount()) + service.activeProtocolVUsersLocked(cached.protocol) + coordinator.pendingProtocolVUsersLocked(cached.protocol)
-			if capabilities.MaxVUsers > 0 && projected > capabilities.MaxVUsers {
-				return rejectedAssignmentStage(fmt.Sprintf("insufficient %s runtime capacity: maximum %d", cached.protocol, capabilities.MaxVUsers), available)
+	persistentJavaDemand := int64(0)
+	if cached.requiresPhaseLifecycle {
+		if strings.EqualFold(strings.TrimSpace(validated.initStrategy), "at_once") {
+			return rejectedAssignmentStage("init_strategy at_once is incompatible with persistent java_vuser lifecycle; use at_runtime", available)
+		}
+		persistentJavaDemand = cached.javaVuserCapacity.Demand(int(request.GetVuserCount()))
+		if service.legacyJavaRuntimeOccupiedLocked() {
+			return rejectedAssignmentStage("persistent java_vuser lifecycle cannot share generator process slots with an active legacy full_lifecycle assignment", available)
+		}
+		if maxVUsers, ok := javaCapacity.persistentMaxVUsers(); ok {
+			projected := service.activePersistentJavaVusersLocked() +
+				coordinator.pendingPersistentJavaVusersLocked() +
+				persistentJavaDemand
+			if projected > maxVUsers {
+				return rejectedAssignmentStage(fmt.Sprintf("insufficient java_vuser runtime capacity: maximum %d", maxVUsers), available)
+			}
+		}
+	} else if strings.EqualFold(cached.protocol, "java_vuser") &&
+		service.persistentJavaRuntimeOccupiedLocked() {
+		return rejectedAssignmentStage("legacy java_vuser full_lifecycle cannot share generator process slots with an active persistent lifecycle assignment", available)
+	}
+	// Persistent Java capacity is accounted above from the unlocked
+	// observation. Legacy full_lifecycle actions still time-share process slots
+	// and have no pinned placement demand. Other protocol capability providers
+	// retain their existing admission path.
+	if !strings.EqualFold(cached.protocol, "java_vuser") {
+		if instance, getErr := protocol.Get(cached.protocol); getErr == nil {
+			if capabilities, supported, capabilityErr := protocol.ReadRuntimeCapabilities(instance); capabilityErr != nil {
+				return assignmentStageDecision{err: status.Error(codes.FailedPrecondition, capabilityErr.Error()), availableCapacity: available}
+			} else if supported && capabilities.MaxVUsers > 0 {
+				projected := int64(request.GetVuserCount()) + service.activeProtocolVUsersLocked(cached.protocol) + coordinator.pendingProtocolVUsersLocked(cached.protocol)
+				if projected > capabilities.MaxVUsers {
+					return rejectedAssignmentStage(fmt.Sprintf("insufficient %s runtime capacity: maximum %d", cached.protocol, capabilities.MaxVUsers), available)
+				}
 			}
 		}
 	}
@@ -334,34 +398,40 @@ func (coordinator *assignmentLifecycleCoordinator) reserveStageLocked(service *S
 	}
 	token := coordinator.nextStagePlanToken
 	pending := &pendingAssignmentStage{
-		token:               token,
-		testID:              request.GetTestId(),
-		groupName:           request.GetGroupName(),
-		executionGeneration: request.GetExecutionGeneration(),
-		scriptID:            request.GetScriptId(),
-		protocol:            cached.protocol,
-		vusers:              request.GetVuserCount(),
-		done:                make(chan struct{}),
+		token:                   token,
+		testID:                  request.GetTestId(),
+		groupName:               request.GetGroupName(),
+		executionGeneration:     request.GetExecutionGeneration(),
+		scriptID:                request.GetScriptId(),
+		protocol:                cached.protocol,
+		vusers:                  request.GetVuserCount(),
+		persistentJavaLifecycle: cached.requiresPhaseLifecycle,
+		legacyJavaLifecycle:     strings.EqualFold(cached.protocol, "java_vuser") && !cached.requiresPhaseLifecycle,
+		persistentJavaDemand:    persistentJavaDemand,
+		done:                    make(chan struct{}),
 	}
 	coordinator.pendingStages[request.GetTestId()] = pending
 	return assignmentStageDecision{
 		kind: assignmentStagePrepare,
 		plan: &assignmentStagePlan{
-			token:               token,
-			validated:           validated,
-			hadCurrent:          currentExists,
-			currentGuard:        assignmentControlFingerprint(current, currentExists),
-			executionEnabled:    service.executionEnabled,
-			scriptContent:       append([]byte(nil), cached.content...),
-			protocol:            cached.protocol,
-			executionDuration:   executionDuration,
-			durationOffset:      executionDurationOffset,
-			nextDuration:        nextDuration,
-			nextDurationSeconds: nextDurationSeconds,
-			nextLifecycle:       staged.lifecycle,
-			nextCommitted:       staged.committed,
-			startPaused:         current.paused || request.GetStartPaused(),
-			needsArchive:        service.executionEnabled || nextDuration > 0,
+			token:                   token,
+			validated:               validated,
+			hadCurrent:              currentExists,
+			currentGuard:            assignmentControlFingerprint(current, currentExists),
+			executionEnabled:        service.executionEnabled,
+			scriptContent:           append([]byte(nil), cached.content...),
+			protocol:                cached.protocol,
+			persistentJavaLifecycle: cached.requiresPhaseLifecycle,
+			legacyJavaLifecycle:     strings.EqualFold(cached.protocol, "java_vuser") && !cached.requiresPhaseLifecycle,
+			persistentJavaDemand:    persistentJavaDemand,
+			executionDuration:       executionDuration,
+			durationOffset:          executionDurationOffset,
+			nextDuration:            nextDuration,
+			nextDurationSeconds:     nextDurationSeconds,
+			nextLifecycle:           staged.lifecycle,
+			nextCommitted:           staged.committed,
+			startPaused:             current.paused || request.GetStartPaused(),
+			needsArchive:            service.executionEnabled || nextDuration > 0,
 		},
 		availableCapacity: available,
 	}
@@ -456,11 +526,36 @@ func (coordinator *assignmentLifecycleCoordinator) commitStageLocked(service *Se
 	if service.activeVUsers64Locked()+coordinator.pendingVUsersLocked() > int64(service.maxVUsers) {
 		return nil, service.availableCapacityLocked(), status.Error(codes.ResourceExhausted, "insufficient generator capacity")
 	}
-	if instance, getErr := protocol.Get(plan.protocol); getErr == nil {
-		if provider, ok := instance.(protocol.RuntimeCapabilityProvider); ok {
-			capabilities := provider.RuntimeCapabilities()
-			if capabilities.MaxVUsers > 0 && service.activeProtocolVUsersLocked(plan.protocol)+coordinator.pendingProtocolVUsersLocked(plan.protocol) > capabilities.MaxVUsers {
-				return nil, service.availableCapacityLocked(), status.Errorf(codes.ResourceExhausted, "insufficient %s runtime capacity: maximum %d", plan.protocol, capabilities.MaxVUsers)
+	if strings.EqualFold(plan.protocol, "java_vuser") {
+		if plan.persistentJavaLifecycle && service.legacyJavaRuntimeOccupiedLocked() {
+			return nil, service.availableCapacityLocked(), status.Error(codes.ResourceExhausted, "persistent java_vuser lifecycle cannot share generator process slots with an active legacy full_lifecycle assignment")
+		}
+		if plan.legacyJavaLifecycle && service.persistentJavaRuntimeOccupiedLocked() {
+			return nil, service.availableCapacityLocked(), status.Error(codes.ResourceExhausted, "legacy java_vuser full_lifecycle cannot share generator process slots with an active persistent lifecycle assignment")
+		}
+	}
+	if plan.persistentJavaLifecycle {
+		if prepared == nil {
+			return nil, service.availableCapacityLocked(), status.Error(codes.Internal, "prepared Java runtime capacity is unavailable")
+		}
+		if maxVUsers, ok := prepared.javaCapacity.persistentMaxVUsers(); ok {
+			occupied := service.activePersistentJavaVusersLocked() + coordinator.pendingPersistentJavaVusersLocked()
+			if occupied > maxVUsers {
+				return nil, service.availableCapacityLocked(), status.Errorf(codes.ResourceExhausted, "insufficient java_vuser runtime capacity: maximum %d", maxVUsers)
+			}
+		} else if plan.executionEnabled {
+			return nil, service.availableCapacityLocked(), status.Error(codes.FailedPrecondition, prepared.javaCapacity.persistentRuntimeError().Error())
+		}
+	}
+	if !strings.EqualFold(plan.protocol, "java_vuser") {
+		if instance, getErr := protocol.Get(plan.protocol); getErr == nil {
+			if capabilities, supported, capabilityErr := protocol.ReadRuntimeCapabilities(instance); capabilityErr != nil {
+				return nil, service.availableCapacityLocked(), status.Error(codes.FailedPrecondition, capabilityErr.Error())
+			} else if supported && capabilities.MaxVUsers > 0 {
+				occupied := service.activeProtocolVUsersLocked(plan.protocol) + coordinator.pendingProtocolVUsersLocked(plan.protocol)
+				if occupied > capabilities.MaxVUsers {
+					return nil, service.availableCapacityLocked(), status.Errorf(codes.ResourceExhausted, "insufficient %s runtime capacity: maximum %d", plan.protocol, capabilities.MaxVUsers)
+				}
 			}
 		}
 	}
@@ -666,6 +761,12 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		}
 	}
 	prepared := &preparedAssignmentStage{}
+	if plan.persistentJavaLifecycle {
+		// Capability providers may probe a JVM or sidecar. Preparation runs
+		// outside the service coordinator lock so the probe cannot stall
+		// assignments, heartbeats, or control operations.
+		prepared.javaCapacity = observeJavaVuserCapacity()
+	}
 	defer func() {
 		if err != nil {
 			service.cleanupPreparedAssignmentStage(plan, prepared)
@@ -697,8 +798,30 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		return nil, status.Errorf(codes.InvalidArgument, "decode script: %v", err)
 	}
 	if instance, getErr := protocol.Get(strings.ToLower(strings.TrimSpace(script.Protocol))); getErr == nil {
-		if provider, ok := instance.(protocol.RuntimeCapabilityProvider); ok && !provider.RuntimeCapabilities().Available {
-			return nil, status.Errorf(codes.FailedPrecondition, "%s runtime is unavailable on this generator", script.Protocol)
+		if strings.EqualFold(script.Protocol, "java_vuser") && requiredRuntimeFeature(&script) == "" {
+			legacyAvailable, supported := legacyRuntimeAvailable(instance)
+			if !supported || !legacyAvailable {
+				return nil, status.Errorf(codes.FailedPrecondition, "%s legacy one-shot runtime is unavailable on this generator", script.Protocol)
+			}
+		} else if strings.EqualFold(script.Protocol, "java_vuser") && requiredRuntimeFeature(&script) != "" {
+			if runtimeErr := prepared.javaCapacity.persistentRuntimeError(); runtimeErr != nil {
+				return nil, status.Error(codes.FailedPrecondition, runtimeErr.Error())
+			}
+		} else {
+			capabilities, hasCapabilities, capabilityErr := protocol.ReadRuntimeCapabilities(instance)
+			if capabilityErr != nil {
+				return nil, status.Error(codes.FailedPrecondition, capabilityErr.Error())
+			}
+			if hasCapabilities {
+				if !capabilities.Available {
+					return nil, status.Errorf(codes.FailedPrecondition, "%s runtime is unavailable on this generator", script.Protocol)
+				}
+				if required := requiredRuntimeFeature(&script); required != "" && !protocol.RuntimeFeaturesSatisfy(capabilities.Features, required) {
+					return nil, status.Errorf(codes.FailedPrecondition, "%s runtime does not advertise required capability %s", script.Protocol, required)
+				}
+			} else if required := requiredRuntimeFeature(&script); required != "" {
+				return nil, status.Errorf(codes.FailedPrecondition, "%s runtime does not advertise required capability %s", script.Protocol, required)
+			}
 		}
 	}
 	if issues := dsl.ValidateScriptIssues(&script); len(issues) > 0 {
@@ -744,6 +867,27 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "prepare runtime secret redaction: %v", err)
 	}
+	runtimeSecrets := secretBundleResolver(request.GetSecretBundle())
+	preflight, preflightErr := engine.PreflightScriptRuntime(ctx, &script, runtimeSecrets)
+	if preflightErr != nil {
+		if ctx != nil {
+			if ctxErr := ctx.Err(); ctxErr != nil {
+				return nil, status.FromContextError(ctxErr).Err()
+			}
+		}
+		if errors.Is(preflightErr, context.Canceled) || errors.Is(preflightErr, context.DeadlineExceeded) {
+			return nil, status.FromContextError(preflightErr).Err()
+		}
+		message := redactionConfig.ScrubText(preflightErr.Error())
+		const maxRuntimePreflightMessageBytes = 16 << 10
+		if len(message) > maxRuntimePreflightMessageBytes {
+			message = boundedtext.TruncateUTF8(message, maxRuntimePreflightMessageBytes-len("...[truncated]")) + "...[truncated]"
+		}
+		return nil, &assignmentRuntimePreflightError{message: fmt.Sprintf("%s runtime preflight failed: %s", script.Protocol, message)}
+	}
+	for _, warning := range preflight.Warnings {
+		slog.Warn("assignment runtime preflight warning", "protocol", script.Protocol, "code", normalizedRuntimeWarningCode(warning))
+	}
 	results := &transactionBuffer{lastDrainAt: time.Now()}
 	writer, created, archiveErr := service.archiveManager.ensureWriter(request.GetTestId(), script.Name)
 	if archiveErr != nil {
@@ -754,6 +898,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 	mge, err := engine.NewMultiGroup(engine.MultiGroupConfig{
 		Groups: []engine.GroupConfig{{
 			Name:            request.GetGroupName(),
+			ScenarioID:      request.GetScenarioId(),
 			Script:          &script,
 			VUsers:          int(request.GetVuserCount()),
 			RampUp:          plan.validated.rampUp,
@@ -769,7 +914,7 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 			VUserIDSpan:     int(maxGeneratorVUsers),
 			ResultSink:      combineSinks(results, writer),
 			RedactionConfig: redactionConfig,
-			SecretResolver:  secretBundleResolver(request.GetSecretBundle()),
+			SecretResolver:  runtimeSecrets,
 		}},
 		Duration:     duration,
 		PreBaseline:  plan.validated.preBaseline,
@@ -795,6 +940,65 @@ func (service *Service) prepareAssignmentStage(ctx context.Context, plan *assign
 		done:                make(chan struct{}),
 	}
 	return prepared, nil
+}
+
+func requiredRuntimeFeature(script *dsl.Script) string {
+	if script == nil || !strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") {
+		return ""
+	}
+	if javaVuserActionsRequirePhaseLifecycle(script.Init) ||
+		javaVuserActionsRequirePhaseLifecycle(script.Actions) ||
+		javaVuserActionsRequirePhaseLifecycle(script.Teardown) {
+		return protocol.FeatureJavaVuserPersistentLifecycleV1
+	}
+	return ""
+}
+
+func javaVuserActionsRequirePhaseLifecycle(actions []dsl.Action) bool {
+	for _, action := range actions {
+		if strings.EqualFold(strings.TrimSpace(action.Type), "java_vuser_run") {
+			method := ""
+			if value, ok := action.Params["method"]; ok && value != nil {
+				method = strings.TrimSpace(fmt.Sprint(value))
+			}
+			if method != "" && !strings.EqualFold(method, "full_lifecycle") {
+				return true
+			}
+		}
+		if action.Control != nil {
+			if javaVuserActionsRequirePhaseLifecycle(action.Control.Steps) || javaVuserActionsRequirePhaseLifecycle(action.Control.Else) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func legacyRuntimeAvailable(instance protocol.Protocol) (available bool, supported bool) {
+	legacy, supported := instance.(interface{ LegacyRuntimeAvailable() bool })
+	if !supported {
+		return false, false
+	}
+	defer func() {
+		if recover() != nil {
+			available = false
+		}
+	}()
+	return legacy.LegacyRuntimeAvailable(), true
+}
+
+func normalizedRuntimeWarningCode(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || len(value) > 128 {
+		return "runtime_preflight_warning"
+	}
+	for _, r := range value {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '.' || r == '-' {
+			continue
+		}
+		return "runtime_preflight_warning"
+	}
+	return value
 }
 
 func (service *Service) cleanupPreparedAssignmentStage(plan *assignmentStagePlan, prepared *preparedAssignmentStage) {

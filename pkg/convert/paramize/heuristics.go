@@ -95,7 +95,16 @@ var selectorTokenPattern = regexp.MustCompile(`[A-Za-z][A-Za-z0-9_\-]*`)
 // values can run through the same name heuristics as HTTP parameters, e.g.
 // `#user_email` -> "user_email", `input[name="user_id"]` -> "user_id".
 func SelectorFieldHint(selector string) string {
-	tokens := selectorTokenPattern.FindAllString(selector, -1)
+	// Selectors normally contain only a handful of tokens. Bound the result set
+	// anyway: imported selector text is untrusted, and collecting every match in
+	// a pathological value would bypass the shared parameterization work limits.
+	if int64(len(selector)) > maxSuggestionRegexSearchBytes {
+		return ""
+	}
+	tokens := selectorTokenPattern.FindAllString(selector, maxSuggestionRegexMatches+1)
+	if len(tokens) > maxSuggestionRegexMatches {
+		return ""
+	}
 	skip := map[string]bool{
 		"input": true, "textarea": true, "select": true, "button": true,
 		"form": true, "div": true, "span": true, "label": true,

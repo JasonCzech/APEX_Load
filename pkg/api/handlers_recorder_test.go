@@ -10,9 +10,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jasonczech/apexload/pkg/recorder"
 	"github.com/jasonczech/apexload/pkg/scrub"
+	"github.com/jasonczech/apexload/pkg/storage"
 )
 
 func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
@@ -89,6 +91,10 @@ func TestHandlePreviewRecordingConversionDoesNotStoreScript(t *testing.T) {
 func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
 	t.Setenv(recordingBaselineKeyEnvVar, "recorder-handler-test-key")
 	server := recordingTestServer(t)
+	now := time.Now().UTC()
+	if err := server.store.SaveProject(&storage.Project{ID: "project-1", Name: "Project 1", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
 	session, err := server.recorder.StartSession("rec-baseline", "Checkout Recording", recorder.SessionFilters{}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -179,23 +185,20 @@ func TestHandleConvertRecordingPersistsBaseline(t *testing.T) {
 		t.Fatalf("observations = %d, want 1 included request", len(record.Observations))
 	}
 	obs := record.Observations[0]
-	if obs.ID != 0 || obs.RequestURL != "https://shop.example.com/api/login" {
-		t.Fatalf("observation = %+v, want first included request at id 0", obs)
+	if obs.ID != 0 || obs.RequestURL != "" || obs.RequestBody != "" || obs.ResponseBody != "" || obs.RequestHeaders != nil || obs.ResponseHeaders != nil {
+		t.Fatalf("observation = %+v, want structural-only first included request at id 0", obs)
 	}
-	if strings.Contains(obs.RequestBody, "hunter2") || strings.Contains(obs.RequestHeaders["Authorization"], "recorded-secret") {
-		t.Fatalf("request-side secrets were not redacted: body=%q headers=%v", obs.RequestBody, obs.RequestHeaders)
-	}
-	// The scrubbed persistence view redacts live session/CSRF tokens so they
-	// cannot leak from a persisted baseline; correlation uses the raw sidecar.
-	if strings.Contains(obs.ResponseBody, "csrf-recorded") {
-		t.Fatalf("scrubbed observation leaked csrf token: %q", obs.ResponseBody)
-	}
+	// The public persistence view contains no caller-derived URL, body, or
+	// header values; correlation uses the encrypted raw sidecar below.
 	// The server-side encrypted correlation sidecar preserves the dynamic value
 	// without persisting plaintext credentials.
 	if len(record.CorrelationObservations) != 0 || record.EncryptedCorrelationObservations == "" {
 		t.Fatalf("correlation sidecar = plaintext:%d encrypted:%t, want encrypted only", len(record.CorrelationObservations), record.EncryptedCorrelationObservations != "")
 	}
-	correlationObservations := baselineObservations(record)
+	correlationObservations, err := baselineObservations(record)
+	if err != nil {
+		t.Fatalf("baselineObservations returned error: %v", err)
+	}
 	if len(correlationObservations) != 1 || !strings.Contains(correlationObservations[0].ResponseBody, "csrf-recorded") {
 		t.Fatalf("decrypted correlation observations = %#v, want dynamic response value preserved for correlation", correlationObservations)
 	}

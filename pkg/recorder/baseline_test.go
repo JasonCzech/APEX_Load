@@ -9,9 +9,11 @@ func TestSessionBaseline(t *testing.T) {
 		Requests: []RecordedRequest{
 			{Seq: 1, Method: "GET", URL: "http://example.com/style.css", Path: "/style.css", StatusCode: 200, IsStatic: true},
 			{Seq: 2, Method: "POST", URL: "http://example.com/api/login", Path: "/api/login",
-				Body:         `{"username":"a","password":"secret"}`,
-				ResponseBody: `{"token":"abc123","session_id":"sess-789"}`,
-				Headers:      map[string]string{"Content-Type": "application/json"}},
+				Body:                    `{"username":"a","password":"secret"}`,
+				ResponseBody:            `{"token":"abc123","session_id":"sess-789"}`,
+				Headers:                 map[string]string{"Content-Type": "application/json"},
+				RawResponseHeaders:      map[string]string{"Set-Cookie": "sid=first"},
+				RawResponseHeadersMulti: map[string][]string{"Set-Cookie": {"sid=first", "route=second"}}},
 			{Seq: 3, Method: "GET", URL: "http://example.com/api/drop", Path: "/api/drop", StatusCode: 200, Excluded: true},
 			{Seq: 4, Method: "GET", URL: "http://example.com/orders?token=abc123", Path: "/orders", StatusCode: 200,
 				Headers:         map[string]string{"X-Token": "[redacted]", "X-APEXLoad-Recorder-Token": "[redacted]"},
@@ -38,6 +40,9 @@ func TestSessionBaseline(t *testing.T) {
 	}
 	if baseline[1].RequestHeaders["X-Token"] != "abc123" {
 		t.Errorf("baseline request headers should use raw in-memory values, got %v", baseline[1].RequestHeaders)
+	}
+	if baseline[0].ResponseHeaders["Set-Cookie"] != "sid=first\nroute=second" {
+		t.Errorf("baseline must preserve repeated raw response headers, got %q", baseline[0].ResponseHeaders["Set-Cookie"])
 	}
 	for name := range baseline[1].RequestHeaders {
 		if isRecorderControlHeader(name) {

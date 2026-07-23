@@ -1102,6 +1102,35 @@ func TestHandleVerifyBrowserRecordingRequiresStop(t *testing.T) {
 	}
 }
 
+func TestHandleVerifyBrowserRecordingUsesClientReplaySessionID(t *testing.T) {
+	fake := newFakeBrowserRecorder(recordedBrowserArtifact())
+	server := newBrowserRecorderTestServer(t, fake)
+	id := startBrowserRecordingViaAPI(t, server)
+	stopBrowserRecordingViaAPI(t, server, id)
+
+	const replaySessionID = "8f28ef09-cf20-4c28-9b85-ff9b0b6f6440"
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/browser-recorder/sessions/"+id+"/verify",
+		bytes.NewBufferString(`{"replay_session_id":"`+replaySessionID+`"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+	if resp.Code != http.StatusCreated {
+		t.Fatalf("verify status = %d, want %d body=%s", resp.Code, http.StatusCreated, resp.Body.String())
+	}
+	var payload struct {
+		ReplaySessionID string `json:"replay_session_id"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	if payload.ReplaySessionID != replaySessionID {
+		t.Fatalf("replay_session_id = %q, want %q", payload.ReplaySessionID, replaySessionID)
+	}
+}
+
 func TestHandleExportBrowserRecordingStorageState(t *testing.T) {
 	exportDir := t.TempDir()
 	t.Setenv("APEXLOAD_EXPORT_DIR", exportDir) // confine the persisted copy to a temp dir

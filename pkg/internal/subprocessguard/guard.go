@@ -17,6 +17,16 @@ var safeEnvironmentNames = map[string]struct{}{
 	"TEMP": {}, "TMP": {}, "TMPDIR": {}, "TZ": {}, "WINDIR": {},
 }
 
+// javaOptionEnvironmentNames are process environment variables the JVM reads to
+// inject launch options (agents, classpath, arbitrary flags). They must never
+// reach a governed child even through the caller-supplied extra map, so a
+// future caller that ever plumbed a user-controlled name through Environment
+// cannot smuggle a launch option past the exact-argv VM-parameter denylist.
+var javaOptionEnvironmentNames = map[string]struct{}{
+	"JAVA_TOOL_OPTIONS": {}, "_JAVA_OPTIONS": {}, "JDK_JAVA_OPTIONS": {},
+	"JAVA_OPTS": {}, "CLASSPATH": {},
+}
+
 var sensitiveEnvironmentNames = map[string]struct{}{
 	"APEXLOAD_GRPC_AUTH_TOKEN":            {},
 	"APEXLOAD_GRPC_TLS_KEY":               {},
@@ -81,6 +91,9 @@ func Environment(extra map[string]string) []string {
 	for name, value := range extra {
 		name = strings.TrimSpace(name)
 		if name == "" || strings.Contains(name, "=") {
+			continue
+		}
+		if _, blocked := javaOptionEnvironmentNames[strings.ToUpper(name)]; blocked {
 			continue
 		}
 		values[name] = value

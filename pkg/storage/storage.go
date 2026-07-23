@@ -222,6 +222,7 @@ type Store interface {
 	// from, used to diagnose record-vs-replay correlation issues).
 	SaveScriptRecording(record *ScriptRecordingRecord) error
 	GetScriptRecording(scriptID string) (*ScriptRecordingRecord, error)
+	GetScriptRecordingStatus(scriptID string) (*ScriptRecordingStatusRecord, error)
 	DeleteScriptRecording(scriptID string) error
 
 	// Tests
@@ -1107,22 +1108,66 @@ type ScriptRecordingObservation struct {
 
 // ScriptRecordingRecord is a per-script recorded baseline: the original recorded
 // exchanges that the script was generated from, keyed by the DSL action index
-// each exchange produced. Observations is the scrubbed persistence view;
-// CorrelationObservations is a server-side raw sidecar used for diagnosis.
+// each exchange produced. Observations is the disclosure-safe persistence view.
+// CorrelationObservations is accepted only as a legacy in-memory input and is
+// discarded; diagnosis uses EncryptedCorrelationObservations.
 type ScriptRecordingRecord struct {
-	ScriptID                string                       `json:"script_id"`
-	SchemaVersion           string                       `json:"schema_version,omitempty"`
-	Source                  string                       `json:"source,omitempty"`
-	Sensitivity             string                       `json:"sensitivity,omitempty"`
-	RequestCount            int                          `json:"request_count"`
-	Observations            []ScriptRecordingObservation `json:"observations"`
-	CorrelationObservations []ScriptRecordingObservation `json:"correlation_observations,omitempty"`
+	ScriptID      string `json:"script_id"`
+	SchemaVersion string `json:"schema_version,omitempty"`
+	// ProjectID and ScriptIncarnation bind this sidecar to one durable script
+	// row, not merely to a reusable caller-controlled script ID. They remain
+	// storage-internal because callers authorize against the parent script.
+	ProjectID         string `json:"-"`
+	ScriptIncarnation string `json:"-"`
+	// ScriptUpdatedAt is the optimistic fence used only while saving. The
+	// recording row is accepted only if this exact parent revision is still live.
+	ScriptUpdatedAt time.Time `json:"-"`
+	// ActionGraphDigest binds the observations to the exact canonical action
+	// graph that produced them. It is storage-internal because exposing a digest
+	// of credential-bearing request structure is unnecessary at the API boundary.
+	ActionGraphDigest string                       `json:"-"`
+	Source            string                       `json:"source,omitempty"`
+	Sensitivity       string                       `json:"sensitivity,omitempty"`
+	RequestCount      int                          `json:"request_count"`
+	Observations      []ScriptRecordingObservation `json:"observations"`
+	// CorrelationObservations is a legacy in-memory compatibility input that the
+	// persistence boundary discards. It may contain raw credentials, so it must
+	// never participate in generic JSON serialization.
+	CorrelationObservations []ScriptRecordingObservation `json:"-"`
 	// EncryptedCorrelationObservations is an opaque API-layer AES-GCM payload.
 	// Storage never decrypts it and never persists CorrelationObservations as
 	// plaintext. The field is intentionally excluded from API serialization.
 	EncryptedCorrelationObservations string    `json:"-"`
 	CreatedAt                        time.Time `json:"created_at"`
 	UpdatedAt                        time.Time `json:"updated_at"`
+}
+
+const (
+	ScriptRecordingSidecarNone = iota
+	ScriptRecordingSidecarV1
+	ScriptRecordingSidecarV2
+	ScriptRecordingSidecarV3
+)
+
+// ScriptRecordingStatusRecord is the bounded metadata projection used by the
+// viewer-polled recording status endpoint. It deliberately contains neither
+// observations_json nor correlation_observations_json. CorrelationMetadataCurrent
+// is true only when the count and sidecar-version witnesses describe this exact
+// recording revision.
+type ScriptRecordingStatusRecord struct {
+	ScriptID                    string
+	ProjectID                   string
+	ScriptIncarnation           string
+	SchemaVersion               string
+	ActionGraphDigest           string
+	Source                      string
+	Sensitivity                 string
+	RequestCount                int
+	CorrelationObservationCount int
+	CorrelationSidecarVersion   int
+	CorrelationMetadataCurrent  bool
+	CreatedAt                   time.Time
+	UpdatedAt                   time.Time
 }
 
 // TestRecord represents a persisted test run.

@@ -21,6 +21,7 @@ type startupLifecycleFakeClient struct {
 	assignErr       error
 	heartbeatClient generatorClient
 	assigned        int
+	scenarioIDs     []string
 	active          int
 	stopped         int
 	closed          int
@@ -56,6 +57,7 @@ func (c *startupLifecycleFakeClient) AssignWork(_ context.Context, assignment ge
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.assigned++
+	c.scenarioIDs = append(c.scenarioIDs, assignment.ScenarioID)
 	if !c.accept {
 		return generatorrpc.AssignmentResult{Accepted: false, ErrorMessage: "rejected for test"}, nil
 	}
@@ -233,6 +235,7 @@ func TestDistributedStartupRollsBackEveryAttemptedShard(t *testing.T) {
 	defer cancel()
 	test := &ManagedTest{
 		ID:           "run-startup-rollback",
+		ScenarioID:   "managed-startup-scenario",
 		Name:         "rollback",
 		Status:       "INITIALIZING",
 		Duration:     time.Minute,
@@ -252,9 +255,16 @@ func TestDistributedStartupRollsBackEveryAttemptedShard(t *testing.T) {
 	clientA.mu.Unlock()
 	clientB.mu.Lock()
 	assignedB, stoppedB := clientB.assigned, clientB.stopped
+	scenariosB := append([]string(nil), clientB.scenarioIDs...)
 	clientB.mu.Unlock()
 	if assignedA != 1 || assignedB != 1 {
 		t.Fatalf("assignment calls = A:%d B:%d, want one each", assignedA, assignedB)
+	}
+	clientA.mu.Lock()
+	scenariosA := append([]string(nil), clientA.scenarioIDs...)
+	clientA.mu.Unlock()
+	if len(scenariosA) != 1 || scenariosA[0] != test.ScenarioID || len(scenariosB) != 1 || scenariosB[0] != test.ScenarioID {
+		t.Fatalf("assignment scenario identities = A:%v B:%v, want %q", scenariosA, scenariosB, test.ScenarioID)
 	}
 	if stoppedA != 1 {
 		t.Fatalf("accepted shard stop count = %d, want 1", stoppedA)

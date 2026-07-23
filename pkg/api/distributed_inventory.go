@@ -79,10 +79,10 @@ func (b *distributedExecutionBackend) SystemInventory(ctx context.Context) []Gen
 					effectiveSpec := generatorEffectiveSpec(target, snapshot)
 					entry.Version = generatorSpecVersion(effectiveSpec)
 					entry.SupportedProtocols = generatorSpecProtocols(effectiveSpec)
-					entry.CompatibleFeatures = snapshot.CompatibleFeatures
-					if len(entry.CompatibleFeatures) == 0 {
-						entry.CompatibleFeatures = append([]string(nil), entry.SupportedProtocols...)
-					}
+					// Preserve an explicitly empty feature advertisement. Protocol
+					// names and controller defaults are not runtime feature evidence.
+					entry.CompatibleFeatures = normalizedProtocolList(snapshot.CompatibleFeatures)
+					entry.RuntimeCapacities = cloneProtocolRuntimeCapacities(snapshot.RuntimeCapacities)
 					entry.CompatibilityState = generatorCompatibilityState(effectiveSpec)
 					entry.CompatibilityIssues = generatorCompatibilityIssues(effectiveSpec)
 					entry.Status = "connected"

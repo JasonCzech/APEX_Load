@@ -20,6 +20,7 @@ IMAGE_ARTIFACTS = {
     "release-image-controller-enterprise",
     "release-image-generator-standard",
     "release-image-generator-enterprise",
+    "release-image-java-vuser-runner-standard",
 }
 EXPECTED_ARTIFACTS = {CORE_ARTIFACT, *CLIENT_ARTIFACTS, *IMAGE_ARTIFACTS}
 

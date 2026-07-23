@@ -26,6 +26,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/andybalholm/brotli"
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/internal/boundedcache"
 )
 
@@ -62,39 +63,41 @@ const (
 )
 
 type RecordedRequest struct {
-	Seq                   int                        `json:"seq"`
-	Timestamp             time.Time                  `json:"timestamp"`
-	Method                string                     `json:"method"`
-	URL                   string                     `json:"url"`
-	Scheme                string                     `json:"scheme,omitempty"`
-	Path                  string                     `json:"path"`
-	QueryString           string                     `json:"query_string,omitempty"`
-	Host                  string                     `json:"host"`
-	Headers               map[string]string          `json:"headers"`
-	HeadersMulti          map[string][]string        `json:"headers_multi,omitempty"`
-	RawHeaders            map[string]string          `json:"-"`
-	RawHeadersMulti       map[string][]string        `json:"-"`
-	Body                  string                     `json:"body,omitempty"`
-	BodyEncoding          string                     `json:"body_encoding,omitempty"`
-	BodySizeBytes         int                        `json:"body_size_bytes,omitempty"`
-	BodyTruncated         bool                       `json:"body_truncated,omitempty"`
-	ContentType           string                     `json:"content_type,omitempty"`
-	StatusCode            int                        `json:"status_code"`
-	ResponseTimeMs        float64                    `json:"response_time_ms"`
-	ResponseBody          string                     `json:"response_body,omitempty"`
-	ResponseBodyEncoding  string                     `json:"response_body_encoding,omitempty"`
-	ResponseBodySizeBytes int                        `json:"response_body_size_bytes,omitempty"`
-	ResponseBodyTruncated bool                       `json:"response_body_truncated,omitempty"`
-	ResponseHeaders       map[string]string          `json:"response_headers,omitempty"`
-	ResponseHeadersMulti  map[string][]string        `json:"response_headers_multi,omitempty"`
-	ThinkTimeMs           int64                      `json:"think_time_ms"`
-	IsStatic              bool                       `json:"is_static"`
-	ResourceType          string                     `json:"resource_type,omitempty"`
-	StepName              string                     `json:"step_name,omitempty"`
-	TransactionName       string                     `json:"transaction_name,omitempty"`
-	Note                  string                     `json:"note,omitempty"`
-	Excluded              bool                       `json:"excluded,omitempty"`
-	WebSocketMessages     []RecordedWebSocketMessage `json:"websocket_messages,omitempty"`
+	Seq                     int                        `json:"seq"`
+	Timestamp               time.Time                  `json:"timestamp"`
+	Method                  string                     `json:"method"`
+	URL                     string                     `json:"url"`
+	Scheme                  string                     `json:"scheme,omitempty"`
+	Path                    string                     `json:"path"`
+	QueryString             string                     `json:"query_string,omitempty"`
+	Host                    string                     `json:"host"`
+	Headers                 map[string]string          `json:"headers"`
+	HeadersMulti            map[string][]string        `json:"headers_multi,omitempty"`
+	RawHeaders              map[string]string          `json:"-"`
+	RawHeadersMulti         map[string][]string        `json:"-"`
+	Body                    string                     `json:"body,omitempty"`
+	BodyEncoding            string                     `json:"body_encoding,omitempty"`
+	BodySizeBytes           int                        `json:"body_size_bytes,omitempty"`
+	BodyTruncated           bool                       `json:"body_truncated,omitempty"`
+	ContentType             string                     `json:"content_type,omitempty"`
+	StatusCode              int                        `json:"status_code"`
+	ResponseTimeMs          float64                    `json:"response_time_ms"`
+	ResponseBody            string                     `json:"response_body,omitempty"`
+	ResponseBodyEncoding    string                     `json:"response_body_encoding,omitempty"`
+	ResponseBodySizeBytes   int                        `json:"response_body_size_bytes,omitempty"`
+	ResponseBodyTruncated   bool                       `json:"response_body_truncated,omitempty"`
+	ResponseHeaders         map[string]string          `json:"response_headers,omitempty"`
+	ResponseHeadersMulti    map[string][]string        `json:"response_headers_multi,omitempty"`
+	RawResponseHeaders      map[string]string          `json:"-"`
+	RawResponseHeadersMulti map[string][]string        `json:"-"`
+	ThinkTimeMs             int64                      `json:"think_time_ms"`
+	IsStatic                bool                       `json:"is_static"`
+	ResourceType            string                     `json:"resource_type,omitempty"`
+	StepName                string                     `json:"step_name,omitempty"`
+	TransactionName         string                     `json:"transaction_name,omitempty"`
+	Note                    string                     `json:"note,omitempty"`
+	Excluded                bool                       `json:"excluded,omitempty"`
+	WebSocketMessages       []RecordedWebSocketMessage `json:"websocket_messages,omitempty"`
 }
 
 type RecordedWebSocketMessage struct {
@@ -1262,6 +1265,8 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 	rawHeaders := firstHeaderValues(rawHeadersMulti)
 	headersMulti := sanitizeHeaders(req.Header, s.Filters.RedactHeaders, true, s.Filters.CaptureCookies)
 	headers := firstHeaderValues(headersMulti)
+	rawRespHeadersMulti := correlationHeaders(resp.Header, s.Filters.RedactHeaders, false, s.Filters.CaptureCookies)
+	rawRespHeaders := firstHeaderValues(rawRespHeadersMulti)
 	respHeadersMulti := sanitizeHeaders(resp.Header, s.Filters.RedactHeaders, false, s.Filters.CaptureCookies)
 
 	ct := resp.Header.Get("Content-Type")
@@ -1273,6 +1278,10 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 	respBodyForCapture := respBody
 	if decoded, ok := decodeBody(respBody, resp.Header.Get("Content-Encoding"), s.Filters.BodyCaptureLimitBytes); ok {
 		respBodyForCapture = decoded
+		delete(rawRespHeadersMulti, "Content-Encoding")
+		delete(rawRespHeadersMulti, "Content-Length")
+		delete(rawRespHeaders, "Content-Encoding")
+		delete(rawRespHeaders, "Content-Length")
 		delete(respHeadersMulti, "Content-Encoding")
 		delete(respHeadersMulti, "Content-Length")
 	}
@@ -1297,34 +1306,36 @@ func (r *Recorder) recordRequestWithOptions(s *Session, req *http.Request, reqBo
 
 	resourceType := classifyResource(parsed, ct)
 	rec := RecordedRequest{
-		Seq:                   s.seq + 1,
-		Timestamp:             opts.requestStartedAt,
-		Method:                req.Method,
-		URL:                   req.URL.String(),
-		Scheme:                parsed.Scheme,
-		Path:                  parsed.Path,
-		QueryString:           parsed.RawQuery,
-		Host:                  host,
-		Headers:               headers,
-		HeadersMulti:          headersMulti,
-		RawHeaders:            rawHeaders,
-		RawHeadersMulti:       rawHeadersMulti,
-		Body:                  reqBodyStr,
-		BodyEncoding:          reqBodyEncoding,
-		BodySizeBytes:         requestBodySizeBytes,
-		BodyTruncated:         reqBodyTruncated,
-		ContentType:           req.Header.Get("Content-Type"),
-		StatusCode:            resp.StatusCode,
-		ResponseTimeMs:        float64(elapsed.Microseconds()) / 1000.0,
-		ResponseBody:          respBodyStr,
-		ResponseBodyEncoding:  respBodyEncoding,
-		ResponseBodySizeBytes: responseBodySizeBytes,
-		ResponseBodyTruncated: respBodyTruncated,
-		ResponseHeaders:       respHeaders,
-		ResponseHeadersMulti:  respHeadersMulti,
-		ThinkTimeMs:           thinkMs,
-		IsStatic:              isStaticResource(parsed),
-		ResourceType:          resourceType,
+		Seq:                     s.seq + 1,
+		Timestamp:               opts.requestStartedAt,
+		Method:                  req.Method,
+		URL:                     req.URL.String(),
+		Scheme:                  parsed.Scheme,
+		Path:                    parsed.Path,
+		QueryString:             parsed.RawQuery,
+		Host:                    host,
+		Headers:                 headers,
+		HeadersMulti:            headersMulti,
+		RawHeaders:              rawHeaders,
+		RawHeadersMulti:         rawHeadersMulti,
+		Body:                    reqBodyStr,
+		BodyEncoding:            reqBodyEncoding,
+		BodySizeBytes:           requestBodySizeBytes,
+		BodyTruncated:           reqBodyTruncated,
+		ContentType:             req.Header.Get("Content-Type"),
+		StatusCode:              resp.StatusCode,
+		ResponseTimeMs:          float64(elapsed.Microseconds()) / 1000.0,
+		ResponseBody:            respBodyStr,
+		ResponseBodyEncoding:    respBodyEncoding,
+		ResponseBodySizeBytes:   responseBodySizeBytes,
+		ResponseBodyTruncated:   respBodyTruncated,
+		ResponseHeaders:         respHeaders,
+		ResponseHeadersMulti:    respHeadersMulti,
+		RawResponseHeaders:      rawRespHeaders,
+		RawResponseHeadersMulti: rawRespHeadersMulti,
+		ThinkTimeMs:             thinkMs,
+		IsStatic:                isStaticResource(parsed),
+		ResourceType:            resourceType,
 	}
 	remainingBodyBytes := maxRecordedBodyBytes - s.storedBodyBytes
 	storedBodies := []struct {
@@ -1422,9 +1433,11 @@ func estimateRecordedRequestBytes(request RecordedRequest) int64 {
 	bytes += estimateRecorderStringMapBytes(request.Headers)
 	bytes += estimateRecorderStringMapBytes(request.RawHeaders)
 	bytes += estimateRecorderStringMapBytes(request.ResponseHeaders)
+	bytes += estimateRecorderStringMapBytes(request.RawResponseHeaders)
 	bytes += estimateRecorderStringSliceMapBytes(request.HeadersMulti)
 	bytes += estimateRecorderStringSliceMapBytes(request.RawHeadersMulti)
 	bytes += estimateRecorderStringSliceMapBytes(request.ResponseHeadersMulti)
+	bytes += estimateRecorderStringSliceMapBytes(request.RawResponseHeadersMulti)
 	bytes += int64(len(request.WebSocketMessages)) * 32
 	for _, message := range request.WebSocketMessages {
 		bytes += estimateRecordedWebSocketMessageBytes(message)
@@ -1502,12 +1515,15 @@ func correlationHeaders(headers http.Header, extraRedact []string, skipProxy boo
 }
 
 func sanitizeHeaders(headers http.Header, extraRedact []string, skipProxy bool, captureCookies bool) map[string][]string {
-	redact := map[string]bool{
-		"authorization": true,
-		"x-api-key":     true,
-		"x-auth-token":  true,
-		"x-csrf-token":  true,
-		"x-xsrf-token":  true,
+	redact := map[string]bool{}
+	for key := range headers {
+		lower := strings.ToLower(strings.TrimSpace(key))
+		if captureCookies && (lower == "cookie" || lower == "set-cookie") {
+			continue
+		}
+		if paramize.SensitiveHeaderKey(key) {
+			redact[lower] = true
+		}
 	}
 	if !captureCookies {
 		redact["cookie"] = true
@@ -1614,7 +1630,19 @@ func capturedBody(body []byte, contentType string, limit int) (string, bool, str
 		captured = body[:limit]
 		truncated = true
 	}
-	if !isTextContent(contentType) && !utf8.Valid(captured) {
+	if !utf8.Valid(captured) && truncated && utf8.Valid(body) {
+		// A byte capture limit can bisect the final UTF-8 rune. Retain the
+		// largest complete prefix so JSON serialization and generated scripts do
+		// not replace the split bytes with U+FFFD.
+		end := len(captured)
+		for end > 0 && len(captured)-end < utf8.UTFMax && !utf8.Valid(captured[:end]) {
+			end--
+		}
+		if utf8.Valid(captured[:end]) {
+			captured = captured[:end]
+		}
+	}
+	if !utf8.Valid(captured) {
 		return base64.StdEncoding.EncodeToString(captured), truncated, "base64"
 	}
 	return string(captured), truncated, ""

@@ -8,9 +8,33 @@ import (
 	"time"
 
 	pb "github.com/jasonczech/apexload/api/proto"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
+
+func TestRequiredRuntimeFeatureForJavaVuserLifecycle(t *testing.T) {
+	tests := []struct {
+		name   string
+		script *dsl.Script
+		want   string
+	}{
+		{name: "combined action", script: &dsl.Script{Protocol: "java_vuser", Actions: []dsl.Action{{Type: "java_vuser_run", Params: map[string]any{"method": "action"}}}}, want: protocol.FeatureJavaVuserPersistentLifecycleV1},
+		{name: "source alias", script: &dsl.Script{Protocol: "java_vuser", Init: []dsl.Action{{Type: "java_vuser_run", Params: map[string]any{"method": "initialize"}}}}, want: protocol.FeatureJavaVuserPersistentLifecycleV1},
+		{name: "nested combined action", script: &dsl.Script{Protocol: "java_vuser", Actions: []dsl.Action{{Type: "loop", Control: &dsl.ControlFlow{Steps: []dsl.Action{{Type: "java_vuser_run", Params: map[string]any{"method": "run"}}}}}}}, want: protocol.FeatureJavaVuserPersistentLifecycleV1},
+		{name: "legacy full lifecycle", script: &dsl.Script{Protocol: "java_vuser", Actions: []dsl.Action{{Type: "java_vuser_run", Params: map[string]any{"method": "full_lifecycle"}}}}},
+		{name: "legacy omitted method", script: &dsl.Script{Protocol: "java_vuser", Actions: []dsl.Action{{Type: "java_vuser_run"}}}},
+		{name: "other protocol", script: &dsl.Script{Protocol: "http", Actions: []dsl.Action{{Type: "java_vuser_run", Params: map[string]any{"method": "action"}}}}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := requiredRuntimeFeature(test.script); got != test.want {
+				t.Fatalf("requiredRuntimeFeature() = %q, want %q", got, test.want)
+			}
+		})
+	}
+}
 
 func validatedStageRequest(t testing.TB, request *pb.WorkAssignment) validatedWorkAssignment {
 	t.Helper()

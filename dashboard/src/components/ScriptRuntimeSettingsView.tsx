@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 
-import type { ScriptDefinition } from '../types/scripts'
+import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import { jmsProviderForProtocol } from './scriptEditorHelpers'
 import {
   BROWSER_DEVICE_PROFILES,
@@ -24,6 +24,7 @@ import {
   parseDFEChain,
   parseKeyValueLines,
   parseLineList,
+  parseExactLineList,
   parseSecondsInputAsMilliseconds,
   syncSOAPEnvelopeNamespace,
   type HTTPTransportTabId,
@@ -32,6 +33,26 @@ import {
 
 const SECONDS_INPUT_STEP = '0.001'
 const WEBKIT_INSTALL_ADVISORY = 'WebKit execution requires Playwright WebKit assets installed on the controller host. Run go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install webkit before running browser tests or replay sessions.'
+
+function flattenRuntimeActions(actions: ScriptActionDefinition[]): ScriptActionDefinition[] {
+  return actions.flatMap(action => [
+    action,
+    ...flattenRuntimeActions(action.control?.steps || []),
+    ...flattenRuntimeActions(action.control?.else || []),
+  ])
+}
+
+function usesPersistentJavaVuserLifecycle(script: ScriptDefinition): boolean {
+  const javaActions = flattenRuntimeActions([
+    ...(script.init || []),
+    ...(script.actions || []),
+    ...(script.teardown || []),
+  ]).filter(action => action.type === 'java_vuser_run')
+  return javaActions.length > 0 && javaActions.every(action => {
+    const method = String(action.params?.method || '').trim().toLowerCase()
+    return method !== '' && method !== 'full_lifecycle'
+  })
+}
 
 interface RuntimeParityEntry {
   area: string
@@ -134,6 +155,56 @@ function SecondsFromMillisecondsInput({
         setDraftValue(nextValue)
         const nextMilliseconds = parseSecondsInputAsMilliseconds(nextValue, min)
         if (nextMilliseconds !== null) onChangeMs(nextMilliseconds)
+      }}
+    />
+  )
+}
+
+interface ExactLineListInputProps {
+  ariaLabel: string
+  onCommit: (values: string[]) => void
+  placeholder?: string
+  rows?: number
+  values?: string[]
+}
+
+function ExactLineListInput({
+  ariaLabel,
+  onCommit,
+  placeholder,
+  rows = 4,
+  values,
+}: ExactLineListInputProps) {
+  const formattedValue = formatLineList(values)
+  const [draftValue, setDraftValue] = useState(formattedValue)
+  const [focused, setFocused] = useState(false)
+
+  useEffect(() => {
+    if (!focused) setDraftValue(formattedValue)
+  }, [focused, formattedValue])
+
+  const commit = () => onCommit(parseExactLineList(draftValue))
+
+  return (
+    <textarea
+      aria-label={ariaLabel}
+      rows={rows}
+      value={focused ? draftValue : formattedValue}
+      placeholder={placeholder}
+      onFocus={() => {
+        setFocused(true)
+        setDraftValue(formattedValue)
+      }}
+      onBlur={() => {
+        commit()
+        setFocused(false)
+      }}
+      onChange={event => setDraftValue(event.target.value)}
+      onKeyDown={event => {
+        if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+          event.preventDefault()
+          commit()
+        }
       }}
     />
   )
@@ -274,6 +345,16 @@ function RuntimeSectionIcon({ section }: { section: RuntimeSettingsSectionId }) 
             <path d="M7 21h10" />
           </>
         )
+      case 'java_vuser':
+        return (
+          <>
+            <path d="M7 8h9v6a4 4 0 0 1-4 4h-1a4 4 0 0 1-4-4V8z" />
+            <path d="M16 10h1.5a2.5 2.5 0 0 1 0 5H16" />
+            <path d="M8 3c1 1 1 2 0 3" />
+            <path d="M12 3c1 1 1 2 0 3" />
+            <path d="M6 21h12" />
+          </>
+        )
       case 'web_runtime':
         return (
           <>
@@ -341,6 +422,7 @@ export function ScriptRuntimeSettingsView({
     http: isHttpScript,
     httpTransport: isHttpTransportScript,
     javaHttp: isJavaHttpScript,
+    javaVuser: isJavaVuserScript,
     jms: isJmsScript,
     network: isNetworkScript,
     soap: isSoapScript,
@@ -363,6 +445,7 @@ export function ScriptRuntimeSettingsView({
   const handleSave = onSave
   const saveScriptDisabled = saveDisabled
   const saveScriptTitle = saveTitle
+  const persistentJavaVuserLifecycle = isJavaVuserScript && usesPersistentJavaVuserLifecycle(script)
 
   const addSoapNamespace = () => {
     const key = window.prompt('Namespace prefix:')
@@ -522,6 +605,13 @@ export function ScriptRuntimeSettingsView({
         <span className="section-summary">{script.config.java_http?.codec || 'java_serialized_object_base64'}</span>
       </button>
     )}
+    {isJavaVuserScript && (
+      <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('java_vuser') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('java_vuser')}>
+        <RuntimeSectionIcon section="java_vuser" />
+        <span className="section-label">Java VM</span>
+        <span className="section-summary">{script.config.java_vuser?.jdk_selection === 'specified' ? 'Specified JDK' : 'Internal JDK logic'}</span>
+      </button>
+    )}
     {isHttpScript && (
       <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('web_runtime') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('web_runtime')}>
         <RuntimeSectionIcon section="web_runtime" />
@@ -572,7 +662,7 @@ export function ScriptRuntimeSettingsView({
             <span>Version</span>
             <input value={script.version} onChange={e => updateField('version', e.target.value)} placeholder="1.0.0" />
           </label>
-          {!isJmsScript && !isDatabaseScript && !isNetworkScript && (
+          {capabilities.requiresBaseURL && (
             <label>
               <span>{isGrpcScript ? 'gRPC Target' : isWebSocketScript ? 'WebSocket Origin' : 'Base URL'}</span>
               <input value={script.config.base_url} onChange={e => updateField('config.base_url', e.target.value)} placeholder={isGrpcScript ? 'dns:///api.example.com:443' : isWebSocketScript ? 'wss://api.example.com' : 'https://api.example.com'} />
@@ -1683,6 +1773,147 @@ export function ScriptRuntimeSettingsView({
               <button className="btn btn-sm btn-ghost" onClick={() => removeJavaHTTPMapping('response_mapping', key)}>✕</button>
             </div>
           ))}
+        </div>
+      </div>
+    )}
+  </div>}
+
+  {isJavaVuserScript && <div className={`settings-section ${runtimeSectionIsActive('java_vuser') ? 'open' : ''}`}>
+    <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('java_vuser')}>
+      <RuntimeSectionIcon section="java_vuser" />
+      <span className="section-label">Java VM Settings</span>
+      <span className="section-summary">{script.config.java_vuser?.jdk_selection === 'specified' ? 'Specified JDK' : 'Internal JDK logic'}</span>
+      <span className="chevron">{runtimeSectionIsActive('java_vuser') ? '▾' : '▸'}</span>
+    </button>
+    {runtimeSectionIsActive('java_vuser') && (
+      <div className="section-body">
+        <div className="settings-sub-group">
+          <h5>Java VM</h5>
+          <div className="runtime-checkbox-list" role="radiogroup" aria-label="Java VM selection">
+            <label className="checkbox-label">
+              <input
+                type="radio"
+                name="java-vuser-jdk-selection"
+                checked={(script.config.java_vuser?.jdk_selection || 'internal') === 'internal'}
+                onChange={() => updateField('config.java_vuser.jdk_selection', 'internal')}
+              />
+              <span>Use internal JDK selection logic</span>
+            </label>
+            <label className="checkbox-label">
+              <input
+                type="radio"
+                name="java-vuser-jdk-selection"
+                checked={script.config.java_vuser?.jdk_selection === 'specified'}
+                onChange={() => updateField('config.java_vuser.jdk_selection', 'specified')}
+              />
+              <span>Use a specified JDK</span>
+            </label>
+          </div>
+          <div className="form-grid">
+            <label className="full-width">
+              <span>JDK Home</span>
+              <input
+                aria-label="JDK Home"
+                value={script.config.java_vuser?.jdk_home || ''}
+                disabled={script.config.java_vuser?.jdk_selection !== 'specified'}
+                onChange={event => updateField('config.java_vuser.jdk_home', event.target.value)}
+                placeholder="/opt/jdks/temurin-21 or C:\\Java\\jdk-21"
+              />
+            </label>
+          </div>
+          <div className="cell-muted">
+            Specified homes are trusted runner-local paths. The runner derives only bin/java (or bin/java.exe), requires Java 17 or newer, and never falls back silently.
+          </div>
+        </div>
+
+        <div className="settings-sub-group">
+          <h5>Precompiled Classpath</h5>
+          <label className="full-width">
+            <span>One class or JAR path per line</span>
+            <ExactLineListInput
+              ariaLabel="Java Vuser classpath"
+              rows={4}
+              values={script.config.java_vuser?.classpath}
+              placeholder={'/opt/apexload/java-vuser/classes\n/opt/apexload/java-vuser/lib/application.jar'}
+              onCommit={values => updateField('config.java_vuser.classpath', values)}
+            />
+          </label>
+          <div className="cell-muted">
+            Paths must already exist on every assigned runner. Script entries are loaded before operator-managed shared libraries; Java source is not compiled or uploaded.
+          </div>
+        </div>
+
+        <div className="settings-sub-group">
+          <h5>Additional VM Parameters</h5>
+          <label className="full-width">
+            <span>One exact JVM argument token per line</span>
+            <ExactLineListInput
+              ariaLabel="Additional VM Parameters"
+              rows={5}
+              values={script.config.java_vuser?.additional_vm_parameters}
+              placeholder={'-Xmx512m\n-Dapp.env=perf\n-Dlabel=hello world'}
+              onCommit={values => updateField('config.java_vuser.additional_vm_parameters', values)}
+            />
+          </label>
+          <div className="cell-muted">
+            Spaces within a line remain part of that single argument. Launcher takeover, argfiles, agents, native hooks, custom loaders, and command-triggering error hooks are rejected.
+          </div>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={script.config.java_vuser?.use_xbootclasspath ?? false}
+              onChange={event => updateField('config.java_vuser.use_xbootclasspath', event.target.checked)}
+            />
+            <span>Use -Xbootclasspath parameters</span>
+          </label>
+          {script.config.java_vuser?.use_xbootclasspath && (
+            <div className="cell-muted" role="note">
+              Java 9 and newer do not replay the legacy prepend behavior. APEX Load uses the configured ordinary classpath and records an explicit compatibility warning; it does not emit an Xboot flag.
+            </div>
+          )}
+        </div>
+
+        <div className="settings-sub-group">
+          <h5>Class Loading</h5>
+          <label className="checkbox-label">
+            <input
+              type="checkbox"
+              checked={script.config.java_vuser?.dedicated_class_loader ?? false}
+              onChange={event => updateField('config.java_vuser.dedicated_class_loader', event.target.checked)}
+            />
+            <span>Load each virtual user using a dedicated class loader</span>
+          </label>
+          <div className="cell-muted">
+            {persistentJavaVuserLifecycle
+              ? 'Each Java VUser keeps one JVM, Actions instance, and child loader for its full lifecycle. Java fields and saved LoadRunner parameters persist across init, repeated action iterations, and end, then the session is closed during teardown.'
+              : 'This legacy full_lifecycle script uses one-shot JVM execution. Java fields and saved LoadRunner parameters do not persist between action invocations. Re-import the Java archive to generate the combined init/action/end lifecycle.'}
+          </div>
+        </div>
+
+        <div className="settings-sub-group">
+          <h5>Runner Timeouts</h5>
+          <div className="form-grid">
+            <label>
+              <span>Startup timeout (s)</span>
+              <SecondsFromMillisecondsInput
+                valueMs={script.config.java_vuser?.startup_timeout_ms}
+                emptyWhenUndefined
+                placeholder="0"
+                ariaLabel="Java Vuser startup timeout"
+                onChangeMs={value => updateField('config.java_vuser.startup_timeout_ms', value)}
+              />
+            </label>
+            <label>
+              <span>Action timeout (s)</span>
+              <SecondsFromMillisecondsInput
+                valueMs={script.config.java_vuser?.action_timeout_ms}
+                emptyWhenUndefined
+                placeholder="30"
+                ariaLabel="Java Vuser action timeout"
+                onChangeMs={value => updateField('config.java_vuser.action_timeout_ms', value)}
+              />
+            </label>
+          </div>
         </div>
       </div>
     )}

@@ -12,6 +12,7 @@ import (
 var errObjectRepositoryOptimisticUpdateUnsupported = errors.New("optimistic object repository updates are not supported by this storage backend")
 var errObjectRepositoryGuardedDeleteUnsupported = errors.New("guarded object repository deletion is not supported by this storage backend")
 var errCorrelationRulesetOptimisticUpdateUnsupported = errors.New("optimistic correlation ruleset updates are not supported by this storage backend")
+var errCorrelationRulesetGuardedDeleteUnsupported = errors.New("guarded correlation ruleset deletion is not supported by this storage backend")
 
 // objectRepositoryService is the narrow domain boundary used by object-
 // repository HTTP handlers. The compatibility adapter retains the existing
@@ -92,10 +93,18 @@ type correlationRulesetService interface {
 	SaveRuleset(*storage.CorrelationRuleset) error
 	ListRulesets(string, int, int) ([]*storage.CorrelationRuleset, error)
 	UpdateRulesetIfUnchanged(*storage.CorrelationRuleset, time.Time) (bool, error)
-	DeleteRuleset(string) (string, error)
+	DeleteRulesetIfUnchanged(*storage.CorrelationRuleset, string) (bool, error)
 	GetScript(string) (*StoredScript, bool)
 	GetScriptRecording(string) (*storage.ScriptRecordingRecord, error)
-	UpdateScript(string, *dsl.Script, string) (bool, error)
+	UpdateScriptIfUnchangedAndRulesetCurrent(
+		string,
+		*dsl.Script,
+		string,
+		time.Time,
+		string,
+		string,
+		time.Time,
+	) (bool, error)
 }
 
 type correlationRulesetCASPersistence interface {
@@ -135,12 +144,17 @@ func (service *testRunnerCorrelationRulesetService) UpdateRulesetIfUnchanged(rul
 	return store.UpdateCorrelationRulesetIfUnchanged(ruleset, expectedUpdatedAt)
 }
 
-func (service *testRunnerCorrelationRulesetService) DeleteRuleset(id string) (string, error) {
-	projectID := ""
-	if ruleset, err := service.store.GetCorrelationRuleset(id); err == nil && ruleset != nil {
-		projectID = ruleset.ProjectID
+func (service *testRunnerCorrelationRulesetService) DeleteRulesetIfUnchanged(ruleset *storage.CorrelationRuleset, expectedProjectID string) (bool, error) {
+	if ruleset == nil {
+		return false, nil
 	}
-	return projectID, service.store.DeleteCorrelationRuleset(id)
+	store, ok := service.store.(interface {
+		DeleteCorrelationRulesetIfUnchanged(string, string, time.Time) (bool, error)
+	})
+	if !ok {
+		return false, errCorrelationRulesetGuardedDeleteUnsupported
+	}
+	return store.DeleteCorrelationRulesetIfUnchanged(ruleset.ID, expectedProjectID, ruleset.UpdatedAt)
 }
 
 func (service *testRunnerCorrelationRulesetService) GetScript(id string) (*StoredScript, bool) {
@@ -151,8 +165,24 @@ func (service *testRunnerCorrelationRulesetService) GetScriptRecording(id string
 	return service.store.GetScriptRecording(id)
 }
 
-func (service *testRunnerCorrelationRulesetService) UpdateScript(id string, script *dsl.Script, projectID string) (bool, error) {
-	_, updated, err := service.runner.UpdateScriptDurableInProject(id, script, projectID)
+func (service *testRunnerCorrelationRulesetService) UpdateScriptIfUnchangedAndRulesetCurrent(
+	id string,
+	script *dsl.Script,
+	projectID string,
+	expectedUpdatedAt time.Time,
+	expectedActionGraphDigest string,
+	rulesetID string,
+	expectedRulesetUpdatedAt time.Time,
+) (bool, error) {
+	_, updated, err := service.runner.UpdateScriptDurableInProjectIfUnchangedAndCorrelationRulesetCurrent(
+		id,
+		script,
+		projectID,
+		expectedUpdatedAt,
+		expectedActionGraphDigest,
+		rulesetID,
+		expectedRulesetUpdatedAt,
+	)
 	return updated, err
 }
 

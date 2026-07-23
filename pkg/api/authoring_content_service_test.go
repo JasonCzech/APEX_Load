@@ -167,13 +167,14 @@ func TestAuthoringContentHandlersPreserveUnsupportedCASErrors(t *testing.T) {
 	})
 
 	t.Run("correlation ruleset", func(t *testing.T) {
+		now := time.Now().UTC()
 		service := &stubCorrelationRulesetService{
 			configured: true,
-			ruleset:    &storage.CorrelationRuleset{ID: "rules-1", ProjectID: "project-a", Name: "Original"},
+			ruleset:    &storage.CorrelationRuleset{ID: "rules-1", ProjectID: "project-a", Name: "Original", UpdatedAt: now},
 			updateErr:  errCorrelationRulesetOptimisticUpdateUnsupported,
 		}
 		server := &Server{correlationRulesetService: service}
-		request := httptest.NewRequest(http.MethodPut, "/api/v1/correlation-rulesets/rules-1", bytes.NewBufferString(`{"name":"Updated"}`))
+		request := httptest.NewRequest(http.MethodPut, "/api/v1/correlation-rulesets/rules-1", bytes.NewBufferString(`{"name":"Updated","expected_updated_at":"`+now.Format(time.RFC3339Nano)+`"}`))
 		request.SetPathValue("id", "rules-1")
 		response := httptest.NewRecorder()
 		server.handleUpdateCorrelationRuleset(response, request)

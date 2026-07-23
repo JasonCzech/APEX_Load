@@ -210,6 +210,55 @@
         }
       }
     },
+    "javaVuser": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "runner": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "image": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "repository": { "type": "string", "minLength": 1 },
+                "tag": { "type": "string" },
+                "pullPolicy": { "enum": ["Always", "IfNotPresent", "Never"] }
+              },
+              "required": ["repository", "tag", "pullPolicy"]
+            },
+            "maxProcesses": { "type": "integer", "minimum": 1, "maximum": 10000 },
+            "resources": { "type": "object" },
+            "scratch": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "tmpSizeLimit": { "type": "string", "minLength": 1 }
+              },
+              "required": ["tmpSizeLimit"]
+            }
+          },
+          "required": [
+            "image",
+            "maxProcesses",
+            "resources",
+            "scratch"
+          ]
+        },
+        "assets": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "existingClaim": { "type": "string" },
+            "mountPath": { "type": "string", "pattern": "^/" }
+          },
+          "required": ["existingClaim", "mountPath"]
+        }
+      },
+      "required": ["enabled", "runner", "assets"]
+    },
     "ingress": {
       "type": "object",
       "properties": {

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"encoding/base64"
+	"fmt"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -21,6 +22,14 @@ func buildProtoConfigForRunModeWithSecretResolver(script *dsl.Script, runMode st
 	runMode = strings.TrimSpace(runMode)
 	if runMode != "" {
 		cfg["apexload_run_mode"] = runMode
+	}
+	return cfg
+}
+
+func buildGroupProtoConfig(group GroupConfig, runMode string) map[string]any {
+	cfg := buildProtoConfigForRunModeWithSecretResolver(group.Script, runMode, group.SecretResolver)
+	if scenarioID := strings.TrimSpace(group.ScenarioID); scenarioID != "" {
+		cfg["scenario_id"] = scenarioID
 	}
 	return cfg
 }
@@ -89,14 +98,15 @@ func vuserProtoConfig(base map[string]any, vuserID int) map[string]any {
 	pool, hasPool := base["web_source_ips"].([]string)
 	profiles, hasProfiles := base["web_network_profiles"].([]dsl.NetworkProfileWeight)
 	_, isBruno := base["bruno_bundle_ref"]
-	if (!hasPool || len(pool) == 0) && (!hasProfiles || len(profiles) == 0) && !isBruno {
+	isJavaVuser := strings.EqualFold(fmt.Sprint(base["protocol"]), "java_vuser")
+	if (!hasPool || len(pool) == 0) && (!hasProfiles || len(profiles) == 0) && !isBruno && !isJavaVuser {
 		return base
 	}
 	clone := make(map[string]any, len(base)+4)
 	for k, v := range base {
 		clone[k] = v
 	}
-	if isBruno {
+	if isBruno || isJavaVuser {
 		clone["vuser_id"] = float64(vuserID)
 	}
 	if hasPool && len(pool) > 0 {
@@ -184,8 +194,13 @@ func injectNetworkSimulation(cfg map[string]any, profile dsl.NetworkProfileWeigh
 
 func buildProtoConfigWithSecretResolver(script *dsl.Script, resolver SecretResolver) map[string]any {
 	cfg := map[string]any{
-		"base_url":   script.Config.BaseURL,
-		"project_id": script.ProjectID,
+		"base_url":            script.Config.BaseURL,
+		"project_id":          script.ProjectID,
+		"protocol":            script.Protocol,
+		"scenario_id":         script.ID,
+		"script_name":         script.Name,
+		"ignore_think_time":   script.Config.ThinkTime.Ignore,
+		"think_time_limit_ms": script.Config.ThinkTime.LimitMs,
 	}
 	if script.Metadata != nil && script.Metadata.RuntimePolicy != nil && len(script.Metadata.RuntimePolicy.AllowedTargetHosts) > 0 {
 		cfg[protocol.TargetPolicyConfigKey] = append([]string(nil), script.Metadata.RuntimePolicy.AllowedTargetHosts...)

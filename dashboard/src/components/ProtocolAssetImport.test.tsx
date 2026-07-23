@@ -1815,6 +1815,68 @@ describe('ProtocolAssetImport', () => {
     }))
   })
 
+  it('deduplicates rapid saves of the same reviewed import', async () => {
+    let resolveSave!: (value: unknown) => void
+    apiMock.savePostmanImport.mockReturnValueOnce(new Promise(resolve => {
+      resolveSave = resolve
+    }))
+
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="postman" projectId="project-1" />)
+    })
+    await flushPromises()
+
+    const collectionInput = container.querySelector('input[type="file"]') as HTMLInputElement | null
+    expect(collectionInput).not.toBeNull()
+    if (!collectionInput) return
+    const collectionFile = new File(['{"info":{"name":"Orders"},"item":[]}'], 'orders.postman_collection.json', { type: 'application/json' })
+    await act(async () => {
+      Object.defineProperty(collectionInput, 'files', { configurable: true, value: [collectionFile] })
+      collectionInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Postman Collection'))
+    expect(convertButton).toBeDefined()
+    if (!convertButton) return
+    await act(async () => {
+      convertButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    const saveButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Save To Script Library'))
+    expect(saveButton).toBeDefined()
+    if (!saveButton) return
+    await act(async () => {
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      saveButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(apiMock.savePostmanImport).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      resolveSave({
+        scripts: [],
+        stored_script: {
+          id: 'script-postman',
+          name: 'Imported Postman',
+          protocol: 'http',
+          version: '1.0.0',
+          project_id: 'project-1',
+          created_at: '2026-01-01T00:00:00Z',
+          script: {
+            name: 'Imported Postman',
+            version: '1.0.0',
+            protocol: 'http',
+            config: { base_url: 'https://api.example.test' },
+            actions: [{ name: 'Get Orders', type: 'request', method: 'GET', target: '/orders' }],
+          },
+        },
+        replaced: false,
+      })
+    })
+    await flushPromises()
+  })
+
   it('converts browser recordings and renders ranked selector candidates', async () => {
     await act(async () => {
       root.render(<ProtocolAssetImport kind="recorder-export" projectId="project-1" />)
@@ -1964,6 +2026,242 @@ describe('ProtocolAssetImport', () => {
     }))
   })
 
+  it('keeps polling the client replay id when the recorder replay start response is lost', async () => {
+    apiMock.startDraftBrowserReplaySession.mockRejectedValueOnce(new Error('connection reset'))
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="recorder-export" projectId="project-1" />)
+    })
+
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['{"title":"Login","steps":[]}'], 'login.json', { type: 'application/json' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Convert Recording'))
+        ?.click()
+    })
+    await flushPromises()
+
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Run Replay Validation'))
+        ?.click()
+    })
+    await flushPromises()
+
+    const replayCalls = apiMock.startDraftBrowserReplaySession.mock.calls
+    const payload = replayCalls[replayCalls.length - 1]?.[0]
+    expect(payload.replay_session_id).toMatch(/^[0-9a-f-]{36}$/)
+    expect(container.textContent).toContain(`Replay ${payload.replay_session_id}`)
+    expect(container.textContent).toContain('Confirming the accepted replay session')
+    expect(container.textContent).not.toContain('Failed to start browser replay validation')
+  })
+
+  it('clears rendered recorder replay evidence when the project scope changes', async () => {
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="recorder-export" projectId="project-1" />)
+    })
+
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['{"title":"Login","steps":[]}'], 'login.json', { type: 'application/json' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Convert Recording'))
+        ?.click()
+    })
+    await flushPromises()
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Run Replay Validation'))
+        ?.click()
+    })
+    await flushPromises()
+    expect(container.textContent).toContain('Replay replay-recorder-1')
+
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="recorder-export" projectId="project-2" />)
+    })
+    await flushPromises()
+
+    expect(container.querySelector('[data-testid="replay-progress"]')).toBeNull()
+    expect(container.textContent).not.toContain('Replay validation passed')
+    expect(container.textContent).not.toContain('Replay replay-recorder-1')
+  })
+
+  it('does not dispatch duplicate recorder replay starts on rapid clicks', async () => {
+    let resolveStart!: (value: unknown) => void
+    apiMock.startDraftBrowserReplaySession.mockReturnValueOnce(new Promise(resolve => {
+      resolveStart = resolve
+    }))
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="recorder-export" projectId="project-1" />)
+    })
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['{"title":"Login","steps":[]}'], 'login.json', { type: 'application/json' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Convert Recording'))
+        ?.click()
+    })
+    await flushPromises()
+    const replayButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Run Replay Validation'))!
+    act(() => {
+      replayButton.click()
+      replayButton.click()
+    })
+
+    expect(apiMock.startDraftBrowserReplaySession).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      resolveStart({
+        replay_session_id: 'replay-recorder-dedupe',
+        session: {
+          id: 'replay-recorder-dedupe',
+          status: 'queued',
+          group: 'Login-replay',
+          protocol: 'browser',
+          current_event_index: -1,
+          events: [],
+        },
+      })
+      await Promise.resolve()
+    })
+  })
+
+  it('invalidates recorder replay evidence after runtime and parameterization mutations', async () => {
+    const sourceScript = {
+      name: 'Recorder With Parameters', version: '1.0', protocol: 'browser',
+      config: { base_url: 'https://shop.example.test' },
+      actions: [{ name: 'Navigate', type: 'browser_navigate', target: '/orders/123' }],
+    }
+    const parameterizedScript = {
+      ...sourceScript,
+      actions: [{ ...sourceScript.actions[0], target: '/orders/{{param.ORDER_ID}}' }],
+    }
+    apiMock.importBrowserRecording.mockResolvedValueOnce({
+      scripts: [], script: sourceScript, warnings: [], unsupported_elements: [], assumptions: [], review_sections: [], repair_suggestions: [], correlations: [],
+      stats: { format: 'chrome_devtools_recorder', total_steps: 1, converted_actions: 1, skipped_steps: 0 }, summary: {},
+      parameterization: {
+        suggestions: [{
+          id: 'order-id', kind: 'data_param', var_name: 'ORDER_ID', replacement: '{{param.ORDER_ID}}',
+          literal_value: '123', confidence: 0.95, rule_id: 'path-id', rationale: 'Recorded order id',
+          auto_apply: true, high_risk: false,
+        }],
+        summary: { total: 1, by_kind: { data_param: 1 }, auto_apply_count: 1, review_count: 0, high_risk_count: 0, pre_applied_count: 0 },
+      },
+    })
+    apiMock.applyImportParameterization.mockResolvedValueOnce({
+      script: parameterizedScript,
+      diffs: [{ suggestion_id: 'order-id', path: 'actions[0].target', kind: 'data_param', before: '/orders/123', after: '/orders/{{param.ORDER_ID}}' }],
+    })
+
+    await act(async () => root.render(<ProtocolAssetImport kind="recorder-export" projectId="project-1" />))
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['{}'], 'recorder.json')] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert Recording'))?.click()
+    })
+    await flushPromises()
+
+    const completeReplay = async () => {
+      const run = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Run Replay Validation'))!
+      await act(async () => run.click())
+      await flushPromises()
+      const complete = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Complete Replay'))!
+      await act(async () => complete.click())
+      expect(container.textContent).toContain('Replay validation passed')
+    }
+
+    await completeReplay()
+    const thinkTimeInput = Array.from(container.querySelectorAll<HTMLLabelElement>('label'))
+      .find(label => label.textContent?.includes('Think Time (ms)'))
+      ?.querySelector<HTMLInputElement>('input')
+    expect(thinkTimeInput).toBeDefined()
+    await act(async () => {
+      if (thinkTimeInput) setInputValue(thinkTimeInput, '2500')
+    })
+    expect(container.textContent).toContain('Runtime settings updated the draft')
+    expect(container.textContent).not.toContain('Replay validation passed')
+
+    await completeReplay()
+    const applyParameterization = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Apply Selected'))!
+    await act(async () => applyParameterization.click())
+    await flushPromises()
+    expect(apiMock.applyImportParameterization).toHaveBeenCalled()
+    expect(container.textContent).toContain('Parameterization updated the draft')
+    expect(container.textContent).not.toContain('Replay validation passed')
+  })
+
+  it('invalidates successful recorder replay evidence when deferred secret bindings change the draft', async () => {
+    const sourceScript = {
+      name: 'Recorder With Secret', version: '1.0', protocol: 'browser',
+      config: { base_url: 'https://shop.example.test', auth: { token: '[REDACTED]' } },
+      actions: [{ name: 'Navigate', type: 'browser_navigate', target: '/account' }],
+    }
+    apiMock.importBrowserRecording.mockResolvedValueOnce({
+      scripts: [], script: sourceScript, warnings: [], unsupported_elements: [], assumptions: [], review_sections: [], repair_suggestions: [], correlations: [],
+      stats: { format: 'chrome_devtools_recorder', total_steps: 1, converted_actions: 1, skipped_steps: 0 }, summary: {},
+      secret_binding_requirements: [{
+        id: 'recorder-token', path: '/config/auth/token', label: 'Recorder token', context: 'Browser authentication',
+        suggested_name: 'RECORDER_TOKEN', script_index: 0, script_name: sourceScript.name,
+      }],
+    })
+    apiMock.applySecretBindings.mockResolvedValueOnce({
+      script: { ...sourceScript, config: { ...sourceScript.config, auth: { token: '{{secret.RECORDER_TOKEN}}' } } },
+      secret_binding_requirements: [],
+    })
+
+    await act(async () => root.render(<ProtocolAssetImport kind="recorder-export" projectId="project-1" />))
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['{}'], 'recorder.json')] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert Recording'))?.click()
+    })
+    await flushPromises()
+
+    const replay = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Run Replay Validation'))!
+    await act(async () => replay.click())
+    await flushPromises()
+    const complete = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Complete Replay'))!
+    await act(async () => complete.click())
+    expect(container.textContent).toContain('Replay validation passed')
+
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save with 1 secret to configure'))!
+    await act(async () => save.click())
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).toHaveBeenCalled()
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Credential bindings updated the draft')
+    expect(container.textContent).not.toContain('Replay validation passed')
+    expect(container.textContent).toContain('Run replay validation successfully before saving')
+  })
+
   it('saves one canonical recorder draft after selector repair and deferred credential binding', async () => {
     const sourceScript = {
       name: 'Recorder With Secret', version: '1.0', protocol: 'browser',
@@ -2014,6 +2312,14 @@ describe('ProtocolAssetImport', () => {
         actions: [expect.objectContaining({ selector: 'role=button[name="Sign in"]' })],
       }),
     }))
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('Credential bindings updated the draft')
+    const resolvedDraftToggle = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find(input => input.parentElement?.textContent?.includes('Save as draft needing replay review'))!
+    await act(async () => resolvedDraftToggle.click())
+    const resolvedSave = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Save To Script Library'))!
+    await act(async () => resolvedSave.click())
+    await flushPromises()
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       config: expect.objectContaining({ auth: { token: '{{secret.RECORDER_TOKEN}}' } }),
       actions: [expect.objectContaining({ selector: 'role=button[name="Sign in"]' })],

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func addJavaZipFile(t *testing.T, zw *zip.Writer, name string, content string) {
@@ -20,7 +21,7 @@ func addJavaZipFile(t *testing.T, zw *zip.Writer, name string, content string) {
 	}
 }
 
-func TestConvertZipJavaVuserSidecarFallbackRequiresExplicitOptIn(t *testing.T) {
+func TestJavaNativeAnalysisSidecarFallbackRequiresExplicitOptIn(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	addJavaZipFile(t, zw, "JavaCustom/JavaCustom.usr", `[General]
@@ -40,7 +41,7 @@ Action=Actions.java
 		t.Fatalf("close zip: %v", err)
 	}
 
-	reviewOnly, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	reviewOnly, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip without opt-in returned error: %v", err)
 	}
@@ -57,7 +58,7 @@ Action=Actions.java
 		t.Fatalf("ValidateScriptIssues(review-only) returned %v", issues)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{AllowJavaVuserRunner: true})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{AllowJavaVuserRunner: true})
 	if err != nil {
 		t.Fatalf("ConvertZip with opt-in returned error: %v", err)
 	}
@@ -80,6 +81,11 @@ Action=Actions.java
 	if sidecarAction.Metadata["shim_class"] != javaVuserShimClass || sidecarAction.Metadata["sidecar_transport"] != javaVuserSidecarTransport {
 		t.Fatalf("sidecar metadata = %#v, want shim/transport contract", sidecarAction.Metadata)
 	}
+	requiredRuntimeFeatures, _ := sidecarAction.Metadata["required_runtime_features"].([]string)
+	if !stringSliceContains(requiredRuntimeFeatures, protocol.FeatureJavaVuserPersistentLifecycleV1) ||
+		!stringSliceContains(requiredRuntimeFeatures, protocol.FeatureJavaVuserSessionFrameTokenV1) {
+		t.Fatalf("sidecar runtime features = %#v, want persistent lifecycle and authenticated frame-token contracts", requiredRuntimeFeatures)
+	}
 	callbacks, _ := sidecarAction.Metadata["shim_callbacks"].([]string)
 	if len(callbacks) == 0 {
 		t.Fatalf("sidecar metadata = %#v, want shim callback list", sidecarAction.Metadata)
@@ -100,12 +106,22 @@ Action=Actions.java
 	if result.ReviewArtifact.Metadata["event_contract"] != javaVuserEventContract || result.ReviewArtifact.Metadata["shim_class"] != javaVuserShimClass {
 		t.Fatalf("review artifact metadata = %#v, want sidecar contract", result.ReviewArtifact.Metadata)
 	}
+	if result.ReviewArtifact.Metadata["sidecar_transport"] != javaVuserSidecarTransport ||
+		result.ReviewArtifact.Metadata["lifecycle_mode"] != "persistent_per_vuser" ||
+		result.ReviewArtifact.Metadata["required_runtime_feature"] != protocol.FeatureJavaVuserPersistentLifecycleV1 {
+		t.Fatalf("review artifact runtime metadata = %#v", result.ReviewArtifact.Metadata)
+	}
+	reviewRuntimeFeatures, _ := result.ReviewArtifact.Metadata["required_runtime_features"].([]string)
+	if !stringSliceContains(reviewRuntimeFeatures, protocol.FeatureJavaVuserPersistentLifecycleV1) ||
+		!stringSliceContains(reviewRuntimeFeatures, protocol.FeatureJavaVuserSessionFrameTokenV1) {
+		t.Fatalf("review artifact runtime features = %#v, want persistent lifecycle and authenticated frame-token contracts", reviewRuntimeFeatures)
+	}
 	reviewEvents, _ := result.ReviewArtifact.Metadata["shim_event_types"].([]string)
 	if !stringSliceContains(reviewEvents, "metric") || !stringSliceContains(reviewEvents, "runtime") {
 		t.Fatalf("review artifact metadata = %#v, want full sidecar event contract", result.ReviewArtifact.Metadata)
 	}
-	if result.SourceReview == nil || len(result.SourceReview.Mappings) == 0 || result.SourceReview.Mappings[0].SupportMode != string(SourceFunctionSupportExternalRequired) {
-		t.Fatalf("source review = %#v, want external_required mapping", result.SourceReview)
+	if result.SourceReview == nil || len(result.SourceReview.Mappings) == 0 {
+		t.Fatalf("source review = %#v, want analyzer mappings", result.SourceReview)
 	}
 }
 
@@ -166,7 +182,7 @@ public class Actions {
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -320,7 +336,7 @@ public class Actions {
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -388,7 +404,7 @@ public class Actions {
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -453,7 +469,7 @@ Action=Actions.java
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -496,7 +512,7 @@ public class Actions {
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -549,7 +565,7 @@ public class Actions {
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -594,7 +610,7 @@ public class Actions {
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -635,7 +651,7 @@ public class Actions {
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -685,7 +701,7 @@ public class Actions {
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -745,7 +761,7 @@ public class Actions {
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -812,7 +828,7 @@ public class Actions {
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -866,7 +882,7 @@ public class Actions {
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -891,7 +907,7 @@ public class Actions {
 	}
 }
 
-func TestConvertZipJavaMixedHTTPAndJDBCSplitsScripts(t *testing.T) {
+func TestConvertZipJavaMixedHTTPAndJDBCKeepsCombinedScript(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	addJavaZipFile(t, zw, "JavaMixed/JavaMixed.usr", `[General]
@@ -920,19 +936,18 @@ public class Actions {
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	if len(result.Scripts) < 2 {
-		t.Fatalf("scripts = %#v, want split HTTP + database scripts", result.Scripts)
+	if len(result.Scripts) != 1 || result.Script != result.Scripts[0] {
+		t.Fatalf("scripts = %#v, want one combined script", result.Scripts)
 	}
-	protocols := map[string]bool{}
-	for _, script := range result.Scripts {
-		protocols[script.Protocol] = true
+	if result.Script.Protocol != "java_vuser" || result.DetectedProtocol == nil || result.DetectedProtocol.APEXLoadProtocol != "java_vuser" || result.DetectedProtocol.ImportMode != ImportModeExternalRunnerRequired {
+		t.Fatalf("result = script %#v detected %#v, want combined external java_vuser", result.Script, result.DetectedProtocol)
 	}
-	if !protocols["http"] || !protocols["database"] {
-		t.Fatalf("protocols = %#v, want http and database", protocols)
+	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Type != "java_vuser_run" || result.Script.Actions[0].Params["method"] != "action" {
+		t.Fatalf("actions = %#v, want one Java action phase", result.Script.Actions)
 	}
 }
 
-func TestConvertZipJavaMixedJMSAndJDBCSeparatesCommitOwnership(t *testing.T) {
+func TestConvertZipJavaMixedJMSAndJDBCKeepsCommitOwnershipInJava(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	addJavaZipFile(t, zw, "JavaMixedTx/JavaMixedTx.usr", `[General]
@@ -965,17 +980,11 @@ public class Actions {
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	counts := map[string]int{}
-	for _, script := range result.Scripts {
-		for _, action := range script.Actions {
-			counts[script.Protocol+":"+action.Type]++
-		}
+	if len(result.Scripts) != 1 || result.Script != result.Scripts[0] || result.Script.Protocol != "java_vuser" {
+		t.Fatalf("scripts = %#v, want one combined java_vuser", result.Scripts)
 	}
-	if counts["database:db_commit"] != 1 {
-		t.Fatalf("action counts = %#v, want one database db_commit from con.commit", counts)
-	}
-	if counts["jms-solace:jms_commit"] != 1 {
-		t.Fatalf("action counts = %#v, want one JMS jms_commit from session.commit", counts)
+	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Type != "java_vuser_run" {
+		t.Fatalf("actions = %#v, want one Java action so JDBC/JMS commit ownership remains in source", result.Script.Actions)
 	}
 }
 
@@ -1015,7 +1024,7 @@ public class Actions {
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -1056,7 +1065,7 @@ public class Actions {
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -1104,7 +1113,7 @@ public class Actions {
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -1145,7 +1154,7 @@ public class Actions {
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -1197,7 +1206,7 @@ public class Actions {
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -1242,22 +1251,24 @@ Action=Actions.java
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	if result.Script == nil {
-		t.Fatal("script is nil, want review script with unparsed_java_region action")
+	if result.Script == nil || result.Script.Protocol != "java_vuser" || len(result.Scripts) != 1 {
+		t.Fatalf("script = %#v scripts=%#v, want singleton combined Java draft", result.Script, result.Scripts)
 	}
-	if result.DetectedProtocol == nil || result.DetectedProtocol.ImportMode != ImportModeReviewOnly {
-		t.Fatalf("detected = %#v, want review-only unparsed Java import", result.DetectedProtocol)
+	if result.DetectedProtocol == nil || result.DetectedProtocol.ImportMode != ImportModeExternalRunnerRequired {
+		t.Fatalf("detected = %#v, want external-runner unparsed Java import", result.DetectedProtocol)
 	}
-	if result.ReviewArtifact == nil || result.ReviewArtifact.Metadata["reason"] != "unparsed_java_region" {
-		t.Fatalf("review artifact = %#v, want unparsed_java_region metadata", result.ReviewArtifact)
+	if result.ReviewArtifact == nil || result.ReviewArtifact.Metadata["reason"] != javaVuserReviewReason {
+		t.Fatalf("review artifact = %#v, want combined Java runner review", result.ReviewArtifact)
 	}
-	assertJavaSourceReviewReason(t, result.effectiveScripts(), "unparsed_java_region")
-	if result.SourceReview == nil || len(result.SourceReview.Mappings) == 0 || result.SourceReview.Mappings[0].SupportMode != string(SourceFunctionSupportReviewOnly) {
-		t.Fatalf("source review = %#v, want review-only mapping", result.SourceReview)
+	// The unparsed region was never analyzed, so its preserved mapping must be
+	// review_only rather than external_required: counting it as converted let
+	// the fidelity report claim full conversion for unreadable source.
+	if result.SourceReview == nil || len(result.SourceReview.Mappings) == 0 || result.SourceReview.Mappings[0].SupportMode != string(SourceFunctionSupportReviewOnly) || result.SourceReview.Mappings[0].Status != "review_only" {
+		t.Fatalf("source review = %#v, want preserved review-only mapping for the unparsed region", result.SourceReview)
 	}
 }
 
-func TestConvertZipJavaMixedHTTPWithMalformedHelperSplitsReviewRegion(t *testing.T) {
+func TestConvertZipJavaMixedHTTPWithMalformedHelperFailsClosed(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	addJavaZipFile(t, zw, "JavaMixedBroken/JavaMixedBroken.usr", `[General]
@@ -1280,31 +1291,9 @@ Action=Actions.java
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
-	if err != nil {
-		t.Fatalf("ConvertZip returned error: %v", err)
-	}
-	if len(result.Scripts) < 2 {
-		t.Fatalf("scripts = %#v, want executable HTTP script plus review script", result.Scripts)
-	}
-	var sawHTTP bool
-	for _, script := range result.Scripts {
-		for _, action := range script.Actions {
-			if action.Method == "GET" && action.Target == "/home" {
-				sawHTTP = true
-				break
-			}
-		}
-		if sawHTTP {
-			break
-		}
-	}
-	if !sawHTTP {
-		t.Fatalf("scripts = %#v, want preserved executable HTTP lane", result.Scripts)
-	}
-	assertJavaSourceReviewReason(t, result.Scripts, "unparsed_java_region")
-	if result.ReviewArtifact == nil || result.ReviewArtifact.Metadata["reason"] != "java_named_review_surfaces" {
-		t.Fatalf("review artifact = %#v, want named review surface artifact", result.ReviewArtifact)
+	_, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
+	if err == nil || !strings.Contains(err.Error(), "no parseable Java lifecycle methods") {
+		t.Fatalf("ConvertZip error = %v, want malformed outer class to fail closed", err)
 	}
 }
 
@@ -1365,7 +1354,7 @@ public class Actions {
 		t.Fatalf("close zip: %v", err)
 	}
 
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -1425,7 +1414,7 @@ public class Actions {
 	if err := zw.Close(); err != nil {
 		t.Fatalf("close zip: %v", err)
 	}
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
@@ -1486,7 +1475,7 @@ public class Actions {
 	if err := zw.Close(); err != nil {
 		t.Fatalf("close zip: %v", err)
 	}
-	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	result, err := convertZipJavaNativeAnalysisForTest(buf.Bytes(), ConvertOptions{})
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}

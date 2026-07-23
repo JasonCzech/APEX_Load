@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"path/filepath"
@@ -49,6 +50,9 @@ func (s *Server) handleValidateRecorderImport(w http.ResponseWriter, r *http.Req
 }
 
 func (s *Server) handleReplayRecorderImport(w http.ResponseWriter, r *http.Request) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
 	importReq, ok := readRecorderImportRequest(w, r)
 	if !ok {
 		return
@@ -71,11 +75,19 @@ func (s *Server) handleReplayRecorderImport(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	ignoreThink := true
-	replay := s.browserReplay.Start(result.Script.ID, result.Script, BrowserReplayStartRequest{
-		GroupName:       result.Script.Name + " — import replay",
-		IgnoreThinkTime: &ignoreThink,
-		Preflight:       preflight,
+	executionCtx, releaseExecutionCtx := s.runner.executionOperationContext(context.Background())
+	replay, replayErr := s.browserReplay.Start(result.Script.ID, result.Script, BrowserReplayStartRequest{
+		GroupName:               result.Script.Name + " — import replay",
+		IgnoreThinkTime:         &ignoreThink,
+		Preflight:               preflight,
+		executionContext:        executionCtx,
+		releaseExecutionContext: releaseExecutionCtx,
 	})
+	if replayErr != nil {
+		releaseExecutionCtx()
+		writeBrowserReplayStartError(w, replayErr)
+		return
+	}
 	response := s.buildRecorderImportResponse(r, result, preflight)
 	response["replay_session_id"] = replay.ID
 	response["replay_session"] = replay

@@ -10,17 +10,22 @@ import (
 // Operator-owned environment variables that govern the Java Vuser external
 // runner. These are intentionally read from the generator/controller process
 // environment — NEVER from uploaded script DSL — so that enabling local JVM
-// process execution and steering the runner command/classpath/working
-// directory is a privileged, operator-only decision. Script-supplied
-// equivalents (config.java_vuser.runner_command, classpath, work_dir,
-// harness_jar, enabled) are inert; they cannot enable or redirect execution.
+// process execution and steering the runner command/shared classpath/working
+// directory is a privileged, operator-only decision. Script-supplied enabled,
+// runner_command, work_dir, harness_jar, and max_processes fields are inert;
+// script classpath entries are separately validated and appended by the
+// governed runtime.
 const (
-	EnvJavaVuserRunnerEnabled = "APEXLOAD_JAVA_VUSER_RUNNER_ENABLED"
-	EnvJavaVuserRunnerCommand = "APEXLOAD_JAVA_VUSER_RUNNER_COMMAND"
-	EnvJavaVuserHarnessJar    = "APEXLOAD_JAVA_VUSER_HARNESS_JAR"
-	EnvJavaVuserClasspath     = "APEXLOAD_JAVA_VUSER_CLASSPATH"
-	EnvJavaVuserWorkDir       = "APEXLOAD_JAVA_VUSER_WORK_DIR"
-	EnvJavaVuserMaxProcesses  = "APEXLOAD_JAVA_VUSER_MAX_PROCESSES"
+	EnvJavaVuserRunnerEnabled   = "APEXLOAD_JAVA_VUSER_RUNNER_ENABLED"
+	EnvJavaVuserRunnerCommand   = "APEXLOAD_JAVA_VUSER_RUNNER_COMMAND"
+	EnvJavaVuserRunnerMode      = "APEXLOAD_JAVA_VUSER_RUNNER_MODE"
+	EnvJavaVuserRunnerURL       = "APEXLOAD_JAVA_VUSER_RUNNER_URL"
+	EnvJavaVuserDefaultJDKHome  = "APEXLOAD_JAVA_VUSER_DEFAULT_JDK_HOME"
+	EnvJavaVuserHarnessJar      = "APEXLOAD_JAVA_VUSER_HARNESS_JAR"
+	EnvJavaVuserClasspath       = "APEXLOAD_JAVA_VUSER_CLASSPATH"
+	EnvJavaVuserWorkDir         = "APEXLOAD_JAVA_VUSER_WORK_DIR"
+	EnvJavaVuserMaxProcesses    = "APEXLOAD_JAVA_VUSER_MAX_PROCESSES"
+	EnvJavaVuserRunnerAuthToken = "APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN"
 
 	EnvK8sRestartEnabled           = "APEXLOAD_K8S_RESTART_ENABLED"
 	EnvK8sNamespace                = "APEXLOAD_K8S_NAMESPACE"
@@ -38,19 +43,43 @@ const (
 // without overriding the command.
 const DefaultJavaVuserRunnerCommand = "java"
 
-// DefaultJavaVuserMaxProcesses caps the number of concurrent runner processes
-// per generator when the operator does not configure a limit.
-const DefaultJavaVuserMaxProcesses = 25
+const (
+	JavaVuserRunnerModeLocal   = "local"
+	JavaVuserRunnerModeSidecar = "sidecar"
+	// DefaultJavaVuserRunnerMode preserves the existing in-process child runner
+	// unless an operator opts into the credential-minimized loopback sidecar.
+	DefaultJavaVuserRunnerMode = JavaVuserRunnerModeLocal
+	// DefaultJavaVuserRunnerURL is used only when sidecar mode is selected.
+	DefaultJavaVuserRunnerURL = "http://127.0.0.1:8098"
+)
+
+const (
+	// DefaultJavaVuserMaxProcesses caps the number of concurrent runner
+	// processes per generator when the operator does not configure a limit.
+	DefaultJavaVuserMaxProcesses = 25
+	// MaxJavaVuserMaxProcesses prevents an untrusted or mistaken environment
+	// value from causing an unbounded semaphore allocation during runner
+	// startup. Deployment schemas enforce the same upper bound.
+	MaxJavaVuserMaxProcesses = 10000
+)
 
 // JavaVuserOperatorConfig is the operator-owned runtime configuration for the
 // Java Vuser external runner, resolved entirely from process environment.
 type JavaVuserOperatorConfig struct {
 	Enabled       bool
 	RunnerCommand string
-	HarnessJar    string
-	Classpath     []string
-	WorkDir       string
-	MaxProcesses  int
+	// RunnerCommandExplicit distinguishes an operator override from the
+	// backward-compatible default "java", allowing internal JDK resolution to
+	// try DefaultJDKHome/JAVA_HOME/JRE_HOME before PATH when no override exists.
+	RunnerCommandExplicit bool
+	RunnerMode            string
+	RunnerURL             string
+	DefaultJDKHome        string
+	HarnessJar            string
+	Classpath             []string
+	WorkDir               string
+	MaxProcesses          int
+	AuthToken             string
 }
 
 // K8sRestartOperatorConfig is operator-owned configuration for opt-in
@@ -69,16 +98,28 @@ type K8sRestartOperatorConfig struct {
 // the operator environment. When the runner is not explicitly enabled the
 // returned config has Enabled=false and callers must refuse execution.
 func LoadJavaVuserOperatorConfig() JavaVuserOperatorConfig {
+	runnerCommand := strings.TrimSpace(os.Getenv(EnvJavaVuserRunnerCommand))
+	runnerCommandExplicit := runnerCommand != ""
+	if !runnerCommandExplicit {
+		runnerCommand = DefaultJavaVuserRunnerCommand
+	}
 	cfg := JavaVuserOperatorConfig{
-		Enabled:       envBool(EnvJavaVuserRunnerEnabled),
-		RunnerCommand: firstNonEmptyEnv(EnvJavaVuserRunnerCommand, DefaultJavaVuserRunnerCommand),
-		HarnessJar:    strings.TrimSpace(os.Getenv(EnvJavaVuserHarnessJar)),
-		Classpath:     splitClasspath(os.Getenv(EnvJavaVuserClasspath)),
-		WorkDir:       strings.TrimSpace(os.Getenv(EnvJavaVuserWorkDir)),
-		MaxProcesses:  envInt(EnvJavaVuserMaxProcesses, DefaultJavaVuserMaxProcesses),
+		Enabled:               envBool(EnvJavaVuserRunnerEnabled),
+		RunnerCommand:         runnerCommand,
+		RunnerCommandExplicit: runnerCommandExplicit,
+		RunnerMode:            strings.ToLower(firstNonEmptyEnv(EnvJavaVuserRunnerMode, DefaultJavaVuserRunnerMode)),
+		RunnerURL:             firstNonEmptyEnv(EnvJavaVuserRunnerURL, DefaultJavaVuserRunnerURL),
+		DefaultJDKHome:        strings.TrimSpace(os.Getenv(EnvJavaVuserDefaultJDKHome)),
+		HarnessJar:            strings.TrimSpace(os.Getenv(EnvJavaVuserHarnessJar)),
+		Classpath:             splitClasspath(os.Getenv(EnvJavaVuserClasspath)),
+		WorkDir:               strings.TrimSpace(os.Getenv(EnvJavaVuserWorkDir)),
+		MaxProcesses:          envInt(EnvJavaVuserMaxProcesses, DefaultJavaVuserMaxProcesses),
+		AuthToken:             strings.TrimSpace(os.Getenv(EnvJavaVuserRunnerAuthToken)),
 	}
 	if cfg.MaxProcesses <= 0 {
 		cfg.MaxProcesses = DefaultJavaVuserMaxProcesses
+	} else if cfg.MaxProcesses > MaxJavaVuserMaxProcesses {
+		cfg.MaxProcesses = MaxJavaVuserMaxProcesses
 	}
 	return cfg
 }

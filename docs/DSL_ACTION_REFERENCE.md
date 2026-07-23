@@ -1082,7 +1082,7 @@ Runs a LoadRunner Java Vuser lifecycle through the governed JVM sidecar runner.
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
 | `target` | string | yes | Java class name to load, usually Actions. |
-| `params.method` | enum: init\|action\|end\|full_lifecycle |  | Lifecycle method or full lifecycle sequence to invoke. |
+| `params.method` | enum: init\|vuser_init\|initialize\|action\|Action\|run\|end\|vuser_end\|teardown\|full_lifecycle |  | Source lifecycle method name or legacy full lifecycle sequence to invoke. |
 | `params.source_archive_ref` | string |  | Preserved source archive or authoring artifact reference. |
 | `params.timeout_ms` | int |  | Per-run timeout in milliseconds (maximum 3600000); falls back to config.java_vuser.action_timeout_ms. |
 | `params.runner_requirement` | string |  | Governance gate required before execution, usually java_vuser_jvm_runner. |

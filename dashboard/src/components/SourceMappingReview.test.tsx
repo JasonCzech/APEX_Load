@@ -185,6 +185,327 @@ describe('SourceMappingReview', () => {
     expect(container.textContent).toContain('native noop')
   })
 
+  it('selects the canonical mapped source when duplicate basenames exist regardless of file order', async () => {
+    const duplicateBasenameReview = {
+      source_files: [
+        {
+          path: 'aaa-backup/Actions.java',
+          language: 'java',
+          content: 'class Actions {\n  // stale backup\n}',
+        },
+        {
+          path: 'src/Actions.java',
+          language: 'java',
+          content: 'class Actions {\n  // governed source\n}',
+        },
+      ],
+      mappings: [
+        {
+          id: 'java-action',
+          source_file: 'src/Actions.java',
+          start_line: 2,
+          end_line: 2,
+          function: 'action',
+          target_path: 'actions[0]',
+          target_name: 'Homepage',
+          target_kind: 'action',
+          status: 'converted',
+          support_mode: 'external_required',
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={duplicateBasenameReview} script={script} />)
+    })
+    await flushPromises()
+
+    expect(Array.from(sourceFileSelect(container).options).map(option => option.value)).toEqual([
+      'src/Actions.java',
+    ])
+    expect(container.querySelector('pre[aria-label="aaa-backup/Actions.java source"]')).toBeNull()
+    expect(container.querySelector('pre[aria-label="src/Actions.java source"]')?.textContent).toContain('governed source')
+
+    await act(async () => {
+      root.render(
+        <SourceMappingReview
+          sourceReview={{
+            ...duplicateBasenameReview,
+            source_files: [...duplicateBasenameReview.source_files].reverse(),
+          }}
+          script={script}
+        />,
+      )
+    })
+    await flushPromises()
+
+    expect(sourceFileSelect(container).value).toBe('src/Actions.java')
+    expect(container.querySelector('pre[aria-label="src/Actions.java source"]')?.textContent).toContain('governed source')
+  })
+
+  it('realigns the source pane when a surviving mapping ID changes its canonical file', async () => {
+    const sourceFiles = [
+      {
+        path: 'aaa/Actions.java',
+        language: 'java',
+        content: 'class Actions { /* first */ }',
+      },
+      {
+        path: 'src/Actions.java',
+        language: 'java',
+        content: 'class Actions { /* second */ }',
+      },
+    ]
+    const reviewFor = (sourceFile: string) => ({
+      source_files: sourceFiles,
+      mappings: [
+        {
+          id: 'stable-action',
+          source_file: sourceFile,
+          start_line: 1,
+          end_line: 1,
+          function: 'action',
+          target_path: 'actions[0]',
+          target_name: 'Homepage',
+          target_kind: 'action',
+          status: 'converted',
+          support_mode: 'external_required',
+        },
+      ],
+    })
+
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={reviewFor('aaa/Actions.java')} script={script} />)
+    })
+    await flushPromises()
+    expect(sourceFileSelect(container).value).toBe('aaa/Actions.java')
+
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={reviewFor('src/Actions.java')} script={script} />)
+    })
+    await flushPromises()
+
+    expect(sourceFileSelect(container).value).toBe('src/Actions.java')
+    expect(container.querySelector('pre[aria-label="aaa/Actions.java source"]')).toBeNull()
+    expect(container.querySelector('pre[aria-label="src/Actions.java source"]')?.textContent).toContain('second')
+  })
+
+  it('fails closed for an ambiguous basename mapping but preserves explicit file inspection', async () => {
+    const ambiguousReview = {
+      source_files: [
+        {
+          path: 'aaa-backup/Actions.java',
+          language: 'java',
+          content: 'class Actions { /* stale backup */ }',
+        },
+        {
+          path: 'src/Actions.java',
+          language: 'java',
+          content: 'class Actions { /* governed source */ }',
+        },
+      ],
+      mappings: [
+        {
+          id: 'ambiguous-java-action',
+          source_file: 'Actions.java',
+          start_line: 1,
+          end_line: 1,
+          function: 'action',
+          target_path: 'actions[0]',
+          target_name: 'Homepage',
+          target_kind: 'action',
+          status: 'review_only',
+          support_mode: 'external_required',
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={ambiguousReview} script={script} />)
+    })
+    await flushPromises()
+
+    expect(sourceFileSelect(container).value).toBe('')
+    expect(container.querySelector('pre[aria-label$=" source"]')).toBeNull()
+    expect(container.textContent).toContain('No source file content was captured.')
+
+    const select = sourceFileSelect(container)
+    await act(async () => {
+      select.value = 'aaa-backup/Actions.java'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(sourceFileSelect(container).value).toBe('aaa-backup/Actions.java')
+    const sourcePane = container.querySelector('pre[aria-label="aaa-backup/Actions.java source"]')
+    expect(sourcePane?.textContent).toContain('stale backup')
+    expect(sourcePane?.getAttribute('data-active-range')).toBe('')
+    expect(container.querySelector('tr[data-mapping-id="ambiguous-java-action"]')?.classList).not.toContain('active')
+  })
+
+  it('permits exact inspection of case-colliding files without attributing the ambiguous mapping', async () => {
+    const collidingReview = {
+      source_files: [
+        {
+          path: 'Src/Actions.java',
+          language: 'java',
+          content: 'class Actions { /* upper path */ }',
+        },
+        {
+          path: 'src/Actions.java',
+          language: 'java',
+          content: 'class Actions { /* lower path */ }',
+        },
+      ],
+      mappings: [
+        {
+          id: 'case-colliding-action',
+          source_file: 'src/Actions.java',
+          start_line: 1,
+          end_line: 1,
+          function: 'action',
+          target_path: 'actions[0]',
+          target_name: 'Homepage',
+          target_kind: 'action',
+          status: 'review_only',
+          support_mode: 'external_required',
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={collidingReview} script={script} />)
+    })
+    await flushPromises()
+
+    expect(sourceFileSelect(container).value).toBe('')
+
+    const select = sourceFileSelect(container)
+    await act(async () => {
+      select.value = 'Src/Actions.java'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(sourceFileSelect(container).value).toBe('Src/Actions.java')
+    const sourcePane = container.querySelector('pre[aria-label="Src/Actions.java source"]')
+    expect(sourcePane?.textContent).toContain('upper path')
+    expect(sourcePane?.getAttribute('data-active-range')).toBe('')
+    expect(container.querySelector('tr[data-mapping-id="case-colliding-action"]')?.classList).not.toContain('active')
+  })
+
+  it('keeps unresolved mapping candidates inspectable alongside a resolved source', async () => {
+    const mixedReview = {
+      source_files: [
+        {
+          path: 'src/Known.java',
+          language: 'java',
+          content: 'class Known { /* mapped */ }',
+        },
+        {
+          path: 'a/Actions.java',
+          language: 'java',
+          content: 'class Actions { /* candidate a */ }',
+        },
+        {
+          path: 'b/Actions.java',
+          language: 'java',
+          content: 'class Actions { /* candidate b */ }',
+        },
+        {
+          path: 'backup/Unrelated.java',
+          language: 'java',
+          content: 'class Unrelated {}',
+        },
+      ],
+      mappings: [
+        {
+          id: 'known-mapping',
+          source_file: 'src/Known.java',
+          start_line: 1,
+          end_line: 1,
+          function: 'known',
+          target_path: 'actions[0]',
+          target_kind: 'action',
+          status: 'converted',
+          support_mode: 'external_required',
+        },
+        {
+          id: 'ambiguous-actions',
+          source_file: 'Actions.java',
+          start_line: 1,
+          end_line: 1,
+          function: 'action',
+          target_path: 'actions[1]',
+          target_kind: 'action',
+          status: 'review_only',
+          support_mode: 'external_required',
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={mixedReview} script={script} />)
+    })
+    await flushPromises()
+
+    expect(Array.from(sourceFileSelect(container).options).map(option => option.value)).toEqual([
+      'src/Known.java',
+      'a/Actions.java',
+      'b/Actions.java',
+    ])
+
+    const select = sourceFileSelect(container)
+    await act(async () => {
+      select.value = 'b/Actions.java'
+      select.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(sourceFileSelect(container).value).toBe('b/Actions.java')
+    const sourcePane = container.querySelector('pre[aria-label="b/Actions.java source"]')
+    expect(sourcePane?.textContent).toContain('candidate b')
+    expect(sourcePane?.getAttribute('data-active-range')).toBe('')
+    expect(container.querySelector('tr.active')).toBeNull()
+  })
+
+  it('does not redirect a mapping to a captured backup when its canonical source was omitted', async () => {
+    const boundedReview = {
+      total_source_files: 2,
+      omitted_source_files: ['src/Actions.java'],
+      source_files: [
+        {
+          path: 'aaa-backup/Actions.java',
+          language: 'java',
+          content: 'class Actions { /* stale backup */ }',
+        },
+      ],
+      mappings: [
+        {
+          id: 'omitted-java-action',
+          source_file: 'src/Actions.java',
+          start_line: 1,
+          end_line: 1,
+          function: 'action',
+          target_path: 'actions[0]',
+          target_name: 'Homepage',
+          target_kind: 'action',
+          status: 'review_only',
+          support_mode: 'external_required',
+        },
+      ],
+    }
+
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={boundedReview} script={script} />)
+    })
+    await flushPromises()
+
+    expect(sourceFileSelect(container).value).toBe('')
+    expect(container.querySelector('pre[aria-label="aaa-backup/Actions.java source"]')).toBeNull()
+    expect(container.textContent).toContain('No source file content was captured.')
+  })
+
   it('applies APEX DSL semantic highlighting only to the generated DSL pane', async () => {
     await act(async () => {
       root.render(<SourceMappingReview sourceReview={sourceReview} script={script} />)
@@ -221,6 +542,68 @@ describe('SourceMappingReview', () => {
     expect(review?.dataset.tooltip).toContain('reviewer attention')
     expect(unsupported?.dataset.tooltip).toContain('manual review')
     expect(withoutOrigin?.dataset.tooltip).toContain('no traceable source mapping')
+  })
+
+  it('warns when the bounded source-review payload omits or truncates executable source', async () => {
+    const digest = `sha256:${'a'.repeat(64)}`
+    const incompleteReview = {
+      ...sourceReview,
+      total_source_files: 5,
+      omitted_source_files: ['Helper.java', 'Support.java'],
+      source_files: sourceReview.source_files.map((file, index) => index === 0 ? { ...file, path: 'Actions.java', language: 'java', truncated: true } : file),
+    }
+    await act(async () => {
+      root.render(<SourceMappingReview
+        sourceReview={incompleteReview}
+        script={{
+          ...script,
+          protocol: 'java_vuser',
+          metadata: {
+            import: {
+              preserved: {
+                review_artifact: {
+                  metadata: {
+                    java_source_manifest: {
+                      contract: 'apexload.java_vuser.source_manifest.v1',
+                      digest,
+                      file_count: 5,
+                      total_bytes: 123456,
+                    },
+                  },
+                },
+              },
+            },
+          },
+        }}
+      />)
+    })
+    await flushPromises()
+
+    const warning = container.querySelector('.source-map-incomplete')
+    expect(warning).not.toBeNull()
+    expect(warning?.textContent).toContain('2 source files are omitted')
+    expect(warning?.textContent).toContain('1 source file is truncated')
+    expect(warning?.textContent).toContain('out-of-band review of the governed original archive before approval')
+    const manifest = container.querySelector('[aria-label="Java full-source manifest"]')
+    expect(manifest?.textContent).toContain('5 Java files')
+    expect(manifest?.textContent).toContain('123,456 bytes')
+    expect(manifest?.textContent).toContain(digest)
+  })
+
+  it('blocks the review guidance when a bounded Java preview has no full-source manifest', async () => {
+    const incompleteReview = {
+      ...sourceReview,
+      total_source_files: 4,
+      omitted_source_files: ['Helper.java'],
+      source_files: sourceReview.source_files.map((file, index) => index === 0 ? { ...file, path: 'Actions.java', language: 'java', truncated: true } : file),
+    }
+    await act(async () => {
+      root.render(<SourceMappingReview sourceReview={incompleteReview} script={{ ...script, protocol: 'java_vuser' }} />)
+    })
+    await flushPromises()
+
+    expect(container.querySelector('.source-map-incomplete')?.textContent).toContain('full Java source manifest is missing; re-import before approval')
+    expect(container.querySelector('[aria-label="Java full-source manifest"]')).toBeNull()
   })
 
   it('filters the mapping table when a coverage pill is toggled', async () => {

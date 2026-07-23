@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,23 +14,26 @@ import (
 )
 
 type ScriptDebugStartRequest struct {
-	GroupName       string                       `json:"group_name,omitempty"`
-	ProjectID       string                       `json:"project_id,omitempty"`
-	ReplaySessionID string                       `json:"replay_session_id,omitempty"`
-	ReplayProfile   string                       `json:"replay_profile,omitempty"`
-	RuntimeProfile  *engine.ReplayRuntimeProfile `json:"runtime_profile,omitempty"`
-	Variables       map[string]string            `json:"variables,omitempty"`
-	RedactionRules  []engine.RedactionRule       `json:"redaction_rules,omitempty"`
-	StartPaused     bool                         `json:"start_paused,omitempty"`
-	Breakpoints     []ScriptDebugBreakpoint      `json:"breakpoints,omitempty"`
-	BreakOnFailure  bool                         `json:"break_on_failure,omitempty"`
-	LogLevel        string                       `json:"log_level,omitempty"`
-	Browser         *dsl.BrowserConfig           `json:"browser,omitempty"`
-	IgnoreThinkTime *bool                        `json:"ignore_think_time,omitempty"`
-	Script          *dsl.Script                  `json:"script,omitempty"`
-	Mode            string                       `json:"-"`
-	Preflight       *ReplayPreflight             `json:"-"`
-	SecretResolver  engine.SecretResolver        `json:"-"`
+	GroupName               string                       `json:"group_name,omitempty"`
+	ProjectID               string                       `json:"project_id,omitempty"`
+	ReplaySessionID         string                       `json:"replay_session_id,omitempty"`
+	ReplayProfile           string                       `json:"replay_profile,omitempty"`
+	RuntimeProfile          *engine.ReplayRuntimeProfile `json:"runtime_profile,omitempty"`
+	Variables               map[string]string            `json:"variables,omitempty"`
+	RedactionRules          []engine.RedactionRule       `json:"redaction_rules,omitempty"`
+	StartPaused             bool                         `json:"start_paused,omitempty"`
+	Breakpoints             []ScriptDebugBreakpoint      `json:"breakpoints,omitempty"`
+	BreakOnFailure          bool                         `json:"break_on_failure,omitempty"`
+	LogLevel                string                       `json:"log_level,omitempty"`
+	Browser                 *dsl.BrowserConfig           `json:"browser,omitempty"`
+	IgnoreThinkTime         *bool                        `json:"ignore_think_time,omitempty"`
+	Script                  *dsl.Script                  `json:"script,omitempty"`
+	Mode                    string                       `json:"-"`
+	Preflight               *ReplayPreflight             `json:"-"`
+	SecretResolver          engine.SecretResolver        `json:"-"`
+	ActionGraphDigest       string                       `json:"-"`
+	executionContext        context.Context
+	releaseExecutionContext context.CancelFunc
 }
 
 type ScriptDebugStepRequest struct {
@@ -42,6 +46,19 @@ type ScriptDebugBreakpointsRequest struct {
 
 type ScriptDebugOptionsRequest struct {
 	BreakOnFailure *bool `json:"break_on_failure"`
+}
+
+type ScriptDebugStartResponse struct {
+	ScriptID        string              `json:"script_id"`
+	ReplaySessionID string              `json:"replay_session_id"`
+	DebugSessionID  string              `json:"debug_session_id"`
+	Session         *ScriptDebugSession `json:"session"`
+	Preflight       *ReplayPreflight    `json:"preflight,omitempty"`
+	Warnings        []string            `json:"warnings,omitempty"`
+}
+
+type ScriptDebugSessionResponse struct {
+	Session *ScriptDebugSession `json:"session"`
 }
 
 func (s *Server) handleStartScriptDebugDraftScript(w http.ResponseWriter, r *http.Request) {
@@ -97,7 +114,7 @@ func (s *Server) handleStartScriptDebugScript(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	s.handleStartScriptDebugRequest(w, r, id, script, req)
+	s.handleStartScriptDebugRequest(w, r, stored.ID, script, req)
 }
 
 func (s *Server) handleStartReplaySessionDraftScript(w http.ResponseWriter, r *http.Request) {
@@ -154,16 +171,29 @@ func (s *Server) handleStartReplaySessionScript(w http.ResponseWriter, r *http.R
 		return
 	}
 	req.Mode = "replay"
-	s.handleStartScriptDebugRequest(w, r, id, script, req)
+	s.handleStartScriptDebugRequest(w, r, stored.ID, script, req)
 }
 
 func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Request, id string, script *dsl.Script, req ScriptDebugStartRequest) {
+	if !s.requireExecutionLeader(w) {
+		return
+	}
+	if err := validateExternalReplaySessionID(req.ReplaySessionID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	script = applyScriptDebugOverrides(script, req)
 	var prepared bool
 	script, prepared = prepareTransientExecutableScript(w, script)
 	if !prepared {
 		return
 	}
+	actionGraphDigest, digestErr := scriptCorrelationActionGraphDigest(script)
+	if digestErr != nil {
+		writeError(w, http.StatusInternalServerError, "failed to identify replay action graph")
+		return
+	}
+	req.ActionGraphDigest = actionGraphDigest
 	resolvedScript, refWarnings, refIssues := resolveObjectRefs(s.store, script)
 	if resolvedScript != nil {
 		script = resolvedScript
@@ -189,15 +219,29 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 
 	req.Preflight = preflight
 	req.SecretResolver = secretResolver
-	session := s.scriptDebug.Start(id, script, req)
+	req.executionContext, req.releaseExecutionContext = s.runner.executionOperationContext(context.Background())
+	session, err := s.scriptDebug.StartChecked(id, script, req)
+	if err != nil {
+		req.releaseExecutionContext()
+		if errors.Is(err, errScriptDebugSessionCapacity) || errors.Is(err, errScriptDebugManagerClosed) || errors.Is(err, errReplaySessionCapacity) || errors.Is(err, errReplaySessionProjectCapacity) || errors.Is(err, errReplaySessionLeaseUnavailable) {
+			writeError(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		if errors.Is(err, errScriptDebugSessionIDConflict) || errors.Is(err, errReplaySessionIDConflict) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "failed to start script debug session")
+		return
+	}
 	s.recordAuditEvent(r, "script_debug.session.start", "success", "script_debug_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "script_name": script.Name, "status": session.Status, "start_paused": req.StartPaused, "log_level": session.LogLevel})
-	writeJSON(w, http.StatusOK, map[string]any{
-		"script_id":         id,
-		"replay_session_id": session.ID,
-		"debug_session_id":  session.ID,
-		"session":           session,
-		"preflight":         preflight,
-		"warnings":          warnings,
+	writeJSON(w, http.StatusOK, ScriptDebugStartResponse{
+		ScriptID:        id,
+		ReplaySessionID: session.ID,
+		DebugSessionID:  session.ID,
+		Session:         session,
+		Preflight:       preflight,
+		Warnings:        warnings,
 	})
 }
 
@@ -210,17 +254,19 @@ func applyScriptDebugOverrides(script *dsl.Script, req ScriptDebugStartRequest) 
 
 func (s *Server) handleGetScriptDebugSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("session_id")
-	session, ok := s.scriptDebug.Get(sessionID)
+	authorizedProjectID, _ := authorizedProjectFromRequest(r)
+	session, ok := s.scriptDebug.GetForProject(sessionID, authorizedProjectID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "script debug session not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+	writeJSON(w, http.StatusOK, ScriptDebugSessionResponse{Session: session})
 }
 
 func (s *Server) handlePauseScriptDebugSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("session_id")
-	session, ok, changed := s.scriptDebug.Pause(sessionID)
+	authorizedProjectID, _ := authorizedProjectFromRequest(r)
+	session, ok, changed := s.scriptDebug.PauseForProject(sessionID, authorizedProjectID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "script debug session not found")
 		return
@@ -230,12 +276,13 @@ func (s *Server) handlePauseScriptDebugSession(w http.ResponseWriter, r *http.Re
 		return
 	}
 	s.recordAuditEvent(r, "script_debug.session.pause", "success", "script_debug_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "status": session.Status})
-	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+	writeJSON(w, http.StatusOK, ScriptDebugSessionResponse{Session: session})
 }
 
 func (s *Server) handleResumeScriptDebugSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("session_id")
-	session, ok, changed := s.scriptDebug.Resume(sessionID)
+	authorizedProjectID, _ := authorizedProjectFromRequest(r)
+	session, ok, changed := s.scriptDebug.ResumeForProject(sessionID, authorizedProjectID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "script debug session not found")
 		return
@@ -245,7 +292,7 @@ func (s *Server) handleResumeScriptDebugSession(w http.ResponseWriter, r *http.R
 		return
 	}
 	s.recordAuditEvent(r, "script_debug.session.resume", "success", "script_debug_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "status": session.Status})
-	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+	writeJSON(w, http.StatusOK, ScriptDebugSessionResponse{Session: session})
 }
 
 func (s *Server) handleStepScriptDebugSession(w http.ResponseWriter, r *http.Request) {
@@ -261,7 +308,8 @@ func (s *Server) handleStepScriptDebugSession(w http.ResponseWriter, r *http.Req
 		}
 		mode = req.Mode
 	}
-	session, ok, changed := s.scriptDebug.StepMode(sessionID, mode)
+	authorizedProjectID, _ := authorizedProjectFromRequest(r)
+	session, ok, changed := s.scriptDebug.StepModeForProject(sessionID, authorizedProjectID, mode)
 	if !ok {
 		writeError(w, http.StatusNotFound, "script debug session not found")
 		return
@@ -271,18 +319,19 @@ func (s *Server) handleStepScriptDebugSession(w http.ResponseWriter, r *http.Req
 		return
 	}
 	s.recordAuditEvent(r, "script_debug.session.step", "success", "script_debug_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "status": session.Status, "mode": mode})
-	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+	writeJSON(w, http.StatusOK, ScriptDebugSessionResponse{Session: session})
 }
 
 func (s *Server) handleStopScriptDebugSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("session_id")
-	session, ok := s.scriptDebug.Stop(sessionID)
+	authorizedProjectID, _ := authorizedProjectFromRequest(r)
+	session, ok := s.scriptDebug.StopForProject(sessionID, authorizedProjectID)
 	if !ok {
 		writeError(w, http.StatusNotFound, "script debug session not found")
 		return
 	}
 	s.recordAuditEvent(r, "script_debug.session.stop", "success", "script_debug_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "status": session.Status})
-	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+	writeJSON(w, http.StatusOK, ScriptDebugSessionResponse{Session: session})
 }
 
 func (s *Server) handleUpdateScriptDebugBreakpoints(w http.ResponseWriter, r *http.Request) {
@@ -291,13 +340,14 @@ func (s *Server) handleUpdateScriptDebugBreakpoints(w http.ResponseWriter, r *ht
 	if !decodeJSONBody(w, r, &req) {
 		return
 	}
-	session, ok := s.scriptDebug.UpdateBreakpoints(sessionID, req.Breakpoints)
+	authorizedProjectID, _ := authorizedProjectFromRequest(r)
+	session, ok := s.scriptDebug.UpdateBreakpointsForProject(sessionID, authorizedProjectID, req.Breakpoints)
 	if !ok {
 		writeError(w, http.StatusNotFound, "script debug session not found")
 		return
 	}
 	s.recordAuditEvent(r, "script_debug.breakpoints.update", "success", "script_debug_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "breakpoints": len(session.Breakpoints)})
-	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+	writeJSON(w, http.StatusOK, ScriptDebugSessionResponse{Session: session})
 }
 
 func (s *Server) handleUpdateScriptDebugOptions(w http.ResponseWriter, r *http.Request) {
@@ -310,19 +360,21 @@ func (s *Server) handleUpdateScriptDebugOptions(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusBadRequest, "break_on_failure is required")
 		return
 	}
-	session, ok := s.scriptDebug.SetBreakOnFailure(sessionID, *req.BreakOnFailure)
+	authorizedProjectID, _ := authorizedProjectFromRequest(r)
+	session, ok := s.scriptDebug.SetBreakOnFailureForProject(sessionID, authorizedProjectID, *req.BreakOnFailure)
 	if !ok {
 		writeError(w, http.StatusNotFound, "script debug session not found")
 		return
 	}
 	s.recordAuditEvent(r, "script_debug.options.update", "success", "script_debug_session", session.ID, session.ProjectID, map[string]any{"script_id": session.ScriptID, "break_on_failure": session.BreakOnFailure})
-	writeJSON(w, http.StatusOK, map[string]any{"session": session})
+	writeJSON(w, http.StatusOK, ScriptDebugSessionResponse{Session: session})
 }
 
 func (s *Server) handleExportScriptDebugSession(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.PathValue("session_id")
 	format := strings.TrimSpace(r.URL.Query().Get("format"))
-	payload, contentType, ok := s.scriptDebug.Export(sessionID, format)
+	authorizedProjectID, _ := authorizedProjectFromRequest(r)
+	payload, contentType, ok := s.scriptDebug.ExportForProject(sessionID, authorizedProjectID, format)
 	if !ok {
 		writeError(w, http.StatusNotFound, "script debug session not found")
 		return

@@ -55,6 +55,13 @@ type Server struct {
 	scheduler                 *scenarioScheduler
 	browserReplay             *BrowserReplayManager
 	scriptDebug               *ScriptDebugManager
+	// replaySessionReservations owns the caller-visible progress-stream ID
+	// namespace across classic, browser, and script-debug replay modes. Entries
+	// track active ownership or a retained terminal-ID tombstone; owner tokens
+	// prevent delayed releases from erasing a newer reservation for the same ID.
+	replaySessionMu           sync.Mutex
+	replaySessionReservations map[string]replaySessionReservation
+	replaySessionLeaseTTL     time.Duration
 	browserRecording          *BrowserRecordingManager
 	browserInstall            *browserInstallState
 	recorder                  *recorder.Recorder
@@ -273,6 +280,24 @@ type ServerConfig struct {
 	TracingStatus telemetry.Status
 }
 
+// scriptRecordingLeadershipRepairStore is intentionally optional so test and
+// alternate Store implementations do not need to know about SQLite/PostgreSQL
+// rolling-upgrade repair. Production stores implement it directly.
+type scriptRecordingLeadershipRepairStore interface {
+	RepairLegacyScriptRecordings() error
+}
+
+func (s *Server) repairScriptRecordingsOnLeadershipAcquire() error {
+	if s == nil || s.store == nil {
+		return nil
+	}
+	repairStore, ok := s.store.(scriptRecordingLeadershipRepairStore)
+	if !ok {
+		return nil
+	}
+	return repairStore.RepairLegacyScriptRecordings()
+}
+
 // NewServer wires the HTTP server, test runner, websocket hub, recorder, and routes.
 func NewServer(cfg ServerConfig) *Server {
 	if cfg.Addr == "" {
@@ -387,6 +412,8 @@ func NewServer(cfg ServerConfig) *Server {
 		scheduler:                   scheduler,
 		browserReplay:               NewBrowserReplayManager(hub),
 		scriptDebug:                 NewScriptDebugManager(hub),
+		replaySessionReservations:   make(map[string]replaySessionReservation),
+		replaySessionLeaseTTL:       defaultReplaySessionLeaseTTL,
 		browserRecording:            browserRecording,
 		browserInstall:              newBrowserInstallState(),
 		recorder:                    rec,
@@ -441,6 +468,7 @@ func NewServer(cfg ServerConfig) *Server {
 		staticFS:                StaticFS,
 		tracing:                 cfg.TracingStatus,
 	}
+	s.configureReplaySessionReservations()
 	if leadership != nil {
 		leadership.setOnLoss(func() {
 			s.clearActiveExecutionEndpoint()
@@ -452,7 +480,9 @@ func NewServer(cfg ServerConfig) *Server {
 		})
 		leadership.setOnAcquire(func() {
 			for leadership.IsLeader() {
-				if err := runner.reloadAndReconcile(); err != nil {
+				if err := s.repairScriptRecordingsOnLeadershipAcquire(); err != nil {
+					slog.Warn("script recording leadership repair failed; admission remains closed", "error", err)
+				} else if err := runner.reloadAndReconcile(); err != nil {
 					slog.Warn("execution leadership recovery failed; admission remains closed", "error", err)
 				} else {
 					ctx, cancel := leadership.operationContext(context.Background())
@@ -1813,11 +1843,8 @@ func (s *Server) shutdown(ctx context.Context) error {
 	if s.runner != nil && s.runner.notifier != nil {
 		s.runner.notifier.Close()
 	}
-	if s.browserReplay != nil {
-		s.browserReplay.Close()
-	}
-	if s.scriptDebug != nil {
-		s.scriptDebug.Close()
+	if err := s.closeReplayManagers(ctx); err != nil {
+		shutdownErr = errors.Join(shutdownErr, err)
 	}
 	if s.browserRecording != nil {
 		s.browserRecording.Close()
@@ -1845,6 +1872,45 @@ func (s *Server) shutdown(ctx context.Context) error {
 	}
 	s.clearBoundAddrs()
 	return shutdownErr
+}
+
+// closeReplayManagers begins both independent manager drains together and
+// applies the Shutdown caller's single deadline to the pair. Each manager has
+// its own defensive worker timeout, but waiting for those timeouts serially
+// would let replay cleanup exceed the server's requested shutdown window.
+func (s *Server) closeReplayManagers(ctx context.Context) error {
+	if s == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	var managers sync.WaitGroup
+	if s.browserReplay != nil {
+		managers.Add(1)
+		go func() {
+			defer managers.Done()
+			s.browserReplay.Close()
+		}()
+	}
+	if s.scriptDebug != nil {
+		managers.Add(1)
+		go func() {
+			defer managers.Done()
+			s.scriptDebug.Close()
+		}()
+	}
+	done := make(chan struct{})
+	go func() {
+		managers.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // launchBackground starts a Server-owned goroutine and accounts for its full
@@ -2021,15 +2087,18 @@ const generatorInventoryRefreshTimeout = 10 * time.Second
 // generator inventory out-of-band. Capacity/launch gates read that cache under
 // tr.mu and must never probe the fleet synchronously themselves; without this
 // cadence the cache is only populated by dashboard/inventory HTTP traffic, so a
-// headless controller (scheduled runs, CI launches) would fall back to
-// configured-only capacity and over-admit when generators are down.
+// headless controller (scheduled runs, CI launches) would either fall back to
+// configured-only capacity or be unable to prove protocol runtime capabilities.
 //
 // It is gated on the STRUCTURAL capability (a distributed inventory backend),
 // NOT the availability SETTING, because that setting is runtime-mutable
 // (UpdateSystemSettings): if we keyed the goroutine's existence on the setting
 // at boot, flipping to configured_plus_live later would never start the cadence
-// and the cache would stay cold. Instead the per-tick refresh checks the current
-// setting and only probes when live availability actually feeds admission.
+// and the cache would stay cold. Runtime capability and protocol-specific
+// capacity gates need the same heartbeat evidence even when capacity advisories
+// use the default configured-only source, so every distributed deployment keeps
+// this cache warm. Capacity advisory readers still ignore live inventory unless
+// configured_plus_live is selected.
 func (s *Server) startGeneratorInventoryRefreshCadence() {
 	if s == nil || s.runner == nil || s.generatorInventoryCancel != nil {
 		return
@@ -2060,13 +2129,11 @@ func (s *Server) startGeneratorInventoryRefreshCadence() {
 // the background cadence. A panic in the broad systemInventory surface (fleet
 // RPC, k8s enrichment) must NOT escape and crash the controller into a
 // timer-driven restart loop, and each probe is time-bounded so a hung fleet does
-// not stall the refresh. It no-ops when live availability is not the active
-// source, so a configured-only deployment carries only an idle ticker.
+// not stall the refresh. Runtime protocol/capacity gates consume this cache under
+// both availability-source modes; configured-only capacity advisories continue
+// to ignore the cached live-count projection.
 func (s *Server) refreshGeneratorInventory(ctx context.Context) {
 	if s == nil || s.runner == nil {
-		return
-	}
-	if s.runner.GetSystemSettings().CapacityPlanning.Availability.Source != capacityAvailabilityConfiguredPlusLive {
 		return
 	}
 	defer func() {

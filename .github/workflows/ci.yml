@@ -774,6 +774,10 @@ jobs:
             echo "rendered Helm manifest contains unresolved placeholder values" >&2
             exit 1
           fi
+          if grep -q 'name: java-vuser-runner' "${RUNNER_TEMP}/apexload-helm.yaml"; then
+            echo "default Helm manifest unexpectedly enables the Java Vuser runner" >&2
+            exit 1
+          fi
 
           bruno_values=(
             "${values[@]}"
@@ -794,10 +798,33 @@ jobs:
             exit 1
           fi
 
+          java_values=(
+            "${values[@]}"
+            --set javaVuser.enabled=true
+            --set javaVuser.assets.existingClaim=apexload-java-vuser-assets
+          )
+          helm lint deployments/helm/apexload "${java_values[@]}"
+          helm template apexload deployments/helm/apexload --namespace apexload \
+            "${java_values[@]}" >"${RUNNER_TEMP}/apexload-helm-java-vuser.yaml"
+          "${RUNNER_TEMP}/bin/kubeconform" -strict \
+            -schema-location default \
+            -schema-location "${RUNNER_TEMP}/crd-schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json" \
+            "${RUNNER_TEMP}/apexload-helm-java-vuser.yaml"
+          grep -q 'name: java-vuser-runner' "${RUNNER_TEMP}/apexload-helm-java-vuser.yaml"
+          grep -q 'azure.workload.identity/skip-containers: "java-vuser-runner"' "${RUNNER_TEMP}/apexload-helm-java-vuser.yaml"
+          grep -q 'value: http://127.0.0.1:8098' "${RUNNER_TEMP}/apexload-helm-java-vuser.yaml"
+          grep -A1 -q 'name: APEXLOAD_JAVA_VUSER_WORK_DIR' "${RUNNER_TEMP}/apexload-helm-java-vuser.yaml"
+          grep -q 'value: /tmp' "${RUNNER_TEMP}/apexload-helm-java-vuser.yaml"
+
       - name: Validate Docker Compose and Prometheus
         run: |
           set -euo pipefail
           docker compose --file compose.yaml config --quiet
+          APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true \
+            docker compose --file compose.yaml --profile java-vuser config >"${RUNNER_TEMP}/apexload-compose-java-vuser.yaml"
+          grep -q 'APEXLOAD_JAVA_VUSER_RUNNER_ENABLED: "true"' "${RUNNER_TEMP}/apexload-compose-java-vuser.yaml"
+          grep -q 'APEXLOAD_JAVA_VUSER_WORK_DIR: /tmp' "${RUNNER_TEMP}/apexload-compose-java-vuser.yaml"
+          grep -q 'network_mode: service:generator' "${RUNNER_TEMP}/apexload-compose-java-vuser.yaml"
           docker run --rm --entrypoint /bin/promtool \
             --volume "${PWD}/deployments/docker/prometheus:/etc/prometheus:ro" \
             "${PROMETHEUS_IMAGE}" check config /etc/prometheus/prometheus.yml
@@ -816,12 +843,19 @@ jobs:
         include:
           - binary: controller
             profile: standard
+            dockerfile: Dockerfile
           - binary: generator
             profile: standard
+            dockerfile: Dockerfile
           - binary: controller
             profile: enterprise
+            dockerfile: Dockerfile
           - binary: generator
             profile: enterprise
+            dockerfile: Dockerfile
+          - binary: java-vuser-runner
+            profile: standard
+            dockerfile: runners/java_vuser/Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -836,7 +870,7 @@ jobs:
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: .
-          file: Dockerfile
+          file: ${{ matrix.dockerfile }}
           load: true
           push: false
           tags: apexload-${{ matrix.binary }}:ci-${{ matrix.profile }}
@@ -852,6 +886,12 @@ jobs:
         env:
           IMAGE: apexload-controller:ci-${{ matrix.profile }}
         run: scripts/ci/container-smoke.sh "${IMAGE}"
+
+      - name: Smoke-test Java Vuser runner image
+        if: matrix.binary == 'java-vuser-runner'
+        env:
+          IMAGE: apexload-java-vuser-runner:ci-standard
+        run: scripts/ci/java-vuser-container-smoke.sh "${IMAGE}"
 
       - name: Generate SPDX SBOM
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610 # v0.24.0

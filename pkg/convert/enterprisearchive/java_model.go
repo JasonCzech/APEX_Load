@@ -11,6 +11,13 @@ type javaProgram struct {
 	Classes  []javaClass
 	Methods  map[string]javaMethod
 	Unparsed []javaStatement
+
+	// selectedVuserClass* records the class selected from the .usr action-source
+	// declaration. It is intentionally kept on the parsed program so every
+	// downstream lifecycle, transaction, and review-evidence pass resolves the
+	// same runner class.
+	selectedVuserClassFile string
+	selectedVuserClassName string
 }
 
 type javaStringEnv struct {
@@ -44,27 +51,191 @@ var (
 func parseJavaProgram(files map[string]string) (javaProgram, []string) {
 	program := javaProgram{Methods: map[string]javaMethod{}}
 	var warnings []string
+	totalSourceBytes := 0
+	analysisBudget := javaProgramAnalysisBudget{}
+	analysisLimitReached := false
 	names := sortedFileNames(files)
-	for _, name := range names {
-		if !strings.HasSuffix(strings.ToLower(filepath.Base(name)), ".java") {
-			continue
-		}
-		cls, err := parseJavaFile(name, files[name])
-		if err != nil {
-			warnings = append(warnings, err.Error())
-			if len(cls.Methods) == 0 && len(cls.Unparsed) == 0 {
-				continue
-			}
-		}
-		program.Classes = append(program.Classes, cls)
-		program.Unparsed = append(program.Unparsed, cls.Unparsed...)
-		for methodName, method := range cls.Methods {
+	appendClassUnchecked := func(class javaClass) {
+		program.Classes = append(program.Classes, class)
+		program.Unparsed = append(program.Unparsed, class.Unparsed...)
+		for methodName, method := range class.Methods {
 			if _, exists := program.Methods[methodName]; !exists {
 				program.Methods[methodName] = method
 			}
 		}
 	}
+	appendClass := func(class javaClass) bool {
+		if reason := analysisBudget.reserveClass(class); reason != "" {
+			reason = class.File + ": " + reason
+			warnings = append(warnings, reason)
+			placeholder := javaAnalysisLimitClass(class.File, reason)
+			placeholder.Name = class.Name
+			placeholder.Package = class.Package
+			placeholder.Kind = class.Kind
+			appendClassUnchecked(placeholder)
+			return false
+		}
+		appendClassUnchecked(class)
+		return true
+	}
+	for _, name := range names {
+		if !strings.HasSuffix(strings.ToLower(filepath.Base(name)), ".java") {
+			continue
+		}
+		if analysisLimitReached {
+			continue
+		}
+		content := files[name]
+		nextSourceBytes, reason := reserveJavaAnalysisSource(
+			name,
+			len(content),
+			totalSourceBytes,
+		)
+		if reason != "" {
+			warnings = append(warnings, reason)
+			if !appendClass(javaAnalysisLimitClass(name, reason)) {
+				analysisLimitReached = true
+			}
+			continue
+		}
+		totalSourceBytes = nextSourceBytes
+		context := newJavaParseContext(content)
+		_, hasTopLevelType := selectJavaTopLevelTypeWithScan(
+			name,
+			content,
+			context,
+		)
+		cls, err := parseJavaFileWithContext(name, content, context)
+		skipUndeclaredFile := false
+		if err != nil {
+			warnings = append(warnings, err.Error())
+			if len(cls.Methods) == 0 && len(cls.Unparsed) == 0 {
+				if !hasTopLevelType {
+					skipUndeclaredFile = true
+				}
+			}
+		}
+		fileClasses := make([]javaClass, 0, 1)
+		// Preserve a declared Actions type even when it owns no methods. It may
+		// inherit lifecycle methods that this source scanner cannot yet prove;
+		// retaining the actual target lets source-integrity checks fail closed
+		// instead of silently retargeting a bundled base/helper class.
+		if !skipUndeclaredFile {
+			fileClasses = append(fileClasses, cls)
+			auxiliary, auxiliaryWarnings := parseJavaAuxiliaryClassesWithContext(
+				name,
+				content,
+				context,
+			)
+			warnings = append(warnings, auxiliaryWarnings...)
+			fileClasses = append(fileClasses, auxiliary...)
+		}
+		if reason := analysisBudget.reserveContext(context); reason != "" {
+			reason = name + ": " + reason
+			warnings = append(warnings, reason)
+			appendClassUnchecked(javaAnalysisLimitClass(name, reason))
+			analysisLimitReached = true
+			continue
+		}
+		if skipUndeclaredFile {
+			continue
+		}
+		for _, class := range fileClasses {
+			if !appendClass(class) {
+				analysisLimitReached = true
+				break
+			}
+		}
+	}
 	return program, warnings
+}
+
+type javaProgramAnalysisBudget struct {
+	types       int
+	methods     int
+	statements  int
+	imports     int
+	braceTokens int
+	scanBytes   int
+}
+
+func (budget *javaProgramAnalysisBudget) reserveContext(context *javaParseContext) string {
+	if context == nil {
+		return ""
+	}
+	braceTokens := len(context.scan.braceOffsets)
+	if len(context.imports) > maxJavaAnalysisTotalImports-budget.imports {
+		return "Java sources exceed aggregate retained-import limit"
+	}
+	if braceTokens > maxJavaAnalysisTotalBraceTokens-budget.braceTokens {
+		return "Java sources exceed aggregate brace-metadata limit"
+	}
+	if context.structuralScanBytes > maxJavaAnalysisTotalScanBytes-budget.scanBytes {
+		return "Java sources exceed aggregate structural scan-work limit"
+	}
+	budget.imports += len(context.imports)
+	budget.braceTokens += braceTokens
+	budget.scanBytes += context.structuralScanBytes
+	return ""
+}
+
+func (budget *javaProgramAnalysisBudget) reserveClass(class javaClass) string {
+	methods := javaRetainedMethodCount(class)
+	statements := javaRetainedStatementCount(class)
+	switch {
+	case budget.types >= maxJavaAnalysisTypeCount:
+		return "Java sources exceed aggregate retained-type limit"
+	case methods > maxJavaAnalysisMethodCount-budget.methods:
+		return "Java sources exceed aggregate retained-method limit"
+	case statements > maxJavaAnalysisStatementCount-budget.statements:
+		return "Java sources exceed aggregate retained-statement limit"
+	}
+	budget.types++
+	budget.methods += methods
+	budget.statements += statements
+	return ""
+}
+
+func javaRetainedMethodCount(class javaClass) int {
+	count := len(class.Constructors)
+	if len(class.MethodOverloads) > 0 {
+		for _, overloads := range class.MethodOverloads {
+			count += len(overloads)
+		}
+		return count
+	}
+	return count + len(class.Methods)
+}
+
+func javaRetainedStatementCount(class javaClass) int {
+	count := javaStatementTreeCount(class.Fields) + javaStatementTreeCount(class.Unparsed)
+	for _, constructor := range class.Constructors {
+		count += javaStatementTreeCount(constructor.Statements)
+	}
+	if len(class.MethodOverloads) > 0 {
+		for _, overloads := range class.MethodOverloads {
+			for _, method := range overloads {
+				count += javaStatementTreeCount(method.Statements)
+			}
+		}
+		return count
+	}
+	for _, method := range class.Methods {
+		count += javaStatementTreeCount(method.Statements)
+	}
+	return count
+}
+
+func javaStatementTreeCount(statements []javaStatement) int {
+	count := 0
+	stack := append([]javaStatement(nil), statements...)
+	for len(stack) > 0 {
+		statement := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		count++
+		stack = append(stack, statement.Children...)
+	}
+	return count
 }
 
 func sortedFileNames(files map[string]string) []string {
@@ -77,15 +248,15 @@ func sortedFileNames(files map[string]string) []string {
 }
 
 func javaLifecycleStatements(program javaProgram, lifecycle string) []javaStatement {
-	names := javaLifecycleMethodNames(lifecycle)
-	var statements []javaStatement
-	for _, name := range names {
-		if method, ok := program.Methods[name]; ok {
-			statements = append(statements, inlineJavaHelperStatements(method.Statements, program.Methods, map[string]bool{name: true}, 0)...)
-			break
-		}
+	method, ok := javaVuserLifecycleMethod(program, lifecycle)
+	if !ok {
+		return nil
 	}
-	return statements
+	class, ok := javaVuserClass(program)
+	if !ok {
+		return nil
+	}
+	return inlineJavaHelperStatements(method.Statements, class.Methods, map[string]bool{method.Name: true}, 0)
 }
 
 func javaLifecycleMethodNames(lifecycle string) []string {

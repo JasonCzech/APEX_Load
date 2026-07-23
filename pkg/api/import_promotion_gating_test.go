@@ -1,6 +1,7 @@
 package api
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
@@ -43,10 +44,56 @@ func TestImportPromotionLaunchConflicts_PromotableScript(t *testing.T) {
 	}
 }
 
+func TestImportPromotionLaunchConflicts_JavaRunnerClassificationIsNotFidelityLoss(t *testing.T) {
+	script := scriptWithPromotion("java-combined", enterprisearchive.ImportPromotionBlocked,
+		[]string{"Source protocol is classified as external_runner_required and cannot be promoted as executable."})
+	script.Protocol = "java_vuser"
+	script.Actions = []dsl.Action{{Name: "Run action", Type: "java_vuser_run"}}
+
+	if conflicts := importPromotionLaunchConflicts([]TestGroup{{script: script}}); len(conflicts) != 0 {
+		t.Fatalf("Java runner posture should not be treated as import fidelity loss, got %v", conflicts)
+	}
+}
+
+func TestImportPromotionLaunchConflicts_JavaDraftRetainsRealFidelityBlocker(t *testing.T) {
+	script := scriptWithPromotion("java-combined", enterprisearchive.ImportPromotionBlocked, []string{
+		"Source protocol is classified as external_runner_required and cannot be promoted as executable.",
+		"One or more source request bodies were detected but not converted.",
+	})
+	script.Protocol = "java_vuser"
+	script.Actions = []dsl.Action{{Name: "Run action", Type: "java_vuser_run"}}
+
+	conflicts := importPromotionLaunchConflicts([]TestGroup{{script: script}})
+	if len(conflicts) != 1 || !strings.Contains(conflicts[0].Message, "request bodies") {
+		t.Fatalf("real Java fidelity blocker should remain, got %v", conflicts)
+	}
+	if strings.Contains(conflicts[0].Message, "external_runner_required") {
+		t.Fatalf("runner classification blocker should be filtered, got %v", conflicts)
+	}
+}
+
 func TestImportPromotionLaunchConflicts_NoReport(t *testing.T) {
 	groups := []TestGroup{{script: &dsl.Script{Name: "plain"}}}
 	if conflicts := importPromotionLaunchConflicts(groups); len(conflicts) != 0 {
 		t.Fatalf("script without a fidelity report should not conflict, got %v", conflicts)
+	}
+}
+
+func TestImportPromotionLaunchConflicts_LegacyJavaOneShotDoesNotRequireCombinedReviewEvidence(t *testing.T) {
+	script := &dsl.Script{
+		Name:          "legacy-java",
+		Protocol:      "java_vuser",
+		GeneratedFrom: "enterprise_script_archive",
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "enterprise_script_archive",
+		}},
+		Actions: []dsl.Action{{
+			Name: "Legacy lifecycle", Type: "java_vuser_run", Target: "Actions",
+			Params: map[string]any{"method": "full_lifecycle"},
+		}},
+	}
+	if blockers := scriptImportPromotionBlockers(script); len(blockers) != 0 {
+		t.Fatalf("legacy one-shot Java script gained combined-review blockers: %v", blockers)
 	}
 }
 

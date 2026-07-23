@@ -142,14 +142,19 @@ type JavaHTTPConfig struct {
 }
 
 type JavaVuserConfig struct {
-	Enabled          bool     `json:"enabled,omitempty"`
-	RunnerCommand    string   `json:"runner_command,omitempty"`
-	HarnessJar       string   `json:"harness_jar,omitempty"`
-	Classpath        []string `json:"classpath,omitempty"`
-	WorkDir          string   `json:"work_dir,omitempty"`
-	MaxProcesses     int      `json:"max_processes,omitempty"`
-	StartupTimeoutMs int      `json:"startup_timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
-	ActionTimeoutMs  int      `json:"action_timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+	Enabled                bool     `json:"enabled,omitempty"`
+	RunnerCommand          string   `json:"runner_command,omitempty"`
+	HarnessJar             string   `json:"harness_jar,omitempty"`
+	Classpath              []string `json:"classpath,omitempty" jsonschema:"maxItems=256"`
+	WorkDir                string   `json:"work_dir,omitempty"`
+	MaxProcesses           int      `json:"max_processes,omitempty"`
+	StartupTimeoutMs       int      `json:"startup_timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+	ActionTimeoutMs        int      `json:"action_timeout_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
+	JDKSelection           string   `json:"jdk_selection,omitempty" jsonschema:"enum=internal,enum=specified"`
+	JDKHome                string   `json:"jdk_home,omitempty" jsonschema:"maxLength=4096"`
+	AdditionalVMParameters []string `json:"additional_vm_parameters,omitempty" jsonschema:"maxItems=128"`
+	UseXBootClasspath      *bool    `json:"use_xbootclasspath,omitempty"`
+	DedicatedClassLoader   *bool    `json:"dedicated_class_loader,omitempty"`
 }
 
 type WebSocketConfig struct {

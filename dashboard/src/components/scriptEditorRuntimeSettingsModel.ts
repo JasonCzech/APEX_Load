@@ -51,6 +51,7 @@ export const RUNTIME_SETTINGS_SECTION_IDS = [
   'http',
   'soap',
   'java_http',
+  'java_vuser',
   'web_runtime',
   'log',
 ] as const
@@ -75,8 +76,10 @@ export interface RuntimeProtocolCapabilities {
   http: boolean
   httpTransport: boolean
   javaHttp: boolean
+  javaVuser: boolean
   jms: boolean
   network: boolean
+  requiresBaseURL: boolean
   soap: boolean
   webSocket: boolean
 }
@@ -102,16 +105,22 @@ export function getRuntimeProtocolCapabilities(protocol: string): RuntimeProtoco
   const browser = normalized === 'browser'
   const http = normalized === 'http'
   const javaHttp = normalized === 'java_http'
+  const javaVuser = normalized === 'java_vuser'
   const soap = normalized === 'soap'
+  const database = normalized === 'database'
+  const jms = normalized.startsWith('jms')
+  const network = normalized === 'network'
   return {
     browser,
-    database: normalized === 'database',
+    database,
     grpc: normalized === 'grpc',
     http,
     httpTransport: http || normalized === 'https' || javaHttp || soap || browser,
     javaHttp,
-    jms: normalized.startsWith('jms'),
-    network: normalized === 'network',
+    javaVuser,
+    jms,
+    network,
+    requiresBaseURL: !jms && !database && !network && !javaVuser,
     soap,
     webSocket: normalized === 'websocket',
   }
@@ -128,12 +137,14 @@ export function runtimeSettingsSectionIsAvailable(section: RuntimeSettingsSectio
     case 'http': return capability.httpTransport
     case 'soap': return capability.soap
     case 'java_http': return capability.javaHttp
+    case 'java_vuser': return capability.javaVuser
     case 'web_runtime': return capability.http
     default: return true
   }
 }
 
 export function formatScriptProtocolLabel(protocol: string): string {
+  if (protocol.trim().toLowerCase() === 'java_vuser') return 'Java Vuser'
   return SCRIPT_PROTOCOL_OPTIONS.find(option => option.value === protocol)?.label || protocol.toUpperCase()
 }
 
@@ -215,6 +226,12 @@ export function formatLineList(values?: string[]): string {
 
 export function parseLineList(value: string): string[] {
   return value.split(/\r?\n/).map(line => line.trim()).filter(Boolean)
+}
+
+// Java VM arguments are already exact argv tokens. Preserve every byte within
+// a non-empty line; trimming here would silently change a property value.
+export function parseExactLineList(value: string): string[] {
+  return value.split(/\r?\n/).filter(line => line.length > 0)
 }
 
 export function formatContentChecks(value?: ContentCheckConfig[]): string {
@@ -307,6 +324,9 @@ export function getImportedRuntimeSectionId(area?: string | null): RuntimeSettin
     case 'soap settings': return 'soap'
     case 'java http':
     case 'java over http': return 'java_http'
+    case 'java vm':
+    case 'java environment':
+    case 'java environment settings': return 'java_vuser'
     case 'jms': return 'jms'
     case 'websocket': return 'websocket'
     case 'grpc': return 'grpc'

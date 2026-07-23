@@ -194,6 +194,8 @@ describe('script editor import model', () => {
     ['Web HTTP/HTML', 'web_runtime'],
     ['SOAP Settings', 'soap'],
     ['Java over HTTP', 'java_http'],
+    ['Java VM', 'java_vuser'],
+    ['Java Environment Settings', 'java_vuser'],
     ['database runtime', 'database'],
     ['Network Runtime', 'network'],
     ['unknown', null],

@@ -423,6 +423,64 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 	},
 }
 
+var javaVuserRTSSupportDefinitions = []runtimeSettingSupportDefinition{
+	{
+		entry: RuntimeSettingSupportEntry{
+			ID:      "java_vm_jdk",
+			Area:    "Java VM",
+			Concept: "Internal or specified JDK selection",
+			Fields:  []string{"config.java_vuser.jdk_selection", "config.java_vuser.jdk_home"},
+			Status:  RuntimeSettingStatusExecuted,
+			Notes:   "The governed Java Vuser runner resolves an internal JDK or validates the specified JDK home on each assigned runner; specified homes do not silently fall back.",
+		},
+		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings"}, []string{"use_jdk", "jdk_selection", "UseSpecifiedJdk", "jdk_home", "JdkPath", "JavaVmJdkPath", "UserJdkPath", "JdkHome"})},
+	},
+	{
+		entry: RuntimeSettingSupportEntry{
+			ID:      "java_vm_parameters",
+			Area:    "Java VM",
+			Concept: "Additional JVM parameters",
+			Fields:  []string{"config.java_vuser.additional_vm_parameters"},
+			Status:  RuntimeSettingStatusExecuted,
+			Notes:   "Parameters are imported with quote-aware tokenization and execute as exact argv tokens after structural safety validation; no shell is involved.",
+		},
+		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings"}, []string{"Java_VM_Params", "java_vm_parameters", "AdditionalVmParams", "ExtraVmParams", "VmParams"})},
+	},
+	{
+		entry: RuntimeSettingSupportEntry{
+			ID:      "java_vm_classpath",
+			Area:    "Java VM",
+			Concept: "Precompiled Java classpath",
+			Fields:  []string{"config.java_vuser.classpath"},
+			Status:  RuntimeSettingStatusExecuted,
+			Notes:   "Imported entries preserve source order and reference precompiled classes or JARs that must already exist on every governed runner.",
+		},
+		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings"}, []string{"Java_Env_ClassPath", "java_env_class_paths"})},
+	},
+	{
+		entry: RuntimeSettingSupportEntry{
+			ID:      "java_vm_dedicated_class_loader",
+			Area:    "Java VM",
+			Concept: "Dedicated class loader",
+			Fields:  []string{"config.java_vuser.dedicated_class_loader"},
+			Status:  RuntimeSettingStatusExecuted,
+			Notes:   "Local and sidecar execution create one child URLClassLoader and Actions object per VUser session, retain them across init, action iterations, and end, then close them at teardown.",
+		},
+		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings"}, []string{"enable_CL_per_vuser", "enable_classloader_per_vuser", "DedicatedClassLoader", "ClassLoaderPerVuser"})},
+	},
+	{
+		entry: RuntimeSettingSupportEntry{
+			ID:      "java_vm_xbootclasspath",
+			Area:    "Java VM",
+			Concept: "Use -Xbootclasspath parameters",
+			Fields:  []string{"config.java_vuser.use_xbootclasspath"},
+			Status:  RuntimeSettingStatusCompatibilityOnly,
+			Notes:   "The setting is preserved for migration evidence; supported modern JDKs execute the same entries through the ordinary classpath and emit an explicit fallback warning rather than an Xboot flag.",
+		},
+		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings"}, []string{"Use_Xboot", "use_xboot", "UseXbootClasspath"})},
+	},
+}
+
 var sourceRTSSupportMatrixNotes = []string{
 	"download_resources = recorded is executed for import/recording flows that preserve recorded-resource URL metadata; manually authored scripts should supply equivalent metadata before selecting that mode.",
 	"Streaming settings execute in the HTTP runtime for media-like responses through buffer and bitrate pacing.",
@@ -464,6 +522,24 @@ var runtimeSettingMigrationStatusWeights = map[RuntimeSettingStatus]int{
 func GetRTSSupportMatrix() []RuntimeSettingSupportEntry {
 	entries := make([]RuntimeSettingSupportEntry, 0, len(sourceRTSSupportDefinitions))
 	for _, definition := range sourceRTSSupportDefinitions {
+		entries = append(entries, RuntimeSettingSupportEntry{
+			ID:      definition.entry.ID,
+			Area:    definition.entry.Area,
+			Concept: definition.entry.Concept,
+			Fields:  cloneStrings(definition.entry.Fields),
+			Status:  definition.entry.Status,
+			Notes:   definition.entry.Notes,
+		})
+	}
+	return entries
+}
+
+// GetJavaVuserRTSSupportMatrix is intentionally separate from the Web
+// HTTP/HTML source matrix so API clients never advertise Java-only settings as
+// Web runtime capabilities.
+func GetJavaVuserRTSSupportMatrix() []RuntimeSettingSupportEntry {
+	entries := make([]RuntimeSettingSupportEntry, 0, len(javaVuserRTSSupportDefinitions))
+	for _, definition := range javaVuserRTSSupportDefinitions {
 		entries = append(entries, RuntimeSettingSupportEntry{
 			ID:      definition.entry.ID,
 			Area:    definition.entry.Area,
@@ -556,12 +632,24 @@ func BuildRTSMigrationReadiness(entries []RuntimeSettingParityEntry, policy Runt
 }
 
 func BuildRTSParityReport(runtimeSections map[string]map[string]map[string]string) []RuntimeSettingParityEntry {
+	return buildRTSParityReport(runtimeSections, sourceRTSSupportDefinitions)
+}
+
+func buildRTSParityReportForProtocol(runtimeSections map[string]map[string]map[string]string, protocol string) []RuntimeSettingParityEntry {
+	definitions := sourceRTSSupportDefinitions
+	if strings.EqualFold(strings.TrimSpace(protocol), "java_vuser") {
+		definitions = allImportedRuntimeSettingSupportDefinitions()
+	}
+	return buildRTSParityReport(runtimeSections, definitions)
+}
+
+func buildRTSParityReport(runtimeSections map[string]map[string]map[string]string, definitions []runtimeSettingSupportDefinition) []RuntimeSettingParityEntry {
 	if len(runtimeSections) == 0 {
 		return nil
 	}
 
 	entries := make([]RuntimeSettingParityEntry, 0)
-	for _, definition := range sourceRTSSupportDefinitions {
+	for _, definition := range definitions {
 		files := runtimeSettingFilesForDefinition(definition, runtimeSections)
 		if len(files) == 0 {
 			continue
@@ -586,7 +674,11 @@ func BuildRTSParityReportFromScript(script *dsl.Script) []RuntimeSettingParityEn
 	}
 
 	entries := make([]RuntimeSettingParityEntry, 0)
-	for _, definition := range sourceRTSSupportDefinitions {
+	definitions := sourceRTSSupportDefinitions
+	if strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") {
+		definitions = allImportedRuntimeSettingSupportDefinitions()
+	}
+	for _, definition := range definitions {
 		if !scriptConfigMatchesRuntimeSettingDefinition(script.Config, definition) {
 			continue
 		}
@@ -601,6 +693,13 @@ func BuildRTSParityReportFromScript(script *dsl.Script) []RuntimeSettingParityEn
 	}
 
 	return entries
+}
+
+func allImportedRuntimeSettingSupportDefinitions() []runtimeSettingSupportDefinition {
+	definitions := make([]runtimeSettingSupportDefinition, 0, len(sourceRTSSupportDefinitions)+len(javaVuserRTSSupportDefinitions))
+	definitions = append(definitions, sourceRTSSupportDefinitions...)
+	definitions = append(definitions, javaVuserRTSSupportDefinitions...)
+	return definitions
 }
 
 func RuntimeSettingStatusCounts(entries []RuntimeSettingParityEntry) map[string]int {

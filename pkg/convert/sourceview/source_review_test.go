@@ -151,4 +151,13 @@ func TestBuildLimitsSourceFiles(t *testing.T) {
 	if len(review.SourceFiles) != MaxFiles {
 		t.Fatalf("source files = %d, want %d", len(review.SourceFiles), MaxFiles)
 	}
+	if review.TotalSourceFiles != MaxFiles+3 {
+		t.Fatalf("total source files = %d, want %d", review.TotalSourceFiles, MaxFiles+3)
+	}
+	if len(review.OmittedSourceFiles) != 3 {
+		t.Fatalf("omitted source files = %#v, want three explicit paths", review.OmittedSourceFiles)
+	}
+	if review.OmittedSourceFiles[0] != fmt.Sprintf("file-%02d.json", MaxFiles) {
+		t.Fatalf("first omitted source file = %q, want deterministic sorted boundary", review.OmittedSourceFiles[0])
+	}
 }

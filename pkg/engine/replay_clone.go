@@ -40,6 +40,9 @@ func cloneReplayDebugAction(action ReplayDebugAction) *ReplayDebugAction {
 
 func cloneReplayActionEvent(event ReplayActionEvent) *ReplayActionEvent {
 	cloned := event
+	// Raw correlation evidence is single-use and must not survive into any
+	// report/session/progress clone, even though its field is also JSON-excluded.
+	cloned.CorrelationEvidence = nil
 	cloned.Headers = cloneStringMap(event.Headers)
 	cloned.Extractions = cloneStringMap(event.Extractions)
 	cloned.Console = cloneConsoleEntries(event.Console)

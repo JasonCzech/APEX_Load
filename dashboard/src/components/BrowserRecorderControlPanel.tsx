@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useLayoutEffect, useMemo, useRef } from 'react'
 
 import { useApi } from '../hooks/useApi'
 import { hasDesktopApiCapability } from '../hooks/apiClient'
@@ -36,6 +36,7 @@ import {
   replaceSecretBindingRequirementsForScript,
   secretBindingRequirementsForScript,
 } from './secretBindingUtils'
+import { createReplaySessionId, isDefiniteReplayStartRejection } from './scriptEditorUtils'
 import './RecordingStudio.css'
 
 const SECTIONS: { value: string; label: string }[] = [
@@ -167,10 +168,14 @@ export default function BrowserRecorderControlPanel({
   const [parameterizeInputs, setParameterizeInputs] = useState(false)
   const [suggestions, setSuggestions] = useState<BrowserRecorderTransactionSuggestion[]>([])
   const [replaySessionId, setReplaySessionId] = useState<string | null>(null)
+  const replaySessionIdRef = useRef<string | null>(replaySessionId)
+  replaySessionIdRef.current = replaySessionId
   const [lastVerifyReport, setLastVerifyReport] = useState<BrowserReplayReport | null>(null)
   const [stepSearch, setStepSearch] = useState('')
-  const refreshInFlightRef = useRef<{ sessionId: string; request: Promise<void> } | null>(null)
-  const sessionScopeRef = useRef({ sessionId, generation: 0 })
+  const recorderRequestScope = api.browserRecorderRequestScope
+  const refreshInFlightRef = useRef<{ sessionId: string; recorderRequestScope: string; request: Promise<void> } | null>(null)
+  const verificationStartScopeRef = useRef<object | null>(null)
+  const sessionScopeRef = useRef({ sessionId, recorderRequestScope, generation: 0 })
   const feedbackTimerRef = useRef<number | null>(null)
   const previewCredentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const salesforceCredentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
@@ -193,10 +198,19 @@ export default function BrowserRecorderControlPanel({
   const previewPreparedScriptsRef = useRef<ScriptDefinition[] | null>(null)
   const salesforcePreparedScriptsRef = useRef<ScriptDefinition[] | null>(null)
   const previewRequestKeyRef = useRef('')
+  // True once the user changed the previewed draft away from what the server's
+  // own conversion would produce (applied parameterization selections or
+  // renamed a suggested credential reference). Those reviewed edits are pushed
+  // over the server-converted scripts after the save-time conversion commits.
+  const previewDraftEditedRef = useRef(false)
 
-  if (sessionScopeRef.current.sessionId !== sessionId) {
+  if (
+    sessionScopeRef.current.sessionId !== sessionId
+    || sessionScopeRef.current.recorderRequestScope !== recorderRequestScope
+  ) {
     sessionScopeRef.current = {
       sessionId,
+      recorderRequestScope,
       generation: sessionScopeRef.current.generation + 1,
     }
   }
@@ -215,26 +229,26 @@ export default function BrowserRecorderControlPanel({
 
   const refresh = useCallback(async () => {
     const inFlight = refreshInFlightRef.current
-    if (inFlight?.sessionId === sessionId) return inFlight.request
+    if (inFlight?.sessionId === sessionId && inFlight.recorderRequestScope === recorderRequestScope) return inFlight.request
     const scope = { ...sessionScopeRef.current }
     const request = (async () => {
       try {
         const res = await api.getBrowserRecording(sessionId)
-        if (sessionScopeRef.current.sessionId !== scope.sessionId || sessionScopeRef.current.generation !== scope.generation) return
+        if (sessionScopeRef.current.sessionId !== scope.sessionId || sessionScopeRef.current.recorderRequestScope !== scope.recorderRequestScope || sessionScopeRef.current.generation !== scope.generation) return
         setSession(res.session)
         setLoadError('')
       } catch (e: any) {
-        if (sessionScopeRef.current.sessionId !== scope.sessionId || sessionScopeRef.current.generation !== scope.generation) return
+        if (sessionScopeRef.current.sessionId !== scope.sessionId || sessionScopeRef.current.recorderRequestScope !== scope.recorderRequestScope || sessionScopeRef.current.generation !== scope.generation) return
         setLoadError(e.message || 'Failed to load browser recording session')
       }
     })()
-    refreshInFlightRef.current = { sessionId, request }
+    refreshInFlightRef.current = { sessionId, recorderRequestScope, request }
     try {
       await request
     } finally {
       if (refreshInFlightRef.current?.request === request) refreshInFlightRef.current = null
     }
-  }, [api, sessionId])
+  }, [api, recorderRequestScope, sessionId])
 
   const loadSuggestions = useCallback(async () => {
     const scope = { ...sessionScopeRef.current }
@@ -247,7 +261,7 @@ export default function BrowserRecorderControlPanel({
     }
   }, [api, sessionId])
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     void previewCredentialReviewRef.current?.discardSourceSession()
     void salesforceCredentialReviewRef.current?.discardSourceSession()
     if (feedbackTimerRef.current !== null) {
@@ -268,6 +282,7 @@ export default function BrowserRecorderControlPanel({
     previewPreparedScriptsRef.current = null
     salesforcePreparedScriptsRef.current = null
     previewRequestKeyRef.current = ''
+    previewDraftEditedRef.current = false
     setSavedScript(null)
     setSuggestions([])
     setReplaySessionId(null)
@@ -283,7 +298,7 @@ export default function BrowserRecorderControlPanel({
     setAlsoCreateHTTP(false)
     setParameterizeInputs(false)
     void refresh()
-  }, [advancePreviewReviewGeneration, advanceSalesforceReviewGeneration, refresh, sessionId])
+  }, [advancePreviewReviewGeneration, advanceSalesforceReviewGeneration, recorderRequestScope, refresh, sessionId])
 
   useEffect(() => () => {
     if (feedbackTimerRef.current !== null) window.clearTimeout(feedbackTimerRef.current)
@@ -481,6 +496,7 @@ export default function BrowserRecorderControlPanel({
       const result = await api.previewBrowserRecordingConversion(sessionId, convertRequest())
       if (!isCurrentSession()) return
       previewPreparedScriptsRef.current = null
+      previewDraftEditedRef.current = false
       setPreviewPreparedSecrets(null)
       setPreview(result)
       previewRequestKeyRef.current = JSON.stringify(convertRequest())
@@ -563,10 +579,18 @@ export default function BrowserRecorderControlPanel({
     const requestIsCurrent = () => previewReviewGenerationRef.current === sourceGeneration
       && sessionScopeRef.current.sessionId === sourceSession.sessionId
       && sessionScopeRef.current.generation === sourceSession.generation
+    // The save-time server conversion re-applies the suggested references on
+    // its own; only a rename away from a suggestion is a client-side edit that
+    // must be pushed over the converted scripts afterwards.
+    const suggestedNames = new Map(
+      (preview.secret_binding_requirements || []).map(requirement => [requirement.id, requirement.suggested_name]),
+    )
+    const renamedSuggestion = bindings.some(binding => suggestedNames.get(binding.requirement_id) !== binding.secret_name)
     const resolved = await applyBindingsToResult(preview, bindings, next => {
       if (isCurrentSession()) setPreview(next)
     }, requestIsCurrent)
     if (!isCurrentSession()) return
+    if (renamedSuggestion) previewDraftEditedRef.current = true
     previewPreparedScriptsRef.current = importResultScripts(resolved)
   }
 
@@ -577,6 +601,7 @@ export default function BrowserRecorderControlPanel({
     previewCredentialReviewRef.current?.preserveEditsForNextReviewGeneration()
     advancePreviewReviewGeneration()
     previewPreparedScriptsRef.current = null
+    previewDraftEditedRef.current = true
     const nextScripts = scripts.map((entry, index) => index === scriptIndex ? parameterizedScript : entry)
     setPreview({
       ...preview,
@@ -599,11 +624,16 @@ export default function BrowserRecorderControlPanel({
       : null
   }
 
+  // Direct createScript persistence for drafts the controller cannot attest to
+  // a headed-browser recording: bridge-mode saves (the remote controller never
+  // observed the local recording session) and Salesforce HAR drafts. These are
+  // intentionally saved without a source recording session id — createScript
+  // rejects headed-browser session ids by design.
   const saveScriptsWithRollback = async (scripts: ScriptDefinition[]): Promise<StoredScript[]> => {
     const created: StoredScript[] = []
     try {
       for (const script of scripts) {
-        const stored = await api.createScript(script, session?.project_id, undefined, sessionId)
+        const stored = await api.createScript(script, session?.project_id)
         created.push(stored)
       }
     } catch (error: unknown) {
@@ -633,6 +663,38 @@ export default function BrowserRecorderControlPanel({
     return created.map((stored, index) => withFallbackPersistedScript(stored, scripts[index]))
   }
 
+  // Headed-browser drafts must be persisted through the server-side conversion
+  // endpoint: createScript rejects a browser-recording session id outright
+  // ("headed-browser drafts must be saved through the server-side browser
+  // conversion endpoint") and the server transaction keeps split/dual-script
+  // saves atomic. Reviewed client-side edits (parameterization selections,
+  // renamed credential references) are then pushed over the converted scripts.
+  const saveThroughServerConversion = async (reviewedScripts: ScriptDefinition[]): Promise<StoredScript[]> => {
+    const converted = await api.convertBrowserRecording(sessionId, convertRequest())
+    const stored = converted.scripts?.length
+      ? converted.scripts
+      : converted.script ? [converted.script] : []
+    if (stored.length === 0) throw new Error('Conversion produced no scripts to save')
+    const persisted = stored.map((entry, index) => withFallbackPersistedScript(entry, reviewedScripts[index]))
+    if (!previewDraftEditedRef.current) return persisted
+    try {
+      // Both lists share one order (converted scripts first, the optional
+      // HAR-derived HTTP script appended last), so pair them by index.
+      for (let index = 0; index < persisted.length && index < reviewedScripts.length; index += 1) {
+        const updated = await api.updateScript(persisted[index].id, reviewedScripts[index])
+        persisted[index] = withFallbackPersistedScript(updated, reviewedScripts[index])
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error && error.message.trim()
+        ? error.message.trim()
+        : 'an unexpected error occurred'
+      throw new Error(
+        `${persisted.length === 1 ? 'The converted script was' : `${persisted.length} converted scripts were`} saved, but applying the reviewed changes failed: ${message}. Review the saved ${persisted.length === 1 ? 'script' : 'scripts'} in the Script Library.`,
+      )
+    }
+    return persisted
+  }
+
   const handleSave = async () => {
     if (!confirmReplaySaveRisk()) return
     setBusy(true)
@@ -645,6 +707,7 @@ export default function BrowserRecorderControlPanel({
         result = await api.previewBrowserRecordingConversion(sessionId, convertRequest())
         if (!isCurrentSession()) return
         previewPreparedScriptsRef.current = null
+        previewDraftEditedRef.current = false
         setPreviewPreparedSecrets(null)
         setPreview(result)
         previewRequestKeyRef.current = requestKey
@@ -657,7 +720,12 @@ export default function BrowserRecorderControlPanel({
       if (!scripts) return
       if (!isCurrentSession()) return
       if (scripts.length === 0) throw new Error('Conversion produced no scripts to save')
-      const persisted = await saveScriptsWithRollback(scripts)
+      // Bridge recordings live on the local recording agent; the remote
+      // controller cannot run the conversion for them, so their reviewed
+      // scripts are created directly (without a source recording session id).
+      const persisted = api.browserRecorderBridge
+        ? await saveScriptsWithRollback(scripts)
+        : await saveThroughServerConversion(scripts)
       if (!isCurrentSession()) return
       setSavedScript(persisted[0])
       onImported?.({ scripts: persisted })
@@ -740,23 +808,49 @@ export default function BrowserRecorderControlPanel({
     }
   }
 
+  const startVerificationReplay = async (successMessage: string) => {
+    if (verificationStartScopeRef.current === renderedSessionScope) return false
+    const verificationScope = renderedSessionScope
+    verificationStartScopeRef.current = verificationScope
+    const clientReplaySessionId = createReplaySessionId()
+    setLastVerifyReport(null)
+    setReplaySessionId(clientReplaySessionId || null)
+    try {
+      const res = await api.verifyBrowserRecording(sessionId, clientReplaySessionId || undefined)
+      if (!isCurrentSession()) return false
+      setReplaySessionId(res.replay_session_id)
+      showFeedback(successMessage)
+      return true
+    } catch (e: any) {
+      if (!isCurrentSession()) return false
+      if (clientReplaySessionId && !isDefiniteReplayStartRejection(e)) {
+        showFeedback('The replay start response was interrupted. Confirming the accepted replay session…')
+        return true
+      }
+      setReplaySessionId(null)
+      showFeedback(e.message || 'Failed to start replay verification', 'error')
+      return false
+    } finally {
+      if (verificationStartScopeRef.current === verificationScope) {
+        verificationStartScopeRef.current = null
+      }
+    }
+  }
+
   const handleVerify = async () => {
+    if (verificationStartScopeRef.current === renderedSessionScope) return
     setBusy(true)
     try {
-      setLastVerifyReport(null)
-      const res = await api.verifyBrowserRecording(sessionId)
-      if (!isCurrentSession()) return
-      setReplaySessionId(res.replay_session_id)
-      showFeedback('Verifying — replaying the recorded script')
-    } catch (e: any) {
-      if (isCurrentSession()) showFeedback(e.message, 'error')
+      await startVerificationReplay('Verifying — replaying the recorded script')
     } finally {
       if (isCurrentSession()) setBusy(false)
     }
   }
 
-  const handleReplayComplete = (report: BrowserReplayReport | null) => {
+  const handleReplayComplete = (sourceReplaySessionId: string, report: BrowserReplayReport | null) => {
     if (!isCurrentSession()) return
+    if (replaySessionIdRef.current !== sourceReplaySessionId) return
+    if (report?.replay_session_id && report.replay_session_id !== sourceReplaySessionId) return
     setLastVerifyReport(report)
     if (!report) {
       showFeedback('Replay verification stopped before a final report was available', 'error')
@@ -782,14 +876,17 @@ export default function BrowserRecorderControlPanel({
       showFeedback('This replay suggestion is missing the original recorder step or selector', 'error')
       return
     }
-    const patched = await api.updateBrowserRecordingStep(sessionId, seq, { promote_selector: selector })
-    if (!isCurrentSession()) return
-    setSession(patched.session)
-    setLastVerifyReport(null)
-    const verify = await api.verifyBrowserRecording(sessionId)
-    if (!isCurrentSession()) return
-    setReplaySessionId(verify.replay_session_id)
-    showFeedback(`Selector promoted for step #${seq}; verifying again`)
+    setBusy(true)
+    try {
+      const patched = await api.updateBrowserRecordingStep(sessionId, seq, { promote_selector: selector })
+      if (!isCurrentSession()) return
+      setSession(patched.session)
+      await startVerificationReplay(`Selector promoted for step #${seq}; verifying again`)
+    } catch (e: any) {
+      if (isCurrentSession()) showFeedback(e.message || 'Failed to apply replay suggestion', 'error')
+    } finally {
+      if (isCurrentSession()) setBusy(false)
+    }
   }
 
   const editableScript = importResultScripts(preview)[0] || savedScript?.script
@@ -1298,7 +1395,7 @@ export default function BrowserRecorderControlPanel({
           projectId={session.project_id}
           bridge={api.browserRecorderBridge}
           onApplySuggestion={handleApplyReplaySuggestion}
-          onComplete={handleReplayComplete}
+          onComplete={report => handleReplayComplete(replaySessionId, report)}
           onDismiss={() => setReplaySessionId(null)}
         />
       )}

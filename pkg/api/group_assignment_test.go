@@ -5,7 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
 func TestScenarioGroupAssignmentPersistsIntoMaterializedTest(t *testing.T) {
@@ -298,5 +300,497 @@ func TestValidateScenarioLoadModelReportsPerGroupBlockedPlacement(t *testing.T) 
 	}
 	if !found {
 		t.Fatalf("report items = %#v, want per-group blocked generator_placement for HTTP Group", report.Items)
+	}
+}
+
+func TestPersistentJavaPlacementUsesAdvertisedRuntimeCapacity(t *testing.T) {
+	group := persistentJavaPlacementGroup("java-users", 5)
+	allLoad := map[string]generatorLoadSnapshot{
+		"gen-full":  persistentJavaLoadSnapshot("gen-full", 100, 1, 25),
+		"gen-roomy": persistentJavaLoadSnapshot("gen-roomy", 100, 10, 25),
+	}
+	specs := persistentJavaTargetSpecs("gen-full", "gen-roomy")
+
+	shards := planDistributedGroupShardsForCandidates(
+		[]TestGroup{group},
+		allLoad,
+		allLoad,
+		[]string{"gen-full", "gen-roomy"},
+		[]string{"gen-full", "gen-roomy"},
+		nil,
+		specs,
+	)
+	if len(shards[group.Name]) != 1 || shards[group.Name][0].Target != "gen-roomy" {
+		t.Fatalf("java shards = %#v, want gen-roomy with sufficient JVM slots", shards[group.Name])
+	}
+}
+
+func TestPersistentJavaPlacementConsumesRuntimeCapacityAcrossGroups(t *testing.T) {
+	first := persistentJavaPlacementGroup("first-java", 4)
+	second := persistentJavaPlacementGroup("second-java", 3)
+	allLoad := map[string]generatorLoadSnapshot{
+		"gen-java": persistentJavaLoadSnapshot("gen-java", 100, 6, 25),
+	}
+
+	shards := planDistributedGroupShardsForCandidates(
+		[]TestGroup{first, second},
+		allLoad,
+		allLoad,
+		[]string{"gen-java"},
+		[]string{"gen-java"},
+		nil,
+		persistentJavaTargetSpecs("gen-java"),
+	)
+	if len(shards[first.Name]) != 1 || shards[first.Name][0].VUsers != 4 {
+		t.Fatalf("first java shards = %#v, want four admitted VUsers", shards[first.Name])
+	}
+	if len(shards[second.Name]) != 0 {
+		t.Fatalf("second java shards = %#v, want rejection after first group consumes four of six slots", shards[second.Name])
+	}
+}
+
+func TestPersistentJavaSpecificHostShardsRespectPerGeneratorRuntimeCapacity(t *testing.T) {
+	group := persistentJavaPlacementGroup("split-java", 5)
+	group.Assignment = &GeneratorAssignmentSettings{
+		Mode:            generatorAssignmentModeSpecificHosts,
+		SelectedTargets: []string{"gen-small", "gen-large"},
+	}
+	allLoad := map[string]generatorLoadSnapshot{
+		"gen-small": persistentJavaLoadSnapshot("gen-small", 100, 1, 25),
+		"gen-large": persistentJavaLoadSnapshot("gen-large", 100, 4, 25),
+	}
+
+	shards := planDistributedGroupShardsForCandidates(
+		[]TestGroup{group},
+		allLoad,
+		allLoad,
+		[]string{"gen-small", "gen-large"},
+		[]string{"gen-small", "gen-large"},
+		nil,
+		persistentJavaTargetSpecs("gen-small", "gen-large"),
+	)
+	got := map[string]int{}
+	for _, shard := range shards[group.Name] {
+		got[shard.Target] = shard.VUsers
+	}
+	if got["gen-small"] != 1 || got["gen-large"] != 4 {
+		t.Fatalf("java shard allocation = %#v, want 1/4 runtime-bounded split", got)
+	}
+}
+
+func TestPersistentJavaPlacementRequiresRuntimeCapacityAdvertisement(t *testing.T) {
+	group := persistentJavaPlacementGroup("legacy-java", 3)
+	legacy := persistentJavaLoadSnapshot("gen-legacy", 100, 25, 25)
+	legacy.RuntimeCapacities = nil
+	allLoad := map[string]generatorLoadSnapshot{"gen-legacy": legacy}
+
+	shards := planDistributedGroupShardsForCandidates(
+		[]TestGroup{group},
+		allLoad,
+		allLoad,
+		[]string{"gen-legacy"},
+		[]string{"gen-legacy"},
+		nil,
+		persistentJavaTargetSpecs("gen-legacy"),
+	)
+	if len(shards[group.Name]) != 0 {
+		t.Fatalf("missing-capacity heartbeat shards = %#v, want fail-closed rejection", shards[group.Name])
+	}
+}
+
+func TestPersistentJavaSpecificHostPlacementSkipsUnavailableRuntimeCapacityAdvertisement(t *testing.T) {
+	group := persistentJavaPlacementGroup("split-java", 3)
+	group.Assignment = &GeneratorAssignmentSettings{
+		Mode:            generatorAssignmentModeSpecificHosts,
+		SelectedTargets: []string{"gen-unavailable", "gen-qualified"},
+	}
+	unavailable := persistentJavaLoadSnapshot("gen-unavailable", 100, 25, 25)
+	unavailable.RuntimeCapacities[0].Available = false
+	unavailable.RuntimeCapacities[0].AvailableVUsers = 0
+	allLoad := map[string]generatorLoadSnapshot{
+		"gen-unavailable": unavailable,
+		"gen-qualified":   persistentJavaLoadSnapshot("gen-qualified", 100, 3, 25),
+	}
+
+	shards := planDistributedGroupShardsForCandidates(
+		[]TestGroup{group},
+		allLoad,
+		allLoad,
+		[]string{"gen-unavailable", "gen-qualified"},
+		[]string{"gen-unavailable", "gen-qualified"},
+		nil,
+		persistentJavaTargetSpecs("gen-unavailable", "gen-qualified"),
+	)
+	if got := shards[group.Name]; len(got) != 1 || got[0].Target != "gen-qualified" || got[0].VUsers != 3 {
+		t.Fatalf("specific-host shards = %#v, want all VUsers on capacity-advertising target", got)
+	}
+}
+
+func TestPersistentJavaPlacementRequiresRuntimeOccupancyAdvertisement(t *testing.T) {
+	group := persistentJavaPlacementGroup("persistent-java", 1)
+	missingOccupancy := persistentJavaLoadSnapshot("gen-missing-occupancy", 100, 25, 25)
+	missingOccupancy.RuntimeCapacities[0].OccupancyMode = ""
+	allLoad := map[string]generatorLoadSnapshot{"gen-missing-occupancy": missingOccupancy}
+
+	shards := planDistributedGroupShardsForCandidates(
+		[]TestGroup{group},
+		allLoad,
+		allLoad,
+		[]string{"gen-missing-occupancy"},
+		[]string{"gen-missing-occupancy"},
+		nil,
+		persistentJavaTargetSpecs("gen-missing-occupancy"),
+	)
+	if len(shards[group.Name]) != 0 {
+		t.Fatalf("missing-occupancy heartbeat shards = %#v, want fail-closed rejection", shards[group.Name])
+	}
+}
+
+func TestLegacyJavaPlacementRejectsPersistentCapableTargetWithoutOccupancy(t *testing.T) {
+	group := legacyJavaPlacementGroup("legacy-java", 1)
+	missingOccupancy := persistentJavaLoadSnapshot("gen-missing-occupancy", 100, 25, 25)
+	missingOccupancy.RuntimeCapacities[0].OccupancyMode = ""
+	allLoad := map[string]generatorLoadSnapshot{"gen-missing-occupancy": missingOccupancy}
+
+	shards := planDistributedGroupShardsForCandidates(
+		[]TestGroup{group},
+		allLoad,
+		allLoad,
+		[]string{"gen-missing-occupancy"},
+		[]string{"gen-missing-occupancy"},
+		nil,
+		persistentJavaTargetSpecs("gen-missing-occupancy"),
+	)
+	if len(shards[group.Name]) != 0 {
+		t.Fatalf("legacy shards on persistent-capable target = %#v, want missing-occupancy rejection", shards[group.Name])
+	}
+}
+
+func TestLegacyJavaPlacementRejectsTokenlessPersistentTargetWithoutOccupancy(t *testing.T) {
+	group := legacyJavaPlacementGroup("legacy-java", 1)
+	target := persistentJavaLoadSnapshot("gen-tokenless", 100, 25, 25)
+	target.CompatibleFeatures = []string{protocol.FeatureJavaVuserPersistentLifecycleV1}
+	target.RuntimeCapacities[0].Features = []string{protocol.FeatureJavaVuserPersistentLifecycleV1}
+	target.RuntimeCapacities[0].OccupancyMode = ""
+	allLoad := map[string]generatorLoadSnapshot{"gen-tokenless": target}
+
+	shards := planDistributedGroupShardsForCandidates(
+		[]TestGroup{group},
+		allLoad,
+		allLoad,
+		[]string{"gen-tokenless"},
+		[]string{"gen-tokenless"},
+		nil,
+		[]generatorTargetSpec{{
+			Address:   "gen-tokenless",
+			Protocols: []string{"java_vuser"},
+			Features:  []string{protocol.FeatureJavaVuserPersistentLifecycleV1},
+		}},
+	)
+	if len(shards[group.Name]) != 0 {
+		t.Fatalf("legacy shards on tokenless persistent target = %#v, want missing-occupancy rejection", shards[group.Name])
+	}
+}
+
+func TestLegacyJavaPlacementRetainsMissingOccupancyCompatibility(t *testing.T) {
+	group := legacyJavaPlacementGroup("legacy-java", 1)
+	legacy := generatorLoadSnapshot{
+		Target:             "gen-legacy",
+		HeartbeatOK:        true,
+		AvailableCapacity:  100,
+		SupportedProtocols: []string{"java_vuser"},
+		CompatibleFeatures: []string{"java_vuser"},
+	}
+	allLoad := map[string]generatorLoadSnapshot{"gen-legacy": legacy}
+	specs := []generatorTargetSpec{{
+		Address:   "gen-legacy",
+		Protocols: []string{"java_vuser"},
+		Features:  []string{"java_vuser"},
+	}}
+
+	shards := planDistributedGroupShardsForCandidates(
+		[]TestGroup{group},
+		allLoad,
+		allLoad,
+		[]string{"gen-legacy"},
+		[]string{"gen-legacy"},
+		nil,
+		specs,
+	)
+	if got := shards[group.Name]; len(got) != 1 || got[0].Target != "gen-legacy" || got[0].VUsers != 1 {
+		t.Fatalf("legacy missing-occupancy shards = %#v, want rolling-upgrade fallback", got)
+	}
+}
+
+func TestJavaPlacementSkipsIncompatibleKnownOccupancy(t *testing.T) {
+	group := legacyJavaPlacementGroup("legacy-java", 2)
+	persistent := persistentJavaLoadSnapshot("gen-persistent", 100, 20, 25)
+	persistent.RuntimeCapacities[0].OccupancyMode = generatorrpc.RuntimeOccupancyModePersistent
+	idle := persistentJavaLoadSnapshot("gen-idle", 50, 25, 25)
+	allLoad := map[string]generatorLoadSnapshot{
+		"gen-persistent": persistent,
+		"gen-idle":       idle,
+	}
+
+	shards := planDistributedGroupShardsForCandidates(
+		[]TestGroup{group},
+		allLoad,
+		allLoad,
+		[]string{"gen-persistent", "gen-idle"},
+		[]string{"gen-persistent", "gen-idle"},
+		nil,
+		persistentJavaTargetSpecs("gen-persistent", "gen-idle"),
+	)
+	if got := shards[group.Name]; len(got) != 1 || got[0].Target != "gen-idle" {
+		t.Fatalf("legacy Java shards = %#v, want idle generator", got)
+	}
+}
+
+func TestJavaSpecificHostPlacementUsesRemainingOccupancyCompatibleHosts(t *testing.T) {
+	group := legacyJavaPlacementGroup("legacy-java", 2)
+	group.Assignment = &GeneratorAssignmentSettings{
+		Mode:            generatorAssignmentModeSpecificHosts,
+		SelectedTargets: []string{"gen-persistent", "gen-idle"},
+	}
+	persistent := persistentJavaLoadSnapshot("gen-persistent", 100, 20, 25)
+	persistent.RuntimeCapacities[0].OccupancyMode = generatorrpc.RuntimeOccupancyModePersistent
+	idle := persistentJavaLoadSnapshot("gen-idle", 50, 25, 25)
+	allLoad := map[string]generatorLoadSnapshot{
+		"gen-persistent": persistent,
+		"gen-idle":       idle,
+	}
+
+	shards := planDistributedGroupShardsForCandidates(
+		[]TestGroup{group},
+		allLoad,
+		allLoad,
+		[]string{"gen-persistent", "gen-idle"},
+		[]string{"gen-persistent", "gen-idle"},
+		nil,
+		persistentJavaTargetSpecs("gen-persistent", "gen-idle"),
+	)
+	if got := shards[group.Name]; len(got) != 1 || got[0].Target != "gen-idle" || got[0].VUsers != 2 {
+		t.Fatalf("legacy Java specific-host shards = %#v, want both VUsers on remaining idle host", got)
+	}
+}
+
+func TestJavaPlacementProjectsLifecycleModeAcrossGroups(t *testing.T) {
+	persistent := persistentJavaPlacementGroup("persistent-java", 2)
+	legacy := legacyJavaPlacementGroup("legacy-java", 2)
+	allLoad := map[string]generatorLoadSnapshot{
+		"gen-primary":  persistentJavaLoadSnapshot("gen-primary", 100, 25, 25),
+		"gen-fallback": persistentJavaLoadSnapshot("gen-fallback", 50, 25, 25),
+	}
+
+	shards := planDistributedGroupShardsForCandidates(
+		[]TestGroup{persistent, legacy},
+		allLoad,
+		allLoad,
+		[]string{"gen-primary", "gen-fallback"},
+		[]string{"gen-primary", "gen-fallback"},
+		nil,
+		persistentJavaTargetSpecs("gen-primary", "gen-fallback"),
+	)
+	if got := shards[persistent.Name]; len(got) != 1 || got[0].Target != "gen-primary" {
+		t.Fatalf("persistent Java shards = %#v, want primary generator", got)
+	}
+	if got := shards[legacy.Name]; len(got) != 1 || got[0].Target != "gen-fallback" {
+		t.Fatalf("legacy Java shards = %#v, want projected idle fallback generator", got)
+	}
+}
+
+func TestZeroStartJavaPlacementProjectsLifecycleMode(t *testing.T) {
+	persistent := persistentJavaPlacementGroup("persistent-zero", 0)
+	legacy := legacyJavaPlacementGroup("legacy-after-zero", 1)
+	load := map[string]generatorLoadSnapshot{
+		"gen-java": persistentJavaLoadSnapshot("gen-java", 100, 25, 25),
+	}
+
+	shards := planDistributedGroupShardsForCandidates(
+		[]TestGroup{persistent, legacy},
+		load,
+		load,
+		[]string{"gen-java"},
+		[]string{"gen-java"},
+		nil,
+		persistentJavaTargetSpecs("gen-java"),
+	)
+	if got := shards[persistent.Name]; len(got) != 1 || got[0].Target != "gen-java" || got[0].VUsers != 0 {
+		t.Fatalf("zero-start persistent Java shards = %#v, want zero shard on generator", got)
+	}
+	if got := shards[legacy.Name]; len(got) != 0 {
+		t.Fatalf("legacy Java shards = %#v, want rejection after projected zero-start persistent occupancy", got)
+	}
+}
+
+func TestPersistentJavaLaunchPlacementProjectsCapacityAcrossGroups(t *testing.T) {
+	runner := NewTestRunner(10, NewHub(), nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"gen-java|protocols=java_vuser"},
+		time.Second,
+		nil,
+	))
+	runner.setCachedGeneratorInventory([]GeneratorInventoryEntry{{
+		Target:             "gen-java",
+		GeneratorID:        "gen-java",
+		Status:             "connected",
+		DrainState:         "active",
+		AvailableCapacity:  100,
+		MaxVUsers:          100,
+		SupportedProtocols: []string{"java_vuser"},
+		CompatibleFeatures: governedPersistentJavaRuntimeFeatures(),
+		RuntimeCapacities: []generatorrpc.ProtocolRuntimeCapacity{{
+			Protocol:        "java_vuser",
+			Available:       true,
+			MaxVUsers:       6,
+			AvailableVUsers: 6,
+			Features:        governedPersistentJavaRuntimeFeatures(),
+			OccupancyMode:   generatorrpc.RuntimeOccupancyModeIdle,
+		}},
+	}}, time.Now())
+	test := &ManagedTest{Groups: []TestGroup{
+		persistentJavaPlacementGroup("first-java", 4),
+		persistentJavaPlacementGroup("second-java", 3),
+	}}
+
+	conflicts := runner.evaluateGeneratorPlacementConflictsLocked(test)
+	if len(conflicts) != 1 || conflicts[0].Group != "second-java" ||
+		!strings.Contains(conflicts[0].Message, "available java_vuser runtime slots") {
+		t.Fatalf("placement conflicts = %#v, want second group runtime-capacity conflict", conflicts)
+	}
+}
+
+func TestJavaLaunchPlacementProjectsLifecycleModeAcrossGroups(t *testing.T) {
+	runner := NewTestRunner(10, NewHub(), nil)
+	runner.setExecutionBackend(newDistributedExecutionBackend(
+		[]string{"gen-java|protocols=java_vuser"},
+		time.Second,
+		nil,
+	))
+	runner.setCachedGeneratorInventory([]GeneratorInventoryEntry{{
+		Target:             "gen-java",
+		GeneratorID:        "gen-java",
+		Status:             "connected",
+		DrainState:         "active",
+		AvailableCapacity:  100,
+		MaxVUsers:          100,
+		SupportedProtocols: []string{"java_vuser"},
+		CompatibleFeatures: governedPersistentJavaRuntimeFeatures(),
+		RuntimeCapacities: []generatorrpc.ProtocolRuntimeCapacity{{
+			Protocol:        "java_vuser",
+			Available:       true,
+			MaxVUsers:       25,
+			AvailableVUsers: 25,
+			Features:        governedPersistentJavaRuntimeFeatures(),
+			OccupancyMode:   generatorrpc.RuntimeOccupancyModeIdle,
+		}},
+	}}, time.Now())
+	test := &ManagedTest{Groups: []TestGroup{
+		persistentJavaPlacementGroup("persistent-java", 1),
+		legacyJavaPlacementGroup("legacy-java", 1),
+	}}
+
+	conflicts := runner.evaluateGeneratorPlacementConflictsLocked(test)
+	if len(conflicts) != 1 || conflicts[0].Group != "legacy-java" ||
+		!strings.Contains(conflicts[0].Message, "runtime occupancy") {
+		t.Fatalf("placement conflicts = %#v, want legacy lifecycle-mode conflict", conflicts)
+	}
+}
+
+func TestInitialPersistentJavaShardsUseProjectedRuntimeCapacity(t *testing.T) {
+	first := persistentJavaPlacementGroup("first-stage", 5)
+	first.stageDriven = true
+	first.currentVUsers = 4
+	second := persistentJavaPlacementGroup("second-stage", 5)
+	second.stageDriven = true
+	second.currentVUsers = 3
+	peak := []GeneratorShardSummary{{Group: first.Name, Target: "gen-java", VUsers: 5}}
+	load := map[string]generatorLoadSnapshot{
+		"gen-java": persistentJavaLoadSnapshot("gen-java", 100, 6, 25),
+	}
+
+	firstShards := initialGroupShardsForRun(first, peak, load)
+	if len(firstShards) != 1 || firstShards[0].VUsers != 4 {
+		t.Fatalf("first initial shards = %#v, want four VUsers", firstShards)
+	}
+	snapshot := load["gen-java"]
+	consumeGroupRuntimeCapacity(&snapshot, first, firstShards[0].VUsers)
+	load["gen-java"] = snapshot
+	secondPeak := []GeneratorShardSummary{{Group: second.Name, Target: "gen-java", VUsers: 5}}
+	if got := initialGroupShardsForRun(second, secondPeak, load); len(got) != 0 {
+		t.Fatalf("second initial shards = %#v, want rejection with only two projected JVM slots", got)
+	}
+}
+
+func persistentJavaPlacementGroup(name string, vusers int) TestGroup {
+	script := &dsl.Script{
+		Protocol: "java_vuser",
+		Actions: []dsl.Action{{
+			Name:   "Action",
+			Type:   "java_vuser_run",
+			Target: "Actions",
+			Params: map[string]any{"method": "action"},
+		}},
+	}
+	return TestGroup{
+		Name:     name,
+		Protocol: "java_vuser",
+		VUsers:   vusers,
+		script:   script,
+	}
+}
+
+func legacyJavaPlacementGroup(name string, vusers int) TestGroup {
+	script := &dsl.Script{
+		Protocol: "java_vuser",
+		Actions: []dsl.Action{{
+			Name:   "Full lifecycle",
+			Type:   "java_vuser_run",
+			Target: "Actions",
+			Params: map[string]any{"method": "full_lifecycle"},
+		}},
+	}
+	return TestGroup{
+		Name:     name,
+		Protocol: "java_vuser",
+		VUsers:   vusers,
+		script:   script,
+	}
+}
+
+func persistentJavaLoadSnapshot(target string, generalCapacity int32, javaAvailable, javaMaximum int64) generatorLoadSnapshot {
+	return generatorLoadSnapshot{
+		Target:             target,
+		HeartbeatOK:        true,
+		AvailableCapacity:  generalCapacity,
+		SupportedProtocols: []string{"java_vuser"},
+		CompatibleFeatures: governedPersistentJavaRuntimeFeatures(),
+		RuntimeCapacities: []generatorrpc.ProtocolRuntimeCapacity{{
+			Protocol:        "java_vuser",
+			Available:       true,
+			MaxVUsers:       javaMaximum,
+			AvailableVUsers: javaAvailable,
+			Features:        governedPersistentJavaRuntimeFeatures(),
+			OccupancyMode:   generatorrpc.RuntimeOccupancyModeIdle,
+		}},
+	}
+}
+
+func persistentJavaTargetSpecs(targets ...string) []generatorTargetSpec {
+	specs := make([]generatorTargetSpec, 0, len(targets))
+	for _, target := range targets {
+		specs = append(specs, generatorTargetSpec{
+			Address:   target,
+			Protocols: []string{"java_vuser"},
+			Features:  governedPersistentJavaRuntimeFeatures(),
+		})
+	}
+	return specs
+}
+
+func governedPersistentJavaRuntimeFeatures() []string {
+	return []string{
+		protocol.FeatureJavaVuserPersistentLifecycleV1,
+		protocol.FeatureJavaVuserSessionFrameTokenV1,
 	}
 }

@@ -24,11 +24,15 @@ type CorrelationRuleset struct {
 // (Source, ExtractType, Expression) triple is exactly a dsl.Extractor, so a rule
 // can be applied to a script as an extractor.
 type CorrelationRule struct {
-	Name        string  `json:"name"`
-	RuleID      string  `json:"rule_id,omitempty"`
-	Source      string  `json:"source"`       // response_body | response_headers | ...
-	ExtractType string  `json:"extract_type"` // jsonpath | boundary | regex | ...
-	Expression  string  `json:"expression"`
-	SampleValue string  `json:"sample_value,omitempty"`
+	Name        string `json:"name"`
+	RuleID      string `json:"rule_id,omitempty"`
+	Source      string `json:"source"`       // response_body | response_headers | ...
+	ExtractType string `json:"extract_type"` // jsonpath | boundary | regex | ...
+	Expression  string `json:"expression"`
+	// SampleValue is retained only as an in-memory compatibility field for
+	// callers that still construct the legacy shape. Learned values can contain
+	// live credentials and must never cross the storage or API serialization
+	// boundary.
+	SampleValue string  `json:"-"`
 	Confidence  float64 `json:"confidence,omitempty"`
 }

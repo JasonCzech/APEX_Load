@@ -13,6 +13,7 @@ import (
 	"strings"
 	"unicode"
 
+	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 	"github.com/jasonczech/apexload/pkg/scrub"
@@ -82,6 +83,7 @@ func maskAuthoringSession(session *storage.AuthoringSession) *storage.AuthoringS
 	masked := cloneAuthoringSession(session)
 	masked.Draft = maskScriptSecrets(masked.Draft)
 	masked.ReviewState = projectAuthoringReviewState(masked.ReviewState)
+	delete(masked.ReviewState, authoringSessionIdempotencyReviewKey)
 	return masked
 }
 
@@ -134,6 +136,15 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 		credentialValue := scriptMapHasCredentialValue(typed)
 		out := make(map[string]any, len(typed))
 		for key, child := range typed {
+			// Java Vuser approval provenance is a server-authored governance
+			// envelope. Its authoring-session UUID is an identifier, not runtime
+			// session material. Preserve only the two exact, validated scalar
+			// fields here; ordinary session_id keys continue through the normal
+			// credential projection and remain masked.
+			if key == javaVuserApprovalEvidenceKey {
+				out[key] = projectJavaVuserApprovalEvidence(child)
+				continue
+			}
 			if ctx.secretBindings {
 				if text, ok := child.(string); ok && isPortableSecretReference(text) {
 					out[key] = text
@@ -191,6 +202,46 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 		}
 		return value
 	}
+}
+
+func projectJavaVuserApprovalEvidence(value any) map[string]any {
+	evidence, ok := value.(map[string]any)
+	if !ok {
+		return map[string]any{}
+	}
+	out := make(map[string]any, 2)
+	sessionID, sessionOK := evidence["session_id"].(string)
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionOK {
+		if _, err := uuid.Parse(sessionID); err == nil {
+			out["session_id"] = sessionID
+		}
+	}
+	contentHash, hashOK := evidence["content_hash"].(string)
+	contentHash = strings.ToLower(strings.TrimSpace(contentHash))
+	if hashOK && isCanonicalSHA256(contentHash) {
+		out["content_hash"] = contentHash
+	}
+	return out
+}
+
+const sha256HexLength = 64
+
+func isCanonicalSHA256(value string) bool {
+	const prefix = "sha256:"
+	return strings.HasPrefix(value, prefix) && isLowerHexDigest(strings.TrimPrefix(value, prefix), sha256HexLength)
+}
+
+func isLowerHexDigest(value string, length int) bool {
+	if len(value) != length {
+		return false
+	}
+	for _, r := range value {
+		if (r < '0' || r > '9') && (r < 'a' || r > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func scriptMapHasCredentialValue(value map[string]any) bool {

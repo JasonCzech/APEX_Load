@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/convert/correlate"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
 )
@@ -22,6 +24,20 @@ const (
 	ScriptDebugCompleted = "completed"
 	ScriptDebugFailed    = "failed"
 	ScriptDebugStopped   = "stopped"
+
+	defaultScriptDebugCorrelationEvidenceGlobalBytes  = 64 << 20
+	defaultScriptDebugCorrelationEvidenceProjectBytes = 24 << 20
+)
+
+var (
+	errScriptDebugCorrelationSessionNotFound = errors.New("replay session not found")
+	errScriptDebugCorrelationScriptMismatch  = errors.New("replay session belongs to a different script")
+	errScriptDebugCorrelationGraphMismatch   = errors.New("replay session belongs to a different action graph")
+	errScriptDebugCorrelationSessionActive   = errors.New("replay session has not completed")
+	errScriptDebugCorrelationUnavailable     = errors.New("raw replay correlation evidence is unavailable")
+	errScriptDebugSessionIDConflict          = errors.New("script debug session id is already in use")
+	errScriptDebugSessionCapacity            = errors.New("script debug session capacity is exhausted")
+	errScriptDebugManagerClosed              = errors.New("script debug manager is closed")
 )
 
 type ScriptDebugBreakpoint struct {
@@ -76,23 +92,56 @@ type ScriptDebugSession struct {
 	// debugger can show why a branch was taken or a loop pass ran.
 	ConditionEvidence map[string]engine.ConditionEvidence `json:"condition_evidence,omitempty"`
 
-	mu             sync.RWMutex
-	cancel         context.CancelFunc
-	stepOnce       bool
-	stepMode       string        // "" | over | loop_end while a step-through is in flight
-	stepBoundary   *stepBoundary // resume-through subtree for stepMode
-	lastActivityAt time.Time
-	terminalAt     *time.Time
-	stateChanged   chan struct{}
+	mu                            sync.RWMutex
+	cancel                        context.CancelFunc
+	stepOnce                      bool
+	stepMode                      string        // "" | over | loop_end while a step-through is in flight
+	stepBoundary                  *stepBoundary // resume-through subtree for stepMode
+	lastActivityAt                time.Time
+	terminalAt                    *time.Time
+	stateChanged                  chan struct{}
+	correlationObservations       []correlate.Observation
+	correlationObservationIDs     map[int]struct{}
+	correlationEvidenceBytes      int
+	correlationEvidenceErr        string
+	correlationActionGraphDigest  string
+	correlationEvidenceRetainedAt time.Time
+	reservation                   *replaySessionLeaseSignal
+	releaseID                     func()
+	workerDone                    chan struct{}
+	workerFinished                bool
+	// workerAbandoned marks a worker that ignored cancellation past the abandon
+	// grace period: its slot and lease were force-released by the backstop and
+	// its late finalization must no-op.
+	workerAbandoned bool
+	abandonArmed    bool
+	retired         bool
+	// terminalFenceEstablished means the worker completed and retained the
+	// global session capability while its execution epoch was still valid.
+	// A terminal-looking status without this proof must be cleared/retired when
+	// cancellation reconciliation observes a lost fence.
+	terminalFenceEstablished bool
 }
 
 type ScriptDebugManager struct {
-	hub           *Hub
-	sessions      map[string]*ScriptDebugSession
-	mu            sync.RWMutex
-	onComplete    replayCompletionHook
-	retention     replaySessionRetentionConfig
-	janitorCancel context.CancelFunc
+	hub                             *Hub
+	sessions                        map[string]*ScriptDebugSession
+	mu                              sync.RWMutex
+	onComplete                      replayCompletionHook
+	reserveID                       replaySessionIDReserver
+	retention                       replaySessionRetentionConfig
+	correlationEvidenceGlobalBytes  int
+	correlationEvidenceProjectBytes int
+	// correlationBudgetMu serializes correlation-evidence budget enforcement,
+	// which scans every session. It is always acquired after m.mu (read) and
+	// before any session mutex, and never blocks progress paths that only need
+	// the manager read lock.
+	correlationBudgetMu sync.Mutex
+	janitorCancel       context.CancelFunc
+	closed              bool
+	closeOnce           sync.Once
+	closeDone           chan struct{}
+	closeTimeout        time.Duration
 }
 
 func NewScriptDebugManager(hub *Hub) *ScriptDebugManager {
@@ -100,6 +149,12 @@ func NewScriptDebugManager(hub *Hub) *ScriptDebugManager {
 		hub:       hub,
 		sessions:  make(map[string]*ScriptDebugSession),
 		retention: defaultReplaySessionRetentionConfig(),
+		correlationEvidenceGlobalBytes: firstConfiguredPositiveInt(defaultScriptDebugCorrelationEvidenceGlobalBytes,
+			"APEXLOAD_REPLAY_CORRELATION_EVIDENCE_MAX_BYTES"),
+		correlationEvidenceProjectBytes: firstConfiguredPositiveInt(defaultScriptDebugCorrelationEvidenceProjectBytes,
+			"APEXLOAD_REPLAY_CORRELATION_EVIDENCE_PROJECT_MAX_BYTES"),
+		closeDone:    make(chan struct{}),
+		closeTimeout: replaySessionCloseDrainTimeout,
 	}
 }
 
@@ -107,11 +162,19 @@ func (m *ScriptDebugManager) setCompletionHook(hook replayCompletionHook) {
 	m.onComplete = hook
 }
 
+func (m *ScriptDebugManager) setSessionIDReserver(reserve replaySessionIDReserver) {
+	m.reserveID = reserve
+}
+
 func (m *ScriptDebugManager) StartJanitor(ctx context.Context) {
 	if m == nil {
 		return
 	}
 	m.mu.Lock()
+	if m.closed {
+		m.mu.Unlock()
+		return
+	}
 	if m.janitorCancel != nil {
 		m.mu.Unlock()
 		return
@@ -139,18 +202,106 @@ func (m *ScriptDebugManager) Close() {
 	if m == nil {
 		return
 	}
-	m.mu.Lock()
-	cancel := m.janitorCancel
-	m.janitorCancel = nil
-	m.mu.Unlock()
-	if cancel != nil {
-		cancel()
+	m.closeOnce.Do(func() {
+		type closeCleanup struct {
+			session   *ScriptDebugSession
+			releaseID func()
+		}
+		now := m.retention.clock()
+		m.mu.Lock()
+		m.closed = true
+		cancelJanitor := m.janitorCancel
+		m.janitorCancel = nil
+		cleanups := make([]closeCleanup, 0, len(m.sessions))
+		for id, session := range m.sessions {
+			session.mu.Lock()
+			session.retired = true
+			if session.Status == ScriptDebugRunning || session.Status == ScriptDebugPaused {
+				session.Status = ScriptDebugStopped
+			}
+			if replaySessionStatusTerminal(session.Status) && session.terminalAt == nil {
+				terminalAt := now
+				session.terminalAt = &terminalAt
+			}
+			session.rejectCorrelationEvidenceLocked("debugger manager closed")
+			// Drop the remaining replay/debug artifacts as well. Although public
+			// projections are scrubbed, the closed manager must not keep diagnostic
+			// payloads alive while an uncooperative protocol drains.
+			session.CurrentAction = nil
+			session.CurrentEvent = nil
+			session.Events = nil
+			session.Logs = nil
+			session.RawOutput = nil
+			session.FinalReport = nil
+			session.ConditionEvidence = nil
+			session.Preflight = nil
+			if session.cancel != nil {
+				session.cancel()
+			}
+			releaseID := session.releaseID
+			session.releaseID = nil
+			session.signalStateChangedLocked()
+			session.mu.Unlock()
+			cleanups = append(cleanups, closeCleanup{session: session, releaseID: releaseID})
+			delete(m.sessions, id)
+		}
+		m.mu.Unlock()
+		if cancelJanitor != nil {
+			cancelJanitor()
+		}
+
+		waitFor := make([]<-chan struct{}, 0, len(cleanups)*2)
+		for _, cleanup := range cleanups {
+			cleanupDone := make(chan struct{})
+			go func(cleanup closeCleanup, done chan<- struct{}) {
+				defer close(done)
+				cleanup.session.reservation.releaseAll()
+				if cleanup.releaseID != nil {
+					cleanup.releaseID()
+				}
+			}(cleanup, cleanupDone)
+			waitFor = append(waitFor, cleanupDone)
+		}
+		for _, cleanup := range cleanups {
+			waitFor = append(waitFor, cleanup.session.workerDone)
+		}
+		waitForReplaySessionWorkers(waitFor, m.closeTimeout)
+		close(m.closeDone)
+	})
+	if m.closeDone != nil {
+		<-m.closeDone
 	}
 }
 
 func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req ScriptDebugStartRequest) *ScriptDebugSession {
+	session, _ := m.StartChecked(scriptID, script, req)
+	return session
+}
+
+// StartChecked starts a session without ever replacing an existing global
+// session capability and reports a collision to transport callers.
+func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, req ScriptDebugStartRequest) (*ScriptDebugSession, error) {
+	executionCtx := req.executionContext
+	if executionCtx == nil {
+		executionCtx = context.Background()
+	}
+	releaseExecutionContext := req.releaseExecutionContext
+	if releaseExecutionContext == nil {
+		releaseExecutionContext = func() {}
+	}
 	sessionID := strings.TrimSpace(req.ReplaySessionID)
-	if sessionID == "" {
+	releaseReservation := func() {}
+	var leaseSignal *replaySessionLeaseSignal
+	if m.reserveID != nil {
+		reservedID, release, signal, err := m.reserveID(executionCtx, sessionID, script.ProjectID)
+		if err != nil {
+			releaseExecutionContext()
+			return nil, err
+		}
+		sessionID = reservedID
+		releaseReservation = release
+		leaseSignal = signal
+	} else if sessionID == "" {
 		sessionID = uuid.New().String()
 	}
 	groupName := strings.TrimSpace(req.GroupName)
@@ -161,29 +312,40 @@ func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req Scri
 		}
 	}
 	now := m.retention.clock()
-	ctx, cancel := context.WithCancel(context.Background())
+	workerCtx, workerCancel := context.WithCancel(executionCtx)
+	cancel := workerCancel
+	ctx := workerCtx
+	leaseFailure := watchReplaySessionLease(ctx, cancel, leaseSignal)
 	ignoreThinkTime := true
 	if req.IgnoreThinkTime != nil {
 		ignoreThinkTime = *req.IgnoreThinkTime
 	}
+	actionGraphDigest := strings.TrimSpace(req.ActionGraphDigest)
+	if actionGraphDigest == "" {
+		actionGraphDigest, _ = scriptCorrelationActionGraphDigest(script)
+	}
 	session := &ScriptDebugSession{
-		ID:                sessionID,
-		Mode:              normalizeReplaySessionMode(req.Mode),
-		ScriptID:          scriptID,
-		ProjectID:         normalizeProjectID(script.ProjectID),
-		Status:            ScriptDebugRunning,
-		Group:             groupName,
-		Protocol:          script.Protocol,
-		LogLevel:          normalizeDebugLogLevel(req.LogLevel),
-		RuntimeProfile:    replayRuntimeProfileForDebug(script, req, ignoreThinkTime),
-		Preflight:         cloneReplayPreflight(req.Preflight),
-		StartedAt:         &now,
-		CurrentEventIndex: -1,
-		Breakpoints:       normalizeDebugBreakpoints(req.Breakpoints),
-		BreakOnFailure:    req.BreakOnFailure,
-		cancel:            cancel,
-		lastActivityAt:    now,
-		stateChanged:      make(chan struct{}),
+		ID:                           sessionID,
+		Mode:                         normalizeReplaySessionMode(req.Mode),
+		ScriptID:                     scriptID,
+		ProjectID:                    normalizeProjectID(script.ProjectID),
+		Status:                       ScriptDebugRunning,
+		Group:                        groupName,
+		Protocol:                     script.Protocol,
+		LogLevel:                     normalizeDebugLogLevel(req.LogLevel),
+		RuntimeProfile:               replayRuntimeProfileForDebug(script, req, ignoreThinkTime),
+		Preflight:                    cloneReplayPreflight(req.Preflight),
+		StartedAt:                    &now,
+		CurrentEventIndex:            -1,
+		Breakpoints:                  normalizeDebugBreakpoints(req.Breakpoints),
+		BreakOnFailure:               req.BreakOnFailure,
+		cancel:                       cancel,
+		lastActivityAt:               now,
+		stateChanged:                 make(chan struct{}),
+		correlationActionGraphDigest: actionGraphDigest,
+		reservation:                  leaseSignal,
+		releaseID:                    releaseReservation,
+		workerDone:                   make(chan struct{}),
 	}
 	if req.StartPaused {
 		session.Status = ScriptDebugPaused
@@ -193,24 +355,51 @@ func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req Scri
 		session.appendLogLocked("info", "control", "Session is waiting at the first action", "", nil)
 	}
 
+	// Retained-lease releases collected during pruning/eviction run once m.mu is
+	// dropped (they are synchronous store calls in HA mode).
+	var pruneReleases []*replaySessionLeaseSignal
+	defer func() { releaseRetainedReplaySessionSignals(pruneReleases) }()
 	m.mu.Lock()
-	m.pruneExpiredLocked(now)
+	if m.closed {
+		m.mu.Unlock()
+		cancel()
+		releaseExecutionContext()
+		releaseReservation()
+		return nil, errScriptDebugManagerClosed
+	}
+	_, pruneReleases = m.pruneExpiredLocked(now)
 	if existing := m.sessions[sessionID]; existing != nil {
-		existing.mu.Lock()
-		m.cancelSessionLocked(existing, now, "Debugger session replaced by a newer session with the same id")
-		existing.mu.Unlock()
-		delete(m.sessions, sessionID)
+		// IDs are global event/evidence capabilities. Never let a colliding start
+		// cancel or substitute an established session from another project.
+		m.mu.Unlock()
+		cancel()
+		releaseExecutionContext()
+		releaseReservation()
+		return nil, errScriptDebugSessionIDConflict
 	}
 	m.sessions[sessionID] = session
-	m.enforceMaxSessionsLocked(now, sessionID)
+	_, enforceReleases := m.enforceMaxSessionsLocked(now, sessionID)
+	pruneReleases = append(pruneReleases, enforceReleases...)
+	if m.retention.maxSessions > 0 && len(m.sessions) > m.retention.maxSessions {
+		delete(m.sessions, sessionID)
+		m.mu.Unlock()
+		cancel()
+		releaseExecutionContext()
+		releaseReservation()
+		return nil, errScriptDebugSessionCapacity
+	}
 	m.mu.Unlock()
 
-	m.broadcast("script_debug_started", session, -1, nil, nil, nil)
+	m.broadcastIfCurrent("script_debug_started", session, -1, nil, nil, nil)
 	if req.StartPaused {
-		m.broadcast("script_debug_paused", session, -1, nil, nil, nil)
+		m.broadcastIfCurrent("script_debug_paused", session, -1, nil, nil, nil)
 	}
+	go m.reconcileWorkerCancellation(ctx, executionCtx, session)
 
 	go func() {
+		defer m.finishWorker(session)
+		defer releaseExecutionContext()
+		defer cancel()
 		report, err := engine.ReplayScript(ctx, script, engine.ReplayOptions{
 			ReplaySessionID: sessionID,
 			GroupName:       groupName,
@@ -221,51 +410,155 @@ func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req Scri
 			IgnoreThinkTime: ignoreThinkTime,
 			DebugController: scriptDebugController{manager: m, session: session},
 			OnProgress: func(event engine.ReplayProgressEvent) {
-				m.handleReplayProgress(session, event)
+				m.handleReplayProgress(ctx, session, event)
 			},
 		})
 
 		completedAt := m.retention.clock()
 		messageType := "script_debug_completed"
-		session.mu.Lock()
-		session.CompletedAt = &completedAt
-		if report != nil {
-			session.FinalReport = cloneBrowserReplayReport(report)
-			session.Error = report.Error
-		}
-		if session.Status == ScriptDebugStopped {
-			messageType = "script_debug_stopped"
-			session.appendLogLocked("warn", "control", "Debugger session stopped", "", nil)
-		} else if err != nil && !errors.Is(err, context.Canceled) {
-			session.Status = ScriptDebugFailed
-			session.Error = err.Error()
-			messageType = "script_debug_failed"
-			session.appendLogLocked("error", "session", err.Error(), "", nil)
-		} else if report != nil && !report.Success {
-			session.Status = ScriptDebugFailed
-			messageType = "script_debug_failed"
-			if report.Error != "" {
-				session.appendLogLocked("error", "session", report.Error, "", nil)
+		leaseErr := leaseFailure.retainForTerminal(m.retention.terminalTTL)
+		fenceErr := replayExecutionFenceError(executionCtx, leaseFailure)
+		terminalFenceEstablished := leaseErr == nil && fenceErr == nil
+		eventIndex := -1
+		abandoned := false
+		current := m.withCurrentSession(session, func() {
+			session.mu.Lock()
+			if session.workerAbandoned {
+				// The abandon backstop already force-released this session's slot
+				// and lease and marked it failed; the late worker must not touch
+				// the orphaned record.
+				abandoned = true
+				session.mu.Unlock()
+				return
 			}
-		} else if session.Status != ScriptDebugStopped {
-			session.Status = ScriptDebugCompleted
-			session.appendLogLocked("info", "session", "Debugger session completed", "", nil)
+			session.CompletedAt = &completedAt
+			session.terminalFenceEstablished = terminalFenceEstablished
+			if report != nil && terminalFenceEstablished {
+				session.FinalReport = cloneBrowserReplayReport(report)
+				session.Error = report.Error
+			} else if !terminalFenceEstablished {
+				session.FinalReport = nil
+			}
+			if !terminalFenceEstablished {
+				session.Status = ScriptDebugFailed
+				if fenceErr != nil {
+					session.Error = fenceErr.Error()
+				} else {
+					session.Error = leaseErr.Error()
+				}
+				session.rejectCorrelationEvidenceLocked("debugger session lost its replay-session integrity fence")
+				messageType = "script_debug_failed"
+				session.appendLogLocked("error", "session", session.Error, "", nil)
+			} else if session.Status == ScriptDebugStopped {
+				session.rejectCorrelationEvidenceLocked("debugger session was stopped before replay completion")
+				messageType = "script_debug_stopped"
+				session.appendLogLocked("warn", "control", "Debugger session stopped", "", nil)
+			} else if err != nil && !errors.Is(err, context.Canceled) {
+				session.Status = ScriptDebugFailed
+				session.Error = err.Error()
+				messageType = "script_debug_failed"
+				session.appendLogLocked("error", "session", err.Error(), "", nil)
+			} else if report != nil && !report.Success {
+				session.Status = ScriptDebugFailed
+				messageType = "script_debug_failed"
+				if report.Error != "" {
+					session.appendLogLocked("error", "session", report.Error, "", nil)
+				}
+			} else if session.Status != ScriptDebugStopped {
+				session.Status = ScriptDebugCompleted
+				session.appendLogLocked("info", "session", "Debugger session completed", "", nil)
+			}
+			if replaySessionStatusTerminal(session.Status) {
+				// A stop request can precede worker completion by an arbitrary
+				// amount. Start terminal retention when the report/evidence
+				// boundary is finalized so readers receive the full TTL.
+				session.terminalAt = &completedAt
+			}
+			session.signalStateChangedLocked()
+			eventIndex = session.CurrentEventIndex
+			session.mu.Unlock()
+		})
+		if !current || abandoned {
+			return
 		}
-		if replaySessionStatusTerminal(session.Status) && session.terminalAt == nil {
-			session.terminalAt = &completedAt
-		}
-		session.signalStateChangedLocked()
-		eventIndex := session.CurrentEventIndex
-		session.mu.Unlock()
-
-		m.broadcast(messageType, session, eventIndex, nil, nil, report)
-
-		if m.onComplete != nil && report != nil {
-			m.onComplete(session.ProjectID, script, report)
+		// Broadcast and run the completion hook only after the manager read lock
+		// is released: the self-heal hook performs multi-round-trip storage
+		// writes, and holding m.mu across them stalls every other session's
+		// handlers and progress callbacks. Currency is re-checked at publish time.
+		if terminalFenceEstablished {
+			if m.broadcastTerminal(messageType, session, eventIndex, nil, nil, report) && m.onComplete != nil && report != nil {
+				if messageType != "script_debug_stopped" {
+					m.onComplete(executionCtx, session.ProjectID, script, report)
+				}
+			}
+		} else {
+			// The integrity fence was lost: keep the report payload suppressed but
+			// still push the terminal status so WebSocket-only consumers observe
+			// the failure instead of a session that appears to run forever, then
+			// retire the local capability before finishWorker releases its global
+			// reservation.
+			m.broadcastTerminal(messageType, session, eventIndex, nil, nil, nil)
+			m.retireUnfencedSession(session)
 		}
 	}()
 
-	return session.snapshot()
+	return session.snapshot(), nil
+}
+
+// reconcileWorkerCancellation makes execution-epoch and replay-session lease
+// loss visible even when a protocol adapter ignores context cancellation. The
+// worker remains capacity-counted during a bounded grace period, then the
+// existing abandon backstop force-releases its local slot and durable lease.
+// Fence loss also rejects private correlation evidence and any final report
+// that raced into the public session snapshot.
+func (m *ScriptDebugManager) reconcileWorkerCancellation(workerCtx, executionCtx context.Context, session *ScriptDebugSession) {
+	if workerCtx == nil || session == nil {
+		return
+	}
+	<-workerCtx.Done()
+	fenceErr := replayExecutionFenceError(executionCtx, session.reservation)
+	eventIndex := -1
+	transitioned := false
+	m.withCurrentSession(session, func() {
+		session.mu.Lock()
+		defer session.mu.Unlock()
+		if session.workerFinished || session.workerAbandoned {
+			return
+		}
+		live := session.Status == ScriptDebugRunning || session.Status == ScriptDebugPaused
+		if !live && (session.terminalFenceEstablished || fenceErr == nil) {
+			// Normal completion and the explicit/idle/Close paths all establish
+			// terminal state before canceling the worker context. Once a terminal
+			// fence is retained, a later execution-epoch release cannot invalidate
+			// the already-fenced report.
+			return
+		}
+		failure := fenceErr
+		if failure == nil {
+			failure = workerCtx.Err()
+		}
+		if failure == nil {
+			failure = context.Canceled
+		}
+		session.Status = ScriptDebugFailed
+		session.Error = failure.Error()
+		session.FinalReport = nil
+		session.stepOnce = false
+		session.clearStepLocked()
+		session.rejectCorrelationEvidenceLocked("debugger session lost its execution integrity fence")
+		session.appendLogLocked("error", "session", session.Error, "", nil)
+		terminalAt := m.retention.clock()
+		if session.terminalAt == nil {
+			session.terminalAt = &terminalAt
+		}
+		m.scheduleWorkerAbandonBackstopLocked(session)
+		session.signalStateChangedLocked()
+		eventIndex = session.CurrentEventIndex
+		transitioned = true
+	})
+	if transitioned {
+		m.broadcastTerminal("script_debug_failed", session, eventIndex, nil, nil, nil)
+	}
 }
 
 func (m *ScriptDebugManager) PruneExpired() int {
@@ -274,48 +567,69 @@ func (m *ScriptDebugManager) PruneExpired() int {
 	}
 	now := m.retention.clock()
 	m.mu.Lock()
-	defer m.mu.Unlock()
-	return m.pruneExpiredLocked(now)
+	removed, releases := m.pruneExpiredLocked(now)
+	m.mu.Unlock()
+	releaseRetainedReplaySessionSignals(releases)
+	return removed
 }
 
-func (m *ScriptDebugManager) pruneExpiredLocked(now time.Time) int {
+// pruneExpiredLocked removes expired sessions but never performs the durable
+// tombstone release itself: in HA mode releaseRetainedID is a synchronous
+// store call, and executing it under m.mu freezes every handler and every
+// running replay's progress path. Callers must release the returned signals
+// after dropping m.mu.
+func (m *ScriptDebugManager) pruneExpiredLocked(now time.Time) (int, []*replaySessionLeaseSignal) {
 	removed := 0
+	var releases []*replaySessionLeaseSignal
 	for id, session := range m.sessions {
 		session.mu.Lock()
 		m.cancelIdleRunningSessionLocked(session, now)
 		if m.shouldPruneSessionLocked(session, now) {
 			m.cancelSessionLocked(session, now, "Debugger session pruned after retention window")
+			session.retired = true
+			releaseRetained := session.workerHasFinishedLocked()
 			delete(m.sessions, id)
 			removed++
+			session.mu.Unlock()
+			if releaseRetained {
+				releases = append(releases, session.reservation)
+			}
+			continue
 		}
 		session.mu.Unlock()
 	}
-	return removed + m.enforceMaxSessionsLocked(now, "")
+	enforced, enforcedReleases := m.enforceMaxSessionsLocked(now, "")
+	return removed + enforced, append(releases, enforcedReleases...)
 }
 
-func (m *ScriptDebugManager) enforceMaxSessionsLocked(now time.Time, protectedID string) int {
+// enforceMaxSessionsLocked follows the same contract as pruneExpiredLocked:
+// retained-lease releases are collected and must run after m.mu is dropped.
+func (m *ScriptDebugManager) enforceMaxSessionsLocked(now time.Time, protectedID string) (int, []*replaySessionLeaseSignal) {
 	if m.retention.maxSessions <= 0 {
-		return 0
+		return 0, nil
 	}
 	removed := 0
+	var releases []*replaySessionLeaseSignal
 	for len(m.sessions) > m.retention.maxSessions {
-		id, session := m.oldestPrunableSessionLocked(protectedID, true)
+		id, session := m.oldestTerminalSessionLocked(protectedID)
 		if session == nil {
-			id, session = m.oldestPrunableSessionLocked(protectedID, false)
-		}
-		if session == nil {
-			return removed
+			return removed, releases
 		}
 		session.mu.Lock()
 		m.cancelSessionLocked(session, now, "Debugger session pruned to enforce session cap")
+		session.retired = true
+		releaseRetained := session.workerHasFinishedLocked()
 		session.mu.Unlock()
 		delete(m.sessions, id)
+		if releaseRetained {
+			releases = append(releases, session.reservation)
+		}
 		removed++
 	}
-	return removed
+	return removed, releases
 }
 
-func (m *ScriptDebugManager) oldestPrunableSessionLocked(protectedID string, terminalOnly bool) (string, *ScriptDebugSession) {
+func (m *ScriptDebugManager) oldestTerminalSessionLocked(protectedID string) (string, *ScriptDebugSession) {
 	var selectedID string
 	var selected *ScriptDebugSession
 	var selectedAt time.Time
@@ -325,7 +639,8 @@ func (m *ScriptDebugManager) oldestPrunableSessionLocked(protectedID string, ter
 		}
 		session.mu.RLock()
 		terminal := replaySessionStatusTerminal(session.Status)
-		if terminalOnly && !terminal {
+		workerFinished := session.workerHasFinishedLocked()
+		if !terminal || !workerFinished {
 			session.mu.RUnlock()
 			continue
 		}
@@ -356,7 +671,7 @@ func (m *ScriptDebugManager) cancelIdleRunningSessionLocked(session *ScriptDebug
 }
 
 func (m *ScriptDebugManager) shouldPruneSessionLocked(session *ScriptDebugSession, now time.Time) bool {
-	if session == nil || m.retention.terminalTTL <= 0 || !replaySessionStatusTerminal(session.Status) {
+	if session == nil || m.retention.terminalTTL <= 0 || !replaySessionStatusTerminal(session.Status) || !session.workerHasFinishedLocked() {
 		return false
 	}
 	terminalAt := session.terminalAt
@@ -378,7 +693,17 @@ func (m *ScriptDebugManager) cancelSessionLocked(session *ScriptDebugSession, no
 		return
 	}
 	if session.Status == ScriptDebugRunning || session.Status == ScriptDebugPaused {
-		session.Status = ScriptDebugStopped
+		// A stopped status does not prove the replay goroutine has exited. Preserve
+		// the active capacity lease until the worker completion path runs so an
+		// adapter that ignores cancellation cannot be hidden behind a tombstone.
+		if err := session.reservation.failureOrExpired(time.Now()); err != nil {
+			session.Status = ScriptDebugFailed
+			session.Error = err.Error()
+			session.rejectCorrelationEvidenceLocked("debugger session lost its replay-session integrity fence")
+		} else {
+			session.Status = ScriptDebugStopped
+			session.rejectCorrelationEvidenceLocked("debugger session was stopped before replay completion")
+		}
 		session.stepOnce = false
 		session.clearStepLocked()
 		if reason != "" {
@@ -387,12 +712,98 @@ func (m *ScriptDebugManager) cancelSessionLocked(session *ScriptDebugSession, no
 		if session.cancel != nil {
 			session.cancel()
 		}
+		m.scheduleWorkerAbandonBackstopLocked(session)
 	}
 	if replaySessionStatusTerminal(session.Status) && session.terminalAt == nil {
 		terminalAt := now
 		session.terminalAt = &terminalAt
 	}
 	session.signalStateChangedLocked()
+}
+
+// scheduleWorkerAbandonBackstopLocked arms a one-shot backstop for a session
+// whose worker was just cancelled. Requires session.mu. If the worker still
+// has not returned after the generous grace period, the backstop force-releases
+// the session's capacity slot and HA lease and marks the session failed, so a
+// cancellation-ignoring protocol adapter cannot permanently consume capacity
+// with no operator remedy short of a restart.
+func (m *ScriptDebugManager) scheduleWorkerAbandonBackstopLocked(session *ScriptDebugSession) {
+	grace := m.retention.workerAbandonGrace
+	if grace <= 0 || session == nil || session.abandonArmed || session.workerHasFinishedLocked() {
+		return
+	}
+	session.abandonArmed = true
+	workerDone := session.workerDone
+	go func() {
+		timer := time.NewTimer(grace)
+		defer timer.Stop()
+		select {
+		case <-workerDone:
+			return
+		case <-timer.C:
+		}
+		m.abandonUnresponsiveWorker(session, grace)
+	}()
+}
+
+// abandonUnresponsiveWorker orphans a session whose worker ignored cancellation
+// past the grace period: it fences the reservation so the late worker can no
+// longer publish or retain, releases the slot and durable lease, and marks the
+// session failed. The worker's own finalization detects workerAbandoned and
+// no-ops; every release below is idempotent, so a worker finishing concurrently
+// is harmless.
+func (m *ScriptDebugManager) abandonUnresponsiveWorker(session *ScriptDebugSession, grace time.Duration) {
+	session.mu.Lock()
+	if session.workerFinished || session.workerAbandoned {
+		session.mu.Unlock()
+		return
+	}
+	session.workerAbandoned = true
+	session.Status = ScriptDebugFailed
+	session.Error = "replay worker ignored cancellation past the abandon grace period; session orphaned and its lease force-released"
+	session.rejectCorrelationEvidenceLocked("debugger session was orphaned after its worker ignored cancellation")
+	session.appendLogLocked("error", "session", session.Error, "", nil)
+	terminalAt := m.retention.clock()
+	if session.terminalAt == nil {
+		session.terminalAt = &terminalAt
+	}
+	if session.CompletedAt == nil {
+		session.CompletedAt = &terminalAt
+	}
+	releaseID := session.releaseID
+	// The abandon path must be the sole releaser from this point forward. A
+	// worker that returns concurrently will run finishWorker, but it must not
+	// make the global ID reusable before the stale local record is retired.
+	session.releaseID = nil
+	reservation := session.reservation
+	session.signalStateChangedLocked()
+	session.mu.Unlock()
+
+	slog.Error("script debug worker ignored cancellation past the grace period; force-releasing its session slot and lease",
+		"replay_session_id", session.ID, "project_id", session.ProjectID, "grace", grace.String())
+	// Fence first so the wedged worker cannot publish or retain afterwards.
+	reservation.fail(errReplaySessionLeaseLost)
+	m.broadcastTerminal("script_debug_failed", session, -1, nil, nil, nil)
+
+	// The global ID may become reusable as soon as the reservation is released.
+	// Retire the stale local record first so this replica cannot keep serving an
+	// old failed session under the same externally addressable capability while
+	// another replica (or a retry here) owns the reused ID.
+	m.mu.Lock()
+	if m.sessions[session.ID] == session {
+		session.mu.Lock()
+		session.retired = true
+		delete(m.sessions, session.ID)
+		session.mu.Unlock()
+	}
+	m.mu.Unlock()
+
+	// Tear down whichever lifecycle state currently owns the reservation only
+	// after the local lookup surface has stopped exposing the old capability.
+	reservation.releaseAll()
+	if releaseID != nil {
+		releaseID()
+	}
 }
 
 func sessionRetentionSortTime(startedAt *time.Time, terminalAt *time.Time, lastActivityAt time.Time) time.Time {
@@ -408,17 +819,22 @@ func sessionRetentionSortTime(startedAt *time.Time, terminalAt *time.Time, lastA
 	return time.Time{}
 }
 
-func (m *ScriptDebugManager) handleReplayProgress(session *ScriptDebugSession, event engine.ReplayProgressEvent) {
-	if session == nil {
+func (m *ScriptDebugManager) handleReplayProgress(ctx context.Context, session *ScriptDebugSession, event engine.ReplayProgressEvent) {
+	if session == nil || ctx.Err() != nil {
+		return
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.closed || m.sessions[session.ID] != session || session.reservation.failureOrExpired(time.Now()) != nil {
+		return
+	}
+	session.mu.RLock()
+	abandoned := session.workerAbandoned
+	session.mu.RUnlock()
+	if abandoned {
 		return
 	}
 	switch event.Type {
-	case engine.ReplayProgressStarted:
-		session.mu.Lock()
-		if event.Report != nil {
-			session.FinalReport = cloneBrowserReplayReport(event.Report)
-		}
-		session.mu.Unlock()
 	case engine.ReplayProgressActionStarted:
 		session.mu.Lock()
 		if event.Action != nil {
@@ -478,41 +894,146 @@ func (m *ScriptDebugManager) handleReplayProgress(session *ScriptDebugSession, e
 			session.mu.Unlock()
 			m.broadcast("script_debug_condition", session, event.EventIndex, nil, event.Action, nil)
 		}
-	case engine.ReplayProgressComplete:
-		session.mu.Lock()
-		if event.Report != nil {
-			session.FinalReport = cloneBrowserReplayReport(event.Report)
-		}
-		session.mu.Unlock()
 	}
+}
+
+// LookupProjectID returns the current capability owner without extending the
+// session's idle lifetime. It is intended for authorization middleware.
+func (m *ScriptDebugManager) LookupProjectID(sessionID string) (string, bool) {
+	if m == nil {
+		return "", false
+	}
+	m.mu.RLock()
+	session := m.sessions[sessionID]
+	if session == nil || session.reservation.failureOrExpired(time.Now()) != nil {
+		m.mu.RUnlock()
+		return "", false
+	}
+	session.mu.RLock()
+	projectID := normalizeProjectID(session.ProjectID)
+	session.mu.RUnlock()
+	m.mu.RUnlock()
+	return projectID, true
 }
 
 func (m *ScriptDebugManager) Get(sessionID string) (*ScriptDebugSession, bool) {
+	return m.getForProject(sessionID, "")
+}
+
+func (m *ScriptDebugManager) GetForProject(sessionID, projectID string) (*ScriptDebugSession, bool) {
+	return m.getForProject(sessionID, projectID)
+}
+
+func (m *ScriptDebugManager) getForProject(sessionID, projectID string) (*ScriptDebugSession, bool) {
 	now := m.retention.clock()
+	var pruneReleases []*replaySessionLeaseSignal
+	defer func() { releaseRetainedReplaySessionSignals(pruneReleases) }()
 	m.mu.Lock()
-	m.pruneExpiredLocked(now)
+	_, pruneReleases = m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
-	m.mu.Unlock()
 	if !ok {
+		m.mu.Unlock()
 		return nil, false
 	}
 	session.mu.Lock()
+	if session.reservation.failureOrExpired(time.Now()) != nil ||
+		!replaySessionProjectMatches(session.ProjectID, projectID) {
+		session.mu.Unlock()
+		m.mu.Unlock()
+		return nil, false
+	}
 	session.lastActivityAt = now
 	snapshot := session.snapshotLocked()
 	session.mu.Unlock()
+	m.mu.Unlock()
 	return snapshot, true
 }
 
+// CorrelationObservations returns a detached copy of the bounded raw replay
+// evidence for a completed session. The evidence is intentionally unavailable
+// through Get, snapshots, exports, and broadcasts; this is the sole consumer
+// boundary, and it binds the caller to the authorized project and stored script
+// id before returning any sensitive values.
+func (m *ScriptDebugManager) CorrelationObservations(sessionID, projectID, scriptID, actionGraphDigest string) ([]correlate.Observation, error) {
+	if m == nil {
+		return nil, errScriptDebugCorrelationSessionNotFound
+	}
+	now := m.retention.clock()
+	var pruneReleases []*replaySessionLeaseSignal
+	defer func() { releaseRetainedReplaySessionSignals(pruneReleases) }()
+	m.mu.Lock()
+	_, pruneReleases = m.pruneExpiredLocked(now)
+	session := m.sessions[strings.TrimSpace(sessionID)]
+	if session == nil {
+		m.mu.Unlock()
+		return nil, errScriptDebugCorrelationSessionNotFound
+	}
+
+	session.mu.Lock()
+	defer func() {
+		session.mu.Unlock()
+		m.mu.Unlock()
+	}()
+	// A replay session id is a body-referenced capability, not part of the route
+	// authorization lookup. Mask a foreign project exactly like an unknown id,
+	// and do so before checking script or graph identity so those fields cannot
+	// become a cross-project existence oracle.
+	if normalizeProjectID(session.ProjectID) != normalizeProjectID(projectID) {
+		return nil, errScriptDebugCorrelationSessionNotFound
+	}
+	if session.reservation.failureOrExpired(time.Now()) != nil {
+		return nil, errScriptDebugCorrelationSessionNotFound
+	}
+	session.lastActivityAt = now
+	if strings.TrimSpace(session.ScriptID) != strings.TrimSpace(scriptID) {
+		return nil, errScriptDebugCorrelationScriptMismatch
+	}
+	if strings.TrimSpace(actionGraphDigest) == "" || session.correlationActionGraphDigest == "" || session.correlationActionGraphDigest != strings.TrimSpace(actionGraphDigest) {
+		return nil, errScriptDebugCorrelationGraphMismatch
+	}
+	switch session.Status {
+	case ScriptDebugCompleted, ScriptDebugFailed:
+		// Status alone is insufficient: raw observations are trusted only after
+		// the replay has produced both terminal artifacts under the same session.
+	case ScriptDebugStopped:
+		return nil, fmt.Errorf("%w: debugger session was stopped before replay completion", errScriptDebugCorrelationUnavailable)
+	default:
+		return nil, errScriptDebugCorrelationSessionActive
+	}
+	if session.CompletedAt == nil || session.CompletedAt.IsZero() || session.FinalReport == nil {
+		return nil, fmt.Errorf("%w: replay terminal artifacts are incomplete", errScriptDebugCorrelationUnavailable)
+	}
+	if session.correlationEvidenceErr != "" {
+		return nil, fmt.Errorf("%w: %s", errScriptDebugCorrelationUnavailable, session.correlationEvidenceErr)
+	}
+	if len(session.correlationObservations) == 0 {
+		return nil, errScriptDebugCorrelationUnavailable
+	}
+	observations := make([]correlate.Observation, len(session.correlationObservations))
+	for i, observation := range session.correlationObservations {
+		observations[i] = cloneCorrelationObservation(observation)
+	}
+	return observations, nil
+}
+
 func (m *ScriptDebugManager) Pause(sessionID string) (*ScriptDebugSession, bool, bool) {
-	return m.updateStatus(sessionID, ScriptDebugPaused, false, "script_debug_paused", "Debugger paused")
+	return m.updateStatus(sessionID, "", ScriptDebugPaused, false, "script_debug_paused", "Debugger paused")
+}
+
+func (m *ScriptDebugManager) PauseForProject(sessionID, projectID string) (*ScriptDebugSession, bool, bool) {
+	return m.updateStatus(sessionID, projectID, ScriptDebugPaused, false, "script_debug_paused", "Debugger paused")
 }
 
 func (m *ScriptDebugManager) Resume(sessionID string) (*ScriptDebugSession, bool, bool) {
-	return m.updateStatus(sessionID, ScriptDebugRunning, false, "script_debug_resumed", "Debugger resumed")
+	return m.updateStatus(sessionID, "", ScriptDebugRunning, false, "script_debug_resumed", "Debugger resumed")
+}
+
+func (m *ScriptDebugManager) ResumeForProject(sessionID, projectID string) (*ScriptDebugSession, bool, bool) {
+	return m.updateStatus(sessionID, projectID, ScriptDebugRunning, false, "script_debug_resumed", "Debugger resumed")
 }
 
 func (m *ScriptDebugManager) Step(sessionID string) (*ScriptDebugSession, bool, bool) {
-	return m.updateStatus(sessionID, ScriptDebugRunning, true, "script_debug_resumed", "Debugger stepping one action")
+	return m.updateStatus(sessionID, "", ScriptDebugRunning, true, "script_debug_resumed", "Debugger stepping one action")
 }
 
 // StepMode advances the debugger using a step mode. "into" (the default) pauses at
@@ -521,20 +1042,36 @@ func (m *ScriptDebugManager) Step(sessionID string) (*ScriptDebugSession, bool, 
 // over/loop_end resume pauses at the first action that falls outside the subtree,
 // and falls back to step-into when no boundary can be derived.
 func (m *ScriptDebugManager) StepMode(sessionID string, mode string) (*ScriptDebugSession, bool, bool) {
+	return m.stepModeForProject(sessionID, "", mode)
+}
+
+func (m *ScriptDebugManager) StepModeForProject(sessionID, projectID, mode string) (*ScriptDebugSession, bool, bool) {
+	return m.stepModeForProject(sessionID, projectID, mode)
+}
+
+func (m *ScriptDebugManager) stepModeForProject(sessionID, projectID, mode string) (*ScriptDebugSession, bool, bool) {
 	mode = strings.ToLower(strings.TrimSpace(mode))
 	if mode != scriptStepOver && mode != scriptStepLoopEnd {
-		return m.Step(sessionID)
+		return m.updateStatus(sessionID, projectID, ScriptDebugRunning, true, "script_debug_resumed", "Debugger stepping one action")
 	}
 	now := m.retention.clock()
+	var pruneReleases []*replaySessionLeaseSignal
+	defer func() { releaseRetainedReplaySessionSignals(pruneReleases) }()
 	m.mu.Lock()
-	m.pruneExpiredLocked(now)
+	_, pruneReleases = m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
-	m.mu.Unlock()
 	if !ok {
+		m.mu.Unlock()
 		return nil, false, false
 	}
 
 	session.mu.Lock()
+	if session.reservation.failureOrExpired(time.Now()) != nil ||
+		!replaySessionProjectMatches(session.ProjectID, projectID) {
+		session.mu.Unlock()
+		m.mu.Unlock()
+		return nil, false, false
+	}
 	session.lastActivityAt = now
 	changed := false
 	if session.Status == ScriptDebugPaused {
@@ -559,9 +1096,10 @@ func (m *ScriptDebugManager) StepMode(sessionID string, mode string) (*ScriptDeb
 	}
 	snapshot := session.snapshotLocked()
 	session.mu.Unlock()
+	m.mu.Unlock()
 
 	if changed {
-		m.broadcast("script_debug_resumed", snapshot, snapshot.CurrentEventIndex, nil, nil, nil)
+		m.broadcastIfCurrent("script_debug_resumed", session, snapshot.CurrentEventIndex, nil, nil, nil)
 	}
 	return snapshot, true, changed
 }
@@ -577,17 +1115,25 @@ func stepModeLogMessage(mode string) string {
 	}
 }
 
-func (m *ScriptDebugManager) updateStatus(sessionID string, nextStatus string, stepOnce bool, messageType string, logMessage string) (*ScriptDebugSession, bool, bool) {
+func (m *ScriptDebugManager) updateStatus(sessionID, projectID string, nextStatus string, stepOnce bool, messageType string, logMessage string) (*ScriptDebugSession, bool, bool) {
 	now := m.retention.clock()
+	var pruneReleases []*replaySessionLeaseSignal
+	defer func() { releaseRetainedReplaySessionSignals(pruneReleases) }()
 	m.mu.Lock()
-	m.pruneExpiredLocked(now)
+	_, pruneReleases = m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
-	m.mu.Unlock()
 	if !ok {
+		m.mu.Unlock()
 		return nil, false, false
 	}
 
 	session.mu.Lock()
+	if session.reservation.failureOrExpired(time.Now()) != nil ||
+		!replaySessionProjectMatches(session.ProjectID, projectID) {
+		session.mu.Unlock()
+		m.mu.Unlock()
+		return nil, false, false
+	}
 	session.lastActivityAt = now
 	changed := false
 	switch nextStatus {
@@ -612,30 +1158,57 @@ func (m *ScriptDebugManager) updateStatus(sessionID string, nextStatus string, s
 	}
 	snapshot := session.snapshotLocked()
 	session.mu.Unlock()
+	m.mu.Unlock()
 
 	if changed {
-		m.broadcast(messageType, snapshot, snapshot.CurrentEventIndex, nil, nil, nil)
+		m.broadcastIfCurrent(messageType, session, snapshot.CurrentEventIndex, nil, nil, nil)
 	}
 	return snapshot, true, changed
 }
 
 func (m *ScriptDebugManager) Stop(sessionID string) (*ScriptDebugSession, bool) {
+	return m.stopForProject(sessionID, "")
+}
+
+func (m *ScriptDebugManager) StopForProject(sessionID, projectID string) (*ScriptDebugSession, bool) {
+	return m.stopForProject(sessionID, projectID)
+}
+
+func (m *ScriptDebugManager) stopForProject(sessionID, projectID string) (*ScriptDebugSession, bool) {
 	now := m.retention.clock()
+	var pruneReleases []*replaySessionLeaseSignal
+	defer func() { releaseRetainedReplaySessionSignals(pruneReleases) }()
 	m.mu.Lock()
-	m.pruneExpiredLocked(now)
+	_, pruneReleases = m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
-	m.mu.Unlock()
 	if !ok {
+		m.mu.Unlock()
 		return nil, false
 	}
 
 	session.mu.Lock()
+	if session.reservation.failureOrExpired(time.Now()) != nil ||
+		!replaySessionProjectMatches(session.ProjectID, projectID) {
+		session.mu.Unlock()
+		m.mu.Unlock()
+		return nil, false
+	}
 	session.lastActivityAt = now
 	if (session.Status == ScriptDebugRunning || session.Status == ScriptDebugPaused) && session.cancel != nil {
-		session.Status = ScriptDebugStopped
+		// Keep the lease active while cancellation drains. Retention begins only
+		// after ReplayScript returns, immediately before terminal publication.
+		if err := session.reservation.failureOrExpired(time.Now()); err != nil {
+			session.Status = ScriptDebugFailed
+			session.Error = err.Error()
+			session.rejectCorrelationEvidenceLocked("debugger session lost its replay-session integrity fence")
+		} else {
+			session.Status = ScriptDebugStopped
+			session.rejectCorrelationEvidenceLocked("debugger session was stopped before replay completion")
+		}
 		session.stepOnce = false
 		session.appendLogLocked("warn", "control", "Stop requested", "", nil)
 		session.cancel()
+		m.scheduleWorkerAbandonBackstopLocked(session)
 		session.signalStateChangedLocked()
 	}
 	if replaySessionStatusTerminal(session.Status) && session.terminalAt == nil {
@@ -644,41 +1217,81 @@ func (m *ScriptDebugManager) Stop(sessionID string) (*ScriptDebugSession, bool) 
 	}
 	snapshot := session.snapshotLocked()
 	session.mu.Unlock()
-	m.broadcast("script_debug_stopped", snapshot, snapshot.CurrentEventIndex, nil, nil, nil)
+	m.mu.Unlock()
+	messageType := "script_debug_stopped"
+	if snapshot.Status == ScriptDebugFailed {
+		messageType = "script_debug_failed"
+	}
+	// Terminal transitions are pushed even when the integrity fence is lost so
+	// WebSocket-only consumers do not keep showing a live session.
+	m.broadcastTerminal(messageType, session, snapshot.CurrentEventIndex, nil, nil, nil)
 	return snapshot, true
 }
 
 func (m *ScriptDebugManager) UpdateBreakpoints(sessionID string, breakpoints []ScriptDebugBreakpoint) (*ScriptDebugSession, bool) {
+	return m.updateBreakpointsForProject(sessionID, "", breakpoints)
+}
+
+func (m *ScriptDebugManager) UpdateBreakpointsForProject(sessionID, projectID string, breakpoints []ScriptDebugBreakpoint) (*ScriptDebugSession, bool) {
+	return m.updateBreakpointsForProject(sessionID, projectID, breakpoints)
+}
+
+func (m *ScriptDebugManager) updateBreakpointsForProject(sessionID, projectID string, breakpoints []ScriptDebugBreakpoint) (*ScriptDebugSession, bool) {
 	now := m.retention.clock()
+	var pruneReleases []*replaySessionLeaseSignal
+	defer func() { releaseRetainedReplaySessionSignals(pruneReleases) }()
 	m.mu.Lock()
-	m.pruneExpiredLocked(now)
+	_, pruneReleases = m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
-	m.mu.Unlock()
 	if !ok {
+		m.mu.Unlock()
 		return nil, false
 	}
 
 	session.mu.Lock()
+	if session.reservation.failureOrExpired(time.Now()) != nil ||
+		!replaySessionProjectMatches(session.ProjectID, projectID) {
+		session.mu.Unlock()
+		m.mu.Unlock()
+		return nil, false
+	}
 	session.lastActivityAt = now
 	session.Breakpoints = normalizeDebugBreakpoints(breakpoints)
 	session.appendLogLocked("info", "breakpoint", fmt.Sprintf("Updated %d breakpoint(s)", len(session.Breakpoints)), "", nil)
 	snapshot := session.snapshotLocked()
 	session.mu.Unlock()
-	m.broadcast("script_debug_breakpoints_updated", snapshot, snapshot.CurrentEventIndex, nil, nil, nil)
+	m.mu.Unlock()
+	m.broadcastIfCurrent("script_debug_breakpoints_updated", session, snapshot.CurrentEventIndex, nil, nil, nil)
 	return snapshot, true
 }
 
 func (m *ScriptDebugManager) SetBreakOnFailure(sessionID string, enabled bool) (*ScriptDebugSession, bool) {
+	return m.setBreakOnFailureForProject(sessionID, "", enabled)
+}
+
+func (m *ScriptDebugManager) SetBreakOnFailureForProject(sessionID, projectID string, enabled bool) (*ScriptDebugSession, bool) {
+	return m.setBreakOnFailureForProject(sessionID, projectID, enabled)
+}
+
+func (m *ScriptDebugManager) setBreakOnFailureForProject(sessionID, projectID string, enabled bool) (*ScriptDebugSession, bool) {
 	now := m.retention.clock()
+	var pruneReleases []*replaySessionLeaseSignal
+	defer func() { releaseRetainedReplaySessionSignals(pruneReleases) }()
 	m.mu.Lock()
-	m.pruneExpiredLocked(now)
+	_, pruneReleases = m.pruneExpiredLocked(now)
 	session, ok := m.sessions[sessionID]
-	m.mu.Unlock()
 	if !ok {
+		m.mu.Unlock()
 		return nil, false
 	}
 
 	session.mu.Lock()
+	if session.reservation.failureOrExpired(time.Now()) != nil ||
+		!replaySessionProjectMatches(session.ProjectID, projectID) {
+		session.mu.Unlock()
+		m.mu.Unlock()
+		return nil, false
+	}
 	session.lastActivityAt = now
 	session.BreakOnFailure = enabled
 	state := "disabled"
@@ -688,12 +1301,21 @@ func (m *ScriptDebugManager) SetBreakOnFailure(sessionID string, enabled bool) (
 	session.appendLogLocked("info", "control", fmt.Sprintf("Break on failure %s", state), "", nil)
 	snapshot := session.snapshotLocked()
 	session.mu.Unlock()
-	m.broadcast("script_debug_options_updated", snapshot, snapshot.CurrentEventIndex, nil, nil, nil)
+	m.mu.Unlock()
+	m.broadcastIfCurrent("script_debug_options_updated", session, snapshot.CurrentEventIndex, nil, nil, nil)
 	return snapshot, true
 }
 
 func (m *ScriptDebugManager) Export(sessionID string, format string) ([]byte, string, bool) {
-	session, ok := m.Get(sessionID)
+	return m.exportForProject(sessionID, "", format)
+}
+
+func (m *ScriptDebugManager) ExportForProject(sessionID, projectID, format string) ([]byte, string, bool) {
+	return m.exportForProject(sessionID, projectID, format)
+}
+
+func (m *ScriptDebugManager) exportForProject(sessionID, projectID, format string) ([]byte, string, bool) {
+	session, ok := m.getForProject(sessionID, projectID)
 	if !ok {
 		return nil, "", false
 	}
@@ -706,6 +1328,41 @@ func (m *ScriptDebugManager) Export(sessionID string, format string) ([]byte, st
 			return []byte("{}"), "application/json", true
 		}
 		return payload, "application/json", true
+	}
+}
+
+// retireUnfencedSession removes a terminal record that could not retain its
+// global capability, then releases whichever active/retained reservation still
+// owns the ID. The local lookup disappears first, so no stale record can
+// overlap a retry that reuses the same externally supplied session ID.
+func (m *ScriptDebugManager) retireUnfencedSession(session *ScriptDebugSession) {
+	if m == nil || session == nil {
+		return
+	}
+	var (
+		releaseID   func()
+		reservation *replaySessionLeaseSignal
+		retired     bool
+	)
+	m.mu.Lock()
+	if m.sessions[session.ID] == session {
+		session.mu.Lock()
+		if !session.terminalFenceEstablished {
+			session.retired = true
+			releaseID = session.releaseID
+			session.releaseID = nil
+			reservation = session.reservation
+			delete(m.sessions, session.ID)
+			retired = true
+		}
+		session.mu.Unlock()
+	}
+	m.mu.Unlock()
+	if retired {
+		reservation.releaseAll()
+		if releaseID != nil {
+			releaseID()
+		}
 	}
 }
 
@@ -742,6 +1399,94 @@ func (m *ScriptDebugManager) broadcast(messageType string, session *ScriptDebugS
 	m.hub.BroadcastJSON(message)
 }
 
+func (m *ScriptDebugManager) withCurrentSession(session *ScriptDebugSession, fn func()) bool {
+	if m == nil || session == nil {
+		return false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.closed || m.sessions[session.ID] != session {
+		return false
+	}
+	if fn != nil {
+		fn()
+	}
+	return true
+}
+
+func (m *ScriptDebugManager) withCurrentWorkerSession(session *ScriptDebugSession, fn func()) bool {
+	if m == nil || session == nil {
+		return false
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.closed || m.sessions[session.ID] != session || session.reservation.failureOrExpired(time.Now()) != nil {
+		return false
+	}
+	session.mu.RLock()
+	abandoned := session.workerAbandoned
+	session.mu.RUnlock()
+	if abandoned {
+		return false
+	}
+	if fn != nil {
+		fn()
+	}
+	return true
+}
+
+func (m *ScriptDebugManager) broadcastIfCurrent(messageType string, session *ScriptDebugSession, eventIndex int, event *engine.ReplayActionEvent, action *engine.ReplayDebugAction, report *engine.ReplayReport) bool {
+	return m.withCurrentWorkerSession(session, func() {
+		m.broadcast(messageType, session, eventIndex, event, action, report)
+	})
+}
+
+// broadcastTerminal publishes a terminal lifecycle message for a session that
+// is still current in this manager. Unlike broadcastIfCurrent it does not
+// require a live integrity fence: after a lease loss progress payloads stay
+// suppressed, but the terminal status itself must still reach push consumers
+// so live views do not show a dead session running forever.
+func (m *ScriptDebugManager) broadcastTerminal(messageType string, session *ScriptDebugSession, eventIndex int, event *engine.ReplayActionEvent, action *engine.ReplayDebugAction, report *engine.ReplayReport) bool {
+	return m.withCurrentSession(session, func() {
+		m.broadcast(messageType, session, eventIndex, event, action, report)
+	})
+}
+
+func (m *ScriptDebugManager) finishWorker(session *ScriptDebugSession) {
+	if session == nil {
+		return
+	}
+	session.mu.Lock()
+	if session.workerFinished {
+		session.mu.Unlock()
+		return
+	}
+	session.workerFinished = true
+	retired := session.retired
+	done := session.workerDone
+	releaseID := session.releaseID
+	session.mu.Unlock()
+
+	if releaseID != nil {
+		releaseID()
+	}
+	if retired {
+		session.reservation.releaseRetainedID()
+	}
+	if done != nil {
+		close(done)
+	}
+}
+
+// workerHasFinishedLocked distinguishes a terminal status from a drained
+// worker. A nil worker channel denotes a terminal record with no live goroutine
+// (used by restored/manual records and tests), so it is safe to prune. An
+// abandoned worker counts as finished: its slot and lease were already
+// force-released by the backstop, so the session must remain evictable.
+func (s *ScriptDebugSession) workerHasFinishedLocked() bool {
+	return s == nil || s.workerFinished || s.workerAbandoned || s.workerDone == nil
+}
+
 func (s *ScriptDebugSession) snapshot() *ScriptDebugSession {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -760,16 +1505,15 @@ func (s *ScriptDebugSession) snapshotLocked() *ScriptDebugSession {
 		LogLevel:          s.LogLevel,
 		RuntimeProfile:    cloneEngineReplayRuntimeProfile(&s.RuntimeProfile),
 		Preflight:         cloneReplayPreflight(s.Preflight),
-		StartedAt:         s.StartedAt,
-		CompletedAt:       s.CompletedAt,
+		StartedAt:         cloneReplaySessionTime(s.StartedAt),
+		CompletedAt:       cloneReplaySessionTime(s.CompletedAt),
 		CurrentEventIndex: s.CurrentEventIndex,
 		BreakOnFailure:    s.BreakOnFailure,
 		FinalReport:       cloneBrowserReplayReport(s.FinalReport),
 		Error:             s.Error,
 	}
 	if s.CurrentAction != nil {
-		currentAction := *s.CurrentAction
-		clone.CurrentAction = &currentAction
+		clone.CurrentAction = cloneScriptDebugAction(s.CurrentAction)
 	}
 	if s.CurrentEvent != nil {
 		currentEvent := cloneBrowserReplayEvent(*s.CurrentEvent)
@@ -808,6 +1552,28 @@ func (s *ScriptDebugSession) snapshotLocked() *ScriptDebugSession {
 		}
 	}
 	return clone
+}
+
+func cloneScriptDebugAction(action *engine.ReplayDebugAction) *engine.ReplayDebugAction {
+	if action == nil {
+		return nil
+	}
+	cloned := *action
+	if action.RequestIndex != nil {
+		requestIndex := *action.RequestIndex
+		cloned.RequestIndex = &requestIndex
+	}
+	if action.Iteration != nil {
+		iteration := *action.Iteration
+		cloned.Iteration = &iteration
+	}
+	if len(action.StepPath) > 0 {
+		cloned.StepPath = append([]string(nil), action.StepPath...)
+	}
+	if len(action.IterationPath) > 0 {
+		cloned.IterationPath = append([]int(nil), action.IterationPath...)
+	}
+	return &cloned
 }
 
 func (s *ScriptDebugSession) appendLogLocked(level string, category string, message string, raw string, event *engine.ReplayActionEvent) {
@@ -865,6 +1631,253 @@ type scriptDebugController struct {
 	session *ScriptDebugSession
 }
 
+// ObserveCorrelationEvidence implements
+// engine.ReplayDebugControllerCorrelationObserver. The callback runs before the
+// engine scrubs and clears the ephemeral event evidence. Only action-phase,
+// one-event-per-top-level-action observations are currently safe to pair with a
+// stored baseline. Container/loop duplicates and init/teardown evidence are
+// rejected for the whole session instead of producing a misleading diagnosis.
+func (c scriptDebugController) ObserveCorrelationEvidence(_ context.Context, action engine.ReplayDebugAction, event *engine.ReplayActionEvent) {
+	if c.manager == nil || c.session == nil || event == nil || event.CorrelationEvidence == nil {
+		return
+	}
+	// This is a per-action hot path: hold only the manager read lock so
+	// concurrently replaying debug sessions never serialize behind each other.
+	// Per-session state stays guarded by the session mutex, and the cross-session
+	// budget sweep is serialized on its own dedicated mutex below.
+	c.manager.mu.RLock()
+	defer c.manager.mu.RUnlock()
+	if c.manager.closed || c.manager.sessions[c.session.ID] != c.session || c.session.reservation.failureOrExpired(time.Now()) != nil {
+		return
+	}
+	c.session.mu.Lock()
+	if c.session.workerAbandoned {
+		c.session.mu.Unlock()
+		return
+	}
+	if event.CorrelationEvidence.UnavailableReason != "" {
+		c.session.rejectCorrelationEvidenceLocked(event.CorrelationEvidence.UnavailableReason)
+		c.session.mu.Unlock()
+		return
+	}
+	c.session.appendCorrelationObservationLocked(action, event, c.manager.retention.clock())
+	retainedBytes := c.session.correlationEvidenceBytes
+	c.session.mu.Unlock()
+	if retainedBytes == 0 {
+		// The observation was rejected or freed; budgets cannot have grown.
+		return
+	}
+	c.manager.correlationBudgetMu.Lock()
+	c.manager.enforceCorrelationEvidenceBudgetsLocked()
+	c.manager.correlationBudgetMu.Unlock()
+}
+
+func (s *ScriptDebugSession) appendCorrelationObservationLocked(action engine.ReplayDebugAction, event *engine.ReplayActionEvent, retainedAt time.Time) {
+	if s == nil || event == nil || event.CorrelationEvidence == nil {
+		return
+	}
+	if s.Status == ScriptDebugStopped {
+		s.rejectCorrelationEvidenceLocked("debugger session was stopped before replay completion")
+		return
+	}
+	if event.CorrelationEvidence.UnavailableReason != "" {
+		s.rejectCorrelationEvidenceLocked(event.CorrelationEvidence.UnavailableReason)
+		return
+	}
+	if s.correlationEvidenceErr != "" {
+		return
+	}
+	eventPhase := strings.TrimSpace(event.Phase)
+	actionPhase := strings.TrimSpace(action.Phase)
+	if eventPhase != "action" || actionPhase != "action" || eventPhase != actionPhase {
+		s.rejectCorrelationEvidenceLocked(fmt.Sprintf("unsupported replay phase %q", eventPhase))
+		return
+	}
+	if event.ActionIndex < 0 || action.ActionIndex != event.ActionIndex {
+		s.rejectCorrelationEvidenceLocked("invalid top-level replay action identity")
+		return
+	}
+	if action.ParentActionName != "" || action.RequestIndex != nil || len(action.StepPath) > 0 || action.Iteration != nil || len(action.IterationPath) > 0 ||
+		event.ParentActionName != "" || event.RequestIndex != nil || len(event.StepPath) > 0 || event.Iteration != nil || len(event.IterationPath) > 0 {
+		s.rejectCorrelationEvidenceLocked("nested replay leaves cannot be bound to a top-level recording action id")
+		return
+	}
+	if s.correlationObservationIDs == nil {
+		s.correlationObservationIDs = make(map[int]struct{})
+	}
+	if _, duplicate := s.correlationObservationIDs[event.ActionIndex]; duplicate {
+		s.rejectCorrelationEvidenceLocked(fmt.Sprintf("duplicate top-level replay action id %d", event.ActionIndex))
+		return
+	}
+	if len(s.correlationObservations) >= maxRecordedBaselineObservations {
+		s.rejectCorrelationEvidenceLocked("raw replay observation count exceeds the retention limit")
+		return
+	}
+
+	evidence := event.CorrelationEvidence
+	responseSuccess := event.Success
+	if evidence.ResponseSuccess != nil {
+		responseSuccess = *evidence.ResponseSuccess
+	}
+	observation := correlate.Observation{
+		ID:                     event.ActionIndex,
+		RequestURL:             evidence.RequestURL,
+		RequestBody:            evidence.RequestBody,
+		RequestBodyTransformed: evidence.RequestBodyTransformed,
+		RequestHeaders:         cloneStringMap(evidence.RequestHeaders),
+		EditableRequestURL:     evidence.RequestURL == evidence.AuthoredRequestURL,
+		EditableRequestBody:    !evidence.RequestBodyTransformed && evidence.RequestBody == evidence.AuthoredRequestBody,
+		EditableRequestHeaders: editableRequestHeaderProof(evidence.RequestHeaders, evidence.AuthoredRequestHeaders),
+		ResponseBody:           evidence.ResponseBody,
+		ResponseHeaders:        cloneStringMap(evidence.ResponseHeaders),
+		ResponseStatus:         evidence.ResponseStatus,
+		ResponseSuccess:        &responseSuccess,
+	}
+	nextBytes := s.correlationEvidenceBytes
+	if len(s.correlationObservations) == 0 {
+		nextBytes = 2 // JSON array brackets.
+	} else {
+		nextBytes++ // comma between observations.
+	}
+	nextBytes += estimatedRecordingObservationJSONSize(rawBaselineObservation(observation))
+	if nextBytes > maxRecordedBaselinePlaintextSize {
+		s.rejectCorrelationEvidenceLocked("raw replay evidence exceeds the retention byte limit")
+		return
+	}
+	s.correlationObservationIDs[event.ActionIndex] = struct{}{}
+	s.correlationObservations = append(s.correlationObservations, observation)
+	s.correlationEvidenceBytes = nextBytes
+	if s.correlationEvidenceRetainedAt.IsZero() {
+		s.correlationEvidenceRetainedAt = retainedAt.UTC()
+	}
+}
+
+func editableRequestHeaderProof(wire, authored map[string]string) map[string]bool {
+	if len(wire) == 0 {
+		return nil
+	}
+	proof := make(map[string]bool, len(wire))
+	for wireName, wireValue := range wire {
+		exact := false
+		matches := 0
+		for authoredName, authoredValue := range authored {
+			if strings.EqualFold(wireName, authoredName) {
+				matches++
+				exact = wireValue == authoredValue
+			}
+		}
+		// Multiple authored keys that collapse to one case-insensitive HTTP
+		// header name are ambiguous. Fail closed regardless of map iteration
+		// order, even if one of the values happens to match the wire value.
+		proof[wireName] = matches == 1 && exact
+	}
+	return proof
+}
+
+func (s *ScriptDebugSession) rejectCorrelationEvidenceLocked(reason string) {
+	s.correlationObservations = nil
+	s.correlationObservationIDs = nil
+	s.correlationEvidenceBytes = 0
+	s.correlationEvidenceRetainedAt = time.Time{}
+	s.correlationEvidenceErr = strings.TrimSpace(reason)
+}
+
+// enforceCorrelationEvidenceBudgetsLocked clears only private raw evidence;
+// public debugger sessions, scrubbed events, and reports retain their normal
+// lifecycle. Oldest evidence is selected by first-retained time and then ID so
+// eviction is deterministic even though sessions is a map. Callers must hold
+// m.mu (read suffices — sessions is only iterated, and per-session state is
+// mutated under each session mutex) plus correlationBudgetMu so only one
+// budget sweep runs at a time.
+func (m *ScriptDebugManager) enforceCorrelationEvidenceBudgetsLocked() {
+	if m == nil {
+		return
+	}
+	if m.correlationEvidenceProjectBytes > 0 {
+		projects := make(map[string]struct{})
+		for _, session := range m.sessions {
+			session.mu.RLock()
+			if session.correlationEvidenceBytes > 0 {
+				projects[normalizeProjectID(session.ProjectID)] = struct{}{}
+			}
+			session.mu.RUnlock()
+		}
+		for projectID := range projects {
+			for m.correlationEvidenceUsageLocked(projectID, true) > m.correlationEvidenceProjectBytes {
+				victim := m.oldestCorrelationEvidenceSessionLocked(projectID, true)
+				if victim == nil {
+					break
+				}
+				victim.mu.Lock()
+				victim.rejectCorrelationEvidenceLocked("raw replay evidence evicted to enforce the project retention byte budget")
+				victim.mu.Unlock()
+			}
+		}
+	}
+	if m.correlationEvidenceGlobalBytes > 0 {
+		for m.correlationEvidenceUsageLocked("", false) > m.correlationEvidenceGlobalBytes {
+			victim := m.oldestCorrelationEvidenceSessionLocked("", false)
+			if victim == nil {
+				break
+			}
+			victim.mu.Lock()
+			victim.rejectCorrelationEvidenceLocked("raw replay evidence evicted to enforce the global retention byte budget")
+			victim.mu.Unlock()
+		}
+	}
+}
+
+func (m *ScriptDebugManager) correlationEvidenceUsageLocked(projectID string, projectScoped bool) int {
+	total := 0
+	for _, session := range m.sessions {
+		session.mu.RLock()
+		if !projectScoped || normalizeProjectID(session.ProjectID) == projectID {
+			total += session.correlationEvidenceBytes
+		}
+		session.mu.RUnlock()
+	}
+	return total
+}
+
+func (m *ScriptDebugManager) oldestCorrelationEvidenceSessionLocked(projectID string, projectScoped bool) *ScriptDebugSession {
+	var selected *ScriptDebugSession
+	var selectedAt time.Time
+	var selectedID string
+	for id, session := range m.sessions {
+		session.mu.RLock()
+		bytes := session.correlationEvidenceBytes
+		retainedAt := session.correlationEvidenceRetainedAt
+		candidateProjectID := normalizeProjectID(session.ProjectID)
+		session.mu.RUnlock()
+		if bytes <= 0 || (projectScoped && candidateProjectID != projectID) {
+			continue
+		}
+		if selected == nil || retainedAt.Before(selectedAt) || (retainedAt.Equal(selectedAt) && id < selectedID) {
+			selected = session
+			selectedAt = retainedAt
+			selectedID = id
+		}
+	}
+	return selected
+}
+
+func cloneCorrelationObservation(observation correlate.Observation) correlate.Observation {
+	cloned := observation
+	cloned.RequestHeaders = cloneStringMap(observation.RequestHeaders)
+	if observation.EditableRequestHeaders != nil {
+		cloned.EditableRequestHeaders = make(map[string]bool, len(observation.EditableRequestHeaders))
+		for name, editable := range observation.EditableRequestHeaders {
+			cloned.EditableRequestHeaders[name] = editable
+		}
+	}
+	cloned.ResponseHeaders = cloneStringMap(observation.ResponseHeaders)
+	if observation.ResponseSuccess != nil {
+		responseSuccess := *observation.ResponseSuccess
+		cloned.ResponseSuccess = &responseSuccess
+	}
+	return cloned
+}
+
 func (c scriptDebugController) BeforeAction(ctx context.Context, action engine.ReplayDebugAction) error {
 	if c.manager == nil || c.session == nil {
 		return nil
@@ -873,42 +1886,53 @@ func (c scriptDebugController) BeforeAction(ctx context.Context, action engine.R
 	actionBroadcasted := false
 	pausedBroadcasted := false
 	for {
-		c.session.mu.Lock()
-		if c.session.Status == ScriptDebugStopped {
-			c.session.mu.Unlock()
+		var (
+			status       string
+			stateChanged <-chan struct{}
+		)
+		if !c.manager.withCurrentWorkerSession(c.session, func() {
+			c.session.mu.Lock()
+			defer c.session.mu.Unlock()
+			if c.session.Status == ScriptDebugStopped {
+				status = ScriptDebugStopped
+				return
+			}
+			if !actionBroadcasted {
+				c.session.CurrentAction = &actionCopy
+				switch {
+				case c.session.Status != ScriptDebugRunning:
+					c.session.appendLogLocked("debug", "action", fmt.Sprintf("Ready to execute %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName)+debugLeafSuffix(actionCopy), "", nil)
+				case c.session.hasBreakpointLocked(actionCopy):
+					c.session.Status = ScriptDebugPaused
+					c.session.stepOnce = false
+					c.session.clearStepLocked()
+					c.session.appendLogLocked("info", "breakpoint", fmt.Sprintf("Paused before %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName)+debugLeafSuffix(actionCopy), "", nil)
+				case c.session.stepBoundaryExitLocked(actionCopy):
+					// A step-over / finish-loop resume has left its subtree: pause before
+					// the first action outside it.
+					c.session.Status = ScriptDebugPaused
+					c.session.stepOnce = false
+					c.session.clearStepLocked()
+					c.session.appendLogLocked("info", "control", fmt.Sprintf("Stepped to %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName)+debugLeafSuffix(actionCopy), "", nil)
+				default:
+					c.session.appendLogLocked("debug", "action", fmt.Sprintf("Ready to execute %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName)+debugLeafSuffix(actionCopy), "", nil)
+				}
+			}
+			status = c.session.Status
+			stateChanged = c.session.stateChangedChanLocked()
+		}) {
 			return context.Canceled
 		}
-		if !actionBroadcasted {
-			c.session.CurrentAction = &actionCopy
-			switch {
-			case c.session.Status != ScriptDebugRunning:
-				c.session.appendLogLocked("debug", "action", fmt.Sprintf("Ready to execute %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName)+debugLeafSuffix(actionCopy), "", nil)
-			case c.session.hasBreakpointLocked(actionCopy):
-				c.session.Status = ScriptDebugPaused
-				c.session.stepOnce = false
-				c.session.clearStepLocked()
-				c.session.appendLogLocked("info", "breakpoint", fmt.Sprintf("Paused before %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName)+debugLeafSuffix(actionCopy), "", nil)
-			case c.session.stepBoundaryExitLocked(actionCopy):
-				// A step-over / finish-loop resume has left its subtree: pause before
-				// the first action outside it.
-				c.session.Status = ScriptDebugPaused
-				c.session.stepOnce = false
-				c.session.clearStepLocked()
-				c.session.appendLogLocked("info", "control", fmt.Sprintf("Stepped to %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName)+debugLeafSuffix(actionCopy), "", nil)
-			default:
-				c.session.appendLogLocked("debug", "action", fmt.Sprintf("Ready to execute %s[%d] %s", actionCopy.Phase, actionCopy.ActionIndex, actionCopy.ActionName)+debugLeafSuffix(actionCopy), "", nil)
-			}
+		if status == ScriptDebugStopped {
+			return context.Canceled
 		}
-		status := c.session.Status
-		stateChanged := c.session.stateChangedChanLocked()
-		c.session.mu.Unlock()
 
 		if !actionBroadcasted {
-			c.manager.broadcast("script_debug_action", c.session, actionCopy.EventIndex, nil, &actionCopy, nil)
+			c.manager.broadcastIfCurrent("script_debug_action", c.session, actionCopy.EventIndex, nil, &actionCopy, nil)
 			actionBroadcasted = true
 		}
 		if status == ScriptDebugPaused && !pausedBroadcasted {
-			c.manager.broadcast("script_debug_paused", c.session, actionCopy.EventIndex, nil, &actionCopy, nil)
+			c.manager.broadcastIfCurrent("script_debug_paused", c.session, actionCopy.EventIndex, nil, &actionCopy, nil)
 			pausedBroadcasted = true
 		}
 		if status != ScriptDebugPaused {
@@ -936,24 +1960,40 @@ func (c scriptDebugController) AfterAction(ctx context.Context, action engine.Re
 		return nil
 	}
 
-	c.session.mu.Lock()
-	if !c.session.BreakOnFailure || c.session.Status != ScriptDebugRunning {
-		c.session.mu.Unlock()
+	paused := false
+	if !c.manager.withCurrentWorkerSession(c.session, func() {
+		c.session.mu.Lock()
+		defer c.session.mu.Unlock()
+		if !c.session.BreakOnFailure || c.session.Status != ScriptDebugRunning {
+			return
+		}
+		c.session.Status = ScriptDebugPaused
+		c.session.stepOnce = false
+		c.session.appendLogLocked("warn", "breakpoint", fmt.Sprintf("Paused after failure in %s[%d] %s", action.Phase, action.ActionIndex, action.ActionName)+debugLeafSuffix(action), "", nil)
+		paused = true
+	}) {
+		return context.Canceled
+	}
+	if !paused {
 		return nil
 	}
-	c.session.Status = ScriptDebugPaused
-	c.session.stepOnce = false
-	c.session.appendLogLocked("warn", "breakpoint", fmt.Sprintf("Paused after failure in %s[%d] %s", action.Phase, action.ActionIndex, action.ActionName)+debugLeafSuffix(action), "", nil)
-	c.session.mu.Unlock()
 
 	actionCopy := action
-	c.manager.broadcast("script_debug_paused", c.session, actionCopy.EventIndex, nil, &actionCopy, nil)
+	c.manager.broadcastIfCurrent("script_debug_paused", c.session, actionCopy.EventIndex, nil, &actionCopy, nil)
 
 	for {
-		c.session.mu.Lock()
-		status := c.session.Status
-		stateChanged := c.session.stateChangedChanLocked()
-		c.session.mu.Unlock()
+		var (
+			status       string
+			stateChanged <-chan struct{}
+		)
+		if !c.manager.withCurrentWorkerSession(c.session, func() {
+			c.session.mu.Lock()
+			status = c.session.Status
+			stateChanged = c.session.stateChangedChanLocked()
+			c.session.mu.Unlock()
+		}) {
+			return context.Canceled
+		}
 		if status == ScriptDebugStopped {
 			return context.Canceled
 		}

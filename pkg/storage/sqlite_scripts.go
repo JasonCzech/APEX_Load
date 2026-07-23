@@ -134,6 +134,42 @@ func (s *SQLiteStore) CreateScriptIfAbsent(script *dsl.Script) (bool, error) {
 // durable version is still current. Library synchronization uses this boundary
 // to avoid overwriting an editor's concurrent update after conflict preflight.
 func (s *SQLiteStore) UpdateScriptIfUnchanged(script *dsl.Script, expectedUpdatedAt time.Time) (bool, error) {
+	return s.updateScriptIfUnchanged(script, expectedUpdatedAt, "", "", time.Time{})
+}
+
+// UpdateScriptIfUnchangedAndCorrelationRulesetCurrent atomically fences a
+// derived script update on both the script revision and the correlation
+// ruleset revision that produced it. The ruleset row is locked in the same
+// transaction as the script CAS, closing the re-read/commit window where a
+// concurrent editor could otherwise change or replace the ruleset after apply
+// preview work had completed.
+func (s *SQLiteStore) UpdateScriptIfUnchangedAndCorrelationRulesetCurrent(
+	script *dsl.Script,
+	expectedUpdatedAt time.Time,
+	rulesetID string,
+	expectedRulesetProjectID string,
+	expectedRulesetUpdatedAt time.Time,
+) (bool, error) {
+	rulesetID = strings.TrimSpace(rulesetID)
+	if rulesetID == "" || expectedRulesetUpdatedAt.IsZero() {
+		return false, errors.New("correlation ruleset id and expected updated_at are required")
+	}
+	return s.updateScriptIfUnchanged(
+		script,
+		expectedUpdatedAt,
+		rulesetID,
+		normalizeProjectID(expectedRulesetProjectID),
+		expectedRulesetUpdatedAt,
+	)
+}
+
+func (s *SQLiteStore) updateScriptIfUnchanged(
+	script *dsl.Script,
+	expectedUpdatedAt time.Time,
+	rulesetID string,
+	expectedRulesetProjectID string,
+	expectedRulesetUpdatedAt time.Time,
+) (bool, error) {
 	if script == nil {
 		return false, errors.New("script is required")
 	}
@@ -141,6 +177,9 @@ func (s *SQLiteStore) UpdateScriptIfUnchanged(script *dsl.Script, expectedUpdate
 		return false, errors.New("script id and expected updated_at are required")
 	}
 	script.ProjectID = normalizeProjectID(strings.TrimSpace(script.ProjectID))
+	if rulesetID != "" && expectedRulesetProjectID != script.ProjectID {
+		return false, errors.New("correlation ruleset belongs to another project")
+	}
 	encoded, err := marshalScriptForStorage(script)
 	if err != nil {
 		return false, err
@@ -158,6 +197,28 @@ func (s *SQLiteStore) UpdateScriptIfUnchanged(script *dsl.Script, expectedUpdate
 	}
 	if err := validateScriptObjectRepositoryProjectsTx(tx, script.ProjectID, script); err != nil {
 		return false, err
+	}
+	if rulesetID != "" {
+		rulesetQuery := `SELECT COALESCE(project_id, ''), updated_at
+			FROM correlation_rulesets WHERE id = ?`
+		if s.db.dialect == storeDialectPostgres {
+			rulesetQuery += ` FOR UPDATE`
+		}
+		var currentRulesetProjectID string
+		var currentRulesetUpdatedAt time.Time
+		if err := tx.QueryRow(rulesetQuery, rulesetID).Scan(
+			&currentRulesetProjectID,
+			&currentRulesetUpdatedAt,
+		); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return false, nil
+			}
+			return false, err
+		}
+		if normalizeProjectID(currentRulesetProjectID) != expectedRulesetProjectID ||
+			!currentRulesetUpdatedAt.Equal(expectedRulesetUpdatedAt) {
+			return false, nil
+		}
 	}
 	var currentUpdatedAt time.Time
 	var currentUpdatedRaw, currentProjectID string
@@ -298,6 +359,29 @@ func (s *SQLiteStore) DeleteScriptIfUnchanged(id string, expectedUpdatedAt time.
 		return false, err
 	}
 	defer tx.Rollback()
+	// Lock the parent scripts row before touching dependent rows so this
+	// transaction and SaveScriptRecording (which locks the parent first, then
+	// upserts script_recordings) acquire row locks in the same order on
+	// PostgreSQL; the opposite order can deadlock. See DeleteScript.
+	lockQuery := `SELECT CAST(updated_at AS TEXT) FROM scripts WHERE id = ?`
+	if s.db.dialect == storeDialectPostgres {
+		lockQuery += ` FOR UPDATE`
+	}
+	var lockedUpdatedRaw string
+	if err := tx.QueryRow(lockQuery, id).Scan(&lockedUpdatedRaw); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, err
+	}
+	if lockedUpdatedRaw != currentUpdatedRaw {
+		return false, nil
+	}
+	if _, err := tx.Exec(`DELETE FROM script_recordings WHERE script_id = ? AND EXISTS (
+		SELECT 1 FROM scripts WHERE id = ? AND CAST(updated_at AS TEXT) = ?
+	)`, id, id, currentUpdatedRaw); err != nil {
+		return false, err
+	}
 	result, err := tx.Exec(`DELETE FROM bruno_source_revisions WHERE script_id = ? AND EXISTS (
 		SELECT 1 FROM scripts WHERE id = ? AND CAST(updated_at AS TEXT) = ?
 	)`, id, id, currentUpdatedRaw)
@@ -541,6 +625,7 @@ func (s *SQLiteStore) SaveAuthoringSession(session *AuthoringSession) error {
 	if session.ID == "" {
 		return errors.New("authoring session id is required")
 	}
+	session.Status = strings.ToLower(strings.TrimSpace(session.Status))
 	session.ProjectID = normalizeProjectID(strings.TrimSpace(session.ProjectID))
 	if session.Draft != nil {
 		if strings.TrimSpace(session.Draft.ProjectID) == "" {
@@ -587,7 +672,8 @@ func (s *SQLiteStore) SaveAuthoringSession(session *AuthoringSession) error {
 			review_state_json=excluded.review_state_json,
 			updated_at=excluded.updated_at,
 			last_accessed_at=excluded.last_accessed_at
-		WHERE COALESCE(NULLIF(authoring_sessions.project_id, ''), ?) = excluded.project_id`,
+		WHERE COALESCE(NULLIF(authoring_sessions.project_id, ''), ?) = excluded.project_id
+			AND LOWER(TRIM(authoring_sessions.status)) NOT IN ('approving', 'approved')`,
 		session.ID, session.ProjectID, session.Source, session.Name, session.Status, string(draftJSON), string(reviewStateJSON), session.CreatedAt, session.UpdatedAt, session.LastAccessedAt, DefaultProjectID)
 	if err != nil {
 		return err
@@ -597,9 +683,89 @@ func (s *SQLiteStore) SaveAuthoringSession(session *AuthoringSession) error {
 		return err
 	}
 	if affected != 1 {
-		return fmt.Errorf("authoring session %q belongs to another project", session.ID)
+		var currentProjectID, currentStatus string
+		if err := tx.QueryRow(`SELECT COALESCE(project_id, ''), status FROM authoring_sessions WHERE id = ?`, session.ID).Scan(&currentProjectID, &currentStatus); err != nil {
+			return err
+		}
+		if normalizeProjectID(currentProjectID) != session.ProjectID {
+			return fmt.Errorf("authoring session %q belongs to another project", session.ID)
+		}
+		switch strings.ToLower(strings.TrimSpace(currentStatus)) {
+		case "approving":
+			return fmt.Errorf("authoring session %q approval is in progress", session.ID)
+		case "approved":
+			return fmt.Errorf("approved authoring session %q is immutable", session.ID)
+		default:
+			return fmt.Errorf("authoring session %q was not saved", session.ID)
+		}
 	}
 	return tx.Commit()
+}
+
+// CreateAuthoringSession inserts one authoring session without replacing an
+// existing row. API idempotency derives a stable session ID from the
+// project-scoped request key; this insert-only primitive makes concurrent
+// controller replicas converge on the first durable review artifact.
+func (s *SQLiteStore) CreateAuthoringSession(session *AuthoringSession) (bool, error) {
+	if session == nil {
+		return false, errors.New("authoring session is required")
+	}
+	session.ID = strings.TrimSpace(session.ID)
+	if session.ID == "" {
+		return false, errors.New("authoring session id is required")
+	}
+	session.Status = strings.ToLower(strings.TrimSpace(session.Status))
+	session.ProjectID = normalizeProjectID(strings.TrimSpace(session.ProjectID))
+	if session.Draft != nil {
+		if strings.TrimSpace(session.Draft.ProjectID) == "" {
+			session.Draft.ProjectID = session.ProjectID
+		} else if normalizeProjectID(strings.TrimSpace(session.Draft.ProjectID)) != session.ProjectID {
+			return false, errors.New("authoring session draft belongs to another project")
+		}
+	}
+	now := authoringSessionTimestamp(time.Now())
+	if session.CreatedAt.IsZero() {
+		session.CreatedAt = now
+	} else {
+		session.CreatedAt = authoringSessionTimestamp(session.CreatedAt)
+	}
+	session.UpdatedAt = now
+	if session.LastAccessedAt.IsZero() {
+		session.LastAccessedAt = now
+	} else {
+		session.LastAccessedAt = authoringSessionTimestamp(session.LastAccessedAt)
+	}
+	draftJSON, err := json.Marshal(session.Draft)
+	if err != nil {
+		return false, fmt.Errorf("marshal authoring draft: %w", err)
+	}
+	reviewStateJSON, err := json.Marshal(session.ReviewState)
+	if err != nil {
+		return false, fmt.Errorf("marshal authoring review state: %w", err)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	if session.ProjectID, err = lockProjectForOwnedMutation(tx, session.ProjectID); err != nil {
+		return false, err
+	}
+	result, err := tx.Exec(`INSERT INTO authoring_sessions (id, project_id, source, name, status, draft_json, review_state_json, created_at, updated_at, last_accessed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO NOTHING`,
+		session.ID, session.ProjectID, session.Source, session.Name, session.Status, string(draftJSON), string(reviewStateJSON), session.CreatedAt, session.UpdatedAt, session.LastAccessedAt)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	if err := tx.Commit(); err != nil {
+		return false, err
+	}
+	return affected == 1, nil
 }
 
 // CompareAndSwapAuthoringSession persists a session only while the durable row
@@ -614,6 +780,10 @@ func (s *SQLiteStore) CompareAndSwapAuthoringSession(session *AuthoringSession, 
 	if session.ID == "" {
 		return false, errors.New("authoring session id is required")
 	}
+	if strings.EqualFold(strings.TrimSpace(expectedStatus), "approved") {
+		return false, nil
+	}
+	session.Status = strings.ToLower(strings.TrimSpace(session.Status))
 	session.ProjectID = normalizeProjectID(strings.TrimSpace(session.ProjectID))
 	if session.Draft != nil {
 		if strings.TrimSpace(session.Draft.ProjectID) == "" {
@@ -675,10 +845,11 @@ func authoringSessionTimestamp(value time.Time) time.Time {
 }
 
 // DeleteAuthoringSessionUnlessApproving fences deletion against the durable
-// approval intent. A caller that loses this race must retry after approval has
-// either completed or been rolled back.
+// approval intent and its finalized approval evidence. A caller that loses an
+// in-progress race may retry after approval is rolled back; approved sessions
+// remain retained for approval verification.
 func (s *SQLiteStore) DeleteAuthoringSessionUnlessApproving(id string) (bool, error) {
-	result, err := s.db.Exec(`DELETE FROM authoring_sessions WHERE id = ? AND status <> 'approving'`, id)
+	result, err := s.db.Exec(`DELETE FROM authoring_sessions WHERE id = ? AND LOWER(TRIM(status)) NOT IN ('approving', 'approved')`, id)
 	if err != nil {
 		return false, err
 	}
@@ -775,8 +946,32 @@ func (s *SQLiteStore) listAuthoringSessions(projectID string, limit, offset int)
 }
 
 func (s *SQLiteStore) DeleteAuthoringSession(id string) error {
-	_, err := s.db.Exec(`DELETE FROM authoring_sessions WHERE id = ?`, id)
-	return err
+	// Final approval evidence is immutable even for direct storage callers.
+	// Project deletion remains the explicit administrative lifecycle boundary
+	// and removes dependent sessions through its transaction.
+	result, err := s.db.Exec(`DELETE FROM authoring_sessions WHERE id = ? AND LOWER(TRIM(status)) NOT IN ('approving', 'approved')`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil || affected == 1 {
+		return err
+	}
+	var status string
+	if err := s.db.QueryRow(`SELECT status FROM authoring_sessions WHERE id = ?`, id).Scan(&status); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "approving":
+		return fmt.Errorf("authoring session %q approval is in progress", id)
+	case "approved":
+		return fmt.Errorf("approved authoring session %q is immutable", id)
+	default:
+		return fmt.Errorf("authoring session %q was not deleted because it changed concurrently", id)
+	}
 }
 
 func decodeAuthoringSessionJSON(session *AuthoringSession, draftJSON string, reviewStateJSON string) error {

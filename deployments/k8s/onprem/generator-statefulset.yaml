@@ -61,6 +61,8 @@ spec:
               value: production
             - name: APEXLOAD_GENERATOR_MAX_VUSERS
               value: "10000"
+            - name: APEXLOAD_JAVA_VUSER_RUNNER_ENABLED
+              value: "false"
             # Persist the fencing high-water per StatefulSet ordinal so a pod
             # replacement cannot revive work from a displaced controller.
             - name: APEXLOAD_GENERATOR_STATE_DIR

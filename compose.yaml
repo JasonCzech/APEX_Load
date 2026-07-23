@@ -82,6 +82,13 @@ services:
       APEXLOAD_BRUNO_MAX_PARALLEL_REQUESTS: "100"
       APEXLOAD_BRUNO_MAX_OUTPUT_BYTES: "4194304"
       APEXLOAD_BRUNO_MAX_STREAM_TIMEOUT_MS: "60000"
+      # Keep operator enablement independent from service selection. Start the
+      # java-vuser profile with APEXLOAD_JAVA_VUSER_RUNNER_ENABLED=true; the
+      # profile alone must not silently enable arbitrary Java execution.
+      APEXLOAD_JAVA_VUSER_RUNNER_ENABLED: ${APEXLOAD_JAVA_VUSER_RUNNER_ENABLED:-false}
+      APEXLOAD_JAVA_VUSER_RUNNER_MODE: sidecar
+      APEXLOAD_JAVA_VUSER_RUNNER_URL: http://127.0.0.1:8098
+      APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN: ${APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN:-}
     expose:
       - "9090"
     tmpfs:
@@ -114,6 +121,47 @@ services:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8097/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
       timeout: 3s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      - generator
+
+  java-vuser-runner:
+    profiles:
+      - java-vuser
+    build:
+      context: .
+      dockerfile: runners/java_vuser/Dockerfile
+    image: apexload-java-vuser-runner:local
+    init: true
+    restart: unless-stopped
+    network_mode: service:generator
+    read_only: true
+    # The stock non-privileged container has no writable cgroup v2 delegation.
+    # It advertises legacy full_lifecycle only; combined persistent lifecycle
+    # requires a separately governed runner described in JAVA_VUSER_RUNTIME.md.
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      # The profile selects the process; this independent operator flag grants
+      # arbitrary Java execution only when explicitly set to true.
+      APEXLOAD_JAVA_VUSER_RUNNER_ENABLED: ${APEXLOAD_JAVA_VUSER_RUNNER_ENABLED:-false}
+      APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN: ${APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN:-}
+      APEXLOAD_JAVA_VUSER_RUNNER_ADDR: 127.0.0.1:8098
+      APEXLOAD_JAVA_VUSER_HARNESS_JAR: /opt/apexload/java-vuser/java-vuser-runner.jar
+      APEXLOAD_JAVA_VUSER_DEFAULT_JDK_HOME: /opt/java/openjdk
+      APEXLOAD_JAVA_VUSER_MAX_PROCESSES: "25"
+      APEXLOAD_JAVA_VUSER_WORK_DIR: /tmp
+    tmpfs:
+      - /tmp
+    volumes:
+      - ${APEXLOAD_JAVA_VUSER_ASSETS_DIR:-./runners/java_vuser/assets}:/opt/apexload/java-assets:ro
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://127.0.0.1:8098/readyz"]
+      interval: 15s
+      timeout: 12s
       retries: 5
       start_period: 20s
     depends_on:

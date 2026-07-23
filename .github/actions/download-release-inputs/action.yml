@@ -1,5 +1,5 @@
 name: Platform-compatible release input download
-description: Downloads the exact ten release input artifacts on GitHub.com or GHES.
+description: Downloads the exact eleven release input artifacts on GitHub.com or GHES.
 inputs:
   path:
     description: Destination directory.
@@ -67,6 +67,12 @@ runs:
       with:
         name: release-image-generator-enterprise
         path: ${{ inputs.path }}/release-image-generator-enterprise
+    - name: Download Java Vuser runner image evidence on GitHub.com
+      if: github.server_url == 'https://github.com'
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+      with:
+        name: release-image-java-vuser-runner-standard
+        path: ${{ inputs.path }}/release-image-java-vuser-runner-standard
     - name: Download core assets on GHES
       if: github.server_url != 'https://github.com'
       uses: actions/download-artifact@246d7188e736d3686f6d19628d253ede9697bd55 # v3-node20
@@ -127,3 +133,9 @@ runs:
       with:
         name: release-image-generator-enterprise
         path: ${{ inputs.path }}/release-image-generator-enterprise
+    - name: Download Java Vuser runner image evidence on GHES
+      if: github.server_url != 'https://github.com'
+      uses: actions/download-artifact@246d7188e736d3686f6d19628d253ede9697bd55 # v3-node20
+      with:
+        name: release-image-java-vuser-runner-standard
+        path: ${{ inputs.path }}/release-image-java-vuser-runner-standard

@@ -1,6 +1,8 @@
 package correlate
 
-import "sort"
+import (
+	"sort"
+)
 
 // DiffClass classifies a detected correlation by comparing two recordings of
 // the same flow.
@@ -37,11 +39,25 @@ type DiffResult struct {
 // review. This is the strongest deterministic signal available for cutting
 // correlation false positives before script generation.
 func DiffRecordings(a, b []Observation) []DiffResult {
-	correlations := Detect(a)
-	if len(correlations) == 0 {
-		return nil
+	results, _ := DiffRecordingsChecked(a, b)
+	return results
+}
+
+// DiffRecordingsChecked is the bounded/error-reporting form of DiffRecordings.
+// Callers at API boundaries must use it so complexity exhaustion cannot be
+// mistaken for a successful comparison with no dynamic values.
+func DiffRecordingsChecked(a, b []Observation) ([]DiffResult, error) {
+	correlations, err := DetectChecked(a)
+	if err != nil {
+		return nil, err
 	}
-	candidatesByID := candidateIndex(b)
+	candidatesByID, indexTruncated, err := candidateIndexChecked(b)
+	if err != nil {
+		return nil, err
+	}
+	if len(correlations) == 0 {
+		return nil, nil
+	}
 
 	results := make([]DiffResult, 0, len(correlations))
 	for _, correlation := range correlations {
@@ -50,7 +66,11 @@ func DiffRecordings(a, b []Observation) []DiffResult {
 		switch {
 		case !found:
 			result.Class = DiffUnknown
-			result.DiffReason = "The source step or extractor expression was not observed in the second recording; verify the extractor boundary before trusting this correlation."
+			if indexTruncated {
+				result.DiffReason = "Second-recording candidate analysis reached its work limit before this extractor could be confirmed; classify this correlation manually."
+			} else {
+				result.DiffReason = "The source step or extractor expression was not observed in the second recording; verify the extractor boundary before trusting this correlation."
+			}
 		case valueB != correlation.Value:
 			result.Class = DiffDynamic
 			result.ValueB = Truncate(valueB, 80)
@@ -73,37 +93,54 @@ func DiffRecordings(a, b []Observation) []DiffResult {
 		}
 		return results[i].Confidence > results[j].Confidence
 	})
-	return results
+	return results, nil
 }
 
 // candidateIndex extracts response candidates per observation ID from the
 // second recording so each correlation can look up its counterpart.
 func candidateIndex(observations []Observation) map[int][]Candidate {
+	index, _, _ := candidateIndexChecked(observations)
+	return index
+}
+
+// candidateIndexChecked reports per-observation and aggregate-candidate
+// exhaustion as truncation instead of silently treating a partial index as
+// complete. Callers decide whether that degrades (diff → unknown class) or
+// fails closed (diagnose).
+func candidateIndexChecked(observations []Observation) (map[int][]Candidate, bool, error) {
+	if err := validateCorrelationObservations(observations); err != nil {
+		return nil, false, err
+	}
 	index := make(map[int][]Candidate, len(observations))
+	totalCandidates := 0
+	truncated := false
 	for _, observation := range observations {
 		if observation.ResponseBody == "" && len(observation.ResponseHeaders) == 0 {
 			continue
 		}
-		index[observation.ID] = Candidates(observation.ResponseBody, observation.ResponseHeaders)
+		candidates, observationTruncated, err := candidatesCheckedWithTruncation(observation.ResponseBody, observation.ResponseHeaders)
+		if err != nil {
+			return nil, false, err
+		}
+		if observationTruncated {
+			truncated = true
+		}
+		if totalCandidates+len(candidates) > maxCorrelationCandidatesPerAnalysis {
+			return index, true, nil
+		}
+		totalCandidates += len(candidates)
+		index[observation.ID] = candidates
 	}
-	return index
+	return index, truncated, nil
 }
 
-// lookupCandidateValue finds the candidate matching a correlation's extractor
-// identity (source + expression, falling back to name) in the counterpart
-// step's candidates.
+// lookupCandidateValue finds the candidate matching a correlation's complete
+// extractor identity. A display-name fallback is unsafe because the same name
+// commonly occurs at multiple JSON paths or response surfaces. Multiple exact
+// matches are accepted only when they all yield the same value; otherwise the
+// extractor is ambiguous and the diff must remain unknown.
 func lookupCandidateValue(candidates []Candidate, correlation Correlation) (string, bool) {
-	for _, candidate := range candidates {
-		if candidate.Source == correlation.Source && candidate.Expression == correlation.Expression {
-			return candidate.Value, true
-		}
-	}
-	for _, candidate := range candidates {
-		if candidate.Source == correlation.Source && candidate.Name == correlation.Name {
-			return candidate.Value, true
-		}
-	}
-	return "", false
+	return uniqueCandidateValue(candidates, correlation)
 }
 
 func diffClassRank(class DiffClass) int {

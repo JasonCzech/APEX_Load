@@ -21,6 +21,14 @@ func TestValidateHTTPRuntimeControlBounds(t *testing.T) {
 			script.Actions[0].Params = map[string]any{"stream_timeout_ms": float64(MaxConfiguredProtocolTimeoutMS) + 1}
 		}, want: "params.stream_timeout_ms"},
 		{name: "fractional SSE timeout", mutate: func(script *Script) { script.Actions[0].Params = map[string]any{"stream_timeout_ms": 1.5} }, want: "params.stream_timeout_ms"},
+		{name: "extractor expression", mutate: func(script *Script) {
+			script.Actions[0].Extractors = []Extractor{{
+				Name:       "oversized",
+				Source:     "body",
+				Type:       "regex",
+				Expression: strings.Repeat("x", httpprotocol.MaxExtractorExpressionBytes+1),
+			}}
+		}, want: "expression must not exceed"},
 		{name: "network jitter", mutate: func(script *Script) {
 			script.Config.WebRuntime.NetworkSimulation.JitterMs = MaxConfiguredProtocolTimeoutMS + 1
 		}, want: "network_simulation.jitter_ms must not exceed"},

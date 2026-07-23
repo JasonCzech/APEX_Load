@@ -44,8 +44,10 @@ const apiMock = {
   migrateImportSecrets: vi.fn(),
   discardImportSecretSession: vi.fn(),
   createScript: vi.fn(),
+  updateScript: vi.fn(),
   deleteScript: vi.fn(),
   browserRecorderBridge: null as any,
+  browserRecorderRequestScope: 'api:http://controller.test',
 }
 
 vi.mock('../hooks/useApi', () => ({
@@ -247,6 +249,13 @@ describe('BrowserRecorderControlPanel', () => {
       created_at: '2026-05-12T20:10:00Z',
       script: { name: 'Checkout Flow', protocol: 'browser', actions: [] },
     })
+    apiMock.updateScript.mockImplementation(async (id: string, script: any) => ({
+      id,
+      name: script.name,
+      protocol: script.protocol,
+      version: '2',
+      script,
+    }))
     apiMock.deleteScript.mockResolvedValue({ deleted: 'script-remote-1' })
     apiMock.getProjectSecretStatuses.mockImplementation(async (_projectId: string, names: string[]) => ({
       capabilities: { provider: 'database_encrypted', writable: true, create_supported: true },
@@ -255,6 +264,7 @@ describe('BrowserRecorderControlPanel', () => {
     apiMock.createProjectSecrets.mockResolvedValue({ secrets: [], count: 0 })
     apiMock.migrateImportSecrets.mockResolvedValue({ secrets: [], count: 0 })
     apiMock.browserRecorderBridge = null
+    apiMock.browserRecorderRequestScope = 'api:http://controller.test'
     saveApiResourceViaBridgeMock.mockResolvedValue('unavailable')
     startDesktopBrowserDownloadMock.mockResolvedValue(undefined)
     hasDesktopApiCapabilityMock.mockReturnValue(false)
@@ -337,6 +347,41 @@ describe('BrowserRecorderControlPanel', () => {
       await Promise.resolve()
     })
     expect(container.textContent).toContain('Second Recording')
+    expect(container.textContent).not.toContain('Checkout Flow')
+  })
+
+  it('starts a fresh refresh and ignores the old response when the recorder API origin changes', async () => {
+    let resolveOld!: (value: { session: typeof recordingSession }) => void
+    const oldRequest = new Promise<{ session: typeof recordingSession }>(resolve => {
+      resolveOld = resolve
+    })
+    const newOriginSession = {
+      ...recordingSession,
+      name: 'Local Bridge Recording',
+      current_url: 'https://bridge.example.test/',
+    }
+    apiMock.getBrowserRecording
+      .mockImplementationOnce(() => oldRequest)
+      .mockResolvedValueOnce({ session: newOriginSession })
+
+    await act(async () => {
+      root.render(<BrowserRecorderControlPanel sessionId="brec-1" />)
+      await Promise.resolve()
+    })
+    apiMock.browserRecorderRequestScope = 'bridge:http://127.0.0.1:8765:bridge-session-2'
+    await act(async () => {
+      root.render(<BrowserRecorderControlPanel sessionId="brec-1" />)
+    })
+    await flushPromises()
+
+    expect(apiMock.getBrowserRecording).toHaveBeenCalledTimes(2)
+    expect(container.textContent).toContain('Local Bridge Recording')
+
+    await act(async () => {
+      resolveOld({ session: recordingSession })
+      await Promise.resolve()
+    })
+    expect(container.textContent).toContain('Local Bridge Recording')
     expect(container.textContent).not.toContain('Checkout Flow')
   })
 
@@ -564,14 +609,17 @@ describe('BrowserRecorderControlPanel', () => {
     await vi.waitFor(() => expect(apiMock.applyImportParameterization).toHaveBeenCalledTimes(1))
     await clickButton('Save to Script Library')
     await flushPromises()
-    await vi.waitFor(() => expect(apiMock.createScript).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(apiMock.convertBrowserRecording).toHaveBeenCalledTimes(1))
 
     expect(apiMock.applyImportParameterization).toHaveBeenCalledWith(expect.objectContaining({
       selected_ids: ['pz_browser_order'],
     }))
-    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
+    // Persistence goes through the server-side conversion endpoint; the
+    // reviewed parameterization is then pushed over the converted script.
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(apiMock.updateScript).toHaveBeenCalledWith('script-9', expect.objectContaining({
       actions: [expect.objectContaining({ target: 'https://shop.example/orders?order_id={{var.order_id}}' })],
-    }), undefined, undefined, 'brec-1')
+    }))
   })
 
   it('scopes split-script parameterization and saves the updated target script', async () => {
@@ -635,9 +683,15 @@ describe('BrowserRecorderControlPanel', () => {
       diffs: [{ kind: 'value_replaced', path: '/actions/0/target', suggestion_id: 'pz_logout_session' }],
       applied_count: 1,
     })
-    apiMock.createScript
-      .mockResolvedValueOnce({ id: 'saved-checkout', name: 'Checkout', protocol: 'browser', version: '1' })
-      .mockResolvedValueOnce({ id: 'saved-logout', name: 'Logout', protocol: 'browser', version: '1' })
+    apiMock.convertBrowserRecording.mockResolvedValueOnce({
+      script: { id: 'saved-checkout', name: 'Checkout', protocol: 'browser', version: '1', script: first },
+      scripts: [
+        { id: 'saved-checkout', name: 'Checkout', protocol: 'browser', version: '1', script: first },
+        { id: 'saved-logout', name: 'Logout', protocol: 'browser', version: '1', script: second },
+      ],
+      warnings: [],
+      stats: {},
+    })
 
     await renderPanel()
     await clickButton('Preview Conversion')
@@ -660,16 +714,17 @@ describe('BrowserRecorderControlPanel', () => {
     await vi.waitFor(() => expect(apiMock.applyImportParameterization).toHaveBeenCalledTimes(1))
     await clickButton('Save to Script Library')
     await flushPromises()
-    await vi.waitFor(() => expect(apiMock.createScript).toHaveBeenCalledTimes(2))
+    await vi.waitFor(() => expect(apiMock.updateScript).toHaveBeenCalledTimes(2))
 
     expect(apiMock.applyImportParameterization).toHaveBeenCalledWith(expect.objectContaining({
       script: second,
       suggestions: [logoutSuggestion],
       selected_ids: ['pz_logout_session'],
     }))
-    expect(apiMock.createScript).toHaveBeenCalledTimes(2)
-    expect(apiMock.createScript).toHaveBeenNthCalledWith(1, first, undefined, undefined, 'brec-1')
-    expect(apiMock.createScript).toHaveBeenNthCalledWith(2, parameterizedSecond, undefined, undefined, 'brec-1')
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledTimes(1)
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(apiMock.updateScript).toHaveBeenNthCalledWith(1, 'saved-checkout', first)
+    expect(apiMock.updateScript).toHaveBeenNthCalledWith(2, 'saved-logout', parameterizedSecond)
   })
 
   it('prompts for optional credentials and saves a configure-later reference', async () => {
@@ -702,10 +757,12 @@ describe('BrowserRecorderControlPanel', () => {
       script_index: 0,
       bindings: [{ requirement_id: 'credential-password', secret_name: 'LOGIN_PASSWORD' }],
     })
-    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
-      config: { http: { auth: { password: '{{secret.LOGIN_PASSWORD}}' } } },
-    }), 'project-1', undefined, 'brec-1')
-    expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'script-remote-1' })] })
+    // The server-side conversion endpoint persists the draft and applies the
+    // same suggested reference; the kept suggestion needs no follow-up update.
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({ name: 'Checkout Flow' }))
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(apiMock.updateScript).not.toHaveBeenCalled()
+    expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'script-9' })] })
   })
 
   it('stores an optional credential value before saving the prepared script', async () => {
@@ -735,7 +792,8 @@ describe('BrowserRecorderControlPanel', () => {
       name: 'LOGIN_PASSWORD',
       value: 'entered-at-conversion',
     }])
-    expect(apiMock.createScript).toHaveBeenCalledTimes(1)
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledTimes(1)
+    expect(apiMock.createScript).not.toHaveBeenCalled()
   })
 
   it('applies credential references across every split conversion script', async () => {
@@ -756,9 +814,15 @@ describe('BrowserRecorderControlPanel', () => {
       script: { ...script, config: { token: `{{secret.${script_index === 0 ? 'CHECKOUT_TOKEN' : 'LOGOUT_TOKEN'}}}` } },
       secret_binding_requirements: [],
     }))
-    apiMock.createScript
-      .mockResolvedValueOnce({ id: 'saved-checkout', name: 'Checkout', protocol: 'browser', version: '1' })
-      .mockResolvedValueOnce({ id: 'saved-logout', name: 'Logout', protocol: 'browser', version: '1' })
+    apiMock.convertBrowserRecording.mockResolvedValueOnce({
+      script: { id: 'saved-checkout', name: 'Checkout', protocol: 'browser', version: '1', script: first },
+      scripts: [
+        { id: 'saved-checkout', name: 'Checkout', protocol: 'browser', version: '1', script: first },
+        { id: 'saved-logout', name: 'Logout', protocol: 'browser', version: '1', script: second },
+      ],
+      warnings: [],
+      stats: {},
+    })
 
     await renderPanel()
     await clickButton('Preview Conversion')
@@ -772,13 +836,15 @@ describe('BrowserRecorderControlPanel', () => {
     expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(2)
     expect(apiMock.applySecretBindings).toHaveBeenNthCalledWith(1, expect.objectContaining({ script_index: 0 }))
     expect(apiMock.applySecretBindings).toHaveBeenNthCalledWith(2, expect.objectContaining({ script_index: 1 }))
-    expect(apiMock.createScript).toHaveBeenCalledTimes(2)
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledTimes(1)
+    expect(apiMock.createScript).not.toHaveBeenCalled()
   })
 
-  it('rolls back an earlier split script when the next script fails to save', async () => {
+  it('rolls back an earlier split bridge script when the next script fails to save', async () => {
     const onImported = vi.fn()
     const first = { name: 'Checkout', protocol: 'browser', actions: [{ name: 'Checkout', type: 'navigate', target: '/' }] }
     const second = { name: 'Logout', protocol: 'browser', actions: [{ name: 'Logout', type: 'navigate', target: '/logout' }] }
+    apiMock.browserRecorderBridge = { origin: 'http://127.0.0.1:49152', token: 'tok', session_id: 'ws-1' }
     apiMock.getBrowserRecording.mockResolvedValue({ session: { ...stoppedSession, project_id: 'project-1' } })
     apiMock.previewBrowserRecordingConversion.mockResolvedValue({
       script: first,
@@ -797,8 +863,9 @@ describe('BrowserRecorderControlPanel', () => {
     await flushPromises()
 
     expect(apiMock.createScript).toHaveBeenCalledTimes(2)
-    expect(apiMock.createScript).toHaveBeenNthCalledWith(1, first, 'project-1', undefined, 'brec-1')
-    expect(apiMock.createScript).toHaveBeenNthCalledWith(2, second, 'project-1', undefined, 'brec-1')
+    // The headed-browser recording session id is never sent to createScript.
+    expect(apiMock.createScript).toHaveBeenNthCalledWith(1, first, 'project-1')
+    expect(apiMock.createScript).toHaveBeenNthCalledWith(2, second, 'project-1')
     expect(apiMock.deleteScript).toHaveBeenCalledTimes(1)
     expect(apiMock.deleteScript).toHaveBeenCalledWith('saved-checkout')
     expect(onImported).not.toHaveBeenCalled()
@@ -806,10 +873,11 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).not.toContain('saved to the script library')
   })
 
-  it('identifies scripts requiring manual cleanup when rollback fails', async () => {
+  it('identifies bridge scripts requiring manual cleanup when rollback fails', async () => {
     const onImported = vi.fn()
     const first = { name: 'Checkout', protocol: 'browser', actions: [{ name: 'Checkout', type: 'navigate', target: '/' }] }
     const second = { name: 'Logout', protocol: 'browser', actions: [{ name: 'Logout', type: 'navigate', target: '/logout' }] }
+    apiMock.browserRecorderBridge = { origin: 'http://127.0.0.1:49152', token: 'tok', session_id: 'ws-1' }
     apiMock.getBrowserRecording.mockResolvedValue({ session: { ...stoppedSession, project_id: 'project-1' } })
     apiMock.previewBrowserRecordingConversion.mockResolvedValue({
       script: first,
@@ -898,7 +966,7 @@ describe('BrowserRecorderControlPanel', () => {
     expect(container.textContent).toContain('Second Recording')
   })
 
-  it('saves the converted script and notifies onImported', async () => {
+  it('saves through the server-side conversion endpoint and notifies onImported', async () => {
     const onImported = vi.fn()
     apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
     await renderPanel({ onImported })
@@ -906,9 +974,70 @@ describe('BrowserRecorderControlPanel', () => {
     await flushPromises()
 
     expect(apiMock.previewBrowserRecordingConversion).toHaveBeenCalledWith('brec-1', expect.objectContaining({ name: 'Checkout Flow' }))
-    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ name: 'Checkout Flow' }), undefined, undefined, 'brec-1')
-    expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'script-remote-1' })] })
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({ name: 'Checkout Flow' }))
+    // createScript rejects headed-browser session ids server-side; the panel
+    // must never fall back to it for embedded recordings.
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'script-9' })] })
     expect(container.textContent).toContain('saved to the script library')
+  })
+
+  it('surfaces a follow-up update failure without losing the converted save', async () => {
+    const onImported = vi.fn()
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    apiMock.previewBrowserRecordingConversion.mockResolvedValueOnce({
+      script: {
+        name: 'Checkout Flow',
+        version: '1.0.0',
+        protocol: 'browser',
+        actions: [{ name: 'Open order', type: 'navigate', target: 'https://shop.example/orders?order_id=42' }],
+      },
+      warnings: [],
+      stats: {},
+      parameterization: {
+        suggestions: [{
+          id: 'pz_browser_order',
+          kind: 'data_param',
+          var_name: 'order_id',
+          replacement: '{{var.order_id}}',
+          sample_value: '42',
+          confidence: 0.9,
+          rule_id: 'test.browser.order',
+          rationale: 'Order id should vary by virtual user',
+          auto_apply: true,
+          high_risk: false,
+          locations: [{ section: 'actions', action_index: 0, action_name: 'Open order', field: 'target' }],
+        }],
+        summary: { total: 1, by_kind: { data_param: 1 }, auto_apply_count: 1, review_count: 0, high_risk_count: 0, pre_applied_count: 0 },
+      },
+    })
+    apiMock.applyImportParameterization.mockResolvedValueOnce({
+      script: {
+        name: 'Checkout Flow',
+        version: '1.0.0',
+        protocol: 'browser',
+        actions: [{ name: 'Open order', type: 'navigate', target: 'https://shop.example/orders?order_id={{var.order_id}}' }],
+      },
+      diffs: [{ kind: 'value_replaced', path: '/actions/0/target', suggestion_id: 'pz_browser_order' }],
+      applied_count: 1,
+    })
+    apiMock.updateScript.mockRejectedValueOnce(new Error('update denied'))
+
+    await renderPanel({ onImported })
+    await clickButton('Preview Conversion')
+    await flushPromises()
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('.paramize-review button.btn-primary')?.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await vi.waitFor(() => expect(apiMock.applyImportParameterization).toHaveBeenCalledTimes(1))
+    await clickButton('Save to Script Library')
+    await flushPromises()
+
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('applying the reviewed changes failed: update denied')
+    expect(onImported).not.toHaveBeenCalled()
   })
 
   it('opens the previewed script in the visual editor', async () => {
@@ -1037,7 +1166,7 @@ describe('BrowserRecorderControlPanel', () => {
     await clickButton('Save Salesforce HTTP Script')
     await flushPromises()
 
-    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ name: 'Checkout Flow Salesforce HTTP' }), undefined, undefined, 'brec-1')
+    expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({ name: 'Checkout Flow Salesforce HTTP' }), undefined)
     expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'script-salesforce-1' })] })
   })
 
@@ -1094,7 +1223,7 @@ describe('BrowserRecorderControlPanel', () => {
     await flushPromises()
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       config: { http: { auth: { token: '{{secret.SALESFORCE_TOKEN}}' } } },
-    }), 'project-1', undefined, 'brec-1')
+    }), 'project-1')
     expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'saved-salesforce-login' })] })
   })
 
@@ -1394,8 +1523,46 @@ describe('BrowserRecorderControlPanel', () => {
     expect(verify).not.toBeNull()
     await act(async () => { verify.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await flushPromises()
-    expect(apiMock.verifyBrowserRecording).toHaveBeenCalledWith('brec-1')
+    expect(apiMock.verifyBrowserRecording).toHaveBeenCalledWith('brec-1', expect.stringMatching(/^[0-9a-f-]{36}$/))
     expect(container.querySelector('[data-testid="replay-progress"]')).not.toBeNull()
+  })
+
+  it('does not dispatch duplicate verification starts on rapid clicks', async () => {
+    let resolveVerify!: (value: { replay_session_id: string; replay_session: object; warnings: string[] }) => void
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    apiMock.verifyBrowserRecording.mockReturnValueOnce(new Promise(resolve => {
+      resolveVerify = resolve
+    }))
+    await renderPanel()
+    const verify = container.querySelector('[data-testid="verify-recording"]') as HTMLButtonElement
+    act(() => {
+      verify.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      verify.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+
+    expect(apiMock.verifyBrowserRecording).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      resolveVerify({ replay_session_id: 'replay-dedupe', replay_session: {}, warnings: [] })
+      await Promise.resolve()
+    })
+  })
+
+  it('keeps reconciling the client replay id when verify loses its start response', async () => {
+    apiMock.getBrowserRecording.mockResolvedValue({ session: stoppedSession })
+    apiMock.verifyBrowserRecording.mockRejectedValueOnce(new Error('connection reset'))
+    await renderPanel()
+
+    const verify = container.querySelector('[data-testid="verify-recording"]') as HTMLButtonElement
+    await act(async () => {
+      verify.click()
+    })
+    await flushPromises()
+
+    const replayCalls = apiMock.verifyBrowserRecording.mock.calls
+    const replaySessionId = replayCalls[replayCalls.length - 1]?.[1]
+    expect(replaySessionId).toMatch(/^[0-9a-f-]{36}$/)
+    expect(container.textContent).toContain(`Replay ${replaySessionId}`)
+    expect(container.textContent).toContain('Confirming the accepted replay session')
   })
 
   it('surfaces unsupported replay-repair patch types instead of no-oping', async () => {
@@ -1423,7 +1590,7 @@ describe('BrowserRecorderControlPanel', () => {
     }
     await clickButton('Save to Script Library')
     await flushPromises()
-    expect(apiMock.previewBrowserRecordingConversion).toHaveBeenCalledWith('brec-1', expect.objectContaining({
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({
       split_at_transactions: true,
       also_create_http_script: true,
       parameterize: false,
@@ -1440,7 +1607,7 @@ describe('BrowserRecorderControlPanel', () => {
     await act(async () => { parameterize.dispatchEvent(new MouseEvent('click', { bubbles: true })) })
     await clickButton('Save to Script Library')
     await flushPromises()
-    expect(apiMock.previewBrowserRecordingConversion).toHaveBeenCalledWith('brec-1', expect.objectContaining({
+    expect(apiMock.convertBrowserRecording).toHaveBeenCalledWith('brec-1', expect.objectContaining({
       parameterize: true,
     }))
   })
@@ -1470,6 +1637,10 @@ describe('BrowserRecorderControlPanel', () => {
     expect(apiMock.convertBrowserRecording).not.toHaveBeenCalled()
     expect(apiMock.previewBrowserRecordingConversion).toHaveBeenCalledWith('brec-1', expect.objectContaining({ name: 'Checkout Flow' }))
     expect(apiMock.createScript).toHaveBeenCalledTimes(2)
+    // The remote controller never observed the local bridge recording, so the
+    // headed-browser session id must not accompany the createScript calls.
+    expect(apiMock.createScript).toHaveBeenNthCalledWith(1, expect.objectContaining({ name: 'Checkout Flow' }), undefined)
+    expect(apiMock.createScript).toHaveBeenNthCalledWith(2, expect.objectContaining({ name: 'Checkout Flow (HTTP)' }), undefined)
     expect(onImported).toHaveBeenCalledWith({ scripts: [expect.objectContaining({ id: 'remote-browser' }), expect.objectContaining({ id: 'remote-http' })] })
     expect(container.textContent).toContain('Saved 2 scripts to the remote script library')
   })

@@ -110,20 +110,139 @@ var javaLRCoverageDetail = map[string]webCoverageDetail{
 	"lr_wasted_time":                 {"source_transaction action", "Records wasted time."},
 }
 
+// javaLRRunnerOverride captures places where the combined Java sidecar's
+// runtime contract differs from the shared C/native-conversion registry. The
+// registry remains the source of truth for native DSL conversion; combined
+// Java imports and their published coverage must instead describe what the
+// governed lrapi.lr shim can faithfully do inside the persistent JVM.
+type javaLRRunnerOverride struct {
+	mode  SourceFunctionSupportMode
+	notes string
+}
+
+var javaLRRunnerOverrides = map[string]javaLRRunnerOverride{
+	"lr_abort": {
+		mode:  SourceFunctionSupportReviewOnly,
+		notes: "The shim can fail and unwind the current Java invocation, but the engine does not yet prove LoadRunner's abort-VUser and teardown semantics; reachable calls block promotion.",
+	},
+	"lr_exit": {
+		mode:  SourceFunctionSupportReviewOnly,
+		notes: "The shim can report and unwind an lr.exit call, but the runner/engine contract does not yet faithfully implement every LoadRunner action, iteration, and VUser continuation option; reachable calls block promotion.",
+	},
+	"lr_rendezvous": {
+		mode:  SourceFunctionSupportReviewOnly,
+		notes: "The shim records bounded rendezvous evidence after the Java invocation; it does not synchronously join the engine's cross-VUser rendezvous barrier.",
+	},
+	"lr_user_data_point": {
+		mode:  SourceFunctionSupportReviewOnly,
+		notes: "The shim records a bounded metric event in protocol evidence, but the runner does not yet publish it as an engine or telemetry metric sample.",
+	},
+}
+
+// javaLRRunnerABIDescriptors is the exact published Java bytecode surface that
+// the shim implements and that the combined importer is therefore allowed to
+// call executable. A source-level Object... convenience overload is not enough:
+// operator-provisioned Actions.class files were compiled against OpenText's
+// lrapi jar and link by exact JVM descriptor.
+var javaLRRunnerABIDescriptors = map[string]string{
+	"lr_end_sub_trans":               "(Ljava/lang/String;I)I",
+	"lr_end_sub_transaction":         "(Ljava/lang/String;I)I",
+	"lr_end_transaction":             "(Ljava/lang/String;I)I",
+	"lr_eval_string":                 "(Ljava/lang/String;)Ljava/lang/String;",
+	"lr_get_transaction_duration":    "(Ljava/lang/String;)D",
+	"lr_get_transaction_status":      "(Ljava/lang/String;)I",
+	"lr_get_transaction_think_time":  "(Ljava/lang/String;)D",
+	"lr_get_transaction_wasted_time": "(Ljava/lang/String;)D",
+	"lr_save_int":                    "(ILjava/lang/String;)I",
+	"lr_save_string":                 "(Ljava/lang/String;Ljava/lang/String;)I",
+	"lr_set_transaction":             "(Ljava/lang/String;DI)I",
+	"lr_set_transaction_status":      "(I)I",
+	"lr_start_sub_transaction":       "(Ljava/lang/String;Ljava/lang/String;)I",
+	"lr_start_transaction":           "(Ljava/lang/String;)I",
+	"lr_think_time":                  "(D)V",
+	"lr_wasted_time":                 "(I)I",
+}
+
+func javaLRRunnerDisposition(name string) (SourceFunctionDefinition, string, bool) {
+	name = strings.ToLower(strings.TrimSpace(name))
+	def, ok := lookupSourceFunction(name)
+	if !ok {
+		return SourceFunctionDefinition{}, "", false
+	}
+	notes := javaLRCoverageDetail[name].notes
+	if override, exists := javaLRRunnerOverrides[name]; exists {
+		def.SupportMode = override.mode
+		if strings.TrimSpace(override.notes) != "" {
+			notes = override.notes
+		}
+	}
+	if def.SupportMode != SourceFunctionSupportReviewOnly {
+		if _, verified := javaLRRunnerABIDescriptors[name]; !verified {
+			def.SupportMode = SourceFunctionSupportReviewOnly
+			notes = "The source is preserved, but the combined shim does not advertise an exact verified OpenText lrapi bytecode descriptor for this method; a reachable call blocks promotion to avoid NoSuchMethodError."
+		}
+	}
+	if strings.TrimSpace(notes) == "" {
+		notes = "Preserved in the combined Java Vuser source; verify the governed runner behavior before approval."
+	}
+	return def, notes, true
+}
+
+func javaLRRunnerCallDisposition(fn ParsedFunction) (SourceFunctionDefinition, string, bool) {
+	def, notes, known := javaLRRunnerDisposition(fn.Name)
+	if !known || !strings.EqualFold(strings.TrimSpace(fn.Name), "lr_exit") {
+		return def, notes, known
+	}
+	if javaLRRunnerSupportsExitCall(fn) {
+		def.SupportMode = SourceFunctionSupportExecutable
+		return def, "The exact two-argument lrapi descriptor is verified. EXIT_ACTION_AND_CONTINUE and EXIT_ITERATION_AND_CONTINUE unwind the current persistent phase, retain the per-VUser Actions instance, emit failed child evidence when requested, and allow the next engine iteration.", true
+	}
+	return def, notes, true
+}
+
+func javaLRRunnerSupportsExitCall(fn ParsedFunction) bool {
+	if len(fn.RawArgs) != 2 {
+		return false
+	}
+	option := strings.ReplaceAll(strings.TrimSpace(fn.RawArgs[0]), " ", "")
+	option = strings.TrimPrefix(option, "lrapi.")
+	switch option {
+	case "lr.EXIT_ACTION_AND_CONTINUE",
+		"lr.EXIT_ITERATION_AND_CONTINUE",
+		"EXIT_ACTION_AND_CONTINUE",
+		"EXIT_ITERATION_AND_CONTINUE":
+		return true
+	default:
+		return false
+	}
+}
+
+func javaLRRunnerTarget(mode SourceFunctionSupportMode) string {
+	switch mode {
+	case SourceFunctionSupportExecutable:
+		return "combined Java runner shim"
+	case SourceFunctionSupportNativeNoop:
+		return "combined Java runner no-op"
+	case SourceFunctionSupportExternalRequired:
+		return "combined runner + governed external provider"
+	default:
+		return "authoring/fidelity review"
+	}
+}
+
 // JavaLRFunctionCoverage returns the full published Java lr API coverage matrix,
 // sorted by Java method name.
 func JavaLRFunctionCoverage() []JavaLRCoverage {
 	rows := make([]JavaLRCoverage, 0, len(javaLRPublishedMethods))
 	for _, name := range javaLRPublishedMethods {
-		def, _ := lookupSourceFunction(name)
-		detail := javaLRCoverageDetail[name]
+		def, notes, _ := javaLRRunnerDisposition(name)
 		rows = append(rows, JavaLRCoverage{
 			Method:      "lr." + strings.TrimPrefix(name, "lr_"),
 			Function:    name,
 			Family:      def.Family,
 			SupportMode: string(def.SupportMode),
-			Target:      detail.target,
-			Notes:       detail.notes,
+			Target:      javaLRRunnerTarget(def.SupportMode),
+			Notes:       notes,
 		})
 	}
 	sort.Slice(rows, func(i, j int) bool { return rows[i].Method < rows[j].Method })
@@ -148,18 +267,21 @@ func RenderJavaLRFunctionCoverageMarkdown() string {
 	b.WriteString("\"Alphabetical Listing - Java Utility Functions\".\n\n")
 	b.WriteString("A Java Vuser script is arbitrary Java, not a closed library — so this matrix covers the ")
 	b.WriteString("**closed `lr` API** only. Java-over-HTTP, JMS, JDBC, SOAP, and no-runtime Java middleware ")
-	b.WriteString("families are reported separately by the enterprise support-matrix endpoint. Arbitrary custom ")
-	b.WriteString("Java remains governed sidecar opt-in or named review; it is never fabricated as native behavior.\n\n")
+	b.WriteString("families are reported separately by the enterprise support-matrix endpoint. Every family remains ")
+	b.WriteString("inside one combined `java_vuser` draft; these rows are review/runtime-shim dispositions, not native lane extraction. ")
+	b.WriteString("Launch requires authoring approval and an enabled governed JVM runner.\n\n")
 
 	fmt.Fprintf(&b, "**Total tracked lr methods:** %d (shared C `lr_*` baseline plus Java-only/alias supplement)\n\n", len(rows))
 	b.WriteString("| Disposition | Count | Meaning |\n")
 	b.WriteString("|---|---|---|\n")
-	fmt.Fprintf(&b, "| `executable` | %d | Translated to an executable DSL action or config mapping. |\n", counts["executable"])
-	fmt.Fprintf(&b, "| `native_noop` | %d | Preserved as a no-op (no replay effect in APEX Load). |\n", counts["native_noop"])
-	fmt.Fprintf(&b, "| `review_only` | %d | Preserved in the import-review artifact; no APEX equivalent, not executed. |\n", counts["review_only"])
+	fmt.Fprintf(&b, "| `executable` | %d | The persistent Java runner/shim has a meaningful runtime implementation for the call. |\n", counts["executable"])
+	fmt.Fprintf(&b, "| `native_noop` | %d | The call reaches the shim but is intentionally a no-op in APEX Load; the source mapping states that explicitly. |\n", counts["native_noop"])
+	fmt.Fprintf(&b, "| `review_only` | %d | Source and any bounded diagnostic event are preserved, but faithful LoadRunner semantics are not verified; a reachable call blocks promotion. |\n", counts["review_only"])
 	fmt.Fprintf(&b, "| `external_required` | %d | Needs an external provider (secret manager) before replay. |\n\n", counts["external_required"])
 
-	b.WriteString("Every published lr method resolves to one of the dispositions above — none falls through to a `custom_call` review stub. Enforced by `TestJavaLRResolvesEveryPublishedFunction`.\n\n")
+	b.WriteString("Every published lr method resolves to one of the dispositions above — none falls through to a `custom_call` review stub. ")
+	b.WriteString("These are Java-runner dispositions, including explicit overrides where the shared native-conversion registry would overstate sidecar behavior. ")
+	b.WriteString("A reachable `review_only` call is a fidelity blocker, while an unused helper remains review evidence only.\n\n")
 
 	b.WriteString("| Java method | Function | Family | Support mode | Target | Notes |\n")
 	b.WriteString("|---|---|---|---|---|---|\n")

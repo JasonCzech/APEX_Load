@@ -46,3 +46,16 @@ func TestDiagnoseReplayDoesNotDoubleReportExplainedRejection(t *testing.T) {
 		t.Fatalf("expected the stale-value error to win, got %#v", suggestions[0])
 	}
 }
+
+func TestDiagnoseReplayHonorsAssertionAwareResponseSuccess(t *testing.T) {
+	succeeded := true
+	failed := false
+
+	if suggestions := DiagnoseReplay(nil, []Observation{{ID: 1, ResponseStatus: 404, ResponseSuccess: &succeeded}}); len(suggestions) != 0 {
+		t.Fatalf("expected asserted 404 must not be called a rejection: %#v", suggestions)
+	}
+	suggestions := DiagnoseReplay(nil, []Observation{{ID: 1, ResponseStatus: 404, ResponseSuccess: &failed}})
+	if len(suggestions) != 1 || suggestions[0].RuleID != "replay_rejected_unexplained" {
+		t.Fatalf("failed 404 suggestions = %#v, want one rejection warning", suggestions)
+	}
+}

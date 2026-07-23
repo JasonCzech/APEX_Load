@@ -9,13 +9,15 @@ vi.mock('../utils/fileUtils', () => ({
 }))
 
 import {
-  buildParameterizeSelectionRequest,
-  buildReplayStartPayload,
+	buildParameterizeSelectionRequest,
+	buildReplayStartPayload,
+	createReplaySessionId,
   countUniqueColumnValues,
   detectInlineDataDelimiter,
   downloadTextFile,
   findJsonStringOccurrences,
   inferDelimiter,
+  isDefiniteReplayStartRejection,
   parseInlineData,
   parseReplayVariablesText,
   resolveJsonStringSelection,
@@ -158,6 +160,28 @@ describe('findJsonStringOccurrences', () => {
 })
 
 describe('scriptEditorUtils replay handoff helpers', () => {
+  it('creates a canonical UUIDv4 when randomUUID is unavailable', () => {
+    const fallbackCrypto = {
+      getRandomValues: (values: Uint8Array) => {
+        values.fill(0xab)
+        return values
+      },
+    } as unknown as Crypto
+    const id = createReplaySessionId(fallbackCrypto)
+    expect(id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+  })
+
+  it('leaves replay session allocation to the server without secure crypto', () => {
+    expect(createReplaySessionId(null)).toBe('')
+  })
+
+  it('reconciles timeout and server failures but clears definite client rejections', () => {
+    expect(isDefiniteReplayStartRejection({ status: 408 })).toBe(false)
+    expect(isDefiniteReplayStartRejection({ status: 503 })).toBe(false)
+    expect(isDefiniteReplayStartRejection({ status: 409 })).toBe(true)
+    expect(isDefiniteReplayStartRejection({ status: 422 })).toBe(true)
+  })
+
   it('parses replay variables text into string values', () => {
     expect(parseReplayVariablesText('')).toBeUndefined()
     expect(parseReplayVariablesText('{}')).toBeUndefined()

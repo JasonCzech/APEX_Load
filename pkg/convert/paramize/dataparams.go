@@ -26,16 +26,30 @@ var (
 // dataParamSuggestions proposes binding literal business values (ids, emails,
 // SKUs, ...) to a generated data source. claimed lists values already owned by
 // the correlation or secret passes, which take precedence.
-func dataParamSuggestions(script *dsl.Script, names *nameRegistry, claimed map[string]bool) []Suggestion {
+func dataParamSuggestions(script *dsl.Script, names *nameRegistry, claimed map[string]bool) ([]Suggestion, error) {
 	collector := newDataParamCollector(names, claimed)
+	budget := &suggestionRegexBudget{}
+	var scanErr error
 	forEachAction(script, func(section string, index int, action *dsl.Action) {
-		collectQueryParams(collector, section, index, action)
-		collectBodyParams(collector, section, index, action)
+		if scanErr != nil {
+			return
+		}
+		scanErr = collectQueryParams(collector, budget, section, index, action)
+		if scanErr != nil {
+			return
+		}
+		scanErr = collectBodyParams(collector, budget, section, index, action)
+		if scanErr != nil {
+			return
+		}
 		collectFillParams(collector, section, index, action)
 		collectUploadParams(collector, section, index, action)
 		collectMessagingParams(collector, section, index, action)
 	})
-	return collector.suggestions()
+	if scanErr != nil {
+		return nil, scanErr
+	}
+	return collector.suggestions(), nil
 }
 
 // messagingParamKeys are per-message identifier params carried in action.Params
@@ -74,13 +88,17 @@ func isMessagingActionType(actionType string) bool {
 		strings.HasPrefix(actionType, "eventhubs_")
 }
 
-func collectQueryParams(collector *dataParamCollector, section string, index int, action *dsl.Action) {
+func collectQueryParams(collector *dataParamCollector, budget *suggestionRegexBudget, section string, index int, action *dsl.Action) error {
 	queryStart := strings.Index(action.Target, "?")
 	if queryStart < 0 {
-		return
+		return nil
 	}
 	query := action.Target[queryStart+1:]
-	for _, match := range queryPairPattern.FindAllStringSubmatch(query, -1) {
+	matches, err := budget.findAllSubmatches(queryPairPattern, query)
+	if err != nil {
+		return err
+	}
+	for _, match := range matches {
 		key, value := match[1], match[2]
 		if !LooksParameterName(key) || value == "" || isTemplated(value) {
 			continue
@@ -88,15 +106,20 @@ func collectQueryParams(collector *dataParamCollector, section string, index int
 		collector.add(key, value, "query parameter", section, index, action,
 			"target", key+"="+value, func(template string) string { return key + "=" + template })
 	}
+	return nil
 }
 
-func collectBodyParams(collector *dataParamCollector, section string, index int, action *dsl.Action) {
+func collectBodyParams(collector *dataParamCollector, budget *suggestionRegexBudget, section string, index int, action *dsl.Action) error {
 	body := strings.TrimSpace(action.Body)
 	if body == "" {
-		return
+		return nil
 	}
 	if strings.HasPrefix(body, "{") || strings.HasPrefix(body, "[") {
-		for _, match := range jsonStringPattern.FindAllStringSubmatch(action.Body, -1) {
+		stringMatches, err := budget.findAllSubmatches(jsonStringPattern, action.Body)
+		if err != nil {
+			return err
+		}
+		for _, match := range stringMatches {
 			key, value := match[1], match[2]
 			if !LooksParameterName(key) || value == "" || isTemplated(value) {
 				continue
@@ -106,7 +129,11 @@ func collectBodyParams(collector *dataParamCollector, section string, index int,
 					return strings.Replace(match[0], `"`+value+`"`, `"`+template+`"`, 1)
 				})
 		}
-		for _, match := range jsonNumberPattern.FindAllStringSubmatch(action.Body, -1) {
+		numberMatches, err := budget.findAllSubmatches(jsonNumberPattern, action.Body)
+		if err != nil {
+			return err
+		}
+		for _, match := range numberMatches {
 			key, value := match[1], match[2]
 			if !LooksParameterName(key) {
 				continue
@@ -125,10 +152,14 @@ func collectBodyParams(collector *dataParamCollector, section string, index int,
 					return match[0][:cut] + template + match[0][cut+len(value):]
 				})
 		}
-		return
+		return nil
 	}
 	// Form-encoded bodies reuse the query-pair shape.
-	for _, match := range queryPairPattern.FindAllStringSubmatch(action.Body, -1) {
+	matches, err := budget.findAllSubmatches(queryPairPattern, action.Body)
+	if err != nil {
+		return err
+	}
+	for _, match := range matches {
 		key, value := match[1], match[2]
 		if !LooksParameterName(key) || value == "" || isTemplated(value) {
 			continue
@@ -136,6 +167,7 @@ func collectBodyParams(collector *dataParamCollector, section string, index int,
 		collector.add(key, value, "form field", section, index, action,
 			"body", key+"="+value, func(template string) string { return key + "=" + template })
 	}
+	return nil
 }
 
 // collectFillParams treats browser fill values as parameterizable when the

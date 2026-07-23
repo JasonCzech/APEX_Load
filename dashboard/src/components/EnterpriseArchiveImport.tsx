@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useRef, type CSSProperties } from 'react'
 import { useApi } from '../hooks/useApi'
+import { ApiError } from '../hooks/apiClient'
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { canUseNativeDialogs, filesFromDroppedPaths, nativeFileReadErrorMessage, pickFilesViaBridge, shouldUseBrowserFileFallback } from '../desktop/desktopFiles'
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
@@ -8,8 +9,9 @@ import { type BrowserReplayEvent, type BrowserReplaySession, type StoredScript }
 import { type SourceArchiveReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
 import { getErrorMessage } from '../utils/errorUtils'
 import { useModalDialog } from '../hooks/useModalDialog'
-import { buildReplayStartPayload, summarizeInlineData } from './scriptEditorUtils'
+import { buildReplayStartPayload, createReplaySessionId, isDefiniteReplayStartRejection, summarizeInlineData } from './scriptEditorUtils'
 import { getImportSummary } from './scriptEditorImportModel'
+import { getImportedRuntimeSectionId } from './scriptEditorRuntimeSettingsModel'
 import ScriptImportReview from './ScriptImportReview'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import SourceMappingReview from './SourceMappingReview'
@@ -315,37 +317,6 @@ interface PromotionReviewInputs {
   importWarnings?: string[]
 }
 
-function getImportedRuntimeSectionId(area?: string | null): string | null {
-  const normalizedArea = area?.trim().toLowerCase()
-  switch (normalizedArea) {
-    case 'think time':
-      return 'think'
-    case 'pacing':
-      return 'pacing'
-    case 'run logic':
-      return 'runlogic'
-    case 'error handling':
-      return 'errors'
-    case 'logging':
-      return 'log'
-    case 'http':
-      return 'http'
-    case 'web http/html':
-    case 'web runtime':
-      return 'web_runtime'
-    case 'soap':
-    case 'soap settings':
-      return 'soap'
-    case 'java http':
-    case 'java over http':
-      return 'java_http'
-    case 'jms':
-      return 'jms'
-    default:
-      return null
-  }
-}
-
 function formatRuntimeSettingStatusLabel(status?: string | null) {
   const normalized = status?.trim().replace(/[_-]+/g, ' ')
   if (!normalized) return 'Unknown'
@@ -613,11 +584,29 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const editorActionInFlightRef = useRef(false)
   const [editorActionPreparing, setEditorActionPreparing] = useState(false)
-  const scriptSaveInFlightRef = useRef(false)
+  type ImportSaveScope = {
+    itemId: string
+    generation: number
+    scriptIndex: number
+    projectId: string | undefined
+    optionsIdentity: string
+    script: ScriptDefinition
+  }
+  const scriptSaveInFlightRef = useRef<ImportSaveScope | null>(null)
+  const reviewArtifactSaveInFlightRef = useRef<ImportSaveScope | null>(null)
   const [scriptSaveInProgress, setScriptSaveInProgress] = useState(false)
   const operationGenerationRef = useRef(0)
   const itemRequestTokensRef = useRef<Map<string, number>>(new Map())
   const replayRequestTokensRef = useRef<Map<string, number>>(new Map())
+  const replayNotFoundCountsRef = useRef<Map<string, number>>(new Map())
+  const replayStartScopeRef = useRef<{
+    itemId: string
+    generation: number
+    scriptIndex: number
+    projectId: string | undefined
+    optionsIdentity: string
+    script: ScriptDefinition
+  } | null>(null)
 
   const [options, setOptions] = useState<ImportOptions>(DEFAULT_IMPORT_OPTIONS)
   const selectedItem = useMemo(
@@ -635,14 +624,30 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   const optionsRef = useRef(options)
   optionsRef.current = options
   const invalidateOperationScopes = useCallback((itemIds?: readonly string[]) => {
-    void credentialReviewRef.current?.discardSourceSession()
+    const invalidatesSelectedReview = !itemIds || itemIds.includes(selectedItemIdRef.current)
+    if (invalidatesSelectedReview) {
+      void credentialReviewRef.current?.discardSourceSession()
+    }
     operationGenerationRef.current += 1
     const ids = itemIds || importItemsRef.current.map(item => item.id)
     ids.forEach(id => {
       nextRequestToken(itemRequestTokensRef.current, id)
       nextRequestToken(replayRequestTokensRef.current, id)
     })
+    replayNotFoundCountsRef.current.clear()
+    const activeReviewArtifactSave = reviewArtifactSaveInFlightRef.current
+    const invalidatesActiveReviewArtifactSave = Boolean(
+      activeReviewArtifactSave &&
+      (!itemIds || itemIds.includes(activeReviewArtifactSave.itemId)),
+    )
+    if (invalidatesActiveReviewArtifactSave) {
+      reviewArtifactSaveInFlightRef.current = null
+    }
     setWorkingMode(null)
+    setScriptSaveInProgress(false)
+    if (invalidatesActiveReviewArtifactSave) {
+      setReviewArtifactSaving(false)
+    }
   }, [])
   const previousProjectIdRef = useRef(projectId)
   useEffect(() => {
@@ -725,23 +730,38 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   const replayValidationWarnings = replayScopeMatches ? rawReplayValidationWarnings : EMPTY_REPLAY_VALIDATION_WARNINGS
   const replayValidationSession = replayScopeMatches ? rawReplayValidationSession : null
   const reviewScope = `${selectedItem?.id || ''}:${selectedItem?.reviewGeneration ?? -1}:${activeResultScriptIndex}:${projectId || ''}`
+  useEffect(() => {
+    const activeSave = reviewArtifactSaveInFlightRef.current
+    setReviewArtifactSaving(Boolean(activeSave))
+  }, [activeResultScriptIndex, projectId, reviewScope, selectedItem?.id, selectedItem?.reviewGeneration])
   const importedScript = resultScripts[activeResultScriptIndex] ?? null
   // Source-secret sessions are archive-wide and single-use. Review every
   // generated script in one credentials card so migration and binding happen
   // once for the complete archive, regardless of the preview tab.
   const secretBindingRequirements = result?.secret_binding_requirements || []
   const latestPreparedReviewRef = useRef({
+    itemId: selectedItem?.id || '',
+    generation: selectedItem?.reviewGeneration ?? -1,
+    scriptIndex: activeResultScriptIndex,
+    projectId,
+    optionsIdentity: selectedItem?.reviewOptionsIdentity || '',
     importedScript,
     result,
     secretBindingRequirements,
   })
   latestPreparedReviewRef.current = {
+    itemId: selectedItem?.id || '',
+    generation: selectedItem?.reviewGeneration ?? -1,
+    scriptIndex: activeResultScriptIndex,
+    projectId,
+    optionsIdentity: selectedItem?.reviewOptionsIdentity || '',
     importedScript,
     result,
     secretBindingRequirements,
   }
   const detectedProtocol = result?.detected_protocol ?? result?.summary?.detected_protocol ?? null
   const reviewArtifact = result?.review_artifact ?? result?.summary?.review_artifact ?? null
+  const fidelityReport = result?.fidelity_report ?? result?.summary?.fidelity_report ?? null
   const executableImport = !detectedProtocol || detectedProtocol.import_mode === 'executable'
   const importMetadata = getImportMetadata(importedScript || undefined)
   const trueClient2CompatReport = getTrueClient2CompatReport(result, importMetadata)
@@ -786,6 +806,17 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   const saveBlockedByMigrationPolicy = Boolean(migrationReadiness?.blocked)
   const saveBlockedByProtocolGate = Boolean(detectedProtocol && detectedProtocol.import_mode !== 'executable')
   const externalRunnerGate = detectedProtocol?.import_mode === 'external_runner_required'
+  const combinedJavaVuserGate = externalRunnerGate && (
+    detectedProtocol?.apexload_protocol === 'java_vuser' ||
+    detectedProtocol?.canonical_source_protocol === 'java_vuser' ||
+    importedScript?.protocol === 'java_vuser'
+  )
+  const combinedJavaVuserApprovalReady = Boolean(
+    combinedJavaVuserGate &&
+    fidelityReport?.promotion_status === 'promotable' &&
+    (fidelityReport.blockers?.length || 0) === 0,
+  )
+  const importedEditorAvailable = Boolean(onEdit) && !combinedJavaVuserGate
   const protocolGateName = detectedProtocol?.display_name || detectedProtocol?.canonical_source_protocol || 'This protocol'
   const protocolGateRunnerRequirement = detectedProtocol?.runner_requirement || reviewArtifact?.protocol?.runner_requirement || ''
   const protocolGateRequiredEvidence = Array.from(new Set([
@@ -796,6 +827,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     protocolGateRunnerRequirement ? `Runner: ${protocolGateRunnerRequirement}` : '',
     reviewArtifact?.title ? `Review artifact: ${reviewArtifact.title}` : '',
     ...protocolGateRequiredEvidence.map(evidence => `Required evidence: ${evidence}`),
+    ...(combinedJavaVuserGate && !combinedJavaVuserApprovalReady
+      ? (fidelityReport?.blockers || []).map(blocker => `Fidelity blocker: ${blocker}`)
+      : []),
     ...(detectedProtocol?.signals || []).slice(0, 3).map(signal => `Signal: ${signal}`),
   ].filter(Boolean)
   const browserImport = isBrowserImport(importedScript)
@@ -816,7 +850,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     ? (!reviewArtifact || reviewArtifactSaving || !reviewMatchesCurrentOptions)
     : (saveBlockedByMigrationPolicy || replayValidationLoading || browserReplayInProgress || !reviewMatchesCurrentOptions)
   const saveActionLabel = saveBlockedByProtocolGate
-    ? (reviewArtifactSaving ? 'Saving Review Artifact...' : 'Save Review Artifact Instead')
+    ? (reviewArtifactSaving
+      ? (combinedJavaVuserApprovalReady ? 'Saving Combined Java Draft...' : 'Saving Review Artifact...')
+      : (combinedJavaVuserApprovalReady ? 'Save Combined Java Draft for Approval' : 'Save Review Artifact Instead'))
     : (reviewMode === 'validation'
       ? (validatedFileCount > 1 ? `Convert ${validatedFileCount} Enterprise Script Archives` : 'Convert Enterprise Script Archive')
       : (browserReplayInProgress
@@ -841,7 +877,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
         ? 'This preview came from the dry-run validator. Wait for the draft browser replay to finish before saving it to the library.'
             : (saveBlockedByProtocolGate
           ? (externalRunnerGate
-              ? `This preview came from the dry-run validator. ${protocolGateName} execution requires ${protocolGateRunnerRequirement || 'an approved external runner'}; save the review artifact before promotion.`
+              ? (combinedJavaVuserGate && !combinedJavaVuserApprovalReady
+                ? `This preview came from the dry-run validator. Save the combined Java Vuser review artifact and resolve its fidelity blockers before authoring approval.`
+                : `This preview came from the dry-run validator. ${protocolGateName} execution requires ${protocolGateRunnerRequirement || 'an approved external runner'}; save ${combinedJavaVuserApprovalReady ? 'the combined draft' : 'the review artifact'} for approval.`)
               : 'This preview came from the dry-run validator. Save the review artifact before script promotion.')
               : 'This preview came from the dry-run validator. Convert the validated archive to save the generated script.')))
     : (saveBlockedByMigrationPolicy
@@ -850,7 +888,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
         ? 'Review the generated script, preserved metadata, and warnings. Wait for the draft browser replay to finish before saving it to the library.'
             : (saveBlockedByProtocolGate
           ? (externalRunnerGate
-              ? `Review the generated ${protocolGateName} draft and save the review artifact; execution requires ${protocolGateRunnerRequirement || 'an approved external runner'}.`
+              ? (combinedJavaVuserGate && !combinedJavaVuserApprovalReady
+                ? 'Review the combined Java Vuser draft, save it as a review artifact, and resolve every fidelity blocker before authoring approval.'
+                : `Review the generated ${protocolGateName} draft and save ${combinedJavaVuserApprovalReady ? 'the combined source-order draft' : 'the review artifact'} for approval; execution requires ${protocolGateRunnerRequirement || 'an approved external runner'}.`)
               : 'Review the protocol classification and save the review artifact; this import is not executable yet.')
               : (saveRequiresBrowserReplay
           ? `Review the generated script, preserved metadata, and warnings. ${browserReplayWasStarted ? 'Rerun' : 'Run'} a draft browser replay before saving it to the library.`
@@ -966,7 +1006,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   }
 
   const openImportedScriptInEditor = (focus?: DraftEditorFocus) => {
-    if (!onEdit) return
+    if (!onEdit || combinedJavaVuserGate) return
     void (async () => {
       const currentScript = await prepareImportedScriptForEditor()
       if (currentScript) onEdit(currentScript, focus)
@@ -974,7 +1014,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   }
 
   const openSalesforceNativePreviewInEditor = () => {
-    if (!salesforceNativeScript || !onEdit) return
+    if (!salesforceNativeScript || !onEdit || combinedJavaVuserGate) return
     void (async () => {
       const preparedScript = await prepareImportedScriptForEditor()
       if (!preparedScript) return
@@ -1065,14 +1105,14 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     const buttons: EditorActionButton[] = []
     switch (sectionKey) {
       case 'unsupported_elements':
-        if (onEdit && firstUnsupportedTargetAction) {
+        if (importedEditorAvailable && firstUnsupportedTargetAction) {
           buttons.push({
             key: 'review-unsupported-action',
             label: 'Open First Unsupported Action In Editor',
             onClick: () => openImportedScriptInEditor({ targetAction: firstUnsupportedTargetAction }),
           })
         }
-        if (onEdit) {
+        if (importedEditorAvailable) {
           buttons.push({
             key: 'review-unsupported-script',
             label: 'Open Imported Script In Editor',
@@ -1081,21 +1121,21 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
         }
         break
       case 'preserved_metadata':
-        if (onEdit && (runtimeFiles.length > 0 || reviewSummary?.mapped_runtime_file)) {
+        if (importedEditorAvailable && (runtimeFiles.length > 0 || reviewSummary?.mapped_runtime_file)) {
           buttons.push({
             key: 'review-preserved-runtime',
             label: 'Open Runtime Settings In Editor',
             onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
           })
         }
-        if (onEdit && parameterFiles.length > 0) {
+        if (importedEditorAvailable && parameterFiles.length > 0) {
           buttons.push({
             key: 'review-preserved-parameter-files',
             label: 'Open Parameter Files In Editor',
             onClick: () => openImportedParameterDataInEditor(firstMappedParameterDataSourceName || firstGeneratedDataSourceName),
           })
         }
-        if (onEdit && firstGeneratedDataSourceName) {
+        if (importedEditorAvailable && firstGeneratedDataSourceName) {
           buttons.push({
             key: 'review-preserved-source',
             label: 'Open First Data Source In Editor',
@@ -1104,7 +1144,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
         }
         break
       case 'runtime_settings_parity':
-        if (onEdit) {
+        if (importedEditorAvailable) {
           buttons.push({
             key: 'review-runtime-parity',
             label: 'Open Runtime Review In Editor',
@@ -1120,7 +1160,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
         }
         break
       case 'runtime_settings_migration_readiness':
-        if (onEdit) {
+        if (importedEditorAvailable) {
           buttons.push({
             key: 'review-runtime-readiness',
             label: 'Open Runtime Review In Editor',
@@ -1137,7 +1177,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
         buttons.push(...buildMigrationPolicyRelaxationButtons('review-runtime-relax'))
         break
       case 'browser_import_assumptions':
-        if (onEdit) {
+        if (importedEditorAvailable) {
           buttons.push({
             key: 'review-browser-import-script',
             label: 'Open Imported Script In Editor',
@@ -1146,14 +1186,14 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
         }
         break
       case 'salesforce_review':
-        if (onEdit && salesforceNativeScript) {
+        if (importedEditorAvailable && salesforceNativeScript) {
           buttons.push({
             key: 'review-salesforce-native-preview',
             label: 'Open Native Preview',
             onClick: openSalesforceNativePreviewInEditor,
           })
         }
-        if (onEdit) {
+        if (importedEditorAvailable) {
           buttons.push({
             key: 'review-salesforce-exact-replay',
             label: 'Open Exact Replay',
@@ -1235,6 +1275,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
         && current.replayProjectId === replayProjectId
         && reviewProjectIdRef.current === projectId
     }
+    const replayLookupKey = `${replayItemId}\u0000${replayGeneration}\u0000${replayScriptIndex}\u0000${replayProjectId}\u0000${sessionId}`
 
     const refreshSession = () => {
       void api.getBrowserReplaySession(sessionId)
@@ -1242,6 +1283,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
           if (!replayScopeIsCurrent() || !response?.session) {
             return
           }
+          replayNotFoundCountsRef.current.delete(replayLookupKey)
           updateImportItem(replayItemId, {
             replayValidationSession: response.session,
             replayValidationWarnings: Array.isArray(response.warnings) ? response.warnings : replayValidationWarnings,
@@ -1249,11 +1291,27 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
           })
         })
         .catch((error: unknown) => {
-          if (replayScopeIsCurrent()) {
+          if (!replayScopeIsCurrent()) return
+          if (error instanceof ApiError && error.status === 404) {
+            const notFoundCount = (replayNotFoundCountsRef.current.get(replayLookupKey) || 0) + 1
+            replayNotFoundCountsRef.current.set(replayLookupKey, notFoundCount)
+            if (notFoundCount <= 4) return
+            replayNotFoundCountsRef.current.delete(replayLookupKey)
+            const current = importItemsRef.current.find(item => item.id === replayItemId)?.replayValidationSession
+            if (!current || current.id !== sessionId) return
             updateImportItem(replayItemId, {
-              replayValidationError: getErrorMessage(error, 'Draft browser replay status refresh failed'),
+              replayValidationSession: {
+                ...current,
+                status: 'failed',
+                error: 'Replay session could not be confirmed. Start draft browser replay again.',
+              },
+              replayValidationError: 'Replay session could not be confirmed. Start draft browser replay again.',
             })
+            return
           }
+          updateImportItem(replayItemId, {
+            replayValidationError: getErrorMessage(error, 'Draft browser replay status refresh failed'),
+          })
         })
     }
 
@@ -1276,7 +1334,11 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
 
     const nextItems = zipFiles.map((nextFile) => {
       itemCounterRef.current += 1
-      return buildEnterpriseArchiveImportQueueItem(nextFile, `lr-import-${Date.now()}-${itemCounterRef.current}`)
+      const randomItemId = createReplaySessionId()
+      return buildEnterpriseArchiveImportQueueItem(
+        nextFile,
+        `lr-import-${randomItemId || `${Date.now()}-${itemCounterRef.current}`}`,
+      )
     })
     setImportItems(items => [...items, ...nextItems])
     setSelectedItemId(nextItems[0].id)
@@ -1690,12 +1752,46 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
 
   const startBrowserReplayValidation = async () => {
     if (!importedScript || !selectedItem) return
+    const currentOptionsIdentity = importOptionsIdentity(optionsRef.current)
+    if (selectedItem.reviewOptionsIdentity !== currentOptionsIdentity) {
+      setError('Conversion options changed after this review. Refresh the review before starting draft browser replay.')
+      return false
+    }
+    const currentItem = importItemsRef.current.find(item => item.id === selectedItem.id)
+    if (
+      selectedItemIdRef.current !== selectedItem.id
+      || selectedResultScriptIndexRef.current !== activeResultScriptIndex
+      || currentItem?.reviewGeneration !== selectedItem.reviewGeneration
+      || currentItem.reviewOptionsIdentity !== currentOptionsIdentity
+      || getEnterpriseArchiveResultScripts(currentItem.result)[activeResultScriptIndex] !== importedScript
+    ) return false
     const script = importedScript
     const sourceItemId = selectedItem.id
     const sourceGeneration = selectedItem.reviewGeneration
     const sourceScriptIndex = activeResultScriptIndex
     const sourceProjectId = reviewProjectIdRef.current
     const sourceOptionsIdentity = selectedItem?.reviewOptionsIdentity || ''
+    const activeStart = replayStartScopeRef.current
+    if (
+      activeStart?.itemId === sourceItemId
+      && activeStart.generation === sourceGeneration
+      && activeStart.scriptIndex === sourceScriptIndex
+      && activeStart.projectId === sourceProjectId
+      && activeStart.optionsIdentity === sourceOptionsIdentity
+      && activeStart.script === script
+    ) return false
+    const startScope = {
+      itemId: sourceItemId,
+      generation: sourceGeneration,
+      scriptIndex: sourceScriptIndex,
+      projectId: sourceProjectId,
+      optionsIdentity: sourceOptionsIdentity,
+      script,
+    }
+    replayStartScopeRef.current = startScope
+    const previousReplaySession = selectedItem.replayValidationSession
+    const previousReplayWarnings = selectedItem.replayValidationWarnings
+    const clientReplaySessionId = createReplaySessionId()
     const requestToken = nextRequestToken(replayRequestTokensRef.current, sourceItemId)
     const requestIsCurrent = () => {
       const current = importItemsRef.current.find(item => item.id === sourceItemId)
@@ -1713,6 +1809,17 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     updateImportItem(sourceItemId, {
       replayValidationLoading: true,
       replayValidationError: '',
+      replayValidationSession: clientReplaySessionId
+        ? {
+            id: clientReplaySessionId,
+            status: 'queued',
+            group: `${script.name || 'script'}-replay`,
+            protocol: 'browser',
+            current_event_index: -1,
+            events: [],
+          }
+        : previousReplaySession,
+      replayValidationWarnings: [],
       replayReviewGeneration: sourceGeneration,
       replayScriptIndex: sourceScriptIndex,
       replayProjectId: sourceProjectId || '',
@@ -1722,6 +1829,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       const res = await api.startDraftBrowserReplaySession(buildReplayStartPayload(script, {
         projectId: sourceProjectId,
         ignoreThinkTime: true,
+        replaySessionId: clientReplaySessionId || undefined,
       }))
       if (!requestIsCurrent()) return false
       updateImportItem(sourceItemId, {
@@ -1731,32 +1839,59 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       return true
     } catch (error: unknown) {
       if (!requestIsCurrent()) return false
+      if (clientReplaySessionId && !isDefiniteReplayStartRejection(error)) {
+        updateImportItem(sourceItemId, {
+          replayValidationError: '',
+          replayValidationWarnings: ['The replay start response was interrupted. Confirming the accepted replay session…'],
+        })
+        return true
+      }
       updateImportItem(sourceItemId, {
+        replayValidationSession: previousReplaySession,
+        replayValidationWarnings: previousReplayWarnings,
         replayValidationError: getErrorMessage(error, 'Draft browser replay failed to start'),
       })
       return false
     } finally {
       if (requestIsCurrent()) updateImportItem(sourceItemId, { replayValidationLoading: false })
+      if (replayStartScopeRef.current === startScope) replayStartScopeRef.current = null
     }
   }
 
   const handleSaveConverted = async () => {
-    if (scriptSaveInFlightRef.current) return
     const preparedReview = latestPreparedReviewRef.current
     const currentImportedScript = preparedReview.importedScript
-    if (!currentImportedScript) return
+    if (!currentImportedScript || !selectedItem) return
     if (!reviewMatchesCurrentOptions) {
       setError('Conversion options changed after this review. Refresh the review before saving the script.')
       return
     }
-    scriptSaveInFlightRef.current = true
     let requestIsCurrent = () => false
+    let saveScope: typeof scriptSaveInFlightRef.current = null
     try {
-      const sourceItemId = selectedItem?.id || ''
-      const sourceGeneration = selectedItem?.reviewGeneration
+      const sourceItemId = selectedItem.id
+      const sourceGeneration = selectedItem.reviewGeneration
       const sourceScriptIndex = activeResultScriptIndex
       const sourceProjectId = reviewProjectIdRef.current
-      const sourceOptionsIdentity = selectedItem?.reviewOptionsIdentity || ''
+      const sourceOptionsIdentity = selectedItem.reviewOptionsIdentity || ''
+      const activeSave = scriptSaveInFlightRef.current
+      if (
+        activeSave?.itemId === sourceItemId
+        && activeSave.generation === sourceGeneration
+        && activeSave.scriptIndex === sourceScriptIndex
+        && activeSave.projectId === sourceProjectId
+        && activeSave.optionsIdentity === sourceOptionsIdentity
+        && activeSave.script === currentImportedScript
+      ) return
+      saveScope = {
+        itemId: sourceItemId,
+        generation: sourceGeneration,
+        scriptIndex: sourceScriptIndex,
+        projectId: sourceProjectId,
+        optionsIdentity: sourceOptionsIdentity,
+        script: currentImportedScript,
+      }
+      scriptSaveInFlightRef.current = saveScope
       requestIsCurrent = () => {
         const current = importItemsRef.current.find(item => item.id === sourceItemId)
         return Boolean(sourceItemId)
@@ -1808,8 +1943,10 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     } catch (error: unknown) {
       if (requestIsCurrent()) setError(getErrorMessage(error, 'Failed to save script'))
     } finally {
-      scriptSaveInFlightRef.current = false
-      setScriptSaveInProgress(false)
+      if (scriptSaveInFlightRef.current === saveScope) {
+        scriptSaveInFlightRef.current = null
+      }
+      if (requestIsCurrent()) setScriptSaveInProgress(false)
     }
   }
 
@@ -1880,6 +2017,11 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     const nextScripts = getEnterpriseArchiveResultScripts(resolvedResult)
     const previewIndex = Math.min(selectedResultScriptIndexRef.current, Math.max(nextScripts.length - 1, 0))
     latestPreparedReviewRef.current = {
+      itemId: sourceItemId,
+      generation: sourceGeneration,
+      scriptIndex: previewIndex,
+      projectId: sourceProjectId,
+      optionsIdentity: selectedItem.reviewOptionsIdentity || '',
       importedScript: nextScripts[previewIndex] || null,
       result: resolvedResult,
       secretBindingRequirements: resolvedResult.secret_binding_requirements || [],
@@ -1908,6 +2050,11 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       scripts: nextScripts,
     }
     latestPreparedReviewRef.current = {
+      itemId: selectedItem.id,
+      generation: selectedItem.reviewGeneration + 1,
+      scriptIndex: activeResultScriptIndex,
+      projectId: reviewProjectIdRef.current,
+      optionsIdentity: selectedItem.reviewOptionsIdentity || '',
       importedScript: parameterizedScript,
       result: nextResult,
       secretBindingRequirements,
@@ -1929,29 +2076,93 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   }
 
   const handleSaveReviewArtifact = async () => {
-    if (!reviewArtifact) return
+    const preparedReview = latestPreparedReviewRef.current
+    const currentResult = preparedReview.result
+    const currentReviewArtifact = currentResult?.review_artifact ?? currentResult?.summary?.review_artifact ?? null
+    const currentDetectedProtocol = currentResult?.detected_protocol ?? currentResult?.summary?.detected_protocol ?? null
+    if (!currentReviewArtifact || !preparedReview.itemId) return
+    const preparedImportedScript = preparedReview.importedScript
+    const preparedDraft = preparedImportedScript || buildReviewArtifactDraft(
+      currentReviewArtifact,
+      currentDetectedProtocol,
+      preparedReview.projectId,
+      optionsRef.current.name,
+      currentResult?.summary?.source_review || null,
+    )
+
+    const saveScope: ImportSaveScope = {
+      itemId: preparedReview.itemId,
+      generation: preparedReview.generation,
+      scriptIndex: preparedReview.scriptIndex,
+      projectId: preparedReview.projectId,
+      optionsIdentity: preparedReview.optionsIdentity,
+      script: preparedDraft,
+    }
+    const activeSave = reviewArtifactSaveInFlightRef.current
+    if (activeSave) return
+
+    const requestIsCurrent = () => {
+      const currentItem = importItemsRef.current.find(item => item.id === saveScope.itemId)
+      const latestReview = latestPreparedReviewRef.current
+      return selectedItemIdRef.current === saveScope.itemId
+        && selectedResultScriptIndexRef.current === saveScope.scriptIndex
+        && reviewProjectIdRef.current === saveScope.projectId
+        && currentItem?.reviewGeneration === saveScope.generation
+        && currentItem?.reviewOptionsIdentity === saveScope.optionsIdentity
+        && importOptionsIdentity(optionsRef.current) === saveScope.optionsIdentity
+        && latestReview.itemId === saveScope.itemId
+        && latestReview.generation === saveScope.generation
+        && latestReview.scriptIndex === saveScope.scriptIndex
+        && latestReview.projectId === saveScope.projectId
+        && latestReview.optionsIdentity === saveScope.optionsIdentity
+        && latestReview.importedScript === preparedImportedScript
+        && latestReview.result === currentResult
+    }
+    if (!requestIsCurrent()) return
+    if (preparedReview.secretBindingRequirements.length > 0) {
+      setError('Resolve every redacted credential binding before saving this review artifact.')
+      return
+    }
+
+    reviewArtifactSaveInFlightRef.current = saveScope
     setReviewArtifactSaving(true)
     setError('')
     try {
+      const currentFidelityReport = currentResult?.fidelity_report ?? currentResult?.summary?.fidelity_report ?? null
+      const currentCombinedJavaVuser = currentDetectedProtocol?.import_mode === 'external_runner_required' && (
+        currentDetectedProtocol?.apexload_protocol === 'java_vuser' ||
+        currentDetectedProtocol?.canonical_source_protocol === 'java_vuser' ||
+        preparedDraft.protocol === 'java_vuser'
+      )
+      const currentCombinedJavaVuserApprovalReady = Boolean(
+        currentCombinedJavaVuser &&
+        currentFidelityReport?.promotion_status === 'promotable' &&
+        (currentFidelityReport.blockers?.length || 0) === 0,
+      )
       const session = await api.createAuthoringSession({
-        project_id: projectId,
+        project_id: saveScope.projectId,
         source: 'source_review_artifact',
-        name: reviewArtifact.title || detectedProtocol?.display_name || 'enterprise script archive protocol review',
+        name: currentReviewArtifact.title || currentDetectedProtocol?.display_name || 'enterprise script archive protocol review',
         status: 'reviewing',
-        draft: importedScript || buildReviewArtifactDraft(reviewArtifact, detectedProtocol, projectId, options.name, sourceReview),
+        idempotency_key: `enterprise-archive-review:${saveScope.itemId}:${saveScope.generation}:${saveScope.scriptIndex}`,
+        draft: preparedImportedScript || preparedDraft,
         review_state: {
-          review_artifact: reviewArtifact,
-          detected_protocol: detectedProtocol,
-          import_summary: result?.summary || {},
-          warnings: result?.warnings || [],
-          required_evidence: reviewArtifact.required_evidence || detectedProtocol?.required_evidence || [],
+          review_artifact: currentReviewArtifact,
+          detected_protocol: currentDetectedProtocol,
+          import_summary: currentResult?.summary || {},
+          warnings: currentResult?.warnings || [],
+          required_evidence: currentReviewArtifact.required_evidence || currentDetectedProtocol?.required_evidence || [],
         },
       })
-      setNotice(`Review artifact saved as authoring session ${session.name || session.id}.`)
+      if (!requestIsCurrent()) return
+      setNotice(`${currentCombinedJavaVuserApprovalReady ? 'Combined Java Vuser draft' : currentCombinedJavaVuser ? 'Combined Java Vuser review artifact' : 'Review artifact'} saved as authoring session ${session.name || session.id}.`)
     } catch (error: unknown) {
-      setError(getErrorMessage(error, 'Failed to save review artifact'))
+      if (requestIsCurrent()) setError(getErrorMessage(error, 'Failed to save review artifact'))
     } finally {
-      setReviewArtifactSaving(false)
+      if (reviewArtifactSaveInFlightRef.current === saveScope) {
+        reviewArtifactSaveInFlightRef.current = null
+        setReviewArtifactSaving(false)
+      }
     }
   }
 
@@ -2273,7 +2484,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
           {javaImportSurfaceMatrix.length > 0 && (
             <div className="lr-warnings" aria-label="java vuser import coverage">
               <h4>Java Vuser Import Coverage</h4>
-              <p className="coverage-hint">Native Java Vuser lanes are classified below the broad Java Vuser external-runner protocol entry.</p>
+              <p className="coverage-hint">Recognized Java idioms are source-review evidence only. HTTP, JDBC, JMS, SOAP, and custom Java remain together in one source-order-preserving draft. Launch requires a governed JVM runner advertising java_vuser_persistent_lifecycle_v1 and java_vuser_session_frame_token_v1; each VUser keeps one JVM and Actions instance across init, action iterations, and end.</p>
               <ul>
                 {javaImportSurfaceMatrix.map(entry => (
                   <li key={entry.id}>
@@ -2415,7 +2626,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
               : reviewMode === 'validation' && selectedItem
                 ? () => convertValidatedItems(validatedItemIds)
                 : handleSaveConverted}
-            onEdit={onEdit ? () => { openImportedScriptInEditor() } : undefined}
+            onEdit={importedEditorAvailable ? () => { openImportedScriptInEditor() } : undefined}
             previewAside={sourceReview ? <SourceMappingReview sourceReview={sourceReview} script={importedScript} /> : undefined}
           >
 
@@ -2428,9 +2639,18 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                   </div>
                   <p>
                     {externalRunnerGate
-                      ? `${protocolGateName} draft conversion is visible for review, but execution is blocked until the required runner is approved and configured.`
+                      ? (combinedJavaVuserGate
+                        ? (combinedJavaVuserApprovalReady
+                          ? `${protocolGateName} remains one combined init/action/end source-order draft. It can be approved into the script library, but execution is blocked until the governed runner advertises java_vuser_persistent_lifecycle_v1 and java_vuser_session_frame_token_v1. Each VUser keeps one JVM and Actions instance across init, repeated action iterations, and end.`
+                          : `${protocolGateName} remains one combined Java Vuser review artifact, but fidelity blockers must be resolved before authoring approval. The source is preserved without splitting it into native protocol lanes.`)
+                        : `${protocolGateName} draft conversion is visible for review, but execution is blocked until the required runner is approved and configured.`)
                       : `${protocolGateName} draft conversion is visible for review, but executable promotion is blocked by the protocol classification.`}
                   </p>
+                  {combinedJavaVuserGate && (
+                    <p>
+                      Save this combined draft as an authoring session, then resume that session to edit and approve it. Direct visual-editor and script-library saves are disabled so the governed approval evidence stays attached to the draft.
+                    </p>
+                  )}
                   {protocolGateDetails.length > 0 && (
                     <ul>
                       {protocolGateDetails.map((detail, index) => <li key={`protocol-gate-${index}`}>{detail}</li>)}
@@ -2500,7 +2720,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                       <ul>{trueClient2CompatReport.next_actions.slice(0, 6).map((action, index) => <li key={`tc2-next-${index}`}>{action}</li>)}</ul>
                     </>
                   ) : null}
-                  {onEdit && renderEditorActionButtons([
+                  {importedEditorAvailable && renderEditorActionButtons([
                     {
                       key: 'trueclient2-open-draft',
                       label: 'Open Imported Draft In Editor',
@@ -2525,7 +2745,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                   </div>
                   <p>{replayPanelDescription}</p>
                   <div className="replay-panel-actions" style={{ marginTop: 12, justifyContent: 'flex-start' }}>
-                    <button className="btn btn-secondary" onClick={handleValidateBrowserReplay} disabled={replayValidationLoading || browserReplayInProgress}>
+                    <button className="btn btn-secondary" onClick={handleValidateBrowserReplay} disabled={replayValidationLoading || browserReplayInProgress || !reviewMatchesCurrentOptions}>
                       {replayValidationLoading ? <><span className="spinner" /> {replayActionLabel}</> : replayActionLabel}
                     </button>
                   </div>
@@ -2594,7 +2814,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                       <dd>{formatSalesforceCoverage(salesforceReview)}</dd>
                     </div>
                   </dl>
-                  {onEdit && renderEditorActionButtons([
+                  {importedEditorAvailable && renderEditorActionButtons([
                     {
                       key: 'salesforce-exact-open',
                       label: 'Open Exact Replay',
@@ -2641,7 +2861,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                       ))}
                     </ul>
                   ) : null}
-                  {onEdit && salesforceNativeScript && renderEditorActionButtons([
+                  {importedEditorAvailable && salesforceNativeScript && renderEditorActionButtons([
                     {
                       key: 'salesforce-native-open',
                       label: 'Open Native Preview',
@@ -2672,7 +2892,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                     return (
                       <li key={`${fnName}-${index}`}>
                         {fnName}
-                        {repairSuggestion?.target_action && onEdit && (
+                        {repairSuggestion?.target_action && importedEditorAvailable && (
                           <>
                             {' '}
                             <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetAction: repairSuggestion.target_action })}>
@@ -2684,7 +2904,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                     )
                   })}
                 </ul>
-                {onEdit && renderEditorActionButtons([
+                {importedEditorAvailable && renderEditorActionButtons([
                   firstUnsupportedTargetAction ? {
                     key: 'unsupported-summary-action',
                     label: 'Open First Unsupported Action In Editor',
@@ -2746,7 +2966,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                         )}
                         {suggestionDescription && <p>{suggestionDescription}</p>}
                         {suggestionAction && <ul><li>{suggestionAction}</li></ul>}
-                        {suggestion.target_action && onEdit && (
+                        {suggestion.target_action && importedEditorAvailable && (
                           renderEditorActionButtons([
                             {
                               key: `${suggestion.id}:target-action`,
@@ -2757,12 +2977,12 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                         )}
                         {!suggestion.target_action && suggestion.category === 'runtime' && (
                           renderEditorActionButtons([
-                            onEdit ? {
+                            importedEditorAvailable ? {
                               key: `${suggestion.id}:runtime-review`,
                               label: 'Open Runtime Review In Editor',
                               onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
                             } : null,
-                            onEdit && firstRuntimeBlockingArea && suggestion.id === 'runtime:migration-readiness' ? {
+                            importedEditorAvailable && firstRuntimeBlockingArea && suggestion.id === 'runtime:migration-readiness' ? {
                               key: `${suggestion.id}:blocking-area`,
                               label: 'Open First Blocking Setting In Editor',
                               onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeBlockingArea),
@@ -2774,7 +2994,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                             ),
                           ].filter((button): button is EditorActionButton => Boolean(button)))
                         )}
-                        {!suggestion.target_action && suggestion.category === 'replay' && onEdit && (
+                        {!suggestion.target_action && suggestion.category === 'replay' && importedEditorAvailable && (
                           renderEditorActionButtons([
                             {
                               key: `${suggestion.id}:open-script`,
@@ -2783,7 +3003,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                             },
                           ])
                         )}
-                        {!suggestion.target_action && suggestion.category === 'salesforce' && onEdit && (
+                        {!suggestion.target_action && suggestion.category === 'salesforce' && importedEditorAvailable && (
                           renderEditorActionButtons([
                             salesforceNativeScript ? {
                               key: `${suggestion.id}:native-preview`,
@@ -2816,7 +3036,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                     <span className="lr-preserved-label">Project File</span>
                     <strong>{reviewSummary?.project_file || importMetadata.source_script_name || importedScript.name}</strong>
                     <small>{importMetadata.source || 'enterprise_script_archive'}</small>
-                    {onEdit && renderEditorActionButtons([
+                    {importedEditorAvailable && renderEditorActionButtons([
                       {
                         key: 'summary-project-file-script',
                         label: 'Open Imported Script In Editor',
@@ -2828,7 +3048,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                     <span className="lr-preserved-label">Mapped Runtime</span>
                     <strong>{reviewSummary?.mapped_runtime_file || 'None mapped'}</strong>
                     <small>{runtimeFiles.join(', ') || 'No runtime files found'}</small>
-                    {onEdit && renderEditorActionButtons([
+                    {importedEditorAvailable && renderEditorActionButtons([
                       {
                         key: 'summary-runtime-review',
                         label: 'Open Runtime Settings In Editor',
@@ -2845,7 +3065,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                     <span className="lr-preserved-label">Parameter Files</span>
                     <strong>{parameterFiles.length}</strong>
                     <small>{parameterFiles.join(', ') || 'No parameter files found'}</small>
-                    {onEdit && parameterFiles.length > 0 && renderEditorActionButtons([
+                    {importedEditorAvailable && parameterFiles.length > 0 && renderEditorActionButtons([
                       {
                         key: 'summary-parameter-files',
                         label: 'Open Parameter Files In Editor',
@@ -2862,7 +3082,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                     <span className="lr-preserved-label">Correlation Suggestions</span>
                     <strong>{importSummary.correlationSuggestions.length}</strong>
                     <small>{importSummary.correlationSuggestions.length > 0 ? 'Imported from preserved metadata' : 'None detected'}</small>
-                    {onEdit && importSummary.correlationSuggestions.length > 0 && renderEditorActionButtons([
+                    {importedEditorAvailable && importSummary.correlationSuggestions.length > 0 && renderEditorActionButtons([
                       firstCorrelationSourceTarget ? {
                         key: 'summary-correlation-source',
                         label: 'Open First Correlation Source In Editor',
@@ -2884,7 +3104,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                     <span className="lr-preserved-label">Unsupported Functions</span>
                     <strong>{reviewSummary?.unsupported_function_count ?? unsupportedFunctions.length}</strong>
                     <small>{unsupportedFunctions.slice(0, 4).join(', ') || 'None'}</small>
-                    {onEdit && firstUnsupportedTargetAction && renderEditorActionButtons([
+                    {importedEditorAvailable && firstUnsupportedTargetAction && renderEditorActionButtons([
                       {
                         key: 'summary-unsupported-action',
                         label: 'Open First Unsupported Action In Editor',
@@ -2896,7 +3116,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                     <span className="lr-preserved-label">Source</span>
                     <strong>{importMetadata.source || 'enterprise_script_archive'}</strong>
                     <small>{importedScript.name}</small>
-                    {onEdit && renderEditorActionButtons([
+                    {importedEditorAvailable && renderEditorActionButtons([
                       {
                         key: 'summary-source-script',
                         label: 'Open Imported Script In Editor',
@@ -2910,12 +3130,12 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                       <strong>{migrationReadiness.score_pct}%</strong>
                       <small>{migrationReadiness.blocked ? 'Blocked by current policy' : migrationReadiness.summary || 'Ready for review'}</small>
                       {renderEditorActionButtons([
-                        onEdit ? {
+                        importedEditorAvailable ? {
                           key: 'summary-migration-runtime-review',
                           label: 'Open Runtime Review In Editor',
                           onClick: () => openImportedScriptInEditor({ targetSection: 'runtime' }),
                         } : null,
-                        onEdit && firstRuntimeBlockingArea ? {
+                        importedEditorAvailable && firstRuntimeBlockingArea ? {
                           key: 'summary-migration-blocking-area',
                           label: 'Open First Blocking Setting In Editor',
                           onClick: () => openImportedRuntimeSettingsInEditor(firstRuntimeBlockingArea),
@@ -2932,7 +3152,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                       <strong>Parameter File Mappings</strong>
                       <span>{importSummary.parameterFileSections.length}</span>
                     </div>
-                    {onEdit && renderEditorActionButtons([
+                    {importedEditorAvailable && renderEditorActionButtons([
                       {
                         key: 'parameter-mappings-review',
                         label: 'Open Parameter Files In Editor',
@@ -2965,7 +3185,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                                 <td>{mappedSourceName || 'Not generated'}</td>
                                 <td>{formatParameterMappingDetails(section.values) || 'No explicit mapping options'}</td>
                                 <td>
-                                  {mappedSourceName && onEdit ? (
+                                  {mappedSourceName && importedEditorAvailable ? (
                                     <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'parameter-data', targetDataSource: mappedSourceName })}>
                                       Open Mapped Data Source In Editor
                                     </button>
@@ -2988,7 +3208,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                       <strong>Correlation Suggestions</strong>
                       <span>{importSummary.correlationSuggestions.length}</span>
                     </div>
-                    {onEdit && renderEditorActionButtons([
+                    {importedEditorAvailable && renderEditorActionButtons([
                       firstCorrelationSourceTarget ? {
                         key: 'correlation-review-source',
                         label: 'Open First Correlation Source In Editor',
@@ -3013,7 +3233,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                           {correlation.sample_value ? ` • ${correlation.sample_value}` : ''}
                           {` • Found in ${correlation.found_at}`}
                           {correlation.used_at.length > 0 ? ` • Used in ${correlation.used_at.join(', ')}` : ''}
-                          {sourceActionName && onEdit && (
+                          {sourceActionName && importedEditorAvailable && (
                             <>
                               {' '}
                               <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetAction: sourceActionName })}>
@@ -3038,7 +3258,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                       <strong>Migration Readiness Blocking Settings</strong>
                       <span>{runtimeBlockingSettings.length}</span>
                     </div>
-                    {onEdit && renderEditorActionButtons([
+                    {importedEditorAvailable && renderEditorActionButtons([
                       {
                         key: 'runtime-blocking-review',
                         label: 'Open Runtime Review In Editor',
@@ -3056,7 +3276,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                           <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
                           {`: ${entry.concept}`}
                           {entry.runtime_files.length > 0 ? ` • ${entry.runtime_files.join(', ')}` : ''}
-                          {onEdit && getImportedRuntimeSectionId(entry.area) && (
+                          {importedEditorAvailable && getImportedRuntimeSectionId(entry.area) && (
                             <>
                               {' '}
                               <button className="btn btn-secondary btn-sm" onClick={() => openImportedRuntimeSettingsInEditor(entry.area)}>
@@ -3076,7 +3296,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                       <strong>Runtime Settings Parity</strong>
                       <span>{importSummary.runtimeSettingsParity.length}</span>
                     </div>
-                    {onEdit && renderEditorActionButtons([
+                    {importedEditorAvailable && renderEditorActionButtons([
                       {
                         key: 'runtime-parity-review',
                         label: 'Open Runtime Review In Editor',
@@ -3094,7 +3314,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                           <strong>{formatRuntimeSettingStatusLabel(entry.status)}: {entry.area}</strong>
                           {`: ${entry.concept}`}
                           {entry.runtime_files.length > 0 ? ` • ${entry.runtime_files.join(', ')}` : ''}
-                          {onEdit && getImportedRuntimeSectionId(entry.area) && (
+                          {importedEditorAvailable && getImportedRuntimeSectionId(entry.area) && (
                             <>
                               {' '}
                               <button className="btn btn-secondary btn-sm" onClick={() => openImportedRuntimeSettingsInEditor(entry.area)}>
@@ -3114,7 +3334,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                       <strong>Generated Data Sources</strong>
                       <span>{generatedDataSources.length}</span>
                     </div>
-                    {onEdit && renderEditorActionButtons([
+                    {importedEditorAvailable && renderEditorActionButtons([
                       {
                         key: 'generated-sources-review',
                         label: 'Open Parameter Data In Editor',
@@ -3149,7 +3369,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                                   : source.columns.join(', ') || 'No columns'}
                               </td>
                               <td>
-                                {onEdit ? (
+                                {importedEditorAvailable ? (
                                   <button className="btn btn-secondary btn-sm" onClick={() => openImportedScriptInEditor({ targetSection: 'parameter-data', targetDataSource: source.name })}>
                                     Open Source In Editor
                                   </button>

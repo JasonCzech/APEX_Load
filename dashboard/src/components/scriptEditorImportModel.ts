@@ -9,22 +9,12 @@ import type {
   SourceArchiveReviewMapping,
 } from '../types/scripts'
 import { isRecord } from './scriptActionHelpers'
+import {
+  getImportedRuntimeSectionId as getSharedImportedRuntimeSectionId,
+  type RuntimeSettingsSectionId,
+} from './scriptEditorRuntimeSettingsModel'
 
-export type ImportedRuntimeSectionId =
-  | 'think'
-  | 'pacing'
-  | 'runlogic'
-  | 'errors'
-  | 'http'
-  | 'web_runtime'
-  | 'soap'
-  | 'java_http'
-  | 'jms'
-  | 'websocket'
-  | 'grpc'
-  | 'database'
-  | 'network'
-  | 'log'
+export type ImportedRuntimeSectionId = RuntimeSettingsSectionId
 
 export interface ImportCorrelationSuggestion {
   name: string
@@ -611,28 +601,7 @@ export function findImportedParameterMappingDataSourceIndex(
 }
 
 export function getImportedRuntimeSectionId(area?: string | null): ImportedRuntimeSectionId | null {
-  switch (area?.trim().toLowerCase()) {
-    case 'think time': return 'think'
-    case 'pacing': return 'pacing'
-    case 'run logic': return 'runlogic'
-    case 'error handling': return 'errors'
-    case 'logging': return 'log'
-    case 'http': return 'http'
-    case 'web http/html':
-    case 'web runtime': return 'web_runtime'
-    case 'soap':
-    case 'soap settings': return 'soap'
-    case 'java http':
-    case 'java over http': return 'java_http'
-    case 'jms': return 'jms'
-    case 'websocket': return 'websocket'
-    case 'grpc': return 'grpc'
-    case 'database':
-    case 'database runtime': return 'database'
-    case 'network':
-    case 'network runtime': return 'network'
-    default: return null
-  }
+	return getSharedImportedRuntimeSectionId(area)
 }
 
 export function formatRuntimeSettingStatusLabel(status: string): string {

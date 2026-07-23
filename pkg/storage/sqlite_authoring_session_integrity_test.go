@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -124,5 +125,71 @@ func TestConcurrentAuthoringSessionCreateAndProjectDeleteCannotLeaveOrphan(t *te
 	project, projectErr := first.GetProject("authoring-race-project")
 	if sessionErr == nil && session != nil && (projectErr != nil || project == nil) {
 		t.Fatalf("orphan authoring session survived concurrent create/delete: session=%#v project=%#v projectErr=%v", session, project, projectErr)
+	}
+}
+
+func TestConcurrentCreateAuthoringSessionConvergesWithoutOverwrite(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "authoring-idempotency-race.db")
+	first, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore(first): %v", err)
+	}
+	defer first.Close()
+	second, err := NewSQLiteStore(path)
+	if err != nil {
+		t.Fatalf("NewSQLiteStore(second): %v", err)
+	}
+	defer second.Close()
+	now := time.Now().UTC()
+	const projectID = "authoring-idempotency-project"
+	if err := first.SaveProject(&Project{ID: projectID, Name: "Idempotency", CreatedAt: now, UpdatedAt: now}); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+
+	start := make(chan struct{})
+	type result struct {
+		created bool
+		err     error
+	}
+	results := make(chan result, 2)
+	var wg sync.WaitGroup
+	for i, store := range []*SQLiteStore{first, second} {
+		wg.Add(1)
+		go func(index int, replica *SQLiteStore) {
+			defer wg.Done()
+			<-start
+			created, err := replica.CreateAuthoringSession(&AuthoringSession{
+				ID:        "stable-idempotent-session",
+				ProjectID: projectID,
+				Source:    "source_review_artifact",
+				Name:      fmt.Sprintf("Replica %d", index),
+				Status:    "reviewing",
+				Draft:     &dsl.Script{ProjectID: projectID, Name: fmt.Sprintf("Draft %d", index), Protocol: "java_vuser"},
+			})
+			results <- result{created: created, err: err}
+		}(i, store)
+	}
+	close(start)
+	wg.Wait()
+	close(results)
+
+	createdCount := 0
+	for result := range results {
+		if result.err != nil {
+			t.Fatalf("CreateAuthoringSession: %v", result.err)
+		}
+		if result.created {
+			createdCount++
+		}
+	}
+	if createdCount != 1 {
+		t.Fatalf("created count = %d, want exactly one winning insert", createdCount)
+	}
+	session, err := first.GetAuthoringSession("stable-idempotent-session")
+	if err != nil {
+		t.Fatalf("GetAuthoringSession: %v", err)
+	}
+	if session == nil || (session.Name != "Replica 0" && session.Name != "Replica 1") {
+		t.Fatalf("persisted session = %#v, want one complete winning replica", session)
 	}
 }

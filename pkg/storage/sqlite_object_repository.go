@@ -4,6 +4,7 @@ package storage
 // same SQL serves the PostgreSQL backend via rewriteSQL.
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -80,6 +81,57 @@ func (s *SQLiteStore) SaveObjectRepository(repo *ObjectRepository) error {
 // only when the durable updated_at value still matches the caller's snapshot.
 // ProjectID is an immutable authorization boundary and is never rewritten.
 func (s *SQLiteStore) UpdateObjectRepositoryIfUnchanged(repo *ObjectRepository, expectedUpdatedAt time.Time) (bool, error) {
+	return s.UpdateObjectRepositoryIfUnchangedContext(context.Background(), repo, expectedUpdatedAt)
+}
+
+type objectRepositoryExecutionLeaseTerm struct {
+	name       string
+	ownerID    string
+	generation uint64
+}
+
+// UpdateObjectRepositoryIfUnchangedContext is the cancelable form used by
+// execution-epoch-bound replay completion hooks. Beginning the transaction
+// with ctx keeps cancellation attached through Commit, so a controller that
+// loses leadership cannot finish a delayed self-heal write afterward.
+func (s *SQLiteStore) UpdateObjectRepositoryIfUnchangedContext(ctx context.Context, repo *ObjectRepository, expectedUpdatedAt time.Time) (bool, error) {
+	return s.updateObjectRepositoryIfUnchangedContext(ctx, repo, expectedUpdatedAt, nil)
+}
+
+// UpdateObjectRepositoryIfUnchangedContextAndLeaseTermHeld combines the object
+// repository revision CAS with an exact, unexpired execution-lease term check
+// in the same transaction. Replay completion work from an old HA leader cannot
+// commit after another controller replaces or expires its term even when the
+// old process-local context has not yet observed that loss.
+func (s *SQLiteStore) UpdateObjectRepositoryIfUnchangedContextAndLeaseTermHeld(
+	ctx context.Context,
+	repo *ObjectRepository,
+	expectedUpdatedAt time.Time,
+	leaseName string,
+	leaseOwnerID string,
+	leaseGeneration uint64,
+) (bool, error) {
+	leaseName = strings.TrimSpace(leaseName)
+	leaseOwnerID = strings.TrimSpace(leaseOwnerID)
+	if leaseName == "" || leaseOwnerID == "" || leaseGeneration == 0 {
+		return false, errors.New("lease name, owner token, and positive generation are required")
+	}
+	return s.updateObjectRepositoryIfUnchangedContext(ctx, repo, expectedUpdatedAt, &objectRepositoryExecutionLeaseTerm{
+		name:       leaseName,
+		ownerID:    leaseOwnerID,
+		generation: leaseGeneration,
+	})
+}
+
+func (s *SQLiteStore) updateObjectRepositoryIfUnchangedContext(
+	ctx context.Context,
+	repo *ObjectRepository,
+	expectedUpdatedAt time.Time,
+	leaseTerm *objectRepositoryExecutionLeaseTerm,
+) (bool, error) {
+	if ctx == nil {
+		return false, errors.New("object repository update context is required")
+	}
 	if repo == nil || strings.TrimSpace(repo.ID) == "" {
 		return false, errors.New("object repository id is required")
 	}
@@ -93,15 +145,27 @@ func (s *SQLiteStore) UpdateObjectRepositoryIfUnchanged(repo *ObjectRepository, 
 	if err != nil {
 		return false, fmt.Errorf("marshal object repository objects: %w", err)
 	}
-	tx, err := s.db.Begin()
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, err
 	}
 	defer tx.Rollback()
+	if leaseTerm != nil {
+		held, err := schedulerLeaseTermHeldInTransaction(
+			tx,
+			s.db.dialect,
+			leaseTerm.name,
+			leaseTerm.ownerID,
+			leaseTerm.generation,
+		)
+		if err != nil || !held {
+			return false, err
+		}
+	}
 	var currentProjectID string
 	var currentUpdatedAt time.Time
 	var currentUpdatedRaw string
-	if err := tx.QueryRow(`SELECT COALESCE(project_id, ''), updated_at, CAST(updated_at AS TEXT) FROM object_repositories WHERE id = ?`, repo.ID).Scan(&currentProjectID, &currentUpdatedAt, &currentUpdatedRaw); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(project_id, ''), updated_at, CAST(updated_at AS TEXT) FROM object_repositories WHERE id = ?`, repo.ID).Scan(&currentProjectID, &currentUpdatedAt, &currentUpdatedRaw); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, nil
 		}
@@ -112,7 +176,7 @@ func (s *SQLiteStore) UpdateObjectRepositoryIfUnchanged(repo *ObjectRepository, 
 	}
 	repo.ProjectID = normalizeProjectID(currentProjectID)
 	repo.UpdatedAt = time.Now()
-	result, err := tx.Exec(`UPDATE object_repositories
+	result, err := tx.ExecContext(ctx, `UPDATE object_repositories
 		SET name = ?, description = ?, source = ?, objects_json = ?, auto_promote_on_heal = ?, updated_at = ?
 		WHERE id = ? AND CAST(updated_at AS TEXT) = ?`, repo.Name, repo.Description, repo.Source, string(objectsJSON), repo.AutoPromoteOnHeal, repo.UpdatedAt, repo.ID, currentUpdatedRaw)
 	if err != nil {

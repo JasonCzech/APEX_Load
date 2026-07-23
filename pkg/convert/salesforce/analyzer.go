@@ -3,7 +3,9 @@ package salesforce
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/url"
 	"regexp"
 	"sort"
@@ -12,6 +14,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
+	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -77,14 +80,16 @@ type NativePreview struct {
 }
 
 type CorrelationCandidate struct {
-	Name       string   `json:"name"`
-	Source     string   `json:"source"`
-	Expression string   `json:"expression"`
-	FoundInSeq int      `json:"found_in_seq"`
-	UsedInSeqs []int    `json:"used_in_seqs,omitempty"`
-	RuleID     string   `json:"rule_id,omitempty"`
-	Confidence float64  `json:"confidence,omitempty"`
-	Reasons    []string `json:"reasons,omitempty"`
+	Name         string   `json:"name"`
+	Source       string   `json:"source"`
+	Expression   string   `json:"expression"`
+	FoundInSeq   int      `json:"found_in_seq"`
+	UsedInSeqs   []int    `json:"used_in_seqs,omitempty"`
+	RuleID       string   `json:"rule_id,omitempty"`
+	Confidence   float64  `json:"confidence,omitempty"`
+	Reasons      []string `json:"reasons,omitempty"`
+	PreApplied   bool     `json:"pre_applied,omitempty"`
+	ReviewAction string   `json:"review_action,omitempty"`
 }
 
 // ParameterizationCandidate is a record/object identifier discovered inside an
@@ -217,7 +222,19 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 		review.Blockers = append(review.Blockers, "No Salesforce Aura or API endpoints were detected; validate that the capture includes the Salesforce transaction traffic.")
 	}
 
-	correlations := detectCorrelations(entries)
+	correlations, correlationWarnings, err := detectCorrelationsChecked(entries)
+	if err != nil {
+		if !errors.Is(err, correlate.ErrCorrelationWorkLimit) {
+			return nil, fmt.Errorf("detect Salesforce correlations: %w", err)
+		}
+		// A deterministic work limit must never discard the whole review: keep
+		// detection/coverage/endpoint results and note the degraded analysis.
+		correlations = nil
+		correlationWarnings = append(correlationWarnings, err.Error())
+	}
+	for _, warning := range correlationWarnings {
+		review.Blockers = append(review.Blockers, "Salesforce correlation analysis was incomplete: "+warning)
+	}
 	review.CorrelationConfidence = correlationConfidence(correlations, len(entries))
 	review.Parameterizations = auraMessageParameterizations(refs, correlations)
 	if opts.BuildNative {
@@ -231,6 +248,18 @@ func Analyze(script *dsl.Script, opts AnalyzeOptions) (*Review, error) {
 }
 
 func flattenRequestActions(script *dsl.Script) []actionRef {
+	return flattenRequestActionsWithSequencePersistence(script, false)
+}
+
+// flattenRequestActionsForRewrite is the mutable counterpart used by the native
+// preview builder. http_sequence requests live inside Action.Params, so parsing
+// them into detached dsl.Action values is not enough: mutations made through the
+// returned refs must point at a slice stored back on the parent action.
+func flattenRequestActionsForRewrite(script *dsl.Script) []actionRef {
+	return flattenRequestActionsWithSequencePersistence(script, true)
+}
+
+func flattenRequestActionsWithSequencePersistence(script *dsl.Script, persistSequenceChildren bool) []actionRef {
 	refs := make([]actionRef, 0, len(script.Init)+len(script.Actions)+len(script.Teardown))
 	seq := 1
 	appendRef := func(phase string, index int, action *dsl.Action, inheritedTransaction string) {
@@ -265,15 +294,22 @@ func flattenRequestActions(script *dsl.Script) []actionRef {
 			if strings.EqualFold(action.Type, "http_sequence") {
 				transaction := convertutil.FirstNonEmpty(metadataString(action.Metadata, "source_transaction"), metadataString(action.Metadata, "source_transaction"))
 				children := salesforceSequenceChildren(*action)
+				if persistSequenceChildren && len(children) > 0 {
+					// Store the typed slice on the parent before taking child pointers.
+					// The interface keeps the same backing array, so every extractor,
+					// assertion, metadata, and correlation rewrite below survives in
+					// the returned native script.
+					action.Params["requests"] = children
+				}
 				for childIndex := range children {
-					child := children[childIndex]
+					child := &children[childIndex]
 					if child.Metadata == nil {
 						child.Metadata = map[string]any{}
 					}
 					if child.Metadata["source_transaction"] == nil && transaction != "" {
 						child.Metadata["source_transaction"] = transaction
 					}
-					appendRef(phase, index, &child, transaction)
+					appendRef(phase, index, child, transaction)
 				}
 				continue
 			}
@@ -375,11 +411,22 @@ func headerMap(headers []struct {
 	Value string `json:"value"`
 }) map[string]string {
 	out := make(map[string]string, len(headers))
+	canonicalKeys := make(map[string]string, len(headers))
 	for _, header := range headers {
-		if strings.TrimSpace(header.Name) == "" {
+		name := strings.TrimSpace(header.Name)
+		if name == "" {
 			continue
 		}
-		out[header.Name] = header.Value
+		lowerName := strings.ToLower(name)
+		if existingKey, exists := canonicalKeys[lowerName]; exists {
+			// HAR represents repeated fields as separate entries. Newlines mirror
+			// the runtime extractor's flattened-header surface and preserve every
+			// value without corrupting commas inside Set-Cookie Expires attributes.
+			out[existingKey] += "\n" + header.Value
+			continue
+		}
+		canonicalKeys[lowerName] = name
+		out[name] = header.Value
 	}
 	return out
 }
@@ -565,10 +612,9 @@ func salesforceActionEvidence(action *dsl.Action, rawURL string) string {
 }
 
 func extractAuraDescriptor(evidence string) string {
-	for _, match := range auraDescriptorPattern.FindAllStringSubmatch(evidence, -1) {
-		if len(match) >= 2 && strings.TrimSpace(match[1]) != "" {
-			return strings.TrimSpace(match[1])
-		}
+	match := auraDescriptorPattern.FindStringSubmatch(evidence)
+	if len(match) >= 2 {
+		return strings.TrimSpace(match[1])
 	}
 	return ""
 }
@@ -804,6 +850,72 @@ func transactionCandidates(refs []actionRef) []TransactionCandidate {
 	return out
 }
 
+type correlationNameRegistry struct {
+	used map[string]bool
+}
+
+func newCorrelationNameRegistry() *correlationNameRegistry {
+	return &correlationNameRegistry{used: map[string]bool{}}
+}
+
+func (registry *correlationNameRegistry) reserve(name string) {
+	name = strings.TrimSpace(name)
+	if name != "" {
+		registry.used[name] = true
+	}
+}
+
+func (registry *correlationNameRegistry) claim(base string) string {
+	base = correlate.Slug(base)
+	if base == "" {
+		base = "corr_value"
+	}
+	if !registry.used[base] {
+		registry.used[base] = true
+		return base
+	}
+	for suffix := 2; ; suffix++ {
+		candidate := fmt.Sprintf("%s_%d", base, suffix)
+		if !registry.used[candidate] {
+			registry.used[candidate] = true
+			return candidate
+		}
+	}
+}
+
+func correlationsWithMappedSources(correlations []correlate.Correlation, refs map[int]*actionRef) []correlate.Correlation {
+	out := make([]correlate.Correlation, 0, len(correlations))
+	for _, corr := range correlations {
+		ref := refs[corr.FoundInID]
+		if ref == nil || ref.Action == nil {
+			continue
+		}
+		out = append(out, corr)
+	}
+	return out
+}
+
+// prepareCorrelationNames reserves existing script extractors first, then gives
+// each mapped correlation a unique variable name. The returned registry remains
+// live so derived names (notably the mixed-use _encoded sibling) cannot collide
+// with either a real correlation or an existing extractor.
+func prepareCorrelationNames(correlations []correlate.Correlation, refs []actionRef) ([]correlate.Correlation, *correlationNameRegistry) {
+	registry := newCorrelationNameRegistry()
+	for _, ref := range refs {
+		if ref.Action == nil {
+			continue
+		}
+		for _, extractor := range ref.Action.Extractors {
+			registry.reserve(extractor.Name)
+		}
+	}
+	out := append([]correlate.Correlation(nil), correlations...)
+	for index := range out {
+		out[index].Name = registry.claim(out[index].Name)
+	}
+	return out, registry
+}
+
 func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry, matches map[int]int, correlations []correlate.Correlation) (*NativePreview, error) {
 	clone, err := cloneScript(script)
 	if err != nil {
@@ -814,9 +926,8 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 	clone.GeneratedFrom = "enterprise_script_archive+har"
 	ensureMetadata(clone)["salesforce_native_preview"] = true
 
-	cloneRefs := flattenRequestActions(clone)
+	cloneRefs := flattenRequestActionsForRewrite(clone)
 	harIDToRef := make(map[int]*actionRef)
-	harSurfaces := harCorrelationSurfaces(entries)
 	for refIndex, harID := range matches {
 		if refIndex >= len(cloneRefs) {
 			continue
@@ -844,15 +955,113 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 		}
 	}
 
-	vars := correlate.BuildVarMap(correlations)
-	encodedValues := make(map[string]bool)
-	for _, corr := range correlations {
+	// Correlations discovered in HAR-only traffic cannot be made executable in
+	// this script: there is nowhere to attach their source extractor. Keep only
+	// correlations whose source maps to a native action, then give every variable
+	// a globally unique name (also avoiding extractors already in the script).
+	mappedCorrelations := correlationsWithMappedSources(correlations, harIDToRef)
+	namedCorrelations, correlationNames := prepareCorrelationNames(mappedCorrelations, cloneRefs)
+	// Only high-confidence, source-mapped correlations participate in the rewrite
+	// map. Lower-confidence candidates still participate in collision ownership:
+	// otherwise a shorter automatic literal could rewrite part of a longer value
+	// that the review intentionally left untouched.
+	vars := make(map[string]string, len(namedCorrelations))
+	varSourceSequences := make(map[string]int, len(namedCorrelations))
+	applications := make(map[string]correlationApplicationStatus, len(namedCorrelations))
+	plans := make([]nativeCorrelationPlan, 0, len(namedCorrelations))
+	sourceValidator := correlate.NewExactQueryEncodingValidator()
+	for _, corr := range namedCorrelations {
 		foundRef := harIDToRef[corr.FoundInID]
-		if foundRef == nil || foundRef.Action == nil {
+		automatic := correlate.HighConfidence(corr)
+		usage := correlationUsage(corr, harIDToRef, foundRef.Sequence)
+		value := correlationValue(corr)
+		queryEncoded := correlate.QueryEncodedFormOf(value)
+		encodedConvert, encodedConvertSupported := correlate.EncodedReuseExtractorConvert(corr.Convert)
+		if encodedConvertSupported && strings.EqualFold(strings.TrimSpace(corr.Convert), "url_decode") {
+			encodedConvertSupported = correlationSourceUsesExactQueryEncoding(sourceValidator, entries, corr, queryEncoded)
+		}
+		plans = append(plans, nativeCorrelationPlan{
+			correlation:      corr,
+			foundRef:         foundRef,
+			automatic:        automatic,
+			usage:            usage,
+			value:            value,
+			queryEncoded:     queryEncoded,
+			encodedConvert:   encodedConvert,
+			encodedSupported: encodedConvertSupported,
+		})
+		status := correlationApplicationStatus{}
+		if !automatic {
+			status.reviewAction = "manual_review_required"
+		}
+		if usage.unsupportedEncoded || (usage.encoded && !encodedConvertSupported) {
+			status.reviewAction = "manual_value_replacement_required"
+		}
+		applications[corr.Name] = status
+	}
+
+	ambiguousLiterals, ambiguousPlans := nativeCorrelationReplacementCollisions(plans, joinedActionCorrelationSurfaces(cloneRefs))
+	for planIndex := range ambiguousPlans {
+		corr := plans[planIndex].correlation
+		status := applications[corr.Name]
+		status.reviewAction = "manual_value_replacement_required"
+		applications[corr.Name] = status
+	}
+
+	// Resolve ownership and reserve extractor capacity before exposing any
+	// replacement variable. A mixed raw+encoded correlation is atomic: if its
+	// source action has room for only one of the two required extractors, leave
+	// both spellings untouched rather than generating a dangling/invalid preview.
+	// Existing source extractors count against the same DSL ceiling.
+	sourceExtractorCounts := make(map[*dsl.Action]int, len(cloneRefs))
+	for index := range cloneRefs {
+		action := cloneRefs[index].Action
+		if action != nil {
+			sourceExtractorCounts[action] = len(action.Extractors)
+		}
+	}
+	for index := range plans {
+		plan := &plans[index]
+		corr := plan.correlation
+		status := applications[corr.Name]
+		plan.rawMapped = plan.automatic && plan.usage.raw && plan.value != "" && !ambiguousLiterals[plan.value]
+		plan.encodedMapped = plan.automatic && plan.usage.encoded && plan.encodedSupported && plan.queryEncoded != "" && !ambiguousLiterals[plan.queryEncoded]
+		requiredExtractors := 0
+		if plan.rawMapped || plan.encodedMapped {
+			requiredExtractors = 1
+		}
+		if plan.rawMapped && plan.encodedMapped {
+			requiredExtractors++
+		}
+		if plan.foundRef == nil || plan.foundRef.Action == nil || sourceExtractorCounts[plan.foundRef.Action]+requiredExtractors > dsl.MaxActionExtractors {
+			plan.rawMapped = false
+			plan.encodedMapped = false
+			if requiredExtractors > 0 {
+				status.reviewAction = "manual_value_replacement_required"
+			}
+			applications[corr.Name] = status
 			continue
 		}
-		usage := correlationUsage(corr, harIDToRef, harSurfaces)
-		value := correlationValue(corr)
+		sourceExtractorCounts[plan.foundRef.Action] += requiredExtractors
+
+		if plan.rawMapped {
+			vars[plan.value] = "{{var." + corr.Name + "}}"
+			varSourceSequences[plan.value] = plan.foundRef.Sequence
+		}
+		if plan.encodedMapped {
+			plan.encodedName = corr.Name
+			if plan.rawMapped {
+				plan.encodedName = correlationNames.claim(corr.Name + "_encoded")
+			}
+			vars[plan.queryEncoded] = "{{var." + plan.encodedName + "}}"
+			varSourceSequences[plan.queryEncoded] = plan.foundRef.Sequence
+		}
+		applications[corr.Name] = status
+	}
+
+	for _, plan := range plans {
+		corr := plan.correlation
+		foundRef := plan.foundRef
 		base := dsl.Extractor{
 			Name:       corr.Name,
 			Source:     corr.Source,
@@ -860,49 +1069,54 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 			Expression: corr.Expression,
 			SaveOffset: corr.SaveOffset,
 			SaveLength: corr.SaveLength,
+			Convert:    corr.Convert,
+			OnMiss:     "fail",
 		}
+		status := applications[corr.Name]
 		switch {
-		case usage.encoded && !usage.raw:
+		case plan.encodedMapped && !plan.rawMapped:
 			// Value is only ever reused percent-encoded (e.g. aura.token inside a
 			// form-urlencoded /aura body): extract it pre-encoded and substitute the
 			// encoded occurrences with the variable.
-			base.Convert = "url_encode"
+			base.Convert = plan.encodedConvert
 			addExtractorIfMissing(foundRef.Action, base)
-			if value != "" {
-				encodedValues[value] = true
-			}
-		case usage.encoded && usage.raw:
+			status.preApplied = true
+		case plan.encodedMapped && plan.rawMapped:
 			// Value is reused BOTH raw (e.g. a JSON body/header) AND percent-encoded
 			// (a form body). A single variable can only resolve one way, so emit a raw
 			// extractor for the raw occurrences plus a url_encode sibling, and route
 			// the percent-encoded literals to the sibling variable.
 			addExtractorIfMissing(foundRef.Action, base)
-			encodedName := corr.Name + "_encoded"
 			addExtractorIfMissing(foundRef.Action, dsl.Extractor{
-				Name:       encodedName,
+				Name:       plan.encodedName,
 				Source:     corr.Source,
 				Type:       corr.ExtractType,
 				Expression: corr.Expression,
 				SaveOffset: corr.SaveOffset,
 				SaveLength: corr.SaveLength,
-				Convert:    "url_encode",
+				Convert:    plan.encodedConvert,
+				OnMiss:     "fail",
 			})
-			if value != "" {
-				for _, encoded := range encodedFormsOf(value) {
-					vars[encoded] = "{{var." + encodedName + "}}"
-				}
-			}
-		default:
-			// Value reused only raw (or not reused in a correlated surface): a single
-			// raw extractor is sufficient.
+			status.preApplied = true
+		case plan.rawMapped:
+			// Raw reuse remains executable even when another consumer uses an
+			// encoding that requires manual replacement.
 			addExtractorIfMissing(foundRef.Action, base)
+			status.preApplied = true
+		default:
+			if status.reviewAction == "" {
+				status.reviewAction = "manual_value_replacement_required"
+			}
 		}
+		applications[corr.Name] = status
 	}
 	for index := range cloneRefs {
 		action := cloneRefs[index].Action
-		action.Target = correlate.ApplyVarsWithEncodedValues(action.Target, vars, encodedValues)
-		action.Body = correlate.ApplyVarsWithEncodedValues(action.Body, vars, encodedValues)
-		action.Headers = correlate.ApplyVarsToHeadersWithEncodedValues(action.Headers, vars, encodedValues)
+		actionVars := correlationVarsAvailableAfterSequence(vars, varSourceSequences, cloneRefs[index].Sequence)
+		action.Target = correlate.ApplyVars(action.Target, actionVars)
+		action.Body = correlate.ApplyVars(action.Body, actionVars)
+		action.Headers = correlate.ApplyVarsToHeaders(action.Headers, actionVars)
+		action.HeaderList = applyCorrelationVarsToHeaderList(action.HeaderList, actionVars)
 	}
 
 	synthesizeBulkPollLoops(cloneRefs)
@@ -910,7 +1124,7 @@ func buildNativePreview(script *dsl.Script, refs []actionRef, entries []harEntry
 
 	return &NativePreview{
 		Script:       clone,
-		Correlations: correlationSummaries(correlations),
+		Correlations: correlationSummaries(namedCorrelations, harIDToRef, applications),
 	}, nil
 }
 
@@ -935,8 +1149,9 @@ func collapseCometdConnectRun(actions []dsl.Action) []dsl.Action {
 			for j < len(actions) && isCometdConnectAction(&actions[j]) {
 				j++
 			}
-			if j-i >= 2 {
-				out = append(out, wrapCometdConnectLoop(actions[i], j-i))
+			if j-i >= 2 && cometdConnectExtractorsAreEquivalent(actions[i:j]) {
+				connect := actions[i]
+				out = append(out, wrapCometdConnectLoop(connect, j-i))
 				i = j
 				continue
 			}
@@ -945,6 +1160,31 @@ func collapseCometdConnectRun(actions []dsl.Action) []dsl.Action {
 		i++
 	}
 	return out
+}
+
+// cometdConnectExtractorsAreEquivalent keeps correlation timing intact when a
+// recorded connect run is replaced by one repeated action. Moving an extractor
+// that first appears on a later response onto the loop body would evaluate a
+// fail-closed extractor too early, while unioning per-response extractors could
+// also exceed the per-action DSL ceiling. Identical extractor lists already run
+// on every recorded response, so repeating the first list preserves behavior.
+func cometdConnectExtractorsAreEquivalent(actions []dsl.Action) bool {
+	if len(actions) == 0 || len(actions[0].Extractors) > dsl.MaxActionExtractors {
+		return false
+	}
+	baseline := actions[0].Extractors
+	for actionIndex := 1; actionIndex < len(actions); actionIndex++ {
+		candidate := actions[actionIndex].Extractors
+		if len(candidate) != len(baseline) {
+			return false
+		}
+		for extractorIndex := range baseline {
+			if candidate[extractorIndex] != baseline[extractorIndex] {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func isCometdConnectAction(action *dsl.Action) bool {
@@ -1251,42 +1491,240 @@ func wrapBulkStatusPollInLoop(action *dsl.Action, kind string) {
 }
 
 // correlationUse records how a correlated value is reused across later requests:
-// raw (verbatim) and/or percent-encoded (e.g. inside a form-urlencoded body). The
-// two are not mutually exclusive — a value can appear raw in one request and
-// encoded in another, which requires both a raw and a url_encode extractor.
+// raw (verbatim) and/or with the exact QueryEscape spelling produced by
+// url_encode. The two are not mutually exclusive, which requires both a raw and
+// a url_encode extractor. Unsupported encoded spellings remain review-only.
 type correlationUse struct {
-	raw     bool
-	encoded bool
+	raw                bool
+	encoded            bool
+	unsupportedEncoded bool
 }
 
-func correlationUsage(corr correlate.Correlation, refs map[int]*actionRef, harSurfaces map[int][]string) correlationUse {
+type nativeCorrelationPlan struct {
+	correlation      correlate.Correlation
+	foundRef         *actionRef
+	automatic        bool
+	usage            correlationUse
+	value            string
+	queryEncoded     string
+	encodedConvert   string
+	encodedSupported bool
+	rawMapped        bool
+	encodedMapped    bool
+	encodedName      string
+}
+
+type correlationApplicationStatus struct {
+	preApplied   bool
+	reviewAction string
+}
+
+func nativeCorrelationReplacementCollisions(plans []nativeCorrelationPlan, requestSurfaces string) (map[string]bool, map[int]bool) {
+	const comparisonLimit = 4_000_000
+
+	type literalClaim struct {
+		planIndex int
+		literal   string
+	}
+	claims := make([]literalClaim, 0, len(plans)*2)
+	for index, plan := range plans {
+		seen := make(map[string]bool)
+		add := func(literal string) {
+			if literal == "" || seen[literal] {
+				return
+			}
+			seen[literal] = true
+			claims = append(claims, literalClaim{planIndex: index, literal: literal})
+		}
+		if plan.usage.raw {
+			add(plan.value)
+		}
+		if plan.usage.encoded {
+			add(plan.queryEncoded)
+		}
+		if plan.usage.unsupportedEncoded {
+			for _, spelling := range unsupportedCorrelationEncodings(plan.value, plan.queryEncoded) {
+				add(spelling)
+			}
+		}
+	}
+
+	ambiguousLiterals := make(map[string]bool)
+	ambiguousPlans := make(map[int]bool)
+	overlapBudget := paramize.NewLiteralOverlapSearchBudget()
+	markAutomaticClaimsAmbiguous := func() {
+		for _, claim := range claims {
+			if !plans[claim.planIndex].automatic {
+				continue
+			}
+			ambiguousLiterals[claim.literal] = true
+			ambiguousPlans[claim.planIndex] = true
+		}
+	}
+	comparisons := 0
+	for leftIndex, left := range claims {
+		for _, right := range claims[leftIndex+1:] {
+			if left.planIndex == right.planIndex {
+				continue
+			}
+			// Salesforce intentionally emits paired 18-character and SaveLength=15
+			// variables from one response extractor. Their values overlap by design,
+			// but longest-first replacement makes the two exact request forms safe.
+			if nativeSalesforceIDVariantPlans(plans[left.planIndex], plans[right.planIndex]) {
+				continue
+			}
+			if !plans[left.planIndex].automatic && !plans[right.planIndex].automatic {
+				continue
+			}
+			comparisons++
+			if comparisons > comparisonLimit {
+				// Collision analysis is safety-critical: when the bounded comparison
+				// budget is exhausted, suppress every automatic claim rather than
+				// returning a partially checked replacement map.
+				markAutomaticClaimsAmbiguous()
+				return ambiguousLiterals, ambiguousPlans
+			}
+			overlaps := false
+			automaticPair := plans[left.planIndex].automatic || plans[right.planIndex].automatic
+			switch {
+			case plans[left.planIndex].automatic && plans[right.planIndex].automatic:
+				overlaps = overlapBudget.Contains(left.literal, right.literal) || overlapBudget.Contains(right.literal, left.literal)
+			case plans[left.planIndex].automatic:
+				overlaps = overlapBudget.Contains(right.literal, left.literal)
+			case plans[right.planIndex].automatic:
+				overlaps = overlapBudget.Contains(left.literal, right.literal)
+			}
+			if overlapBudget.Exhausted() {
+				markAutomaticClaimsAmbiguous()
+				return ambiguousLiterals, ambiguousPlans
+			}
+			// Containment is not the only unsafe shape: two literals whose
+			// suffix/prefix merge really occurs on a rewrite-target surface would
+			// be corrupted by single-pass replacement. Occurrence confirmation
+			// keeps disjoint usage automatic.
+			if !overlaps && automaticPair {
+				overlaps = overlapBudget.LiteralsPartiallyOverlapInSurface(requestSurfaces, left.literal, right.literal)
+				if overlapBudget.Exhausted() {
+					markAutomaticClaimsAmbiguous()
+					return ambiguousLiterals, ambiguousPlans
+				}
+			}
+			if !overlaps {
+				continue
+			}
+			ambiguousLiterals[left.literal] = true
+			ambiguousLiterals[right.literal] = true
+			ambiguousPlans[left.planIndex] = true
+			ambiguousPlans[right.planIndex] = true
+		}
+	}
+	return ambiguousLiterals, ambiguousPlans
+}
+
+func nativeSalesforceIDVariantPlans(left, right nativeCorrelationPlan) bool {
+	leftCorrelation := left.correlation
+	rightCorrelation := right.correlation
+	if leftCorrelation.FoundInID != rightCorrelation.FoundInID ||
+		leftCorrelation.Source != rightCorrelation.Source ||
+		leftCorrelation.ExtractType != rightCorrelation.ExtractType ||
+		leftCorrelation.Expression != rightCorrelation.Expression ||
+		leftCorrelation.Convert != rightCorrelation.Convert ||
+		leftCorrelation.SaveOffset != rightCorrelation.SaveOffset {
+		return false
+	}
+	if leftCorrelation.SaveLength == 15 && rightCorrelation.SaveLength == 0 {
+		return len(left.value) == 15 && len(right.value) == 18 && strings.HasPrefix(right.value, left.value)
+	}
+	if rightCorrelation.SaveLength == 15 && leftCorrelation.SaveLength == 0 {
+		return len(right.value) == 15 && len(left.value) == 18 && strings.HasPrefix(left.value, right.value)
+	}
+	return false
+}
+
+func correlationUsage(corr correlate.Correlation, refs map[int]*actionRef, sourceSequence int) correlationUse {
 	use := correlationUse{}
 	value := correlationValue(corr)
 	if strings.TrimSpace(value) == "" {
 		return use
 	}
-	encodedForms := encodedFormsOf(value)
+	queryEncoded := correlate.QueryEncodedFormOf(value)
+	unsupportedEncoded := unsupportedCorrelationEncodings(value, queryEncoded)
 	for _, harID := range corr.UsedInIDs {
 		ref := refs[harID]
-		if ref == nil || ref.Action == nil {
+		if ref == nil || ref.Action == nil || ref.Sequence <= sourceSequence {
 			continue
 		}
 		surfaces := actionCorrelationSurfaces(ref.Action)
-		if raw, ok := harSurfaces[harID]; ok {
-			surfaces = append(surfaces, raw...)
-		}
 		for _, candidate := range surfaces {
 			if strings.Contains(candidate, value) {
 				use.raw = true
 			}
-			for _, encoded := range encodedForms {
-				if strings.Contains(candidate, encoded) {
-					use.encoded = true
+			if queryEncoded != "" && strings.Contains(candidate, queryEncoded) {
+				use.encoded = true
+			}
+			for _, representation := range unsupportedEncoded {
+				if strings.Contains(candidate, representation) {
+					use.unsupportedEncoded = true
+					break
 				}
 			}
 		}
 	}
 	return use
+}
+
+func unsupportedCorrelationEncodings(value, queryEncoded string) []string {
+	seen := map[string]bool{value: true, queryEncoded: true}
+	forms := make([]string, 0, 8)
+	appendForm := func(form string) {
+		if form == "" || seen[form] {
+			return
+		}
+		seen[form] = true
+		forms = append(forms, form)
+	}
+	for _, form := range correlate.EncodedFormsOf(value) {
+		appendForm(form)
+		appendForm(lowerPercentEscapes(form))
+	}
+	appendForm(lowerPercentEscapes(queryEncoded))
+	return forms
+}
+
+func lowerPercentEscapes(value string) string {
+	encoded := []byte(value)
+	for index := 0; index+2 < len(encoded); index++ {
+		if encoded[index] != '%' {
+			continue
+		}
+		for offset := 1; offset <= 2; offset++ {
+			if encoded[index+offset] >= 'A' && encoded[index+offset] <= 'F' {
+				encoded[index+offset] += 'a' - 'A'
+			}
+		}
+		index += 2
+	}
+	return string(encoded)
+}
+
+// A url_decode source may drop its conversion for a query/form consumer only
+// when the source capture already has QueryEscape's exact spelling. Equivalent
+// decoded values are insufficient: %20 and '+' must not be interchanged.
+func correlationSourceUsesExactQueryEncoding(validator *correlate.ExactQueryEncodingValidator, entries []harEntry, corr correlate.Correlation, queryEncoded string) bool {
+	if queryEncoded == "" {
+		return false
+	}
+	var source *harEntry
+	for index := range entries {
+		if entries[index].ID == corr.FoundInID {
+			source = &entries[index]
+			break
+		}
+	}
+	if source == nil {
+		return false
+	}
+	return validator.Matches(corr.FoundInID, source.ResponseBody, source.ResponseHeaders, corr, queryEncoded)
 }
 
 // correlationValue returns the concrete value a correlation substitutes, mirroring
@@ -1298,10 +1736,22 @@ func correlationValue(corr correlate.Correlation) string {
 	return corr.SampleValue
 }
 
-// encodedFormsOf returns the distinct percent-encoded representations of value that
-// differ from the raw value (query- and path-escaped).
-func encodedFormsOf(value string) []string {
-	return correlate.EncodedFormsOf(value)
+// joinedActionCorrelationSurfaces concatenates every rewrite-target action
+// surface with a NUL separator so one strings.Contains tests whether a merged
+// literal spelling occurs on any single surface without matching across
+// boundaries.
+func joinedActionCorrelationSurfaces(refs []actionRef) string {
+	var builder strings.Builder
+	for index := range refs {
+		for _, surface := range actionCorrelationSurfaces(refs[index].Action) {
+			if surface == "" {
+				continue
+			}
+			builder.WriteString(surface)
+			builder.WriteByte(0)
+		}
+	}
+	return builder.String()
 }
 
 func actionCorrelationSurfaces(action *dsl.Action) []string {
@@ -1312,7 +1762,34 @@ func actionCorrelationSurfaces(action *dsl.Action) []string {
 	for _, value := range action.Headers {
 		surfaces = append(surfaces, value)
 	}
+	for _, header := range action.HeaderList {
+		surfaces = append(surfaces, header.Value)
+	}
 	return surfaces
+}
+
+func applyCorrelationVarsToHeaderList(headers dsl.HeaderList, vars map[string]string) dsl.HeaderList {
+	for index := range headers {
+		headers[index].Value = correlate.ApplyVars(headers[index].Value, vars)
+	}
+	return headers
+}
+
+// correlationVarsAvailableAfterSequence prevents an earlier native action from
+// referencing a variable whose extractor is attached to a later response. HAR
+// and native-script orders can diverge, and the same literal may also occur
+// incidentally before its actual response source.
+func correlationVarsAvailableAfterSequence(vars map[string]string, sourceSequences map[string]int, sequence int) map[string]string {
+	if len(vars) == 0 {
+		return nil
+	}
+	available := make(map[string]string, len(vars))
+	for literal, replacement := range vars {
+		if sourceSequence, ok := sourceSequences[literal]; ok && sourceSequence < sequence {
+			available[literal] = replacement
+		}
+	}
+	return available
 }
 
 func harCorrelationSurfaces(entries []harEntry) map[int][]string {
@@ -1352,7 +1829,147 @@ func ensureMetadata(script *dsl.Script) map[string]any {
 	return script.Metadata.Import.Preserved
 }
 
+const (
+	maxSalesforceShapeCandidates   = 4096
+	maxSalesforceShapeCorrelations = 4096
+	maxSalesforceShapeSearchBytes  = int64(64 << 20)
+	maxSalesforceConstructionBytes = int64(16 << 20)
+	maxSalesforceJSONTokens        = 8192
+	maxSalesforceJSONDepth         = 128
+)
+
+// salesforceCorrelationBudget bounds the extra Salesforce-shape passes that
+// run after the shared checked detector. In particular, composite/nested
+// candidates otherwise rescan every later request and the Bulk locator pass is
+// quadratic in the number of observations.
+type salesforceCorrelationBudget struct {
+	candidates           int
+	correlations         int
+	searchBytes          int64
+	constructionBytes    int64
+	maxCandidates        int
+	maxCorrelations      int
+	maxSearchBytes       int64
+	maxConstructionBytes int64
+}
+
+func newSalesforceCorrelationBudget() *salesforceCorrelationBudget {
+	return &salesforceCorrelationBudget{
+		maxCandidates:        maxSalesforceShapeCandidates,
+		maxCorrelations:      maxSalesforceShapeCorrelations,
+		maxSearchBytes:       maxSalesforceShapeSearchBytes,
+		maxConstructionBytes: maxSalesforceConstructionBytes,
+	}
+}
+
+func (budget *salesforceCorrelationBudget) chargeCandidates(count int) error {
+	if budget == nil || count < 0 || count > budget.maxCandidates-budget.candidates {
+		return fmt.Errorf("%w: Salesforce shape candidates exceed %d", correlate.ErrCorrelationWorkLimit, maxSalesforceShapeCandidates)
+	}
+	budget.candidates += count
+	return nil
+}
+
+func (budget *salesforceCorrelationBudget) remainingCandidates() int {
+	if budget == nil || budget.maxCandidates <= budget.candidates {
+		return 0
+	}
+	return budget.maxCandidates - budget.candidates
+}
+
+func (budget *salesforceCorrelationBudget) chargeConstruction(bytes int64) error {
+	if budget == nil || bytes < 0 || bytes > budget.maxConstructionBytes-budget.constructionBytes {
+		return fmt.Errorf("%w: Salesforce candidate/path construction exceeds %d bytes", correlate.ErrCorrelationWorkLimit, maxSalesforceConstructionBytes)
+	}
+	budget.constructionBytes += bytes
+	return nil
+}
+
+func salesforceCandidateCapacity(requested int, budget *salesforceCorrelationBudget) int {
+	remaining := budget.remainingCandidates()
+	if requested < remaining {
+		return requested
+	}
+	return remaining
+}
+
+func (budget *salesforceCorrelationBudget) chargeCorrelation() error {
+	if budget == nil || budget.correlations >= budget.maxCorrelations {
+		return fmt.Errorf("%w: Salesforce shape correlations exceed %d", correlate.ErrCorrelationWorkLimit, maxSalesforceShapeCorrelations)
+	}
+	budget.correlations++
+	return nil
+}
+
+func (budget *salesforceCorrelationBudget) chargeSearch(observation correlate.Observation) error {
+	// ObservationContains scans raw URL/body/headers, their query-decoded forms,
+	// and parsed form values. Decoding cannot expand the bytes, and parsed form
+	// keys/values are bounded by the body, so this is a conservative upper bound
+	// for one reconstruction and search.
+	cost := int64(2*len(observation.RequestURL) + 3*len(observation.RequestBody))
+	for _, value := range observation.RequestHeaders {
+		cost += int64(2 * len(value))
+	}
+	if cost < 0 || cost > budget.maxSearchBytes-budget.searchBytes {
+		return fmt.Errorf("%w: Salesforce request-surface search exceeds %d bytes", correlate.ErrCorrelationWorkLimit, maxSalesforceShapeSearchBytes)
+	}
+	budget.searchBytes += cost
+	return nil
+}
+
+// validateSalesforceJSONShape performs a streaming structural pass before any
+// shape-specific decoder materializes maps/slices or recursively constructs
+// JMESPath strings. A response may be large because it contains one large
+// scalar, but node fan-out and nesting are capped independently so a <16 MiB
+// adversarial JSON document cannot trigger unbounded candidate/path work.
+// Documents beyond the caps (standard Aura bootstrap and 2000-record SOQL
+// pages routinely are) return valid=false: that single response's shape pass
+// is skipped rather than failing the whole analysis.
+func validateSalesforceJSONShape(body string) (bool, error) {
+	if strings.TrimSpace(body) == "" {
+		return false, nil
+	}
+	decoder := json.NewDecoder(strings.NewReader(body))
+	decoder.UseNumber()
+	tokens := 0
+	depth := 0
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			return depth == 0, nil
+		}
+		if err != nil {
+			return false, nil
+		}
+		tokens++
+		if tokens > maxSalesforceJSONTokens {
+			return false, nil
+		}
+		delimiter, ok := token.(json.Delim)
+		if !ok {
+			continue
+		}
+		switch delimiter {
+		case '{', '[':
+			depth++
+			if depth > maxSalesforceJSONDepth {
+				return false, nil
+			}
+		case '}', ']':
+			depth--
+			if depth < 0 {
+				return false, nil
+			}
+		}
+	}
+}
+
 func detectCorrelations(entries []harEntry) []correlate.Correlation {
+	correlations, _, _ := detectCorrelationsChecked(entries)
+	return correlations
+}
+
+func detectCorrelationsChecked(entries []harEntry) ([]correlate.Correlation, []string, error) {
 	observations := make([]correlate.Observation, 0, len(entries))
 	for _, entry := range entries {
 		observations = append(observations, correlate.Observation{
@@ -1364,22 +1981,52 @@ func detectCorrelations(entries []harEntry) []correlate.Correlation {
 			ResponseHeaders: entry.ResponseHeaders,
 		})
 	}
+	genericCorrelations, warnings, err := correlate.DetectCheckedWithWarnings(observations)
+	if err != nil {
+		if !errors.Is(err, correlate.ErrCorrelationWorkLimit) {
+			return nil, nil, err
+		}
+		// Input pathological enough for the generic validator is not re-scanned
+		// by the Salesforce-shape passes either: degrade to no correlations with
+		// a note, keeping the surrounding review intact.
+		return nil, append(warnings, err.Error()), nil
+	}
 	seenValues := make(map[string]bool)
 	// Salesforce-shape-aware passes run first so their precise JMESPath extractors
 	// pre-empt the generic nested-JSON candidate for the same value (dedup is by
 	// value via seenValues): CometD clientId (channel-filtered array lookup),
 	// composite referenceId (referenceId-scoped lookup), and Bulk query locator
 	// (header cursor reused as a locator query parameter).
-	correlations := detectCometdCorrelations(observations, seenValues)
-	correlations = append(correlations, detectCompositeCorrelations(observations, seenValues)...)
-	correlations = append(correlations, detectBulkQueryLocatorCorrelations(observations, seenValues)...)
-	correlations = append(correlations, detectNestedJSONCorrelations(observations, seenValues)...)
-	for _, corr := range correlate.Detect(observations) {
+	budget := newSalesforceCorrelationBudget()
+	correlations := make([]correlate.Correlation, 0)
+	for _, phase := range []func([]correlate.Observation, map[string]bool, *salesforceCorrelationBudget) ([]correlate.Correlation, error){
+		detectCometdCorrelations,
+		detectCompositeCorrelations,
+		detectBulkQueryLocatorCorrelations,
+		detectNestedJSONCorrelations,
+	} {
+		phaseCorrelations, phaseErr := phase(observations, seenValues, budget)
+		correlations = append(correlations, phaseCorrelations...)
+		if phaseErr != nil {
+			if !errors.Is(phaseErr, correlate.ErrCorrelationWorkLimit) {
+				return nil, nil, phaseErr
+			}
+			// Budget exhaustion keeps every correlation found so far and stops
+			// the remaining shape passes instead of failing the analysis.
+			warnings = append(warnings, "Salesforce-shape correlation analysis was truncated: "+phaseErr.Error())
+			break
+		}
+	}
+	for _, corr := range genericCorrelations {
 		if seenValues[corr.Value] {
 			continue
 		}
 		seenValues[corr.Value] = true
 		correlations = append(correlations, corr)
+		if len(correlations) >= maxSalesforceShapeCorrelations {
+			warnings = append(warnings, fmt.Sprintf("combined Salesforce correlations were truncated at %d", maxSalesforceShapeCorrelations))
+			break
+		}
 	}
 	sort.SliceStable(correlations, func(i, j int) bool {
 		if correlations[i].Confidence != correlations[j].Confidence {
@@ -1390,7 +2037,7 @@ func detectCorrelations(entries []harEntry) []correlate.Correlation {
 		}
 		return correlations[i].FoundInID < correlations[j].FoundInID
 	})
-	return correlations
+	return correlations, warnings, nil
 }
 
 // detectCometdCorrelations finds the Bayeux clientId returned by a CometD
@@ -1399,35 +2046,55 @@ func detectCorrelations(entries []harEntry) []correlate.Correlation {
 // JMESPath extractor. The handshake response is array-rooted, so a "$.clientId"
 // jsonpath would error at replay; the channel filter is also more robust than a
 // positional [0].clientId when the response carries multiple messages.
-func detectCometdCorrelations(observations []correlate.Observation, seenValues map[string]bool) []correlate.Correlation {
+func detectCometdCorrelations(observations []correlate.Observation, seenValues map[string]bool, budget *salesforceCorrelationBudget) ([]correlate.Correlation, error) {
 	correlations := make([]correlate.Correlation, 0)
 	for index, observation := range observations {
-		for _, candidate := range cometdCandidates(observation.ResponseBody) {
+		candidates, err := cometdCandidatesChecked(observation.ResponseBody, budget)
+		if err != nil {
+			return correlations, err
+		}
+		for _, candidate := range candidates {
 			if candidate.Value == "" {
 				continue
 			}
-			for _, reuse := range salesforceCandidateReuses(observations, index, candidate.Value) {
+			reuses, err := salesforceCandidateReuses(observations, index, candidate.Value, budget)
+			if err != nil {
+				return correlations, err
+			}
+			for _, reuse := range reuses {
 				if seenValues[reuse.value] {
 					continue
+				}
+				if err := budget.chargeCorrelation(); err != nil {
+					return correlations, err
 				}
 				seenValues[reuse.value] = true
 				correlations = append(correlations, salesforceCorrelationFromCandidate(candidate, observation, reuse))
 			}
 		}
 	}
-	return correlations
+	return correlations, nil
 }
 
 // cometdCandidates parses a CometD handshake response (a JSON array of Bayeux
 // messages) and emits the clientId from the /meta/handshake message.
 func cometdCandidates(body string) []correlate.Candidate {
+	candidates, _ := cometdCandidatesChecked(body, newSalesforceCorrelationBudget())
+	return candidates
+}
+
+func cometdCandidatesChecked(body string, budget *salesforceCorrelationBudget) ([]correlate.Candidate, error) {
 	trimmed := strings.TrimSpace(body)
 	if trimmed == "" || !strings.HasPrefix(trimmed, "[") {
-		return nil
+		return nil, nil
+	}
+	valid, err := validateSalesforceJSONShape(trimmed)
+	if err != nil || !valid {
+		return nil, err
 	}
 	var messages []map[string]any
 	if err := json.Unmarshal([]byte(trimmed), &messages); err != nil {
-		return nil
+		return nil, nil
 	}
 	for _, msg := range messages {
 		if channel, _ := msg["channel"].(string); channel != "/meta/handshake" {
@@ -1436,6 +2103,9 @@ func cometdCandidates(body string) []correlate.Candidate {
 		clientID, _ := msg["clientId"].(string)
 		if clientID == "" {
 			continue
+		}
+		if err := budget.chargeCandidates(1); err != nil {
+			return nil, err
 		}
 		return []correlate.Candidate{{
 			Name:           "corr_salesforce_cometd_client_id",
@@ -1446,9 +2116,9 @@ func cometdCandidates(body string) []correlate.Candidate {
 			RuleID:         correlate.RuleSalesforceCometdClientID,
 			BaseConfidence: 0.95,
 			Reason:         "Salesforce CometD Bayeux clientId",
-		}}
+		}}, nil
 	}
-	return nil
+	return nil, nil
 }
 
 // detectCompositeCorrelations finds server-assigned record ids returned by a
@@ -1457,26 +2127,37 @@ func cometdCandidates(body string) []correlate.Candidate {
 // id is correlated rather than the recorded literal. Intra-request @{ref.field}
 // placeholders are resolved server-side and need no handling (the engine only
 // expands {{...}} tokens, so @{...} passes through verbatim).
-func detectCompositeCorrelations(observations []correlate.Observation, seenValues map[string]bool) []correlate.Correlation {
+func detectCompositeCorrelations(observations []correlate.Observation, seenValues map[string]bool, budget *salesforceCorrelationBudget) ([]correlate.Correlation, error) {
 	correlations := make([]correlate.Correlation, 0)
 	for index, observation := range observations {
 		if !strings.Contains(strings.ToLower(observation.RequestURL), "/composite") {
 			continue
 		}
-		for _, candidate := range compositeCandidates(observation.ResponseBody) {
+		candidates, err := compositeCandidatesChecked(observation.ResponseBody, budget)
+		if err != nil {
+			return correlations, err
+		}
+		for _, candidate := range candidates {
 			if candidate.Value == "" {
 				continue
 			}
-			for _, reuse := range salesforceCandidateReuses(observations, index, candidate.Value) {
+			reuses, err := salesforceCandidateReuses(observations, index, candidate.Value, budget)
+			if err != nil {
+				return correlations, err
+			}
+			for _, reuse := range reuses {
 				if seenValues[reuse.value] {
 					continue
+				}
+				if err := budget.chargeCorrelation(); err != nil {
+					return correlations, err
 				}
 				seenValues[reuse.value] = true
 				correlations = append(correlations, salesforceCorrelationFromCandidate(candidate, observation, reuse))
 			}
 		}
 	}
-	return correlations
+	return correlations, nil
 }
 
 // compositeCandidates parses Salesforce composite-family response shapes and
@@ -1484,28 +2165,38 @@ func detectCompositeCorrelations(observations []correlate.Observation, seenValue
 // by its referenceId so the extractor is unambiguous even when multiple
 // subrequests each return an id.
 func compositeCandidates(body string) []correlate.Candidate {
+	candidates, _ := compositeCandidatesChecked(body, newSalesforceCorrelationBudget())
+	return candidates
+}
+
+func compositeCandidatesChecked(body string, budget *salesforceCorrelationBudget) ([]correlate.Candidate, error) {
 	if strings.TrimSpace(body) == "" {
-		return nil
+		return nil, nil
+	}
+	valid, err := validateSalesforceJSONShape(body)
+	if err != nil || !valid {
+		return nil, err
 	}
 	var decoded map[string]any
 	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
-		return nil
+		return nil, nil
 	}
 	usedNames := map[string]int{}
 	if entries, ok := decoded["compositeResponse"].([]any); ok {
-		return flatCompositeCandidates(entries, usedNames)
+		return flatCompositeCandidates(entries, usedNames, budget)
 	}
 	if entries, ok := decoded["results"].([]any); ok {
-		return treeCompositeCandidates(entries, usedNames)
+		return treeCompositeCandidates(entries, usedNames, budget)
 	}
 	if entries, ok := decoded["graphs"].([]any); ok {
-		return graphCompositeCandidates(entries, usedNames)
+		return graphCompositeCandidates(entries, usedNames, budget)
 	}
-	return nil
+	return nil, nil
 }
 
-func flatCompositeCandidates(entries []any, usedNames map[string]int) []correlate.Candidate {
-	candidates := make([]correlate.Candidate, 0, len(entries))
+func flatCompositeCandidates(entries []any, usedNames map[string]int, budget *salesforceCorrelationBudget) ([]correlate.Candidate, error) {
+	candidates := make([]correlate.Candidate, 0, salesforceCandidateCapacity(len(entries), budget))
+	usedExpressions := make(map[string]bool)
 	for _, raw := range entries {
 		sub, ok := raw.(map[string]any)
 		if !ok {
@@ -1526,19 +2217,34 @@ func flatCompositeCandidates(entries []any, usedNames map[string]int) []correlat
 		if id == "" {
 			continue
 		}
+		if err := budget.chargeConstruction(512 + 6*int64(len(ref))); err != nil {
+			return nil, err
+		}
+		if err := budget.chargeCandidates(1); err != nil {
+			return nil, err
+		}
+		expression := "compositeResponse[?referenceId=='" + ref + "'].body.id | [0]"
+		if usedExpressions[expression] {
+			// The expression selects [0], so a duplicate referenceId can only
+			// replay the first value. Suppress later values instead of emitting an
+			// extractor that deterministically returns the wrong record id.
+			continue
+		}
+		usedExpressions[expression] = true
 		candidates = append(candidates, compositeRecordIDCandidate(
 			usedNames,
 			"salesforce_composite_"+ref,
 			id,
-			"compositeResponse[?referenceId=='"+ref+"'].body.id | [0]",
+			expression,
 			"Salesforce composite subrequest '"+ref+"' record id",
 		))
 	}
-	return candidates
+	return candidates, nil
 }
 
-func treeCompositeCandidates(entries []any, usedNames map[string]int) []correlate.Candidate {
-	candidates := make([]correlate.Candidate, 0, len(entries))
+func treeCompositeCandidates(entries []any, usedNames map[string]int, budget *salesforceCorrelationBudget) ([]correlate.Candidate, error) {
+	candidates := make([]correlate.Candidate, 0, salesforceCandidateCapacity(len(entries), budget))
+	usedExpressions := make(map[string]bool)
 	for _, raw := range entries {
 		result, ok := raw.(map[string]any)
 		if !ok {
@@ -1552,19 +2258,31 @@ func treeCompositeCandidates(entries []any, usedNames map[string]int) []correlat
 		if id == "" {
 			continue
 		}
+		if err := budget.chargeConstruction(384 + 6*int64(len(ref))); err != nil {
+			return nil, err
+		}
+		if err := budget.chargeCandidates(1); err != nil {
+			return nil, err
+		}
+		expression := "results[?referenceId=='" + ref + "'].id | [0]"
+		if usedExpressions[expression] {
+			continue
+		}
+		usedExpressions[expression] = true
 		candidates = append(candidates, compositeRecordIDCandidate(
 			usedNames,
 			"salesforce_composite_tree_"+ref,
 			id,
-			"results[?referenceId=='"+ref+"'].id | [0]",
+			expression,
 			"Salesforce composite tree result '"+ref+"' record id",
 		))
 	}
-	return candidates
+	return candidates, nil
 }
 
-func graphCompositeCandidates(graphs []any, usedNames map[string]int) []correlate.Candidate {
-	candidates := make([]correlate.Candidate, 0)
+func graphCompositeCandidates(graphs []any, usedNames map[string]int, budget *salesforceCorrelationBudget) ([]correlate.Candidate, error) {
+	candidates := make([]correlate.Candidate, 0, salesforceCandidateCapacity(len(graphs), budget))
+	usedExpressions := make(map[string]bool)
 	for _, rawGraph := range graphs {
 		graph, ok := rawGraph.(map[string]any)
 		if !ok {
@@ -1602,16 +2320,27 @@ func graphCompositeCandidates(graphs []any, usedNames map[string]int) []correlat
 			if id == "" {
 				continue
 			}
+			if err := budget.chargeConstruction(768 + 6*int64(len(graphID)+len(ref))); err != nil {
+				return nil, err
+			}
+			if err := budget.chargeCandidates(1); err != nil {
+				return nil, err
+			}
+			expression := "graphs[?graphId=='" + graphID + "'].graphResponse.compositeResponse[] | [?referenceId=='" + ref + "'].body.id | [0]"
+			if usedExpressions[expression] {
+				continue
+			}
+			usedExpressions[expression] = true
 			candidates = append(candidates, compositeRecordIDCandidate(
 				usedNames,
 				"salesforce_composite_graph_"+graphID+"_"+ref,
 				id,
-				"graphs[?graphId=='"+graphID+"'].graphResponse.compositeResponse[] | [?referenceId=='"+ref+"'].body.id | [0]",
+				expression,
 				"Salesforce composite graph '"+graphID+"' subrequest '"+ref+"' record id",
 			))
 		}
 	}
-	return candidates
+	return candidates, nil
 }
 
 func compositeRecordIDCandidate(usedNames map[string]int, nameSeed, id, expression, reason string) correlate.Candidate {
@@ -1672,12 +2401,15 @@ type salesforceCandidateReuse struct {
 	reasonSuffix string
 }
 
-func salesforceCandidateReuses(observations []correlate.Observation, startIndex int, value string) []salesforceCandidateReuse {
+func salesforceCandidateReuses(observations []correlate.Observation, startIndex int, value string, budget *salesforceCorrelationBudget) ([]salesforceCandidateReuse, error) {
 	if strings.TrimSpace(value) == "" {
-		return nil
+		return nil, nil
 	}
 	exactUsed := make([]int, 0)
 	for later := startIndex + 1; later < len(observations); later++ {
+		if err := budget.chargeSearch(observations[later]); err != nil {
+			return nil, err
+		}
 		if correlate.ObservationContains(observations[later], value) {
 			exactUsed = append(exactUsed, observations[later].ID)
 		}
@@ -1693,10 +2425,13 @@ func salesforceCandidateReuses(observations []correlate.Observation, startIndex 
 
 	id15, ok := salesforceID15(value)
 	if !ok || len(value) != 18 || id15 == value {
-		return out
+		return out, nil
 	}
 	truncatedUsed := make([]int, 0)
 	for later := startIndex + 1; later < len(observations); later++ {
+		if err := budget.chargeSearch(observations[later]); err != nil {
+			return nil, err
+		}
 		if observationContainsSalesforceID15(observations[later], id15) {
 			truncatedUsed = append(truncatedUsed, observations[later].ID)
 		}
@@ -1714,7 +2449,7 @@ func salesforceCandidateReuses(observations []correlate.Observation, startIndex 
 			reasonSuffix: " (18-character Salesforce id trimmed to 15-character request form)",
 		})
 	}
-	return out
+	return out, nil
 }
 
 func observationContainsSalesforceID15(observation correlate.Observation, id15 string) bool {
@@ -1781,7 +2516,7 @@ func salesforceCorrelationFromCandidate(candidate correlate.Candidate, observati
 	}
 }
 
-func detectBulkQueryLocatorCorrelations(observations []correlate.Observation, seenValues map[string]bool) []correlate.Correlation {
+func detectBulkQueryLocatorCorrelations(observations []correlate.Observation, seenValues map[string]bool, budget *salesforceCorrelationBudget) ([]correlate.Correlation, error) {
 	correlations := make([]correlate.Correlation, 0)
 	for index, observation := range observations {
 		if !isBulkQueryResultsURL(observation.RequestURL) {
@@ -1791,14 +2526,23 @@ func detectBulkQueryLocatorCorrelations(observations []correlate.Observation, se
 		if locator == "" || seenValues[locator] {
 			continue
 		}
+		if err := budget.chargeCandidates(1); err != nil {
+			return correlations, err
+		}
 		usedIn := make([]int, 0)
 		for later := index + 1; later < len(observations); later++ {
+			if err := budget.chargeSearch(observations[later]); err != nil {
+				return correlations, err
+			}
 			if correlate.ObservationContains(observations[later], locator) {
 				usedIn = append(usedIn, observations[later].ID)
 			}
 		}
 		if len(usedIn) == 0 {
 			continue
+		}
+		if err := budget.chargeCorrelation(); err != nil {
+			return correlations, err
 		}
 		seenValues[locator] = true
 		correlations = append(correlations, correlate.Correlation{
@@ -1815,7 +2559,7 @@ func detectBulkQueryLocatorCorrelations(observations []correlate.Observation, se
 			Reasons:     []string{"Salesforce Bulk API query Sforce-Locator response header"},
 		})
 	}
-	return correlations
+	return correlations, nil
 }
 
 func isBulkQueryResultsURL(rawURL string) bool {
@@ -1843,61 +2587,123 @@ func bulkQueryLocatorHeader(headers map[string]string) string {
 	return ""
 }
 
-func detectNestedJSONCorrelations(observations []correlate.Observation, seenValues map[string]bool) []correlate.Correlation {
+func detectNestedJSONCorrelations(observations []correlate.Observation, seenValues map[string]bool, budget *salesforceCorrelationBudget) ([]correlate.Correlation, error) {
 	correlations := make([]correlate.Correlation, 0)
 	for index, observation := range observations {
-		candidates := nestedJSONCandidates(observation.ResponseBody)
+		candidates, err := nestedJSONCandidatesChecked(observation.ResponseBody, budget)
+		if err != nil {
+			return correlations, err
+		}
 		for _, candidate := range candidates {
 			if candidate.Value == "" {
 				continue
 			}
-			for _, reuse := range salesforceCandidateReuses(observations, index, candidate.Value) {
+			reuses, err := salesforceCandidateReuses(observations, index, candidate.Value, budget)
+			if err != nil {
+				return correlations, err
+			}
+			for _, reuse := range reuses {
 				if seenValues[reuse.value] {
 					continue
+				}
+				if err := budget.chargeCorrelation(); err != nil {
+					return correlations, err
 				}
 				seenValues[reuse.value] = true
 				correlations = append(correlations, salesforceCorrelationFromCandidate(candidate, observation, reuse))
 			}
 		}
 	}
-	return correlations
+	return correlations, nil
 }
 
 func nestedJSONCandidates(body string) []correlate.Candidate {
+	candidates, _ := nestedJSONCandidatesChecked(body, newSalesforceCorrelationBudget())
+	return candidates
+}
+
+func nestedJSONCandidatesChecked(body string, budget *salesforceCorrelationBudget) ([]correlate.Candidate, error) {
 	if strings.TrimSpace(body) == "" {
-		return nil
+		return nil, nil
+	}
+	valid, err := validateSalesforceJSONShape(body)
+	if err != nil || !valid {
+		return nil, err
 	}
 	var decoded any
-	if err := json.Unmarshal([]byte(body), &decoded); err != nil {
-		return nil
+	decoder := json.NewDecoder(strings.NewReader(body))
+	decoder.UseNumber()
+	if err := decoder.Decode(&decoded); err != nil {
+		return nil, nil
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, nil
 	}
 	candidates := make([]correlate.Candidate, 0)
-	var walk func(value any, path string, key string)
-	walk = func(value any, path string, key string) {
+	var walk func(value any, path string, key string, depth int) error
+	walk = func(value any, path string, key string, depth int) error {
+		if depth > maxSalesforceJSONDepth {
+			return fmt.Errorf("%w: Salesforce JSON nesting exceeds %d", correlate.ErrCorrelationWorkLimit, maxSalesforceJSONDepth)
+		}
 		switch typed := value.(type) {
 		case map[string]any:
-			for childKey, childValue := range typed {
-				walk(childValue, appendJMESPath(path, childKey), childKey)
+			keys := make([]string, 0, len(typed))
+			for childKey := range typed {
+				keys = append(keys, childKey)
+			}
+			sort.Strings(keys)
+			for _, childKey := range keys {
+				childValue := typed[childKey]
+				// strconv.Quote can expand one input byte to as many as six output
+				// bytes (\u00XX). Charge conservatively before constructing the path.
+				if err := budget.chargeConstruction(int64(len(path)+4) + 6*int64(len(childKey))); err != nil {
+					return err
+				}
+				if err := walk(childValue, appendJMESPath(path, childKey), childKey, depth+1); err != nil {
+					return err
+				}
 			}
 		case []any:
 			for index, childValue := range typed {
-				walk(childValue, fmt.Sprintf("%s[%d]", path, index), key)
+				indexText := strconv.Itoa(index)
+				if err := budget.chargeConstruction(int64(len(path) + len(indexText) + 2)); err != nil {
+					return err
+				}
+				if err := walk(childValue, path+"["+indexText+"]", key, depth+1); err != nil {
+					return err
+				}
 			}
 		case string:
 			if len(typed) >= 6 && dynamicJSONKey(key) {
+				if err := budget.chargeConstruction(256 + int64(len(path)) + 6*int64(len(key))); err != nil {
+					return err
+				}
+				if err := budget.chargeCandidates(1); err != nil {
+					return err
+				}
 				candidates = append(candidates, nestedJSONCandidate(key, typed, path, false))
 			}
-		case float64:
+		case json.Number:
 			if dynamicJSONKey(key) {
-				value := strconv.FormatFloat(typed, 'f', -1, 64)
+				value := typed.String()
 				if len(value) >= 4 {
+					if err := budget.chargeConstruction(256 + int64(len(path)+len(value)) + 6*int64(len(key))); err != nil {
+						return err
+					}
+					if err := budget.chargeCandidates(1); err != nil {
+						return err
+					}
 					candidates = append(candidates, nestedJSONCandidate(key, value, path, true))
 				}
 			}
 		}
+		return nil
 	}
-	walk(decoded, "", "")
-	return candidates
+	if err := walk(decoded, "", "", 0); err != nil {
+		return nil, err
+	}
+	return candidates, nil
 }
 
 func nestedJSONCandidate(key, value, expression string, numeric bool) correlate.Candidate {
@@ -1935,7 +2741,11 @@ func nestedJSONCandidate(key, value, expression string, numeric bool) correlate.
 func appendJMESPath(path, key string) string {
 	segment := key
 	if !jmesIdentifierPattern.MatchString(key) {
-		segment = strconv.Quote(key)
+		quotedKey, err := json.Marshal(key)
+		if err != nil {
+			return ""
+		}
+		segment = string(quotedKey)
 	}
 	if path == "" {
 		return segment
@@ -2099,18 +2909,39 @@ func auraParamIdentifierKind(key, value string) (string, bool) {
 	return "", false
 }
 
-func correlationSummaries(correlations []correlate.Correlation) []CorrelationCandidate {
+func correlationSummaries(correlations []correlate.Correlation, refs map[int]*actionRef, applications map[string]correlationApplicationStatus) []CorrelationCandidate {
 	out := make([]CorrelationCandidate, 0, len(correlations))
 	for _, corr := range correlations {
+		foundRef := refs[corr.FoundInID]
+		if foundRef == nil {
+			continue
+		}
+		usedInSeqs := make([]int, 0, len(corr.UsedInIDs))
+		seenSeqs := map[int]bool{}
+		for _, harID := range corr.UsedInIDs {
+			usedRef := refs[harID]
+			if usedRef == nil || seenSeqs[usedRef.Sequence] {
+				continue
+			}
+			seenSeqs[usedRef.Sequence] = true
+			usedInSeqs = append(usedInSeqs, usedRef.Sequence)
+		}
+		application := applications[corr.Name]
+		reviewAction := application.reviewAction
+		if !application.preApplied && reviewAction == "" {
+			reviewAction = "manual_review_required"
+		}
 		out = append(out, CorrelationCandidate{
-			Name:       corr.Name,
-			Source:     corr.Source,
-			Expression: corr.Expression,
-			FoundInSeq: corr.FoundInID,
-			UsedInSeqs: append([]int(nil), corr.UsedInIDs...),
-			RuleID:     corr.RuleID,
-			Confidence: corr.Confidence,
-			Reasons:    append([]string(nil), corr.Reasons...),
+			Name:         corr.Name,
+			Source:       corr.Source,
+			Expression:   corr.Expression,
+			FoundInSeq:   foundRef.Sequence,
+			UsedInSeqs:   usedInSeqs,
+			RuleID:       corr.RuleID,
+			Confidence:   corr.Confidence,
+			Reasons:      append([]string(nil), corr.Reasons...),
+			PreApplied:   application.preApplied,
+			ReviewAction: reviewAction,
 		})
 	}
 	return out

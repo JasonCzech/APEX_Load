@@ -35,7 +35,11 @@ import { type BrunoInspectResponse, type BrunoProjectionPreview, type BrunoSourc
 
 export interface ScriptRecordingStatus {
   exists: boolean
+  correlation_usable?: boolean
+  correlation_unavailable_reason?: string
   request_count?: number
+  correlation_request_count?: number
+  correlation_truncated?: boolean
   source?: string
   sensitivity?: string
   captured_at?: string
@@ -166,6 +170,7 @@ type CreateAuthoringSessionRequest = {
   status?: string
   draft: ScriptDefinition
   review_state?: Record<string, unknown>
+  idempotency_key?: string
 }
 
 type AuthoringSessionApprovalResponse = {
@@ -215,17 +220,56 @@ export type BrowserToHTTPPreviewResponse = {
   warnings?: string[]
   review: {
     status: string
+	promotion_status: string
     source_browser_actions: number
     captured_requests: number
     generated_http_actions: number
     skipped_static_assets: number
-    correlation_candidates?: Array<{ name: string; source: string; value?: string; evidence?: string; action?: string }>
+    correlation_candidates?: Array<{ name: string; source: string; evidence?: string; action?: string }>
     data_source_candidates?: Array<{ name: string; source: string; value?: string; evidence?: string; action?: string }>
     auth_findings?: Array<{ severity: string; summary: string; evidence?: string; action?: string }>
     cookie_findings?: Array<{ severity: string; summary: string; evidence?: string; action?: string }>
     blocking_findings?: Array<{ severity: string; summary: string; evidence?: string; action?: string }>
     findings?: string[]
+	next_actions?: string[]
+	evidence: {
+	  replay_session_id?: string
+	  replay_session_resolved: boolean
+	  replay_session_status?: string
+	  replay_session_successful: boolean
+	  replay_network_entries?: number
+	  network_durable: boolean
+	  correlation_durable: boolean
+	  durable: boolean
+	  verification_status: string
+	  network_entries: number
+	  correlation_observations?: number
+	  source_browser_script_id?: string
+	  source_browser_script_name?: string
+	  required_artifacts?: string[]
+	}
   }
+	governance: {
+	  status: string
+	  approval_required: boolean
+	  approval_status: string
+	  approved_by?: string
+	  approved_at?: string
+	  required_evidence?: string[]
+	  blockers?: Array<{ severity: string; summary: string; evidence?: string; action?: string }>
+	  next_actions?: string[]
+	}
+	diff: {
+	  source_protocol?: string
+	  generated_protocol?: string
+	  source_browser_actions: number
+	  generated_http_actions: number
+	  captured_requests: number
+	  endpoint_coverage_pct: number
+	  hosts?: string[]
+	  methods?: string[]
+	  notes?: string[]
+	}
   scenario_template: {
     name: string
     duration: string
@@ -410,8 +454,11 @@ export function useScriptApi() {
   )
 
   const diagnoseScriptReplay = useCallback(
-    (id: string, replay: CorrelationStep[]) =>
-      request<CorrelationDiagnoseResponse>(`/scripts/${id}/diagnose-replay`, { method: 'POST', body: JSON.stringify({ replay }) }),
+    (id: string, replay: CorrelationStep[], replaySessionId?: string) =>
+      request<CorrelationDiagnoseResponse>(`/scripts/${id}/diagnose-replay`, {
+        method: 'POST',
+        body: JSON.stringify({ replay, replay_session_id: replaySessionId || undefined }),
+      }),
     [],
   )
 

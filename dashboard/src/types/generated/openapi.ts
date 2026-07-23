@@ -6,6 +6,15 @@
 
 export interface components {
   schemas: {
+    "AuthoringSessionCreateRequest": {
+      "draft"?: Record<string, unknown>;
+      "idempotency_key"?: string;
+      "name"?: string;
+      "project_id"?: string;
+      "review_state"?: Record<string, unknown>;
+      "source": string;
+      "status"?: "reviewing" | "editing" | "blocked" | "ready";
+    };
     "ErrorResponse": {
       "code"?: string;
       "error": string;
@@ -1484,14 +1493,25 @@ export interface operations {
       content: {
         "application/json": {
           "apply"?: boolean;
-          "script_id"?: string;
+          "preview_token"?: string;
+          "script_id": string;
         };
       };
     };
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "applied"?: boolean;
+            "diffs"?: Array<{
+              "kind"?: string;
+              "path"?: string;
+            }>;
+            "matched_rules"?: number;
+            "preview_token"?: string;
+            "ruleset_id"?: string;
+            "script_id"?: string;
+          };
         };
       };
       "400": {
@@ -1515,6 +1535,11 @@ export interface operations {
         };
       };
       "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -3012,10 +3037,15 @@ export interface operations {
     parameters?: never;
     requestBody: {
       content: {
-        "application/json": Record<string, unknown>;
+        "application/json": components["schemas"]["AuthoringSessionCreateRequest"];
       };
     };
     responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
       "201": {
         content: {
           "application/json": Record<string, unknown>;
@@ -3032,6 +3062,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -3214,7 +3249,23 @@ export interface operations {
     responses: {
       "201": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "created_at"?: string;
+            "description"?: string;
+            "id"?: string;
+            "name"?: string;
+            "project_id"?: string;
+            "rules"?: Array<{
+              "confidence"?: number;
+              "expression"?: string;
+              "extract_type"?: string;
+              "name"?: string;
+              "rule_id"?: string;
+              "source"?: string;
+            }>;
+            "source"?: string;
+            "updated_at"?: string;
+          };
         };
       };
       "400": {
@@ -5278,6 +5329,16 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
@@ -6541,7 +6602,9 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "deleted"?: string;
+          };
         };
       };
       "400": {
@@ -6555,6 +6618,26 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "501": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -7721,7 +7804,36 @@ export interface operations {
     parameters?: never;
     requestBody: {
       content: {
-        "application/json": Record<string, unknown>;
+        "application/json": {
+          "recorded"?: Array<{
+            "id"?: number;
+            "parent_action_name"?: string;
+            "request_body"?: string;
+            "request_body_transformed"?: boolean;
+            "request_headers"?: Record<string, unknown>;
+            "request_index"?: number;
+            "request_url"?: string;
+            "response_body"?: string;
+            "response_headers"?: Record<string, unknown>;
+            "response_status"?: number;
+            "response_success"?: boolean;
+            "step_path"?: Array<string>;
+          }>;
+          "replay"?: Array<{
+            "id"?: number;
+            "parent_action_name"?: string;
+            "request_body"?: string;
+            "request_body_transformed"?: boolean;
+            "request_headers"?: Record<string, unknown>;
+            "request_index"?: number;
+            "request_url"?: string;
+            "response_body"?: string;
+            "response_headers"?: Record<string, unknown>;
+            "response_status"?: number;
+            "response_success"?: boolean;
+            "step_path"?: Array<string>;
+          }>;
+        };
       };
     };
     responses: {
@@ -7729,11 +7841,14 @@ export interface operations {
         content: {
           "application/json": {
             "blocking"?: boolean;
+            "compared_recorded_steps"?: number;
             "counts"?: {
               "errors"?: number;
               "warnings"?: number;
             };
             "suggestions"?: Array<Record<string, unknown>>;
+            "total_recorded_steps"?: number;
+            "truncated"?: boolean;
           };
         };
       };
@@ -7748,6 +7863,21 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -7773,11 +7903,14 @@ export interface operations {
         content: {
           "application/json": {
             "blocking"?: boolean;
+            "compared_recorded_steps"?: number;
             "counts"?: {
               "errors"?: number;
               "warnings"?: number;
             };
             "suggestions"?: Array<Record<string, unknown>>;
+            "total_recorded_steps"?: number;
+            "truncated"?: boolean;
           };
         };
       };
@@ -7797,6 +7930,21 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -7867,7 +8015,22 @@ export interface operations {
               "static"?: number;
               "unknown"?: number;
             };
-            "results"?: Array<Record<string, unknown>>;
+            "results"?: Array<{
+              "class"?: "dynamic" | "static" | "unknown";
+              "confidence"?: number;
+              "convert"?: string;
+              "diff_reason"?: string;
+              "expression"?: string;
+              "extract_type"?: string;
+              "found_in_id"?: number;
+              "name"?: string;
+              "reasons"?: Array<string>;
+              "rule_id"?: string;
+              "save_length"?: number;
+              "save_offset"?: number;
+              "source"?: string;
+              "used_in_ids"?: Array<number>;
+            }>;
           };
         };
       };
@@ -7882,6 +8045,21 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -7955,14 +8133,30 @@ export interface operations {
       content: {
         "application/json": {
           "name"?: string;
-          "script_id"?: string;
+          "script_id": string;
         };
       };
     };
     responses: {
       "201": {
         content: {
-          "application/json": unknown;
+          "application/json": {
+            "created_at"?: string;
+            "description"?: string;
+            "id"?: string;
+            "name"?: string;
+            "project_id"?: string;
+            "rules"?: Array<{
+              "confidence"?: number;
+              "expression"?: string;
+              "extract_type"?: string;
+              "name"?: string;
+              "rule_id"?: string;
+              "source"?: string;
+            }>;
+            "source"?: string;
+            "updated_at"?: string;
+          };
         };
       };
       "400": {
@@ -7981,6 +8175,16 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -10071,7 +10275,45 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "completed_at"?: string;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "401": {
@@ -10271,7 +10513,23 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "created_at"?: string;
+            "description"?: string;
+            "id"?: string;
+            "name"?: string;
+            "project_id"?: string;
+            "rules"?: Array<{
+              "confidence"?: number;
+              "expression"?: string;
+              "extract_type"?: string;
+              "name"?: string;
+              "rule_id"?: string;
+              "source"?: string;
+            }>;
+            "source"?: string;
+            "updated_at"?: string;
+          };
         };
       };
       "401": {
@@ -12497,6 +12755,14 @@ export interface operations {
                 "region"?: string;
                 "restart_blocked_reason"?: string;
                 "restartable"?: boolean;
+                "runtime_capacities"?: Array<{
+                  "available": boolean;
+                  "available_vusers": number;
+                  "features"?: Array<string>;
+                  "max_vusers": number;
+                  "occupancy_mode"?: "idle" | "persistent" | "legacy";
+                  "protocol": string;
+                }>;
                 "status"?: string;
                 "supported_protocols"?: Array<string>;
                 "target"?: string;
@@ -12946,6 +13212,14 @@ export interface operations {
                   "region"?: string;
                   "restart_blocked_reason"?: string;
                   "restartable"?: boolean;
+                  "runtime_capacities"?: Array<{
+                    "available": boolean;
+                    "available_vusers": number;
+                    "features"?: Array<string>;
+                    "max_vusers": number;
+                    "occupancy_mode"?: "idle" | "persistent" | "legacy";
+                    "protocol": string;
+                  }>;
                   "status"?: string;
                   "supported_protocols"?: Array<string>;
                   "target"?: string;
@@ -13999,7 +14273,67 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "401": {
@@ -14032,7 +14366,67 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "401": {
@@ -14074,6 +14468,11 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -14204,6 +14603,14 @@ export interface operations {
               "region"?: string;
               "restart_blocked_reason"?: string;
               "restartable"?: boolean;
+              "runtime_capacities"?: Array<{
+                "available": boolean;
+                "available_vusers": number;
+                "features"?: Array<string>;
+                "max_vusers": number;
+                "occupancy_mode"?: "idle" | "persistent" | "legacy";
+                "protocol": string;
+              }>;
               "status"?: string;
               "supported_protocols"?: Array<string>;
               "target"?: string;
@@ -15477,6 +15884,14 @@ export interface operations {
                 "region"?: string;
                 "restart_blocked_reason"?: string;
                 "restartable"?: boolean;
+                "runtime_capacities"?: Array<{
+                  "available": boolean;
+                  "available_vusers": number;
+                  "features"?: Array<string>;
+                  "max_vusers": number;
+                  "occupancy_mode"?: "idle" | "persistent" | "legacy";
+                  "protocol": string;
+                }>;
                 "status"?: string;
                 "supported_protocols"?: Array<string>;
                 "target"?: string;
@@ -18903,7 +19318,28 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "correlation_rulesets"?: Array<{
+              "created_at"?: string;
+              "description"?: string;
+              "id"?: string;
+              "name"?: string;
+              "project_id"?: string;
+              "rules"?: Array<{
+                "confidence"?: number;
+                "expression"?: string;
+                "extract_type"?: string;
+                "name"?: string;
+                "rule_id"?: string;
+                "source"?: string;
+              }>;
+              "source"?: string;
+              "updated_at"?: string;
+            }>;
+            "count"?: number;
+            "limit"?: number;
+            "offset"?: number;
+          };
         };
       };
       "401": {
@@ -21344,7 +21780,45 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "completed_at"?: string;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "401": {
@@ -21415,7 +21889,67 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "401": {
@@ -21453,7 +21987,67 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "401": {
@@ -22657,7 +23251,6 @@ export interface operations {
                 "evidence"?: string;
                 "name"?: string;
                 "source"?: string;
-                "value"?: string;
               }>;
               "correlation_engine"?: string;
               "data_source_candidates"?: Array<{
@@ -22668,12 +23261,20 @@ export interface operations {
                 "value"?: string;
               }>;
               "evidence"?: {
+                "correlation_durable"?: boolean;
                 "correlation_observations"?: number;
+                "durable"?: boolean;
+                "network_durable"?: boolean;
                 "network_entries"?: number;
+                "replay_network_entries"?: number;
                 "replay_session_id"?: string;
+                "replay_session_resolved"?: boolean;
+                "replay_session_status"?: string;
+                "replay_session_successful"?: boolean;
                 "required_artifacts"?: Array<string>;
                 "source_browser_script_id"?: string;
                 "source_browser_script_name"?: string;
+                "verification_status"?: string;
               };
               "findings"?: Array<string>;
               "generated_http_actions"?: number;
@@ -22718,6 +23319,11 @@ export interface operations {
         };
       };
       "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -27113,7 +27719,45 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "completed_at"?: string;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "401": {
@@ -27184,7 +27828,67 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "401": {
@@ -27222,7 +27926,67 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "401": {
@@ -28822,7 +29586,7 @@ export interface operations {
           "project_id"?: string;
           "redaction_rules"?: Array<Record<string, unknown>>;
           "replay_session_id"?: string;
-          "script"?: Record<string, unknown>;
+          "script": Record<string, unknown>;
           "start_paused"?: boolean;
           "variables"?: Record<string, unknown>;
         };
@@ -28831,7 +29595,68 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "preflight"?: {
+              "action_count"?: number;
+              "browser_required"?: boolean;
+              "checks"?: Array<{
+                "detail"?: string;
+                "id"?: string;
+                "label"?: string;
+                "status"?: string;
+              }>;
+              "data_source_count"?: number;
+              "expected_action_count"?: number;
+              "issues"?: Array<string>;
+              "missing_secrets"?: Array<string>;
+              "missing_variables"?: Array<string>;
+              "parameter_count"?: number;
+              "required_secrets"?: Array<string>;
+              "runtime_prerequisites"?: Array<string>;
+              "valid"?: boolean;
+              "warnings"?: Array<string>;
+            };
+            "replay_session_id"?: string;
+            "script_id"?: string;
+            "session"?: {
+              "completed_at"?: string;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+            "warnings"?: Array<string>;
+          };
         };
       };
       "400": {
@@ -28849,6 +29674,21 @@ export interface operations {
           "application/json": components["schemas"]["ErrorResponse"];
         };
       };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
       "default": {
         content?: never;
       };
@@ -28860,7 +29700,7 @@ export interface operations {
         "id": string;
       };
     };
-    requestBody: {
+    requestBody?: {
       content: {
         "application/json": {
           "breakpoints"?: Array<number>;
@@ -28879,7 +29719,68 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "preflight"?: {
+              "action_count"?: number;
+              "browser_required"?: boolean;
+              "checks"?: Array<{
+                "detail"?: string;
+                "id"?: string;
+                "label"?: string;
+                "status"?: string;
+              }>;
+              "data_source_count"?: number;
+              "expected_action_count"?: number;
+              "issues"?: Array<string>;
+              "missing_secrets"?: Array<string>;
+              "missing_variables"?: Array<string>;
+              "parameter_count"?: number;
+              "required_secrets"?: Array<string>;
+              "runtime_prerequisites"?: Array<string>;
+              "valid"?: boolean;
+              "warnings"?: Array<string>;
+            };
+            "replay_session_id"?: string;
+            "script_id"?: string;
+            "session"?: {
+              "completed_at"?: string;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+            "warnings"?: Array<string>;
+          };
         };
       };
       "400": {
@@ -28898,6 +29799,21 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -28984,7 +29900,91 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "debug_session_id"?: string;
+            "preflight"?: {
+              "action_count"?: number;
+              "browser_required"?: boolean;
+              "checks"?: Array<{
+                "detail"?: string;
+                "id"?: string;
+                "label"?: string;
+                "status"?: string;
+              }>;
+              "data_source_count"?: number;
+              "expected_action_count"?: number;
+              "issues"?: Array<string>;
+              "missing_secrets"?: Array<string>;
+              "missing_variables"?: Array<string>;
+              "parameter_count"?: number;
+              "required_secrets"?: Array<string>;
+              "runtime_prerequisites"?: Array<string>;
+              "valid"?: boolean;
+              "warnings"?: Array<string>;
+            };
+            "replay_session_id"?: string;
+            "script_id"?: string;
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+            "warnings"?: Array<string>;
+          };
         };
       };
       "400": {
@@ -28998,6 +29998,21 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -29041,7 +30056,91 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "debug_session_id"?: string;
+            "preflight"?: {
+              "action_count"?: number;
+              "browser_required"?: boolean;
+              "checks"?: Array<{
+                "detail"?: string;
+                "id"?: string;
+                "label"?: string;
+                "status"?: string;
+              }>;
+              "data_source_count"?: number;
+              "expected_action_count"?: number;
+              "issues"?: Array<string>;
+              "missing_secrets"?: Array<string>;
+              "missing_variables"?: Array<string>;
+              "parameter_count"?: number;
+              "required_secrets"?: Array<string>;
+              "runtime_prerequisites"?: Array<string>;
+              "valid"?: boolean;
+              "warnings"?: Array<string>;
+            };
+            "replay_session_id"?: string;
+            "script_id"?: string;
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+            "warnings"?: Array<string>;
+          };
         };
       };
       "400": {
@@ -29060,6 +30159,21 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -29099,7 +30213,91 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "debug_session_id"?: string;
+            "preflight"?: {
+              "action_count"?: number;
+              "browser_required"?: boolean;
+              "checks"?: Array<{
+                "detail"?: string;
+                "id"?: string;
+                "label"?: string;
+                "status"?: string;
+              }>;
+              "data_source_count"?: number;
+              "expected_action_count"?: number;
+              "issues"?: Array<string>;
+              "missing_secrets"?: Array<string>;
+              "missing_variables"?: Array<string>;
+              "parameter_count"?: number;
+              "required_secrets"?: Array<string>;
+              "runtime_prerequisites"?: Array<string>;
+              "valid"?: boolean;
+              "warnings"?: Array<string>;
+            };
+            "replay_session_id"?: string;
+            "script_id"?: string;
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+            "warnings"?: Array<string>;
+          };
         };
       };
       "400": {
@@ -29113,6 +30311,21 @@ export interface operations {
         };
       };
       "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -29156,7 +30369,91 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "debug_session_id"?: string;
+            "preflight"?: {
+              "action_count"?: number;
+              "browser_required"?: boolean;
+              "checks"?: Array<{
+                "detail"?: string;
+                "id"?: string;
+                "label"?: string;
+                "status"?: string;
+              }>;
+              "data_source_count"?: number;
+              "expected_action_count"?: number;
+              "issues"?: Array<string>;
+              "missing_secrets"?: Array<string>;
+              "missing_variables"?: Array<string>;
+              "parameter_count"?: number;
+              "required_secrets"?: Array<string>;
+              "runtime_prerequisites"?: Array<string>;
+              "valid"?: boolean;
+              "warnings"?: Array<string>;
+            };
+            "replay_session_id"?: string;
+            "script_id"?: string;
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+            "warnings"?: Array<string>;
+          };
         };
       };
       "400": {
@@ -29175,6 +30472,21 @@ export interface operations {
         };
       };
       "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -29258,7 +30570,67 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "400": {
@@ -29305,7 +30677,67 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "400": {
@@ -29381,7 +30813,45 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "completed_at"?: string;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "401": {
@@ -29447,7 +30917,67 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "401": {
@@ -29480,7 +31010,67 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "401": {
@@ -30706,13 +32296,41 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": Record<string, unknown>;
+        "application/json": {
+          "description"?: string;
+          "expected_updated_at": string;
+          "name": string;
+          "rules"?: Array<{
+            "confidence"?: number;
+            "expression"?: string;
+            "extract_type"?: string;
+            "name"?: string;
+            "rule_id"?: string;
+            "source"?: string;
+          }>;
+        };
       };
     };
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "created_at"?: string;
+            "description"?: string;
+            "id"?: string;
+            "name"?: string;
+            "project_id"?: string;
+            "rules"?: Array<{
+              "confidence"?: number;
+              "expression"?: string;
+              "extract_type"?: string;
+              "name"?: string;
+              "rule_id"?: string;
+              "source"?: string;
+            }>;
+            "source"?: string;
+            "updated_at"?: string;
+          };
         };
       };
       "400": {
@@ -32022,7 +33640,67 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "400": {
@@ -32064,7 +33742,67 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "400": {
@@ -32106,7 +33844,67 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "400": {
@@ -32148,7 +33946,67 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "session"?: {
+              "break_on_failure"?: boolean;
+              "breakpoints"?: Array<{
+                "action_index"?: number;
+                "phase"?: string;
+                "request_index"?: number;
+                "step_path"?: Array<string>;
+              }>;
+              "completed_at"?: string;
+              "condition_evidence"?: Record<string, unknown>;
+              "current_action"?: Record<string, unknown>;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "log_level"?: string;
+              "logs"?: Array<{
+                "action_index"?: number;
+                "action_name"?: string;
+                "category"?: string;
+                "id"?: string;
+                "level"?: string;
+                "message"?: string;
+                "phase"?: string;
+                "raw"?: string;
+                "timestamp"?: string;
+              }>;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "raw_output"?: Array<string>;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+          };
         };
       };
       "400": {
@@ -33135,11 +34993,62 @@ export interface operations {
         "id": string;
       };
     };
-    requestBody?: never;
+    requestBody?: {
+      content: {
+        "application/json": {
+          "replay_session_id"?: string;
+        };
+      };
+    };
     responses: {
       "201": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": {
+            "replay_session"?: {
+              "completed_at"?: string;
+              "current_event"?: Record<string, unknown>;
+              "current_event_index"?: number;
+              "error"?: string;
+              "events"?: Array<Record<string, unknown>>;
+              "group"?: string;
+              "id"?: string;
+              "mode"?: string;
+              "preflight"?: {
+                "action_count"?: number;
+                "browser_required"?: boolean;
+                "checks"?: Array<{
+                  "detail"?: string;
+                  "id"?: string;
+                  "label"?: string;
+                  "status"?: string;
+                }>;
+                "data_source_count"?: number;
+                "expected_action_count"?: number;
+                "issues"?: Array<string>;
+                "missing_secrets"?: Array<string>;
+                "missing_variables"?: Array<string>;
+                "parameter_count"?: number;
+                "required_secrets"?: Array<string>;
+                "runtime_prerequisites"?: Array<string>;
+                "valid"?: boolean;
+                "warnings"?: Array<string>;
+              };
+              "project_id"?: string;
+              "protocol"?: string;
+              "report"?: Record<string, unknown>;
+              "runtime_profile"?: Record<string, unknown>;
+              "script_id"?: string;
+              "started_at"?: string;
+              "status"?: string;
+            };
+            "replay_session_id"?: string;
+            "warnings"?: Array<string>;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "401": {
@@ -33163,6 +35072,16 @@ export interface operations {
         };
       };
       "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

@@ -77,6 +77,26 @@ never receive the write-enable setting. See
 [Project Secrets](../../../docs/PROJECT_SECRETS.md) for security and runtime
 delivery details.
 
+Java Vuser execution is also opt-in. Set `javaVuser.enabled=true` to add the
+credential-minimized runner to each generator pod. The runner binds only the
+shared pod loopback interface and receives no generator credentials or
+platform-identity mounts. The stock non-privileged sidecar has no writable
+cgroup v2 delegation and therefore supports legacy `full_lifecycle` execution
+only; combined persistent imports fail capability preflight with
+`persistent_lifecycle_unavailable`. Do not use a privileged host-cgroup mount
+as a workaround. A persistent lifecycle requires a separately governed Windows
+runner or Linux runner with a narrowly delegated cgroup subtree.
+
+The runner is released only in the `standard` coordinate: an empty
+`javaVuser.runner.image.tag` derives
+`<base image.tag>-standard`, including when controller/generator images use the
+enterprise profile. Set an explicit runner tag for a signed custom image.
+Supply precompiled classes/JARs through that image or set
+`javaVuser.assets.existingClaim` to a read-only PVC; source compilation and
+artifact upload are intentionally out of scope. See
+[`docs/JAVA_VUSER_RUNTIME.md`](../../../docs/JAVA_VUSER_RUNTIME.md) for the JDK,
+classpath, and trust contract.
+
 Bruno source import is available independently of runner deployment. Enable it
 with `bruno.importEnabled=true` and configure a wrapping key. To enable
 canonical Bruno execution, also set `bruno.enabled=true` and provide:

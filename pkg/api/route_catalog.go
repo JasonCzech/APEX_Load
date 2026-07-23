@@ -121,8 +121,8 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodGet, "/api/v1/downloads/recording-agent/latest/checksum", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/downloads/desktop/latest", viewerGlobalAccess()),
 	routeAuth(http.MethodGet, "/api/v1/downloads/desktop/latest/checksum", viewerGlobalAccess()),
-	routeAuth(http.MethodPost, "/api/v1/correlations/diagnose", accessRequirement{AuthenticatedOnly: true}),
-	routeAuth(http.MethodPost, "/api/v1/correlations/diff", accessRequirement{AuthenticatedOnly: true}),
+	routeAuth(http.MethodPost, "/api/v1/correlations/diagnose", accessRequirement{AuthenticatedOnly: true, MaxBodyBytes: maxCorrelationRequestBodyBytes}),
+	routeAuth(http.MethodPost, "/api/v1/correlations/diff", accessRequirement{AuthenticatedOnly: true, MaxBodyBytes: maxCorrelationRequestBodyBytes}),
 	routeAuth(http.MethodPost, "/api/v1/selectors/diagnose", accessRequirement{AuthenticatedOnly: true}),
 	routeAuth(http.MethodPost, "/api/v1/scripts/import/asyncapi", editorImportAccess(resolveImportProjectIDFromJSONOrForm, webAPIImportMaxBodyBytes)),
 	routeAuth(http.MethodGet, "/api/v1/scripts/import/asyncapi/support-matrix", viewerGlobalAccess()),
@@ -296,7 +296,7 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/bruno-imports/rollback", editorProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/bruno-projection/preview", editorProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/bruno-projection/commit", editorProjectAccess(resolveScriptProjectID)),
-	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/diagnose-replay", editorProjectAccess(resolveScriptProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/diagnose-replay", editorProjectAccessWithBodyLimit(resolveScriptProjectID, maxCorrelationRequestBodyBytes)),
 	routeAuth(http.MethodPost, "/api/v1/tests/{id}/github/check-run", editorProjectAccess(resolveTestProjectID)),
 
 	// Capacity estimate (write-level, project-scoped).
@@ -353,6 +353,14 @@ func editorProjectAccess(lookup projectScopedLookup) accessRequirement {
 		ProjectRoles:  []string{RoleEditor, RoleProjectAdmin},
 		ProjectLookup: lookup,
 	}
+}
+
+// editorProjectAccessWithBodyLimit grants normal editor access while applying
+// a route-specific JSON body limit to non-upload mutation endpoints.
+func editorProjectAccessWithBodyLimit(lookup projectScopedLookup, maxBody int64) accessRequirement {
+	req := editorProjectAccess(lookup)
+	req.MaxBodyBytes = maxBody
+	return req
 }
 
 // editorImportAccess is editorProjectAccess with an upload body-size limit.
