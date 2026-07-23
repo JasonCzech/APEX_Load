@@ -4,6 +4,7 @@ import type { ScriptConfig, ScriptDefinition } from '../types/scripts'
 import {
   buildScriptRuntimeSummary,
   cloneScriptRuntimeConfig,
+  formatBrowserEmulationSummary,
   formatContentChecks,
   formatDFEChain,
   formatKeyValueLines,
@@ -12,6 +13,7 @@ import {
   formatScriptProtocolLabel,
   getImportedRuntimeSectionId,
   getRuntimeProtocolCapabilities,
+  httpTransportTabIsAvailable,
   parseContentChecks,
   parseDFEChain,
   parseExactLineList,
@@ -70,6 +72,36 @@ describe('scriptEditorRuntimeSettingsModel', () => {
     expect(runtimeSettingsSectionIsAvailable('java_vuser', 'java_vuser')).toBe(true)
     expect(runtimeSettingsSectionIsAvailable('java_vuser', 'http')).toBe(false)
     expect(runtimeSettingsSectionIsAvailable('errors', 'grpc')).toBe(true)
+  })
+
+  it('gates browser emulation to HTTP-transport protocols (never the browser protocol)', () => {
+    expect(getRuntimeProtocolCapabilities('http')).toMatchObject({ browserEmulation: true })
+    expect(getRuntimeProtocolCapabilities('soap')).toMatchObject({ browserEmulation: true })
+    expect(getRuntimeProtocolCapabilities('java_http')).toMatchObject({ browserEmulation: true })
+    expect(getRuntimeProtocolCapabilities('browser')).toMatchObject({ browserEmulation: false })
+    expect(getRuntimeProtocolCapabilities('grpc')).toMatchObject({ browserEmulation: false })
+    expect(runtimeSettingsSectionIsAvailable('browser_emulation', 'http')).toBe(true)
+    expect(runtimeSettingsSectionIsAvailable('browser_emulation', 'soap')).toBe(true)
+    expect(runtimeSettingsSectionIsAvailable('browser_emulation', 'java_http')).toBe(true)
+    expect(runtimeSettingsSectionIsAvailable('browser_emulation', 'browser')).toBe(false)
+    expect(runtimeSettingsSectionIsAvailable('browser_emulation', 'grpc')).toBe(false)
+    expect(runtimeSettingsSectionIsAvailable('browser_emulation', 'java_vuser')).toBe(false)
+  })
+
+  it('shows the Playwright browser sub-tab only for browser-protocol scripts', () => {
+    expect(httpTransportTabIsAvailable('browser', 'browser')).toBe(true)
+    expect(httpTransportTabIsAvailable('browser', 'http')).toBe(false)
+    expect(httpTransportTabIsAvailable('browser', 'soap')).toBe(false)
+    expect(httpTransportTabIsAvailable('connection', 'http')).toBe(true)
+    expect(httpTransportTabIsAvailable('timeouts', 'browser')).toBe(true)
+  })
+
+  it('summarizes browser emulation for the nav button', () => {
+    expect(formatBrowserEmulationSummary(undefined)).toBe('Engine default')
+    expect(formatBrowserEmulationSummary({})).toBe('Engine default')
+    expect(formatBrowserEmulationSummary({ mode: 'custom', custom_user_agent: 'X/1' })).toBe('Custom UA')
+    expect(formatBrowserEmulationSummary({ mode: 'specific', browser_type: 'chrome', browser_version: '126', platform: 'windows' })).toBe('chrome 126 · windows')
+    expect(formatBrowserEmulationSummary({ mode: 'specific', browser_type: 'safari' })).toBe('safari')
   })
 
   it('preserves explicit false and zero values instead of treating them as inheritance', () => {

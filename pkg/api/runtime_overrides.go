@@ -311,6 +311,9 @@ func applyRuntimeOverrides(script *dsl.Script, overrides *RuntimeSettingsOverrid
 	if overrides.JavaVuser != nil {
 		applyJavaVuserRuntimeOverride(&script.Config.JavaVuser, overrides.JavaVuser)
 	}
+	if overrides.BrowserEmulation != nil {
+		script.Config.BrowserEmulation = cloneViaJSON(overrides.BrowserEmulation)
+	}
 	if overrides.BrowserConfig != nil {
 		script.Config.Browser = *cloneViaJSON(overrides.BrowserConfig)
 	} else if overrides.Browser != nil {
@@ -418,6 +421,7 @@ func cloneRuntimeSettings(overrides *RuntimeSettingsOverride) *RuntimeSettingsOv
 	clone.HTTP = cloneViaJSON(overrides.HTTP)
 	clone.WebRuntime = cloneViaJSON(overrides.WebRuntime)
 	clone.BrowserConfig = cloneViaJSON(overrides.BrowserConfig)
+	clone.BrowserEmulation = cloneViaJSON(overrides.BrowserEmulation)
 	clone.JavaVuser = cloneViaJSON(overrides.JavaVuser)
 	if overrides.Browser != nil {
 		browser := *overrides.Browser
@@ -649,6 +653,9 @@ func mergeRuntimeSettings(base *RuntimeSettingsOverride, group *RuntimeSettingsO
 	}
 	if group.BrowserConfig != nil {
 		merged.BrowserConfig = cloneViaJSON(group.BrowserConfig)
+	}
+	if group.BrowserEmulation != nil {
+		merged.BrowserEmulation = cloneViaJSON(group.BrowserEmulation)
 	}
 	if group.Browser != nil {
 		if group.BrowserConfig == nil && merged.BrowserConfig != nil {

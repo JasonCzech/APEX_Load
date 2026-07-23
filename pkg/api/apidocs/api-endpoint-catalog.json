@@ -1314,6 +1314,16 @@
     },
     {
       "method": "GET",
+      "path": "/api/v1/dsl/browser-emulation-catalog",
+      "operationId": "handleBrowserEmulationCatalog",
+      "summary": "Browser Emulation Catalog",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; service-account scope: read"
+    },
+    {
+      "method": "GET",
       "path": "/api/v1/dsl/config-defaults",
       "operationId": "handleConfigDefaults",
       "summary": "Config Defaults",

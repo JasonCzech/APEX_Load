@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 
-import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
+import type { BrowserEmulationCatalog, ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
+import { useSystemApi } from '../hooks/api/useSystemApi'
 import { jmsProviderForProtocol } from './scriptEditorHelpers'
 import { JavaEnvSettingsFields } from './JavaEnvSettingsFields'
 import { readImportedJavaVMParameters } from './scriptEditorImportModel'
@@ -10,9 +11,11 @@ import {
   lookupBrowserDeviceProfile,
 } from './scriptEditorWorkbench'
 import {
+  FALLBACK_BROWSER_EMULATION_CATALOG,
   HTTP_TRANSPORT_TAB_OPTIONS,
   SCRIPT_PROTOCOL_OPTIONS,
   buildScriptRuntimeSummary,
+  formatBrowserEmulationSummary,
   formatContentChecks,
   formatDFEChain,
   formatKeyValueLines,
@@ -22,6 +25,7 @@ import {
   formatRuntimeSettingStatusLabel,
   formatScriptProtocolLabel,
   getRuntimeProtocolCapabilities,
+  httpTransportTabIsAvailable,
   parseContentChecks,
   parseDFEChain,
   parseKeyValueLines,
@@ -306,6 +310,16 @@ function RuntimeSectionIcon({ section }: { section: RuntimeSettingsSectionId }) 
             <path d="M6 21h12" />
           </>
         )
+      case 'browser_emulation':
+        return (
+          <>
+            <rect x="3" y="4" width="18" height="16" rx="2" />
+            <path d="M3 8h18" />
+            <circle cx="12" cy="14" r="3.2" />
+            <path d="M8.8 14h6.4" />
+            <path d="M12 10.8a5.5 5.5 0 0 1 0 6.4" />
+          </>
+        )
       case 'web_runtime':
         return (
           <>
@@ -398,6 +412,46 @@ export function ScriptRuntimeSettingsView({
   const saveScriptTitle = saveTitle
   const persistentJavaVuserLifecycle = isJavaVuserScript && usesPersistentJavaVuserLifecycle(script)
   const importedJavaVMParameters = isJavaVuserScript ? readImportedJavaVMParameters(script.metadata?.import) : []
+  const supportsBrowserEmulation = capabilities.browserEmulation
+
+  // The 'browser' sub-tab edits config.browser.* (Playwright runtime) and is
+  // shown only for browser-protocol scripts; HTTP scripts use the top-level
+  // Browser Emulation section. Clamp a stale hidden tab to the first visible.
+  const visibleHTTPTransportTabs = HTTP_TRANSPORT_TAB_OPTIONS.filter(tab => httpTransportTabIsAvailable(tab.id, script.protocol))
+  const effectiveHTTPTransportTab: HTTPTransportTabId = visibleHTTPTransportTabs.some(tab => tab.id === activeHTTPTransportTab)
+    ? activeHTTPTransportTab
+    : (visibleHTTPTransportTabs[0]?.id ?? 'timeouts')
+
+  // Browser-emulation catalog: seeded with the bundled fallback, refreshed from
+  // the controller so dropdowns stay in lockstep with replay UA resolution.
+  const [browserEmulationCatalog, setBrowserEmulationCatalog] = useState<BrowserEmulationCatalog>(FALLBACK_BROWSER_EMULATION_CATALOG)
+  const { getBrowserEmulationCatalog } = useSystemApi()
+  useEffect(() => {
+    if (!supportsBrowserEmulation) return
+    let cancelled = false
+    try {
+      getBrowserEmulationCatalog()
+        .then((catalog) => {
+          if (!cancelled && catalog?.browsers?.length) setBrowserEmulationCatalog(catalog)
+        })
+        .catch(() => { /* keep the bundled fallback */ })
+    } catch { /* keep the bundled fallback */ }
+    return () => { cancelled = true }
+  }, [supportsBrowserEmulation, getBrowserEmulationCatalog])
+
+  const browserEmulation = script.config.browser_emulation
+  const browserEmulationMode = browserEmulation?.mode === 'custom' ? 'custom' : browserEmulation?.mode === 'specific' ? 'specific' : ''
+  const browserEmulationCache = browserEmulation?.cache
+  const selectedEmulationBrowser = browserEmulationCatalog.browsers.find(browser => browser.type === browserEmulation?.browser_type)
+  const updateBrowserEmulation = (patch: Record<string, unknown>) => {
+    updateField('config.browser_emulation', { ...(script.config.browser_emulation || {}), ...patch })
+  }
+  const updateBrowserEmulationCache = (patch: Record<string, unknown>) => {
+    updateField('config.browser_emulation', {
+      ...(script.config.browser_emulation || {}),
+      cache: { ...(script.config.browser_emulation?.cache || {}), ...patch },
+    })
+  }
 
   const addSoapNamespace = () => {
     const key = window.prompt('Namespace prefix:')
@@ -541,6 +595,13 @@ export function ScriptRuntimeSettingsView({
         <RuntimeSectionIcon section="http" />
         <span className="section-label">HTTP Transport</span>
         <span className="section-summary">{httpProxySummary}</span>
+      </button>
+    )}
+    {supportsBrowserEmulation && (
+      <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('browser_emulation') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('browser_emulation')}>
+        <RuntimeSectionIcon section="browser_emulation" />
+        <span className="section-label">Browser Emulation</span>
+        <span className="section-summary">{formatBrowserEmulationSummary(script.config.browser_emulation)}</span>
       </button>
     )}
     {isSoapScript && (
@@ -1240,22 +1301,22 @@ export function ScriptRuntimeSettingsView({
     {runtimeSectionIsActive('http') && (
       <div className="section-body">
         <div className="http-transport-tabs" role="tablist" aria-label="HTTP Transport option groups">
-          {HTTP_TRANSPORT_TAB_OPTIONS.map(tab => (
+          {visibleHTTPTransportTabs.map(tab => (
             <button
               key={tab.id}
               type="button"
               role="tab"
               id={`http-transport-tab-${tab.id}`}
               aria-controls={`http-transport-panel-${tab.id}`}
-              aria-selected={activeHTTPTransportTab === tab.id}
-              className={`http-transport-tab ${activeHTTPTransportTab === tab.id ? 'active' : ''}`}
+              aria-selected={effectiveHTTPTransportTab === tab.id}
+              className={`http-transport-tab ${effectiveHTTPTransportTab === tab.id ? 'active' : ''}`}
               onClick={() => setActiveHTTPTransportTab(tab.id)}
             >
               {tab.label}
             </button>
           ))}
         </div>
-        {activeHTTPTransportTab === 'timeouts' && <div
+        {effectiveHTTPTransportTab === 'timeouts' && <div
           id="http-transport-panel-timeouts"
           className="settings-sub-group http-transport-tab-panel"
           role="tabpanel"
@@ -1277,7 +1338,7 @@ export function ScriptRuntimeSettingsView({
                 onChangeMs={value => updateField('config.http', { ...script.config.http, idle_timeout_ms: value ?? 0 })} /></label>
           </div>
         </div>}
-        {activeHTTPTransportTab === 'connection' && <div
+        {effectiveHTTPTransportTab === 'connection' && <div
           id="http-transport-panel-connection"
           className="settings-sub-group http-transport-tab-panel"
           role="tabpanel"
@@ -1298,9 +1359,21 @@ export function ScriptRuntimeSettingsView({
             <label><span>Max Redirects</span>
               <input type="number" value={script.config.http?.max_redirects ?? 10}
                 onChange={e => updateField('config.http', { ...script.config.http, max_redirects: Number(e.target.value) })} /></label>
+            <label className="full-width"><span>User-Agent</span>
+              <input value={script.config.http?.user_agent || ''} placeholder="Mozilla/5.0 ..."
+                onChange={e => updateField('config.http', { ...script.config.http, user_agent: e.target.value })} /></label>
+            {supportsBrowserEmulation && browserEmulationMode !== '' && (
+              <div className="form-hint full-width">Overridden by the Browser Emulation tab while a browser selection is active.</div>
+            )}
+            <label><span>Accept-Encoding</span>
+              <input value={script.config.http?.accept_encoding || ''} placeholder="gzip, deflate, br"
+                onChange={e => updateField('config.http', { ...script.config.http, accept_encoding: e.target.value })} /></label>
+            <label><span>Accept-Language</span>
+              <input value={script.config.http?.accept_language || ''} placeholder="en-US,en;q=0.9"
+                onChange={e => updateField('config.http', { ...script.config.http, accept_language: e.target.value })} /></label>
           </div>
         </div>}
-        {activeHTTPTransportTab === 'tls' && <div
+        {effectiveHTTPTransportTab === 'tls' && <div
           id="http-transport-panel-tls"
           className="settings-sub-group http-transport-tab-panel"
           role="tabpanel"
@@ -1323,7 +1396,7 @@ export function ScriptRuntimeSettingsView({
             </div>
           </div>
         </div>}
-        {activeHTTPTransportTab === 'proxy' && <div
+        {effectiveHTTPTransportTab === 'proxy' && <div
           id="http-transport-panel-proxy"
           className="settings-sub-group http-transport-tab-panel"
           role="tabpanel"
@@ -1358,7 +1431,7 @@ export function ScriptRuntimeSettingsView({
                 onChange={e => updateField('config.http', { ...script.config.http, proxy: { ...script.config.http?.proxy, no_proxy: parseLineList(e.target.value) } })} /></label>
           </div>
         </div>}
-        {activeHTTPTransportTab === 'authentication' && <div
+        {effectiveHTTPTransportTab === 'authentication' && <div
           id="http-transport-panel-authentication"
           className="settings-sub-group http-transport-tab-panel"
           role="tabpanel"
@@ -1391,7 +1464,7 @@ export function ScriptRuntimeSettingsView({
             )}
           </div>
         </div>}
-        {activeHTTPTransportTab === 'browser' && <div
+        {effectiveHTTPTransportTab === 'browser' && <div
           id="http-transport-panel-browser"
           className="settings-sub-group http-transport-tab-panel"
           role="tabpanel"
@@ -1464,15 +1537,6 @@ export function ScriptRuntimeSettingsView({
                 <option value="per_action">Per action</option>
               </select>
             </label>
-            <label className="full-width"><span>User-Agent</span>
-              <input value={script.config.http?.user_agent || ''} placeholder="Mozilla/5.0 ..."
-                onChange={e => updateField('config.http', { ...script.config.http, user_agent: e.target.value })} /></label>
-            <label><span>Accept-Encoding</span>
-              <input value={script.config.http?.accept_encoding || ''} placeholder="gzip, deflate, br"
-                onChange={e => updateField('config.http', { ...script.config.http, accept_encoding: e.target.value })} /></label>
-            <label><span>Accept-Language</span>
-              <input value={script.config.http?.accept_language || ''} placeholder="en-US,en;q=0.9"
-                onChange={e => updateField('config.http', { ...script.config.http, accept_language: e.target.value })} /></label>
             <label>
               <span>Download Resources</span>
               <select value={script.config.browser?.download_resources || 'recorded'}
@@ -1543,6 +1607,181 @@ export function ScriptRuntimeSettingsView({
             </div>
           </div>
         </div>}
+      </div>
+    )}
+  </div>}
+
+  {/* Browser Emulation (HTTP replay) */}
+  {supportsBrowserEmulation && <div className={`settings-section ${runtimeSectionIsActive('browser_emulation') ? 'open' : ''}`}>
+    <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('browser_emulation')}>
+      <RuntimeSectionIcon section="browser_emulation" />
+      <span className="section-label">Browser Emulation</span>
+      <span className="section-summary">{formatBrowserEmulationSummary(script.config.browser_emulation)}</span>
+      <span className="chevron">{runtimeSectionIsActive('browser_emulation') ? '▾' : '▸'}</span>
+    </button>
+    {runtimeSectionIsActive('browser_emulation') && (
+      <div className="section-body">
+        <div className="settings-sub-group">
+          <h5>Browser Selection</h5>
+          <div className="form-grid">
+            <div className="runtime-checkbox-list full-width" role="radiogroup" aria-label="Browser selection mode">
+              <label className="checkbox-label">
+                <input
+                  type="radio"
+                  name="browser-emulation-mode"
+                  checked={browserEmulationMode !== 'custom'}
+                  onChange={() => updateBrowserEmulation({ mode: browserEmulation?.browser_type ? 'specific' : undefined, custom_user_agent: undefined })}
+                />
+                <span>Use a specific browser</span>
+              </label>
+              <label className="checkbox-label">
+                <input
+                  type="radio"
+                  name="browser-emulation-mode"
+                  checked={browserEmulationMode === 'custom'}
+                  onChange={() => updateBrowserEmulation({ mode: 'custom', browser_type: undefined, browser_version: undefined, platform: undefined })}
+                />
+                <span>Custom browser</span>
+              </label>
+            </div>
+            <label>
+              <span>Browser</span>
+              <select
+                value={browserEmulation?.browser_type || ''}
+                disabled={browserEmulationMode === 'custom'}
+                aria-label="Browser type"
+                onChange={e => updateBrowserEmulation({
+                  // Only a concrete browser makes the mode "specific"; clearing
+                  // it back to Engine default unsets the mode so the section
+                  // never saves as specific-without-a-browser (which the backend
+                  // validator rejects).
+                  mode: e.target.value ? 'specific' : undefined,
+                  browser_type: e.target.value || undefined,
+                  browser_version: undefined,
+                  platform: undefined,
+                })}
+              >
+                <option value="">Engine default</option>
+                {browserEmulationCatalog.browsers.map(browser => (
+                  <option key={browser.type} value={browser.type}>{browser.label}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Version</span>
+              <select
+                value={browserEmulation?.browser_version || ''}
+                disabled={browserEmulationMode === 'custom' || !selectedEmulationBrowser}
+                aria-label="Browser version"
+                onChange={e => updateBrowserEmulation({ browser_version: e.target.value || undefined })}
+              >
+                <option value="">Latest</option>
+                {(selectedEmulationBrowser?.versions || []).map(version => (
+                  <option key={version} value={version}>{version}</option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Platform</span>
+              <select
+                value={browserEmulation?.platform || ''}
+                disabled={browserEmulationMode === 'custom' || !selectedEmulationBrowser}
+                aria-label="Browser platform"
+                onChange={e => updateBrowserEmulation({ platform: e.target.value || undefined })}
+              >
+                <option value="">Browser default</option>
+                {(selectedEmulationBrowser?.platforms || []).map(platform => (
+                  <option key={platform} value={platform}>
+                    {browserEmulationCatalog.platforms.find(candidate => candidate.id === platform)?.label || platform}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Language</span>
+              <select
+                value={browserEmulation?.language || ''}
+                aria-label="Browser language"
+                onChange={e => updateBrowserEmulation({ language: e.target.value || undefined })}
+              >
+                <option value="">Engine default</option>
+                {browserEmulationCatalog.languages.map(language => (
+                  <option key={language.tag} value={language.tag}>{language.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="full-width">
+              <span>Custom User-Agent</span>
+              <input
+                value={browserEmulation?.custom_user_agent || ''}
+                disabled={browserEmulationMode !== 'custom'}
+                placeholder="Mozilla/5.0 ..."
+                aria-label="Custom User-Agent"
+                onChange={e => updateBrowserEmulation({ custom_user_agent: e.target.value })}
+              />
+            </label>
+          </div>
+        </div>
+        <div className="settings-sub-group">
+          <h5>Browser Cache</h5>
+          <div className="runtime-checkbox-list" aria-label="Browser cache simulation">
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={browserEmulationCache?.simulate_cache || false}
+                onChange={e => updateBrowserEmulationCache(e.target.checked
+                  ? { simulate_cache: true }
+                  // Clear the dependent children when disabling the cache; leaving
+                  // them true (but now disabled) is a state the backend validator
+                  // rejects with no reachable control to fix it.
+                  : { simulate_cache: false, cache_content_urls: undefined, check_newer_versions: undefined })}
+              />
+              <span>Simulate browser cache</span>
+            </label>
+            <label className="checkbox-label checkbox-label-indented">
+              <input
+                type="checkbox"
+                checked={browserEmulationCache?.cache_content_urls || false}
+                disabled={!browserEmulationCache?.simulate_cache}
+                onChange={e => updateBrowserEmulationCache({ cache_content_urls: e.target.checked })}
+              />
+              <span>Cache URLs requiring content (HTMLs)</span>
+            </label>
+            <label className="checkbox-label checkbox-label-indented">
+              <input
+                type="checkbox"
+                checked={browserEmulationCache?.check_newer_versions || false}
+                disabled={!browserEmulationCache?.simulate_cache}
+                onChange={e => updateBrowserEmulationCache({ check_newer_versions: e.target.checked })}
+              />
+              <span>Check for newer versions of stored pages on every visit</span>
+            </label>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={browserEmulationCache?.download_non_html_resources || false}
+                onChange={e => updateBrowserEmulationCache({ download_non_html_resources: e.target.checked })}
+              />
+              <span>Download non-HTML resources</span>
+            </label>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={browserEmulationCache?.new_user_each_iteration || false}
+                onChange={e => updateBrowserEmulationCache({ new_user_each_iteration: e.target.checked })}
+              />
+              <span>Simulate a new user on each iteration (clear cache on each iteration)</span>
+            </label>
+            <label className="checkbox-label">
+              <input
+                type="checkbox"
+                checked={browserEmulationCache?.simulate_prefetch || false}
+                onChange={e => updateBrowserEmulationCache({ simulate_prefetch: e.target.checked })}
+              />
+              <span>Simulate prefetch and prerender</span>
+            </label>
+          </div>
+        </div>
       </div>
     )}
   </div>}

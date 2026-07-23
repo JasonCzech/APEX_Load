@@ -16,6 +16,7 @@ export function copyRuntimeSettingsForProtocol(
   const copy = structuredClone(source)
   if (!isRuntimeFieldApplicable('browser', protocol)) copy.browser = undefined
   if (!isRuntimeFieldApplicable('browser_config', protocol)) copy.browser_config = undefined
+  if (!isRuntimeFieldApplicable('browser_emulation', protocol)) copy.browser_emulation = undefined
   if (!isRuntimeFieldApplicable('http', protocol)) copy.http = undefined
   if (!isRuntimeFieldApplicable('web_runtime', protocol)) copy.web_runtime = undefined
   if (!isRuntimeFieldApplicable('java_vuser', protocol)) copy.java_vuser = undefined
@@ -134,6 +135,8 @@ function applyEffectiveRuntimeLayer(base: RuntimeSettingsOverride, layer: Runtim
   if (layer.think_time) next.think_time = structuredClone(layer.think_time)
   if (layer.error_handling) next.error_handling = structuredClone(layer.error_handling)
   if (layer.http) next.http = structuredClone(layer.http)
+  // Whole-section replace, mirroring the Go controller's browser_emulation merge.
+  if (layer.browser_emulation) next.browser_emulation = structuredClone(layer.browser_emulation)
   if (layer.web_runtime) next.web_runtime = mergeMaterializedWeb(next.web_runtime, layer.web_runtime)
   if (layer.java_vuser) next.java_vuser = mergeJavaVuserLayer(next.java_vuser, layer.java_vuser)
 

@@ -388,8 +388,12 @@ func runtimeSettingsReportForScenario(scenarioID string, scenario *StoredScenari
 			continue
 		}
 		scriptCopy := *stored.Script
-		if scenario.RuntimeSettings != nil {
-			_ = applyRuntimeOverrides(&scriptCopy, scenario.RuntimeSettings)
+		// Apply the same root→group effective merge the compile path uses so the
+		// report reflects what actually runs per group (a per-group override —
+		// the primary UX for several sections — was previously invisible here).
+		effectiveOverride := mergeRuntimeSettings(scenario.RuntimeSettings, ref.RuntimeSettings)
+		if effectiveOverride != nil {
+			_ = applyRuntimeOverrides(&scriptCopy, effectiveOverride)
 		}
 		entries := buildValidationRuntimeSettingsParity(&scriptCopy)
 		report.Entries = append(report.Entries, entries...)

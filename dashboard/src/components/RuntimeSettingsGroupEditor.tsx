@@ -15,6 +15,7 @@ import {
   type RuntimeFieldKey,
 } from './runtimeSettingsModel'
 import { materializeRuntimeSettingsForApply } from './runtimeSettingsApply'
+import { FALLBACK_BROWSER_EMULATION_CATALOG } from './scriptEditorRuntimeSettingsModel'
 import WebHttpTab from './runtimeTabs/WebHttpTab'
 import { JavaEnvSettingsFields, type JavaEnvSettingsValue } from './JavaEnvSettingsFields'
 import { type RuntimeJavaVuserSettings } from '../types'
@@ -57,6 +58,7 @@ const FIELD_LABELS: Record<RuntimeFieldKey, string> = {
   http: 'HTTP transport',
   web_runtime: 'Web runtime',
   browser_config: 'Browser config',
+  browser_emulation: 'Browser emulation',
   java_vuser: 'Java Env',
 }
 
@@ -73,6 +75,7 @@ const SUMMARY_FIELDS: RuntimeFieldKey[] = [
   'http',
   'web_runtime',
   'browser_config',
+  'browser_emulation',
   'java_vuser',
 ]
 
@@ -89,6 +92,7 @@ type RuntimeTabId =
   | 'run_logic'
   | 'error_handling'
   | 'http_transport'
+  | 'browser_emulation'
   | 'web_http'
   | 'java_env'
 
@@ -97,6 +101,7 @@ type HttpSubTabId = 'timeouts' | 'connection' | 'tls' | 'proxy' | 'authenticatio
 
 type HTTPSettings = NonNullable<ScenarioRuntimeSettingsDraft['http']>
 type BrowserSettings = NonNullable<ScenarioRuntimeSettingsDraft['browser_config']>
+type BrowserEmulationSettings = NonNullable<ScenarioRuntimeSettingsDraft['browser_emulation']>
 type ErrorHandlingSettings = NonNullable<RuntimeSettingsOverride['error_handling']>
 type LogSettings = NonNullable<RuntimeSettingsOverride['log']>
 type RunLogicSettings = NonNullable<RuntimeSettingsOverride['run_logic']>
@@ -241,6 +246,11 @@ export default function RuntimeSettingsGroupEditor({
   const httpApplicable = isRuntimeFieldApplicable('http', focusGroup.protocol)
   const webRuntimeApplicable = isRuntimeFieldApplicable('web_runtime', focusGroup.protocol)
   const javaVuserApplicable = isRuntimeFieldApplicable('java_vuser', focusGroup.protocol)
+  const browserEmulationApplicable = isRuntimeFieldApplicable('browser_emulation', focusGroup.protocol)
+
+  // Browser emulation replaces as a whole section (mirrors the Go controller).
+  const inheritedBrowserEmulation: BrowserEmulationSettings = structuredClone(inheritedOverride?.browser_emulation ?? {})
+  const effectiveBrowserEmulation: BrowserEmulationSettings = draft.browser_emulation ?? inheritedBrowserEmulation
 
   // The Java Env override replaces the whole section: seed the editor from the
   // group override when present, else from the inherited (script/scenario) value.
@@ -369,6 +379,29 @@ export default function RuntimeSettingsGroupEditor({
     patch({ browser_config: edited, browser: undefined })
   }
 
+  // Browser-emulation edits replace the whole section; the first edit
+  // materializes the inherited section, mirroring patchBrowserConfig.
+  const patchBrowserEmulation = (next: Partial<BrowserEmulationSettings>) => {
+    const hasCurrentSection = draft.browser_emulation !== undefined
+    const topLevelNext = { ...next }
+    delete topLevelNext.cache
+    const edited = editReplacementSection<BrowserEmulationSettings>(
+      draft.browser_emulation,
+      topLevelNext,
+      inheritedBrowserEmulation,
+    ) as BrowserEmulationSettings
+    if (Object.prototype.hasOwnProperty.call(next, 'cache')) {
+      const cache = editReplacementSection(
+        hasCurrentSection ? (draft.browser_emulation?.cache ?? {}) : inheritedBrowserEmulation.cache,
+        next.cache,
+        inheritedBrowserEmulation.cache,
+      )
+      if (Object.keys(cache).length > 0) edited.cache = cache
+      else delete edited.cache
+    }
+    patch({ browser_emulation: edited })
+  }
+
   const browserBoolValue = (a?: boolean, b?: boolean): string => {
     const value = a ?? b
     return value === undefined ? '' : value ? 'true' : 'false'
@@ -431,6 +464,9 @@ export default function RuntimeSettingsGroupEditor({
       case 'browser_config':
         patch({ browser_config: undefined, browser: undefined })
         break
+      case 'browser_emulation':
+        patch({ browser_emulation: undefined })
+        break
       case 'java_vuser':
         patch({ java_vuser: undefined })
         break
@@ -468,6 +504,8 @@ export default function RuntimeSettingsGroupEditor({
         return Boolean(o.web_runtime)
       case 'browser_config':
         return Boolean(o.browser_config)
+      case 'browser_emulation':
+        return Boolean(o.browser_emulation)
       case 'java_vuser':
         return Boolean(o.java_vuser)
     }
@@ -507,6 +545,7 @@ export default function RuntimeSettingsGroupEditor({
     { id: 'run_logic', label: 'Run Logic', show: true },
     { id: 'error_handling', label: 'Error Handling', show: true },
     { id: 'http_transport', label: 'HTTP Transport', show: httpApplicable || browserApplicable },
+    { id: 'browser_emulation', label: 'Browser Emulation', show: browserEmulationApplicable },
     { id: 'web_http', label: 'Web/HTTP', show: webRuntimeApplicable },
     { id: 'java_env', label: 'Java Env', show: javaVuserApplicable },
   ]
@@ -522,7 +561,7 @@ export default function RuntimeSettingsGroupEditor({
     { id: 'tls', label: 'TLS / SSL', show: true },
     { id: 'proxy', label: 'Proxy', show: true },
     { id: 'authentication', label: 'Authentication', show: true },
-    { id: 'browser_emulation', label: 'Browser emulation', show: browserApplicable },
+    { id: 'browser_emulation', label: 'Browser (Playwright)', show: browserApplicable },
   ]
   const visibleHttpSubTabs = httpSubTabs.filter(st => st.show)
   const httpSubTab: HttpSubTabId = visibleHttpSubTabs.some(st => st.id === rawHttpSubTab) ? rawHttpSubTab : 'timeouts'
@@ -1114,6 +1153,177 @@ export default function RuntimeSettingsGroupEditor({
                   </div>
                 </>
               )}
+            </div>
+          </>
+        )}
+
+        {activeTab === 'browser_emulation' && (
+          <>
+            {draft.browser_emulation && (
+              <div className="runtime-override-active-banner">
+                <span>Overriding the script's browser emulation for this group.</span>
+                <button type="button" className="link-button" onClick={() => clearField('browser_emulation')}>
+                  Clear override
+                </button>
+              </div>
+            )}
+            <div className="scenario-browser-grid">
+              <label>
+                <span>Mode</span>
+                <select
+                  className="settings-input"
+                  value={draft.browser_emulation?.mode ?? ''}
+                  aria-label="Browser emulation mode"
+                  onChange={event => {
+                    const mode = event.target.value
+                    if (!mode) {
+                      // Inherit identity but preserve any cache override this group
+                      // already set — only clear the whole section when there is
+                      // nothing else to keep (avoids silently discarding edits).
+                      const currentCache = draft.browser_emulation?.cache
+                      patch({ browser_emulation: currentCache ? { cache: currentCache } : undefined })
+                      return
+                    }
+                    if (mode === 'custom') {
+                      patchBrowserEmulation({ mode: 'custom', browser_type: undefined, browser_version: undefined, platform: undefined })
+                    } else {
+                      patchBrowserEmulation({ mode: 'specific', custom_user_agent: undefined })
+                    }
+                  }}
+                >
+                  <option value="">Inherit{effectiveBrowserEmulation.mode ? ` (${effectiveBrowserEmulation.mode})` : ''}</option>
+                  <option value="specific">Specific browser</option>
+                  <option value="custom">Custom browser</option>
+                </select>
+              </label>
+              <label>
+                <span>Browser</span>
+                <select
+                  className="settings-input"
+                  value={effectiveBrowserEmulation.browser_type || ''}
+                  disabled={effectiveBrowserEmulation.mode === 'custom'}
+                  aria-label="Browser type"
+                  onChange={event => patchBrowserEmulation({ mode: event.target.value ? 'specific' : undefined, browser_type: event.target.value || undefined, browser_version: undefined, platform: undefined })}
+                >
+                  <option value="">Engine default</option>
+                  {FALLBACK_BROWSER_EMULATION_CATALOG.browsers.map(browser => (
+                    <option key={browser.type} value={browser.type}>{browser.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Version</span>
+                <select
+                  className="settings-input"
+                  value={effectiveBrowserEmulation.browser_version || ''}
+                  disabled={effectiveBrowserEmulation.mode === 'custom' || !effectiveBrowserEmulation.browser_type}
+                  aria-label="Browser version"
+                  onChange={event => patchBrowserEmulation({ browser_version: event.target.value || undefined })}
+                >
+                  <option value="">Latest</option>
+                  {(FALLBACK_BROWSER_EMULATION_CATALOG.browsers.find(browser => browser.type === effectiveBrowserEmulation.browser_type)?.versions || []).map(version => (
+                    <option key={version} value={version}>{version}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Platform</span>
+                <select
+                  className="settings-input"
+                  value={effectiveBrowserEmulation.platform || ''}
+                  disabled={effectiveBrowserEmulation.mode === 'custom' || !effectiveBrowserEmulation.browser_type}
+                  aria-label="Browser platform"
+                  onChange={event => patchBrowserEmulation({ platform: event.target.value || undefined })}
+                >
+                  <option value="">Browser default</option>
+                  {(FALLBACK_BROWSER_EMULATION_CATALOG.browsers.find(browser => browser.type === effectiveBrowserEmulation.browser_type)?.platforms || []).map(platform => (
+                    <option key={platform} value={platform}>
+                      {FALLBACK_BROWSER_EMULATION_CATALOG.platforms.find(candidate => candidate.id === platform)?.label || platform}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Language</span>
+                <select
+                  className="settings-input"
+                  value={effectiveBrowserEmulation.language || ''}
+                  aria-label="Browser language"
+                  onChange={event => patchBrowserEmulation({ language: event.target.value || undefined })}
+                >
+                  <option value="">Engine default</option>
+                  {FALLBACK_BROWSER_EMULATION_CATALOG.languages.map(language => (
+                    <option key={language.tag} value={language.tag}>{language.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="scenario-browser-grid-wide">
+                <span>Custom User-Agent</span>
+                <input
+                  className="settings-input"
+                  value={effectiveBrowserEmulation.custom_user_agent || ''}
+                  disabled={effectiveBrowserEmulation.mode !== 'custom'}
+                  placeholder={inh(inheritedBrowserEmulation.custom_user_agent)}
+                  aria-label="Custom User-Agent"
+                  onChange={event => patchBrowserEmulation({ custom_user_agent: event.target.value })}
+                />
+              </label>
+            </div>
+            <div className="scenario-browser-checkboxes" aria-label="Browser cache simulation">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={effectiveBrowserEmulation.cache?.simulate_cache || false}
+                  onChange={event => patchBrowserEmulation({ cache: event.target.checked
+                    ? { simulate_cache: true }
+                    // Explicit false (not undefined) so editReplacementSection turns
+                    // the children off rather than restoring the inherited value.
+                    : { simulate_cache: false, cache_content_urls: false, check_newer_versions: false } })}
+                />
+                <span>Simulate browser cache</span>
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={effectiveBrowserEmulation.cache?.cache_content_urls || false}
+                  disabled={!effectiveBrowserEmulation.cache?.simulate_cache}
+                  onChange={event => patchBrowserEmulation({ cache: { cache_content_urls: event.target.checked } })}
+                />
+                <span>Cache URLs requiring content (HTMLs)</span>
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={effectiveBrowserEmulation.cache?.check_newer_versions || false}
+                  disabled={!effectiveBrowserEmulation.cache?.simulate_cache}
+                  onChange={event => patchBrowserEmulation({ cache: { check_newer_versions: event.target.checked } })}
+                />
+                <span>Check for newer versions of stored pages on every visit</span>
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={effectiveBrowserEmulation.cache?.download_non_html_resources || false}
+                  onChange={event => patchBrowserEmulation({ cache: { download_non_html_resources: event.target.checked } })}
+                />
+                <span>Download non-HTML resources</span>
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={effectiveBrowserEmulation.cache?.new_user_each_iteration || false}
+                  onChange={event => patchBrowserEmulation({ cache: { new_user_each_iteration: event.target.checked } })}
+                />
+                <span>Simulate a new user on each iteration</span>
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={effectiveBrowserEmulation.cache?.simulate_prefetch || false}
+                  onChange={event => patchBrowserEmulation({ cache: { simulate_prefetch: event.target.checked } })}
+                />
+                <span>Simulate prefetch and prerender</span>
+              </label>
             </div>
           </>
         )}

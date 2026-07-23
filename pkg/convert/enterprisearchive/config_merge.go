@@ -59,6 +59,28 @@ func mergeScriptConfig(dst *dsl.ScriptConfig, src *dsl.ScriptConfig) {
 	if !isEmptyWebRuntimeConfig(src.WebRuntime) {
 		dst.WebRuntime = src.WebRuntime
 	}
+	if src.BrowserEmulation != nil {
+		dst.BrowserEmulation = cloneBrowserEmulationConfig(src.BrowserEmulation)
+	}
+}
+
+func cloneBrowserEmulationConfig(src *dsl.BrowserEmulationConfig) *dsl.BrowserEmulationConfig {
+	if src == nil {
+		return nil
+	}
+	clone := *src
+	if src.Cache != nil {
+		cache := dsl.BrowserCacheSimulationConfig{
+			SimulateCache:        cloneRuntimeBoolPointer(src.Cache.SimulateCache),
+			CacheContentURLs:     cloneRuntimeBoolPointer(src.Cache.CacheContentURLs),
+			CheckNewerVersions:   cloneRuntimeBoolPointer(src.Cache.CheckNewerVersions),
+			NewUserEachIteration: cloneRuntimeBoolPointer(src.Cache.NewUserEachIteration),
+			SimulatePrefetch:     cloneRuntimeBoolPointer(src.Cache.SimulatePrefetch),
+			DownloadNonHTML:      cloneRuntimeBoolPointer(src.Cache.DownloadNonHTML),
+		}
+		clone.Cache = &cache
+	}
+	return &clone
 }
 
 // mergeJavaVuserVMSettings copies only source-owned Java VM settings. Runner
@@ -102,6 +124,7 @@ func mergeJavaVuserRuntimeSettingsIntoResult(result *ConvertResult, src *dsl.Scr
 		mergeJavaVuserVMSettings(&script.Config.JavaVuser, src.JavaVuser)
 	}
 }
+
 
 func isEmptyPacingConfig(cfg dsl.PacingConfig) bool {
 	return cfg.Type == "" && cfg.DelayMs == 0 && cfg.MinDelayMs == 0 && cfg.MaxDelayMs == 0 && cfg.IntervalMs == 0 && cfg.MinIntervalMs == 0 && cfg.MaxIntervalMs == 0 && cfg.TPS == 0

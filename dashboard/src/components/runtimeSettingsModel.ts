@@ -33,6 +33,7 @@ const ENGINE_FALLBACK_LABEL: Partial<Record<RuntimeFieldKey, string>> = {
   web_runtime: 'None',
   think_time: 'None',
   pacing: 'None',
+  browser_emulation: 'None',
 }
 
 /** Override fields the Scenario Builder can manage per group (Phase 1 surface). */
@@ -49,6 +50,7 @@ export type RuntimeFieldKey =
   | 'http'
   | 'web_runtime'
   | 'browser_config'
+  | 'browser_emulation'
   | 'java_vuser'
 
 function isPresent(value: unknown): boolean {
@@ -166,6 +168,10 @@ export function isRuntimeFieldApplicable(field: RuntimeFieldKey, protocol?: stri
       return isHTTPProtocol(protocol) || isBrowser
     case 'web_runtime':
       return isBrowser || isHTTPProtocol(protocol)
+    case 'browser_emulation':
+      // Browser emulation drives the HTTP replay engine only; the browser
+      // protocol's emulation home stays browser_config.
+      return isHTTPProtocol(protocol)
     case 'java_vuser':
       return (protocol || '').trim().toLowerCase() === 'java_vuser'
     default:
@@ -199,6 +205,7 @@ export function isRuntimeDraftEmpty(draft?: ScenarioRuntimeSettingsDraft): boole
     !draft.http &&
     !draft.web_runtime &&
     !draft.browser_config &&
+    !draft.browser_emulation &&
     isJavaVuserSettingsEmpty(draft.java_vuser) &&
     !draft.base_url &&
     !draft.env &&
@@ -243,6 +250,7 @@ export function runtimeDraftFromOverride(override?: RuntimeSettingsOverride): Sc
     http: override.http,
     web_runtime: override.web_runtime,
     browser_config: override.browser_config,
+    browser_emulation: override.browser_emulation,
     java_vuser: override.java_vuser ? { ...override.java_vuser } : undefined,
     base_url: override.base_url,
     env: override.env ? { ...override.env } : undefined,
@@ -285,6 +293,7 @@ export function overrideFromRuntimeDraft(draft?: ScenarioRuntimeSettingsDraft): 
     http: draft.http,
     web_runtime: draft.web_runtime,
     browser_config: draft.browser_config,
+    browser_emulation: draft.browser_emulation,
     java_vuser: isJavaVuserSettingsEmpty(draft.java_vuser) ? undefined : { ...draft.java_vuser },
     base_url: draft.base_url,
     env: draft.env ? { ...draft.env } : undefined,
@@ -335,6 +344,25 @@ export function formatWebRuntime(webRuntime?: RuntimeSettingsOverride['web_runti
   return parts.length > 0 ? parts.join(' · ') : 'configured'
 }
 
+export function formatBrowserEmulation(emulation?: RuntimeSettingsOverride['browser_emulation']): string | null {
+  if (!emulation) return null
+  const parts: string[] = []
+  if (emulation.mode === 'custom') {
+    parts.push('Custom UA')
+  } else if (emulation.mode === 'specific') {
+    const browser = [emulation.browser_type, emulation.browser_version].filter(Boolean).join(' ')
+    if (browser) parts.push(browser)
+    if (emulation.platform) parts.push(emulation.platform)
+  }
+  if (emulation.language) parts.push(emulation.language)
+  const cache = emulation.cache
+  if (cache?.simulate_cache) parts.push('cache')
+  if (cache?.download_non_html_resources) parts.push('resources')
+  if (cache?.new_user_each_iteration) parts.push('new user/iter')
+  if (cache?.simulate_prefetch) parts.push('prefetch')
+  return parts.length > 0 ? parts.join(' · ') : 'configured'
+}
+
 export function formatBrowserConfig(browser?: RuntimeSettingsOverride['browser_config']): string | null {
   if (!browser) return null
   const parts: string[] = []
@@ -376,6 +404,7 @@ export function runtimeOverrideFromScriptConfig(config?: ScriptConfig): RuntimeS
     http: config.http,
     web_runtime: config.web_runtime,
     browser_config: config.browser,
+    browser_emulation: config.browser_emulation,
     java_vuser: config.java_vuser
       ? {
           jdk_selection: config.java_vuser.jdk_selection,
@@ -423,6 +452,7 @@ export function formatEffectiveRuntimeField(
     http: (o) => formatHTTP(o?.http),
     web_runtime: (o) => formatWebRuntime(o?.web_runtime),
     browser_config: (o) => formatBrowserConfig(o?.browser_config),
+    browser_emulation: (o) => formatBrowserEmulation(o?.browser_emulation),
     java_vuser: (o) => formatJavaVuserSummary(o?.java_vuser),
   }
   const format = formatters[field]

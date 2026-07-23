@@ -843,6 +843,7 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("GET /api/v1/correlations/rules", cors(log(auth(http.HandlerFunc(s.handleListCorrelationRules)))))
 	s.mux.Handle("GET /api/v1/dsl/actions", cors(log(auth(http.HandlerFunc(s.handleListDSLActions)))))
 	s.mux.Handle("GET /api/v1/dsl/config-defaults", cors(log(auth(http.HandlerFunc(s.handleConfigDefaults)))))
+	s.mux.Handle("GET /api/v1/dsl/browser-emulation-catalog", cors(log(auth(http.HandlerFunc(s.handleBrowserEmulationCatalog)))))
 	s.mux.Handle("POST /api/v1/correlations/diagnose", cors(log(auth(http.HandlerFunc(s.handleDiagnoseCorrelations)))))
 	s.mux.Handle("POST /api/v1/correlations/diff", cors(log(auth(http.HandlerFunc(s.handleDiffCorrelations)))))
 	s.mux.Handle("POST /api/v1/selectors/diagnose", cors(log(auth(http.HandlerFunc(s.handleDiagnoseSelectors)))))

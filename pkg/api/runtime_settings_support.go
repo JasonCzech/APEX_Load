@@ -144,6 +144,7 @@ func runtimeSettingsSupportMatrix() []RuntimeSettingsSupportEntry {
 	matrix = append(matrix, web2BrowserProfileRuntimeSupportEntries()...)
 	matrix = append(matrix, nativeRuntimeSupportEntries()...)
 	matrix = append(matrix, javaVuserRuntimeSupportEntries()...)
+	matrix = append(matrix, browserEmulationRuntimeSupportEntries()...)
 	sort.SliceStable(matrix, func(i, j int) bool {
 		if strings.Join(matrix[i].Protocols, ",") == strings.Join(matrix[j].Protocols, ",") {
 			return matrix[i].ID < matrix[j].ID
@@ -173,6 +174,43 @@ func javaVuserRuntimeSupportEntries() []RuntimeSettingsSupportEntry {
 		})
 	}
 	return entries
+}
+
+// browserEmulationRuntimeSupportEntries registers the config.browser_emulation
+// section: HTTP-transport browser identity plus browser-cache simulation,
+// editable on the author page and per-group scenario overrides.
+func browserEmulationRuntimeSupportEntries() []RuntimeSettingsSupportEntry {
+	protocols := []string{"http", "https", "soap", "java_http"}
+	return []RuntimeSettingsSupportEntry{
+		{
+			ID:                  "browser_emulation_selection",
+			Protocols:           cloneStringSlice(protocols),
+			Source:              "native",
+			Area:                "Browser Emulation",
+			Concept:             "Browser selection (specific type/version/platform/language or custom User-Agent)",
+			Fields:              []string{"config.browser_emulation.mode", "config.browser_emulation.browser_type", "config.browser_emulation.browser_version", "config.browser_emulation.platform", "config.browser_emulation.language", "config.browser_emulation.custom_user_agent"},
+			Status:              string(enterprisearchive.RuntimeSettingStatusExecuted),
+			ExecutionScope:      "HTTP replay presents the selected browser's User-Agent and Accept-Language on every request.",
+			ImportSources:       []string{"Enterprise Script Archive Web HTTP/HTML", "JSON DSL"},
+			Evidence:            []string{"pkg/dsl/catalog_browser_emulation.go", "pkg/protocol/http/resources_test.go"},
+			RecommendedWorkflow: "Pick a catalog browser (or custom User-Agent) on the Browser Emulation tab, or override it per group in the scenario editor.",
+			Notes:               "The browser catalog is served by GET /api/v1/dsl/browser-emulation-catalog.",
+		},
+		{
+			ID:                  "browser_emulation_cache",
+			Protocols:           cloneStringSlice(protocols),
+			Source:              "native",
+			Area:                "Browser Emulation",
+			Concept:             "Browser cache simulation (cache content URLs, check newer versions, download non-HTML resources, new user each iteration, prefetch/prerender)",
+			Fields:              []string{"config.browser_emulation.cache.simulate_cache", "config.browser_emulation.cache.cache_content_urls", "config.browser_emulation.cache.check_newer_versions", "config.browser_emulation.cache.download_non_html_resources", "config.browser_emulation.cache.new_user_each_iteration", "config.browser_emulation.cache.simulate_prefetch"},
+			Status:              string(enterprisearchive.RuntimeSettingStatusExecuted),
+			ExecutionScope:      "HTTP replay caches responses per VUser with conditional revalidation, fetches embedded page resources and prefetch hints, and clears cache+cookies each iteration when simulating a new user.",
+			ImportSources:       []string{"Enterprise Script Archive Web HTTP/HTML", "JSON DSL"},
+			Evidence:            []string{"pkg/protocol/http/cache.go", "pkg/protocol/http/resources.go"},
+			RecommendedWorkflow: "Enable Simulate browser cache and its sub-options on the Browser Emulation tab; verify cache hits via the resource counters in run evidence.",
+			Notes:               "Resource fetches never fail the parent step; failures surface as resource_failures counters and network entries.",
+		},
+	}
 }
 
 func web2BrowserProfileRuntimeSupportEntries() []RuntimeSettingsSupportEntry {

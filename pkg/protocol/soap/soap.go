@@ -61,6 +61,11 @@ func compileGeneratedSOAPPattern(key string, pattern string) *regexp.Regexp {
 	return actual
 }
 
+var (
+	_ protocol.CookieController = (*SOAP)(nil)
+	_ protocol.CacheController  = (*SOAP)(nil)
+)
+
 func (s *SOAP) Name() string { return "soap" }
 
 func (s *SOAP) Init(ctx context.Context, config map[string]any) error {
@@ -213,6 +218,24 @@ func (s *SOAP) Teardown(ctx context.Context) error {
 		return nil
 	}
 	return s.http.Teardown(ctx)
+}
+
+// ClearCookies / ClearCache delegate to the wrapped HTTP protocol so that
+// browser-emulation's "simulate a new user on each iteration" (and the
+// cookie_clear action) actually reset SOAP session state — the wrapped HTTP
+// instance holds the cookie jar and response cache.
+func (s *SOAP) ClearCookies(ctx context.Context) error {
+	if s.http == nil {
+		return nil
+	}
+	return s.http.ClearCookies(ctx)
+}
+
+func (s *SOAP) ClearCache(ctx context.Context) error {
+	if s.http == nil {
+		return nil
+	}
+	return s.http.ClearCache(ctx)
 }
 
 func (s *SOAP) HealthCheck(ctx context.Context) error {

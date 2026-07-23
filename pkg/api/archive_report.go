@@ -799,6 +799,27 @@ func runtimeOverrideFieldNames(settings *RuntimeSettingsOverride) []string {
 	if settings.ErrorHandling != nil {
 		fields = append(fields, "error_handling")
 	}
+	if settings.Log != nil {
+		fields = append(fields, "log")
+	}
+	if settings.RunLogic != nil {
+		fields = append(fields, "run_logic")
+	}
+	if settings.HTTP != nil {
+		fields = append(fields, "http")
+	}
+	if settings.WebRuntime != nil {
+		fields = append(fields, "web_runtime")
+	}
+	if settings.BrowserConfig != nil {
+		fields = append(fields, "browser_config")
+	}
+	if settings.BrowserEmulation != nil {
+		fields = append(fields, "browser_emulation")
+	}
+	if settings.JavaVuser != nil {
+		fields = append(fields, "java_vuser")
+	}
 	return fields
 }
 

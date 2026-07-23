@@ -98,6 +98,7 @@ function buildRuntimeSettingsDraft(settings?: RuntimeSettingsOverride): Scenario
     http: cloneValue(settings?.http),
     web_runtime: cloneValue(settings?.web_runtime),
     browser_config: cloneValue(settings?.browser_config),
+    browser_emulation: cloneValue(settings?.browser_emulation),
     java_vuser: cloneValue(settings?.java_vuser),
     base_url: settings?.base_url,
     env: cloneValue(settings?.env),

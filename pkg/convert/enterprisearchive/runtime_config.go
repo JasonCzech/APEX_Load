@@ -98,6 +98,42 @@ type RuntimeConfig struct {
 	JavaVMSkipParameterEvaluation    *bool
 	JavaVMSkipParameterEvaluationRaw string
 	JavaVMSkipParamEvalParseError    string
+
+	// Browser Emulation (config.browser_emulation) — parsed from real
+	// LoadRunner [WEB] keys plus the APEX-native aliases. Raw values are
+	// preserved for round-trip review; ParseError fields surface malformed
+	// values instead of silently defaulting.
+	BEBrowserType                string // catalog type (chrome|edge|firefox|safari|ie); "" when unmapped
+	BEBrowserTypeRaw             string // source value, preserved even when unmapped
+	BEBrowserVersion             string
+	BEPlatform                   string
+	BEPlatformRaw                string
+	BELanguage                   string // explicit language code key only (BrowserLanguageCode)
+	BEUseCustomUA                *bool
+	BEUseCustomUARaw             string
+	BEUseCustomUAParseError      string
+	BESimulateCache              *bool
+	BESimulateCacheRaw           string
+	BESimulateCacheParseError    string
+	BECacheContentURLs           *bool
+	BECacheContentURLsRaw        string
+	BECacheContentURLsParseError string
+	BECheckNewerVersions         *bool
+	BECheckNewerVersionsRaw      string
+	BECheckNewerParseError       string
+	BENewUserEachIteration       *bool
+	BENewUserEachIterationRaw    string
+	BENewUserParseError          string
+	BEDownloadNonHTML            *bool
+	BEDownloadNonHTMLRaw         string
+	BEDownloadNonHTMLParseError  string
+	BESimulatePrefetch           *bool
+	BESimulatePrefetchRaw        string
+	BESimulatePrefetchParseError string
+	// BEClearCacheEachIterationRaw preserves LR's ClearCacheForSimulateNewUser
+	// child key. Stock VuGen cfgs carry it unconditionally, so it is never
+	// applied on its own — new_user_each_iteration comes from SimulateNewUser.
+	BEClearCacheEachIterationRaw string
 }
 
 // ParseRuntimeCfg parses a source default.cfg / runtime settings .cfg file.
@@ -139,7 +175,11 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	rc.ProxyPass = strings.TrimSpace(firstNonBlank(proxySection["ProxyPassword"], proxySection["Password"]))
 
 	browserSection := findSection(sections, "Browser Emulation", "Browser", "WEB", "Web")
-	rc.UserAgent = strings.TrimSpace(firstNonBlank(browserSection["CustomUserAgent"], browserSection["UserAgent"], browserSection["BrowserUserAgent"]))
+	// rc.UserAgent is sourced inside parseBrowserEmulationRuntimeSettings so it
+	// shares the same browser-section→[WEB] fallback as the browser-emulation
+	// toggles; sourcing it here from browserSection alone would silently lose a
+	// custom UA that lives in [WEB] when an APEX-native [Browser Emulation]
+	// section is also present.
 	rc.AcceptLanguage = strings.TrimSpace(firstNonBlank(browserSection["AcceptLanguage"], browserSection["BrowserAcceptLanguage"], browserSection["NavigatorBrowserLanguage"], browserSection["NavigatorUserLanguage"]))
 	acceptEncoding := firstNonBlank(browserSection["AcceptEncoding"], browserSection["BrowserAcceptEncoding"])
 	rc.UseGzip = strings.Contains(strings.ToLower(acceptEncoding), "gzip")
@@ -155,7 +195,12 @@ func ParseRuntimeCfg(content string) *RuntimeConfig {
 	rc.BrowserSlowMoMs = firstNonZeroInt(browserSection["SlowMoMs"], browserSection["SlowMotionMs"])
 	rc.BrowserViewportWidth = firstNonZeroInt(browserSection["ViewportWidth"], browserSection["ScreenWidth"])
 	rc.BrowserViewportHeight = firstNonZeroInt(browserSection["ViewportHeight"], browserSection["ScreenHeight"])
-	rc.DownloadResources = normalizeEnum(strings.TrimSpace(firstNonBlank(browserSection["DownloadResources"], browserSection["DownloadNonHtmlResources"])))
+	// DownloadNonHtmlResources in its bool form (1/0/yes/no) feeds the
+	// browser_emulation cache flag, not this all/none/recorded enum — passing a
+	// bool through here would yield an invalid config.browser.download_resources
+	// value like "1".
+	rc.DownloadResources = normalizeEnum(strings.TrimSpace(firstNonBlank(browserSection["DownloadResources"], enumDownloadResourcesOnly(browserSection["DownloadNonHtmlResources"]))))
+	parseBrowserEmulationRuntimeSettings(rc, browserSection, findSection(sections, "WEB", "Web"))
 
 	sslSection := findSection(sections, "SSL", "Security")
 	rc.SSLVersion = strings.TrimSpace(firstNonBlank(sslSection["SSLVersion"], sslSection["TLSVersion"]))
@@ -339,6 +384,7 @@ func (rc *RuntimeConfig) ToScriptConfig() *dsl.ScriptConfig {
 	if httpCfg := rc.ToHTTPConfig(); httpCfg != nil {
 		config.HTTP = *httpCfg
 	}
+	config.BrowserEmulation = rc.ToBrowserEmulationConfig()
 	if rc.Iterations > 0 || rc.AutoTransactions != "" || rc.BlockScheduling != "" || len(rc.ActionSequence) > 0 {
 		config.RunLogic = dsl.RunLogicConfig{
 			Iterations:       rc.Iterations,
@@ -507,7 +553,11 @@ func (rc *RuntimeConfig) ToHTTPConfig() *dsl.HTTPConfig {
 		cfg.ProxyMode = rc.ProxyMode
 	}
 
-	if rc.UserAgent != "" {
+	// When browser emulation resolves a mode, the User-Agent lives in
+	// config.browser_emulation (authoritative at replay); duplicating it here
+	// would leave two editable sources of the same header.
+	emulation := rc.ToBrowserEmulationConfig()
+	if rc.UserAgent != "" && (emulation == nil || emulation.Mode == "") {
 		cfg.UserAgent = rc.UserAgent
 	}
 	if rc.AcceptLanguage != "" {
@@ -536,6 +586,272 @@ func (rc *RuntimeConfig) ToHTTPConfig() *dsl.HTTPConfig {
 	}
 
 	return cfg
+}
+
+// enumDownloadResourcesOnly returns the value only when it is one of the
+// browser download_resources enum members (all/none/recorded); bool forms such
+// as "1"/"yes" are dropped so they don't become an invalid enum value.
+func enumDownloadResourcesOnly(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "all", "none", "recorded":
+		return value
+	}
+	return ""
+}
+
+// firstNonBlankLookup returns the first alias whose lookup yields a non-blank
+// value, preserving alias precedence.
+func firstNonBlankLookup(lookup func(...string) (string, bool), aliases ...string) string {
+	for _, alias := range aliases {
+		if value, ok := lookup(alias); ok && strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+// parseBrowserEmulationRuntimeSettings extracts config.browser_emulation
+// inputs. Real LoadRunner cfgs keep these under [WEB]; the APEX-native aliases
+// live under [Browser Emulation]. Each key is looked up in the browser section
+// first, then the [WEB] section, case-insensitively.
+func parseBrowserEmulationRuntimeSettings(rc *RuntimeConfig, browserSection, webSection map[string]string) {
+	lookup := func(aliases ...string) (string, bool) {
+		if value, ok := sectionValueCaseInsensitive(browserSection, aliases...); ok {
+			return value, true
+		}
+		return sectionValueCaseInsensitive(webSection, aliases...)
+	}
+	// lookupPreferred resolves alias-first (each alias across both sections)
+	// rather than section-first, so an authoritative real-LoadRunner key beats an
+	// invented alias regardless of which section carries it — e.g. an explicit
+	// [WEB] SimulateCache=0 is not shadowed by a [Browser] CacheEnabled=1.
+	lookupPreferred := func(aliases ...string) (string, bool) {
+		for _, alias := range aliases {
+			if value, ok := lookup(alias); ok {
+				return value, true
+			}
+		}
+		return "", false
+	}
+
+	// UA string: same browser-section→[WEB] fallback as the toggles above.
+	rc.UserAgent = strings.TrimSpace(firstNonBlankLookup(lookup, "CustomUserAgent", "UserAgent", "BrowserUserAgent"))
+	parseTristate := func(target **bool, raw *string, parseError *string, errText string, aliases ...string) {
+		value, ok := lookup(aliases...)
+		if !ok || strings.TrimSpace(value) == "" {
+			return
+		}
+		*raw = value
+		if parsed, valid := parseBoolExplicit(value); valid {
+			*target = &parsed
+		} else {
+			*parseError = errText
+		}
+	}
+
+	if value, ok := lookup("BrowserType", "Browser_Type", "UserBrowserType"); ok && strings.TrimSpace(value) != "" {
+		rc.BEBrowserTypeRaw = strings.TrimSpace(value)
+		mappedType, embeddedVersion := mapSourceBrowserType(rc.BEBrowserTypeRaw)
+		rc.BEBrowserType = mappedType
+		if embeddedVersion != "" && rc.BEBrowserVersion == "" {
+			rc.BEBrowserVersion = embeddedVersion
+		}
+	}
+	if value, ok := lookup("BrowserVer", "BrowserVersion", "UserBrowserVersion"); ok && strings.TrimSpace(value) != "" {
+		rc.BEBrowserVersion = strings.TrimSpace(value)
+	}
+	if value, ok := lookup("BrowserPlatform", "Platform"); ok && strings.TrimSpace(value) != "" {
+		rc.BEPlatformRaw = strings.TrimSpace(value)
+		rc.BEPlatform = mapSourceBrowserPlatform(rc.BEPlatformRaw)
+	}
+	if value, ok := lookup("BrowserLanguageCode", "BrowserLanguage", "LanguageCode"); ok && strings.TrimSpace(value) != "" {
+		rc.BELanguage = strings.TrimSpace(value)
+	}
+	// UseBrowserAgent is intentionally NOT an alias here: in LoadRunner it means
+	// "use the recorded browser's agent" — the negation of a custom UA — so
+	// mapping it onto the custom-UA toggle would invert the semantics. Only the
+	// genuine custom-UA toggle keys participate.
+	parseTristate(&rc.BEUseCustomUA, &rc.BEUseCustomUARaw, &rc.BEUseCustomUAParseError,
+		"invalid browser-emulation custom user-agent toggle", "UseCustomAgent", "UseCustomUserAgent")
+	// SimulateCache (real LR) wins over the invented CacheEnabled alias across
+	// sections; CacheEnabled still independently feeds config.browser.cache_enabled.
+	if value, ok := lookupPreferred("SimulateCache", "CacheEnabled"); ok && strings.TrimSpace(value) != "" {
+		rc.BESimulateCacheRaw = value
+		if parsed, valid := parseBoolExplicit(value); valid {
+			rc.BESimulateCache = &parsed
+		} else {
+			rc.BESimulateCacheParseError = "invalid browser-emulation simulate-cache boolean"
+		}
+	}
+	parseTristate(&rc.BECacheContentURLs, &rc.BECacheContentURLsRaw, &rc.BECacheContentURLsParseError,
+		"invalid browser-emulation cache-content-URLs boolean", "CacheHtmlPages", "CacheContentURLs", "CacheURLsRequiringContent")
+	parseTristate(&rc.BECheckNewerVersions, &rc.BECheckNewerVersionsRaw, &rc.BECheckNewerParseError,
+		"invalid browser-emulation check-newer-versions boolean", "CacheAlwaysCheckForNewerPages", "CheckNewerVersions", "CheckForNewerPages", "CheckNewerVersion")
+	parseTristate(&rc.BENewUserEachIteration, &rc.BENewUserEachIterationRaw, &rc.BENewUserParseError,
+		"invalid browser-emulation new-user-each-iteration boolean", "SimulateNewUser", "NewUserEachIteration", "NewUserPerIteration")
+	parseTristate(&rc.BESimulatePrefetch, &rc.BESimulatePrefetchRaw, &rc.BESimulatePrefetchParseError,
+		"invalid browser-emulation prefetch boolean", "SimulatePrefetchPrerender", "SimulatePrefetch", "Prefetch")
+	// Bool form only: all/none/recorded values continue to feed the browser
+	// protocol's download_resources enum path above.
+	if value, ok := lookup("SearchForImages", "DownloadNonHtmlResources"); ok && strings.TrimSpace(value) != "" {
+		if parsed, valid := parseBoolExplicit(value); valid {
+			rc.BEDownloadNonHTMLRaw = value
+			rc.BEDownloadNonHTML = &parsed
+		} else if strings.EqualFold(strings.TrimSpace(value), "all") || strings.EqualFold(strings.TrimSpace(value), "none") || strings.EqualFold(strings.TrimSpace(value), "recorded") {
+			// Enum form handled by DownloadResources; not an error.
+		} else {
+			rc.BEDownloadNonHTMLRaw = value
+			rc.BEDownloadNonHTMLParseError = "invalid browser-emulation download-non-HTML boolean"
+		}
+	}
+	if value, ok := lookup("ClearCacheForSimulateNewUser", "ClearCacheEachIteration", "ClearCacheOnEachIteration"); ok && strings.TrimSpace(value) != "" {
+		rc.BEClearCacheEachIterationRaw = value
+	}
+}
+
+// mapSourceBrowserType maps a LoadRunner browser name (e.g. "Microsoft
+// Internet Explorer 4.0", "Google Chrome 99") to a catalog type plus any
+// version embedded in the name. Unrecognized names return "".
+func mapSourceBrowserType(raw string) (mapped, embeddedVersion string) {
+	name := strings.ToLower(strings.TrimSpace(raw))
+	if name == "" {
+		return "", ""
+	}
+	if trailing := trailingVersionToken(name); trailing != "" {
+		embeddedVersion = trailing
+		name = strings.TrimSpace(strings.TrimSuffix(name, trailing))
+	}
+	switch {
+	case strings.Contains(name, "edge"):
+		return "edge", embeddedVersion
+	case strings.Contains(name, "chrome") || strings.Contains(name, "chromium"):
+		return "chrome", embeddedVersion
+	case strings.Contains(name, "firefox"):
+		return "firefox", embeddedVersion
+	case strings.Contains(name, "safari"):
+		return "safari", embeddedVersion
+	case strings.Contains(name, "internet explorer") || strings.Contains(name, "msie") || name == "ie":
+		return "ie", embeddedVersion
+	}
+	return "", embeddedVersion
+}
+
+// trailingVersionToken returns a trailing numeric/dotted version token
+// ("microsoft internet explorer 4.0" -> "4.0"), or "".
+func trailingVersionToken(name string) string {
+	fields := strings.Fields(name)
+	if len(fields) < 2 {
+		return ""
+	}
+	candidate := fields[len(fields)-1]
+	for _, r := range candidate {
+		if (r < '0' || r > '9') && r != '.' {
+			return ""
+		}
+	}
+	return candidate
+}
+
+// mapSourceBrowserPlatform maps LR platform names to catalog platform ids.
+func mapSourceBrowserPlatform(raw string) string {
+	name := strings.ToLower(strings.TrimSpace(raw))
+	switch {
+	case name == "":
+		return ""
+	case strings.Contains(name, "windows") || strings.Contains(name, "win"):
+		return "windows"
+	case strings.Contains(name, "mac") || strings.Contains(name, "os x"):
+		return "macos"
+	case strings.Contains(name, "linux") || strings.Contains(name, "x11"):
+		return "linux"
+	case strings.Contains(name, "android"):
+		return "android"
+	case strings.Contains(name, "ios") || strings.Contains(name, "iphone") || strings.Contains(name, "ipad"):
+		return "ios"
+	}
+	return ""
+}
+
+// ToBrowserEmulationConfig converts the parsed browser-emulation inputs into
+// the config.browser_emulation section, or nil when nothing relevant was set.
+// Mode resolution: an explicit UseCustomAgent=true (or a UA with no explicit
+// toggle — the legacy import behavior) selects custom mode; an explicit
+// UseCustomAgent=false suppresses custom mode even with a UA present, falling
+// back to specific mode when a recognized browser type exists.
+func (rc *RuntimeConfig) ToBrowserEmulationConfig() *dsl.BrowserEmulationConfig {
+	if rc == nil {
+		return nil
+	}
+	emu := &dsl.BrowserEmulationConfig{}
+
+	customAllowed := rc.BEUseCustomUA == nil || *rc.BEUseCustomUA
+	switch {
+	case rc.UserAgent != "" && customAllowed:
+		emu.Mode = "custom"
+		emu.CustomUserAgent = rc.UserAgent
+	case rc.BEBrowserType != "":
+		emu.Mode = "specific"
+		emu.BrowserType = rc.BEBrowserType
+		emu.BrowserVersion = rc.BEBrowserVersion
+		// Source browser type and platform/version are parsed independently, so
+		// LR-era combinations the APEX catalog does not offer (e.g. Safari on
+		// Windows, or a non-numeric version) must be dropped here — otherwise the
+		// imported script fails dsl.ValidateScriptIssues and cannot be saved or
+		// run. The raw source values remain in the preserved metadata for review,
+		// and the engine's UA resolver degrades gracefully on the remaining type.
+		if !dsl.BrowserEmulationPlatformValidFor(rc.BEBrowserType, rc.BEPlatform) {
+			emu.Platform = ""
+		} else {
+			emu.Platform = rc.BEPlatform
+		}
+		if !browserEmulationVersionHasNumericMajor(emu.BrowserVersion) {
+			emu.BrowserVersion = ""
+		}
+	}
+	emu.Language = rc.BELanguage
+
+	if rc.BESimulateCache != nil || rc.BECacheContentURLs != nil || rc.BECheckNewerVersions != nil ||
+		rc.BENewUserEachIteration != nil || rc.BEDownloadNonHTML != nil || rc.BESimulatePrefetch != nil {
+		cache := &dsl.BrowserCacheSimulationConfig{
+			SimulateCache:        cloneRuntimeBoolPointer(rc.BESimulateCache),
+			CacheContentURLs:     cloneRuntimeBoolPointer(rc.BECacheContentURLs),
+			CheckNewerVersions:   cloneRuntimeBoolPointer(rc.BECheckNewerVersions),
+			NewUserEachIteration: cloneRuntimeBoolPointer(rc.BENewUserEachIteration),
+			DownloadNonHTML:      cloneRuntimeBoolPointer(rc.BEDownloadNonHTML),
+			SimulatePrefetch:     cloneRuntimeBoolPointer(rc.BESimulatePrefetch),
+		}
+		// Stock VuGen cfgs emit the cache child keys unconditionally, so an
+		// unchecked "Simulate browser cache" (SimulateCache=0) arrives alongside
+		// CacheHtmlPages=1 / CacheAlwaysCheckForNewerPages=1. Those children have
+		// no effect while the cache is off and the validator rejects the pairing,
+		// so drop them when the cache is explicitly disabled (raw values stay in
+		// preserved metadata).
+		if cache.SimulateCache != nil && !*cache.SimulateCache {
+			cache.CacheContentURLs = nil
+			cache.CheckNewerVersions = nil
+		}
+		emu.Cache = cache
+	}
+
+	if emu.Mode == "" && emu.Language == "" && emu.Cache == nil {
+		return nil
+	}
+	return emu
+}
+
+// browserEmulationVersionHasNumericMajor reports whether a browser version
+// string begins with a numeric major component (mirrors the validator's
+// normalizeBrowserMajorVersion acceptance). Empty is treated as valid ("Latest").
+func browserEmulationVersionHasNumericMajor(version string) bool {
+	v := strings.TrimSpace(version)
+	if v == "" {
+		return true
+	}
+	major, _, _ := strings.Cut(v, ".")
+	if _, err := strconv.Atoi(major); err != nil {
+		return false
+	}
+	return true
 }
 
 func findSection(sections map[string]map[string]string, aliases ...string) map[string]string {

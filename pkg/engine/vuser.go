@@ -283,9 +283,16 @@ func (vu *VUser) Run(ctx context.Context) {
 					goto teardown
 				}
 			}
-			if vu.Script.Protocol == "http" && cfg.HTTP.ClearCookiesPerIter != nil && *cfg.HTTP.ClearCookiesPerIter {
+			newUser := browserEmulationNewUserEachIteration(cfg)
+			if newUser || (vu.Script.Protocol == "http" && cfg.HTTP.ClearCookiesPerIter != nil && *cfg.HTTP.ClearCookiesPerIter) {
 				if err := vu.clearProtocolCookies(iterCtx); err != nil {
 					logger.Error("iteration cookie clear failed", "iteration", iteration+1, "err", scrubSensitiveError(err, vu.RedactionConfig))
+					goto teardown
+				}
+			}
+			if newUser {
+				if err := vu.clearProtocolCache(iterCtx); err != nil {
+					logger.Error("iteration cache clear failed", "iteration", iteration+1, "err", scrubSensitiveError(err, vu.RedactionConfig))
 					goto teardown
 				}
 			}

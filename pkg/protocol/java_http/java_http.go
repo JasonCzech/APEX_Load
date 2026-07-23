@@ -49,6 +49,11 @@ type JavaHTTP struct {
 	responseMapping      map[string]string
 }
 
+var (
+	_ protocol.CookieController = (*JavaHTTP)(nil)
+	_ protocol.CacheController  = (*JavaHTTP)(nil)
+)
+
 func (j *JavaHTTP) Name() string { return "java_http" }
 
 func (j *JavaHTTP) Init(ctx context.Context, config map[string]any) error {
@@ -226,6 +231,23 @@ func (j *JavaHTTP) Teardown(ctx context.Context) error {
 		return nil
 	}
 	return j.http.Teardown(ctx)
+}
+
+// ClearCookies / ClearCache delegate to the wrapped HTTP protocol so that
+// browser-emulation's "simulate a new user on each iteration" (and the
+// cookie_clear action) actually reset Java-over-HTTP session state.
+func (j *JavaHTTP) ClearCookies(ctx context.Context) error {
+	if j.http == nil {
+		return nil
+	}
+	return j.http.ClearCookies(ctx)
+}
+
+func (j *JavaHTTP) ClearCache(ctx context.Context) error {
+	if j.http == nil {
+		return nil
+	}
+	return j.http.ClearCache(ctx)
 }
 
 func (j *JavaHTTP) HealthCheck(ctx context.Context) error {

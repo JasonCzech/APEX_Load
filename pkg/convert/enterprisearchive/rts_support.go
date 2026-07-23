@@ -101,12 +101,51 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			ID:      "request_headers",
 			Area:    "Browser Emulation",
 			Concept: "User agent and default accept headers",
-			Fields:  []string{"config.browser.user_agent", "config.http.user_agent", "config.http.accept_language", "config.http.accept_encoding"},
+			Fields:  []string{"config.browser_emulation.custom_user_agent", "config.browser_emulation.language", "config.http.accept_language", "config.http.accept_encoding"},
 			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "Imported user agent and accept headers execute in HTTP and browser runtimes.",
+			Notes:   "Imported user agent and accept headers execute on HTTP replay via config.browser_emulation and the HTTP default headers.",
 		},
 		matchers: []runtimeSettingMatcher{
-			matcher([]string{"Browser Emulation", "Browser"}, []string{"UserAgent", "AcceptLanguage", "AcceptEncoding"}),
+			matcher([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"UserAgent", "CustomUserAgent", "BrowserUserAgent", "UseCustomAgent", "UseCustomUserAgent", "AcceptLanguage", "BrowserAcceptLanguage", "BrowserLanguageCode", "NavigatorBrowserLanguage", "NavigatorUserLanguage", "AcceptEncoding", "BrowserAcceptEncoding"}),
+		},
+	},
+	{
+		entry: RuntimeSettingSupportEntry{
+			ID:      "browser_selection",
+			Area:    "Browser Emulation",
+			Concept: "Specific browser selection (type, version, platform)",
+			Fields:  []string{"config.browser_emulation.browser_type", "config.browser_emulation.browser_version", "config.browser_emulation.platform"},
+			Status:  RuntimeSettingStatusExecuted,
+			Notes:   "The selected browser resolves to a catalog User-Agent that HTTP replay presents on every request.",
+		},
+		matchers: []runtimeSettingMatcher{
+			matcher([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"BrowserType", "Browser_Type", "UserBrowserType", "BrowserVer", "BrowserVersion", "UserBrowserVersion", "BrowserPlatform"}),
+		},
+	},
+	{
+		entry: RuntimeSettingSupportEntry{
+			ID:      "download_non_html_resources",
+			Area:    "Browser Emulation",
+			Concept: "Download non-HTML resources",
+			Fields:  []string{"config.browser_emulation.cache.download_non_html_resources"},
+			Status:  RuntimeSettingStatusExecuted,
+			Notes:   "HTTP replay parses HTML responses and fetches embedded resources with browser-like bounded concurrency, feeding the simulated cache.",
+		},
+		matchers: []runtimeSettingMatcher{
+			matcherWithValues([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"SearchForImages", "DownloadNonHtmlResources"}, []string{"1", "0", "yes", "no", "true", "false", "on", "off", "enabled", "disabled"}),
+		},
+	},
+	{
+		entry: RuntimeSettingSupportEntry{
+			ID:      "simulate_prefetch_prerender",
+			Area:    "Browser Emulation",
+			Concept: "Simulate browser prefetch and prerender",
+			Fields:  []string{"config.browser_emulation.cache.simulate_prefetch"},
+			Status:  RuntimeSettingStatusExecuted,
+			Notes:   "HTTP replay fetches link rel=prefetch/prerender/preload targets after page resources.",
+		},
+		matchers: []runtimeSettingMatcher{
+			matcher([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"SimulatePrefetchPrerender", "SimulatePrefetch", "Prefetch"}),
 		},
 	},
 	{
@@ -249,45 +288,48 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 		entry: RuntimeSettingSupportEntry{
 			ID:      "browser_cache_enabled",
 			Area:    "Browser Emulation",
-			Concept: "Cache enabled",
-			Fields:  []string{"config.browser.cache_enabled"},
+			Concept: "Simulate browser cache",
+			Fields:  []string{"config.browser_emulation.cache.simulate_cache", "config.browser.cache_enabled"},
 			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "Browser runtime toggles browser cache usage.",
+			Notes:   "HTTP replay toggles the simulated response cache; the browser runtime toggles its own cache usage.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Browser Emulation", "Browser"}, []string{"CacheEnabled"})},
+		matchers: []runtimeSettingMatcher{matcher([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"CacheEnabled", "SimulateCache"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
 			ID:      "browser_cache_content_urls",
 			Area:    "Browser Emulation",
 			Concept: "Cache URLs requiring content",
-			Fields:  []string{"config.browser.cache_content_urls"},
+			Fields:  []string{"config.browser_emulation.cache.cache_content_urls", "config.browser.cache_content_urls"},
 			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "Browser runtime forces content revalidation when disabled.",
+			Notes:   "HTTP replay restricts cache storage to content-bearing (HTML) responses when enabled.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Browser Emulation", "Browser"}, []string{"CacheContentURLs", "CacheURLsRequiringContent"})},
+		matchers: []runtimeSettingMatcher{matcher([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"CacheContentURLs", "CacheURLsRequiringContent", "CacheHtmlPages"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
 			ID:      "browser_check_newer_versions",
 			Area:    "Browser Emulation",
-			Concept: "Check for newer versions",
-			Fields:  []string{"config.browser.check_newer_versions"},
+			Concept: "Check for newer versions on every visit",
+			Fields:  []string{"config.browser_emulation.cache.check_newer_versions", "config.browser.check_newer_versions"},
 			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "Browser runtime injects revalidation headers.",
+			Notes:   "HTTP replay revalidates fresh cache entries with conditional requests on every visit; the browser runtime injects revalidation headers.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Browser Emulation", "Browser"}, []string{"CheckNewerVersions", "CheckForNewerPages"})},
+		matchers: []runtimeSettingMatcher{matcher([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"CheckNewerVersions", "CheckForNewerPages", "CheckNewerVersion", "CacheAlwaysCheckForNewerPages"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
 			ID:      "browser_new_user_per_iteration",
 			Area:    "Browser Emulation",
-			Concept: "New user each iteration",
-			Fields:  []string{"config.browser.new_user_per_iteration"},
+			Concept: "Simulate a new user on each iteration",
+			Fields:  []string{"config.browser_emulation.cache.new_user_each_iteration", "config.browser.new_user_per_iteration"},
 			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "Browser protocol is reset between iterations.",
+			Notes:   "HTTP replay clears the simulated cache and cookie jar at iteration start; the browser protocol is reset between iterations.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Browser Emulation", "Browser"}, []string{"NewUserPerIteration", "SimulateNewUser"})},
+		// ClearCacheForSimulateNewUser is deliberately NOT a matcher: stock VuGen
+		// cfgs carry it unconditionally, and the importer never applies it on its
+		// own (raw-preserved only), so matching it would overclaim "executed".
+		matchers: []runtimeSettingMatcher{matcher([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"NewUserPerIteration", "SimulateNewUser"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{

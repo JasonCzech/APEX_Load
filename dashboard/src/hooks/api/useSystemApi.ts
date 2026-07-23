@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from 'react'
 
-import { type ScriptConfig } from '../../types/scripts'
+import { type BrowserEmulationCatalog, type ScriptConfig } from '../../types/scripts'
 
 import {
   ArchiveRetentionPlanResponse,
@@ -151,6 +151,10 @@ export function useSystemApi() {
   // Engine config defaults — the values the runtime applies when a script leaves a
   // field unset; the runtime editor uses these as the lowest "inherited" layer.
   const getConfigDefaults = useCallback(() => request<{ config: ScriptConfig }>('/dsl/config-defaults'), [])
+  // Browser-emulation catalog: the curated browser identities the runtime
+  // editor's Browser Emulation tab offers, kept in lockstep with replay-time
+  // User-Agent resolution by serving it from the controller.
+  const getBrowserEmulationCatalog = useCallback(() => request<BrowserEmulationCatalog>('/dsl/browser-emulation-catalog'), [])
   const getSystemInventory = useCallback(() => request<SystemInventoryResponse>('/system/inventory'), [])
   const getRestartCapabilities = useCallback(() => request<SystemRestartCapabilities>('/system/restarts/capabilities'), [])
   const executeRestart = useCallback(
@@ -299,6 +303,7 @@ export function useSystemApi() {
       getHealth,
       getVersion,
       getConfigDefaults,
+      getBrowserEmulationCatalog,
       getSystemInventory,
       getRestartCapabilities,
       executeRestart,
@@ -339,6 +344,6 @@ export function useSystemApi() {
       testPowerBIConnection,
       recreatePowerBIDataset,
     }),
-    [getAuthEffectiveAccess, getAuthEffectiveAccessForPrincipal, getAuthAccessMatrix, getAuthPolicy, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, onboardAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, revokeAuthUserSessions, deleteAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, getAccessReview, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getConfigDefaults, getSystemInventory, getRestartCapabilities, executeRestart, getSystemReadiness, getSystemServices, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getPrometheusGraphs, getImportedDashboardGraphs, listImportedDashboards, importGrafanaDashboard, importGrafanaDashboardByUID, commitGrafanaDashboardImport, previewGrafanaDashboardImport, resolveGrafanaImportLabelValues, getImportedDashboardPanels, patchImportedDashboard, deleteImportedDashboard, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, ackFleetAlert, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings, testPowerBIConnection, recreatePowerBIDataset],
+    [getAuthEffectiveAccess, getAuthEffectiveAccessForPrincipal, getAuthAccessMatrix, getAuthPolicy, getAuthDiagnostics, getAuthRoleCatalog, listAuthServiceAccounts, createAuthServiceAccount, updateAuthServiceAccount, rotateAuthServiceAccount, deleteAuthServiceAccount, listAuthUsers, createAuthUser, onboardAuthUser, updateAuthUser, enableAuthUser, disableAuthUser, revokeAuthUserSessions, deleteAuthUser, createAuthUserBinding, deleteAuthUserBinding, getAuthUserActivity, downloadAuthUserActivity, getAccessReview, listAuthAuditEvents, downloadAuthAuditEvents, getHealth, getVersion, getConfigDefaults, getBrowserEmulationCatalog, getSystemInventory, getRestartCapabilities, executeRestart, getSystemReadiness, getSystemServices, getParityStatus, getBrowserBenchmarks, getAPMIntegrationProfiles, getInfrastructureMonitorPacks, getPrometheusGraphs, getImportedDashboardGraphs, listImportedDashboards, importGrafanaDashboard, importGrafanaDashboardByUID, commitGrafanaDashboardImport, previewGrafanaDashboardImport, resolveGrafanaImportLabelValues, getImportedDashboardPanels, patchImportedDashboard, deleteImportedDashboard, getReportProfiles, getReleaseSLAGovernance, createReleaseSLAWaiver, listExternalResultImports, importExternalResults, getFleetAlerts, ackFleetAlert, getFleetCapacity, getFleetProvisioner, getUsageAccounting, listUsageAccountingSnapshots, captureUsageAccountingSnapshot, downloadUsageAccounting, planArchiveRetention, applyArchiveRetention, getSystemSettings, updateSystemSettings, testPowerBIConnection, recreatePowerBIDataset],
   )
 }

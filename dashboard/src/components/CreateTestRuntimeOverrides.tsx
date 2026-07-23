@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { ScenarioDraft } from '../types'
 import { JavaEnvSettingsFields, type JavaEnvSettingsValue } from './JavaEnvSettingsFields'
+import { FALLBACK_BROWSER_EMULATION_CATALOG } from './scriptEditorRuntimeSettingsModel'
 
 type RuntimeSettingsState = ScenarioDraft['runtimeSettings']
 type BrowserRuntimeSettings = NonNullable<RuntimeSettingsState['browser']>
 type WebRuntimeSettings = NonNullable<RuntimeSettingsState['web_runtime']>
+type BrowserEmulationSettings = NonNullable<RuntimeSettingsState['browser_emulation']>
 
 // looksLikeIp is a lightweight client-side hint mirroring the backend's net.ParseIP
 // gate (config.web_runtime.source_ips). The server remains the authority; this only
@@ -104,6 +106,21 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
   const hasInvalidIp = ipRows.some((row) => row.trim() !== '' && !looksLikeIp(row))
 
   const [javaEnvOpen, setJavaEnvOpen] = useState(Boolean(runtimeSettings.java_vuser))
+
+  const [browserEmulationOpen, setBrowserEmulationOpen] = useState(Boolean(runtimeSettings.browser_emulation))
+  const browserEmulation = runtimeSettings.browser_emulation
+  const selectedEmulationBrowser = FALLBACK_BROWSER_EMULATION_CATALOG.browsers.find(
+    (browser) => browser.type === browserEmulation?.browser_type,
+  )
+  const updateBrowserEmulation = (patch: Partial<BrowserEmulationSettings>) => {
+    onRuntimeSettingChange('browser_emulation', { ...(runtimeSettings.browser_emulation || {}), ...patch })
+  }
+  const updateBrowserEmulationCache = (patch: Partial<NonNullable<BrowserEmulationSettings['cache']>>) => {
+    onRuntimeSettingChange('browser_emulation', {
+      ...(runtimeSettings.browser_emulation || {}),
+      cache: { ...(runtimeSettings.browser_emulation?.cache || {}), ...patch },
+    })
+  }
   const updateJavaEnv = (next: JavaEnvSettingsValue) => {
     const cleaned: JavaEnvSettingsValue = { ...next }
     for (const key of Object.keys(cleaned) as Array<keyof JavaEnvSettingsValue>) {
@@ -372,6 +389,173 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
               <p className="ip-spoofing-error">Enter valid IPv4 or IPv6 addresses.</p>
             )}
             <button type="button" className="btn-add-ip" onClick={addIpRow}>+ Add IP</button>
+          </div>
+        )}
+      </section>
+
+      <section className="browser-emulation-overrides">
+        <label className="checkbox-label">
+          <input
+            type="checkbox"
+            checked={browserEmulationOpen}
+            onChange={(event) => {
+              setBrowserEmulationOpen(event.target.checked)
+              if (!event.target.checked) onRuntimeSettingChange('browser_emulation', undefined)
+            }}
+          />
+          <span>Override Browser Emulation (HTTP-transport groups)</span>
+        </label>
+        {browserEmulationOpen && (
+          <div className="browser-emulation-overrides-body">
+            <div className="form-grid">
+              <label>
+                <span>Mode</span>
+                <select
+                  value={browserEmulation?.mode || ''}
+                  aria-label="Browser emulation mode"
+                  onChange={(event) => {
+                    const mode = event.target.value
+                    if (!mode) {
+                      onRuntimeSettingChange('browser_emulation', undefined)
+                      return
+                    }
+                    updateBrowserEmulation(mode === 'custom'
+                      ? { mode: 'custom', browser_type: undefined, browser_version: undefined, platform: undefined }
+                      : { mode: 'specific', custom_user_agent: undefined })
+                  }}
+                >
+                  <option value="">Inherit</option>
+                  <option value="specific">Specific browser</option>
+                  <option value="custom">Custom browser</option>
+                </select>
+              </label>
+              <label>
+                <span>Browser</span>
+                <select
+                  value={browserEmulation?.browser_type || ''}
+                  disabled={browserEmulation?.mode === 'custom'}
+                  aria-label="Browser type"
+                  onChange={(event) => updateBrowserEmulation({
+                    mode: event.target.value ? 'specific' : browserEmulation?.mode,
+                    browser_type: event.target.value || undefined,
+                    browser_version: undefined,
+                    platform: undefined,
+                  })}
+                >
+                  <option value="">Engine default</option>
+                  {FALLBACK_BROWSER_EMULATION_CATALOG.browsers.map((browser) => (
+                    <option key={browser.type} value={browser.type}>{browser.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Version</span>
+                <select
+                  value={browserEmulation?.browser_version || ''}
+                  disabled={browserEmulation?.mode === 'custom' || !selectedEmulationBrowser}
+                  aria-label="Browser version"
+                  onChange={(event) => updateBrowserEmulation({ browser_version: event.target.value || undefined })}
+                >
+                  <option value="">Latest</option>
+                  {(selectedEmulationBrowser?.versions || []).map((version) => (
+                    <option key={version} value={version}>{version}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Platform</span>
+                <select
+                  value={browserEmulation?.platform || ''}
+                  disabled={browserEmulation?.mode === 'custom' || !selectedEmulationBrowser}
+                  aria-label="Browser platform"
+                  onChange={(event) => updateBrowserEmulation({ platform: event.target.value || undefined })}
+                >
+                  <option value="">Browser default</option>
+                  {(selectedEmulationBrowser?.platforms || []).map((platform) => (
+                    <option key={platform} value={platform}>
+                      {FALLBACK_BROWSER_EMULATION_CATALOG.platforms.find((candidate) => candidate.id === platform)?.label || platform}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                <span>Language</span>
+                <select
+                  value={browserEmulation?.language || ''}
+                  aria-label="Browser language"
+                  onChange={(event) => updateBrowserEmulation({ language: event.target.value || undefined })}
+                >
+                  <option value="">Engine default</option>
+                  {FALLBACK_BROWSER_EMULATION_CATALOG.languages.map((language) => (
+                    <option key={language.tag} value={language.tag}>{language.label}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="full-width">
+                <span>Custom User-Agent</span>
+                <input
+                  value={browserEmulation?.custom_user_agent || ''}
+                  disabled={browserEmulation?.mode !== 'custom'}
+                  placeholder="Mozilla/5.0 ..."
+                  aria-label="Custom User-Agent"
+                  onChange={(event) => updateBrowserEmulation({ custom_user_agent: event.target.value })}
+                />
+              </label>
+            </div>
+            <div className="runtime-checkbox-list" aria-label="Browser cache simulation">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={browserEmulation?.cache?.simulate_cache || false}
+                  onChange={(event) => updateBrowserEmulationCache(event.target.checked
+                    ? { simulate_cache: true }
+                    : { simulate_cache: false, cache_content_urls: undefined, check_newer_versions: undefined })}
+                />
+                <span>Simulate browser cache</span>
+              </label>
+              <label className="checkbox-label checkbox-label-indented">
+                <input
+                  type="checkbox"
+                  checked={browserEmulation?.cache?.cache_content_urls || false}
+                  disabled={!browserEmulation?.cache?.simulate_cache}
+                  onChange={(event) => updateBrowserEmulationCache({ cache_content_urls: event.target.checked })}
+                />
+                <span>Cache URLs requiring content (HTMLs)</span>
+              </label>
+              <label className="checkbox-label checkbox-label-indented">
+                <input
+                  type="checkbox"
+                  checked={browserEmulation?.cache?.check_newer_versions || false}
+                  disabled={!browserEmulation?.cache?.simulate_cache}
+                  onChange={(event) => updateBrowserEmulationCache({ check_newer_versions: event.target.checked })}
+                />
+                <span>Check for newer versions of stored pages on every visit</span>
+              </label>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={browserEmulation?.cache?.download_non_html_resources || false}
+                  onChange={(event) => updateBrowserEmulationCache({ download_non_html_resources: event.target.checked })}
+                />
+                <span>Download non-HTML resources</span>
+              </label>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={browserEmulation?.cache?.new_user_each_iteration || false}
+                  onChange={(event) => updateBrowserEmulationCache({ new_user_each_iteration: event.target.checked })}
+                />
+                <span>Simulate a new user on each iteration</span>
+              </label>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={browserEmulation?.cache?.simulate_prefetch || false}
+                  onChange={(event) => updateBrowserEmulationCache({ simulate_prefetch: event.target.checked })}
+                />
+                <span>Simulate prefetch and prerender</span>
+              </label>
+            </div>
           </div>
         )}
       </section>

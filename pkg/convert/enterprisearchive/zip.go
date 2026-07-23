@@ -491,6 +491,7 @@ func finalizeEnterpriseArchiveImportResult(result *ConvertResult, ctx archiveFin
 	if result == nil {
 		return
 	}
+	applyBrowserEmulationRuntimeSettingsReview(result, ctx.RuntimeConfig)
 	parameterSections := make(map[string]map[string]map[string]string)
 	scripts := result.effectiveScripts()
 	if len(scripts) > 0 {
@@ -925,6 +926,67 @@ func preservedJavaVMSettings(runtimeCfg *RuntimeConfig) map[string]any {
 	return settings
 }
 
+// preservedBrowserEmulationSettings captures the raw browser-emulation source
+// values (including unmapped browser names and the never-applied
+// ClearCacheForSimulateNewUser child key) for round-trip review.
+func preservedBrowserEmulationSettings(runtimeCfg *RuntimeConfig) map[string]any {
+	if runtimeCfg == nil {
+		return nil
+	}
+	settings := make(map[string]any)
+	putRaw := func(key, value string) {
+		if value != "" {
+			settings[key] = value
+		}
+	}
+	putRaw("browser_type_raw", runtimeCfg.BEBrowserTypeRaw)
+	putRaw("browser_version", runtimeCfg.BEBrowserVersion)
+	putRaw("platform_raw", runtimeCfg.BEPlatformRaw)
+	putRaw("language", runtimeCfg.BELanguage)
+	putRaw("use_custom_user_agent_raw", runtimeCfg.BEUseCustomUARaw)
+	putRaw("simulate_cache_raw", runtimeCfg.BESimulateCacheRaw)
+	putRaw("cache_content_urls_raw", runtimeCfg.BECacheContentURLsRaw)
+	putRaw("check_newer_versions_raw", runtimeCfg.BECheckNewerVersionsRaw)
+	putRaw("new_user_each_iteration_raw", runtimeCfg.BENewUserEachIterationRaw)
+	putRaw("download_non_html_resources_raw", runtimeCfg.BEDownloadNonHTMLRaw)
+	putRaw("simulate_prefetch_raw", runtimeCfg.BESimulatePrefetchRaw)
+	putRaw("clear_cache_each_iteration_raw", runtimeCfg.BEClearCacheEachIterationRaw)
+	if runtimeCfg.BEBrowserTypeRaw != "" && runtimeCfg.BEBrowserType == "" {
+		settings["browser_type_unmapped"] = true
+	}
+	if len(settings) == 0 {
+		return nil
+	}
+	return settings
+}
+
+// applyBrowserEmulationRuntimeSettingsReview surfaces malformed
+// browser-emulation values as import warnings. Unlike Java VM blockers these
+// do not gate promotion: an unparseable boolean simply leaves the setting
+// unset, with the raw value preserved in metadata for review.
+func applyBrowserEmulationRuntimeSettingsReview(result *ConvertResult, runtimeCfg *RuntimeConfig) {
+	if result == nil || runtimeCfg == nil {
+		return
+	}
+	warn := func(parseError, raw string) {
+		if parseError == "" {
+			return
+		}
+		result.Warnings = append(result.Warnings, fmt.Sprintf("Browser Emulation import: %s (source value %q); the setting was left unset and preserved for review.", parseError, raw))
+	}
+	warn(runtimeCfg.BEUseCustomUAParseError, runtimeCfg.BEUseCustomUARaw)
+	warn(runtimeCfg.BESimulateCacheParseError, runtimeCfg.BESimulateCacheRaw)
+	warn(runtimeCfg.BECacheContentURLsParseError, runtimeCfg.BECacheContentURLsRaw)
+	warn(runtimeCfg.BECheckNewerParseError, runtimeCfg.BECheckNewerVersionsRaw)
+	warn(runtimeCfg.BENewUserParseError, runtimeCfg.BENewUserEachIterationRaw)
+	warn(runtimeCfg.BEDownloadNonHTMLParseError, runtimeCfg.BEDownloadNonHTMLRaw)
+	warn(runtimeCfg.BESimulatePrefetchParseError, runtimeCfg.BESimulatePrefetchRaw)
+	if runtimeCfg.BEBrowserTypeRaw != "" && runtimeCfg.BEBrowserType == "" {
+		result.Warnings = append(result.Warnings, fmt.Sprintf("Browser Emulation import: browser type %q is not in the APEX browser catalog; no specific-browser emulation was configured and the raw value was preserved for review.", runtimeCfg.BEBrowserTypeRaw))
+	}
+	result.Warnings = uniqueSortedStrings(result.Warnings)
+}
+
 func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFileName string, projectSections map[string]map[string]string, projectConfig *ProjectConfig, files map[string]string, runtimeFileName string, runtimeCfg *RuntimeConfig, parameterSections map[string]map[string]map[string]string, parameterFileNames []string, trueClientInspection *trueclient.ArchiveInspection) {
 	if script == nil {
 		return
@@ -964,6 +1026,9 @@ func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFile
 		if javaVM := preservedJavaVMSettings(runtimeCfg); javaVM != nil {
 			preserved["java_vm_settings"] = javaVM
 		}
+	}
+	if browserEmulation := preservedBrowserEmulationSettings(runtimeCfg); browserEmulation != nil {
+		preserved["browser_emulation_settings"] = browserEmulation
 	}
 	if len(parameterFileNames) > 0 {
 		files := make([]string, 0, len(parameterFileNames))

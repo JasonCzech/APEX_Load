@@ -76,6 +76,28 @@ func (vu *VUser) clearProtocolCookies(ctx context.Context) error {
 	return controller.ClearCookies(ctx)
 }
 
+// browserEmulationNewUserEachIteration reports whether browser emulation's
+// "simulate a new user on each iteration" is enabled — the flag that clears
+// both the simulated browser cache and the cookie jar at iteration start.
+func browserEmulationNewUserEachIteration(cfg dsl.ScriptConfig) bool {
+	emu := cfg.BrowserEmulation
+	return emu != nil && emu.Cache != nil && emu.Cache.NewUserEachIteration != nil && *emu.Cache.NewUserEachIteration
+}
+
+// clearProtocolCache dispatches to the protocol.CacheController capability
+// (HTTP's simulated browser cache). Safe no-op when the protocol keeps no
+// response cache.
+func (vu *VUser) clearProtocolCache(ctx context.Context) error {
+	if vu == nil || vu.Proto == nil {
+		return nil
+	}
+	controller, ok := vu.Proto.(protocol.CacheController)
+	if !ok {
+		return nil
+	}
+	return controller.ClearCache(ctx)
+}
+
 func (vu *VUser) handleHTTPOAuth2TokenAction(ctx context.Context, action dsl.Action) error {
 	params := vu.interpolateAnyMap(action.Params)
 	saveAs, _ := actionParamString(params, "save_as")

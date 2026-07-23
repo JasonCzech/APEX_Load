@@ -94,6 +94,7 @@ func ValidateScriptIssues(script *Script) []string {
 	issues = append(issues, fileDataSourceIssues...)
 	issues = append(issues, validateFileReferenceIssues(script)...)
 	issues = append(issues, validateBrowserConfigIssues(script)...)
+	issues = append(issues, validateBrowserEmulationIssues(script)...)
 	issues = append(issues, validateWebSocketConfigIssues(script)...)
 	issues = append(issues, validateGRPCConfigIssues(script)...)
 	issues = append(issues, validateWebRuntimeIssues(script)...)

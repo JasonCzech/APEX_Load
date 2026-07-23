@@ -1,5 +1,6 @@
 import type {
   BrowserConfig,
+  BrowserEmulationConfig,
   ErrorHandlingConfig,
   HTTPConfig,
   JavaVuserConfig,
@@ -45,6 +46,7 @@ export interface RuntimeSettingsOverride {
   http?: HTTPConfig
   web_runtime?: WebRuntimeConfig
   browser_config?: BrowserConfig
+  browser_emulation?: BrowserEmulationConfig
   java_vuser?: RuntimeJavaVuserSettings
   base_url?: string
   env?: Record<string, string>
@@ -95,6 +97,7 @@ export interface ScenarioRuntimeSettingsDraft {
   http?: HTTPConfig
   web_runtime?: WebRuntimeConfig
   browser_config?: BrowserConfig
+  browser_emulation?: BrowserEmulationConfig
   java_vuser?: RuntimeJavaVuserSettings
   base_url?: string
   env?: Record<string, string>

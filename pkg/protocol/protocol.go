@@ -271,6 +271,16 @@ type CookieController interface {
 	ClearCookies(ctx context.Context) error
 }
 
+// CacheController is an optional capability for protocols that maintain a
+// per-VUser response cache. The engine invokes ClearCache at the start of an
+// iteration when browser emulation's "simulate a new user on each iteration"
+// is enabled. Protocols without a cache simply do not implement this
+// interface and the engine treats the clear as a no-op.
+type CacheController interface {
+	// ClearCache discards all cached responses held by the VUser session.
+	ClearCache(ctx context.Context) error
+}
+
 // Action represents a single operation (HTTP request, message, etc.) to execute.
 type HeaderEntry struct {
 	Name  string `json:"name"`

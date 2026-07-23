@@ -155,7 +155,7 @@ describe('RuntimeSettingsGroupEditor', () => {
 
     // Universal tabs always present.
     render(0) // http
-    expect(tabLabels()).toEqual(['Summary', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling', 'HTTP Transport', 'Web/HTTP'])
+    expect(tabLabels()).toEqual(['Summary', 'Think Time', 'Iteration Pacing', 'Run Logic', 'Error Handling', 'HTTP Transport', 'Browser Emulation', 'Web/HTTP'])
 
     render(1) // browser — HTTP Transport (with browser emulation) + Web/HTTP still show
     expect(tabLabels()).toContain('HTTP Transport')
@@ -187,8 +187,8 @@ describe('RuntimeSettingsGroupEditor', () => {
     })
     // HTTP Transport tab shows for the browser group and folds in Browser emulation.
     clickTab('HTTP Transport')
-    expect(container.textContent || '').toContain('Browser emulation')
-    clickTab('Browser emulation')
+    expect(container.textContent || '').toContain('Browser (Playwright)')
+    clickTab('Browser (Playwright)')
     const deviceSelect = Array.from(container.querySelectorAll('select')).find(s =>
       Array.from(s.options).some(o => o.value === 'pixel_8'),
     )
@@ -599,7 +599,7 @@ describe('RuntimeSettingsGroupEditor', () => {
       )
     })
     clickTab('HTTP Transport')
-    clickTab('Browser emulation')
+    clickTab('Browser (Playwright)')
     const engineSelect = Array.from(container.querySelectorAll('select')).find(s =>
       Array.from(s.options).some(o => o.value === 'webkit') && Array.from(s.options).some(o => o.value === 'chromium'),
     ) as HTMLSelectElement
@@ -1091,7 +1091,7 @@ describe('RuntimeSettingsGroupEditor', () => {
       )
     })
     clickTab('HTTP Transport')
-    clickTab('Browser emulation')
+    clickTab('Browser (Playwright)')
     const reviewedJavaScript = Array.from(container.querySelectorAll('label')).find(label =>
       (label.textContent || '').includes('Allow reviewed JavaScript'),
     )?.querySelector('input[type="checkbox"]') as HTMLInputElement
@@ -1186,7 +1186,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     })
 
     clickTab('HTTP Transport')
-    clickTab('Browser emulation')
+    clickTab('Browser (Playwright)')
     act(() => setInputValue(findLabeledControl<HTMLInputElement>('Viewport height', 'input'), '900'))
     expect(onChange.mock.calls[onChange.mock.calls.length - 1]?.[1].browser_config).toEqual({
       headless: false,
@@ -1204,6 +1204,40 @@ describe('RuntimeSettingsGroupEditor', () => {
     })
   })
 
+  it('offers the Browser Emulation tab for http groups and writes browser_emulation overrides', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor groups={GROUPS} focusedIndex={0} onFocusChange={() => {}} overrides={[undefined, undefined]} onChange={onChange} onApplyToGroups={() => {}} />,
+      )
+    })
+    clickTab('Browser Emulation')
+    const browserSelect = container.querySelector<HTMLSelectElement>('select[aria-label="Browser type"]')
+    expect(browserSelect).toBeTruthy()
+    act(() => {
+      browserSelect!.value = 'chrome'
+      browserSelect!.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const written = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(written?.browser_emulation).toMatchObject({ mode: 'specific', browser_type: 'chrome' })
+
+    const cacheCheckbox = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'))
+      .find(cb => cb.closest('label')?.textContent?.includes('Simulate browser cache'))
+    expect(cacheCheckbox).toBeTruthy()
+    act(() => cacheCheckbox!.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const cacheWritten = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(cacheWritten?.browser_emulation?.cache).toMatchObject({ simulate_cache: true })
+  })
+
+  it('hides the Browser Emulation tab for browser-protocol groups', () => {
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor groups={GROUPS} focusedIndex={1} onFocusChange={() => {}} overrides={[undefined, undefined]} onChange={() => {}} onApplyToGroups={() => {}} />,
+      )
+    })
+    expect(tabLabels()).not.toContain('Browser Emulation')
+  })
+
   it('shows the Browser emulation sub-tab only for browser groups', () => {
     const subTabLabels = () => Array.from(container.querySelectorAll('.http-transport-tab')).map(b => (b.textContent || '').trim())
     // http group → no Browser emulation sub-tab.
@@ -1213,7 +1247,7 @@ describe('RuntimeSettingsGroupEditor', () => {
       )
     })
     clickTab('HTTP Transport')
-    expect(subTabLabels()).not.toContain('Browser emulation')
+    expect(subTabLabels()).not.toContain('Browser (Playwright)')
     // browser group → Browser emulation sub-tab present.
     act(() => {
       root.render(
@@ -1221,6 +1255,6 @@ describe('RuntimeSettingsGroupEditor', () => {
       )
     })
     clickTab('HTTP Transport')
-    expect(subTabLabels()).toContain('Browser emulation')
+    expect(subTabLabels()).toContain('Browser (Playwright)')
   })
 })
