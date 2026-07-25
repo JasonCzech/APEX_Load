@@ -3,6 +3,8 @@ import { useCallback, useRef, useState, type CSSProperties, type DragEvent } fro
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { canUseNativeDialogs, filesFromDroppedPaths, nativeFileReadErrorMessage, pickFilesViaBridge, shouldUseBrowserFileFallback } from '../desktop/desktopFiles'
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
+import DropIngestOverlay from './DropIngestOverlay'
+import { useDropIngestFeedback } from './dropIngestFeedback'
 import './ImportDropzone.css'
 
 interface Props {
@@ -28,33 +30,40 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
   const zoneRef = useRef<HTMLDivElement>(null)
   const [dragOver, setDragOver] = useState(false)
   const [browserFallback, setBrowserFallback] = useState(false)
+  // Stable callbacks — destructured so the native drop handler keeps its identity
+  // (it is a useDesktopFileDrop dependency and would re-register every render).
+  const { phase: ingestPhase, label: ingestLabel, hostClassName, begin: beginIngest, succeed: succeedIngest, fail: failIngest } = useDropIngestFeedback()
 
   const desktop = isDesktopSurface()
   const nativeDialogs = desktop && canUseNativeDialogs() && !browserFallback
 
-  const acceptFile = useCallback((next?: File | null) => {
-    if (!next) return
+  const acceptFile = useCallback((next?: File | null): boolean => {
+    if (!next) return false
     if (validate) {
       const error = validate(next)
       if (error) {
         onError?.(error)
-        return
+        return false
       }
     }
     onFile(next)
+    return true
   }, [validate, onError, onFile])
 
   // Native drop (desktop): Wails delivers absolute paths; reconstruct a File.
   const handleNativePaths = useCallback((paths: string[]) => {
+    beginIngest()
     void filesFromDroppedPaths(paths).then(files => {
       setDragOver(false)
-      acceptFile(files[0])
+      if (acceptFile(files[0])) succeedIngest(`Added ${files[0].name}`)
+      else failIngest()
     }).catch(error => {
       setDragOver(false)
+      failIngest()
       onError?.(nativeFileReadErrorMessage(error))
       if (shouldUseBrowserFileFallback(error)) setBrowserFallback(true)
     })
-  }, [acceptFile, onError])
+  }, [acceptFile, onError, beginIngest, succeedIngest, failIngest])
   useDesktopFileDrop(zoneRef, handleNativePaths, desktop)
 
   const handleBrowse = useCallback(() => {
@@ -81,7 +90,13 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
     // In the desktop shell, file drops arrive via the native OnFileDrop router
     // (dataTransfer carries no usable path); ignore the HTML5 drop there.
     if (desktop) return
-    acceptFile(event.dataTransfer.files?.[0])
+    const dropped = event.dataTransfer.files?.[0]
+    if (!dropped) return
+    // The File is available synchronously here, so the feedback hook holds the
+    // "reading" state briefly — otherwise a drop lands with no visible change.
+    beginIngest()
+    if (acceptFile(dropped)) succeedIngest(`Added ${dropped.name}`)
+    else failIngest()
   }
 
   // The CSS marker registers this element as a Wails native drop target.
@@ -90,7 +105,7 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
   return (
     <div
       ref={zoneRef}
-      className={`import-dropzone ${dragOver ? 'drag-over' : ''} ${file ? 'has-file' : ''}`}
+      className={`import-dropzone ${hostClassName} ${dragOver ? 'drag-over' : ''} ${file ? 'has-file' : ''}`}
       style={dropTargetStyle}
       onDragOver={event => { event.preventDefault(); setDragOver(true) }}
       onDragLeave={() => setDragOver(false)}
@@ -98,8 +113,12 @@ export default function ImportDropzone({ accept, file, onFile, dropHint, validat
       onClick={handleBrowse}
       role="button"
       tabIndex={0}
+      // Named explicitly (as the JMeter/archive dropzones are) so the transient
+      // drop-status text inside the zone cannot leak into its accessible name.
+      aria-label={file ? `Selected file ${file.name}. Choose another file` : dropHint}
       onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') handleBrowse() }}
     >
+      <DropIngestOverlay phase={ingestPhase} label={ingestLabel} />
       <input
         ref={inputRef}
         type="file"

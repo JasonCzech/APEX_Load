@@ -19,6 +19,8 @@ import { getErrorMessage } from '../utils/errorUtils'
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { canUseNativeDialogs, filesFromDroppedPaths, nativeFileReadErrorMessage, pickFilesViaBridge, shouldUseBrowserFileFallback } from '../desktop/desktopFiles'
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
+import DropIngestOverlay from './DropIngestOverlay'
+import { describeAccepted, describeReading, useDropIngestFeedback } from './dropIngestFeedback'
 import { createJavaHttpDraft } from './scriptDraftFactories'
 import { attachImportCorrelationSuggestions } from './scriptEditorUtils'
 import ScriptImportReview from './ScriptImportReview'
@@ -426,6 +428,12 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
   const [primaryMergedCount, setPrimaryMergedCount] = useState(0)
   const [secondaryMergedCount, setSecondaryMergedCount] = useState(0)
   const [dragTarget, setDragTarget] = useState<'primary' | 'secondary' | null>(null)
+  // One drop animation per sample field. Destructured callbacks stay stable so
+  // the native drop handlers keep their identity for useDesktopFileDrop.
+  const primaryIngest = useDropIngestFeedback()
+  const secondaryIngest = useDropIngestFeedback()
+  const { begin: beginPrimaryIngest, succeed: succeedPrimaryIngest, fail: failPrimaryIngest } = primaryIngest
+  const { begin: beginSecondaryIngest, succeed: succeedSecondaryIngest, fail: failSecondaryIngest } = secondaryIngest
   const [messageError, setMessageError] = useState('')
   const convertTask = useAsyncTask<SampleImportResult>()
   const saveTask = useAsyncTask<StoredScript>()
@@ -512,14 +520,16 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
     setSecondaryMergedCount(0)
   }
 
-  const handleFilesLoad = useCallback(async (files: File[], target: 'primary' | 'secondary', formatOverride?: SampleFormat) => {
+  // Resolves with what happened, so drop handlers can settle the drop animation.
+  // 'superseded' means a newer load took over and now owns the animation.
+  const handleFilesLoad = useCallback(async (files: File[], target: 'primary' | 'secondary', formatOverride?: SampleFormat): Promise<'loaded' | 'superseded' | 'error'> => {
     const sourceGeneration = invalidateSampleSource()
     const sourceProjectId = reviewProjectIdRef.current
     const requestIsCurrent = () => reviewGenerationRef.current === sourceGeneration && reviewProjectIdRef.current === sourceProjectId
     const effectiveFormat = formatOverride || format
     try {
       const loaded = await Promise.all(files.map(async (file) => ({ file, text: await file.text() })))
-      if (!requestIsCurrent()) return
+      if (!requestIsCurrent()) return 'superseded'
       const normalized: LoadedSample[] = loaded.map(item => ({ name: item.file.name, text: item.text }))
       if (target === 'primary') {
         const merged = mergePrimarySamples(effectiveFormat, normalized)
@@ -537,8 +547,11 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
         setSecondaryMergedCount(merged.mergedCount)
       }
       setMessageError('')
+      return 'loaded'
     } catch (error: unknown) {
-      if (requestIsCurrent()) setMessageError(getErrorMessage(error, `Failed to read ${files[0]?.name || 'sample file'}`))
+      if (!requestIsCurrent()) return 'superseded'
+      setMessageError(getErrorMessage(error, `Failed to read ${files[0]?.name || 'sample file'}`))
+      return 'error'
     }
   }, [format, invalidateSampleSource])
 
@@ -576,6 +589,36 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
     }
   }
 
+  // Drop feedback is per field, so route to the matching animation.
+  const ingestFor = useCallback((target: 'primary' | 'secondary') => (
+    target === 'primary'
+      ? { begin: beginPrimaryIngest, succeed: succeedPrimaryIngest, fail: failPrimaryIngest }
+      : { begin: beginSecondaryIngest, succeed: succeedSecondaryIngest, fail: failSecondaryIngest }
+  ), [beginPrimaryIngest, succeedPrimaryIngest, failPrimaryIngest, beginSecondaryIngest, succeedSecondaryIngest, failSecondaryIngest])
+
+  // Only the newest drop per field owns that field's animation. A load can be
+  // superseded by an unrelated invalidation (typing in the textarea, changing
+  // format/options) as well as by a newer drop, so the sequence — not the
+  // 'superseded' outcome — decides who is allowed to settle the spinner.
+  const ingestSeqRef = useRef({ primary: 0, secondary: 0 })
+
+  const beginIngest = useCallback((target: 'primary' | 'secondary', count: number) => {
+    const seq = ingestSeqRef.current[target] + 1
+    ingestSeqRef.current[target] = seq
+    ingestFor(target).begin(describeReading(count))
+    return seq
+  }, [ingestFor])
+
+  const settleIngest = useCallback((target: 'primary' | 'secondary', seq: number, outcome: 'loaded' | 'superseded' | 'error', count: number) => {
+    // A newer drop on this field is already animating — leave it alone.
+    if (ingestSeqRef.current[target] !== seq) return
+    const ingest = ingestFor(target)
+    // 'superseded' here means the content never landed, so it must clear rather
+    // than confirm — otherwise the spinner runs until the watchdog fires.
+    if (outcome === 'loaded') ingest.succeed(describeAccepted(count))
+    else ingest.fail()
+  }, [ingestFor])
+
   const handleDrop = (event: React.DragEvent, target: 'primary' | 'secondary') => {
     event.preventDefault()
     setDragTarget(null)
@@ -583,22 +626,30 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
     const files = Array.from(event.dataTransfer.files || [])
     if (files.length > 0) {
       const allowMultiple = target === 'primary' ? supportsMultiPrimary(format) : supportsMultiSecondary(format)
-      void handleFilesLoad(allowMultiple ? files : [files[0]], target)
+      const selected = allowMultiple ? files : [files[0]]
+      const seq = beginIngest(target, selected.length)
+      void handleFilesLoad(selected, target).then(outcome => settleIngest(target, seq, outcome, selected.length))
     }
   }
 
   const handleNativeSamplePaths = useCallback((paths: string[], target: 'primary' | 'secondary') => {
+    const seq = beginIngest(target, paths.length)
     void filesFromDroppedPaths(paths).then(files => {
       setDragTarget(null)
-      if (files.length === 0) return
+      if (files.length === 0) {
+        settleIngest(target, seq, 'error', 0)
+        return
+      }
       const allowMultiple = target === 'primary' ? supportsMultiPrimary(format) : supportsMultiSecondary(format)
-      void handleFilesLoad(allowMultiple ? files : [files[0]], target)
+      const selected = allowMultiple ? files : [files[0]]
+      void handleFilesLoad(selected, target).then(outcome => settleIngest(target, seq, outcome, selected.length))
     }).catch(error => {
       setDragTarget(null)
+      settleIngest(target, seq, 'error', 0)
       setMessageError(nativeFileReadErrorMessage(error))
       if (shouldUseBrowserFileFallback(error)) setBrowserPickerFallback(true)
     })
-  }, [format, handleFilesLoad])
+  }, [format, handleFilesLoad, beginIngest, settleIngest])
   const handleNativePrimaryPaths = useCallback((paths: string[]) => handleNativeSamplePaths(paths, 'primary'), [handleNativeSamplePaths])
   const handleNativeSecondaryPaths = useCallback((paths: string[]) => handleNativeSamplePaths(paths, 'secondary'), [handleNativeSamplePaths])
   useDesktopFileDrop(primaryDropRef, handleNativePrimaryPaths, desktop)
@@ -895,7 +946,8 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
             onDrop={event => handleDrop(event, 'primary')}
           >
             <span>Primary Sample</span>
-            <div className="sample-import-upload-row">
+            <div className={`sample-import-upload-row ${primaryIngest.hostClassName}`}>
+              <DropIngestOverlay phase={primaryIngest.phase} label={primaryIngest.label} inline />
               <input
                 ref={primaryFileRef}
                 type="file"
@@ -935,7 +987,8 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
               onDrop={event => handleDrop(event, 'secondary')}
             >
               <span>Sample Response (optional)</span>
-              <div className="sample-import-upload-row">
+              <div className={`sample-import-upload-row ${secondaryIngest.hostClassName}`}>
+                <DropIngestOverlay phase={secondaryIngest.phase} label={secondaryIngest.label} inline />
                 <input
                   ref={secondaryFileRef}
                   type="file"

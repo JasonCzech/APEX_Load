@@ -8,6 +8,8 @@ import { type DetectedSourceProtocol, type ImportRepairSuggestion, type Enterpri
 import { type BrowserReplayEvent, type BrowserReplaySession, type StoredScript } from '../types'
 import { type JavaClasspathAsset, type SourceArchiveReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
 import { isJavaClasspathUploadEnabled } from '../utils/featureFlags'
+import DropIngestOverlay from './DropIngestOverlay'
+import { describeAccepted, describeReading, useDropIngestFeedback } from './dropIngestFeedback'
 import { JavaClasspathResolver } from './JavaClasspathResolver'
 import { getErrorMessage } from '../utils/errorUtils'
 import { useModalDialog } from '../hooks/useModalDialog'
@@ -627,6 +629,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   const classpathAssetsByKeyRef = useRef(classpathAssetsByKey)
   classpathAssetsByKeyRef.current = classpathAssetsByKey
   const [dragOver, setDragOver] = useState(false)
+  // Destructured for stable callback identity — the native drop handler is a
+  // useDesktopFileDrop dependency and must not change every render.
+  const { phase: ingestPhase, label: ingestLabel, hostClassName: ingestHostClass, begin: beginIngest, succeed: succeedIngest, fail: failIngest } = useDropIngestFeedback()
   const [workingMode, setWorkingMode] = useState<'convert' | 'validate' | null>(null)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -1433,14 +1438,16 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     }
   }, [activeResultScriptIndex, api, browserReplayInProgress, projectId, replayValidationError, replayValidationLoading, replayValidationSession?.id, replayValidationWarnings, selectedItem?.id, selectedItem?.reviewGeneration])
 
-  const addFilesToQueue = useCallback((fileList?: FileList | File[] | null) => {
+  // Returns the number of archives actually queued, so drop handlers can tell
+  // the drop animation whether the drop was accepted.
+  const addFilesToQueue = useCallback((fileList?: FileList | File[] | null): number => {
     const incomingFiles = Array.from(fileList || [])
-    if (incomingFiles.length === 0) return
+    if (incomingFiles.length === 0) return 0
 
     const zipFiles = incomingFiles.filter(isEnterpriseArchiveZipFile)
     if (zipFiles.length === 0) {
       setError('Please upload ZIP files containing enterprise script archive folders.')
-      return
+      return 0
     }
 
     const nextItems = zipFiles.map((nextFile) => {
@@ -1455,6 +1462,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     setSelectedItemId(nextItems[0].id)
     setError(zipFiles.length === incomingFiles.length ? '' : `${incomingFiles.length - zipFiles.length} non-ZIP file${incomingFiles.length - zipFiles.length === 1 ? '' : 's'} skipped.`)
     setNotice('')
+    return zipFiles.length
   }, [])
 
   useEffect(() => {
@@ -1467,15 +1475,19 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   // drops (absolute paths via Wails OnFileDrop), reconstructing File objects for
   // the existing queue. Browser keeps the <input type=file> + HTML5 drop path.
   const handleNativeArchivePaths = useCallback((paths: string[]) => {
+    beginIngest(describeReading(paths.length))
     void filesFromDroppedPaths(paths).then(files => {
       setDragOver(false)
-      addFilesToQueue(files)
+      const queued = addFilesToQueue(files)
+      if (queued > 0) succeedIngest(describeAccepted(queued))
+      else failIngest()
     }).catch(error => {
       setDragOver(false)
+      failIngest()
       setError(nativeFileReadErrorMessage(error))
       if (shouldUseBrowserFileFallback(error)) setBrowserPickerFallback(true)
     })
-  }, [addFilesToQueue])
+  }, [addFilesToQueue, beginIngest, succeedIngest, failIngest])
   useDesktopFileDrop(dropzoneRef, handleNativeArchivePaths, desktop)
 
   const handleBrowseArchives = useCallback(() => {
@@ -1533,7 +1545,12 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     // Desktop file drops arrive via the native OnFileDrop router with real
     // paths; the webview's dataTransfer has none, so ignore HTML5 drop there.
     if (desktop) return
-    addFilesToQueue(e.dataTransfer.files)
+    const dropped = e.dataTransfer.files
+    if (!dropped || dropped.length === 0) return
+    beginIngest(describeReading(dropped.length))
+    const queued = addFilesToQueue(dropped)
+    if (queued > 0) succeedIngest(describeAccepted(queued))
+    else failIngest()
   }
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2382,7 +2399,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       </div>
 
       {/* Drop zone */}
-      <div ref={dropzoneRef} className={`lr-dropzone ${dragOver ? 'drag-over' : ''} ${queuedFileCount > 0 ? 'has-file' : ''}`}
+      <div ref={dropzoneRef} className={`lr-dropzone ${ingestHostClass} ${dragOver ? 'drag-over' : ''} ${queuedFileCount > 0 ? 'has-file' : ''}`}
         style={desktop ? ({ '--wails-drop-target': 'drop' } as CSSProperties) : undefined}
         onDragOver={e => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
@@ -2398,6 +2415,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
             handleBrowseArchives()
           }
         }}>
+        <DropIngestOverlay phase={ingestPhase} label={ingestLabel} />
         <input ref={fileRef} type="file" accept=".zip" multiple onClick={event => event.stopPropagation()} onChange={handleFileSelect} hidden />
         {queuedFileCount > 0 ? (
           <div className="lr-file-queue">

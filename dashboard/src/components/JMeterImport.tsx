@@ -7,6 +7,8 @@ import { getErrorMessage } from '../utils/errorUtils'
 import { isDesktopSurface } from '../desktop/desktopBridge'
 import { canUseNativeDialogs, filesFromDroppedPaths, nativeFileReadErrorMessage, pickFilesViaBridge, shouldUseBrowserFileFallback } from '../desktop/desktopFiles'
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
+import DropIngestOverlay from './DropIngestOverlay'
+import { useDropIngestFeedback } from './dropIngestFeedback'
 import ParameterizationReview from './ParameterizationReview'
 import ScriptImportReview from './ScriptImportReview'
 import { type SecretBindingReviewHandle } from './SecretBindingReview'
@@ -53,6 +55,9 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
   const dropzoneRef = useRef<HTMLDivElement>(null)
   const [file, setFile] = useState<File | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  // Destructured for stable callback identity — the native drop handler is a
+  // useDesktopFileDrop dependency and must not change every render.
+  const { phase: ingestPhase, label: ingestLabel, hostClassName: ingestHostClass, begin: beginIngest, succeed: succeedIngest, fail: failIngest } = useDropIngestFeedback()
   const [workingMode, setWorkingMode] = useState<'convert' | 'validate' | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -138,16 +143,17 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
     }
   }, [api])
 
-  const acceptFile = useCallback((nextFile?: File) => {
-    if (!nextFile) return
+  const acceptFile = useCallback((nextFile?: File): boolean => {
+    if (!nextFile) return false
     if (!nextFile.name.toLowerCase().endsWith('.jmx')) {
       setError('Please upload a JMeter .jmx test plan.')
-      return
+      return false
     }
     invalidateReview()
     setFile(nextFile)
     setError('')
     setNotice('')
+    return true
   }, [invalidateReview])
 
   useEffect(() => {
@@ -157,15 +163,19 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
   }, [acceptFile, initialFile])
 
   const handleNativeJMeterPaths = useCallback((paths: string[]) => {
+    beginIngest()
     void filesFromDroppedPaths(paths).then(files => {
       setDragOver(false)
-      acceptFile(files.find(next => next.name.toLowerCase().endsWith('.jmx')) || files[0])
+      const picked = files.find(next => next.name.toLowerCase().endsWith('.jmx')) || files[0]
+      if (acceptFile(picked)) succeedIngest(`Added ${picked.name}`)
+      else failIngest()
     }).catch(error => {
       setDragOver(false)
+      failIngest()
       setError(nativeFileReadErrorMessage(error))
       if (shouldUseBrowserFileFallback(error)) setBrowserPickerFallback(true)
     })
-  }, [acceptFile])
+  }, [acceptFile, beginIngest, succeedIngest, failIngest])
   useDesktopFileDrop(dropzoneRef, handleNativeJMeterPaths, desktop)
 
   const handleBrowse = useCallback(() => {
@@ -188,7 +198,11 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
     event.preventDefault()
     setDragOver(false)
     if (desktop) return
-    acceptFile(event.dataTransfer.files[0])
+    const dropped = event.dataTransfer.files[0]
+    if (!dropped) return
+    beginIngest()
+    if (acceptFile(dropped)) succeedIngest(`Added ${dropped.name}`)
+    else failIngest()
   }
 
   const handleImport = async () => {
@@ -384,7 +398,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
 
       <div
         ref={dropzoneRef}
-        className={`lr-dropzone ${dragOver ? 'drag-over' : ''} ${file ? 'has-file' : ''}`}
+        className={`lr-dropzone ${ingestHostClass} ${dragOver ? 'drag-over' : ''} ${file ? 'has-file' : ''}`}
         style={desktop ? ({ '--wails-drop-target': 'drop' } as CSSProperties) : undefined}
         onDragOver={event => { event.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
@@ -401,6 +415,7 @@ export default function JMeterImport({ initialFile, projectId, onImported, onEdi
           }
         }}
       >
+        <DropIngestOverlay phase={ingestPhase} label={ingestLabel} />
         <input ref={fileRef} type="file" accept=".jmx,.xml" onClick={event => event.stopPropagation()} onChange={event => acceptFile(event.target.files?.[0])} hidden />
         {file ? (
           <div className="lr-file-info">

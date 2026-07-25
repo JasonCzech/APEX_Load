@@ -733,6 +733,41 @@ describe('SampleScriptImport', () => {
 
     expect(apiMock.importSample).toHaveBeenCalledWith(expect.objectContaining({ project_id: 'project-1' }))
   })
+
+  it('clears the drop animation when the dropped file read is superseded', async () => {
+    await act(async () => {
+      root.render(<SampleScriptImport />)
+    })
+
+    // Hold the read open so the supersede lands while it is still in flight.
+    let releaseRead: (text: string) => void = () => {}
+    const pendingText = new Promise<string>(resolve => { releaseRead = resolve })
+    const file = new File(['{}'], 'sample.json')
+    Object.defineProperty(file, 'text', { value: () => pendingText })
+
+    const field = container.querySelector<HTMLElement>('.sample-import-field')
+    const drop = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(drop, 'dataTransfer', { value: { files: [file], types: ['Files'] } })
+
+    await act(async () => {
+      field?.dispatchEvent(drop)
+    })
+    expect(container.querySelector('[data-testid="drop-ingest-overlay"]')?.textContent).toContain('Reading file')
+
+    // Typing in the sample textarea invalidates the in-flight read. The dropped
+    // content never lands, so the spinner must clear rather than run forever.
+    const textarea = container.querySelector('textarea')
+    await act(async () => {
+      if (textarea) setControlValue(textarea, 'edited by hand')
+    })
+
+    await act(async () => {
+      releaseRead('{}')
+    })
+    await flushPromises()
+
+    expect(container.querySelector('[data-testid="drop-ingest-overlay"]')).toBeNull()
+  })
 })
 
 async function flushPromises() {

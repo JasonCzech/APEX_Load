@@ -1,0 +1,161 @@
+/* Shared drop → "working" → "added" feedback for every file import dropzone. */
+
+.drop-ingest-host {
+  position: relative;
+}
+
+/* Doubled class on purpose. Host stylesheets set the same property at equal
+   specificity (.import-dropzone.has-file, .lr-dropzone:hover) and may be bundled
+   after this file, so the drop state would otherwise win or lose by source
+   order. The extra class makes it deterministic. */
+.drop-ingest-host.is-ingesting.is-ingesting {
+  border-color: var(--accent, var(--primary, #6366f1));
+  animation: drop-ingest-host-pulse 1.1s ease-in-out infinite;
+}
+
+.drop-ingest-host.is-accepted.is-accepted {
+  border-color: color-mix(in srgb, var(--success) 65%, var(--border));
+}
+
+/* Announcement channel for screen readers; always present so the text change is
+   what triggers the announcement. Kept out of the visual layer entirely. */
+.drop-ingest-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.drop-ingest-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: inherit;
+  text-align: center;
+  pointer-events: none;
+  /* --bg-card is itself translucent in the dark themes, so mixing from it would
+     leave the underlying file row legible through the overlay. Mix from the
+     opaque page background instead. */
+  background: var(--bg-primary, #0b0c10);
+  background: color-mix(in srgb, var(--bg-primary, #0b0c10) 94%, transparent);
+  animation: drop-ingest-fade-in 140ms ease-out;
+}
+
+/* The confirmation must not hide the row it is confirming — the file name that
+   just landed is the thing the user wants to read. So it shrinks to a pill in
+   the corner instead of covering the host. */
+.drop-ingest-overlay.drop-ingest-accepted {
+  inset: auto 8px 6px auto;
+  flex-direction: row;
+  gap: 5px;
+  /* Kept ~22px tall so it clears the host's own content row: the shortest host
+     (.import-dropzone, 96px) leaves 30px below its centred file row. */
+  padding: 3px 9px;
+  /* Sized to content, then clamped. Without max-content the ellipsis rule on the
+     label lets it shrink to zero inside this shrink-to-fit box. */
+  width: max-content;
+  max-width: calc(100% - 16px);
+  border: 1px solid color-mix(in srgb, var(--success) 35%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--success) 12%, var(--bg-primary, #0b0c10));
+}
+
+/* Compact variant for short, single-row hosts (e.g. an upload button row).
+   Fully opaque here: at ~25px tall the near-opaque backdrop used by the block
+   dropzones lets the row's own controls ghost through into the label. */
+.drop-ingest-overlay.is-inline {
+  flex-direction: row;
+  gap: 8px;
+  justify-content: flex-start;
+  padding: 0 4px;
+  background: var(--bg-primary, #0b0c10);
+}
+
+/* An inline host is one row tall, so the pill rides at its right edge. */
+.drop-ingest-overlay.drop-ingest-accepted.is-inline {
+  inset: 50% 0 auto auto;
+  padding: 3px 9px;
+  transform: translateY(-50%);
+}
+
+.drop-ingest-overlay.is-inline .drop-ingest-spinner {
+  width: 16px;
+  height: 16px;
+  border-width: 2px;
+}
+
+/* Scoped through the overlay so it outranks host rules that style every span
+   they contain — .sample-import-field span uppercases its descendants, which
+   turned the status text into "READING FILE…". */
+.drop-ingest-overlay .drop-ingest-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--text-secondary);
+  word-break: break-word;
+}
+
+.drop-ingest-overlay.drop-ingest-accepted .drop-ingest-label {
+  font-size: 11px;
+  color: var(--success);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drop-ingest-spinner {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2.5px solid color-mix(in srgb, var(--accent, var(--primary, #6366f1)) 22%, transparent);
+  border-top-color: var(--accent, var(--primary, #6366f1));
+  animation: drop-ingest-spin 0.7s linear infinite;
+}
+
+.drop-ingest-check {
+  flex-shrink: 0;
+  animation: drop-ingest-pop 320ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes drop-ingest-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes drop-ingest-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes drop-ingest-pop {
+  0% { transform: scale(0.4); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes drop-ingest-host-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent, var(--primary, #6366f1)) 30%, transparent); }
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--accent, var(--primary, #6366f1)) 0%, transparent); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .drop-ingest-host.is-ingesting.is-ingesting,
+  .drop-ingest-overlay,
+  .drop-ingest-check {
+    animation: none;
+  }
+
+  .drop-ingest-spinner {
+    animation: drop-ingest-spin 1.6s steps(8, end) infinite;
+  }
+}
