@@ -202,6 +202,38 @@ func (tr *TestRunner) javaVuserRunnerLaunchConflictsForTestLocked(test *ManagedT
 			}
 		}
 
+		// A script that carries user-uploaded classpath JARs cannot run unless the
+		// operator has opted into honoring them; otherwise the attached bindings
+		// are silently ignored and the run fails later with an opaque
+		// classpath_entry_unavailable. Surface that as a clear, blocking conflict.
+		if scriptHasJavaClasspathAssets(group.script) && !config.JavaClasspathUploadEnabled() {
+			return []LaunchConflict{{
+				Code:       "java_vuser_classpath_asset_unresolved",
+				Severity:   "blocking",
+				Source:     "protocol_runtime",
+				ResourceID: firstNonEmpty(strings.TrimSpace(group.Name), "java_vuser"),
+				Message:    "This Java Vuser has user-uploaded classpath dependencies, but classpath JAR upload is not enabled on the runner (APEXLOAD_JAVA_VUSER_CLASSPATH_UPLOAD_ENABLED). Enable it on the runner, or remove the attached JARs and provision the classpath on the runner.",
+			}}
+		}
+
+		// User-uploaded classpath JARs are local-runner-only: their StorageRef is
+		// a controller-local file:// path that a distributed generator cannot read
+		// (it materializes to classpath_asset_unavailable, or worse silently loads
+		// a same-named pre-provisioned JAR). Block distributed + assets at launch
+		// rather than letting it silently degrade. (The flag-off case above already
+		// covers both backends; this reaches only the flag-on distributed case.)
+		if scriptHasJavaClasspathAssets(group.script) {
+			if _, distributed := tr.execution.(*distributedExecutionBackend); distributed {
+				return []LaunchConflict{{
+					Code:       "java_vuser_classpath_asset_distributed_unsupported",
+					Severity:   "blocking",
+					Source:     "protocol_runtime",
+					ResourceID: firstNonEmpty(strings.TrimSpace(group.Name), "java_vuser"),
+					Message:    "User-uploaded Java Vuser classpath JARs are only supported on a local runner; distributed generators cannot materialize them yet. Run this test on a local runner, or provision the classpath on every generator and remove the attached JARs.",
+				}}
+			}
+		}
+
 		available := false
 		if backend, ok := tr.execution.(*distributedExecutionBackend); ok {
 			if test != nil {
@@ -297,11 +329,12 @@ func writeJavaVuserAuthoringApproval(script *dsl.Script, evidence javaVuserAppro
 // that changes WHAT JAVA CODE RUNS: the lifecycle actions (which carry the
 // java_vuser_run class_name/method/source_archive_ref — also the {{env}}
 // template substitution vector) or the code-selecting Java Env config fields
-// (classpath, JDK home/selection, additional VM parameters). Runtime-safe
-// toggles (skip_parameter_evaluation, use_xbootclasspath, dedicated_class_loader)
-// and non-Java runtime sections (pacing, logging, think time, …) are NOT
-// code-selecting and are intentionally excluded, so those overrides remain
-// re-blessable under the existing authoring approval.
+// (classpath, classpath asset bindings, JDK home/selection, additional VM
+// parameters). Runtime-safe toggles (skip_parameter_evaluation,
+// use_xbootclasspath, dedicated_class_loader) and non-Java runtime sections
+// (pacing, logging, think time, …) are NOT code-selecting and are intentionally
+// excluded, so those overrides remain re-blessable under the existing authoring
+// approval.
 func javaVuserOverrideChangedExecutableSurface(approved, candidate *dsl.Script) bool {
 	if approved == nil || candidate == nil {
 		return true
@@ -316,7 +349,15 @@ func javaVuserOverrideChangedExecutableSurface(approved, candidate *dsl.Script) 
 	return a.JDKSelection != c.JDKSelection ||
 		a.JDKHome != c.JDKHome ||
 		!reflect.DeepEqual(a.Classpath, c.Classpath) ||
+		// A swapped JAR (different sha256) or a re-pointed classpath binding
+		// changes the bytes loaded into the JVM, so it must invalidate an
+		// existing authoring approval and force re-approval.
+		!reflect.DeepEqual(a.ClasspathAssets, c.ClasspathAssets) ||
 		!reflect.DeepEqual(a.AdditionalVMParameters, c.AdditionalVMParameters)
+}
+
+func scriptHasJavaClasspathAssets(script *dsl.Script) bool {
+	return script != nil && len(script.Config.JavaVuser.ClasspathAssets) > 0
 }
 
 func scriptRequiresJavaVuserAuthoringApproval(script *dsl.Script) bool {

@@ -203,6 +203,56 @@ func TestConvertJavaAcceptsResolvedExplicitSuperclassConstructor(t *testing.T) {
 	}
 }
 
+func TestConvertJavaIgnoresUnparsedRegionsOutsideSelectedRunnerHierarchy(t *testing.T) {
+	files := map[string]string{
+		"Actions.java": `public class Actions {
+  public int action() { return 0; }
+}`,
+		"IrrelevantHelper.java": `public class IrrelevantHelper {
+  public void broken() {
+    if (true) {
+}`,
+	}
+	result, err := ConvertZip(buildJavaVuserFilesArchive(t, "JavaUnparsedIrrelevantHelper", files), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip: %v", err)
+	}
+	assertCombinedJavaImport(t, result)
+	if result.FidelityReport == nil || result.FidelityReport.PromotionStatus != ImportPromotionPromotable {
+		t.Fatalf("fidelity report = %#v, unparsed helper outside selected runner hierarchy should not block promotion", result.FidelityReport)
+	}
+	for _, blocker := range result.FidelityReport.Blockers {
+		if strings.Contains(strings.ToLower(blocker), "unparsed region") {
+			t.Fatalf("blockers = %#v, unexpected unparsed-region blocker from unrelated helper", result.FidelityReport.Blockers)
+		}
+	}
+}
+
+// Analysis-limit placeholders stay blocking even when they sit outside the
+// selected runner hierarchy, because they mean the parsed type model itself is
+// incomplete rather than merely unreachable.
+func TestConvertJavaKeepsAnalysisLimitPlaceholdersBlockingOutsideHierarchy(t *testing.T) {
+	program := javaProgram{
+		Classes: []javaClass{
+			{Name: "Actions", File: "Actions.java", Kind: "class", Public: true, Source: "public int action() { return 0; }"},
+			// Declared so the helper's type surface is known and provably unused;
+			// without this the scoping fails closed on an unknown type surface.
+			{Name: "Unrelated", File: "Unrelated.java", Kind: "class"},
+		},
+		Unparsed: []javaStatement{
+			{Kind: "unparsed", File: "Unrelated.java", Text: "Unrelated.java exceeds Java analysis file-size limit of 1 bytes", Header: "", StartLine: 1},
+			{Kind: "unparsed", File: "Unrelated.java", Text: "plain broken region", Header: "", StartLine: 2},
+		},
+	}
+	regions := javaVuserRelevantUnparsedRegions(program, nil)
+	if len(regions) != 1 {
+		t.Fatalf("relevant regions = %#v, want only the analysis-limit placeholder", regions)
+	}
+	if !strings.Contains(strings.ToLower(regions[0].Text), "analysis file-size limit") {
+		t.Fatalf("relevant region = %#v, want the analysis-limit placeholder retained", regions[0])
+	}
+}
+
 func TestConvertJavaMapsClassInitializersToConstructionPhase(t *testing.T) {
 	files := map[string]string{
 		"src/Actions.java": `package example;
@@ -363,5 +413,163 @@ public class Actions {
 	}
 	if result.Stats.Transactions != 1 || result.Stats.TransactionMarkers != 2 {
 		t.Fatalf("stats = %#v, want String overload transaction only", result.Stats)
+	}
+}
+
+// Aggregate parser budgets stop parsing of every REMAINING .java file, so the
+// skipped files never enter program.Classes and no later evidence pass can see
+// them. Those placeholders must never be scoped away, and their reason strings
+// deliberately do not contain the word "analysis".
+func TestConvertJavaKeepsAggregateTruncationBlockingOutsideHierarchy(t *testing.T) {
+	aggregateReasons := []string{
+		"Java sources exceed aggregate retained-import limit",
+		"Java sources exceed aggregate brace-metadata limit",
+		"Java sources exceed aggregate structural scan-work limit",
+		"Java sources exceed aggregate retained-type limit",
+		"Java sources exceed aggregate retained-method limit",
+		"Java sources exceed aggregate retained-statement limit",
+		"Java sources exceed aggregate analysis limit of 100 bytes at Big.java",
+	}
+	for _, reason := range aggregateReasons {
+		t.Run(reason, func(t *testing.T) {
+			program := javaProgram{
+				Classes: []javaClass{
+					{Name: "Actions", File: "Actions.java", Kind: "class", Public: true, Source: "public int action() { return 0; }"},
+					{Name: "Big", File: "Big.java", Kind: "class"},
+				},
+				Unparsed: []javaStatement{
+					{Kind: "unparsed", File: "Big.java", Text: reason, StartLine: 1},
+				},
+			}
+			regions := javaVuserRelevantUnparsedRegions(program, nil)
+			if len(regions) != 1 {
+				t.Fatalf("relevant regions = %#v, aggregate truncation must stay blocking", regions)
+			}
+		})
+	}
+}
+
+// vuser_init.java / vuser_end.java are executed by the combined runner but are
+// not in the selected class's superclass chain, so hierarchy-only scoping used to
+// discard their unparsed regions and promote a draft missing its login/setup.
+func TestConvertJavaKeepsUnparsedExternalLifecycleSourceBlocking(t *testing.T) {
+	for _, lifecycleFile := range []string{"vuser_init.java", "vuser_end.java"} {
+		t.Run(lifecycleFile, func(t *testing.T) {
+			program := javaProgram{
+				Classes: []javaClass{
+					{Name: "Actions", File: "Actions.java", Kind: "class", Public: true, Source: "public int action() { return 0; }"},
+					{Name: strings.TrimSuffix(lifecycleFile, ".java"), File: lifecycleFile, Kind: "class"},
+				},
+				Unparsed: []javaStatement{
+					{Kind: "unparsed", File: lifecycleFile, Text: "Java source contains an unmatched opening brace", StartLine: 1},
+				},
+			}
+			regions := javaVuserRelevantUnparsedRegions(program, nil)
+			if len(regions) != 1 {
+				t.Fatalf("relevant regions = %#v, unparsed lifecycle source %s must stay blocking", regions, lifecycleFile)
+			}
+		})
+	}
+}
+
+// A helper the runner actually names cannot be scoped away just because it is not
+// a superclass: its parse failure hides code the runner reaches.
+func TestConvertJavaKeepsUnparsedHelperReferencedByRunnerBlocking(t *testing.T) {
+	program := javaProgram{
+		Classes: []javaClass{
+			{
+				Name: "Actions", File: "Actions.java", Kind: "class", Public: true,
+				Source: "public int action() { new Zservice().submitOrder(); return 0; }",
+			},
+			{Name: "Zservice", File: "Zservice.java", Kind: "class"},
+		},
+		Unparsed: []javaStatement{
+			{Kind: "unparsed", File: "Zservice.java", Text: "Java source contains an unmatched opening brace", StartLine: 1},
+		},
+	}
+	if regions := javaVuserRelevantUnparsedRegions(program, nil); len(regions) != 1 {
+		t.Fatalf("relevant regions = %#v, helper named by the runner must stay blocking", regions)
+	}
+
+	// The same helper, never named by the runner, is genuinely irrelevant.
+	program.Classes[0].Source = "public int action() { return 0; }"
+	if regions := javaVuserRelevantUnparsedRegions(program, nil); len(regions) != 0 {
+		t.Fatalf("relevant regions = %#v, unreferenced helper should not block promotion", regions)
+	}
+}
+
+// End-to-end: an unparsed vuser_init.java must leave the combined draft blocked.
+func TestConvertJavaBlocksPromotionWhenLifecycleSourceFailsToParse(t *testing.T) {
+	files := map[string]string{
+		"Actions.java": `public class Actions {
+  public int action() { return 0; }
+}`,
+		"vuser_init.java": `public class vuser_init {
+  public int init() {
+    if (true) {
+}`,
+	}
+	result, err := ConvertZip(buildJavaVuserFilesArchive(t, "JavaUnparsedLifecycle", files), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip: %v", err)
+	}
+	if result.FidelityReport == nil || result.FidelityReport.PromotionStatus != ImportPromotionBlocked {
+		t.Fatalf("fidelity report = %#v, unparsed vuser_init must block promotion", result.FidelityReport)
+	}
+}
+
+func TestJavaSourceMentionsTypeMatchesWholeIdentifiersOnly(t *testing.T) {
+	if javaSourceMentionsType("new HelperFactory();", "Helper") {
+		t.Fatal("Helper must not match inside HelperFactory")
+	}
+	if javaSourceMentionsType("MyHelper h;", "Helper") {
+		t.Fatal("Helper must not match inside MyHelper")
+	}
+	if !javaSourceMentionsType("new Helper();", "Helper") {
+		t.Fatal("Helper must match a whole identifier")
+	}
+	if !javaSourceMentionsType("Helper", "Helper") {
+		t.Fatal("Helper must match when it is the entire text")
+	}
+}
+
+// An implemented interface can contribute executable default-method bodies, and
+// its name lives in the class DECLARATION HEADER, which is outside class.Source
+// (the scanner stores only the class body). Both facts have to hold or an
+// unparsed interface is silently scoped away and the draft promotes.
+func TestConvertJavaKeepsUnparsedImplementedInterfaceBlocking(t *testing.T) {
+	files := map[string]string{
+		"Actions.java": `public class Actions implements OrderFlow {
+  public int action() { return runFlow(); }
+}`,
+		"OrderFlow.java": `public interface OrderFlow {
+  default int runFlow() {
+    if (true) {
+}`,
+	}
+	result, err := ConvertZip(buildJavaVuserFilesArchive(t, "JavaUnparsedInterface", files), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip: %v", err)
+	}
+	if result.FidelityReport == nil || result.FidelityReport.PromotionStatus != ImportPromotionBlocked {
+		t.Fatalf("fidelity report = %#v, unparsed implemented interface must block promotion", result.FidelityReport)
+	}
+}
+
+// A type named only in an import statement is also header-only.
+func TestJavaClassReferenceTextCoversHeaderAndImports(t *testing.T) {
+	class := javaClass{
+		Name:       "Actions",
+		File:       "Actions.java",
+		Source:     "public int action() { return 0; }",
+		SuperClass: "BaseRunner",
+		Interfaces: []string{"OrderFlow"},
+		Imports:    []string{"com.acme.Config"},
+	}
+	text := javaClassReferenceText(class)
+	for _, name := range []string{"BaseRunner", "OrderFlow", "Config"} {
+		if !javaSourceMentionsType(text, name) {
+			t.Fatalf("reference text %q does not mention header type %q", text, name)
+		}
 	}
 }

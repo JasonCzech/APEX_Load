@@ -34,8 +34,8 @@ describe("resolveApiOrigin", () => {
         {
           protocol: "http:",
           hostname: "localhost",
-          port: "3000",
-          origin: "http://localhost:3000",
+          port: "4000",
+          origin: "http://localhost:4000",
         },
       ),
     ).toBe("http://api.example.test:8080");
@@ -55,18 +55,18 @@ describe("resolveApiOrigin", () => {
     ).toBe("http://localhost:3031");
   });
 
-  it("uses the same-origin proxy for localhost port 3000 even when DEV metadata is absent", () => {
+  it("uses the same-origin proxy for localhost port 4000 even when DEV metadata is absent", () => {
     expect(
       resolveApiOrigin(
         {},
         {
           protocol: "http:",
           hostname: "127.0.0.1",
-          port: "3000",
-          origin: "http://127.0.0.1:3000",
+          port: "4000",
+          origin: "http://127.0.0.1:4000",
         },
       ),
-    ).toBe("http://127.0.0.1:3000");
+    ).toBe("http://127.0.0.1:4000");
   });
 
   it("falls back to the local controller for file URLs", () => {
@@ -476,5 +476,73 @@ describe("dev preview API headers", () => {
 
     expect(message).toContain("backend route may be unavailable");
     expect(message).not.toContain("<!DOCTYPE html>");
+  });
+
+  // Pins the isTimeoutAbort(error, timedOut) discrimination. A caller- or
+  // unmount-initiated abort travels through the SAME merged signal as the timeout,
+  // so without the timedOut flag it is rewritten into Error("Request timed out
+  // after Xms") - destroying the DOMException and breaking every standard
+  // `err.name === "AbortError"` cancellation check. The positive timeout test
+  // below passes under the broken implementation too, so it cannot pin this.
+  it("reports a caller-initiated abort as an AbortError, not a timeout", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => {
+      return new Promise((_, reject) => {
+        const signal = init?.signal as AbortSignal | undefined;
+        signal?.addEventListener("abort", () => {
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+    });
+
+    const controller = new AbortController();
+    const pending = request("/projects/demo/secrets", {
+      method: "POST",
+      body: JSON.stringify({ secrets: [] }),
+      // Long enough that the timeout timer cannot be what fires.
+      timeoutMs: 60_000,
+      signal: controller.signal,
+    });
+    const settled = pending.then(
+      () => ({ ok: true, error: undefined as unknown }),
+      (error: unknown) => ({ ok: false, error }),
+    );
+
+    controller.abort();
+    await vi.advanceTimersByTimeAsync(1);
+    const outcome = await settled;
+
+    expect(outcome.ok).toBe(false);
+    expect(outcome.error).toBeInstanceOf(DOMException);
+    expect((outcome.error as DOMException).name).toBe("AbortError");
+    expect(String((outcome.error as Error).message)).not.toContain("timed out");
+    vi.useRealTimers();
+  });
+
+  it("aborts requests that exceed the configured timeout", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation((_input, init) => {
+      return new Promise((_, reject) => {
+        const signal = init?.signal as AbortSignal | undefined;
+        signal?.addEventListener("abort", () => {
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+    });
+
+    const pending = request("/projects/demo/secrets", {
+      method: "POST",
+      body: JSON.stringify({ secrets: [{ name: "TOKEN", value: "value" }] }),
+      timeoutMs: 50,
+    });
+
+    // Attach the rejection handler BEFORE advancing timers: otherwise the abort
+    // fires during a full macrotask turn with no handler attached and node marks
+    // the rejection unhandled, polluting the whole suite run.
+    const rejects = expect(pending).rejects.toThrow("Request timed out after 50ms");
+    await vi.advanceTimersByTimeAsync(60);
+    await rejects;
+    fetchMock.mockRestore();
+    vi.useRealTimers();
   });
 });

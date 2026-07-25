@@ -14,8 +14,8 @@ import PageViewToggle from './PageViewToggle'
 import StatusBadge from './StatusBadge'
 import { useTestApi } from '../hooks/api/useTestApi'
 import { isValidDurationInput, parseDurationToSeconds } from '../utils/timeUtils'
-import { isCompletedTestStatus, isLiveTestStatus } from '../utils/testStatusUtils'
-import type { BrowserReplaySnapshot, GroupLiveMetrics, ImportedDashboardResult, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, PrometheusGraph, TestGroup, TestStatus, TestSummary, TransactionEvent, VUserRampStatus } from '../types'
+import { isCompletedTestStatus, isLiveTestStatus, isPendingTestStatus } from '../utils/testStatusUtils'
+import type { BrowserReplaySnapshot, GroupLiveMetrics, ImportedDashboardResult, IntervalSummaryRecord, LiveErrorEvidence, LiveMetrics, MetricsHistoryPoint, PrometheusGraph, TestGroup, TestStatus, TestSummary, TransactionEvent, TxMetrics, VUserRampStatus } from '../types'
 import { getErrorMessage } from '../utils/errorUtils'
 import TestExecutionCharts, { type GraphCursorState, type GraphGroupTabId, type UnderLoadDisplayMode } from './TestExecutionCharts'
 import type { ExecutionChartTimeRange } from './testExecutionChartZoomModel'
@@ -134,7 +134,7 @@ const TEST_STATUSES: TestStatus[] = [
 ]
 
 function isCommandCenterDiscoverableStatus(status?: string): boolean {
-  return isLiveTestStatus(status) || status === 'SHAKEOUT' || status === 'SHAKEOUT_REVIEW' || status === 'PAUSED'
+  return isLiveTestStatus(status) || isPendingTestStatus(status) || status === 'SHAKEOUT' || status === 'SHAKEOUT_REVIEW' || status === 'PAUSED'
 }
 
 const VARIANT_OPTIONS: Array<{ value: VariantId; label: string }> = [
@@ -2307,8 +2307,14 @@ function CommandRunTables({
     errors: { key: 'count', direction: 'desc' },
     infrastructure: { key: 'type', direction: 'asc' },
   })
+  const [transactionSnapshot, setTransactionSnapshot] = useState<Record<string, TxMetrics>>({})
+  useEffect(() => {
+    const incoming = metrics?.transactions
+    if (!incoming || Object.keys(incoming).length === 0) return
+    setTransactionSnapshot(incoming)
+  }, [metrics?.transactions])
   const activeSort = sorts[activeTab]
-  const scenarioRows = useMemo(() => buildScenarioRunRows(groups, metrics), [groups, metrics])
+  const scenarioRows = useMemo(() => buildScenarioRunRows(groups, metrics, transactionSnapshot), [groups, metrics, transactionSnapshot])
   const infrastructureRows = useMemo(() => buildInfrastructureRows(groups, metrics), [groups, metrics])
   const activeEvidence = selectedEvidence.find(item => item.id === selectedEvidenceId) || selectedEvidence[0]
 
@@ -2758,7 +2764,7 @@ function EmptyTableRow({ colSpan, message }: { colSpan: number; message: string 
   )
 }
 
-function buildScenarioRunRows(groups: CommandGroup[], metrics?: LiveMetrics): ScenarioRunRow[] {
+export function buildScenarioRunRows(groups: CommandGroup[], metrics?: LiveMetrics, transactionSnapshot?: Record<string, TxMetrics>): ScenarioRunRow[] {
   const rows: ScenarioRunRow[] = groups.map(group => {
     const groupMetrics = metrics?.groups?.[group.name]
     const transactions = groupMetrics?.transactions ?? group.transactions
@@ -2789,7 +2795,10 @@ function buildScenarioRunRows(groups: CommandGroup[], metrics?: LiveMetrics): Sc
     }
   })
 
-  Object.entries(metrics?.transactions || {}).forEach(([name, tx]) => {
+  const transactions = (metrics?.transactions && Object.keys(metrics.transactions).length > 0)
+    ? metrics.transactions
+    : transactionSnapshot
+  Object.entries(transactions || {}).forEach(([name, tx]) => {
     if (!tx) return
     rows.push({
       id: `transaction-${name}`,

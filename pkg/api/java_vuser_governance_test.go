@@ -908,6 +908,36 @@ func TestBlockedJavaVuserRepairSuggestionRequiresFidelityResolution(t *testing.T
 	}
 }
 
+func TestCombinedJavaVuserWithoutNamedFidelityBlockersUsesReviewReadinessGuidance(t *testing.T) {
+	result := &enterprisearchive.ConvertResult{
+		Script: combinedJavaVuserGovernanceDraft("project-java"),
+		FidelityReport: &enterprisearchive.ImportFidelityReport{
+			PromotionStatus: enterprisearchive.ImportPromotionBlocked,
+			Blockers:        nil,
+		},
+		DetectedProtocol: &enterprisearchive.DetectedProtocol{
+			CanonicalSourceProtocol: "java_vuser",
+			APEXLoadProtocol:        "java_vuser",
+			DisplayName:             "LoadRunner Java Vuser",
+			ImportMode:              enterprisearchive.ImportModeExternalRunnerRequired,
+		},
+	}
+	suggestions := buildEnterpriseArchiveImportRepairSuggestions(result, nil, enterpriseArchiveImportSummary{})
+	if len(suggestions) != 1 {
+		t.Fatalf("suggestions = %#v, want one review-readiness suggestion", suggestions)
+	}
+	suggestion := suggestions[0]
+	if suggestion.Severity != "warning" || suggestion.Title != "Review combined Java Vuser draft readiness" {
+		t.Fatalf("suggestion = %#v, want review-readiness guidance", suggestion)
+	}
+	text := strings.ToLower(suggestion.Description + " " + suggestion.Action)
+	if strings.Contains(text, "resolve every named fidelity blocker") ||
+		!strings.Contains(text, "no named fidelity blockers") ||
+		!strings.Contains(text, "authoring session") {
+		t.Fatalf("suggestion = %#v, want non-fidelity review-readiness guidance", suggestion)
+	}
+}
+
 func TestAuthoringApprovalRejectsFidelityBlockedCombinedJavaVuser(t *testing.T) {
 	const projectID = "project-java-blocked-approval"
 	server := newJavaVuserGovernanceServer(t, projectID)

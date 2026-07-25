@@ -31,7 +31,7 @@ Type="Table"
 		t.Fatalf("data sources = %#v, want one parsed data source", parsed.DataSources)
 	}
 	source := parsed.DataSources[0]
-	if source.Name != "spi_info" || !source.FirstRowHeader || len(source.Columns) != 0 {
+	if source.Name != "spi_info" || source.Path != "" || source.FileName != "SPI_Info.dat" || !source.FirstRowHeader || len(source.Columns) != 0 {
 		t.Fatalf("data source = %#v, want first-row-header SPI_Info.dat source", source)
 	}
 }

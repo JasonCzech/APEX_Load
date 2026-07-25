@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/config"
+	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/javasidecar"
 )
 
@@ -29,7 +30,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("Java Vuser runner sidecar refused its listener: %v", err)
 	}
-	runner := javasidecar.NewServer(javasidecar.ServerOptions{Operator: config.LoadJavaVuserOperatorConfig()})
+	operator := config.LoadJavaVuserOperatorConfig()
+	if operator.ClasspathUploadEnabled && strings.TrimSpace(operator.ClasspathAssetDir) != "" {
+		// Allow the sidecar to read uploaded classpath JAR bytes from the
+		// controller's import asset store (same-host coupling). If this fails,
+		// uploaded dependencies simply fail to resolve (fail closed) rather than
+		// taking down the runner.
+		if err := fileasset.RegisterProjectRoot(operator.ClasspathAssetDir); err != nil {
+			log.Printf("Java Vuser runner sidecar could not register classpath asset dir %q: %v", operator.ClasspathAssetDir, err)
+		}
+	}
+	runner := javasidecar.NewServer(javasidecar.ServerOptions{Operator: operator})
 	server := &http.Server{
 		Handler:           runner,
 		ReadHeaderTimeout: 5 * time.Second,

@@ -186,6 +186,7 @@ func bindProtocolRuntimeRedaction(proto protocol.Protocol, provider func() *Reda
 func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	vu.unresolvedSecretRefs = nil
 	vu.unresolvedFileRefs = nil
+	vu.unresolvedParameterRefs = nil
 	target, redactedTarget := vu.interpolateWithSecrets(action.Target)
 	selector, redactedSelector := vu.interpolateWithSecrets(action.Selector)
 	value, redactedValue := vu.interpolateWithSecrets(action.Value)
@@ -501,6 +502,8 @@ func (vu *VUser) interpolateWithSecrets(s string) (string, string) {
 			vu.unresolvedSecretRefs = append(vu.unresolvedSecretRefs, expr)
 		} else if strings.HasPrefix(expr, "file.") {
 			vu.unresolvedFileRefs = append(vu.unresolvedFileRefs, expr)
+		} else if strings.HasPrefix(expr, "param.") {
+			vu.unresolvedParameterRefs = append(vu.unresolvedParameterRefs, expr)
 		}
 		if strings.HasPrefix(expr, "secret.") {
 			hasRedaction = true

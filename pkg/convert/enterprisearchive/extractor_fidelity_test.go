@@ -334,10 +334,29 @@ func TestPruneUnusedWholeBodyExtractorsRetainsReferencedAndTargeted(t *testing.T
 		}},
 		{Name: "consumer", Body: `{{var.used}}`},
 	}}
-	if removed := pruneUnusedWholeBodyExtractors(script); removed != 1 {
-		t.Fatalf("removed = %d, want 1", removed)
+	if removed := pruneUnusedWholeBodyExtractors(script); len(removed) != 1 {
+		t.Fatalf("removed = %v, want 1", removed)
 	}
 	if got := script.Actions[0].Extractors; len(got) != 2 || got[0].Name != "used" || got[1].Name != "token" {
 		t.Fatalf("extractors = %#v, want referenced whole-body and targeted extractors", got)
+	}
+}
+
+func TestPruneUnusedWholeBodyExtractors(t *testing.T) {
+	newScript := func(body string) *dsl.Script {
+		return &dsl.Script{Actions: []dsl.Action{
+			{Name: "request", Type: "request", Extractors: []dsl.Extractor{{Name: "get_body", Type: "regex", Expression: "(?s)^(.*)$"}}},
+			{Name: "next", Type: "request", Body: body},
+		}}
+	}
+
+	unused := newScript("ordinary body")
+	if removed := pruneUnusedWholeBodyExtractors(unused); len(removed) != 1 || removed[0] != "get_body" || len(unused.Actions[0].Extractors) != 0 {
+		t.Fatalf("unused prune = %#v actions=%#v", removed, unused.Actions)
+	}
+
+	referenced := newScript("response={{var.get_body}}")
+	if removed := pruneUnusedWholeBodyExtractors(referenced); len(removed) != 0 || len(referenced.Actions[0].Extractors) != 1 {
+		t.Fatalf("referenced prune = %#v actions=%#v", removed, referenced.Actions)
 	}
 }

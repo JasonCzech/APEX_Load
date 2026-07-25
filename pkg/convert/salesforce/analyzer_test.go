@@ -1485,6 +1485,83 @@ func TestAnalyzeNativePreviewHandlesDualRawAndEncodedReuse(t *testing.T) {
 	}
 }
 
+func TestAnalyzeNativePreviewCorrelatesCSHCHandoff(t *testing.T) {
+	const cshc = "cshc-abcdef1234567890"
+	sessionURL := "https://attone--perfhyper2.sandbox.lightning.force.com/visualforce/session?url=https%3A%2F%2Fattone--perfhyper2--c.sandbox.vf.force.com%2Fapex%2FVFLoginFlow&cshc=" + cshc + "&inst=dq"
+	script := &dsl.Script{
+		Name:     "SF CSHC Handoff",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://attone--perfhyper2.sandbox.my.salesforce.com"},
+		Actions: []dsl.Action{{
+			Name:   "Login",
+			Type:   "POST",
+			Method: "POST",
+			Target: "https://attone--perfhyper2.sandbox.my.salesforce.com/",
+			Body:   "username=user@example.test&password=secret",
+		}, {
+			Name:   "Visualforce Session",
+			Type:   "POST",
+			Method: "POST",
+			Target: sessionURL,
+			Body:   "cshc=" + cshc + "&retURL=%2Fhome%2Fhome.jsp",
+		}},
+	}
+	har := []byte(`{
+	  "log": {
+	    "entries": [
+	      {
+	        "request": {"method": "POST", "url": "https://attone--perfhyper2.sandbox.my.salesforce.com/", "headers": [], "postData": {"text": "username=user@example.test&password=secret"}},
+	        "response": {"headers": [], "content": {"text": "<html><a href=\"/visualforce/session?cshc=` + cshc + `&display=page\">continue</a></html>"}}
+	      },
+	      {
+	        "request": {"method": "POST", "url": "` + sessionURL + `", "headers": [], "postData": {"text": "cshc=` + cshc + `&retURL=%2Fhome%2Fhome.jsp"}},
+	        "response": {"headers": [], "content": {"text": "<html>ok</html>"}}
+	      }
+	    ]
+	  }
+	}`)
+
+	review, err := Analyze(script, AnalyzeOptions{BuildNative: true, HARData: har})
+	if err != nil {
+		t.Fatalf("Analyze returned error: %v", err)
+	}
+	if review.NativePreview == nil || review.NativePreview.Script == nil {
+		t.Fatal("NativePreview = nil, want script")
+	}
+	preview := review.NativePreview.Script
+	login := preview.Actions[0]
+	var cshcExtractor *dsl.Extractor
+	for i := range login.Extractors {
+		if login.Extractors[i].Name == "corr_salesforce_cshc" {
+			cshcExtractor = &login.Extractors[i]
+			break
+		}
+	}
+	if cshcExtractor == nil {
+		t.Fatalf("login extractors = %#v, want cshc correlation extractor", login.Extractors)
+	}
+	if cshcExtractor.Type != "regex" || cshcExtractor.Source != "body" || !strings.Contains(cshcExtractor.Expression, "cshc") {
+		t.Fatalf("cshc extractor = %#v, want body regex extractor targeting cshc", cshcExtractor)
+	}
+	session := preview.Actions[1]
+	if strings.Contains(session.Target, cshc) || strings.Contains(session.Body, cshc) {
+		t.Fatalf("session action still carries recorded cshc literal: target=%q body=%q", session.Target, session.Body)
+	}
+	if !strings.Contains(session.Target, "{{var.corr_salesforce_cshc}}") || !strings.Contains(session.Body, "{{var.corr_salesforce_cshc}}") {
+		t.Fatalf("session action missing cshc variable substitution: target=%q body=%q", session.Target, session.Body)
+	}
+	foundSummary := false
+	for _, corr := range review.NativePreview.Correlations {
+		if corr.RuleID == correlate.RuleSalesforceCSHC {
+			foundSummary = true
+			break
+		}
+	}
+	if !foundSummary {
+		t.Fatalf("native preview correlations = %#v, want Salesforce cshc summary", review.NativePreview.Correlations)
+	}
+}
+
 // TestAnalyzeNativePreviewCorrelatesSOQLPagination proves the A5 SOQL-pagination
 // rule flows end-to-end through the native preview: the first query gets a
 // $.nextRecordsUrl extractor and the follow-up query's URL is rewritten to reuse

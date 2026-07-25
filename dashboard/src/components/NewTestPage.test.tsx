@@ -1792,6 +1792,7 @@ describe('NewTestPage', () => {
     expect(startNowButton?.disabled).toBe(true)
     expect(scheduleButton?.disabled).toBe(true)
     expect(container.textContent).toContain('Current session can view scenarios but cannot create runs or schedules for this project.')
+    expect(container.querySelector('[role="alert"]')?.classList.contains('page-error-banner')).toBe(true)
 
     const schedulesButton = Array.from(container.querySelectorAll('button')).find(element => element.textContent === 'Schedules')
     expect(schedulesButton).toBeTruthy()

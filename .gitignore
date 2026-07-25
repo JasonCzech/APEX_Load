@@ -145,3 +145,12 @@ deck_build/*.pptx
 /diff_*.txt
 /patch_sla.go
 /update_apexctl.py
+
+# Local npm registry overrides. dashboard/.npmrc pins an internal Artifactory
+# mirror that is unreachable from GitHub runners, so committing it breaks
+# `npm ci` in ci.yml and release.yml. Keep it local; CI uses NPM_CONFIG_REGISTRY.
+.npmrc
+
+# Local environment template. .env.example carries corporate proxy/registry
+# hostnames that must not be published in this PUBLIC repo; keep it local.
+.env.example

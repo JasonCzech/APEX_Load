@@ -489,6 +489,33 @@ describe('DashboardPage', () => {
     expect(onNavigate).toHaveBeenCalledWith('new-test')
   })
 
+  it('counts queued and reserved runs as pending work', async () => {
+    apiMock.listTests.mockResolvedValueOnce({
+      tests: [
+        { id: 'queued-run', name: 'Queued Checkout', status: 'QUEUED', application_id: 'app-1', project_id: 'project-1', created_at: '2026-05-10T10:00:00Z' },
+        { id: 'reserved-run', name: 'Reserved Checkout', status: 'RESERVED', application_id: 'app-1', project_id: 'project-1', created_at: '2026-05-10T10:01:00Z' },
+      ],
+      count: 2,
+    })
+
+    await act(async () => {
+      root.render(
+        <DashboardPage
+          testStatuses={{}}
+          metricsHistory={{}}
+          connectionState="connected"
+          onSelectTest={onSelectTest}
+          onNavigate={onNavigate}
+        />,
+      )
+    })
+    await flushDashboard()
+
+    expect(container.textContent).toContain('0 live · 2 queued')
+    expect(container.textContent).toContain('Queued Checkout waiting')
+    expect(container.textContent).toContain('Reserved Checkout waiting')
+  })
+
   it('renders same-named archive-pending attention items with unique keys', async () => {
     // Two completed runs share a name and have no archive, so they produce
     // attention items with identical title + detail (different ids). The feed

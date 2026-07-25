@@ -943,6 +943,37 @@ describe('ScriptEditor', () => {
     expect(apiMock.replayDraftScript).not.toHaveBeenCalled()
   })
 
+  it('checks required secrets in the saved script project when no project is actively selected', async () => {
+    const savedScript: ScriptDefinition = {
+      ...initialScript,
+      project_id: 'unassigned',
+      actions: [{
+        ...initialScript.actions[0],
+        headers: { Authorization: 'Bearer {{secret.LOGIN_TOKEN}}' },
+      }],
+    }
+    apiMock.getProjectSecretStatuses.mockResolvedValueOnce({
+      project_id: 'unassigned',
+      capabilities: {
+        provider: 'environment_read_only',
+        writable: false,
+        create_supported: false,
+        replace_supported: false,
+        source_secret_migration_policy_enabled: false,
+      },
+      secrets: [{ name: 'LOGIN_TOKEN', configured: false }],
+    })
+
+    await act(async () => {
+      root.render(<ScriptEditor scriptId="saved-script" initialScript={savedScript} />)
+    })
+    await flushReact()
+
+    expect(apiMock.getProjectSecretStatuses).toHaveBeenCalledWith('unassigned', ['LOGIN_TOKEN'])
+    expect(container.textContent).not.toContain('Project secret configuration is still being checked')
+    expect(container.textContent).toContain('LOGIN_TOKEN')
+  })
+
   it('probes project secret status for an unsaved clone without showing configured references as missing', async () => {
     const clonedScript: ScriptDefinition = {
       ...initialScript,

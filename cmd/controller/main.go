@@ -33,6 +33,12 @@ func main() {
 }
 
 func runController() (runErr error) {
+	loadLocalDotEnv()
+	if applied, value, err := applyTLSCompatibilityDefaults(os.Getenv, os.Setenv); err != nil {
+		slog.Warn("failed to apply TLS compatibility defaults", "err", err)
+	} else if applied {
+		slog.Warn("applied TLS compatibility defaults", "godebug", value)
+	}
 	logRuntimeTuning(runtimetuning.ApplyFromCgroup(os.Getenv))
 	build := buildinfo.Get()
 	tracingConfig, err := telemetry.LoadConfig(os.Getenv, "apexload-controller", build.Version)
@@ -114,6 +120,7 @@ func runController() (runErr error) {
 	if haLeaderElection {
 		slog.Info("HA execution leader election enabled; only the lease holder will run tests")
 	}
+
 	activeEndpointPublisher, err := activeEndpointPublisherFromEnv(haLeaderElection)
 	if err != nil {
 		return fmt.Errorf("configure active controller endpoint routing: %w", err)
@@ -156,9 +163,9 @@ func runController() (runErr error) {
 	}()
 
 	runErr = serveController(ctx, server, 30*time.Second)
-	// A Serve failure is also a shutdown signal for the leadership and
-	// pod-watcher loops. Server.Shutdown has already bounded the scheduler-owned
-	// worker; wait for the remaining process workers before closing storage.
+	// A Serve failure is also a shutdown signal for the leadership, scheduler,
+	// and pod-watcher loops. Wait for them before the deferred storage close so
+	// none can continue using the database after cleanup.
 	stop()
 	workersDone := make(chan struct{})
 	go func() {
@@ -264,7 +271,6 @@ func validateGeneratorTransportStartup(targets []string, appEnv string, security
 	}
 	return fmt.Errorf("production distributed execution requires mTLS or verified TLS plus %s; configured %s", "APEXLOAD_GRPC_AUTH_TOKEN", security.String())
 }
-
 func logRuntimeTuning(settings runtimetuning.Settings) {
 	if settings.GOMAXPROCS == 0 && settings.GOMEMLIMIT == 0 {
 		return
@@ -285,6 +291,70 @@ func envIsTruthy(raw string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func applyTLSCompatibilityDefaults(getenv func(string) string, setenv func(string, string) error) (bool, string, error) {
+	if getenv == nil || setenv == nil {
+		return false, "", nil
+	}
+	if envIsTruthy(getenv("APEXLOAD_DISABLE_TLS_COMPAT")) || envIsTruthy(getenv("APEXLOAD_DISABLE_DEV_TLS_COMPAT")) {
+		return false, "", nil
+	}
+	appEnv := strings.ToLower(strings.TrimSpace(getenv("APEXLOAD_ENV")))
+	if (appEnv == "production" || appEnv == "prod") && !envIsTruthy(getenv("APEXLOAD_ENABLE_TLS_COMPAT")) {
+		return false, "", nil
+	}
+	required := map[string]string{
+		"x509negativeserial": "1",
+		"tlsmlkem":           "0",
+		"tlssecpmlkem":       "0",
+	}
+	existingRaw := strings.TrimSpace(getenv("GODEBUG"))
+	entries := []string{}
+	seen := map[string]struct{}{}
+	if existingRaw != "" {
+		for _, token := range strings.Split(existingRaw, ",") {
+			token = strings.TrimSpace(token)
+			if token == "" {
+				continue
+			}
+			entries = append(entries, token)
+			key := strings.ToLower(strings.TrimSpace(token))
+			if idx := strings.Index(token, "="); idx >= 0 {
+				key = strings.ToLower(strings.TrimSpace(token[:idx]))
+			}
+			seen[key] = struct{}{}
+		}
+	}
+	changed := false
+	for key, value := range required {
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		entries = append(entries, key+"="+value)
+		changed = true
+	}
+	if !changed {
+		return false, strings.Join(entries, ","), nil
+	}
+	next := strings.Join(entries, ",")
+	if err := setenv("GODEBUG", next); err != nil {
+		return false, "", err
+	}
+	return true, next, nil
+}
+
+func loadLocalDotEnv() {
+	appEnv := strings.ToLower(strings.TrimSpace(os.Getenv("APEXLOAD_ENV")))
+	if appEnv == "production" || appEnv == "prod" {
+		return
+	}
+	if err := config.LoadDotEnv(".env"); err != nil {
+		if os.IsNotExist(err) {
+			return
+		}
+		slog.Warn("failed to load local .env", "err", err)
 	}
 }
 

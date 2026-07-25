@@ -150,6 +150,34 @@ func TestParameterRuntime_SourceStartRowAndVUserAllocation(t *testing.T) {
 	}
 }
 
+func TestParameterRuntime_BlockAllocationUsesLastRowOnVUserExhaustion(t *testing.T) {
+	provider, err := NewDataProvider([]dsl.DataSource{{
+		Name:           "config",
+		Type:           "csv",
+		InlineData:     "URL\nhttps://example.test\n",
+		FirstRowHeader: true,
+	}})
+	if err != nil {
+		t.Fatalf("NewDataProvider: %v", err)
+	}
+
+	runtime := NewParameterRuntime([]dsl.Parameter{{
+		Name:         "url",
+		Type:         "file",
+		DataSource:   "config",
+		Column:       "URL",
+		Selection:    "sequential",
+		Update:       "each_iteration",
+		OnExhaustion: "last",
+		BlockSize:    1,
+	}}, provider, 3)
+	runtime.Prime()
+
+	if got, ok := runtime.ResolveNamed("url"); !ok || got != "https://example.test" {
+		t.Fatalf("vuser3 url = %q, %v; want final source row", got, ok)
+	}
+}
+
 func TestParameterRuntime_VUserIDParameter(t *testing.T) {
 	runtime := NewParameterRuntime([]dsl.Parameter{{
 		Name:   "vuser",

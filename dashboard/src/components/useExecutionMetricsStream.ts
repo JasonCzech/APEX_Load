@@ -7,7 +7,11 @@ import { isCompletedTestStatus } from '../utils/testStatusUtils'
 import { routeLatencySeriesValuesForTarget } from './latencySeries'
 import { mapExecutionHistory, mapExecutionMetricToHistoryPoint, mergeMetricsHistory } from './testExecutionMetricsModel'
 
-export const EXECUTION_STREAM_HISTORY_LIMIT = 300
+// Upper bound on retained live points. The previous 300-point cap truncated
+// visible history during long runs, but an UNBOUNDED array grows for the whole
+// run and is exactly the shape of the two unbounded-growth leaks this codebase
+// has already had to fix. 5000 points is ~83 minutes at one point per second.
+export const EXECUTION_STREAM_HISTORY_LIMIT = 5000
 
 function shouldStreamExecutionMetrics(status?: TestStatus): boolean {
   return status === 'SHAKEOUT' || status === 'RUNNING' || status === 'INITIALIZING' || status === 'PAUSED' || status === 'STOPPING'
@@ -153,8 +157,8 @@ export function useExecutionMetricsStream(testId: string, status?: TestStatus) {
     hasConnectedRef.current = true
     void getTest(testId, {
       includeHistory: true,
-      since: isReconnect ? lastSeenTimestampRef.current : undefined,
       limit: EXECUTION_STREAM_HISTORY_LIMIT,
+      since: isReconnect ? lastSeenTimestampRef.current : undefined,
     })
       .then((test) => {
         if (!mountedRef.current || activeTestIdRef.current !== testId) return

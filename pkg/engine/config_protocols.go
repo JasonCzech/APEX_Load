@@ -307,6 +307,14 @@ func appendJavaVuserConfig(cfg map[string]any, script *dsl.Script) {
 	if len(javaVuserCfg.Classpath) > 0 {
 		cfg["java_vuser_classpath"] = javaVuserCfg.Classpath
 	}
+	// User-supplied classpath JAR bindings. Carried through so the protocol/
+	// sidecar can materialize uploaded dependencies into the runner workDir
+	// before resolving the classpath. Operator-owned; only entries the author
+	// explicitly attached an asset to are affected. Flattened as the typed
+	// slice; the protocol reader tolerates a JSON round-trip to []any(map).
+	if len(javaVuserCfg.ClasspathAssets) > 0 {
+		cfg["java_vuser_classpath_assets"] = javaVuserCfg.ClasspathAssets
+	}
 	if javaVuserCfg.UseXBootClasspath != nil {
 		cfg["java_vuser_use_xbootclasspath"] = *javaVuserCfg.UseXBootClasspath
 	}

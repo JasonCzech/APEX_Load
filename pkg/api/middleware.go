@@ -585,6 +585,14 @@ const (
 	harImportMaxBodyBytes               int64 = 50 << 20
 	jmeterImportMaxBodyBytes            int64 = 50 << 20
 	enterpriseArchiveImportMaxBodyBytes int64 = 100 << 20
+	// defaultJavaClasspathUploadMaxBytes bounds a single user-uploaded Java
+	// Vuser classpath JAR (env-overridable at the handler via
+	// javaClasspathUploadMaxBytes). javaClasspathUploadMaxBodyBytes is the
+	// transport ceiling: the JAR cap plus multipart framing headroom, so the
+	// body limiter does not truncate a valid upload before the handler's own
+	// streaming cap runs.
+	defaultJavaClasspathUploadMaxBytes int64 = 256 << 20
+	javaClasspathUploadMaxBodyBytes    int64 = defaultJavaClasspathUploadMaxBytes + (32 << 20)
 	// Bruno authorization resolves project scope from the query string without
 	// pre-reading the upload. Keep the transport ceiling aligned with the
 	// default compressed upload quota plus JSON/multipart framing.

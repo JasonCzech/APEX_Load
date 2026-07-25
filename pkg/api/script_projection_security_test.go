@@ -141,6 +141,34 @@ func TestMaskScriptSecretsPreservesPortableVariableBindings(t *testing.T) {
 	}
 }
 
+func TestMaskScriptSecretsGeneratesRedactedXMLMessageIDs(t *testing.T) {
+	const recordedMessageID = "AbCdEf0123456789GhIjKlMnOpQrStUv"
+	script := &dsl.Script{
+		ID: "soap-message-id", Name: "SOAP message", Version: "1", Protocol: "http",
+		Actions: []dsl.Action{{
+			Name: "submit", Type: "request", Method: http.MethodPost, Target: "/soap",
+			Body: `<Envelope><Header><mes:messageId>` + recordedMessageID + `</mes:messageId>` +
+				`<mes:password>source-password</mes:password></Header></Envelope>`,
+		}},
+	}
+
+	masked := maskScriptSecrets(script)
+	if masked == nil || len(masked.Actions) != 1 {
+		t.Fatalf("masked script = %#v", masked)
+	}
+	body := masked.Actions[0].Body
+	if strings.Contains(body, recordedMessageID) || !strings.Contains(body, `<mes:messageId>{{fn.uuid()}}</mes:messageId>`) {
+		t.Fatalf("message id was not replaced with a generated UUID: %q", body)
+	}
+	if strings.Contains(body, "source-password") || !strings.Contains(body, `<mes:password>`+maskedScriptSecret+`</mes:password>`) {
+		t.Fatalf("password was not redacted: %q", body)
+	}
+	requirements := discoverSecretBindingRequirements(masked, 0)
+	if len(requirements) != 1 || !strings.Contains(requirements[0].Replacement, `<mes:password>{{secret.`) {
+		t.Fatalf("secret requirements = %#v, want only the password", requirements)
+	}
+}
+
 func TestMaskScriptSecretsPreservesOAuthTokenEndpointLocator(t *testing.T) {
 	script := &dsl.Script{
 		ID: "oauth-locator", Name: "OAuth locator", Version: "1", Protocol: "http",
@@ -443,5 +471,68 @@ func TestLibraryTransferResolverRejectsForgedProjectForPushAndDiff(t *testing.T)
 		if projectID, status, _ := resolveLibraryTransferProjectID(req, store); projectID != "" || status != http.StatusBadRequest {
 			t.Fatalf("%s resolver = %q/%d, want project mismatch", path, projectID, status)
 		}
+	}
+}
+
+// End-to-end guard for the sentinel-free projection case. scrubScriptText
+// rewrites a redacted <messageId> into {{fn.uuid()}}, which carries NO
+// [REDACTED] sentinel, so this must be driven through reconcileMaskedScriptSecrets
+// (the real entry point) rather than reconcileProjectedJSON: an earlier version of
+// this test called the inner helper directly and passed while the production path
+// still destroyed the stored value.
+func TestReconcileMaskedScriptSecretsRestoresSentinelFreeProjection(t *testing.T) {
+	const rawBody = `<Envelope><Header><mes:messageId>AbCdEf0123456789GhIjKlMnOpQrStUv</mes:messageId></Header><Body><Order>123</Order></Body></Envelope>`
+	stored := &dsl.Script{
+		Name: "soap-order", Version: "1.0.0", Protocol: "http",
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{{Name: "Submit", Type: "request", Method: "POST", Target: "/soap", Body: rawBody}},
+	}
+
+	projected := maskScriptSecrets(stored)
+	projectedBody := projected.Actions[0].Body
+	if strings.Contains(projectedBody, maskedScriptSecret) {
+		t.Fatalf("projected body = %q, this test requires a SENTINEL-FREE projection", projectedBody)
+	}
+	if projectedBody == rawBody {
+		t.Fatalf("projected body was not rewritten (%q); the messageId masking this guards is gone", projectedBody)
+	}
+
+	// Simulate GET -> unchanged -> PUT.
+	incoming := maskScriptSecrets(stored)
+	if err := reconcileMaskedScriptSecrets(incoming, stored); err != nil {
+		t.Fatalf("reconcileMaskedScriptSecrets returned error: %v", err)
+	}
+	if incoming.Actions[0].Body != rawBody {
+		t.Fatalf("reconciled body = %q, want the stored body %q restored", incoming.Actions[0].Body, rawBody)
+	}
+}
+
+// A client edit must still win over the stored value.
+func TestReconcileMaskedScriptSecretsKeepsClientEditOfProjectedField(t *testing.T) {
+	const rawBody = `<Envelope><Header><mes:messageId>AbCdEf0123456789GhIjKlMnOpQrStUv</mes:messageId></Header><Body><Order>123</Order></Body></Envelope>`
+	stored := &dsl.Script{
+		Name: "soap-order", Version: "1.0.0", Protocol: "http",
+		Config:  dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{{Name: "Submit", Type: "request", Method: "POST", Target: "/soap", Body: rawBody}},
+	}
+	incoming := maskScriptSecrets(stored)
+	incoming.Actions[0].Body = `<Envelope><Body><Order>999</Order></Body></Envelope>`
+
+	if err := reconcileMaskedScriptSecrets(incoming, stored); err != nil {
+		t.Fatalf("reconcileMaskedScriptSecrets returned error: %v", err)
+	}
+	if !strings.Contains(incoming.Actions[0].Body, "999") {
+		t.Fatalf("reconciled body = %q, want the client edit preserved", incoming.Actions[0].Body)
+	}
+}
+
+// A genuinely edited value must still be taken from the client.
+func TestReconcileKeepsClientEditsOverStoredValue(t *testing.T) {
+	got, err := reconcileProjectedJSON("edited by user", "projected", "stored raw", "script.actions.0.body")
+	if err != nil {
+		t.Fatalf("reconcileProjectedJSON returned error: %v", err)
+	}
+	if got != "edited by user" {
+		t.Fatalf("reconciled = %q, want the client edit", got)
 	}
 }

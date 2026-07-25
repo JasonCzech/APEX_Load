@@ -5,12 +5,15 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -1640,6 +1643,14 @@ Action()
 		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
 	}
 	var result struct {
+		Script struct {
+			GeneratedBy string `json:"generated_by"`
+			Metadata    struct {
+				Import struct {
+					Source string `json:"source"`
+				} `json:"import"`
+			} `json:"metadata"`
+		} `json:"script"`
 		Summary struct {
 			SalesforceReview struct {
 				Detected         bool `json:"detected"`
@@ -1668,8 +1679,93 @@ Action()
 	if result.Summary.SalesforceReview.NativePreview.Script == nil {
 		t.Fatal("native preview script missing")
 	}
+	if result.Script.GeneratedBy != "apexload-salesforce-builder" {
+		t.Fatalf("generated_by = %q, want Salesforce native builder", result.Script.GeneratedBy)
+	}
+	if result.Script.Metadata.Import.Source != "salesforce" {
+		t.Fatalf("import source = %q, want salesforce", result.Script.Metadata.Import.Source)
+	}
 	if !reviewSectionsContain(result.ReviewSections, "salesforce_review") {
 		t.Fatalf("review sections = %#v, want salesforce_review", result.ReviewSections)
+	}
+}
+
+func TestHandleValidateEnterpriseArchiveImportMergesSupplementalFiles(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("file", "demo.zip")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	zipWriter := zip.NewWriter(part)
+	addZipEntry := func(name string, content string) {
+		entry, createErr := zipWriter.Create(name)
+		if createErr != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, createErr)
+		}
+		if _, writeErr := entry.Write([]byte(content)); writeErr != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, writeErr)
+		}
+	}
+	addZipEntry("Demo.usr", `[General]
+Type=Java
+
+[Actions]
+vuser_init=vuser_init.java
+Action=Action.java
+vuser_end=vuser_end.java
+`)
+	addZipEntry("Action.java", `public class Action extends BasicClient {
+  public int action() { return 0; }
+}`)
+	addZipEntry("vuser_init.java", `public class vuser_init {
+  public int init() { return 0; }
+}`)
+	addZipEntry("vuser_end.java", `public class vuser_end {
+  public int end() { return 0; }
+}`)
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	supplementalPart, err := writer.CreateFormFile("supplemental_file", "BasicClient.java")
+	if err != nil {
+		t.Fatalf("CreateFormFile supplemental returned error: %v", err)
+	}
+	if _, err := supplementalPart.Write([]byte(`public class BasicClient {
+  public BasicClient() {}
+}`)); err != nil {
+		t.Fatalf("Write supplemental returned error: %v", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/validate", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		FidelityReport struct {
+			Blockers []string `json:"blockers"`
+		} `json:"fidelity_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	for _, blocker := range result.FidelityReport.Blockers {
+		if strings.Contains(strings.ToLower(blocker), "unresolved superclass") {
+			t.Fatalf("blockers still contain unresolved superclass after supplemental file merge: %#v", result.FidelityReport.Blockers)
+		}
 	}
 }
 
@@ -5738,4 +5834,250 @@ func containsStringContaining(values []string, needle string) bool {
 		}
 	}
 	return false
+}
+
+// The merge re-inflates uploaded entries, so it must enforce the same
+// decompression-bomb bounds ConvertZip does. Without this an attached
+// supplemental file routes the upload through an unguarded path.
+func TestMergeEnterpriseArchiveZipRejectsOversizedEntry(t *testing.T) {
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	entry, err := writer.Create("Huge.java")
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	// Highly compressible payload just past the per-entry cap.
+	if _, err := entry.Write(make([]byte, enterprisearchive.MaxArchiveEntryBytes+1)); err != nil {
+		t.Fatalf("Write returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	_, err = mergeEnterpriseArchiveZipWithSupplementalFiles(buf.Bytes(), []string{"Extra.java"}, [][]byte{[]byte("public class Extra {}")})
+	if err == nil {
+		t.Fatal("merge accepted an entry past the per-entry limit; the decompression-bomb guard is bypassable")
+	}
+	if !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("merge error = %v, want a size-limit error", err)
+	}
+}
+
+// A browser only ever sends a base filename, so a supplemental file must replace
+// the matching NESTED entry rather than being appended at the archive root (which
+// makes ConvertZip abort on a duplicate normalized entry).
+func TestMergeEnterpriseArchiveZipReplacesNestedEntryByBaseName(t *testing.T) {
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	for name, content := range map[string]string{
+		"MyScript/Demo.usr":    "[General]\nType=Java\n",
+		"MyScript/Action.java": "public class Action { /* stale */ }",
+	} {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte(content)); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	merged, err := mergeEnterpriseArchiveZipWithSupplementalFiles(
+		buf.Bytes(), []string{"Action.java"}, [][]byte{[]byte("public class Action { /* fresh */ }")})
+	if err != nil {
+		t.Fatalf("merge returned error: %v", err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(merged), int64(len(merged)))
+	if err != nil {
+		t.Fatalf("zip.NewReader returned error: %v", err)
+	}
+	names := map[string]string{}
+	for _, file := range reader.File {
+		rc, err := file.Open()
+		if err != nil {
+			t.Fatalf("Open(%q) returned error: %v", file.Name, err)
+		}
+		body, err := io.ReadAll(rc)
+		_ = rc.Close()
+		if err != nil {
+			t.Fatalf("ReadAll(%q) returned error: %v", file.Name, err)
+		}
+		names[file.Name] = string(body)
+	}
+	if _, rooted := names["Action.java"]; rooted {
+		t.Fatalf("merged entries = %v, supplemental must not be appended at the root", names)
+	}
+	if got := names["MyScript/Action.java"]; !strings.Contains(got, "fresh") {
+		t.Fatalf("MyScript/Action.java = %q, want the supplemental content", got)
+	}
+	if len(names) != 2 {
+		t.Fatalf("merged entries = %v, want exactly the two original paths", names)
+	}
+}
+
+// The merge enforces four independent bounds. The per-entry byte cap is covered
+// by TestMergeEnterpriseArchiveZipRejectsOversizedEntry; this covers the
+// entry-count cap. (The 512 MiB total-uncompressed cap shares the same
+// accumulator but cannot be driven directly without allocating >512 MiB.)
+func TestMergeEnterpriseArchiveZipRejectsTooManyEntries(t *testing.T) {
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	for index := 0; index <= enterprisearchive.MaxArchiveEntries; index++ {
+		entry, err := writer.Create(fmt.Sprintf("file_%d.txt", index))
+		if err != nil {
+			t.Fatalf("Create returned error: %v", err)
+		}
+		if _, err := entry.Write([]byte("x")); err != nil {
+			t.Fatalf("Write returned error: %v", err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	_, err := mergeEnterpriseArchiveZipWithSupplementalFiles(buf.Bytes(), []string{"Extra.java"}, [][]byte{[]byte("x")})
+	if err == nil {
+		t.Fatal("merge accepted an archive past the entry-count limit")
+	}
+	if !strings.Contains(err.Error(), "limit") {
+		t.Fatalf("merge error = %v, want an entry-count limit error", err)
+	}
+}
+
+// Every merge bound must report a message containing "limit" so callers (and the
+// tests above) can distinguish a bound rejection from an I/O failure.
+func TestMergeEnterpriseArchiveZipBoundErrorsMentionLimit(t *testing.T) {
+	source, err := os.ReadFile("handlers_import_enterprise.go")
+	if err != nil {
+		t.Fatalf("ReadFile returned error: %v", err)
+	}
+	for _, bound := range []string{"MaxArchiveEntries", "MaxArchiveEntryBytes", "MaxArchiveTotalBytes"} {
+		index := strings.Index(string(source), bound+")")
+		if index < 0 {
+			t.Fatalf("bound %s is not referenced in an error message", bound)
+		}
+	}
+	if strings.Contains(string(source), `"archive exceeds %d uncompressed bytes"`) {
+		t.Fatal("total-bytes bound error must contain the word limit for consistency with the other bounds")
+	}
+}
+
+// The HTTP layer caps how many supplemental parts one import may carry.
+func TestHandleValidateEnterpriseArchiveImportRejectsTooManySupplementalFiles(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("file", "demo.zip")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	zipWriter := zip.NewWriter(part)
+	entry, err := zipWriter.Create("Demo.usr")
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	if _, err := entry.Write([]byte("[General]\nType=Java\n")); err != nil {
+		t.Fatalf("Write returned error: %v", err)
+	}
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("zip Close returned error: %v", err)
+	}
+
+	for index := 0; index <= maxSupplementalArchiveFiles; index++ {
+		supplemental, err := writer.CreateFormFile("supplemental_file", fmt.Sprintf("Extra%d.java", index))
+		if err != nil {
+			t.Fatalf("CreateFormFile supplemental returned error: %v", err)
+		}
+		if _, err := supplemental.Write([]byte("public class Extra {}")); err != nil {
+			t.Fatalf("Write supplemental returned error: %v", err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart Close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/validate", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusBadRequest, resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "supplemental_file") {
+		t.Fatalf("body = %s, want a supplemental_file limit error", resp.Body.String())
+	}
+}
+
+// The merge must round-trip entry names. ConvertZip strips the FIRST path
+// segment, so rewriting "./MyScript/Action.java" to "MyScript/Action.java" would
+// shift every nested file up one level purely because a supplemental file was
+// attached - turning imports that succeed without one into failures.
+func TestMergeEnterpriseArchiveZipPreservesOriginalEntryNames(t *testing.T) {
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	for _, name := range []string{"./MyScript/Demo.usr", "./MyScript/Action.java"} {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, err)
+		}
+		if _, err := entry.Write([]byte("x")); err != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	merged, err := mergeEnterpriseArchiveZipWithSupplementalFiles(
+		buf.Bytes(), []string{"Action.java"}, [][]byte{[]byte("fresh")})
+	if err != nil {
+		t.Fatalf("merge returned error: %v", err)
+	}
+	reader, err := zip.NewReader(bytes.NewReader(merged), int64(len(merged)))
+	if err != nil {
+		t.Fatalf("zip.NewReader returned error: %v", err)
+	}
+	names := make([]string, 0, len(reader.File))
+	for _, file := range reader.File {
+		names = append(names, file.Name)
+	}
+	sort.Strings(names)
+	want := []string{"./MyScript/Action.java", "./MyScript/Demo.usr"}
+	if !reflect.DeepEqual(names, want) {
+		t.Fatalf("merged entry names = %v, want the original names %v", names, want)
+	}
+}
+
+// Two supplemental files whose names differ only in case resolve to the same
+// archive entry. Picking a winner by map iteration order was nondeterministic,
+// so the request is rejected instead.
+func TestMergeEnterpriseArchiveZipRejectsCaseCollidingSupplementalFiles(t *testing.T) {
+	var buf bytes.Buffer
+	writer := zip.NewWriter(&buf)
+	entry, err := writer.Create("MyScript/Action.java")
+	if err != nil {
+		t.Fatalf("Create returned error: %v", err)
+	}
+	if _, err := entry.Write([]byte("stale")); err != nil {
+		t.Fatalf("Write returned error: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close returned error: %v", err)
+	}
+
+	_, err = mergeEnterpriseArchiveZipWithSupplementalFiles(
+		buf.Bytes(),
+		[]string{"Action.java", "ACTION.JAVA"},
+		[][]byte{[]byte("first"), []byte("second")})
+	if err == nil {
+		t.Fatal("merge silently dropped one of two case-colliding supplemental files")
+	}
+	if !strings.Contains(err.Error(), "both target") {
+		t.Fatalf("merge error = %v, want a collision error", err)
+	}
 }

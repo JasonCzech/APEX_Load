@@ -1348,7 +1348,11 @@ func (s *Server) prepareRuntime(ctx context.Context, settings RuntimeSettings) (
 	if failure != nil {
 		return preparedRuntime{}, failure
 	}
-	scriptClasspath, failure := resolveClasspath(settings.Classpath, workDir)
+	materializedClasspath, failure := s.materializeClasspathAssets(settings.Classpath, settings.ClasspathAssets, workDir)
+	if failure != nil {
+		return preparedRuntime{}, failure
+	}
+	scriptClasspath, failure := resolveClasspath(materializedClasspath, workDir)
 	if failure != nil {
 		return preparedRuntime{}, failure
 	}

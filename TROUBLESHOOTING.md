@@ -65,6 +65,36 @@ npm run build
 
 ### Backend / Controller Issues
 
+#### TLS handshake fails with x509 negative serial number
+**Symptom:** Requests to enterprise targets fail with an error similar to:
+`tls: failed to parse certificate from server: x509: negative serial number`
+
+**Why this happens:**
+- Go 1.23+ rejects certificates with negative serial numbers by default.
+- Some enterprise proxies/intermediaries still present legacy chains that trigger this path.
+
+**Solutions:**
+1. Enable compatibility mode through controller startup flags:
+   ```bash
+   APEXLOAD_ENABLE_TLS_COMPAT=true go run ./cmd/controller
+   ```
+   This appends missing `GODEBUG` tokens:
+   `x509negativeserial=1,tlsmlkem=0,tlssecpmlkem=0`
+
+2. For local dev, compatibility defaults are applied automatically unless disabled.
+
+3. If you need to force-disable compatibility defaults:
+   ```bash
+   APEXLOAD_DISABLE_TLS_COMPAT=true go run ./cmd/controller
+   ```
+
+4. Verify startup log includes:
+   - `applied TLS compatibility defaults`
+
+**Production caveat:**
+- If `APEXLOAD_ENV=production|prod`, the persisted `auth.mode` setting must not be a bypass mode such as `dev`; the controller refuses to start.
+- Use `oidc` or `trusted_headers` auth mode in production environments.
+
 #### Port 8080 already in use
 **Symptom:** `listen tcp :8080: bind: address already in use`
 

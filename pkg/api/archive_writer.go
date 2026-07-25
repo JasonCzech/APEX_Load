@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"time"
 
@@ -486,11 +487,18 @@ func syncArchiveArtifacts(root, manifestPath string) error {
 		}
 		syncErr := file.Sync()
 		closeErr := file.Close()
-		if syncErr != nil {
+		if syncErr != nil && !isIgnorableReadOnlySyncError(syncErr) {
 			return syncErr
 		}
 		return closeErr
 	})
+}
+
+func isIgnorableReadOnlySyncError(err error) bool {
+	// On Windows, Sync on a read-only handle can return access denied even
+	// though data durability is already guaranteed by the writer-side Sync prior
+	// to close. Ignore that specific class so manifest publication can proceed.
+	return runtime.GOOS == "windows" && os.IsPermission(err)
 }
 
 func writeArchiveManifestDurable(path string, data []byte) error {
@@ -555,9 +563,19 @@ func writeArchiveArtifactDurable(rootPath, name string, data []byte, perm os.Fil
 	}
 	keepTemp = false
 	if err := syncArchiveDirectory(rootPath); err != nil {
+		if isIgnorableArchiveDirectorySyncError(err) {
+			return nil
+		}
 		return fmt.Errorf("sync archive directory: %w", err)
 	}
 	return nil
+}
+
+func isIgnorableArchiveDirectorySyncError(err error) bool {
+	// Some Windows filesystems reject directory Sync with access denied even
+	// after atomic rename/write succeeds. Treat this as non-fatal so archives
+	// can still be published.
+	return runtime.GOOS == "windows" && os.IsPermission(err)
 }
 
 func sha256BytesHex(data []byte) string {

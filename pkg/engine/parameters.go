@@ -521,9 +521,12 @@ func (pr *ParameterRuntime) applyParameterRowAllocation(values []string, param d
 		if vuserID <= (len(values)-1)/param.BlockSize {
 			blockStart = vuserID * param.BlockSize
 		} else {
-			if effectiveOnExhaustion(param) == "wrap" {
+			switch effectiveOnExhaustion(param) {
+			case "wrap":
 				blockStart = safePositiveMulMod(vuserID, param.BlockSize, len(values))
-			} else {
+			case "last":
+				blockStart = len(values) - 1
+			default:
 				return nil
 			}
 		}
@@ -539,9 +542,12 @@ func (pr *ParameterRuntime) applyParameterRowAllocation(values []string, param d
 			index = 0
 		}
 		if index >= len(values) {
-			if effectiveOnExhaustion(param) == "wrap" {
+			switch effectiveOnExhaustion(param) {
+			case "wrap":
 				index = index % len(values)
-			} else {
+			case "last":
+				index = len(values) - 1
+			default:
 				return nil
 			}
 		}

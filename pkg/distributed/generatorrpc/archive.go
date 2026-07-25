@@ -218,6 +218,10 @@ type generatorArchiveFreeBudget struct {
 	freeBytes func(string) (int64, error)
 }
 
+func generatorArchiveFreeBytes(path string) (int64, error) {
+	return diskspace.AvailablePath(path)
+}
+
 func (b *generatorArchiveFreeBudget) reserve(length int64, minFreeBytes int64) (func(), error) {
 	if b == nil {
 		return func() {}, nil
@@ -339,10 +343,6 @@ func (f *generatorArchiveQuotaParquetFile) Create(name string) (source.ParquetFi
 		return nil, err
 	}
 	return &generatorArchiveQuotaParquetFile{ParquetFile: created, budget: f.budget}, nil
-}
-
-func generatorArchiveFreeBytes(path string) (int64, error) {
-	return diskspace.AvailablePath(path)
 }
 
 type parquetTransactionEvent struct {
@@ -1132,6 +1132,8 @@ func streamJSONLToParquetAtWithBudget[In any, Out any](root *os.Root, inputName 
 		return err
 	}
 	pw.CompressionType = parquet.CompressionCodec_SNAPPY
+	// Bounded per-record scanning keeps a single oversized JSONL line from
+	// being decoded wholesale into generator memory.
 	scanner := bufio.NewScanner(input)
 	scanner.Buffer(make([]byte, 0, 64*1024), maxGeneratorArchiveJSONLRecordBytes)
 	for scanner.Scan() {

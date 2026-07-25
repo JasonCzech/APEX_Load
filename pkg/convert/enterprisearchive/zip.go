@@ -23,12 +23,29 @@ const (
 	maxEnterpriseArchiveEntries    = 4096
 )
 
+// Exported so any caller that rewrites an archive before ConvertZip (for example
+// the API's supplemental-file merge) enforces the SAME decompression-bomb bounds.
+// A pre-pass that inflates entries without these caps silently defeats them.
+const (
+	MaxArchiveEntryBytes = maxEnterpriseArchiveEntryBytes
+	MaxArchiveTotalBytes = maxEnterpriseArchiveTotalBytes
+	MaxArchiveEntries    = maxEnterpriseArchiveEntries
+)
+
 // ConvertZip processes a ZIP archive containing enterprise C/VUser source files
 // and returns either converted APEX Load DSL or a review artifact.
 func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
+	if len(zipData) < 4 {
+		return nil, fmt.Errorf("zip file is too small (%d bytes); expected at least 4 bytes for ZIP magic header", len(zipData))
+	}
+	// Verify ZIP magic bytes (PK)
+	if zipData[0] != 0x50 || zipData[1] != 0x4b {
+		return nil, fmt.Errorf("invalid zip file: magic bytes mismatch (expected PK, got %02x%02x); file may be corrupted or truncated during upload", zipData[0], zipData[1])
+	}
+
 	reader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
 	if err != nil {
-		return nil, fmt.Errorf("failed to open zip archive: %w", err)
+		return nil, fmt.Errorf("failed to open zip archive (size=%d bytes): %w; the file may be corrupted, incomplete, or use an unsupported ZIP compression method", len(zipData), err)
 	}
 	if len(reader.File) > maxEnterpriseArchiveEntries {
 		return nil, fmt.Errorf("zip archive contains %d entries; maximum is %d", len(reader.File), maxEnterpriseArchiveEntries)
@@ -525,6 +542,15 @@ func finalizeEnterpriseArchiveImportResult(result *ConvertResult, ctx archiveFin
 			}
 			applyKnownParameterReferences(script)
 			applyParameterizedBaseURL(script)
+			removed := len(pruneUnusedWholeBodyExtractors(script))
+			if removed > 0 {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("%d unused whole-response extractors were omitted to keep large responses within runtime extraction bounds", removed))
+				if result.Stats.Extractors >= removed {
+					result.Stats.Extractors -= removed
+				} else {
+					result.Stats.Extractors = 0
+				}
+			}
 		}
 		resolveTemplatedBaseURL(result)
 	}
@@ -543,12 +569,14 @@ func redactArchiveMaskedBodyMetadata(script *dsl.Script) {
 	var redactActions func([]dsl.Action)
 	redactActions = func(actions []dsl.Action) {
 		for i := range actions {
-			if actions[i].Metadata != nil {
-				if _, ok := actions[i].Metadata["masked_body_raw"]; ok {
-					actions[i].Metadata["masked_body_raw"] = "lr_unmask(\"[REDACTED]\")"
-				}
-				if _, ok := actions[i].Metadata["masked_body_calls"]; ok {
-					actions[i].Metadata["masked_body_calls"] = []string{"lr_unmask(\"[REDACTED]\")"}
+			if len(actions[i].Metadata) > 0 {
+				delete(actions[i].Metadata, "masked_body")
+				delete(actions[i].Metadata, "masked_body_preview")
+				delete(actions[i].Metadata, "masked_body_secret")
+				delete(actions[i].Metadata, "masked_body_secrets")
+				delete(actions[i].Metadata, "masked_body_reference")
+				if len(actions[i].Metadata) == 0 {
+					actions[i].Metadata = nil
 				}
 			}
 			if actions[i].Control != nil {

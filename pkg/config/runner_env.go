@@ -27,6 +27,17 @@ const (
 	EnvJavaVuserMaxProcesses    = "APEXLOAD_JAVA_VUSER_MAX_PROCESSES"
 	EnvJavaVuserRunnerAuthToken = "APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN"
 
+	// EnvJavaVuserClasspathUploadEnabled opts an operator into honoring
+	// user-uploaded classpath JARs for imported Java Vusers. When unset, the
+	// upload endpoint is disabled and any attached classpath assets are ignored
+	// at runtime, preserving the fail-closed, operator-provisioned model.
+	EnvJavaVuserClasspathUploadEnabled = "APEXLOAD_JAVA_VUSER_CLASSPATH_UPLOAD_ENABLED"
+	// EnvJavaVuserClasspathAssetDir points the runner at the controller's import
+	// asset store so a local (same-host) sidecar can read uploaded JAR bytes by
+	// their file:// storage_ref. Unset for distributed runners, which receive
+	// staged bytes instead.
+	EnvJavaVuserClasspathAssetDir = "APEXLOAD_JAVA_VUSER_CLASSPATH_ASSET_DIR"
+
 	EnvK8sRestartEnabled           = "APEXLOAD_K8S_RESTART_ENABLED"
 	EnvK8sNamespace                = "APEXLOAD_K8S_NAMESPACE"
 	EnvK8sControllerDeployment     = "APEXLOAD_K8S_CONTROLLER_DEPLOYMENT"
@@ -80,6 +91,13 @@ type JavaVuserOperatorConfig struct {
 	WorkDir               string
 	MaxProcesses          int
 	AuthToken             string
+	// ClasspathUploadEnabled gates honoring user-uploaded classpath JARs. When
+	// false, attached JavaClasspathAsset records are ignored and runtime
+	// behavior is identical to the pre-feature, fail-closed model.
+	ClasspathUploadEnabled bool
+	// ClasspathAssetDir is the same-host import asset root a local sidecar reads
+	// uploaded JAR bytes from. Empty for distributed runners.
+	ClasspathAssetDir string
 }
 
 // K8sRestartOperatorConfig is operator-owned configuration for opt-in
@@ -104,17 +122,19 @@ func LoadJavaVuserOperatorConfig() JavaVuserOperatorConfig {
 		runnerCommand = DefaultJavaVuserRunnerCommand
 	}
 	cfg := JavaVuserOperatorConfig{
-		Enabled:               envBool(EnvJavaVuserRunnerEnabled),
-		RunnerCommand:         runnerCommand,
-		RunnerCommandExplicit: runnerCommandExplicit,
-		RunnerMode:            strings.ToLower(firstNonEmptyEnv(EnvJavaVuserRunnerMode, DefaultJavaVuserRunnerMode)),
-		RunnerURL:             firstNonEmptyEnv(EnvJavaVuserRunnerURL, DefaultJavaVuserRunnerURL),
-		DefaultJDKHome:        strings.TrimSpace(os.Getenv(EnvJavaVuserDefaultJDKHome)),
-		HarnessJar:            strings.TrimSpace(os.Getenv(EnvJavaVuserHarnessJar)),
-		Classpath:             splitClasspath(os.Getenv(EnvJavaVuserClasspath)),
-		WorkDir:               strings.TrimSpace(os.Getenv(EnvJavaVuserWorkDir)),
-		MaxProcesses:          envInt(EnvJavaVuserMaxProcesses, DefaultJavaVuserMaxProcesses),
-		AuthToken:             strings.TrimSpace(os.Getenv(EnvJavaVuserRunnerAuthToken)),
+		Enabled:                envBool(EnvJavaVuserRunnerEnabled),
+		RunnerCommand:          runnerCommand,
+		RunnerCommandExplicit:  runnerCommandExplicit,
+		RunnerMode:             strings.ToLower(firstNonEmptyEnv(EnvJavaVuserRunnerMode, DefaultJavaVuserRunnerMode)),
+		RunnerURL:              firstNonEmptyEnv(EnvJavaVuserRunnerURL, DefaultJavaVuserRunnerURL),
+		DefaultJDKHome:         strings.TrimSpace(os.Getenv(EnvJavaVuserDefaultJDKHome)),
+		HarnessJar:             strings.TrimSpace(os.Getenv(EnvJavaVuserHarnessJar)),
+		Classpath:              splitClasspath(os.Getenv(EnvJavaVuserClasspath)),
+		WorkDir:                strings.TrimSpace(os.Getenv(EnvJavaVuserWorkDir)),
+		MaxProcesses:           envInt(EnvJavaVuserMaxProcesses, DefaultJavaVuserMaxProcesses),
+		AuthToken:              strings.TrimSpace(os.Getenv(EnvJavaVuserRunnerAuthToken)),
+		ClasspathUploadEnabled: envBool(EnvJavaVuserClasspathUploadEnabled),
+		ClasspathAssetDir:      strings.TrimSpace(os.Getenv(EnvJavaVuserClasspathAssetDir)),
 	}
 	if cfg.MaxProcesses <= 0 {
 		cfg.MaxProcesses = DefaultJavaVuserMaxProcesses
@@ -122,6 +142,13 @@ func LoadJavaVuserOperatorConfig() JavaVuserOperatorConfig {
 		cfg.MaxProcesses = MaxJavaVuserMaxProcesses
 	}
 	return cfg
+}
+
+// JavaClasspathUploadEnabled reports whether the operator has opted into
+// user-uploaded classpath JARs. The controller/API process uses this to gate
+// the upload endpoint without loading the full runner operator config.
+func JavaClasspathUploadEnabled() bool {
+	return envBool(EnvJavaVuserClasspathUploadEnabled)
 }
 
 // LoadK8sRestartOperatorConfig resolves the opt-in Kubernetes restart settings.

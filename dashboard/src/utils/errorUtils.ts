@@ -294,6 +294,21 @@ export function diagnoseError(error: unknown, fallback: string): ErrorDiagnostic
     )
   }
 
+  if (/request origin is not allowed|credentialed requests require an explicit allowed origin/.test(message)) {
+    return diagnostic(
+      details,
+      'network',
+      'warning',
+      summaryOr(details, 'Dashboard origin is not allowed by the controller'),
+      'The request reached the controller, but its browser Origin does not match the API host or an explicitly allowed origin.',
+      [
+        'When using the local Vite dashboard, restart Vite so its API proxy rewrites the request origin.',
+        'For a separately hosted dashboard, add its exact origin to APEXLOAD_ALLOWED_ORIGINS and restart the controller.',
+        'Do not change project roles for this error; authorization is evaluated after the origin policy passes.',
+      ],
+    )
+  }
+
   if (details.status === 403 || /\bforbidden\b|access denied|not allowed|permission denied/.test(message)) {
     return diagnostic(
       details,

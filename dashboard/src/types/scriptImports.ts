@@ -211,6 +211,17 @@ export interface ImportAssetUploadResponse {
   uploaded_at: string
 }
 
+export interface JavaClasspathAssetUploadResponse {
+  import_id: string
+  entry?: string
+  file_name: string
+  content_type?: string
+  size_bytes: number
+  sha256: string
+  storage_ref: string
+  uploaded_at: string
+}
+
 export interface DetectedSourceProtocol {
   canonical_source_protocol: string
   apexload_protocol?: string

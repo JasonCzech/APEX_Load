@@ -2804,6 +2804,31 @@ describe('TestHub', () => {
     expect(apiMock.createScenario).toHaveBeenCalledWith(expect.objectContaining({ name: 'Late Named Scenario' }))
   })
 
+  it('keeps the review scenario name input mounted while typing', async () => {
+    await act(async () => {
+      root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)
+    })
+    await flushPromises()
+
+    await clickWizardStep('Review')
+    const nameInput = container.querySelector('.scenario-name-prompt input') as HTMLInputElement | null
+    expect(nameInput).toBeTruthy()
+    if (!nameInput) return
+
+    await act(async () => {
+      setInputValue(nameInput, 'N')
+    })
+
+    expect(container.querySelector('.scenario-name-prompt input')).toBe(nameInput)
+
+    await act(async () => {
+      setInputValue(nameInput, 'New Scenario')
+    })
+
+    expect(nameInput.value).toBe('New Scenario')
+    expect(container.querySelector('.scenario-name-prompt input')).toBe(nameInput)
+  })
+
   it('starts over without restoring or persisting an in-progress builder draft', async () => {
     await act(async () => {
       root.render(<TestHub testStatuses={{}} onSelectTest={vi.fn()} />)

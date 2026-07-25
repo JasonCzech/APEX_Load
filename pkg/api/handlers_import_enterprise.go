@@ -3,9 +3,12 @@ package api
 // handlers_import_enterprise — split from handlers_scripts.go (same package, behavior-preserving).
 
 import (
+	"archive/zip"
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"sort"
 	"strings"
 
@@ -31,6 +34,29 @@ func acquireEnterpriseImportSlot(r *http.Request, w http.ResponseWriter) bool {
 }
 
 func releaseEnterpriseImportSlot() { <-enterpriseImportGate }
+
+// mergedArchiveEntryKey normalizes an archive entry name for MATCHING only.
+// The original name is what gets written back out.
+func mergedArchiveEntryKey(name string) string {
+	cleaned := path.Clean(strings.TrimPrefix(name, "./"))
+	if cleaned == "." || cleaned == "" {
+		return ""
+	}
+	return cleaned
+}
+
+// maxSupplementalArchiveFiles bounds how many extra sources one import may carry.
+const maxSupplementalArchiveFiles = 64
+
+// hasWindowsDriveLetterPrefix reports whether name begins with a drive
+// specifier such as "C:" that would escape a relative archive path.
+func hasWindowsDriveLetterPrefix(name string) bool {
+	if len(name) < 2 || name[1] != ':' {
+		return false
+	}
+	c := name[0]
+	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+}
 
 func (s *Server) handleImportEnterpriseArchive(w http.ResponseWriter, r *http.Request) {
 	if !acquireEnterpriseImportSlot(r, w) {
@@ -121,9 +147,21 @@ func attachSalesforceReviewToEnterpriseArchiveResult(result *enterprisearchive.C
 	if review == nil || (!review.Detected && !importReq.SalesforceNative) {
 		return
 	}
+	reviewForResponse := salesforceReviewForResponse(review)
+	if importReq.SalesforceNative && review.NativePreview != nil && review.NativePreview.Script != nil {
+		preview := review.NativePreview.Script
+		preview.ProjectID = normalizeProjectID(importReq.ProjectID)
+		attachSourceReviewToScript(preview, "salesforce", reviewScript.Name, result.SourceReview)
+		if preview.Metadata != nil && preview.Metadata.Import != nil {
+			preview.Metadata.Import.Source = "salesforce"
+		}
+		ensureScriptImportPreserved(preview, "salesforce")["salesforce_review"] = reviewForResponse
+		result.Script = preview
+		result.Scripts = nil
+	}
 	for _, script := range scripts {
 		preserved := ensureScriptImportPreserved(script, "enterprise_script_archive")
-		preserved["salesforce_review"] = review
+		preserved["salesforce_review"] = reviewForResponse
 	}
 }
 
@@ -237,10 +275,77 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 	// Deprecated compatibility input. Java archives now always produce one
 	// governed java_vuser draft, so true and false intentionally behave alike.
 	_ = parseBoolDefault(firstNonEmpty(r.FormValue("allow_java_vuser_runner"), r.URL.Query().Get("allow_java_vuser_runner")), true)
+	// Verify ZIP magic bytes for early diagnosis
+	if len(data) > 0 && len(data) < 4 {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("file is too small (%d bytes); ZIP files must be at least 4 bytes", len(data)))
+		return nil, false
+	}
+	if len(data) >= 2 && (data[0] != 0x50 || data[1] != 0x4b) {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("file does not appear to be a valid ZIP archive (magic bytes: %02x %02x); expected PK", data[0], data[1]))
+		return nil, false
+	}
+
+	supplementalData := make([][]byte, 0)
+	supplementalNames := make([]string, 0)
+	if r.MultipartForm != nil {
+		supplementalHeaders := r.MultipartForm.File["supplemental_file"]
+		if len(supplementalHeaders) > maxSupplementalArchiveFiles {
+			writeError(w, http.StatusBadRequest, fmt.Sprintf("at most %d supplemental_file entries are accepted", maxSupplementalArchiveFiles))
+			return nil, false
+		}
+		for _, header := range supplementalHeaders {
+			if header == nil {
+				continue
+			}
+			// mime/multipart already reduces Filename to a base name, so this is a
+			// defense-in-depth check rather than the primary traversal guard.
+			name := path.Clean(strings.TrimSpace(header.Filename))
+			name = strings.TrimPrefix(name, "./")
+			if name == "." || name == "" || name == ".." || strings.HasPrefix(name, "../") ||
+				strings.Contains(name, "\\") || strings.ContainsRune(name, 0) || hasWindowsDriveLetterPrefix(name) {
+				writeError(w, http.StatusBadRequest, "supplemental_file names must be relative archive paths")
+				return nil, false
+			}
+			if strings.HasPrefix(name, "/") {
+				writeError(w, http.StatusBadRequest, "supplemental_file names must be relative archive paths")
+				return nil, false
+			}
+			file, openErr := header.Open()
+			if openErr != nil {
+				writeError(w, http.StatusBadRequest, "failed to read supplemental_file: "+openErr.Error())
+				return nil, false
+			}
+			body, readErr := io.ReadAll(io.LimitReader(file, int64(enterprisearchive.MaxArchiveEntryBytes)+1))
+			_ = file.Close()
+			if readErr != nil {
+				writeError(w, http.StatusBadRequest, "failed to read supplemental_file: "+readErr.Error())
+				return nil, false
+			}
+			if len(body) > enterprisearchive.MaxArchiveEntryBytes {
+				writeError(w, http.StatusBadRequest, fmt.Sprintf("supplemental_file %q exceeds the %d byte limit", name, enterprisearchive.MaxArchiveEntryBytes))
+				return nil, false
+			}
+			if len(body) == 0 {
+				continue
+			}
+			supplementalData = append(supplementalData, body)
+			supplementalNames = append(supplementalNames, name)
+		}
+	}
+	if len(supplementalData) > 0 {
+		mergedData, mergeErr := mergeEnterpriseArchiveZipWithSupplementalFiles(data, supplementalNames, supplementalData)
+		if mergeErr != nil {
+			writeError(w, http.StatusBadRequest, "failed to merge supplemental_file entries into archive: "+mergeErr.Error())
+			return nil, false
+		}
+		data = mergedData
+	}
 
 	return &enterpriseArchiveImportRequest{
 		Data:             data,
 		HARData:          harData,
+		SupplementalData: supplementalData,
+		SupplementalName: supplementalNames,
 		ProjectID:        authorizedImportProjectID(r),
 		SalesforceNative: parseBoolDefault(firstNonEmpty(r.FormValue("salesforce_native"), r.URL.Query().Get("salesforce_native")), false),
 		Opts: enterprisearchive.ConvertOptions{
@@ -251,6 +356,167 @@ func readEnterpriseArchiveImportRequest(w http.ResponseWriter, r *http.Request) 
 		},
 		ReadinessPolicy: enterprisearchive.ParseRuntimeSettingMigrationPolicy(r.FormValue("migration_block_statuses")),
 	}, true
+}
+
+// mergeEnterpriseArchiveZipWithSupplementalFiles rewrites the uploaded archive
+// with the caller's supplemental sources merged in.
+//
+// It re-inflates the uploaded entries, so it MUST enforce the same
+// decompression-bomb bounds ConvertZip does — otherwise attaching a single
+// supplemental file routes an upload through an unguarded path and a ~100 MiB
+// body can expand to ~100 GiB before ConvertZip ever sees it.
+func mergeEnterpriseArchiveZipWithSupplementalFiles(baseZip []byte, names []string, contents [][]byte) ([]byte, error) {
+	reader, err := zip.NewReader(bytes.NewReader(baseZip), int64(len(baseZip)))
+	if err != nil {
+		return nil, err
+	}
+	if len(reader.File) > enterprisearchive.MaxArchiveEntries {
+		return nil, fmt.Errorf("archive contains %d entries, limit is %d", len(reader.File), enterprisearchive.MaxArchiveEntries)
+	}
+
+	overrides := make(map[string][]byte, len(names))
+	for idx, name := range names {
+		if idx >= len(contents) {
+			break
+		}
+		if name == "" {
+			continue
+		}
+		overrides[name] = contents[idx]
+	}
+
+	// Browser multipart always reduces a filename to its base name, so a
+	// supplemental "Action.java" must be matched against the base name of nested
+	// entries such as "MyScript/Action.java". Appending it at the archive root
+	// instead would make ConvertZip see two entries that normalize to the same
+	// name and abort the whole import.
+	baseNameCounts := map[string]int{}
+	for _, file := range reader.File {
+		if file == nil || file.FileInfo().IsDir() {
+			continue
+		}
+		if cleaned := mergedArchiveEntryKey(file.Name); cleaned != "" {
+			baseNameCounts[strings.ToLower(path.Base(cleaned))]++
+		}
+	}
+
+	// Resolve supplemental names to archive entries in a DETERMINISTIC order:
+	// ranging a map made the winner of a collision depend on Go's random map
+	// iteration. replacements is keyed by the entry's ORIGINAL name because that
+	// is what gets written back out.
+	supplementalNamesSorted := make([]string, 0, len(overrides))
+	for name := range overrides {
+		supplementalNamesSorted = append(supplementalNamesSorted, name)
+	}
+	sort.Strings(supplementalNamesSorted)
+
+	replacements := make(map[string][]byte, len(overrides))
+	claimedBy := map[string]string{}
+	for _, name := range supplementalNamesSorted {
+		target := ""
+		for _, file := range reader.File {
+			if file == nil || file.FileInfo().IsDir() {
+				continue
+			}
+			cleaned := mergedArchiveEntryKey(file.Name)
+			if cleaned == "" {
+				continue
+			}
+			if cleaned == name {
+				target = file.Name
+				break
+			}
+			// Only retarget when the base name is unambiguous inside the archive.
+			if strings.EqualFold(path.Base(cleaned), path.Base(name)) &&
+				baseNameCounts[strings.ToLower(path.Base(name))] == 1 {
+				target = file.Name
+			}
+		}
+		if target == "" {
+			continue
+		}
+		// Two supplemental names that differ only in case resolve to the same
+		// entry. Silently dropping one would depend on ordering, so reject.
+		if previous, taken := claimedBy[target]; taken {
+			return nil, fmt.Errorf("supplemental_file %q and %q both target archive entry %q", previous, name, target)
+		}
+		claimedBy[target] = name
+		replacements[target] = overrides[name]
+		delete(overrides, name)
+	}
+
+	var out bytes.Buffer
+	writer := zip.NewWriter(&out)
+	fail := func(err error) ([]byte, error) {
+		_ = writer.Close()
+		return nil, err
+	}
+
+	totalBytes := 0
+	writeEntry := func(name string, body []byte) error {
+		if len(body) > enterprisearchive.MaxArchiveEntryBytes {
+			return fmt.Errorf("archive entry %q is %d bytes, limit is %d", name, len(body), enterprisearchive.MaxArchiveEntryBytes)
+		}
+		totalBytes += len(body)
+		if totalBytes > enterprisearchive.MaxArchiveTotalBytes {
+			return fmt.Errorf("archive exceeds the %d uncompressed byte limit", enterprisearchive.MaxArchiveTotalBytes)
+		}
+		dst, createErr := writer.Create(name)
+		if createErr != nil {
+			return createErr
+		}
+		_, writeErr := dst.Write(body)
+		return writeErr
+	}
+
+	for _, file := range reader.File {
+		if file == nil || file.FileInfo().IsDir() {
+			continue
+		}
+		if mergedArchiveEntryKey(file.Name) == "" {
+			continue
+		}
+		// Preserve the ORIGINAL entry name. Rewriting it to the cleaned form
+		// changes which leading segment ConvertZip strips (it removes the first
+		// path segment), so every nested file would silently move up one level
+		// purely because a supplemental file was attached.
+		fileName := file.Name
+		body, ok := replacements[fileName]
+		if !ok {
+			src, openErr := file.Open()
+			if openErr != nil {
+				return fail(openErr)
+			}
+			// Bounded read: never materialize more than one entry's limit, so a
+			// zero-filled bomb cannot grow the heap past the cap.
+			readBody, readErr := io.ReadAll(io.LimitReader(src, int64(enterprisearchive.MaxArchiveEntryBytes)+1))
+			_ = src.Close()
+			if readErr != nil {
+				return fail(readErr)
+			}
+			body = readBody
+		}
+		if err := writeEntry(fileName, body); err != nil {
+			return fail(err)
+		}
+	}
+
+	// Any supplemental file that matched no existing entry is added at the root.
+	remaining := make([]string, 0, len(overrides))
+	for name := range overrides {
+		remaining = append(remaining, name)
+	}
+	sort.Strings(remaining)
+	for _, name := range remaining {
+		if err := writeEntry(name, overrides[name]); err != nil {
+			return fail(err)
+		}
+	}
+
+	if closeErr := writer.Close(); closeErr != nil {
+		return nil, closeErr
+	}
+	return out.Bytes(), nil
 }
 
 func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *http.Request, status int, result *enterprisearchive.ConvertResult, readinessPolicy enterprisearchive.RuntimeSettingMigrationPolicy) {
@@ -359,6 +625,7 @@ func buildEnterpriseArchiveImportRepairSuggestions(result *enterprisearchive.Con
 		if fidelityReport == nil {
 			fidelityReport = summary.FidelityReport
 		}
+		hasNamedFidelityBlockers := fidelityReport != nil && len(fidelityReport.Blockers) > 0
 		javaVuserApprovalReady := combinedJavaVuser &&
 			fidelityReport != nil &&
 			fidelityReport.PromotionStatus == enterprisearchive.ImportPromotionPromotable &&
@@ -372,7 +639,7 @@ func buildEnterpriseArchiveImportRepairSuggestions(result *enterprisearchive.Con
 				Description: "The Java archive is represented by one external-runner draft rather than split native lanes. This runner posture is not conversion loss, but launch requires authoring approval and a compatible governed JVM runner.",
 				Action:      "Save the combined draft to an authoring session, review and approve it, then enable a runner advertising java_vuser_persistent_lifecycle_v1 and java_vuser_session_frame_token_v1 before launch.",
 			})
-		} else if combinedJavaVuser {
+		} else if combinedJavaVuser && hasNamedFidelityBlockers {
 			suggestions = append(suggestions, scriptImportRepairSuggestion{
 				ID:          "protocol:java-vuser-fidelity",
 				Category:    "protocol",
@@ -380,6 +647,15 @@ func buildEnterpriseArchiveImportRepairSuggestions(result *enterprisearchive.Con
 				Title:       "Resolve combined Java Vuser fidelity blockers",
 				Description: "The archive remains preserved as one combined Java Vuser draft, but its source or lifecycle fidelity is blocked and the draft is not ready for authoring approval.",
 				Action:      "Save the combined draft as a review artifact, resolve every named fidelity blocker, then re-import and approve the promotable draft.",
+			})
+		} else if combinedJavaVuser {
+			suggestions = append(suggestions, scriptImportRepairSuggestion{
+				ID:          "protocol:java-vuser-review",
+				Category:    "protocol",
+				Severity:    "warning",
+				Title:       "Review combined Java Vuser draft readiness",
+				Description: "The archive remains represented as one combined Java Vuser draft. No named fidelity blockers were reported, but approval readiness still depends on preserved runtime and governance evidence.",
+				Action:      "Save the draft to an authoring session, review preserved runtime/settings evidence, and approve once migration and governed-runner prerequisites are satisfied.",
 			})
 		} else {
 			suggestions = append(suggestions, scriptImportRepairSuggestion{
@@ -796,6 +1072,13 @@ func buildEnterpriseArchiveImportSummary(result *enterprisearchive.ConvertResult
 	summary.SalesforceReview = salesforceReviewValue(preserved["salesforce_review"])
 	summary.AgentforceReview = agentforceReviewValue(preserved["agentforce_review"])
 	summary.MuleSoftReview = mulesoftReviewValue(preserved["mulesoft_review"])
+	if summary.SalesforceReview != nil && summary.SalesforceReview.NativePreview != nil && summary.SalesforceReview.NativePreview.Script == nil && result != nil && result.Script != nil && result.Script.GeneratedBy == "apexload-salesforce-builder" {
+		summary.SalesforceReview.NativePreview.Script = result.Script
+	}
+	if summary.SalesforceReview != nil && summary.SalesforceReview.NativePreview != nil && result != nil && result.Script != nil && result.Script.GeneratedBy == "apexload-salesforce-builder" {
+		preserved["generation_mode"] = "salesforce_native_http"
+		preserved["protocol_scope"] = "salesforce_http_family"
+	}
 	if summary.FidelityReport == nil {
 		summary.FidelityReport = fidelityReportValue(preserved["fidelity_report"])
 	}
@@ -828,7 +1111,7 @@ func persistEnterpriseArchiveImportSummary(result *enterprisearchive.ConvertResu
 			script.Metadata.Import.Preserved["trueclient2_compat_report"] = summary.TrueClient2CompatReport
 		}
 		if summary.SalesforceReview != nil {
-			script.Metadata.Import.Preserved["salesforce_review"] = summary.SalesforceReview
+			script.Metadata.Import.Preserved["salesforce_review"] = salesforceReviewForResponse(summary.SalesforceReview)
 		}
 		if summary.AgentforceReview != nil {
 			script.Metadata.Import.Preserved["agentforce_review"] = summary.AgentforceReview

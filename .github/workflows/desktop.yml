@@ -108,6 +108,18 @@ jobs:
           sudo apt-get install -y dpkg-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
             desktop-file-utils shared-mime-info xdg-utils
 
+      # NPM_CONFIG_REGISTRY is inherited from the workflow-level env above, which
+      # defaults to the public registry. Do NOT override it here with an internal
+      # mirror: GitHub-hosted runners cannot reach one, and a step-level fallback
+      # would shadow the safe default on every matrix leg.
+      - name: Build Dashboard
+        env:
+          HTTP_PROXY: ${{ vars.HTTP_PROXY }}
+          HTTPS_PROXY: ${{ vars.HTTPS_PROXY }}
+          NO_PROXY: ${{ vars.NO_PROXY }}
+          NODE_EXTRA_CA_CERTS: ${{ vars.NODE_EXTRA_CA_CERTS }}
+        run: cd dashboard && npm ci --ignore-scripts && npm run build
+
       - name: Resolve friendly build version
         id: version
         shell: bash

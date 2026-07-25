@@ -25,7 +25,7 @@ The controller serves API endpoints under:
 http://<controller-host>:8080/api/v1
 ```
 
-Local dashboard development normally proxies `/api` from `http://localhost:3000` to the controller. Direct API clients should use the controller origin.
+Local dashboard development normally proxies `/api` from `http://localhost:4000` to the controller. Direct API clients should use the controller origin.
 
 Health checks:
 
@@ -33,6 +33,30 @@ Health checks:
 curl http://localhost:8080/api/v1/system/health
 curl http://localhost:8080/api/v1/system/readiness
 ```
+
+## Controller Startup Compatibility
+
+Some enterprise TLS intermediaries still present certificate chains that require compatibility behavior in newer Go runtimes.
+
+When needed, enable controller TLS compatibility defaults explicitly:
+
+```bash
+APEXLOAD_ENABLE_TLS_COMPAT=true go run ./cmd/controller
+```
+
+This appends missing `GODEBUG` tokens:
+
+- `x509negativeserial=1`
+- `tlsmlkem=0`
+- `tlssecpmlkem=0`
+
+To force-disable automatic TLS compatibility defaults in any environment:
+
+```bash
+APEXLOAD_DISABLE_TLS_COMPAT=true go run ./cmd/controller
+```
+
+If `APEXLOAD_ENV=production|prod`, the persisted `auth.mode` setting must not be a bypass mode such as `dev`; the controller rejects that combination at startup. Use `oidc` or `trusted_headers` in production environments. (There is no `APEXLOAD_AUTH_MODE` environment variable — the mode is a stored system setting.)
 
 ## Authentication
 

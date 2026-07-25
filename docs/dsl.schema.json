@@ -7428,6 +7428,33 @@
       },
       "type": "object"
     },
+    "JavaClasspathAsset": {
+      "additionalProperties": false,
+      "properties": {
+        "content_type": {
+          "type": "string"
+        },
+        "entry": {
+          "type": "string"
+        },
+        "file_name": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string"
+        },
+        "size_bytes": {
+          "type": "integer"
+        },
+        "staged_asset": {
+          "type": "string"
+        },
+        "storage_ref": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "JavaHTTPConfig": {
       "additionalProperties": false,
       "properties": {
@@ -7488,6 +7515,13 @@
         "classpath": {
           "items": {
             "type": "string"
+          },
+          "maxItems": 256,
+          "type": "array"
+        },
+        "classpath_assets": {
+          "items": {
+            "$ref": "#/$defs/JavaClasspathAsset"
           },
           "maxItems": 256,
           "type": "array"

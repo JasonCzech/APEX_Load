@@ -59,6 +59,12 @@ func (vu *VUser) checkResolvedFiles() error {
 	return fmt.Errorf("unresolved file asset reference(s) %s: refusing to run with placeholder values (upload or attach the referenced file asset, or set %s=true to override)", refs, allowUnresolvedFilesEnv)
 }
 
+// Unresolved {{param.*}} references are gated by actionContainsUnresolvedParameter
+// in safeProtoExecuteStream, which inspects every resolved field (body, headers,
+// params, metadata, wait_for, sync, auth, soap, extractors, assertions) and names
+// the offending action. Adding a second, narrower gate here only changed the
+// diagnostic text and split the behavior across two code paths.
+
 func dedupeTemplateRefs(in []string) []string {
 	seen := make(map[string]struct{}, len(in))
 	out := make([]string, 0, len(in))

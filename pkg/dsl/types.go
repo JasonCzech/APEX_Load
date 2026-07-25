@@ -166,6 +166,28 @@ type JavaVuserConfig struct {
 	// injected as lr_parameters before dispatch to the JVM. Explicitly
 	// authored lr_parameters entries are still delivered.
 	SkipParameterEvaluation *bool `json:"skip_parameter_evaluation,omitempty"`
+	// ClasspathAssets binds user-uploaded JAR files to individual Classpath
+	// entries so an imported Java Vuser whose dependencies are not
+	// pre-provisioned on the runner can still execute. The []string Classpath
+	// above and its wildcard/separator validation are unaffected: this is a
+	// parallel, entry-keyed sidecar record resolved by content hash. An entry
+	// is only user-suppliable when the user explicitly attaches an asset to it;
+	// unattached entries remain assumed operator-provisioned and fail closed.
+	ClasspathAssets []JavaClasspathAsset `json:"classpath_assets,omitempty" jsonschema:"maxItems=256"`
+}
+
+// JavaClasspathAsset binds one exact Java Vuser classpath entry to a
+// user-uploaded JAR by content hash. SHA256 is the portable identity every
+// runner (local or distributed) resolves against; Entry is the exact string in
+// JavaVuserConfig.Classpath that this asset materializes.
+type JavaClasspathAsset struct {
+	Entry       string `json:"entry"`                  // exact string in Classpath this asset materializes
+	FileName    string `json:"file_name,omitempty"`    // original upload name (display only)
+	SHA256      string `json:"sha256"`                 // lowercase hex; portable key + integrity check
+	SizeBytes   int64  `json:"size_bytes,omitempty"`   // uploaded size in bytes
+	ContentType string `json:"content_type,omitempty"` // sniffed/declared content type
+	StorageRef  string `json:"storage_ref,omitempty"`  // file://… controller/local-reachable source
+	StagedAsset string `json:"staged_asset,omitempty"` // set by distributed staging; empty for local
 }
 
 type WebSocketConfig struct {

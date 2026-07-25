@@ -268,64 +268,17 @@ func loadDataSource(src dsl.DataSource, assets map[string][]byte) (*dataSource, 
 }
 
 func resolveDataSourceDelimiter(src dsl.DataSource, content string) rune {
-	if src.Delimiter == "\t" {
-		return '\t'
-	}
-	delimiter := strings.TrimSpace(src.Delimiter)
-	switch strings.ToLower(delimiter) {
-	case "":
-		if src.Type == "dat" {
-			return '\t'
-		}
-		if detected := detectDataSourceDelimiter(content); detected != 0 {
-			return detected
-		}
-		return ','
-	case "auto":
-		if detected := detectDataSourceDelimiter(content); detected != 0 {
-			return detected
-		}
-		if src.Type == "dat" {
-			return '\t'
-		}
-		return ','
-	case `\t`, "tab":
-		return '\t'
-	case "comma":
-		return ','
-	default:
-		return []rune(delimiter)[0]
-	}
+	// Delegates to pkg/dsl so script validation and the runtime loader can never
+	// disagree about which delimiter a data source uses.
+	return dsl.ResolveDataSourceDelimiter(src, content)
 }
 
 func detectDataSourceDelimiter(content string) rune {
-	commaScore := scoreDataSourceDelimiter(content, ',')
-	tabScore := scoreDataSourceDelimiter(content, '\t')
-	if tabScore == 0 && commaScore == 0 {
-		return 0
-	}
-	if tabScore > commaScore {
-		return '\t'
-	}
-	return ','
+	return dsl.DetectDataSourceDelimiter(content)
 }
 
 func scoreDataSourceDelimiter(content string, delimiter rune) int {
-	score := 0
-	for index, line := range strings.Split(content, "\n") {
-		if index >= 20 {
-			break
-		}
-		line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
-		if line == "" {
-			continue
-		}
-		count := strings.Count(line, string(delimiter))
-		if count > 0 {
-			score += count + 1
-		}
-	}
-	return score
+	return dsl.ScoreDataSourceDelimiter(content, delimiter)
 }
 
 func openDataSourceReader(src dsl.DataSource, assets map[string][]byte) (io.ReadCloser, error) {

@@ -1739,7 +1739,7 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
       </div>
 
       {error && <ErrorDiagnostic error={error} fallback="Unable to create or load test setup" compact className="new-test-error-diagnostic" />}
-      {!canManageTests && <div className="settings-error-inline" role="alert">Current session can view scenarios but cannot create runs or schedules for this project.</div>}
+      {!canManageTests && <div className="settings-error-inline page-error-banner" role="alert">Current session can view scenarios but cannot create runs or schedules for this project.</div>}
 
       {pageMode === 'schedules' ? (
         <div className="new-test-layout new-test-schedules-layout">

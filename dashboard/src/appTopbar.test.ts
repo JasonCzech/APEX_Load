@@ -49,7 +49,7 @@ describe('app topbar helpers', () => {
     expect(shouldShowTopbarClientDownloads({ page: 'settings' })).toBe(false)
   })
 
-  it('selects only active run statuses and prioritizes live work', () => {
+  it('selects active and pending run statuses while prioritizing live work', () => {
     const runs = selectTopbarActiveRuns([
       buildRun({ id: 'complete', name: 'Completed', status: 'COMPLETE', started_at: '2026-06-07T10:00:00Z' }),
       buildRun({ id: 'pending', name: 'Pending API Burst', status: 'PENDING', created_at: '2026-06-07T12:50:00Z' }),
@@ -59,7 +59,7 @@ describe('app topbar helpers', () => {
       buildRun({ id: 'queued', name: 'Queued API Burst', status: 'QUEUED', created_at: '2026-06-07T12:45:00Z' }),
     ])
 
-    expect(runs.map(run => run.id)).toEqual(['running-new', 'running-old', 'paused'])
+    expect(runs.map(run => run.id)).toEqual(['running-new', 'running-old', 'paused', 'pending', 'queued'])
   })
 
   it('applies live status overrides before filtering active runs', () => {
@@ -103,13 +103,23 @@ describe('app topbar helpers', () => {
     })
     expect(completed).toEqual([])
 
+    // Queued/pending runs are surfaced in the topbar alongside live work, so a
+    // QUEUED message adds the run rather than dropping it.
     const queued = updateTopbarActiveRuns(completed, {
       id: 'run-2',
       name: 'Queued API Burst',
       status: 'QUEUED',
       timestamp: '2026-06-07T12:06:00Z',
     })
-    expect(queued).toEqual([])
+    expect(queued.map(run => run.id)).toEqual(['run-2'])
+    expect(queued[0].status).toBe('QUEUED')
+
+    const aborted = updateTopbarActiveRuns(queued, {
+      id: 'run-2',
+      status: 'ABORTED',
+      timestamp: '2026-06-07T12:07:00Z',
+    })
+    expect(aborted).toEqual([])
   })
 
   it('formats run chip labels and tones', () => {

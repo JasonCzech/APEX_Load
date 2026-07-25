@@ -6,7 +6,9 @@ import { canUseNativeDialogs, filesFromDroppedPaths, nativeFileReadErrorMessage,
 import { useDesktopFileDrop } from '../desktop/useDesktopFileDrop'
 import { type DetectedSourceProtocol, type ImportRepairSuggestion, type EnterpriseArchiveImportResult, type EnterpriseArchiveImportSummary, type EnterpriseArchiveJavaSupportEntry, type EnterpriseArchiveMigrationReadiness, type EnterpriseArchiveProtocolSupportEntry, type EnterpriseArchiveReviewArtifact, type EnterpriseArchiveSupportMatrixEntry, type EnterpriseArchiveSupportMatrixExample, type EnterpriseArchiveSupportMatrixResponse, type SalesforceReview, type SecretBindingSelection, type TrueClient2CompatReport } from '../types/scriptImports'
 import { type BrowserReplayEvent, type BrowserReplaySession, type StoredScript } from '../types'
-import { type SourceArchiveReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
+import { type JavaClasspathAsset, type SourceArchiveReview, type ScriptActionDefinition, type ScriptDefinition } from '../types/scripts'
+import { isJavaClasspathUploadEnabled } from '../utils/featureFlags'
+import { JavaClasspathResolver } from './JavaClasspathResolver'
 import { getErrorMessage } from '../utils/errorUtils'
 import { useModalDialog } from '../hooks/useModalDialog'
 import { buildReplayStartPayload, createReplaySessionId, isDefiniteReplayStartRejection, summarizeInlineData } from './scriptEditorUtils'
@@ -54,6 +56,57 @@ function isEnterpriseArchiveZipFile(file: File) {
 function isHARFile(file: File) {
   const lowerName = file.name.toLowerCase()
   return lowerName.endsWith('.har') || lowerName.endsWith('.json') || file.type === 'application/json'
+}
+
+function javaSimpleClassName(className: string) {
+  const normalized = className.trim().replace(/\$/g, '.')
+  const parts = normalized.split('.')
+  return parts[parts.length - 1] || normalized
+}
+
+function javaClassToSuggestedSourcePath(className: string) {
+  return `${className.trim().replace(/\./g, '/').replace(/\$/g, '/')}.java`
+}
+
+type RequiredFileCandidate = {
+  className: string
+  suggestedPath: string
+  reason: string
+}
+
+// Java fidelity blockers name the exact dependency that could not be resolved.
+// Turning those names into concrete source-file candidates lets reviewers attach
+// the missing sources without hand-parsing blocker prose.
+function parseRequiredJavaFilesFromFidelityBlockers(blockers: string[]): RequiredFileCandidate[] {
+  if (!Array.isArray(blockers) || blockers.length === 0) return []
+
+  const patterns: RegExp[] = [
+    /extends unresolved superclass\s+([A-Za-z_][\w.$]*)/i,
+    /unresolved superclass\s+([A-Za-z_][\w.$]*)/i,
+    /Archived superclass\s+([A-Za-z_][\w.$]*)\s+has no resolvable zero-argument constructor/i,
+  ]
+  const candidates = new Map<string, RequiredFileCandidate>()
+
+  blockers.forEach((blocker) => {
+    for (const pattern of patterns) {
+      const match = blocker.match(pattern)
+      if (!match) continue
+      const className = match[1]?.trim()
+      if (!className) continue
+
+      const key = className.toLowerCase()
+      if (!candidates.has(key)) {
+        candidates.set(key, {
+          className,
+          suggestedPath: javaClassToSuggestedSourcePath(className),
+          reason: blocker,
+        })
+      }
+      break
+    }
+  })
+
+  return Array.from(candidates.values())
 }
 
 function formatEnterpriseArchiveFileSize(file: File) {
@@ -172,6 +225,7 @@ function buildEnterpriseArchiveImportQueueItem(file: File, id: string): Enterpri
     id,
     file,
     harFile: null,
+    supplementalFiles: [],
     status: 'queued',
     result: null,
     reviewMode: null,
@@ -236,6 +290,7 @@ interface EnterpriseArchiveImportQueueItem {
   id: string
   file: File
   harFile: File | null
+  supplementalFiles: File[]
   status: EnterpriseArchiveImportQueueStatus
   result: EnterpriseArchiveImportResult | null
   reviewMode: ReviewMode | null
@@ -557,6 +612,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
   const harFileRef = useRef<HTMLInputElement>(null)
+  const supplementalFileRef = useRef<HTMLInputElement>(null)
   const dropzoneRef = useRef<HTMLDivElement>(null)
   const itemCounterRef = useRef(0)
   const desktop = isDesktopSurface()
@@ -564,6 +620,12 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   const nativeDialogs = desktop && canUseNativeDialogs() && !browserPickerFallback
   const [importItems, setImportItems] = useState<EnterpriseArchiveImportQueueItem[]>([])
   const [selectedItemId, setSelectedItemId] = useState('')
+  // User-uploaded classpath JAR bindings, keyed by `${itemId}:${scriptIndex}` so
+  // each imported Java script keeps its own attachments. Merged into the script
+  // config at save time. A ref mirrors it for the async save handler.
+  const [classpathAssetsByKey, setClasspathAssetsByKey] = useState<Record<string, JavaClasspathAsset[]>>({})
+  const classpathAssetsByKeyRef = useRef(classpathAssetsByKey)
+  classpathAssetsByKeyRef.current = classpathAssetsByKey
   const [dragOver, setDragOver] = useState(false)
   const [workingMode, setWorkingMode] = useState<'convert' | 'validate' | null>(null)
   const [error, setError] = useState('')
@@ -674,6 +736,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     })))
   }, [invalidateOperationScopes, projectId])
   const selectedHARFile = selectedItem?.harFile ?? null
+  const selectedSupplementalFiles = selectedItem?.supplementalFiles || []
   const result = selectedItem?.result ?? null
   const reviewMode = selectedItem?.reviewMode ?? null
   const reviewMatchesCurrentOptions = !result || selectedItem?.reviewOptionsIdentity === importOptionsIdentity(options)
@@ -762,6 +825,24 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   const detectedProtocol = result?.detected_protocol ?? result?.summary?.detected_protocol ?? null
   const reviewArtifact = result?.review_artifact ?? result?.summary?.review_artifact ?? null
   const fidelityReport = result?.fidelity_report ?? result?.summary?.fidelity_report ?? null
+  const requiredFileCandidates = useMemo(
+    () => parseRequiredJavaFilesFromFidelityBlockers(fidelityReport?.blockers || []),
+    [fidelityReport?.blockers],
+  )
+  const matchedRequiredFileKeys = useMemo(() => {
+    const availableNames = new Set(
+      selectedSupplementalFiles.map(file => file.name.trim().toLowerCase()).filter(Boolean),
+    )
+    return new Set(
+      requiredFileCandidates
+        .filter((candidate) => {
+          const expectedFileName = `${javaSimpleClassName(candidate.className)}.java`.toLowerCase()
+          const expectedPath = candidate.suggestedPath.toLowerCase()
+          return availableNames.has(expectedFileName) || availableNames.has(expectedPath)
+        })
+        .map(candidate => candidate.className.toLowerCase()),
+    )
+  }, [requiredFileCandidates, selectedSupplementalFiles])
   const executableImport = !detectedProtocol || detectedProtocol.import_mode === 'executable'
   const importMetadata = getImportMetadata(importedScript || undefined)
   const trueClient2CompatReport = getTrueClient2CompatReport(result, importMetadata)
@@ -816,6 +897,33 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     fidelityReport?.promotion_status === 'promotable' &&
     (fidelityReport.blockers?.length || 0) === 0,
   )
+  const javaClasspathUploadEnabled = isJavaClasspathUploadEnabled()
+  const currentClasspathKey = `${selectedItem?.id ?? ''}:${activeResultScriptIndex}`
+  const currentClasspathEntries = importedScript?.protocol === 'java_vuser'
+    ? (importedScript.config?.java_vuser?.classpath ?? [])
+    : []
+  const currentClasspathAssets = classpathAssetsByKey[currentClasspathKey] ?? []
+  // Count only bindings whose entry is still in the classpath, so the header
+  // never reads e.g. "3/2 attached" when a stale/orphaned binding lingers.
+  const currentAttachedCount = currentClasspathAssets.filter(asset => currentClasspathEntries.includes(asset.entry)).length
+  const showClasspathResolver = javaClasspathUploadEnabled
+    && importedScript?.protocol === 'java_vuser'
+    && currentClasspathEntries.length > 0
+  const setCurrentClasspathAssets = (assets: JavaClasspathAsset[]) => {
+    setClasspathAssetsByKey(previous => ({ ...previous, [currentClasspathKey]: assets }))
+  }
+  const handleUploadClasspathJar = async (file: File, entry: string): Promise<JavaClasspathAsset> => {
+    const importId = selectedItem?.id || 'import'
+    const response = await api.uploadJavaClasspathJar(importId, file, { project_id: projectId ?? '', entry })
+    return {
+      entry,
+      file_name: response.file_name,
+      sha256: response.sha256,
+      size_bytes: response.size_bytes,
+      content_type: response.content_type,
+      storage_ref: response.storage_ref,
+    }
+  }
   const importedEditorAvailable = Boolean(onEdit) && !combinedJavaVuserGate
   const protocolGateName = detectedProtocol?.display_name || detectedProtocol?.canonical_source_protocol || 'This protocol'
   const protocolGateRunnerRequirement = detectedProtocol?.runner_requirement || reviewArtifact?.protocol?.runner_requirement || ''
@@ -1253,6 +1361,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
 
   useEffect(() => {
     setSelectedResultScriptIndex(0)
+    if (supplementalFileRef.current) {
+      supplementalFileRef.current.value = ''
+    }
   }, [selectedItemId])
 
   useEffect(() => {
@@ -1411,6 +1522,9 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     if (harFileRef.current) {
       harFileRef.current.value = ''
     }
+    if (supplementalFileRef.current) {
+      supplementalFileRef.current.value = ''
+    }
   }
 
   const handleDrop = (e: React.DragEvent) => {
@@ -1482,6 +1596,63 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     }
   }
 
+  // Attaching, removing, or clearing supplemental sources changes what the
+  // backend will convert, so each handler invalidates the current review and
+  // returns the item to 'queued' for a fresh validate/convert run.
+  const resetSelectedItemForSupplementalChange = (patch: Partial<EnterpriseArchiveImportQueueItem>) => {
+    if (!selectedItem) return
+    invalidateOperationScopes([selectedItem.id])
+    updateImportItem(selectedItem.id, {
+      ...patch,
+      status: 'queued',
+      result: null,
+      reviewMode: null,
+      reviewOptionsIdentity: '',
+      reviewGeneration: selectedItem.reviewGeneration + 1,
+      replayValidationLoading: false,
+      replayValidationError: '',
+      replayValidationWarnings: [],
+      replayValidationSession: null,
+      replayReviewGeneration: -1,
+      replayScriptIndex: -1,
+      replayProjectId: '',
+      error: '',
+      notice: '',
+    })
+  }
+
+  const handleSupplementalFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const incomingFiles = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!selectedItem || incomingFiles.length === 0) return
+
+    // Same-named re-attachments replace the previous file rather than duplicate it.
+    const deduped = new Map<string, File>()
+    ;(selectedItem.supplementalFiles || []).forEach((file) => {
+      deduped.set(file.name.toLowerCase(), file)
+    })
+    incomingFiles.forEach((file) => {
+      deduped.set(file.name.toLowerCase(), file)
+    })
+
+    resetSelectedItemForSupplementalChange({ supplementalFiles: Array.from(deduped.values()) })
+  }
+
+  const removeSelectedSupplementalFile = (fileName: string) => {
+    if (!selectedItem) return
+    const remaining = (selectedItem.supplementalFiles || []).filter(file => file.name !== fileName)
+    resetSelectedItemForSupplementalChange({ supplementalFiles: remaining })
+  }
+
+  const clearSelectedSupplementalFiles = () => {
+    if (!selectedItem) return
+    if ((selectedItem.supplementalFiles || []).length === 0) return
+    resetSelectedItemForSupplementalChange({ supplementalFiles: [] })
+    if (supplementalFileRef.current) {
+      supplementalFileRef.current.value = ''
+    }
+  }
+
   const runReview = async (
     mode: 'convert' | 'validate',
     reviewOptions: ImportOptions = options,
@@ -1505,6 +1676,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
         && itemRequestTokensRef.current.get(item.id) === requestTokens.get(item.id)
         && current?.file === item.file
         && current.harFile === item.harFile
+        && current.supplementalFiles === item.supplementalFiles
     }
 
     const runningStatus = mode === 'validate' ? 'validating' : 'converting'
@@ -1550,6 +1722,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
           preserve_transactions: reviewOptions.preserve_transactions,
           migration_block_statuses: buildMigrationBlockStatuses(reviewOptions),
           ...(item.harFile ? { har_file: item.harFile } : {}),
+          ...((item.supplementalFiles || []).length > 0 ? { supplemental_files: item.supplementalFiles || [] } : {}),
           ...(reviewOptions.salesforce_native ? { salesforce_native: true } : {}),
         })
         if (!requestIsCurrent(item)) continue
@@ -1611,6 +1784,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
         && itemRequestTokensRef.current.get(item.id) === requestTokens.get(item.id)
         && current?.file === item.file
         && current.harFile === item.harFile
+        && current.supplementalFiles === item.supplementalFiles
     }
 
     const targetIds = new Set(targetItems.map(item => item.id))
@@ -1650,6 +1824,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
           preserve_transactions: options.preserve_transactions,
           migration_block_statuses: buildMigrationBlockStatuses(options),
           ...(item.harFile ? { har_file: item.harFile } : {}),
+          ...((item.supplementalFiles || []).length > 0 ? { supplemental_files: item.supplementalFiles || [] } : {}),
           ...(options.salesforce_native ? { salesforce_native: true } : {}),
         })
         if (!requestIsCurrent(item)) continue
@@ -1928,7 +2103,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
         return
       }
       if (!requestIsCurrent()) return
-      const scriptToSave = browserImport
+      let scriptToSave = browserImport
         ? attachTrueClientPromotionReview(currentImportedScript, {
           compatReport: trueClient2CompatReport,
           replaySession: replayValidationSession,
@@ -1936,6 +2111,28 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
           importWarnings: preparedReview.result?.warnings || [],
         })
         : currentImportedScript
+      // Persist any user-attached classpath JARs into the saved script config so
+      // the runner can materialize them at launch. Only when the feature flag is
+      // on (parity: nothing emitted when off), and only bindings whose entry is
+      // still in the saved script's classpath (drop stale/orphaned attachments
+      // left by a re-review that changed the classpath).
+      if (javaClasspathUploadEnabled) {
+        const savedClasspath = scriptToSave.config?.java_vuser?.classpath ?? []
+        const attachedClasspathAssets = (classpathAssetsByKeyRef.current[`${sourceItemId}:${sourceScriptIndex}`] ?? [])
+          .filter(asset => savedClasspath.includes(asset.entry))
+        if (attachedClasspathAssets.length > 0) {
+          scriptToSave = {
+            ...scriptToSave,
+            config: {
+              ...scriptToSave.config,
+              java_vuser: {
+                ...(scriptToSave.config?.java_vuser ?? {}),
+                classpath_assets: attachedClasspathAssets,
+              },
+            },
+          }
+        }
+      }
       setScriptSaveInProgress(true)
       const savedScript = await api.createScript(scriptToSave, sourceProjectId)
       if (!requestIsCurrent()) return
@@ -2245,6 +2442,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                         {enterpriseArchiveImportStatusLabel(item.status)}
                       </span>
                       {item.harFile ? ` · HAR: ${item.harFile.name}` : ''}
+                      {(item.supplementalFiles || []).length > 0 ? ` · Required files: ${(item.supplementalFiles || []).length}` : ''}
                     </small>
                     {item.error && <small className="lr-file-row-message" role="alert">{item.error}</small>}
                   </span>
@@ -2343,6 +2541,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
             <p className="lr-subtitle">{queuedFileCount} ZIP file{queuedFileCount === 1 ? '' : 's'} queued</p>
           </div>
           <input ref={harFileRef} type="file" accept=".har,.json,application/json" onChange={handleHARFileSelect} hidden />
+          <input ref={supplementalFileRef} type="file" accept=".java,.zip,.jar,.json,.txt" multiple onChange={handleSupplementalFileSelect} hidden />
           <div className="lr-har-panel">
             <div>
               <h4>Salesforce HAR</h4>
@@ -2359,6 +2558,65 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
               )}
             </div>
           </div>
+          <div className="lr-required-files-panel">
+            <div>
+              <h4>Required Files</h4>
+              <p>
+                {requiredFileCandidates.length > 0
+                  ? `${matchedRequiredFileKeys.size}/${requiredFileCandidates.length} detected dependency file${requiredFileCandidates.length === 1 ? '' : 's'} attached.`
+                  : 'No unresolved required files detected in the current review.'}
+              </p>
+            </div>
+            <div className="lr-required-files-actions">
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => supplementalFileRef.current?.click()} disabled={!selectedItem}>
+                Attach Required File(s)
+              </button>
+              {selectedSupplementalFiles.length > 0 && (
+                <button type="button" className="btn btn-ghost btn-sm" onClick={clearSelectedSupplementalFiles}>
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+          {(requiredFileCandidates.length > 0 || selectedSupplementalFiles.length > 0) && (
+            <div className="lr-warnings lr-required-files-review">
+              {requiredFileCandidates.length > 0 && (
+                <>
+                  <h4>Required Files To Resolve Fidelity Blockers</h4>
+                  <ul>
+                    {requiredFileCandidates.map((candidate) => {
+                      const attached = matchedRequiredFileKeys.has(candidate.className.toLowerCase())
+                      return (
+                        <li key={candidate.className.toLowerCase()}>
+                          {candidate.className} ({candidate.suggestedPath}) - {attached ? 'attached' : 'missing'}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </>
+              )}
+              {selectedSupplementalFiles.length > 0 && (
+                <>
+                  <h4>Attached Supplemental Files ({selectedSupplementalFiles.length})</h4>
+                  <ul>
+                    {selectedSupplementalFiles.map((file) => (
+                      <li key={file.name}>
+                        {file.name}{' '}
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={() => removeSelectedSupplementalFile(file.name)}
+                        >
+                          Remove
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="lr-subtitle">Attached files are merged into the uploaded ZIP the next time you validate or convert this archive.</p>
+                </>
+              )}
+            </div>
+          )}
           <div className="lr-import-action-buttons">
             <button className="btn btn-secondary btn-lg" onClick={() => runReview('validate')} disabled={queuedFileCount === 0 || workingMode !== null}>
               {workingMode === 'validate' ? <><span className="spinner" /> Validating...</> : validateButtonLabel}
@@ -2656,6 +2914,27 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
                       {protocolGateDetails.map((detail, index) => <li key={`protocol-gate-${index}`}>{detail}</li>)}
                     </ul>
                   )}
+                </div>
+              </div>
+            )}
+
+            {showClasspathResolver && (
+              <div className="lr-warnings lr-java-classpath-resolver-section">
+                <div className="lr-review-section">
+                  <div className="lr-review-section-header">
+                    <strong>Resolve Java Dependencies</strong>
+                    <span>{currentAttachedCount}/{currentClasspathEntries.length} attached</span>
+                  </div>
+                  {!projectId && (
+                    <p className="cell-error">Select a project before attaching classpath JARs.</p>
+                  )}
+                  <JavaClasspathResolver
+                    classpath={currentClasspathEntries}
+                    assets={currentClasspathAssets}
+                    onChange={setCurrentClasspathAssets}
+                    onUpload={handleUploadClasspathJar}
+                    disabled={!projectId}
+                  />
                 </div>
               </div>
             )}

@@ -167,7 +167,7 @@ func TestDetectSkipsBenignJSONSubstringKeys(t *testing.T) {
 }
 
 func TestSalesforceFormExtractorUsesFormFieldKey(t *testing.T) {
-	candidates := formCandidates("aura.token=tok-abcdef123456&sid=sid-abcdef123456")
+	candidates := formCandidates("aura.token=tok-abcdef123456&sid=sid-abcdef123456&cshc=cshc-abcdef123456")
 	byRule := map[string]Candidate{}
 	for _, candidate := range candidates {
 		byRule[candidate.RuleID] = candidate
@@ -178,7 +178,10 @@ func TestSalesforceFormExtractorUsesFormFieldKey(t *testing.T) {
 	if got := byRule[RuleSalesforceFrontdoorSID].Expression; got != `(?i)(?:^|&)sid=([^&]*)` {
 		t.Fatalf("sid expression = %q, want form field key regex", got)
 	}
-	if byRule[RuleSalesforceAuraToken].Convert != "url_decode" || byRule[RuleSalesforceFrontdoorSID].Convert != "url_decode" {
+	if got := byRule[RuleSalesforceCSHC].Expression; got != `(?i)(?:^|&)cshc=([^&]*)` {
+		t.Fatalf("cshc expression = %q, want form field key regex", got)
+	}
+	if byRule[RuleSalesforceAuraToken].Convert != "url_decode" || byRule[RuleSalesforceFrontdoorSID].Convert != "url_decode" || byRule[RuleSalesforceCSHC].Convert != "url_decode" {
 		t.Fatalf("form extractors = %#v, want url_decode convert", byRule)
 	}
 }

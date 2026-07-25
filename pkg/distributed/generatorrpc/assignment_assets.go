@@ -20,6 +20,16 @@ const maxAssignmentDataFiles = 64
 // content-addressed assignment assets. The returned script contains only
 // opaque staged_asset references, so a generator can never reopen a path from
 // the controller's filesystem namespace.
+//
+// NOTE: user-uploaded Java Vuser classpath JARs
+// (script.Config.JavaVuser.ClasspathAssets) are deliberately NOT staged here
+// yet — the upload feature is local-runner-first. Their StorageRef is a
+// controller-local file:// reference; on a distributed generator that path is
+// outside the generator's registered fileasset roots, so materialization fails
+// closed with classpath_asset_unavailable rather than reading a controller
+// path. Distributed support will mirror the DataFile staging below (read via
+// fileasset, emit a content-addressed DataFile, set StagedAsset, clear
+// StorageRef before transport) so generators receive the bytes by hash.
 func PrepareDistributedScript(script *dsl.Script) ([]byte, string, []DataFile, error) {
 	if script == nil {
 		return nil, "", nil, fmt.Errorf("script is required")
@@ -93,6 +103,17 @@ func PrepareDistributedScript(script *dsl.Script) ([]byte, string, []DataFile, e
 		source.StorageRef = ""
 	}
 
+	// User-uploaded Java Vuser classpath JARs are NOT staged yet (local-runner
+	// only). Strip their controller-local StorageRef before transport so a
+	// generator cannot read a controller path and uniformly fails closed with
+	// classpath_asset_unavailable, and so no controller filesystem path leaks
+	// into the assignment. Any inbound StagedAsset is rejected by
+	// assignmentDataFiles; clear it here defensively too.
+	for index := range staged.Config.JavaVuser.ClasspathAssets {
+		staged.Config.JavaVuser.ClasspathAssets[index].StorageRef = ""
+		staged.Config.JavaVuser.ClasspathAssets[index].StagedAsset = ""
+	}
+
 	content, err = json.Marshal(&staged)
 	if err != nil {
 		return nil, "", nil, fmt.Errorf("marshal staged script: %w", err)
@@ -162,6 +183,15 @@ func assignmentDataFiles(assignment *pb.WorkAssignment, script *dsl.Script, aggr
 		// dependent on precedence and the generator filesystem.
 		if strings.TrimSpace(source.Path) != "" || strings.TrimSpace(source.StorageRef) != "" {
 			return nil, fmt.Errorf("data source %q contains an unstaged local file reference", source.Name)
+		}
+	}
+	// Java Vuser classpath JARs are not staged for transport (local-runner only).
+	// PrepareDistributedScript strips their StorageRef/StagedAsset; an inbound
+	// non-empty reference is anomalous and would point at a controller path, so
+	// reject the assignment rather than let a generator attempt to read it.
+	for index, asset := range script.Config.JavaVuser.ClasspathAssets {
+		if strings.TrimSpace(asset.StorageRef) != "" || strings.TrimSpace(asset.StagedAsset) != "" {
+			return nil, fmt.Errorf("classpath asset %d carries an unstaged local reference; user-uploaded classpath JARs are not supported on distributed generators", index)
 		}
 	}
 	for name := range assets {

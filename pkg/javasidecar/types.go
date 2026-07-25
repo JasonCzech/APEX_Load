@@ -69,6 +69,23 @@ type RuntimeSettings struct {
 	UseXBootClasspath      bool     `json:"use_xbootclasspath,omitempty"`
 	DedicatedClassLoader   bool     `json:"dedicated_class_loader,omitempty"`
 	StartupTimeoutMS       int64    `json:"startup_timeout_ms,omitempty"`
+	// ClasspathAssets binds user-uploaded JAR dependencies to script Classpath
+	// entries by content hash. When the operator has opted in, the server
+	// materializes each referenced JAR into the runner work directory before
+	// resolving Classpath, so an imported Java Vuser whose dependency is not
+	// pre-provisioned on the runner can still execute. Empty (or ignored when
+	// the operator has not opted in) preserves the fail-closed behavior.
+	ClasspathAssets []ClasspathAssetRef `json:"classpath_assets,omitempty"`
+}
+
+// ClasspathAssetRef binds one exact script Classpath entry to an uploaded JAR.
+// SHA256 is the portable identity the runner verifies after materialization.
+// StorageRef is a same-host file:// source read by a local sidecar; it is empty
+// when a distributed runner instead receives the bytes as a staged asset.
+type ClasspathAssetRef struct {
+	Entry      string `json:"entry"`
+	SHA256     string `json:"sha256"`
+	StorageRef string `json:"storage_ref,omitempty"`
 }
 
 // Target identifies one Java Actions class/lifecycle method for validation.

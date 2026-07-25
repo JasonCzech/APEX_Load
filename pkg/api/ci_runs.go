@@ -1410,6 +1410,14 @@ func validateCIScriptAssets(script *dsl.Script) error {
 			return fmt.Errorf("inline CI scripts cannot reference runner-local data source paths; inline the data or use a controller-managed storage_ref")
 		}
 	}
+	// User-uploaded classpath JARs are not supported in inline CI runs: any
+	// classpath entry they would bind to is already rejected above, so an
+	// attached asset can never take effect. Reject explicitly rather than
+	// carrying an inert binding (which would still trip the authoring-approval
+	// re-blessing on every CI submission).
+	if len(script.Config.JavaVuser.ClasspathAssets) > 0 {
+		return fmt.Errorf("config.java_vuser.classpath_assets are not supported in a CI run; provision the classpath on the runner instead")
+	}
 	var visit func([]dsl.Action) error
 	visit = func(actions []dsl.Action) error {
 		for _, action := range actions {

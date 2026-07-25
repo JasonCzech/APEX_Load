@@ -1505,7 +1505,10 @@ func TestTrustedHeaderAuthReadsEnterpriseArchiveMultipartProjectID(t *testing.T)
 	if err != nil {
 		t.Fatalf("CreateFormFile returned error: %v", err)
 	}
-	if _, err := part.Write([]byte("zip")); err != nil {
+	// A minimally valid (empty) ZIP: the archive must clear the handler's magic
+	// pre-check so this test still isolates the AUTH boundary rather than passing
+	// on an unrelated 400.
+	if _, err := part.Write(minimalEmptyZIP()); err != nil {
 		t.Fatalf("part.Write returned error: %v", err)
 	}
 	if err := writer.Close(); err != nil {
@@ -1528,7 +1531,7 @@ func TestTrustedHeaderAuthReadsEnterpriseArchiveMultipartProjectID(t *testing.T)
 	if err != nil {
 		t.Fatalf("CreateFormFile without project returned error: %v", err)
 	}
-	if _, err := missingPart.Write([]byte("zip")); err != nil {
+	if _, err := missingPart.Write(minimalEmptyZIP()); err != nil {
 		t.Fatalf("missingPart.Write returned error: %v", err)
 	}
 	if err := missingWriter.Close(); err != nil {
@@ -2504,4 +2507,12 @@ func scopedLibraryRequest(t *testing.T, method string, path string, body any) *h
 	req := httptest.NewRequest(method, path, bytes.NewReader(payload))
 	req.Header.Set("Content-Type", "application/json")
 	return req
+}
+
+// minimalEmptyZIP returns the 22-byte end-of-central-directory record that makes
+// a valid, empty ZIP archive.
+func minimalEmptyZIP() []byte {
+	zipBytes := make([]byte, 22)
+	copy(zipBytes, []byte{'P', 'K', 0x05, 0x06})
+	return zipBytes
 }

@@ -53,6 +53,10 @@ func redactedBindingTestScript() *dsl.Script {
 
 func TestDiscoverSecretBindingRequirementsFindsExecutableValuesOnly(t *testing.T) {
 	script := redactedBindingTestScript()
+	script.Actions[0].Metadata = map[string]any{
+		"original_url":       "https://csi-bau.it.att.com:[REDACTED].jws",
+		"source_transaction": "[REDACTED]",
+	}
 	first := discoverSecretBindingRequirements(script, 3)
 	second := discoverSecretBindingRequirements(script, 3)
 	if len(first) != 5 {
@@ -88,6 +92,9 @@ func TestDiscoverSecretBindingRequirementsFindsExecutableValuesOnly(t *testing.T
 	}
 	if seenPaths["/actions/0/headers/Authorization"] != 1 || seenPaths["/actions/0/target"] != 1 || seenPaths["/config/http/auth/password"] != 1 {
 		t.Fatalf("requirement paths = %#v", seenPaths)
+	}
+	if seenPaths["/actions/0/metadata/original_url"] != 0 || seenPaths["/actions/0/metadata/source_transaction"] != 0 {
+		t.Fatalf("action metadata incorrectly produced requirements: %#v", seenPaths)
 	}
 
 	header := findSecretBindingRequirement(t, first, "/actions/0/headers/Authorization", 0)
@@ -707,4 +714,36 @@ func postSecretBindingJSON(t *testing.T, server *Server, path string, value any)
 	response := httptest.NewRecorder()
 	server.mux.ServeHTTP(response, request)
 	return response
+}
+
+// The placeholder-secret bypass must require an explicit opt-in and must never be
+// reachable via the ambient APEXLOAD_ENV values that compose.yaml already sets
+// (it ships APEXLOAD_ENV=local), nor in production even when opted in.
+func TestSecretBindingEnforcementRequiresExplicitDevOptIn(t *testing.T) {
+	tests := []struct {
+		name       string
+		appEnv     string
+		fakeFlag   string
+		wantBypass bool
+	}{
+		{name: "compose local stack without opt-in", appEnv: "local", wantBypass: false},
+		{name: "development without opt-in", appEnv: "development", wantBypass: false},
+		{name: "dev without opt-in", appEnv: "dev", wantBypass: false},
+		{name: "unset env without opt-in", appEnv: "", wantBypass: false},
+		{name: "explicit opt-in on local", appEnv: "local", fakeFlag: "true", wantBypass: true},
+		{name: "explicit opt-in with unset env", appEnv: "", fakeFlag: "true", wantBypass: true},
+		{name: "opt-in refused in production", appEnv: "production", fakeFlag: "true", wantBypass: false},
+		{name: "opt-in refused in prod", appEnv: "prod", fakeFlag: "true", wantBypass: false},
+		{name: "opt-in false", appEnv: "local", fakeFlag: "false", wantBypass: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Setenv("APEXLOAD_ENV", test.appEnv)
+			t.Setenv(devFakeSecretsEnv, test.fakeFlag)
+			if got := secretBindingEnforcementDisabled(); got != test.wantBypass {
+				t.Fatalf("secretBindingEnforcementDisabled() = %v, want %v (APEXLOAD_ENV=%q %s=%q)",
+					got, test.wantBypass, test.appEnv, devFakeSecretsEnv, test.fakeFlag)
+			}
+		})
+	}
 }

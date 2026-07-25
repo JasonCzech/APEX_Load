@@ -7311,3 +7311,29 @@ button.debugger-problem-row:hover {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+
+/* Attached classpath JAR chips shown under the Java Env classpath list */
+.java-env-classpath-assets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+.java-env-classpath-asset-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 3px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-alt, var(--surface));
+  font-size: 12px;
+}
+.java-env-classpath-asset-chip .chip-file { color: var(--text); }
+.java-env-classpath-asset-chip .chip-sha {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.java-env-classpath-asset-chip .chip-entry { color: var(--text-muted); overflow-wrap: anywhere; }

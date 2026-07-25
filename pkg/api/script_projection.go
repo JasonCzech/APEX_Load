@@ -27,6 +27,7 @@ var scriptPortableTemplatePattern = regexp.MustCompile(`\{\{[^{}\r\n]{1,256}\}\}
 var scriptPortableReferencePattern = regexp.MustCompile(`^(?:(?:env|data|var|param|file)\.[A-Za-z0-9_.:/@-]+|secret\.` + engine.LogicalSecretNameInputPattern + `)$`)
 var scriptPortableRandomPattern = regexp.MustCompile(`^fn\.random\(\s*-?\d+\s*,\s*-?\d+\s*\)$`)
 var scriptPortableRandomStringPattern = regexp.MustCompile(`^fn\.random_string\(\s*\d+\s*\)$`)
+var redactedXMLMessageIDPattern = regexp.MustCompile(`(?is)(<(?:(?:[\w.-]+):)?messageId\b[^>]*>)\s*\[REDACTED\]\s*(</(?:(?:[\w.-]+):)?messageId\s*>)`)
 
 // maskScriptSecrets returns a deep, portable copy of script with inline
 // credentials removed. It intentionally preserves explicit secret references
@@ -504,6 +505,7 @@ func scrubScriptText(value string, urlValue bool) string {
 	for placeholder, binding := range templateBindings {
 		protected = strings.ReplaceAll(protected, placeholder, binding)
 	}
+	protected = redactedXMLMessageIDPattern.ReplaceAllString(protected, `${1}{{fn.uuid()}}${2}`)
 	return protected
 }
 
@@ -594,11 +596,19 @@ func reconcileMaskedScriptSecrets(incoming *dsl.Script, prior *dsl.Script) error
 	if err != nil {
 		return err
 	}
-	if !jsonValueContainsExecutableMaskedSecret(incomingJSON, "") {
-		return nil
-	}
+	// Reconciliation cannot be gated on the presence of a [REDACTED] sentinel.
+	// scrubScriptText also emits SENTINEL-FREE projections (a redacted
+	// <messageId> becomes {{fn.uuid()}}), so a read-modify-write of such a script
+	// carries no sentinel at all; skipping reconciliation there persisted the
+	// projection over the stored value and destroyed it. Whenever a prior version
+	// exists we reconcile, and reconcileProjectedJSON restores only values the
+	// client returned byte-identical to the projection.
+	hasMaskedSecret := jsonValueContainsExecutableMaskedSecret(incomingJSON, "")
 	if prior == nil {
-		return fmt.Errorf("script contains an orphan %s sentinel; bind a secret reference instead", maskedScriptSecret)
+		if hasMaskedSecret {
+			return fmt.Errorf("script contains an orphan %s sentinel; bind a secret reference instead", maskedScriptSecret)
+		}
+		return nil
 	}
 	rawPrior, err := scriptAsJSONValue(prior)
 	if err != nil {
@@ -637,11 +647,19 @@ func scriptAsJSONValue(script *dsl.Script) (any, error) {
 func reconcileProjectedJSON(incoming any, projectedPrior any, rawPrior any, path string) (any, error) {
 	switch typed := incoming.(type) {
 	case string:
+		projected, projectedOK := projectedPrior.(string)
+		raw, rawOK := rawPrior.(string)
+		// An unmodified projection must restore the stored value even when the
+		// projection carries no [REDACTED] sentinel. scrubScriptText rewrites a
+		// redacted <messageId> into {{fn.uuid()}}, which is sentinel-free; without
+		// this branch a masked read-modify-write would persist the placeholder and
+		// destroy the recorded correlation id.
+		if projectedOK && rawOK && typed == projected && typed != raw && !strings.Contains(raw, maskedScriptSecret) {
+			return raw, nil
+		}
 		if !strings.Contains(typed, maskedScriptSecret) {
 			return typed, nil
 		}
-		projected, projectedOK := projectedPrior.(string)
-		raw, rawOK := rawPrior.(string)
 		if projectedOK && rawOK && typed == projected && !strings.Contains(raw, maskedScriptSecret) {
 			return raw, nil
 		}
@@ -734,7 +752,14 @@ func jsonValueContainsExecutableMaskedSecret(value any, path string) bool {
 			if isNonExecutableRedactionSubtree(typed, key, path) {
 				continue
 			}
-			if jsonValueContainsExecutableMaskedSecret(child, appendJSONPointer(path, key)) {
+			childPath := appendJSONPointer(path, key)
+			// Must mirror discoverRedactedValues: a provenance entry raises no
+			// binding requirement, so treating it as an orphan sentinel here would
+			// reject a save the user has no way to satisfy.
+			if isImportProvenanceMetadataPath(childPath) {
+				continue
+			}
+			if jsonValueContainsExecutableMaskedSecret(child, childPath) {
 				return true
 			}
 		}

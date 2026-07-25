@@ -146,7 +146,15 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 		Convert:    convert,
 	}
 
+	salesforceCSHCHandoff := isSalesforceCSHCHandoffExtractor(paramName, lb, rb)
 	switch {
+	case salesforceCSHCHandoff:
+		ext.Type = "regex"
+		ext.Expression = salesforceCSHCExtractorRegex()
+		if mode == "" && ordinal > 1 {
+			ext.Type = "regex_ordinal"
+			ext.Expression = encodeRegexOrdinalExpression(ext.Expression, ordinal)
+		}
 	case lb == "" && rb == "":
 		// Empty boundaries on both sides save the entire response.
 		ext.Type = "regex"
@@ -163,8 +171,19 @@ func convertExtractor(fn ParsedFunction) (*dsl.Extractor, []string) {
 		ext.Type = "boundary"
 		ext.Expression = encodeBoundaryExpression(lb, rb, ordinal, caseInsensitive)
 	}
+	if salesforceCSHCHandoff {
+		warnings = append(warnings, fmt.Sprintf("line %d: Salesforce login handoff extractor %q was normalized from strict boundary match (%s ... %s) to a cshc query/form regex; validate it against a current Salesforce capture or prefer HAR-backed salesforce_native import", fn.LineNumber, paramName, cleanConfigValue(lb), cleanConfigValue(rb)))
+	}
 
 	return ext, warnings
+}
+
+func isSalesforceCSHCHandoffExtractor(paramName, lb, rb string) bool {
+	return strings.EqualFold(paramName, "c_cshc") || (strings.Contains(strings.ToLower(lb), "cshc") && strings.Contains(strings.ToLower(rb), "display"))
+}
+
+func salesforceCSHCExtractorRegex() string {
+	return `(?i)(?:^|[?&{,"\s]|&amp;)cshc["']?\s*[:=]\s*["']?([^"&',}<\s]+)`
 }
 
 // sourceExtractorPostProcessing maps the SaveOffset=/SaveLen=/Convert=

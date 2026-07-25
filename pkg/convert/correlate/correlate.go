@@ -149,9 +149,10 @@ var (
 	auraPageScopeIDPattern = regexp.MustCompile(`(?i)"pageScopeId"\s*:\s*"([^"]{6,})"`)
 	// The field name is deliberately non-capturing: generated regex extractors
 	// must return the ViewState value as capture group 1.
-	visualforcePattern  = regexp.MustCompile(`(?i)<input[^>]*\bname="(?:(?:com\.salesforce\.visualforce\.)?ViewState(?:MAC|Version|CSRF)?)"[^>]*\bvalue="([^"]{4,})"`)
-	confirmationPattern = regexp.MustCompile(`(?i)(?:^|[&{,"\s])_CONFIRMATIONTOKEN["']?\s*[:=]\s*["']?([^"&',}\s]{6,})`)
-	frontdoorSIDPattern = regexp.MustCompile(`(?i)(?:^|[?&{,"\s])sid(?:_Client(?:_id)?)?["']?\s*[:=]\s*["']?([A-Za-z0-9!._-]{8,})`)
+	visualforcePattern    = regexp.MustCompile(`(?i)<input[^>]*\bname="(?:(?:com\.salesforce\.visualforce\.)?ViewState(?:MAC|Version|CSRF)?)"[^>]*\bvalue="([^"]{4,})"`)
+	confirmationPattern   = regexp.MustCompile(`(?i)(?:^|[&{,"\s])_CONFIRMATIONTOKEN["']?\s*[:=]\s*["']?([^"&',}\s]{6,})`)
+	frontdoorSIDPattern   = regexp.MustCompile(`(?i)(?:^|[?&{,"\s])sid(?:_Client(?:_id)?)?["']?\s*[:=]\s*["']?([A-Za-z0-9!._-]{8,})`)
+	salesforceCSHCPattern = regexp.MustCompile(`(?i)(?:^|[?&{,"\s])cshc["']?\s*[:=]\s*["']?([^"&',}\s]{6,})`)
 	// salesforceNextRecordsURLPattern matches the SOQL REST Query API pagination
 	// cursor: the response carries {"done":false,"nextRecordsUrl":"/services/data/
 	// vXX/query/01g...-2000",...} and the client must GET that relative URL to page.
@@ -984,6 +985,7 @@ func salesforceRegexCandidatesForSource(body string, source string) []Candidate 
 	addMatches(visualforcePattern, "salesforce_viewstate", RuleSalesforceViewState, "Salesforce Visualforce ViewState field", 0.94)
 	addMatches(confirmationPattern, "salesforce_confirmation_token", RuleSalesforceConfirmationToken, "Salesforce confirmation token", 0.93)
 	addMatches(frontdoorSIDPattern, "salesforce_frontdoor_sid", RuleSalesforceFrontdoorSID, "Salesforce frontdoor sid/session value", 0.85)
+	addMatches(salesforceCSHCPattern, "salesforce_cshc", RuleSalesforceCSHC, "Salesforce cshc login/session handoff value", 0.92)
 	// addJSONPath emits a clean JSONPath extractor (not a brittle regex one) for
 	// values that live at a well-known top-level JSON field, so the generated
 	// extractor reads $.<field> at replay rather than re-running the match regex.
@@ -1189,6 +1191,8 @@ func formCandidates(body string) []Candidate {
 				add(key, "salesforce_confirmation_token", value, RuleSalesforceConfirmationToken, 0.93, "Salesforce confirmation token form field", valueIndex+1, len(fieldOccurrences))
 			case "sid", "sid_client", "sid_client_id":
 				add(key, "salesforce_frontdoor_sid", value, RuleSalesforceFrontdoorSID, 0.85, "Salesforce frontdoor sid form field", valueIndex+1, len(fieldOccurrences))
+			case "cshc":
+				add(key, "salesforce_cshc", value, RuleSalesforceCSHC, 0.92, "Salesforce cshc login/session handoff form field", valueIndex+1, len(fieldOccurrences))
 			}
 		}
 	}
@@ -1256,7 +1260,10 @@ func correlationFormKey(key string) bool {
 	switch key {
 	case "aura.token", "aura.context", "aura.pageuri",
 		"com.salesforce.visualforce.viewstate", "viewstatemac", "viewstateversion", "viewstatecsrf",
-		"_confirmationtoken", "sid", "sid_client", "sid_client_id":
+		"_confirmationtoken", "sid", "sid_client", "sid_client_id",
+		// Indexed so the salesforce.cshc rule can match a form/query body;
+		// exactRawFormOccurrenceIndex drops every key not listed here.
+		"cshc":
 		return true
 	default:
 		return false

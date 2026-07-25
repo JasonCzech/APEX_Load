@@ -5,13 +5,17 @@ import { ExactStringListRows } from './ExactStringListRows'
 
 /** The script-owned Java Env settings that are editable in the RTS panel and
  * overridable per scenario group. Operator-owned runner fields (enablement,
- * runner command, harness jar, work dir, capacity) are deliberately excluded. */
+ * runner command, harness jar, work dir, capacity) are deliberately excluded.
+ * classpath_assets (user-uploaded JAR bindings) round-trip through here so the
+ * component can display which classpath entries have an attached dependency;
+ * uploading a JAR happens in the import wizard, which has the import context. */
 export type JavaEnvSettingsValue = Pick<
   JavaVuserConfig,
   | 'jdk_selection'
   | 'jdk_home'
   | 'additional_vm_parameters'
   | 'classpath'
+  | 'classpath_assets'
   | 'use_xbootclasspath'
   | 'dedicated_class_loader'
   | 'skip_parameter_evaluation'
@@ -48,6 +52,7 @@ export function JavaEnvSettingsFields({
   const patch = (next: Partial<JavaEnvSettingsValue>) => onChange({ ...value, ...next })
   const selection = value.jdk_selection || 'internal'
   const vmParameters = value.additional_vm_parameters ?? []
+  const classpathAssets = value.classpath_assets ?? []
 
   const [pendingImport, setPendingImport] = useState('')
   const importCandidates = useMemo(() => {
@@ -194,8 +199,27 @@ export function JavaEnvSettingsFields({
           onChange={values => patch({ classpath: values })}
         />
         <div className="cell-muted">
-          Paths must already exist on every assigned runner and load in listed order. Imported LoadRunner classpath entries are prepopulated here; Java source is not compiled or uploaded.
+          Paths must already exist on every assigned runner and load in listed order, unless a JAR is attached below. Imported LoadRunner classpath entries are prepopulated here; Java source is not compiled.
         </div>
+        {classpathAssets.length > 0 && (
+          <div className="java-env-classpath-assets" role="list" aria-label="Attached classpath JARs">
+            {classpathAssets.map(asset => (
+              <div className="java-env-classpath-asset-chip" role="listitem" key={`${asset.entry}:${asset.sha256}`}>
+                <span className="chip-file" title={asset.entry}>{asset.file_name || asset.entry}</span>
+                <span className="chip-sha" title={asset.sha256}>{asset.sha256.slice(0, 8)}</span>
+                <span className="chip-entry">→ {asset.entry}</span>
+                <button
+                  type="button"
+                  className="chip-remove"
+                  aria-label={`Remove attached JAR for ${asset.entry}`}
+                  onClick={() => patch({ classpath_assets: classpathAssets.filter(a => a !== asset) })}
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
         {listOverrideInherits && (
           <div className="cell-muted" role="note">
             Removing every entry inherits the script's classpath; an override cannot clear it to empty.
