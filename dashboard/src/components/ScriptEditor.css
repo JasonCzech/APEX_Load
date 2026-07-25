@@ -5936,14 +5936,29 @@
   align-items: flex-start;
   flex-direction: row;
   gap: 8px;
+  justify-content: flex-start;
   min-height: 32px;
   min-width: 0;
 }
+/* Radios/checkboxes inside a .form-grid otherwise inherit the full-width text
+   input chrome from `.form-grid input`, which stretches the control and pushes
+   its label onto a second line. Keep the control at its intrinsic size, hard
+   left, with the text beside it on one line. */
 .form-grid .runtime-checkbox-list .checkbox-label input[type="checkbox"],
-.runtime-checkbox-list .checkbox-label input[type="checkbox"] {
+.form-grid .runtime-checkbox-list .checkbox-label input[type="radio"],
+.runtime-checkbox-list .checkbox-label input[type="checkbox"],
+.runtime-checkbox-list .checkbox-label input[type="radio"] {
+  background: none;
+  border: none;
+  border-radius: 0;
   flex: 0 0 auto;
-  margin-top: 2px;
+  margin: 2px 0 0;
+  padding: 0;
   width: auto;
+}
+.form-grid .runtime-checkbox-list .checkbox-label input[type="radio"],
+.runtime-checkbox-list .checkbox-label input[type="radio"] {
+  accent-color: var(--accent);
 }
 .form-grid .runtime-checkbox-list .checkbox-label span,
 .runtime-checkbox-list .checkbox-label span {
