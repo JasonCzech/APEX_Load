@@ -60,6 +60,10 @@ var wailsWebviewOrigins = []string{
 	"wails://wails.localhost",
 	"http://wails.localhost",
 	"https://wails.localhost",
+	// Must track dashboard/vite.config.ts (strictPort, default 4000). 3000 is
+	// kept for older local setups that still pin it via PORT.
+	"http://localhost:4000",
+	"http://127.0.0.1:4000",
 	"http://localhost:3000",
 	"http://127.0.0.1:3000",
 }

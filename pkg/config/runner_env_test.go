@@ -111,6 +111,36 @@ func TestLoadJavaVuserOperatorConfig(t *testing.T) {
 			t.Fatalf("MaxProcesses = %d, want configured maximum %d", got, MaxJavaVuserMaxProcesses)
 		}
 	})
+
+	t.Run("classpath upload defaults off", func(t *testing.T) {
+		t.Setenv(EnvJavaVuserClasspathUploadEnabled, "")
+		t.Setenv(EnvJavaVuserClasspathAssetDir, "")
+		cfg := LoadJavaVuserOperatorConfig()
+		if cfg.ClasspathUploadEnabled {
+			t.Error("ClasspathUploadEnabled = true, want false when unset")
+		}
+		if cfg.ClasspathAssetDir != "" {
+			t.Errorf("ClasspathAssetDir = %q, want empty", cfg.ClasspathAssetDir)
+		}
+		if JavaClasspathUploadEnabled() {
+			t.Error("JavaClasspathUploadEnabled() = true, want false when unset")
+		}
+	})
+
+	t.Run("classpath upload opt-in", func(t *testing.T) {
+		t.Setenv(EnvJavaVuserClasspathUploadEnabled, "true")
+		t.Setenv(EnvJavaVuserClasspathAssetDir, " /var/apexload/import-assets ")
+		cfg := LoadJavaVuserOperatorConfig()
+		if !cfg.ClasspathUploadEnabled {
+			t.Error("ClasspathUploadEnabled = false, want true")
+		}
+		if cfg.ClasspathAssetDir != "/var/apexload/import-assets" {
+			t.Errorf("ClasspathAssetDir = %q, want trimmed path", cfg.ClasspathAssetDir)
+		}
+		if !JavaClasspathUploadEnabled() {
+			t.Error("JavaClasspathUploadEnabled() = false, want true")
+		}
+	})
 }
 
 func TestLoadK8sRestartOperatorConfig(t *testing.T) {

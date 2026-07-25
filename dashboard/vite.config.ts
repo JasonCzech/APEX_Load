@@ -8,6 +8,8 @@ const dashboardPackage = require('./package.json') as { version?: string }
 const vitePackage = require('vite/package.json') as { version?: string }
 const dashboardRoot = fileURLToPath(new URL('.', import.meta.url))
 const docsRoot = fileURLToPath(new URL('../docs', import.meta.url))
+const apiProxyTarget = process.env.APEXLOAD_API_PROXY || 'http://localhost:8080'
+const apiProxyOrigin = new URL(apiProxyTarget).origin
 
 function resolveBuildTime(explicit?: string) {
   const raw = explicit || process.env.SOURCE_DATE_EPOCH
@@ -67,7 +69,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: Number(process.env.PORT) || 3000,
+    port: Number(process.env.PORT) || 4000,
     // The desktop controller's CORS/WebSocket allow-list is intentionally
     // limited to the configured Wails dev origin. Do not let Vite silently
     // move to another port when that origin is occupied.
@@ -79,10 +81,17 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: process.env.APEXLOAD_API_PROXY || 'http://localhost:8080',
+        target: apiProxyTarget,
+        changeOrigin: true,
         ws: true,
-		changeOrigin: true,
-		rewriteWsOrigin: true,
+        rewriteWsOrigin: true,
+        configure(proxy) {
+          proxy.on('proxyReq', (proxyRequest, request) => {
+            if (request.headers.origin) {
+              proxyRequest.setHeader('Origin', apiProxyOrigin)
+            }
+          })
+        },
       },
     },
   },

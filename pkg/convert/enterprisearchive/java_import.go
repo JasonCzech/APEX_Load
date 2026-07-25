@@ -198,7 +198,7 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 		}
 		result.Warnings = append(result.Warnings, blockers...)
 	}
-	if blockers := javaVuserSourceIntegrityBlockers(program); len(blockers) > 0 {
+	if blockers := javaVuserSourceIntegrityBlockers(program, projectConfig); len(blockers) > 0 {
 		if result.ReviewArtifact != nil {
 			if result.ReviewArtifact.Metadata == nil {
 				result.ReviewArtifact.Metadata = map[string]any{}
@@ -218,10 +218,10 @@ func ConvertJava(files map[string]string, opts ConvertOptions, detected Detected
 	return result, nil
 }
 
-func javaVuserSourceIntegrityBlockers(program javaProgram) []string {
+func javaVuserSourceIntegrityBlockers(program javaProgram, projectConfig *ProjectConfig) []string {
 	blockers := javaVuserInstantiationBlockers(program)
 	blockers = append(blockers, javaVuserInheritanceBlockers(program)...)
-	blockers = append(blockers, javaVuserUnparsedSourceBlockers(program)...)
+	blockers = append(blockers, javaVuserUnparsedSourceBlockers(program, projectConfig)...)
 	if len(program.Methods) == 0 {
 		blockers = append(blockers, javaVuserNoParseableSourceBlocker)
 		return uniqueSortedStrings(blockers)
@@ -233,9 +233,10 @@ func javaVuserSourceIntegrityBlockers(program javaProgram) []string {
 	return uniqueSortedStrings(blockers)
 }
 
-func javaVuserUnparsedSourceBlockers(program javaProgram) []string {
-	blockers := make([]string, 0, len(program.Unparsed))
-	for _, region := range program.Unparsed {
+func javaVuserUnparsedSourceBlockers(program javaProgram, projectConfig *ProjectConfig) []string {
+	regions := javaVuserRelevantUnparsedRegions(program, projectConfig)
+	blockers := make([]string, 0, len(regions))
+	for _, region := range regions {
 		filename := strings.TrimSpace(region.File)
 		if filename == "" {
 			filename = "an uploaded Java source"
@@ -260,6 +261,211 @@ func javaVuserUnparsedSourceBlockers(program javaProgram) []string {
 		))
 	}
 	return uniqueSortedStrings(blockers)
+}
+
+// javaVuserUnparsedRegionIsGlobalTruncation reports whether an unparsed region
+// means the parser stopped in a way that can hide code ANYWHERE in the archive.
+// The aggregate budgets in parseJavaProgram set analysisLimitReached, which skips
+// every remaining .java file, so those files never enter program.Classes at all
+// and no later evidence pass can notice they are missing. Such a region can never
+// be scoped away by relevance, because relevance itself is unknowable once the
+// type model is truncated.
+func javaVuserUnparsedRegionIsGlobalTruncation(region javaStatement) bool {
+	reason := strings.ToLower(strings.TrimSpace(region.Text + " " + region.Header))
+	// "Java sources exceed aggregate <budget> limit" (java_model.go) and
+	// "Java sources exceed aggregate analysis limit ... at <file>" (java_scanner.go).
+	if strings.Contains(reason, "aggregate") {
+		return true
+	}
+	// Per-file scanner budgets, e.g. "Java source exceeds analysis method limit".
+	return strings.Contains(reason, "analysis") && strings.Contains(reason, "limit")
+}
+
+// javaVuserRunnerSourceFiles returns the normalized source paths the combined
+// runner actually executes: the selected class and its superclass chain, plus the
+// declared (or conventionally named) lifecycle sources. External lifecycle files
+// such as vuser_init.java are NOT in the superclass chain, yet ConvertJava binds
+// their init/action/teardown bodies into the draft, so they must count as runner
+// sources for blocker scoping.
+func javaVuserRunnerSourceFiles(program javaProgram, selected javaClass, projectConfig *ProjectConfig) map[string]bool {
+	sources := map[string]bool{}
+	add := func(file string) {
+		if normalized := javaNormalizedSourcePath(file); normalized != "" {
+			sources[normalized] = true
+		}
+	}
+
+	index := newJavaEvidenceIndex(program)
+
+	// Seed with the selected runner plus every file that supplies a lifecycle
+	// phase: those are executed even though they are unrelated by inheritance.
+	worklist := []javaClass{selected}
+	for _, class := range program.Classes {
+		for _, lifecycle := range []string{"init", "action", "teardown"} {
+			if javaExternalLifecycleFileMatches(lifecycle, class.File, projectConfig) {
+				worklist = append(worklist, class)
+				break
+			}
+		}
+	}
+
+	// Close over supertypes. classHierarchy walks SUPERCLASSES only, but an
+	// implemented interface can contribute executable default-method bodies, so
+	// its source is part of the runner's surface too.
+	visited := map[string]bool{}
+	for len(worklist) > 0 {
+		current := worklist[len(worklist)-1]
+		worklist = worklist[:len(worklist)-1]
+		key := javaEvidenceOwnerKey(current)
+		if visited[key] {
+			continue
+		}
+		visited[key] = true
+		add(current.File)
+
+		for _, superType := range append([]string{current.SuperClass}, current.Interfaces...) {
+			name := strings.TrimSpace(superType)
+			if name == "" || strings.EqualFold(name, "Object") || strings.EqualFold(name, "java.lang.Object") {
+				continue
+			}
+			if resolved, ok := index.classForType(current, name); ok {
+				worklist = append(worklist, resolved)
+			}
+		}
+	}
+	return sources
+}
+
+// javaClassReferenceText returns the text of a class that can name another type.
+// class.Source holds only the class BODY (java_scanner.go sets it to the span
+// inside the braces), so the declaration header — extends/implements clauses —
+// and the file's imports must be searched explicitly or a header-only reference
+// looks like "unused" and its unparsed source gets scoped away.
+func javaClassReferenceText(class javaClass) string {
+	var builder strings.Builder
+	builder.WriteString(class.Source)
+	builder.WriteByte('\n')
+	builder.WriteString(class.SuperClass)
+	builder.WriteByte('\n')
+	for _, name := range class.Interfaces {
+		builder.WriteString(name)
+		builder.WriteByte('\n')
+	}
+	for _, imported := range class.Imports {
+		builder.WriteString(imported)
+		builder.WriteByte('\n')
+	}
+	if strings.TrimSpace(class.Source) == "" {
+		for _, method := range class.Methods {
+			builder.WriteString(method.Body)
+			builder.WriteByte('\n')
+		}
+		for _, constructor := range class.Constructors {
+			builder.WriteString(constructor.Body)
+			builder.WriteByte('\n')
+		}
+	}
+	return builder.String()
+}
+
+// javaVuserSourceIsReferencedByRunner reports whether any type declared by the
+// given source file is named anywhere in the runner's own sources. A file that
+// fails to parse yields a class with zero methods, so the usual evidence passes
+// cannot see it; matching the declared type name against the runner text is what
+// lets a genuinely unused helper be scoped away without hiding a used one.
+func javaVuserSourceIsReferencedByRunner(program javaProgram, source string, runnerSources map[string]bool) bool {
+	declared := make([]string, 0, 2)
+	for _, class := range program.Classes {
+		if javaNormalizedSourcePath(class.File) != source {
+			continue
+		}
+		if name := strings.TrimSpace(class.Name); name != "" {
+			declared = append(declared, name)
+		}
+	}
+	if len(declared) == 0 {
+		// Unknown type surface: fail closed.
+		return true
+	}
+
+	for _, class := range program.Classes {
+		if !runnerSources[javaNormalizedSourcePath(class.File)] {
+			continue
+		}
+		text := javaClassReferenceText(class)
+		for _, name := range declared {
+			if javaSourceMentionsType(text, name) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// javaSourceMentionsType reports whether name appears in text as a whole Java
+// identifier rather than as a substring of a longer one.
+func javaSourceMentionsType(text, name string) bool {
+	if name == "" || text == "" {
+		return false
+	}
+	isIdentRune := func(r byte) bool {
+		return r == '_' || r == '$' ||
+			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')
+	}
+	for offset := 0; ; {
+		index := strings.Index(text[offset:], name)
+		if index < 0 {
+			return false
+		}
+		start := offset + index
+		end := start + len(name)
+		beforeOK := start == 0 || !isIdentRune(text[start-1])
+		afterOK := end == len(text) || !isIdentRune(text[end])
+		if beforeOK && afterOK {
+			return true
+		}
+		offset = start + 1
+	}
+}
+
+// javaVuserRelevantUnparsedRegions narrows unparsed-source blockers to the
+// sources that can actually affect the selected runner. A support class the
+// runner never names cannot change its construction or lifecycle semantics, so an
+// unparsed region there is not a promotion blocker. Everything else fails closed:
+// global (aggregate) truncation always blocks, as does any file the runner names
+// or any file whose type surface cannot be determined.
+func javaVuserRelevantUnparsedRegions(program javaProgram, projectConfig *ProjectConfig) []javaStatement {
+	if len(program.Unparsed) == 0 {
+		return nil
+	}
+	selected, ok := javaVuserClass(program)
+	if !ok {
+		// Fail closed when no runner class can be selected.
+		return append([]javaStatement(nil), program.Unparsed...)
+	}
+
+	runnerSources := javaVuserRunnerSourceFiles(program, selected, projectConfig)
+	if len(runnerSources) == 0 {
+		// Preserve fail-closed behavior if source ownership cannot be resolved.
+		return append([]javaStatement(nil), program.Unparsed...)
+	}
+
+	regions := make([]javaStatement, 0, len(program.Unparsed))
+	for _, region := range program.Unparsed {
+		if javaVuserUnparsedRegionIsGlobalTruncation(region) {
+			regions = append(regions, region)
+			continue
+		}
+		source := javaNormalizedSourcePath(region.File)
+		if source == "" || runnerSources[source] {
+			regions = append(regions, region)
+			continue
+		}
+		if javaVuserSourceIsReferencedByRunner(program, source, runnerSources) {
+			regions = append(regions, region)
+		}
+	}
+	return regions
 }
 
 func javaVuserInheritanceBlockers(program javaProgram) []string {

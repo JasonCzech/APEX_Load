@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -75,11 +76,37 @@ type staleSecretBindingRequirementsError struct {
 	requirements []SecretBindingRequirement
 }
 
+// devFakeSecretsEnv opts a local workstation into substituting a placeholder for
+// every project secret. It is deliberately NOT keyed on APEXLOAD_ENV: compose.yaml
+// ships APEXLOAD_ENV=local, so keying on it silently turned the shipped local
+// stack into one that sends a fake credential to whatever target the script
+// points at while reporting every secret as configured.
+const devFakeSecretsEnv = "APEXLOAD_DEV_FAKE_SECRETS"
+
+// secretBindingEnforcementDisabled reports whether placeholder secrets are
+// allowed. It requires an explicit opt-in and is refused outright in production.
+func secretBindingEnforcementDisabled() bool {
+	if !parseBoolDefault(strings.TrimSpace(os.Getenv(devFakeSecretsEnv)), false) {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("APEXLOAD_ENV"))) {
+	case "production", "prod":
+		return false
+	default:
+		return true
+	}
+}
+
 func (err *staleSecretBindingRequirementsError) Error() string {
 	return "secret binding requirements changed; review the refreshed locations and retry"
 }
 
 func discoverSecretBindingRequirements(script *dsl.Script, scriptIndex int) []SecretBindingRequirement {
+	// Deliberately NOT gated on secretBindingEnforcementDisabled. Discovery is
+	// what turns a [REDACTED] sentinel into a guided binding; suppressing it while
+	// reconcileMaskedScriptSecrets still rejects orphan sentinels left create and
+	// update failing with a flat 400 and no requirement list to act on. The dev
+	// bypass only needs to affect RUNTIME resolution, which it still does.
 	if script == nil {
 		return []SecretBindingRequirement{}
 	}
@@ -217,7 +244,17 @@ func discoverRedactedValues(value any, path string, ctx redactionTraversalContex
 			if isNonExecutableRedactionSubtree(typed, key, path) {
 				continue
 			}
-			discoverRedactedValues(typed[key], appendJSONPointer(path, key), ctx, scriptIndex, scriptID, scriptName, out)
+			childPath := appendJSONPointer(path, key)
+			// Import provenance recorded in action metadata (original_url,
+			// source_transaction) documents where the action came from and is
+			// never sent, so it must
+			// not demand a credential binding. This skip is deliberately scoped to
+			// requirement DISCOVERY: redaction reconciliation still walks metadata,
+			// so a masked read-modify-write cannot overwrite the stored value.
+			if isImportProvenanceMetadataPath(childPath) {
+				continue
+			}
+			discoverRedactedValues(typed[key], childPath, ctx, scriptIndex, scriptID, scriptName, out)
 		}
 	case []any:
 		for index, child := range typed {
@@ -297,6 +334,35 @@ func isNonExecutableReviewAction(value map[string]any) bool {
 
 // Script metadata/import identity and explicit review-only actions are
 // authoring provenance. They never participate in runtime credential use.
+// isImportProvenanceMetadataPath reports whether a JSON pointer addresses an
+// import-provenance entry inside action metadata, e.g.
+// /actions/0/metadata/original_url or /actions/0/metadata/source_transaction.
+func isImportProvenanceMetadataPath(path string) bool {
+	segments := strings.Split(path, "/")
+	if len(segments) < 2 {
+		return false
+	}
+	if segments[len(segments)-2] != "metadata" {
+		return false
+	}
+	return isImportProvenanceMetadataKey(segments[len(segments)-1])
+}
+
+// isImportProvenanceMetadataKey reports whether an action-metadata key records
+// where an action came from rather than a value that is sent.
+//
+// "original_" is NOT a safe prefix: original_request holds captured raw review
+// evidence (headers, credentials) whose promotion into an executable action must
+// still be rejected. Only the specific provenance keys are exempt.
+func isImportProvenanceMetadataKey(key string) bool {
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "original_url", "source_transaction":
+		return true
+	default:
+		return false
+	}
+}
+
 func isNonExecutableRedactionSubtree(parent map[string]any, key string, path string) bool {
 	if path == "" {
 		switch key {
@@ -310,6 +376,11 @@ func isNonExecutableRedactionSubtree(parent map[string]any, key string, path str
 			return true
 		}
 	}
+	// Metadata on a preserved review artifact is provenance and is never sent.
+	// Metadata on a real action IS executable — kafka.buildRecord and
+	// jms.buildMessage copy it onto the wire — so it must stay inside redaction
+	// reconciliation, or a masked read-modify-write overwrites the stored value
+	// with the [REDACTED] sentinel and the orphan-sentinel guard stops firing.
 	if key == "metadata" && isNonExecutableReviewAction(parent) {
 		return true
 	}

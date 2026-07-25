@@ -831,6 +831,13 @@ export default function TestExecutionCharts({
     }
     onActiveGraphGroupTabChange?.(tab)
   }, [activeGraphGroupTabProp, onActiveGraphGroupTabChange])
+  const onGranularityChange = useCallback((value: string) => {
+    const parsed = Number(value)
+    if (!Number.isFinite(parsed) || parsed < 0) return
+    // Persist immediately so a polling-driven remount cannot restore a stale value.
+    writeStoredString(chartGranularityStorageKey, String(parsed))
+    setGranularitySeconds(parsed)
+  }, [chartGranularityStorageKey])
   useEffect(() => {
     if (!enableGraphGroupTabs) return
     if (visibleGraphGroupTabs.some(tab => tab.id === activeGraphGroupTab)) return
@@ -1579,7 +1586,7 @@ export default function TestExecutionCharts({
           className="chart-granularity-select"
           aria-label="Graph granularity"
           value={granularitySeconds}
-          onChange={event => setGranularitySeconds(Number(event.currentTarget.value))}
+          onChange={event => onGranularityChange(event.currentTarget.value)}
         >
           {GRANULARITY_OPTIONS.map(option => (
             <option key={option.value} value={option.value}>

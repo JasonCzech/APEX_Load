@@ -9,6 +9,7 @@ const STATUS_ALIASES: Record<string, string> = {
 
 const COMPLETED_TEST_STATUSES = new Set(['COMPLETE', 'FAILED', 'ABORTED'])
 const LIVE_TEST_STATUSES = new Set(['RUNNING', 'INITIALIZING', 'STOPPING'])
+const PENDING_TEST_STATUSES = new Set(['PENDING', 'QUEUED', 'RESERVED', 'SCHEDULED'])
 
 export function normalizeTestStatus(status?: string): string {
   const normalized = status?.trim().toUpperCase() || ''
@@ -21,6 +22,10 @@ export function isCompletedTestStatus(status?: string): boolean {
 
 export function isLiveTestStatus(status?: string): boolean {
   return LIVE_TEST_STATUSES.has(normalizeTestStatus(status))
+}
+
+export function isPendingTestStatus(status?: string): boolean {
+  return PENDING_TEST_STATUSES.has(normalizeTestStatus(status))
 }
 
 export function resolveTestStatus(

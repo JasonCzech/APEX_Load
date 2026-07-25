@@ -694,7 +694,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	for _, fn := range sourceRuntimeControls {
 		reapplySourceRuntimeControlConfig(result, fn)
 	}
-	result.Stats.Extractors -= pruneUnusedWholeBodyExtractors(result.Script)
+	result.Stats.Extractors -= len(pruneUnusedWholeBodyExtractors(result.Script))
 
 	return result, nil
 }
@@ -727,9 +727,9 @@ func referencedVariableNames(text string) map[string]struct{} {
 // extraction budget. Importers may emit them defensively even when no later
 // executable field consumes the value, so retain only structurally referenced
 // captures. Targeted extractors are intentionally unaffected.
-func pruneUnusedWholeBodyExtractors(script *dsl.Script) int {
+func pruneUnusedWholeBodyExtractors(script *dsl.Script) []string {
 	if script == nil {
-		return 0
+		return nil
 	}
 	clone := *script
 	clone.Init = append([]dsl.Action(nil), script.Init...)
@@ -750,10 +750,10 @@ func pruneUnusedWholeBodyExtractors(script *dsl.Script) int {
 	}
 	references, err := json.Marshal(&clone)
 	if err != nil {
-		return 0
+		return nil
 	}
 	referenced := referencedVariableNames(string(references))
-	removed := 0
+	var removed []string
 	prune := func(actions []dsl.Action) {
 		for i := range actions {
 			kept := actions[i].Extractors[:0]
@@ -761,7 +761,7 @@ func pruneUnusedWholeBodyExtractors(script *dsl.Script) int {
 				wholeBody := extractor.Type == "regex" && extractor.Expression == "(?s)^(.*)$"
 				_, used := referenced[extractor.Name]
 				if wholeBody && !used {
-					removed++
+					removed = append(removed, extractor.Name)
 					continue
 				}
 				kept = append(kept, extractor)

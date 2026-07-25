@@ -57,6 +57,7 @@ type healthStatusSetter interface {
 
 func main() {
 	slog.SetDefault(slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	loadLocalDotEnv()
 	logRuntimeTuning(runtimetuning.ApplyFromCgroup(os.Getenv))
 	build := buildinfo.Get()
 	tracingConfig, err := telemetry.LoadConfig(os.Getenv, "apexload-generator", build.Version)
@@ -296,7 +297,6 @@ func gracefulStopWithTimeout(server grpcStopper, timeout time.Duration) bool {
 		return false
 	}
 }
-
 func logRuntimeTuning(settings runtimetuning.Settings) {
 	if settings.GOMAXPROCS == 0 && settings.GOMEMLIMIT == 0 {
 		return
@@ -309,4 +309,17 @@ func logRuntimeTuning(settings runtimetuning.Settings) {
 		args = append(args, "gomemlimit", settings.GOMEMLIMIT, "gomemlimit_source", settings.GOMEMLIMITSource)
 	}
 	slog.Info("go runtime tuning applied", args...)
+}
+
+func loadLocalDotEnv() {
+	appEnv := strings.ToLower(strings.TrimSpace(os.Getenv("APEXLOAD_ENV")))
+	if appEnv == "production" || appEnv == "prod" {
+		return
+	}
+	if err := config.LoadDotEnv(".env"); err != nil {
+		if os.IsNotExist(err) {
+			return
+		}
+		slog.Warn("failed to load local .env", "err", err)
+	}
 }

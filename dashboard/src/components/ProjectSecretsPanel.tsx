@@ -189,6 +189,12 @@ export default function ProjectSecretsPanel({
         {error && (
           <div>
             <p className="settings-error-inline" role="alert">{error}</p>
+            {error.toLowerCase().includes('timed out') && (
+              <p className="new-test-inline-note" role="status">
+                Secret operation timed out. The request was canceled to avoid hanging on Creating....
+                Confirm the controller is healthy, then retry.
+              </p>
+            )}
             {loadError && (
               <button
                 className="btn btn-secondary btn-sm"

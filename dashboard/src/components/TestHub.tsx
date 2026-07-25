@@ -3437,18 +3437,16 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             {loadModelValidationLoading ? 'Validating...' : 'Validate Load Model'}
           </button>
         </div>
-        {!form.name.trim() && (
-          <label className="scenario-field scenario-name-prompt">
-            <span>Name this scenario to save it</span>
-            <input
-              className="settings-input"
-              value={form.name}
-              placeholder="Scenario name"
-              aria-label="Scenario name"
-              onChange={event => setForm({ ...form, name: event.target.value })}
-            />
-          </label>
-        )}
+        <label className="scenario-field scenario-name-prompt">
+          <span>{form.name.trim() ? 'Scenario Name' : 'Name this scenario to save it'}</span>
+          <input
+            className="settings-input"
+            value={form.name}
+            placeholder="Scenario name"
+            aria-label="Scenario name"
+            onChange={event => setForm({ ...form, name: event.target.value })}
+          />
+        </label>
         <div className="scenario-review-grid">
           <div className="scenario-review-card"><span>Name</span><strong>{form.name.trim() || 'Unnamed scenario'}</strong></div>
           <div className="scenario-review-card"><span>Shape</span><strong>{shapeLabel}</strong></div>
@@ -3495,7 +3493,7 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
         </div>
       )}
 
-      {error && <div className="settings-error-inline">{error}</div>}
+      {error && <div className="settings-error-inline page-error-banner" role="alert">{error}</div>}
 
       {showPlans && (
         <div className="page-section">

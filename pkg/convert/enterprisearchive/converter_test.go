@@ -1706,8 +1706,11 @@ UpdateValueOn=Each Occurrence
 	if len(result.Script.DataSources) != 1 || result.Script.DataSources[0].Name != "users" {
 		t.Fatalf("data sources = %#v, want one mapped users data source", result.Script.DataSources)
 	}
-	if result.Script.DataSources[0].Path != "" || result.Script.DataSources[0].FileName != "Users.dat" {
-		t.Fatalf("data source path/file_name = %q/%q, want inline data with Users.dat provenance", result.Script.DataSources[0].Path, result.Script.DataSources[0].FileName)
+	if source := result.Script.DataSources[0]; source.Path != "" || source.FileName != "Users.dat" || source.InlineData == "" {
+		t.Fatalf("data source = %#v, want inline Users.dat with no runtime file path", source)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) > 0 {
+		t.Fatalf("converted script validation issues = %#v, want Script Library-safe inline parameter assets", issues)
 	}
 	payload, err := json.Marshal(result.Script.Metadata.Import)
 	if err != nil {
@@ -1746,16 +1749,16 @@ Action0=vuser_init.c
 Action1=Action.c
 `,
 		"vuser_init.c": `
-vuser_init()
+	vuser_init()
 {
-	web_add_auto_header("X-B3-TraceId", "{TraceId}");
-	web_add_header("accept-language", "en-US,en;q=0.9");
-	web_reg_save_param_json("ParamName=c_access_token", "QueryString=$.access_token", LAST);
-	web_add_cookie("sid={c_lightning_sid}; DOMAIN=attone--perfhyper2.sandbox.lightning.force.com; PATH=/");
-	web_url("Init Login", "URL=https://attone--perfhyper2.sandbox.my.salesforce.com/login", LAST);
-	return 0;
-}
-`,
+		web_add_auto_header("X-B3-TraceId", "{TraceId}");
+		web_add_header("accept-language", "en-US,en;q=0.9");
+		web_reg_save_param_json("ParamName=c_access_token", "QueryString=$.access_token", LAST);
+		web_add_cookie("sid={c_lightning_sid}; DOMAIN=attone--perfhyper2.sandbox.lightning.force.com; PATH=/");
+		web_url("Init Login", "URL=https://attone--perfhyper2.sandbox.my.salesforce.com/login", LAST);
+		return 0;
+	}
+	`,
 		"Action.c": `
 Action()
 {
@@ -1840,6 +1843,100 @@ Options=NOTHINK
 	}
 	if !result.Script.Config.ThinkTime.Ignore {
 		t.Fatalf("think time ignore = false, want NOTHINK mapped")
+	}
+}
+
+func TestConvertZipPreservesSalesforceContentDoorCSHCExtractor(t *testing.T) {
+	archive := buildSourceZip(t, map[string]string{
+		"Salesforce.usr": `[General]
+Type=Web
+
+[Actions]
+Action0=vuser_init.c
+`,
+		"vuser_init.c": `
+vuser_init()
+{
+	web_reg_save_param("c_lm", "LB=name=\"lm\" id=\"lm\" value=\"", "RB=\" /><input type", LAST);
+	web_reg_save_param("c_sid", "LB=name=\"sid\" id=\"sid\" value=\"", "RB=\" /><input type", LAST);
+	web_reg_save_param("c_cshc", "LB=&cshc=", "RB=&display", LAST);
+	web_submit_data("S01_WLSMultiLineCRP_T02_LogIn_attone_perfhyper2_sandbox_my_salesforce_com_3",
+		"Action=https://attone--perfhyper2.sandbox.my.salesforce.com/",
+		"Method=POST",
+		ITEMDATA,
+		"Name=un", "Value={p_username}", ENDITEM,
+		"Name=pw", "Value={p_password}", ENDITEM,
+		LAST);
+	web_submit_data("S01_WLSMultiLineCRP_T02_LogIn_recsession",
+		"Action=https://attone--perfhyper2.sandbox.lightning.force.com/visualforce/recsession",
+		"Method=POST",
+		ITEMDATA,
+		"Name=url", "Value=https://attone--perfhyper2.sandbox.lightning.force.com/visualforce/session?url=https%3A%2F%2Fattone--perfhyper2--c.sandbox.vf.force.com%2Fapex%2FVFLoginFlow%3FretURL%3D%252Fhome%252Fhome.jsp&cshc={c_cshc}&inst=dq&retURL=https://attone--perfhyper2.sandbox.lightning.force.com/visualforce/session?url=https%3A%2F%2Fattone--perfhyper2--c.sandbox.vf.force.com%2Fapex%2FVFLoginFlow%3FretURL%3D%252Fhome%252Fhome.jsp&sid={c_sid}", ENDITEM,
+		LAST);
+	return 0;
+}
+`,
+	})
+
+	result, err := ConvertZip(archive, ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if len(result.Script.Init) != 2 {
+		t.Fatalf("init actions = %d, want 2: %#v", len(result.Script.Init), result.Script.Init)
+	}
+	login := result.Script.Init[0]
+	if login.Name != "S01_WLSMultiLineCRP_T02_LogIn_attone_perfhyper2_sandbox_my_salesforce_com_3" {
+		t.Fatalf("login name = %q", login.Name)
+	}
+	if len(login.Extractors) != 3 {
+		t.Fatalf("login extractors = %#v, want 3", login.Extractors)
+	}
+	var cshc *dsl.Extractor
+	for index := range login.Extractors {
+		if login.Extractors[index].Name == "c_cshc" {
+			cshc = &login.Extractors[index]
+			break
+		}
+	}
+	if cshc == nil {
+		t.Fatalf("login extractors = %#v, want c_cshc", login.Extractors)
+	}
+	if cshc.Type != "regex" {
+		t.Fatalf("c_cshc type = %q, want regex", cshc.Type)
+	}
+	if !strings.Contains(cshc.Expression, "cshc") || !strings.Contains(cshc.Expression, "&amp;") {
+		t.Fatalf("c_cshc expression = %q, want normalized cshc regex", cshc.Expression)
+	}
+	if cshc.OnMiss != "fail" {
+		t.Fatalf("c_cshc on_miss = %q, want fail", cshc.OnMiss)
+	}
+	recsession := result.Script.Init[1]
+	if !strings.Contains(recsession.Body, "{{var.c_cshc}}") {
+		t.Fatalf("recsession body = %q, want c_cshc variable use", recsession.Body)
+	}
+	foundWarning := false
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "Salesforce login handoff extractor") && strings.Contains(warning, "normalized from strict boundary") && strings.Contains(warning, "c_cshc") {
+			foundWarning = true
+			break
+		}
+	}
+	if !foundWarning {
+		t.Fatalf("warnings = %#v, want Salesforce c_cshc normalization warning", result.Warnings)
+	}
+	if result.SourceReview == nil {
+		t.Fatal("expected source review")
+	}
+	foundMapping := false
+	for _, mapping := range result.SourceReview.Mappings {
+		if mapping.TargetPath == "init[0].extractors[2]" && mapping.TargetName == "c_cshc" {
+			foundMapping = true
+			break
+		}
+	}
+	if !foundMapping {
+		t.Fatalf("source review mappings = %#v, want c_cshc mapping", result.SourceReview.Mappings)
 	}
 }
 
@@ -2458,8 +2555,8 @@ Type="Table"
 	}
 	dataSourceFiles := map[string]string{}
 	for _, source := range result.Script.DataSources {
-		if source.Path != "" {
-			t.Fatalf("data source = %#v, archive-backed inline data must not expose an executable path", source)
+		if source.Path != "" || source.InlineData == "" {
+			t.Fatalf("data source = %#v, want inline archive data with no runtime file path", source)
 		}
 		dataSourceFiles[source.Name] = source.FileName
 		if !source.FirstRowHeader {
@@ -2467,7 +2564,7 @@ Type="Table"
 		}
 	}
 	if dataSourceFiles["username"] != "UserName.dat" || dataSourceFiles["acme_iao"] != "ACME_IAO.dat" {
-		t.Fatalf("data source file names = %#v, want original .dat provenance", dataSourceFiles)
+		t.Fatalf("data source filenames = %#v, want original .dat filenames", dataSourceFiles)
 	}
 }
 

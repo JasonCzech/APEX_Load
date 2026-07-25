@@ -108,6 +108,9 @@ func mergeJavaVuserVMSettings(dst *dsl.JavaVuserConfig, src dsl.JavaVuserConfig)
 	if len(src.Classpath) > 0 {
 		dst.Classpath = append([]string(nil), src.Classpath...)
 	}
+	if len(src.ClasspathAssets) > 0 {
+		dst.ClasspathAssets = append([]dsl.JavaClasspathAsset(nil), src.ClasspathAssets...)
+	}
 	if src.SkipParameterEvaluation != nil {
 		dst.SkipParameterEvaluation = cloneRuntimeBoolPointer(src.SkipParameterEvaluation)
 	}

@@ -32,6 +32,10 @@ type ApiErrorPayload = {
   [key: string]: unknown;
 };
 
+type ApiRequestOptions = RequestInit & {
+  timeoutMs?: number;
+};
+
 export function trimTrailingSlash(value: string): string {
   return value.replace(/\/+$/, "");
 }
@@ -88,7 +92,7 @@ export function resolveApiOrigin(
   const isLocalHost =
     location?.hostname === "localhost" || location?.hostname === "127.0.0.1";
   const hasUsableOrigin = !!location?.origin && location.origin !== "null";
-  if (isLocalHost && hasUsableOrigin && (env.DEV || location.port === "3000")) {
+  if (isLocalHost && hasUsableOrigin && (env.DEV || location.port === "4000")) {
     return trimTrailingSlash(location.origin);
   }
   if (hasUsableOrigin) {
@@ -335,21 +339,83 @@ export class ApiError extends Error {
   }
 }
 
+function mergeAbortSignals(
+  primary?: AbortSignal | null,
+  secondary?: AbortSignal | null,
+): AbortSignal | undefined {
+  if (!primary && !secondary) return undefined;
+  if (!primary) return secondary ?? undefined;
+  if (!secondary) return primary ?? undefined;
+  const controller = new AbortController();
+  const abort = () => {
+    if (!controller.signal.aborted) controller.abort();
+  };
+  if (primary.aborted || secondary.aborted) {
+    abort();
+    return controller.signal;
+  }
+  primary.addEventListener("abort", abort, { once: true });
+  secondary.addEventListener("abort", abort, { once: true });
+  return controller.signal;
+}
+
+function createTimeoutSignal(timeoutMs?: number): {
+  signal?: AbortSignal;
+  clear: () => void;
+  timedOut: () => boolean;
+} {
+  if (!timeoutMs || timeoutMs <= 0) {
+    return { signal: undefined, clear: () => {}, timedOut: () => false };
+  }
+  const controller = new AbortController();
+  let firedByTimeout = false;
+  const timer = window.setTimeout(() => {
+    firedByTimeout = true;
+    controller.abort();
+  }, timeoutMs);
+  return {
+    signal: controller.signal,
+    clear: () => window.clearTimeout(timer),
+    timedOut: () => firedByTimeout,
+  };
+}
+
+// Only the timeout timer firing makes an AbortError a timeout. A caller- or
+// unmount-initiated abort travels through the same merged signal, and reporting
+// that as "Request timed out" both misleads the caller and replaces the
+// DOMException with a plain Error, breaking standard `err.name === "AbortError"`
+// cancellation checks.
+function isTimeoutAbort(error: unknown, timedOut: boolean): boolean {
+  if (!timedOut) return false;
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
 export function apiFetch(
   pathOrURL: string,
-  options?: RequestInit,
+  options?: ApiRequestOptions,
 ): Promise<Response> {
   const target = apiUrl(pathOrURL);
   const isDesktopController =
     new URL(target).origin === new URL(API_ORIGIN).origin;
+  const { timeoutMs, signal, ...init } = options ?? {};
+  const timeout = createTimeoutSignal(timeoutMs);
+  const mergedSignal = mergeAbortSignals(signal, timeout.signal);
   return fetch(target, {
-    ...options,
-    credentials: options?.credentials ?? "include",
+    ...init,
+    signal: mergedSignal,
+    credentials: init?.credentials ?? "include",
     headers: mergeHeaders(
-      options?.headers,
+      init?.headers,
       isDesktopController ? buildDevPreviewHeaders() : {},
       isDesktopController,
     ),
+  }).catch((error: unknown) => {
+    if (isTimeoutAbort(error, timeout.timedOut())) {
+      throw new Error(`Request timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  }).finally(() => {
+    timeout.clear();
   });
 }
 
@@ -397,25 +463,36 @@ export async function requestApiNavigation(pathOrURL: string): Promise<string> {
 export function apiFetchFromOrigin(
   apiOrigin: string,
   pathOrURL: string,
-  options?: RequestInit,
+  options?: ApiRequestOptions,
 ): Promise<Response> {
   const target = buildApiUrl(apiOrigin, pathOrURL);
   const isDesktopController =
     new URL(target).origin === new URL(API_ORIGIN).origin;
+  const { timeoutMs, signal, ...init } = options ?? {};
+  const timeout = createTimeoutSignal(timeoutMs);
+  const mergedSignal = mergeAbortSignals(signal, timeout.signal);
   return fetch(target, {
-    ...options,
-    credentials: options?.credentials ?? "include",
+    ...init,
+    signal: mergedSignal,
+    credentials: init?.credentials ?? "include",
     headers: mergeHeaders(
-      options?.headers,
+      init?.headers,
       isDesktopController ? buildDevPreviewHeaders() : {},
       isDesktopController,
     ),
+  }).catch((error: unknown) => {
+    if (isTimeoutAbort(error, timeout.timedOut())) {
+      throw new Error(`Request timed out after ${timeoutMs}ms`);
+    }
+    throw error;
+  }).finally(() => {
+    timeout.clear();
   });
 }
 
 export async function request<T>(
   path: string,
-  options?: RequestInit,
+  options?: ApiRequestOptions,
 ): Promise<T> {
   return requestFromOrigin<T>(API_ORIGIN, path, options);
 }
@@ -423,7 +500,7 @@ export async function request<T>(
 export async function requestFromOrigin<T>(
   apiOrigin: string,
   path: string,
-  options?: RequestInit,
+  options?: ApiRequestOptions,
 ): Promise<T> {
   const headers = new Headers(options?.headers);
   if (!headers.has("Content-Type")) {

@@ -1,6 +1,6 @@
 import type { AppView } from './appRouting'
 import type { TestStatus, TestSummary } from './types'
-import { normalizeTestStatus, resolveTestStatus } from './utils/testStatusUtils'
+import { isPendingTestStatus, normalizeTestStatus, resolveTestStatus } from './utils/testStatusUtils'
 
 export type TopbarPageTitleOptions = {
   repositoryName?: string
@@ -14,6 +14,10 @@ const ACTIVE_RUN_STATUS_PRIORITY: Record<string, number> = {
   INITIALIZING: 1,
   PAUSED: 2,
   STOPPING: 3,
+  PENDING: 4,
+  QUEUED: 5,
+  RESERVED: 6,
+  SCHEDULED: 7,
 }
 
 export function pageTitleForView(view: AppView, options: TopbarPageTitleOptions = {}): string {
@@ -112,7 +116,7 @@ export function shouldShowTopbarClientDownloads(view: AppView): boolean {
 }
 
 export function isTopbarActiveRunStatus(status?: string): status is TestStatus {
-  return Boolean(status && ACTIVE_RUN_STATUS_PRIORITY[normalizeTestStatus(status)] !== undefined)
+  return Boolean(status && (ACTIVE_RUN_STATUS_PRIORITY[normalizeTestStatus(status)] !== undefined || isPendingTestStatus(status)))
 }
 
 export function topbarRunStatusLabel(status?: string): string {

@@ -5,12 +5,13 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import CommandCenterPrototype, {
+  buildScenarioRunRows,
   buildSelectedGroupChartHistoryFromTransactions,
   historicalGroupSummaryQuery,
   selectedGroupLoadImpactData,
   type CommandGroup,
 } from './CommandCenterPrototype'
-import type { MetricsHistoryPoint, TestSummary, TransactionEvent } from '../types'
+import type { MetricsHistoryPoint, TestSummary, TransactionEvent, TxMetrics } from '../types'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -266,6 +267,24 @@ describe('CommandCenterPrototype', () => {
 
     expect(container.querySelector('[aria-label="No active command center run"]')).toBeNull()
     expect(container.textContent).toContain('Checkout Soak')
+  })
+
+  it('discovers queued and reserved runs so operators can start or abort them', async () => {
+    const queued: TestSummary = { ...buildLiveVuserTest(), id: 'queued-run', name: 'Queued Checkout', status: 'QUEUED' }
+    const reserved: TestSummary = { ...buildLiveVuserTest(), id: 'reserved-run', name: 'Reserved Checkout', status: 'RESERVED' }
+    vi.spyOn(globalThis, 'fetch').mockImplementation((input) => {
+      const url = requestUrl(input)
+      if (url.includes('/tests')) return Promise.resolve(jsonResponse({ tests: [queued, reserved], count: 2 }))
+      return Promise.resolve(jsonResponse({}))
+    })
+
+    await act(async () => {
+      root.render(<CommandCenterPrototype projectId="project-1" />)
+    })
+    await flush()
+
+    expect(container.textContent).toContain('Queued Checkout')
+    expect(container.textContent).toContain('Reserved Checkout')
   })
 
   it('does not auto-discover runs until a project scope is available', async () => {
@@ -845,6 +864,53 @@ describe('CommandCenterPrototype', () => {
     // The count must be non-zero: a naive wiring fix leaves the imported charts hidden
     // by the monitor preset, rendering the tab with a "0" count and nothing inside.
     expect(prometheusTab?.querySelector('small')?.textContent).not.toBe('0')
+  })
+
+  it('keeps transaction rows when live metrics temporarily omit transactions', () => {
+    const groups = [commandGroup('Live Checkout', 50)]
+    const transaction: TxMetrics = {
+      name: 'POST /orders',
+      count: 23,
+      errors: 1,
+      avg_ms: 140,
+      p50_ms: 120,
+      p90_ms: 220,
+      p95_ms: 260,
+      p99_ms: 410,
+      dependency_type: 'http',
+    }
+    const snapshot = { 'POST /orders': transaction }
+
+    const rowsWhenPresent = buildScenarioRunRows(groups, {
+      timestamp: '2026-06-08T13:10:00Z',
+      active_vusers: 42,
+      tps: 75.4,
+      avg_response_ms: 134,
+      error_pct: 0.5,
+      total_transactions: 1200,
+      total_errors: 6,
+      p50_ms: 82,
+      p90_ms: 210,
+      p95_ms: 260,
+      p99_ms: 410,
+      transactions: snapshot,
+    })
+    const rowsWhenMissing = buildScenarioRunRows(groups, {
+      timestamp: '2026-06-08T13:10:01Z',
+      active_vusers: 42,
+      tps: 75.4,
+      avg_response_ms: 134,
+      error_pct: 0.5,
+      total_transactions: 1200,
+      total_errors: 6,
+      p50_ms: 82,
+      p90_ms: 210,
+      p95_ms: 260,
+      p99_ms: 410,
+    }, snapshot)
+
+    expect(rowsWhenPresent.some(row => row.id === 'transaction-POST /orders')).toBe(true)
+    expect(rowsWhenMissing.some(row => row.id === 'transaction-POST /orders')).toBe(true)
   })
 
   it('does not query Prometheus in prototype (non-live) mode', async () => {

@@ -3069,7 +3069,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
       : []),
   ])).sort()
   const requiredProjectSecretNamesKey = requiredProjectSecretNames.join('\u0000')
-  const secretScopeProjectId = currentDraftScript.project_id || projectId
+	const secretScopeProjectId = currentDraftScript.project_id || projectId
   const preflightWithAllRequiredSecrets: ReplayPreflight = {
     ...unreconciledReplayPreflight,
     required_secrets: requiredProjectSecretNames,
@@ -3092,7 +3092,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     })
     void api.getProjectSecretStatuses(secretScopeProjectId, requiredNames)
       .then(response => {
-        if (projectSecretProbeRequestRef.current !== requestId || response.project_id !== secretScopeProjectId) return
+		if (projectSecretProbeRequestRef.current !== requestId || response.project_id !== secretScopeProjectId) return
         setProjectSecretProbe({
           projectId: secretScopeProjectId,
           namesKey: requiredProjectSecretNamesKey,

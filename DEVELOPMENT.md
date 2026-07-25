@@ -308,7 +308,7 @@ go run ./cmd/controller
 cd dashboard
 npm install
 npm run dev
-# Starts Vite dev server on :3000 with API proxy to :8080
+# Starts Vite dev server on :4000 with API proxy to :8080
 ```
 
 **Windows local helper** (optional)
@@ -318,6 +318,12 @@ npm run dev
 # Open directly to recorder authoring and manage Windows recorder proxy state
 .\scripts\start-local-windows.ps1 -ConfigureRecorderProxy -DashboardRoute '#/scripts?mode=create'
 ```
+
+### Enterprise npm and network defaults
+
+- `dashboard/.npmrc` now points npm at the ATT Artifactory registry used in the legacy agentic pipeline repo.
+- `.env.example` carries forward the non-secret proxy, CA-path, and local endpoint defaults that are relevant to this repo.
+- The Go binaries, helper scripts, and MCP client read process environment directly; they do not auto-load `.env.example`, so export the values into your shell or CI job before running `go`, `npm`, Docker, or MCP commands.
 
 ### 2. Making Changes
 

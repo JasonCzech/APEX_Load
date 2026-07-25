@@ -115,4 +115,16 @@ describe('error diagnostics', () => {
     expect(diagnostic.summary).toBe('test not found')
     expect(diagnostic.nextSteps.join(' ')).toContain('stale IDs')
   })
+
+  it('does not misclassify an origin-policy rejection as an RBAC denial', () => {
+    const diagnostic = diagnoseError(
+      { message: 'request origin is not allowed', status: 403 },
+      'Unable to create test',
+    )
+
+    expect(diagnostic.category).toBe('network')
+    expect(diagnostic.likelyCause).toContain('browser Origin')
+    expect(diagnostic.nextSteps.join(' ')).toContain('restart Vite')
+    expect(diagnostic.nextSteps.join(' ')).toContain('Do not change project roles')
+  })
 })

@@ -32,8 +32,8 @@ func TestPruneKeepsExtractorsReferencedWithSurroundingWhitespace(t *testing.T) {
 	} {
 		t.Run(reference, func(t *testing.T) {
 			script := wholeBodyCaptureScript(dsl.Action{Name: "use", Target: "/next?t=" + reference})
-			if removed := pruneUnusedWholeBodyExtractors(script); removed != 0 {
-				t.Errorf("removed = %d, want 0 — %s is a live reference", removed, reference)
+			if removed := pruneUnusedWholeBodyExtractors(script); len(removed) != 0 {
+				t.Errorf("removed = %v, want 0 — %s is a live reference", removed, reference)
 			}
 			if got := len(script.Actions[0].Extractors); got != 1 {
 				t.Errorf("kept %d extractors, want 1 — the capture is consumed by %s", got, reference)
@@ -50,8 +50,8 @@ func TestPruneKeepsExtractorReferencedByAnotherExtractor(t *testing.T) {
 			{Name: "second", Source: "body", Type: "regex", Expression: "prefix={{var.token}}(.*)"},
 		}},
 	}}
-	if removed := pruneUnusedWholeBodyExtractors(script); removed != 0 {
-		t.Errorf("removed = %d, want 0 — a sibling extractor consumes the capture", removed)
+	if removed := pruneUnusedWholeBodyExtractors(script); len(removed) != 0 {
+		t.Errorf("removed = %v, want 0 — a sibling extractor consumes the capture", removed)
 	}
 	if got := len(script.Actions[0].Extractors); got != 2 {
 		t.Errorf("kept %d extractors, want 2", got)
@@ -68,8 +68,8 @@ func TestPruneRemovesOnlyUnreferencedWholeBodyExtractors(t *testing.T) {
 		}},
 		{Name: "use", Target: "/next"},
 	}}
-	if removed := pruneUnusedWholeBodyExtractors(script); removed != 1 {
-		t.Fatalf("removed = %d, want 1", removed)
+	if removed := pruneUnusedWholeBodyExtractors(script); len(removed) != 1 {
+		t.Fatalf("removed = %v, want 1", removed)
 	}
 	kept := script.Actions[0].Extractors
 	if len(kept) != 1 || kept[0].Name != "targeted" {
@@ -96,7 +96,7 @@ func TestReferencedVariableNamesIgnoresOtherNamespaces(t *testing.T) {
 }
 
 func TestPruneUnusedWholeBodyExtractorsNilScript(t *testing.T) {
-	if removed := pruneUnusedWholeBodyExtractors(nil); removed != 0 {
-		t.Errorf("removed = %d, want 0", removed)
+	if removed := pruneUnusedWholeBodyExtractors(nil); len(removed) != 0 {
+		t.Errorf("removed = %v, want 0", removed)
 	}
 }

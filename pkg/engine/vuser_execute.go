@@ -278,6 +278,12 @@ func (vu *VUser) safeProtoExecute(ctx context.Context, action *protocol.Action) 
 
 func (vu *VUser) safeProtoExecuteStream(ctx context.Context, action *protocol.Action, emit func(*protocol.Result) error) (result *protocol.Result, err error) {
 	if actionContainsUnresolvedParameter(action) {
+		// Name the offending reference when resolveAction recorded one, so the
+		// diagnostic points at the specific binding instead of only the action.
+		if refs := dedupeTemplateRefs(vu.unresolvedParameterRefs); len(refs) > 0 {
+			return nil, fmt.Errorf("refusing to execute action %q with an unresolved {{param.*}} reference: %s (check the parameter data source and column binding)",
+				action.Name, strings.Join(refs, ", "))
+		}
 		return nil, fmt.Errorf("refusing to execute action %q with an unresolved {{param.*}} reference", action.Name)
 	}
 	defer func() {

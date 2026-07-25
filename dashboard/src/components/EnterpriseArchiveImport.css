@@ -191,6 +191,36 @@
   gap: 8px;
   flex: 0 0 auto;
 }
+.lr-required-files-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+.lr-required-files-panel h4 {
+  margin: 0 0 3px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.lr-required-files-panel p {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.lr-required-files-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.lr-required-files-review {
+  margin-top: -8px;
+}
 .lr-import-action-buttons {
   display: grid;
   grid-template-columns: 1fr;
@@ -708,3 +738,53 @@
 .coverage-hint { color: var(--text-muted); font-size: 12px; margin: 4px 0 8px 0; }
 .lr-warnings details[data-coverage="adapter_required"] > summary { color: var(--danger); }
 .lr-warnings details[data-coverage="external_runner_required"] > summary { color: var(--danger); }
+
+/* Resolve Java Dependencies — user-uploaded classpath JAR attachment */
+.lr-java-classpath-resolver-section .java-classpath-resolver-list {
+  list-style: none;
+  margin: 8px 0 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.java-classpath-resolver-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface-alt, var(--surface));
+}
+.java-classpath-resolver-row .entry-path {
+  flex: 1 1 240px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  color: var(--text);
+}
+.java-classpath-resolver-row .entry-asset {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.java-classpath-resolver-row .chip-file { font-size: 12px; color: var(--text); }
+.java-classpath-resolver-row .chip-sha {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.java-classpath-resolver-row .chip-remove,
+.java-env-classpath-asset-chip .chip-remove {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+.java-classpath-resolver-row .chip-remove:hover,
+.java-env-classpath-asset-chip .chip-remove:hover { color: var(--danger); }

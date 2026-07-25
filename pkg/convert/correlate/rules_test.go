@@ -281,21 +281,30 @@ func TestDetectSalesforceLoginTokensFromDecodedForms(t *testing.T) {
 	observations := []Observation{
 		{
 			ID:           1,
-			ResponseBody: `_CONFIRMATIONTOKEN=confirm-abcdef123456&sid=frontdoor-session-abcdef123456`,
+			ResponseBody: `_CONFIRMATIONTOKEN=confirm-abcdef123456&sid=frontdoor-session-abcdef123456&cshc=cshc-abcdef123456`,
 		},
 		{
 			ID:          2,
-			RequestBody: `_CONFIRMATIONTOKEN=confirm-abcdef123456&sid=frontdoor-session-abcdef123456`,
+			RequestBody: `_CONFIRMATIONTOKEN=confirm-abcdef123456&sid=frontdoor-session-abcdef123456&cshc=cshc-abcdef123456`,
 		},
 	}
 	correlations := Detect(observations)
 	wantRules := map[string]bool{
 		RuleSalesforceConfirmationToken: false,
 		RuleSalesforceFrontdoorSID:      false,
+		RuleSalesforceCSHC:              false,
 	}
 	for _, c := range correlations {
 		if _, ok := wantRules[c.RuleID]; ok {
 			wantRules[c.RuleID] = true
+			if c.RuleID == RuleSalesforceCSHC {
+				if c.ExtractType != "regex" || c.Expression != `(?i)(?:^|&)cshc=([^&]*)` || c.Convert != "url_decode" {
+					t.Fatalf("cshc correlation = %#v, want form-field regex with url_decode", c)
+				}
+				if !HighConfidence(c) {
+					t.Fatalf("cshc confidence = %.2f, want high confidence", c.Confidence)
+				}
+			}
 		}
 	}
 	for rule, found := range wantRules {
@@ -303,6 +312,34 @@ func TestDetectSalesforceLoginTokensFromDecodedForms(t *testing.T) {
 			t.Fatalf("missing Salesforce login rule %s in correlations: %#v", rule, correlations)
 		}
 	}
+}
+
+func TestDetectSalesforceCSHCHandoffFromRedirectSurface(t *testing.T) {
+	const cshc = "cshc-redirect-abcdef123456"
+	observations := []Observation{
+		{
+			ID:              1,
+			ResponseHeaders: map[string]string{"Location": `https://attone--perfhyper2.sandbox.lightning.force.com/visualforce/session?url=%2Fapex%2FVFLoginFlow&cshc=` + cshc + `&display=page`},
+		},
+		{
+			ID:         2,
+			RequestURL: `https://attone--perfhyper2.sandbox.lightning.force.com/visualforce/recsession?cshc=` + cshc + `&inst=dq`,
+		},
+	}
+
+	for _, corr := range Detect(observations) {
+		if corr.RuleID != RuleSalesforceCSHC {
+			continue
+		}
+		if corr.Value != cshc || corr.Name != "corr_salesforce_cshc" {
+			t.Fatalf("cshc correlation = %#v, want %q with stable name", corr, cshc)
+		}
+		if corr.Source != "header" || corr.ExtractType != "regex" || !strings.Contains(corr.Expression, "cshc") {
+			t.Fatalf("cshc extractor = %#v, want regex targeting cshc", corr)
+		}
+		return
+	}
+	t.Fatalf("missing cshc correlation: %#v", Detect(observations))
 }
 
 func TestSetCookieSessionVsOtherConfidence(t *testing.T) {

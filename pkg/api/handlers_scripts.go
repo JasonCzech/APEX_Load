@@ -31,6 +31,8 @@ type jmeterImportRequest struct {
 type enterpriseArchiveImportRequest struct {
 	Data             []byte
 	HARData          []byte
+	SupplementalData [][]byte
+	SupplementalName []string
 	ProjectID        string
 	Opts             enterprisearchive.ConvertOptions
 	ReadinessPolicy  enterprisearchive.RuntimeSettingMigrationPolicy

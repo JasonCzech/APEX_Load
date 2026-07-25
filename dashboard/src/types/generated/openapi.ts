@@ -34938,6 +34938,70 @@ export interface operations {
       };
     };
   };
+  "handleUploadJavaClasspathJar": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "project_id"?: string;
+      };
+    };
+    requestBody: {
+      content: {
+        "multipart/form-data": Record<string, unknown>;
+      };
+    };
+    responses: {
+      "201": {
+        content: {
+          "application/json": {
+            "content_type"?: string;
+            "entry"?: string;
+            "file_name"?: string;
+            "import_id"?: string;
+            "sha256"?: string;
+            "size_bytes"?: number;
+            "storage_ref"?: string;
+            "uploaded_at"?: string;
+          };
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "413": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleValidateDraftScript": {
     parameters?: never;
     requestBody: {
@@ -36853,6 +36917,9 @@ export interface paths {
   };
   "/api/v1/scripts/import/{id}/assets/upload": {
     "post": operations["handleUploadImportAsset"];
+  };
+  "/api/v1/scripts/import/{id}/java-classpath/upload": {
+    "post": operations["handleUploadJavaClasspathJar"];
   };
   "/api/v1/scripts/replay": {
     "post": operations["handleReplayDraftScript"];

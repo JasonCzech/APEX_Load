@@ -95,6 +95,22 @@ func TestExecuteWithRetry_FailsClosedOnUnresolvedSecret(t *testing.T) {
 	}
 }
 
+func TestExecuteWithRetry_FailsClosedOnUnresolvedParameter(t *testing.T) {
+	proto := &captureProtocol{}
+	vu := newControlFlowVUser(proto, nil, nil)
+	vu.Script.Parameters = []dsl.Parameter{{Name: "username", Type: "file", DataSource: "users", Column: "UserName"}}
+	vu.Parameters = NewParameterRuntime(vu.Script.Parameters, nil, 0)
+
+	resolved := vu.resolveAction(dsl.Action{Name: "soap", Type: "POST", Body: `<userName>{{param.username}}</userName>`})
+	_, err := vu.executeWithRetry(context.Background(), resolved, dsl.ErrorHandlingConfig{})
+	if err == nil || !strings.Contains(err.Error(), "param.username") {
+		t.Fatalf("expected unresolved parameter error, got %v", err)
+	}
+	if len(proto.names) != 0 {
+		t.Fatalf("protocol must not execute with a placeholder parameter; executed %v", proto.names)
+	}
+}
+
 func TestExecuteWithRetry_OptOutAllowsUnresolvedSecret(t *testing.T) {
 	t.Setenv(allowUnresolvedSecretsEnv, "true")
 	proto := &captureProtocol{}

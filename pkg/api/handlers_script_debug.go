@@ -204,6 +204,7 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 	}
 	issues := append(validateScriptForReplay(script), refIssues...)
 	warnings := append(validationWarnings(script), refWarnings...)
+	warnings = append(warnings, scriptDebugParityWarnings(script)...)
 	secretResolver := s.runner.secretResolverForProject(script.ProjectID)
 	preflight := buildReplayPreflight(script, req.Variables, issues, warnings, secretResolver)
 	if len(issues) > 0 || len(preflight.MissingSecrets) > 0 {
@@ -243,6 +244,23 @@ func (s *Server) handleStartScriptDebugRequest(w http.ResponseWriter, r *http.Re
 		Preflight:       preflight,
 		Warnings:        warnings,
 	})
+}
+
+// scriptDebugParityWarnings makes the single-VUser deterministic replay boundary
+// visible before its result is used to judge a multi-VUser scenario.
+func scriptDebugParityWarnings(script *dsl.Script) []string {
+	if script == nil {
+		return nil
+	}
+	for _, parameter := range script.Parameters {
+		if parameter.Type != "file" {
+			continue
+		}
+		if parameter.Selection == "random" || parameter.BlockSize > 0 || parameter.ValueForEachVUser {
+			return []string{"Debugger replay validates one deterministic VUser path; randomized or VUser-partitioned parameter data still requires a scenario shakeout before load execution."}
+		}
+	}
+	return nil
 }
 
 func applyScriptDebugOverrides(script *dsl.Script, req ScriptDebugStartRequest) *dsl.Script {

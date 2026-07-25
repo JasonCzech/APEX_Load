@@ -9,6 +9,8 @@ import {
 } from '../../types/secrets'
 import { request } from '../apiClient'
 
+const PROJECT_SECRET_MUTATION_TIMEOUT_MS = 15000
+
 export type DeleteEntityResponse = {
   deleted: string
   external_secret_cleanup_required?: boolean
@@ -68,6 +70,7 @@ export function useProjectApi() {
       request<ProjectSecretsWriteResponse>(`/projects/${encodeURIComponent(projectId)}/secrets`, {
         method: 'POST',
         body: JSON.stringify({ secrets }),
+        timeoutMs: PROJECT_SECRET_MUTATION_TIMEOUT_MS,
       }),
     [],
   )
@@ -77,6 +80,7 @@ export function useProjectApi() {
       request<ProjectSecretsWriteResponse>(`/projects/${encodeURIComponent(projectId)}/secrets/${encodeURIComponent(name)}`, {
         method: 'PUT',
         body: JSON.stringify({ value }),
+        timeoutMs: PROJECT_SECRET_MUTATION_TIMEOUT_MS,
       }),
     [],
   )

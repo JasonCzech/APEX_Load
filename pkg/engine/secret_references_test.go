@@ -111,6 +111,42 @@ func TestReferencedSecretNamesSkipsProvenanceAndReviewOnlyActions(t *testing.T) 
 	}
 }
 
+// Action metadata secrets MUST be collected: ReferencedSecretNames drives the
+// runtime RedactionConfig and the fail-closed missing-secret preflight, and
+// kafka/jms copy metadata onto the wire (TestJMSPublishWithMetadataAndNoPropertiesConfig
+// asserts source_transaction is delivered as a JMS property). Suppressing the
+// "configure this secret" PROMPT for provenance keys is a UI concern handled in
+// pkg/api, not here. An earlier version of this test asserted the opposite and
+// would have let a wire-bound credential go unredacted.
+func TestReferencedSecretNamesCollectsActionMetadataSecretsForRedaction(t *testing.T) {
+	script := &dsl.Script{
+		Protocol: "http",
+		Actions: []dsl.Action{
+			{
+				Name:   "HTTP request",
+				Type:   "request",
+				Target: "/orders",
+				Headers: map[string]string{
+					"Authorization": "Bearer {{secret.EXECUTABLE_TOKEN}}",
+				},
+				Metadata: map[string]any{
+					"original_url":       "https://service.test:{{secret.METADATA_URL_PORT}}/path",
+					"source_transaction": "{{secret.METADATA_TRANSACTION_NAME}}",
+				},
+			},
+		},
+	}
+
+	got, err := ReferencedSecretNames(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"EXECUTABLE_TOKEN", "METADATA_TRANSACTION_NAME", "METADATA_URL_PORT"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ReferencedSecretNames() = %v, want %v (metadata secrets must stay redactable)", got, want)
+	}
+}
+
 func TestSnapshotReferencedSecretsFailsClosedForEveryStaticReference(t *testing.T) {
 	tests := map[string]*dsl.Script{
 		"dedicated config": {
@@ -670,5 +706,35 @@ func TestReplayRedactsResolverBackedBasicAuthCompositeEcho(t *testing.T) {
 	}
 	if bytes.Contains(encoded, []byte(encodedCredentials)) {
 		t.Fatalf("neutral response disclosed resolver-backed Basic credentials: %s", encoded)
+	}
+}
+
+// Only import provenance keys (original_*, source_*) are exempt. Other action
+// metadata IS sent on the wire — kafka.buildRecord and jms.buildMessage copy
+// metadata into headers/properties — so those secret names must stay in
+// ReferencedSecretNames or the runtime RedactionConfig will not scrub them.
+func TestReferencedSecretNamesKeepsNonProvenanceActionMetadataSecrets(t *testing.T) {
+	script := &dsl.Script{
+		Protocol: "kafka",
+		Actions: []dsl.Action{
+			{
+				Name:   "produce",
+				Type:   "kafka_produce",
+				Target: "orders",
+				Metadata: map[string]any{
+					"original_url": "https://service.test/{{secret.PROVENANCE_ONLY}}",
+					"api_key":      "{{secret.KAFKA_API_KEY}}",
+				},
+			},
+		},
+	}
+
+	got, err := ReferencedSecretNames(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"KAFKA_API_KEY", "PROVENANCE_ONLY"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("ReferencedSecretNames() = %v, want %v (every metadata secret must be redactable)", got, want)
 	}
 }

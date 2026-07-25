@@ -16,6 +16,11 @@ import (
 const (
 	MaxBytes           int64 = 50 << 20
 	MaxCredentialBytes int64 = 4 << 20
+	// MaxJarBytes bounds a single user-uploaded Java Vuser classpath JAR. It is
+	// deliberately larger than MaxBytes (which fences ordinary data-source
+	// reads) and is used only by the classpath materializer and distributed
+	// stager via the *Limited helpers. The global MaxBytes is unchanged.
+	MaxJarBytes int64 = 256 << 20
 )
 
 var (
@@ -169,6 +174,17 @@ func ValidatePathForProject(path, projectID string) (string, error) {
 }
 
 func OpenPath(path string) (io.ReadCloser, error) {
+	return OpenPathLimited(path, MaxBytes)
+}
+
+// OpenPathLimited is OpenPath with a caller-supplied maximum size. It is used
+// for asset classes whose ceiling differs from the default MaxBytes (e.g.
+// user-uploaded classpath JARs, which use MaxJarBytes). maxBytes must be
+// positive; the root/symlink fencing is identical to OpenPath.
+func OpenPathLimited(path string, maxBytes int64) (io.ReadCloser, error) {
+	if maxBytes <= 0 {
+		return nil, fmt.Errorf("file asset read limit must be positive")
+	}
 	path = strings.TrimSpace(path)
 	if path == "" {
 		return nil, fmt.Errorf("path is required")
@@ -210,9 +226,9 @@ func OpenPath(path string) (io.ReadCloser, error) {
 			_ = f.Close()
 			return nil, fmt.Errorf("file asset %s is not a regular file", abs)
 		}
-		if info.Size() > MaxBytes {
+		if info.Size() > maxBytes {
 			_ = f.Close()
-			return nil, fmt.Errorf("file asset %s exceeds %d byte limit", abs, MaxBytes)
+			return nil, fmt.Errorf("file asset %s exceeds %d byte limit", abs, maxBytes)
 		}
 		return f, nil
 	}
@@ -228,6 +244,16 @@ func OpenStorageRef(ref string) (io.ReadCloser, error) {
 		return nil, err
 	}
 	return OpenPath(path)
+}
+
+// OpenStorageRefLimited resolves a file:// storage_ref and opens it with a
+// caller-supplied maximum size (see OpenPathLimited).
+func OpenStorageRefLimited(ref string, maxBytes int64) (io.ReadCloser, error) {
+	path, err := storageRefPath(ref)
+	if err != nil {
+		return nil, err
+	}
+	return OpenPathLimited(path, maxBytes)
 }
 
 func ReadPathLimited(path string, maxBytes int64) ([]byte, error) {

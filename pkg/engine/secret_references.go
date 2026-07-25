@@ -127,6 +127,16 @@ func collectExecutableSecretNames(value any, root, dedicatedField bool, seen, de
 					continue
 				}
 			}
+			// NOTHING in action metadata is exempt here. ReferencedSecretNames
+			// drives the runtime RedactionConfig and the fail-closed missing-secret
+			// preflight, and kafka.buildRecord / jms.buildMessage copy metadata
+			// entries onto the wire as headers/properties — including original_url
+			// and source_transaction (see TestJMSPublishWithMetadataAndNoPropertiesConfig,
+			// which asserts source_transaction is delivered as a JMS property).
+			// Exempting them here would leave a resolved value absent from the
+			// redaction set: plaintext in logs, evidence bundles, and archives.
+			// Suppressing the "configure this secret" PROMPT is a UI concern and is
+			// handled separately in pkg/api (isImportProvenanceMetadataPath).
 			_, childDedicated := dedicatedLogicalSecretFields[normalizedKey]
 			if err := collectExecutableSecretNames(child, false, childDedicated, seen, dedicated); err != nil {
 				return err

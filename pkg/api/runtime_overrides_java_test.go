@@ -203,6 +203,28 @@ func TestJavaVuserOverrideChangedExecutableSurface(t *testing.T) {
 	if !javaVuserOverrideChangedExecutableSurface(base, act) {
 		t.Fatal("action rewrite must be flagged")
 	}
+
+	// Attaching a classpath JAR changes the bytes loaded into the JVM → flagged.
+	withAsset := cloneScriptForStoredGroup(base)
+	withAsset.Config.JavaVuser.ClasspathAssets = []dsl.JavaClasspathAsset{{
+		Entry:      "/opt/app.jar",
+		SHA256:     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		StorageRef: "file:///assets/app.jar",
+	}}
+	if !javaVuserOverrideChangedExecutableSurface(base, withAsset) {
+		t.Fatal("attaching a classpath JAR must be flagged")
+	}
+
+	// Swapping the attached JAR (different sha256) → flagged.
+	swapped := cloneScriptForStoredGroup(withAsset)
+	swapped.Config.JavaVuser.ClasspathAssets = []dsl.JavaClasspathAsset{{
+		Entry:      "/opt/app.jar",
+		SHA256:     "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+		StorageRef: "file:///assets/app.jar",
+	}}
+	if !javaVuserOverrideChangedExecutableSurface(withAsset, swapped) {
+		t.Fatal("swapping the attached JAR must be flagged")
+	}
 }
 
 func TestApplyRuntimeOverridesJavaVuserDenylistedVMParameterFailsValidation(t *testing.T) {

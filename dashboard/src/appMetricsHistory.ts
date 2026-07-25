@@ -1,6 +1,8 @@
 import type { MetricsHistoryPoint } from './types'
 
-export const MAX_LIVE_METRICS_POINTS_PER_TEST = 300
+// Keep enough 1-second samples to cover long-running sessions in execution
+// views where Display Window=All is expected to show the full run timeline.
+export const MAX_LIVE_METRICS_POINTS_PER_TEST = 21600
 export const MAX_LIVE_METRICS_TESTS = 24
 
 /**

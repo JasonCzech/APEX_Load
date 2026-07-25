@@ -360,6 +360,30 @@ func (*blockingProjectSecretStore) List(context.Context, string) ([]secretstore.
 func (*blockingProjectSecretStore) Writable() bool   { return true }
 func (*blockingProjectSecretStore) Provider() string { return "blocking_provider" }
 
+type blockingProjectSecretMutationStore struct {
+	createCalls  atomic.Int32
+	replaceCalls atomic.Int32
+}
+
+func (*blockingProjectSecretMutationStore) Get(context.Context, string, string) (string, secretstore.Metadata, error) {
+	return "", secretstore.Metadata{}, secretstore.ErrNotFound
+}
+func (s *blockingProjectSecretMutationStore) Create(ctx context.Context, _, _, _, _ string) (secretstore.Metadata, error) {
+	s.createCalls.Add(1)
+	<-ctx.Done()
+	return secretstore.Metadata{}, ctx.Err()
+}
+func (s *blockingProjectSecretMutationStore) Replace(ctx context.Context, _, _, _, _ string) (secretstore.Metadata, error) {
+	s.replaceCalls.Add(1)
+	<-ctx.Done()
+	return secretstore.Metadata{}, ctx.Err()
+}
+func (*blockingProjectSecretMutationStore) List(context.Context, string) ([]secretstore.Metadata, error) {
+	return nil, nil
+}
+func (*blockingProjectSecretMutationStore) Writable() bool   { return true }
+func (*blockingProjectSecretMutationStore) Provider() string { return "blocking_mutation_provider" }
+
 type discoveryFailureSecretStore struct {
 	metadata []secretstore.Metadata
 }
@@ -620,6 +644,48 @@ func TestProjectSecretRotationReconciliationRequiresFreshCommittedMetadata(t *te
 			}
 			if !errors.Is(err, secretstore.ErrMetadataCommit) || outcome != "provider_error_commit_ambiguous" {
 				t.Fatalf("stale reconciliation = %#v, %q, %v", metadata, outcome, err)
+			}
+		})
+	}
+}
+
+func TestProjectSecretMutationReconciliationHonorsCallerDeadline(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		mutate func(context.Context, secretstore.Store) error
+		calls  func(*blockingProjectSecretMutationStore) int32
+	}{
+		{
+			name: "create",
+			mutate: func(ctx context.Context, store secretstore.Store) error {
+				_, _, err := createProjectSecretWithReconciliation(ctx, store, "project", "TOKEN", "value", "admin")
+				return err
+			},
+			calls: func(store *blockingProjectSecretMutationStore) int32 { return store.createCalls.Load() },
+		},
+		{
+			name: "replace",
+			mutate: func(ctx context.Context, store secretstore.Store) error {
+				_, _, err := replaceProjectSecretWithReconciliation(ctx, store, "project", "TOKEN", "value", "admin")
+				return err
+			},
+			calls: func(store *blockingProjectSecretMutationStore) int32 { return store.replaceCalls.Load() },
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := &blockingProjectSecretMutationStore{}
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+			defer cancel()
+			started := time.Now()
+			err := test.mutate(ctx, store)
+			if !errors.Is(err, context.DeadlineExceeded) {
+				t.Fatalf("mutation error = %v, want deadline exceeded", err)
+			}
+			if elapsed := time.Since(started); elapsed > time.Second {
+				t.Fatalf("mutation elapsed = %s, want bounded provider call", elapsed)
+			}
+			if got := test.calls(store); got != 1 {
+				t.Fatalf("mutation calls = %d, want 1", got)
 			}
 		})
 	}

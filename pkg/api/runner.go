@@ -1164,6 +1164,48 @@ func WithProjectSecretStore(store secretstore.Store) TestRunnerOption {
 }
 
 func (tr *TestRunner) secretResolverForProject(projectID string) engine.SecretResolver {
+	if secretBindingEnforcementDisabled() {
+		// Explicitly opted-in development mode keeps secret placeholders runnable
+		// without governed project secret setup. A configured secret always wins,
+		// and ONLY a genuine miss falls back to the placeholder: the store is
+		// probed directly rather than through EngineResolver, because that helper
+		// collapses provider errors (timeout, 5xx, throttling) into the same
+		// ("", false) it returns for a miss. Substituting a fake credential on a
+		// transient failure would be cached for the whole run and silently mask a
+		// real configured secret, so provider errors fail closed instead.
+		var store secretstore.Store
+		if tr != nil {
+			store = tr.projectSecretStore
+		}
+		envFallback := engine.NewProjectSecretResolver(projectID)
+		return engine.CacheSecretResolverForRun(engine.ContextSecretResolverFunc(func(parent context.Context, name string) (string, bool) {
+			if strings.TrimSpace(name) == "" {
+				return "", false
+			}
+			if parent == nil {
+				parent = context.Background()
+			}
+			if store != nil {
+				ctx, cancel := context.WithTimeout(parent, 5*time.Second)
+				value, _, err := store.Get(ctx, projectID, name)
+				cancel()
+				switch {
+				case err == nil:
+					return value, true
+				case !errors.Is(err, secretstore.ErrNotFound):
+					slog.Error("project secret store failed; refusing to substitute a development placeholder",
+						"secret", name, "project_id", projectID, "err", err)
+					return "", false
+				}
+			}
+			if value, ok := engine.ResolveSecret(parent, envFallback, name); ok {
+				return value, true
+			}
+			slog.Warn("substituting placeholder for unconfigured project secret",
+				"secret", name, "project_id", projectID, "env", devFakeSecretsEnv)
+			return "apexload-dev-secret", true
+		}))
+	}
 	if tr == nil {
 		return engine.CacheSecretResolverForRun(engine.NewProjectSecretResolver(projectID))
 	}

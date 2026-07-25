@@ -44,7 +44,7 @@ export interface ScriptRecordingStatus {
   sensitivity?: string
   captured_at?: string
 }
-import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type ApplySecretBindingsRequest, type ApplySecretBindingsResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
+import { type ApplyParameterizationRequest, type ApplyParameterizationResponse, type ApplySecretBindingsRequest, type ApplySecretBindingsResponse, type AuthoringCapabilitiesResponse, type Parameterization, type AsyncAPIImportResult, type AsyncAPISupportMatrixResponse, type BrokerConfigImportResult, type BrokerConfigSupportMatrixResponse, type BrowserRecordingImportResult, type CommitAsyncAPIImportRequest, type CommitAsyncAPIImportResponse, type CommitOpenAPIImportRequest, type CommitOpenAPIImportResponse, type DevWebImportResult, type DevWebSupportMatrixResponse, type EventHubsCaptureImportResult, type EventHubsCaptureSupportMatrixResponse, type HARImportResult, type ImportAssetUploadResponse, type JavaClasspathAssetUploadResponse, type JMeterImportResult, type JMeterSupportMatrixResponse, type K6ImportResult, type K6SupportMatrixResponse, type EnterpriseArchiveImportResult, type EnterpriseArchiveSupportMatrixResponse, type OpenAPIImportResult, type OpenAPISupportMatrixResponse, type OracleEBusinessReviewRequest, type OracleEBusinessReviewResponse, type OracleEBusinessSupportMatrixResponse, type PostmanImportResult, type PostmanSupportMatrixResponse, type RAMLImportResult, type RAMLSupportMatrixResponse, type SalesforceImportResult, type SampleImportResult, type SaveJMeterImportRequest, type SaveJMeterImportResponse, type SavePostmanImportRequest, type SavePostmanImportResponse, type WSDLImportResult } from '../../types/scriptImports'
 import { type JsonRequestBody } from '../../types/generated/openapi'
 import { ApiError, apiFetch, request } from '../apiClient'
 
@@ -187,6 +187,7 @@ type EnterpriseArchiveImportOptions = {
   migration_block_statuses?: string[]
   project_id?: string
   har_file?: File
+  supplemental_files?: File[]
   salesforce_native?: boolean
 }
 
@@ -609,6 +610,11 @@ export function useScriptApi() {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.har_file) formData.append('har_file', options.har_file)
+      if (options?.supplemental_files?.length) {
+        options.supplemental_files.forEach((supplementalFile) => {
+          formData.append('supplemental_file', supplementalFile)
+        })
+      }
       if (options?.name) formData.append('name', options.name)
       if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
@@ -634,6 +640,11 @@ export function useScriptApi() {
       const formData = new FormData()
       formData.append('file', file)
       if (options?.har_file) formData.append('har_file', options.har_file)
+      if (options?.supplemental_files?.length) {
+        options.supplemental_files.forEach((supplementalFile) => {
+          formData.append('supplemental_file', supplementalFile)
+        })
+      }
       if (options?.name) formData.append('name', options.name)
       if (options?.project_id) formData.append('project_id', options.project_id)
       if (options?.base_url) formData.append('base_url', options.base_url)
@@ -812,6 +823,27 @@ export function useScriptApi() {
         throw new Error(await errorMessageFromResponse(res))
       }
       return res.json() as Promise<ImportAssetUploadResponse>
+    },
+    [],
+  )
+
+  const uploadJavaClasspathJar = useCallback(
+    async (importId: string, file: File, options: { project_id: string; entry?: string }): Promise<JavaClasspathAssetUploadResponse> => {
+      const formData = new FormData()
+      formData.append('file', file)
+      if (options.entry) formData.append('entry', options.entry)
+      formData.append('project_id', options.project_id)
+      // project_id is passed in the query so authorization resolves without
+      // consuming the multipart body (the server streams the JAR to disk).
+      const query = `?project_id=${encodeURIComponent(options.project_id)}`
+      const res = await apiFetch(`/scripts/import/${encodeURIComponent(importId)}/java-classpath/upload${query}`, {
+        method: 'POST',
+        body: formData,
+      })
+      if (!res.ok) {
+        throw new Error(await errorMessageFromResponse(res))
+      }
+      return res.json() as Promise<JavaClasspathAssetUploadResponse>
     },
     [],
   )
@@ -1371,6 +1403,7 @@ export function useScriptApi() {
       commitAsyncAPIImport,
       importSample,
       uploadImportAsset,
+      uploadJavaClasspathJar,
       importDevWeb,
       importK6,
       importEventHubsCapture,
@@ -1481,6 +1514,7 @@ export function useScriptApi() {
       commitAsyncAPIImport,
       importSample,
       uploadImportAsset,
+      uploadJavaClasspathJar,
       importDevWeb,
       importK6,
       importEventHubsCapture,

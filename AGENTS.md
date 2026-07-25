@@ -134,7 +134,7 @@ go build ./cmd/apexctl
 ./apexctl run --script order-flow.json --vusers 100 --duration 5m
 
 # Dashboard dev server (proxies /api to :8080)
-cd dashboard && npm install && npm run dev   # http://localhost:3000
+cd dashboard && npm install && npm run dev   # http://localhost:4000
 
 # Build dashboard into Go binary (embedded)
 cd dashboard && npm run build   # outputs to pkg/api/static/

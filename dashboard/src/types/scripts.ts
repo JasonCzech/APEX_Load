@@ -380,11 +380,25 @@ export interface JavaHTTPConfig {
   preserve_binary_result?: boolean
 }
 
+// JavaClasspathAsset binds one exact classpath entry to a user-uploaded JAR by
+// content hash. Mirrors the Go dsl.JavaClasspathAsset. The classpath string
+// list is unaffected; this is a parallel, entry-keyed record.
+export interface JavaClasspathAsset {
+  entry: string
+  file_name?: string
+  sha256: string
+  size_bytes?: number
+  content_type?: string
+  storage_ref?: string
+  staged_asset?: string
+}
+
 export interface JavaVuserConfig {
   enabled?: boolean
   runner_command?: string
   harness_jar?: string
   classpath?: string[]
+  classpath_assets?: JavaClasspathAsset[]
   work_dir?: string
   max_processes?: number
   startup_timeout_ms?: number

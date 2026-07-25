@@ -1,6 +1,8 @@
 package dsl
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestValidateScriptIssues_Parameters(t *testing.T) {
 	script := &Script{
@@ -71,5 +73,85 @@ func TestValidateScriptIssues_ParametersAllowsSupportedValues(t *testing.T) {
 	issues := ValidateScriptIssues(script)
 	if len(issues) != 0 {
 		t.Fatalf("issues = %v, want none", issues)
+	}
+}
+
+// A parameter column that does not exist in its data source is a data-source FIT
+// problem, not a structural one. ValidateScriptIssues gates script save, test
+// creation, persistence reload AND generator-side execution staging, so making
+// this structural would reject already-stored scripts that run today. The fit
+// report (authoring health "data_source_fit") is the channel that raises it - see
+// TestDraftValidationReturnsDataSourceFitHealth, which asserts structural
+// validity stays true while fit reports blocked.
+//
+// This asserts the POSITIVE contract (no issues at all for the fixture). An
+// earlier version asserted the absence of a specific message string that no
+// validator ever emits, so it passed unconditionally and would not have caught a
+// re-escalation worded any other way.
+func TestValidateScriptIssues_UnresolvableParameterColumnIsFitNotStructural(t *testing.T) {
+	script := &Script{
+		Name:        "legacy-param",
+		Protocol:    "http",
+		Config:      ScriptConfig{BaseURL: "https://example.com"},
+		Parameters:  []Parameter{{Name: "username", Type: "file", DataSource: "users", Column: "UserName"}},
+		DataSources: []DataSource{{Name: "users", Type: "dat", InlineData: "alice\n", Strategy: "sequential"}},
+		Actions:     []Action{{Name: "call", Type: "request", Target: "/ping"}},
+	}
+
+	if issues := ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("issues = %v, a missing parameter column must not be a structural validation error", issues)
+	}
+}
+
+// The structural checks the function DOES own must still fire, so the test above
+// cannot pass merely because validation stopped running.
+func TestValidateScriptIssues_RejectsUnknownDataSourceReference(t *testing.T) {
+	script := &Script{
+		Name:        "missing-source",
+		Protocol:    "http",
+		Config:      ScriptConfig{BaseURL: "https://example.com"},
+		Parameters:  []Parameter{{Name: "username", Type: "file", DataSource: "nope", Column: "UserName"}},
+		DataSources: []DataSource{{Name: "users", Type: "dat", InlineData: "alice\n", Strategy: "sequential"}},
+		Actions:     []Action{{Name: "call", Type: "request", Target: "/ping"}},
+	}
+	issues := ValidateScriptIssues(script)
+	assertIssue(t, issues, `parameters[0] "username": data_source "nope" does not exist`)
+}
+
+func TestValidateScriptIssues_RejectsParameterHeaderConsumedAsData(t *testing.T) {
+	script := &Script{
+		Name:        "header-as-data",
+		Protocol:    "http",
+		Config:      ScriptConfig{BaseURL: "https://example.com"},
+		Parameters:  []Parameter{{Name: "username", Type: "file", DataSource: "users", Column: "UserName"}},
+		DataSources: []DataSource{{Name: "users", Type: "dat", InlineData: "UserName\nalice\n", Columns: []string{"UserName"}, Strategy: "sequential"}},
+		Actions:     []Action{{Name: "call", Type: "request", Target: "/ping"}},
+	}
+
+	issues := ValidateScriptIssues(script)
+	assertIssue(t, issues, `parameters[0] "username": data_source "users" first record matches its columns but first_row_header is false`)
+}
+
+func TestValidateScriptIssues_ParameterColumnsRespectInspectableSchema(t *testing.T) {
+	tests := []struct {
+		name   string
+		source DataSource
+	}{
+		{name: "tab header", source: DataSource{Name: "users", Type: "dat", InlineData: "UserName\tPassword\nalice\tsecret\n", Delimiter: "tab", FirstRowHeader: true}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			script := &Script{
+				Name:        "parameter-schema",
+				Protocol:    "http",
+				Config:      ScriptConfig{BaseURL: "https://example.com"},
+				Parameters:  []Parameter{{Name: "username", Type: "file", DataSource: "users", Column: "UserName"}},
+				DataSources: []DataSource{test.source},
+				Actions:     []Action{{Name: "call", Type: "request", Target: "/ping"}},
+			}
+			if issues := ValidateScriptIssues(script); len(issues) != 0 {
+				t.Fatalf("issues = %v, want none", issues)
+			}
+		})
 	}
 }

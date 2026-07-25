@@ -1063,6 +1063,47 @@ func TestHandleStartScriptDebugDraftScriptRejectsProjectMismatch(t *testing.T) {
 	}
 }
 
+func TestHandleStartScriptDebugDraftScriptWarnsWhenParameterDataDiffersFromScenarioLoad(t *testing.T) {
+	protocolName := registerReplayAPIProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	server := NewServer(ServerConfig{})
+	body, _ := json.Marshal(map[string]any{
+		"start_paused": true,
+		"script": map[string]any{
+			"name":     "Parameterized Debug",
+			"version":  "1.0.0",
+			"protocol": protocolName,
+			"config":   map[string]any{"base_url": "https://example.com"},
+			"parameters": []map[string]any{{
+				"name": "subscriber", "type": "file", "selection": "random", "data_source": "subscribers", "column": "id",
+			}},
+			"data_sources": []map[string]any{{
+				"name": "subscribers", "type": "csv", "first_row_header": true, "inline_data": "id\n1\n2\n",
+			}},
+			"actions": []map[string]any{{"name": "Get account", "type": "GET", "method": "GET", "target": "/accounts/{{param.subscriber}}"}},
+		},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/debug/sessions", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+	var payload struct {
+		Warnings []string `json:"warnings"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	if !strings.Contains(strings.Join(payload.Warnings, "\n"), "deterministic VUser") {
+		t.Fatalf("warnings = %#v, want deterministic VUser parity warning", payload.Warnings)
+	}
+}
+
 func TestHandleGetScriptDebugSessionNotFound(t *testing.T) {
 	server := NewServer(ServerConfig{})
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/script-debug/sessions/missing", nil)

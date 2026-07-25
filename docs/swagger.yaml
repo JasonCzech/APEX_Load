@@ -47362,6 +47362,98 @@ paths:
       tags:
         - Scripts
       x-handler: handleUploadImportAsset
+  /api/v1/scripts/import/{id}/java-classpath/upload:
+    post:
+      summary: Upload Java Classpath Jar
+      description: '**Access Control:** Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
+      operationId: handleUploadJavaClasspathJar
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  content_type:
+                    type: string
+                  entry:
+                    type: string
+                  file_name:
+                    type: string
+                  import_id:
+                    type: string
+                  sha256:
+                    type: string
+                  size_bytes:
+                    type: integer
+                    format: int64
+                  storage_ref:
+                    type: string
+                  uploaded_at:
+                    type: string
+                    format: date-time
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "401":
+          description: Authentication required or invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "403":
+          description: Authenticated principal lacks the required role or service-account scope.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "404":
+          description: Not Found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "413":
+          description: Request Entity Too Large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "500":
+          description: Internal Server Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        default:
+          description: Additional handler-defined response.
+      x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+      tags:
+        - Scripts
+      x-handler: handleUploadJavaClasspathJar
   /api/v1/scripts/import/asyncapi:
     post:
       summary: Import AsyncAPI

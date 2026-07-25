@@ -93,6 +93,11 @@ const applicationContextMock = {
   createAndSelectApplication: vi.fn(),
 }
 
+const projectContextMock = {
+  activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
+  createAndSelectProject: vi.fn(),
+}
+
 vi.mock('../hooks/useApi', () => ({
   useApi: () => apiMock,
 }))
@@ -114,9 +119,7 @@ vi.mock('../hooks/useApplication', () => ({
 }))
 
 vi.mock('../hooks/useProject', () => ({
-  useProject: () => ({
-    activeProject: { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' },
-  }),
+  useProject: () => projectContextMock,
 }))
 
 vi.mock('../utils/fileUtils', () => ({
@@ -229,6 +232,7 @@ describe('SettingsPage', () => {
     window.localStorage.removeItem('apexload.settings.projectId')
     window.localStorage.removeItem('apexload.settings.integrationSubsection')
     delete (window as BridgeWindow).go
+    projectContextMock.createAndSelectProject.mockReset()
 
     apiMock.getSystemSettings.mockResolvedValue({
       general: {
@@ -1942,6 +1946,40 @@ describe('SettingsPage', () => {
     const saveButton = findButton('Save Project Governance')
     expect(saveButton?.disabled).toBe(true)
     expect(projectApiMock.updateProject).not.toHaveBeenCalled()
+  })
+
+  it('creates projects through the scoped project context used by the sidebar', async () => {
+    const created = {
+      id: 'project-new',
+      name: 'New Project',
+      domain_id: 'default',
+      created_at: '2026-07-20T00:00:00Z',
+      updated_at: '2026-07-20T00:00:00Z',
+    }
+    projectContextMock.createAndSelectProject.mockResolvedValue(created)
+
+    await act(async () => {
+      renderWithSettingsTopbar(root, <SettingsPage theme="dark" onThemeChange={vi.fn()} />)
+    })
+    await flushPromises()
+    await flushPromises()
+    await selectTopLevelSettingsTab('Projects & Compliance')
+    const projectSection = container.querySelector('#settings-section-projects')
+    const input = Array.from(projectSection?.querySelectorAll('input') || [])
+      .find(candidate => candidate.placeholder?.includes('Create project')) as HTMLInputElement | undefined
+    expect(input).toBeDefined()
+    if (!input) return
+
+    await setFieldValue(input, 'New Project')
+    await act(async () => {
+      findButton('Add Project')?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    })
+    await flushPromises()
+
+    expect(projectContextMock.createAndSelectProject).toHaveBeenCalledWith({ name: 'New Project' })
+    expect(projectApiMock.createProject).not.toHaveBeenCalled()
+    expect(projectSection?.textContent).toContain('2 projects')
+    expect(projectSection?.textContent).toContain('New Project')
   })
 
   it('does not report unsaved changes for a project that has per-pool quotas (no edits)', async () => {

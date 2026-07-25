@@ -1496,6 +1496,37 @@ describe('TestExecutionCharts context menu', () => {
     expect(Math.max(...dataLengths())).toBe(denseData.length)
   })
 
+  it('keeps selected graph granularity after an immediate remount', async () => {
+    window.localStorage.setItem('apexload.execution.chartGranularity', '1')
+    await renderCharts()
+
+    // The granularity control lives in the "Configure Graphs" drawer.
+    const openGranularityDrawer = async () => {
+      const configureButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.trim() === 'Configure Graphs')
+      expect(configureButton).toBeDefined()
+      await act(async () => configureButton?.click())
+      return container.querySelector<HTMLSelectElement>('select[aria-label="Graph granularity"]')
+    }
+
+    const granularitySelect = await openGranularityDrawer()
+    expect(granularitySelect).not.toBeNull()
+    if (!granularitySelect) return
+
+    await act(async () => {
+      granularitySelect.value = '15'
+      granularitySelect.dispatchEvent(new Event('change', { bubbles: true }))
+      // Simulate a rapid remount from surrounding workspace/live-refresh churn.
+      root.render(<div />)
+    })
+
+    await renderCharts()
+
+    const remountedSelect = await openGranularityDrawer()
+    expect(remountedSelect?.value).toBe('15')
+    expect(window.localStorage.getItem('apexload.execution.chartGranularity')).toBe('15')
+  })
+
   function menuActionTexts() {
     return Array.from(container.querySelectorAll('.chart-context-menu button')).map(button => button.textContent)
   }

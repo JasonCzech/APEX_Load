@@ -161,7 +161,7 @@ For hot-reload during frontend dev:
 ```bash
 cd dashboard
 npm run dev
-# Starts dev server on :3000 with proxy to :8080 for API calls
+# Starts dev server on :4000 with proxy to :8080 for API calls
 ```
 
 ### 5. Windows local startup utility
@@ -207,6 +207,9 @@ Controller runtime configuration:
 - `APEXLOAD_METRICS_ADDR`: when set (e.g. `:9091`), serves `GET /metrics` on a dedicated listener instead of the API port, so network policy can scope Prometheus access separately from API access
 - `APEXLOAD_METRICS_TOKEN`: optional bearer token required for `GET /metrics` on either the API port or the dedicated metrics listener
 - `APEXLOAD_PPROF_ADDR`: optional unauthenticated Go pprof bind address for controller/generator runtime debugging. In production it must be an explicit loopback address (for example `127.0.0.1:6060`); use port forwarding for remote access
+- `APEXLOAD_ENABLE_TLS_COMPAT`: set `true` to force TLS compatibility defaults even in `APEXLOAD_ENV=production|prod`. When enabled, missing `GODEBUG` tokens are appended as `x509negativeserial=1,tlsmlkem=0,tlssecpmlkem=0` to improve compatibility with legacy or enterprise TLS intermediaries.
+- `APEXLOAD_DISABLE_TLS_COMPAT`: set `true` to disable automatic TLS compatibility defaults in all environments.
+- `APEXLOAD_DISABLE_DEV_TLS_COMPAT`: legacy alias for disabling dev-mode TLS compatibility defaults; `APEXLOAD_DISABLE_TLS_COMPAT` is preferred for new setups.
 - `APEXLOAD_PROMETHEUS_URL`: Prometheus base URL used by dashboard graph overlays; independent from the controller `/metrics` scrape endpoint
 - `APEXLOAD_OTEL_ENABLED`: explicit opt-in for controller/generator OpenTelemetry tracing (default `false`). Enabling it also requires `OTEL_EXPORTER_OTLP_ENDPOINT` or `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`; see [OpenTelemetry tracing](docs/OPENTELEMETRY.md)
 - `OTEL_EXPORTER_OTLP_PROTOCOL` / `OTEL_EXPORTER_OTLP_TRACES_PROTOCOL`: OTLP transport, `http/protobuf` (default) or `grpc`; standard OTLP headers, TLS, timeout, compression, service/resource, and sampler variables are honored
@@ -225,6 +228,8 @@ Controller runtime configuration:
 
 See [Project Secrets](docs/PROJECT_SECRETS.md) for provider setup, import
 migration governance, and secure distributed delivery requirements.
+
+Note: If you run with `APEXLOAD_ENV=production|prod`, the persisted authentication mode (Settings → Authentication, stored as `auth.mode`) must not be a bypass mode such as `dev`. The controller refuses to start in that combination by design; use `oidc` or `trusted_headers`.
 
 ## Build and Test
 

@@ -2,6 +2,7 @@ package dsl
 
 import (
 	"encoding/base64"
+	"encoding/csv"
 	"fmt"
 	"math"
 	"net"
@@ -1081,6 +1082,10 @@ func validateParameterIssues(script *Script) []string {
 	}
 
 	var issues []string
+	dataSourcesByName := make(map[string]DataSource, len(script.DataSources))
+	for _, source := range script.DataSources {
+		dataSourcesByName[strings.ToLower(strings.TrimSpace(source.Name))] = source
+	}
 	parametersByName := make(map[string]Parameter, len(script.Parameters))
 	for _, param := range script.Parameters {
 		name := strings.TrimSpace(param.Name)
@@ -1163,12 +1168,16 @@ func validateParameterIssues(script *Script) []string {
 			if strings.TrimSpace(param.Column) == "" {
 				issues = append(issues, fmt.Sprintf("%s %q: column is required for file parameters", label, name))
 			}
+			issues = append(issues, validateParameterDataSourceBinding(label, name, param, dataSourcesByName)...)
 		case "list":
 			if len(param.Values) == 0 && strings.TrimSpace(param.DataSource) == "" {
 				issues = append(issues, fmt.Sprintf("%s %q: values or data_source is required for list parameters", label, name))
 			}
 			if strings.TrimSpace(param.DataSource) != "" && strings.TrimSpace(param.Column) == "" {
 				issues = append(issues, fmt.Sprintf("%s %q: column is required when data_source is set", label, name))
+			}
+			if strings.TrimSpace(param.DataSource) != "" {
+				issues = append(issues, validateParameterDataSourceBinding(label, name, param, dataSourcesByName)...)
 			}
 		case "random_number":
 			if param.Min > param.Max {
@@ -1196,6 +1205,119 @@ func validateParameterIssues(script *Script) []string {
 	}
 
 	return issues
+}
+
+func validateParameterDataSourceBinding(label, name string, param Parameter, sources map[string]DataSource) []string {
+	sourceName := strings.TrimSpace(param.DataSource)
+	column := strings.TrimSpace(param.Column)
+	if sourceName == "" || column == "" {
+		return nil
+	}
+	source, ok := sources[strings.ToLower(sourceName)]
+	if !ok {
+		return []string{fmt.Sprintf("%s %q: data_source %q does not exist", label, name, sourceName)}
+	}
+	if !source.FirstRowHeader && len(source.Columns) > 0 && parameterColumnsMatchRecord(source.Columns, parameterDataSourceFirstRecord(source)) {
+		return []string{fmt.Sprintf("%s %q: data_source %q first record matches its columns but first_row_header is false", label, name, sourceName)}
+	}
+	// Whether the referenced COLUMN exists is deliberately not checked here. It is
+	// a data-source FIT problem, not a structural one: the script still parses and
+	// stores, and the fit report already raises it (driving authoring health to
+	// blocked). Reporting it structurally would make ValidateScriptIssues reject
+	// scripts that run today, including inside generator-side execution staging.
+	return nil
+}
+
+func parameterColumnsMatchRecord(columns, record []string) bool {
+	if len(columns) == 0 || len(columns) != len(record) {
+		return false
+	}
+	for index := range columns {
+		if !strings.EqualFold(strings.TrimSpace(columns[index]), strings.TrimSpace(record[index])) {
+			return false
+		}
+	}
+	return true
+}
+
+// ScoreDataSourceDelimiter counts delimiter-separated fields across the first
+// lines of content so a delimiter can be sniffed from the data itself.
+func ScoreDataSourceDelimiter(content string, delimiter rune) int {
+	score := 0
+	for index, line := range strings.Split(content, "\n") {
+		if index >= 20 {
+			break
+		}
+		line = strings.TrimSpace(strings.TrimSuffix(line, "\r"))
+		if line == "" {
+			continue
+		}
+		count := strings.Count(line, string(delimiter))
+		if count > 0 {
+			score += count + 1
+		}
+	}
+	return score
+}
+
+// DetectDataSourceDelimiter returns the delimiter that best explains content, or
+// 0 when neither comma nor tab appears.
+func DetectDataSourceDelimiter(content string) rune {
+	commaScore := ScoreDataSourceDelimiter(content, ',')
+	tabScore := ScoreDataSourceDelimiter(content, '\t')
+	if tabScore == 0 && commaScore == 0 {
+		return 0
+	}
+	if tabScore > commaScore {
+		return '\t'
+	}
+	return ','
+}
+
+// ResolveDataSourceDelimiter is the single source of truth for how a data
+// source's delimiter is chosen. Validation and the runtime loader MUST agree:
+// when they disagree the validator parses a header row as one field and rejects
+// scripts the engine runs correctly.
+func ResolveDataSourceDelimiter(source DataSource, content string) rune {
+	if source.Delimiter == "\t" {
+		return '\t'
+	}
+	delimiter := strings.TrimSpace(source.Delimiter)
+	switch strings.ToLower(delimiter) {
+	case "":
+		if source.Type == "dat" {
+			return '\t'
+		}
+		if detected := DetectDataSourceDelimiter(content); detected != 0 {
+			return detected
+		}
+		return ','
+	case "auto":
+		if detected := DetectDataSourceDelimiter(content); detected != 0 {
+			return detected
+		}
+		if source.Type == "dat" {
+			return '\t'
+		}
+		return ','
+	case `\t`, "tab":
+		return '\t'
+	case "comma":
+		return ','
+	default:
+		return []rune(delimiter)[0]
+	}
+}
+
+func parameterDataSourceFirstRecord(source DataSource) []string {
+	reader := csv.NewReader(strings.NewReader(source.InlineData))
+	reader.Comma = ResolveDataSourceDelimiter(source, source.InlineData)
+	reader.LazyQuotes = true
+	record, err := reader.Read()
+	if err != nil {
+		return nil
+	}
+	return record
 }
 
 func validateParameterTimezone(issues *[]string, label, name, timezone string) {

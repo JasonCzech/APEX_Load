@@ -388,6 +388,35 @@ describe('ProjectSecretsPanel', () => {
     expect(fieldError?.textContent).toContain('Use 1–249 uppercase letters')
   })
 
+  it('shows timeout guidance when create secret request times out', async () => {
+    apiMock.createProjectSecrets.mockRejectedValueOnce(new Error('Request timed out after 15000ms'))
+
+    await act(async () => {
+      root.render(
+        <ProjectSecretsPanel
+          projectId="project-1"
+          projectName="Checkout"
+          canCreate
+          canRotate
+        />,
+      )
+    })
+    await flushPromises()
+
+    const createInputs = container.querySelectorAll<HTMLInputElement>('.project-secret-create input')
+    act(() => {
+      setInput(createInputs[0], 'TIMEOUT_SECRET')
+      setInput(createInputs[1], 'timeout-sensitive-value')
+    })
+    const createButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent === 'Create Secret')
+    await act(async () => createButton?.click())
+    await flushPromises()
+
+    expect(container.textContent).toContain('Request timed out after 15000ms')
+    expect(container.textContent).toContain('Secret operation timed out. The request was canceled to avoid hanging on Creating....')
+  })
+
   it('clears write-only values and operation messages when the selected project changes', async () => {
     apiMock.listProjectSecrets.mockImplementation(async (projectId: string) => ({
       project_id: projectId,

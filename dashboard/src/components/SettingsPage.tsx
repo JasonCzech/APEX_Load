@@ -224,7 +224,7 @@ export default function SettingsPage({
     refreshReleases,
     createAndSelectApplication,
   } = useApplication()
-  const { activeProject } = useProject()
+  const { activeProject, createAndSelectProject } = useProject()
   const [settings, setSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
   const [savedSettings, setSavedSettings] = useState<DashboardSystemSettings>(DEFAULT_SETTINGS)
   const [health, setHealth] = useState<HealthResponse | null>(null)
@@ -1474,7 +1474,7 @@ export default function SettingsPage({
     const name = newProjectName.trim()
     if (!name) return
     try {
-      const created = await projectApi.createProject({ name })
+      const created = await createAndSelectProject({ name })
       const nextProjects = sortProjects([...projects, created])
       setProjects(nextProjects)
       setNewProjectName('')

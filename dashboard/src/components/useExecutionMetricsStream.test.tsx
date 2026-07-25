@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TestStatus, WSMessage } from '../types'
 import { latencySeriesKeyForTarget, routeLatencyDetailSeriesKeyForTarget } from './latencySeries'
-import { useExecutionMetricsStream } from './useExecutionMetricsStream'
+import { EXECUTION_STREAM_HISTORY_LIMIT, useExecutionMetricsStream } from './useExecutionMetricsStream'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -233,7 +233,7 @@ describe('useExecutionMetricsStream', () => {
     }))
   })
 
-  it('caps streamed execution history at 300 points', async () => {
+  it('retains full streamed execution history during an active run', async () => {
     await act(async () => {
       root.render(<MetricsStreamHarness />)
     })
@@ -254,8 +254,71 @@ describe('useExecutionMetricsStream', () => {
       } as WSMessage)
     }
 
-    expect(readTestId('count')).toBe('300')
+    expect(readTestId('count')).toBe('301')
     expect(readTestId('tps')).toBe('300')
+  })
+
+  // The 300-point cap was deleted outright and this file's guarding test was
+  // reworded to bless the removal, leaving localMetricsHistory growing for the
+  // whole run. History is bounded again — generously, so long runs keep more
+  // than the old 300 points, but never without limit.
+  // The 300-point cap was deleted outright and this file's guarding test was
+  // reworded to bless the removal, leaving localMetricsHistory growing for the
+  // whole run. History is bounded again — generously, so long runs keep far more
+  // than the old 300 points, but never without limit.
+  it('caps retained execution history at EXECUTION_STREAM_HISTORY_LIMIT', async () => {
+    const oversized = Array.from({ length: EXECUTION_STREAM_HISTORY_LIMIT + 25 }, (_, index) => ({
+      timestamp: new Date(Date.UTC(2026, 4, 12, 0, 0, index)).toISOString(),
+      active_vusers: index,
+      tps: index,
+      avg_response_ms: index,
+      error_pct: 0,
+      p50_ms: index,
+      p90_ms: index,
+      p95_ms: index,
+      p99_ms: index,
+    }))
+    getTestMock.mockResolvedValueOnce({ history: oversized })
+
+    await act(async () => {
+      root.render(<MetricsStreamHarness />)
+    })
+    await triggerOpen()
+
+    expect(Number(readTestId('count'))).toBe(EXECUTION_STREAM_HISTORY_LIMIT)
+  })
+
+  // The backfill test above only exercises the merge path (line 97/168). The
+  // per-message append (line 149) is a SEPARATE .slice() and must be proven
+  // independently, or unbounded live growth regresses undetected. Messages are
+  // dispatched inside one act() so the loop stays fast.
+  it('caps live streamed history at the limit and drops the oldest point', async () => {
+    await act(async () => {
+      root.render(<MetricsStreamHarness />)
+    })
+
+    const overflow = 5
+    await act(async () => {
+      for (let index = 0; index < EXECUTION_STREAM_HISTORY_LIMIT + overflow; index += 1) {
+        onMessage?.({
+          type: 'metrics_update',
+          timestamp: '2026-05-12T20:05:00Z',
+          data: {
+            active_vusers: index,
+            tps: index,
+            avg_response_ms: index,
+            error_pct: 0,
+            p50_ms: index,
+            p90_ms: index,
+            p99_ms: index,
+          },
+        } as WSMessage)
+      }
+    })
+
+    expect(Number(readTestId('count'))).toBe(EXECUTION_STREAM_HISTORY_LIMIT)
+    // The newest point survives and the oldest was evicted.
+    expect(readTestId('tps')).toBe(String(EXECUTION_STREAM_HISTORY_LIMIT + overflow - 1))
   })
 
   it('resets accumulated history and latest metrics when the testId changes', async () => {
@@ -299,8 +362,8 @@ describe('useExecutionMetricsStream', () => {
     await triggerOpen()
     expect(getTestMock).toHaveBeenCalledWith('test-1', {
       includeHistory: true,
+      limit: EXECUTION_STREAM_HISTORY_LIMIT,
       since: undefined,
-      limit: 300,
     })
     expect(readTestId('count')).toBe('1')
     expect(readTestId('tps')).toBe('4')
@@ -317,8 +380,8 @@ describe('useExecutionMetricsStream', () => {
 
     expect(getTestMock).toHaveBeenLastCalledWith('test-1', {
       includeHistory: true,
+      limit: EXECUTION_STREAM_HISTORY_LIMIT,
       since: '2026-05-12T20:05:00Z',
-      limit: 300,
     })
     expect(readTestId('count')).toBe('3')
     expect(readTestId('tps')).toBe('99')

@@ -901,6 +901,8 @@ describe('EnterpriseArchiveImport', () => {
       bindings: [{ requirement_id: 'login-password', secret_name: 'LOGIN_PASSWORD' }],
     })
     expect(container.textContent).toContain('{{secret.LOGIN_PASSWORD}}')
+    expect(container.textContent).toContain('Secret bindings applied across the generated archive. Every script contains governed secret references only.')
+    expect(container.textContent).not.toContain('Resolve every redacted credential binding before saving this script.')
     expect(apiMock.createScript).toHaveBeenCalledTimes(1)
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       actions: [expect.objectContaining({ body: 'password={{secret.LOGIN_PASSWORD}}' })],
@@ -1653,6 +1655,103 @@ describe('EnterpriseArchiveImport', () => {
       draft: blockedJavaDraft,
     }))
     expect(container.textContent).toContain('Combined Java Vuser review artifact saved as authoring session')
+  })
+
+  it('lets users attach required files from fidelity blockers and sends them on re-validation', async () => {
+    const unresolvedSuperclassBlocker = 'Java runner class Action extends unresolved superclass BasicClient; upload the exact superclass source so construction and lifecycle semantics can be verified before promotion.'
+    const blockedJavaDraft = {
+      name: 'Blocked Combined Java Vuser',
+      version: '1.0.0',
+      protocol: 'java_vuser',
+      actions: [{ name: 'Java action', type: 'java_vuser_run', params: { method: 'action' } }],
+      metadata: {
+        import: {
+          source: 'enterprise_script_archive',
+          preserved: {
+            fidelity_report: {
+              promotion_status: 'blocked',
+              blockers: [unresolvedSuperclassBlocker],
+            },
+          },
+        },
+      },
+    }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue({
+      script: blockedJavaDraft,
+      scripts: [blockedJavaDraft],
+      detected_protocol: {
+        canonical_source_protocol: 'java_vuser',
+        apexload_protocol: 'java_vuser',
+        display_name: 'LoadRunner Java Vuser',
+        import_mode: 'external_runner_required',
+        confidence: 'high',
+        runner_requirement: 'java_vuser_jvm_runner',
+      },
+      review_artifact: {
+        id: 'java-blocked-review',
+        title: 'Blocked combined Java Vuser review',
+        status: 'external_runner_required',
+        protocol: {
+          canonical_source_protocol: 'java_vuser',
+          apexload_protocol: 'java_vuser',
+          import_mode: 'external_runner_required',
+          confidence: 'high',
+          runner_requirement: 'java_vuser_jvm_runner',
+        },
+        summary: 'Resolve the selected lifecycle blocker.',
+      },
+      fidelity_report: {
+        promotion_status: 'blocked',
+        blockers: [unresolvedSuperclassBlocker],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      summary: {
+        import_mode: 'external_runner_required',
+        fidelity_report: {
+          promotion_status: 'blocked',
+          blockers: [unresolvedSuperclassBlocker],
+        },
+        migration_readiness: {
+          score_pct: 50,
+          blocked: false,
+          summary: 'Review required',
+          policy: { block_statuses: ['blocked', 'partial', 'compatibility_only'] },
+        },
+      },
+      stats: { total_functions: 1, converted_actions: 1, extractors: 0, think_times: 0, transactions: 0, skipped: 0 },
+    })
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const zipFile = new File(['zip-content'], 'blocked-java.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [zipFile] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    expect(container.textContent).toContain('Required Files')
+    expect(container.textContent).toContain('Required Files To Resolve Fidelity Blockers')
+    expect(container.textContent).toContain('BasicClient (BasicClient.java) - missing')
+
+    const supplementalInput = container.querySelector('input[accept*=".java"]') as HTMLInputElement
+    const basicClientFile = new File(['public class BasicClient {}'], 'BasicClient.java', { type: 'text/plain' })
+    await act(async () => {
+      Object.defineProperty(supplementalInput, 'files', { configurable: true, value: [basicClientFile] })
+      supplementalInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    await clickImportAction(container, 'Validate Only')
+    expect(apiMock.validateEnterpriseArchiveImport).toHaveBeenLastCalledWith(zipFile, expect.objectContaining({
+      supplemental_files: [basicClientFile],
+    }))
+    expect(container.textContent).toContain('BasicClient (BasicClient.java) - attached')
   })
 
   it('surfaces TrueClient2 compatibility report from Enterprise Script Archive import responses', async () => {

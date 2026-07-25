@@ -426,7 +426,7 @@ func (s *Server) handleScriptSecretStatus(w http.ResponseWriter, r *http.Request
 			missing = append(missing, status.Name)
 		}
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
+	response := map[string]any{
 		"script_id":    stored.ID,
 		"project_id":   stored.ProjectID,
 		"required":     required,
@@ -434,7 +434,14 @@ func (s *Server) handleScriptSecretStatus(w http.ResponseWriter, r *http.Request
 		"missing":      missing,
 		"secrets":      statuses,
 		"capabilities": s.projectSecretCapabilities(stored.ProjectID),
-	})
+	}
+	// Report the REAL store state even when placeholder substitution is enabled.
+	// Claiming every secret is configured hid the fact that runs were sending a
+	// fake credential; surface the substitution as its own flag instead.
+	if secretBindingEnforcementDisabled() {
+		response["placeholder_substitution"] = true
+	}
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleCloneScriptDraft(w http.ResponseWriter, r *http.Request) {
@@ -831,16 +838,16 @@ func projectSecretAuditDetails(provider, reason string, extra map[string]any) ma
 }
 
 func createProjectSecretWithReconciliation(ctx context.Context, store secretstore.Store, projectID, name, value, actor string) (secretstore.Metadata, string, error) {
-	ctx, cancel := engine.WithSecretResolutionBudget(ctx)
+	mutationCtx, cancel := engine.WithSecretResolutionBudget(ctx)
 	defer cancel()
-	metadata, err := store.Create(ctx, projectID, name, value, actor)
+	metadata, err := store.Create(mutationCtx, projectID, name, value, actor)
 	if err == nil {
 		return metadata, "created", nil
 	}
 	if projectSecretErrorReason(err) != "provider_error" {
 		return secretstore.Metadata{}, projectSecretErrorReason(err), err
 	}
-	observedValue, observedMetadata, probeErr := store.Get(ctx, projectID, name)
+	observedValue, observedMetadata, probeErr := store.Get(mutationCtx, projectID, name)
 	if probeErr == nil && strings.TrimSpace(observedMetadata.CreatedBy) == strings.TrimSpace(actor) &&
 		subtle.ConstantTimeCompare([]byte(observedValue), []byte(value)) == 1 {
 		return observedMetadata, "created_reconciled", nil
@@ -852,17 +859,17 @@ func createProjectSecretWithReconciliation(ctx context.Context, store secretstor
 }
 
 func replaceProjectSecretWithReconciliation(ctx context.Context, store secretstore.Store, projectID, name, value, actor string) (secretstore.Metadata, string, error) {
-	ctx, cancel := engine.WithSecretResolutionBudget(ctx)
+	mutationCtx, cancel := engine.WithSecretResolutionBudget(ctx)
 	defer cancel()
 	attemptStarted := time.Now().UTC().Truncate(time.Microsecond)
-	metadata, err := store.Replace(ctx, projectID, name, value, actor)
+	metadata, err := store.Replace(mutationCtx, projectID, name, value, actor)
 	if err == nil {
 		return metadata, "rotated", nil
 	}
 	if projectSecretErrorReason(err) != "provider_error" {
 		return secretstore.Metadata{}, projectSecretErrorReason(err), err
 	}
-	observedValue, observedMetadata, probeErr := store.Get(ctx, projectID, name)
+	observedValue, observedMetadata, probeErr := store.Get(mutationCtx, projectID, name)
 	if probeErr == nil && projectSecretRotationMetadataCommitted(observedMetadata, projectID, name, actor, attemptStarted) &&
 		subtle.ConstantTimeCompare([]byte(observedValue), []byte(value)) == 1 {
 		return observedMetadata, "rotated_reconciled", nil

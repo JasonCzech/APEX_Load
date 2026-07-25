@@ -6,7 +6,7 @@ import { useApplication } from '../hooks/useApplication'
 import { useProject } from '../hooks/useProject'
 import { TestSummary, MetricsHistoryPoint, Release, RunArchiveReport, GroupLiveMetrics } from '../types'
 import { downloadBlob } from '../utils/fileUtils'
-import { isCompletedTestStatus, isLiveTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
+import { isCompletedTestStatus, isLiveTestStatus, isPendingTestStatus, resolveTestStatus } from '../utils/testStatusUtils'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { SortIndicator as SortIcon } from './SortIndicator'
 import { LoadComparisonPanel, type LoadComparisonTestOption } from './LoadComparisonPanel'
@@ -121,6 +121,7 @@ interface ReleaseSnapshotPanelProps {
   onReleaseChange: (release: Release) => void
   onLatestResult: () => void
   onPrimaryActiveRun: () => void
+  onPendingRun: (id?: string) => void
   onResults: () => void
   onMonitoring: () => void
   onNewTest: () => void
@@ -440,6 +441,7 @@ function ReleaseSnapshotPanel({
   onReleaseChange,
   onLatestResult,
   onPrimaryActiveRun,
+  onPendingRun,
   onResults,
   onMonitoring,
   onNewTest,
@@ -539,7 +541,7 @@ function ReleaseSnapshotPanel({
                 <SnapshotStat label="API Health" value={statusLabel} tone={statusColor === 'healthy' ? 'success' : statusColor === 'offline' ? 'danger' : 'warning'} onClick={onMonitoring} />
                 <SnapshotStat label="Generators Ready" value={generatorAvailability} onClick={onMonitoring} />
                 <SnapshotStat label="WebSocket Clients" value={health?.ws_clients ?? 0} />
-                <SnapshotStat label="Pending Runs" value={pendingTests.length} tone={pendingTests.length > 0 ? 'warning' : 'neutral'} onClick={onPrimaryActiveRun} />
+                <SnapshotStat label="Pending Runs" value={pendingTests.length} tone={pendingTests.length > 0 ? 'warning' : 'neutral'} onClick={() => onPendingRun(pendingTests[0]?.id)} />
               </div>
               <div className="release-panel-feed">
                 {visibleAttentionItems.length === 0 ? (
@@ -549,7 +551,9 @@ function ReleaseSnapshotPanel({
                     type="button"
                     key={`attention-${index}-${item.testId ?? item.title}`}
                     className={`release-panel-feed-item tone-${item.tone}`}
-                    onClick={() => item.testId ? onSelectTest(item.testId) : onMonitoring()}
+                    onClick={() => item.testId
+                      ? pendingTests.some(test => test.id === item.testId) ? onPendingRun(item.testId) : onSelectTest(item.testId)
+                      : onMonitoring()}
                   >
                     <strong>{item.title}</strong>
                     <span>{item.detail}</span>
@@ -700,7 +704,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
 
   const pendingTests = useMemo(() =>
     resolvedTests
-      .filter(t => t.status === 'PENDING')
+      .filter(t => isPendingTestStatus(t.status))
       .sort((a, b) => {
         const aPosition = a.queue_position ?? Number.MAX_SAFE_INTEGER
         const bPosition = b.queue_position ?? Number.MAX_SAFE_INTEGER
@@ -1127,6 +1131,17 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
       return
     }
     onNavigate('tests')
+  }
+  const navigateToPendingRun = (id?: string) => {
+    if (id && onOpenCommandCenter) {
+      onOpenCommandCenter(id)
+      return
+    }
+    if (id) {
+      onSelectTest(id)
+      return
+    }
+    onNavigate('command-center')
   }
   const requestPerformanceSort = (field: PerformanceSortField) => {
     setPerformanceSort(current => ({
@@ -1640,6 +1655,7 @@ export default function DashboardPage({ testStatuses, metricsHistory, connection
           onReleaseChange={setActiveRelease}
           onLatestResult={navigateToLatestResult}
           onPrimaryActiveRun={navigateToPrimaryActiveRun}
+          onPendingRun={navigateToPendingRun}
           onResults={navigateToResults}
           onMonitoring={navigateToMonitoring}
           onNewTest={navigateToNewTest}

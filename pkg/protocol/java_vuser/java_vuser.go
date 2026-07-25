@@ -24,6 +24,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/fileasset"
 	"github.com/jasonczech/apexload/pkg/internal/boundedtext"
 	"github.com/jasonczech/apexload/pkg/internal/subprocessguard"
 	"github.com/jasonczech/apexload/pkg/javarunner"
@@ -66,6 +67,7 @@ var (
 var knownSidecarCodes = map[string]struct{}{
 	"action_type_invalid": {}, "ambient_credentials_detected": {},
 	"classpath_entry_invalid": {}, "classpath_entry_unavailable": {}, "classpath_too_many_entries": {},
+	javarunner.ClasspathAssetIntegrity: {}, javarunner.ClasspathAssetUnavailable: {}, javarunner.ClasspathAssetWorkDirRequired: {},
 	"contract_version_mismatch": {}, "dedicated_classpath_required": {},
 	"event_capture_unavailable": {}, "execution_canceled": {}, "execution_id_conflict": {},
 	"execution_id_invalid": {}, "execution_timeout": {}, "harness_configuration_invalid": {},
@@ -253,6 +255,8 @@ type configuration struct {
 	RunnerCommand          string
 	HarnessJar             string
 	ScriptClasspath        []string
+	ClasspathAssets        []dsl.JavaClasspathAsset
+	ClasspathUploadEnabled bool
 	Classpath              []string
 	WorkDir                string
 	MaxProcesses           int
@@ -384,6 +388,16 @@ func (j *JavaVuser) Init(ctx context.Context, cfg map[string]any) error {
 	if issues := javarunner.ValidateClasspath(effectiveClasspath); len(issues) > 0 {
 		return fmt.Errorf("java_vuser %w", issues[0])
 	}
+	classpathAssets, err := exactClasspathAssetsValue(cfg, "java_vuser_classpath_assets")
+	if err != nil {
+		return err
+	}
+	if operator.ClasspathUploadEnabled && strings.TrimSpace(operator.ClasspathAssetDir) != "" {
+		// Register the controller's import asset store so a local (same-host)
+		// runner can read uploaded JAR bytes by their file:// storage_ref.
+		// Idempotent; safe to call per Init.
+		_ = fileasset.RegisterProjectRoot(operator.ClasspathAssetDir)
+	}
 	j.cfg = configuration{
 		Enabled:                operator.Enabled,
 		RunnerMode:             runnerMode,
@@ -391,6 +405,8 @@ func (j *JavaVuser) Init(ctx context.Context, cfg map[string]any) error {
 		RunnerCommand:          protocol.FirstNonEmpty(operator.RunnerCommand, defaultRunnerCommand),
 		HarnessJar:             operator.HarnessJar,
 		ScriptClasspath:        append([]string(nil), scriptClasspath...),
+		ClasspathAssets:        classpathAssets,
+		ClasspathUploadEnabled: operator.ClasspathUploadEnabled,
 		Classpath:              effectiveClasspath,
 		WorkDir:                operator.WorkDir,
 		MaxProcesses:           operator.MaxProcesses,
@@ -697,6 +713,7 @@ func sidecarFailureSafeBeforeInvocation(code string) bool {
 	switch code {
 	case "action_type_invalid", "ambient_credentials_detected",
 		"classpath_entry_invalid", "classpath_entry_unavailable", "classpath_too_many_entries",
+		javarunner.ClasspathAssetIntegrity, javarunner.ClasspathAssetUnavailable, javarunner.ClasspathAssetWorkDirRequired,
 		"dedicated_classpath_required", "event_capture_unavailable",
 		"harness_configuration_invalid", "harness_health_failed", "harness_payload_invalid",
 		"harness_unavailable", "invalid_request", "jdk_home_invalid", "jdk_home_required",
@@ -732,7 +749,44 @@ func (j *JavaVuser) sidecarRuntimeSettings() javasidecar.RuntimeSettings {
 		UseXBootClasspath:      j.cfg.UseXBootClasspath,
 		DedicatedClassLoader:   j.cfg.DedicatedClassLoader,
 		StartupTimeoutMS:       j.cfg.StartupTimeout.Milliseconds(),
+		ClasspathAssets:        j.sidecarClasspathAssetRefs(),
 	}
+}
+
+// sidecarClasspathAssetRefs projects the script-owned classpath asset bindings
+// onto the sidecar wire contract. The sidecar decides whether to honor them
+// (operator opt-in); sending them unconditionally keeps the protocol layer
+// free of operator-flag logic.
+func (j *JavaVuser) sidecarClasspathAssetRefs() []javasidecar.ClasspathAssetRef {
+	if len(j.cfg.ClasspathAssets) == 0 {
+		return nil
+	}
+	refs := make([]javasidecar.ClasspathAssetRef, 0, len(j.cfg.ClasspathAssets))
+	for _, asset := range j.cfg.ClasspathAssets {
+		refs = append(refs, javasidecar.ClasspathAssetRef{
+			Entry:      asset.Entry,
+			SHA256:     asset.SHA256,
+			StorageRef: asset.StorageRef,
+		})
+	}
+	return refs
+}
+
+// localClasspathAssets projects DSL classpath asset bindings onto the shared
+// javarunner materialization contract used by the in-process local runner.
+func localClasspathAssets(assets []dsl.JavaClasspathAsset) []javarunner.ClasspathAsset {
+	if len(assets) == 0 {
+		return nil
+	}
+	out := make([]javarunner.ClasspathAsset, 0, len(assets))
+	for _, asset := range assets {
+		out = append(out, javarunner.ClasspathAsset{
+			Entry:      asset.Entry,
+			SHA256:     asset.SHA256,
+			StorageRef: asset.StorageRef,
+		})
+	}
+	return out
 }
 
 func (j *JavaVuser) executeOneShot(ctx context.Context, action *protocol.Action, emit func(*protocol.Result) error) (*protocol.Result, error) {
@@ -1794,6 +1848,30 @@ func prepareLocalConfigurationWithResolver(
 		return configuration{}, fmt.Errorf("java_vuser local runtime is unavailable (runner_unavailable)")
 	}
 
+	if cfg.ClasspathUploadEnabled && len(cfg.ClasspathAssets) > 0 {
+		// Materialize ONLY over the script-owned classpath slice, never the
+		// operator-provisioned shared entries. cfg.Classpath is
+		// scriptClasspath ++ operator.Classpath (built in Init); rewriting an
+		// operator entry would let a user-uploaded JAR shadow an operator-trusted
+		// dependency the approving reviewer cannot see. The sidecar path already
+		// materializes ScriptClasspath only; this mirrors it.
+		scriptCount := len(cfg.ScriptClasspath)
+		if scriptCount > len(cfg.Classpath) {
+			scriptCount = len(cfg.Classpath)
+		}
+		scriptPortion := append([]string(nil), cfg.Classpath[:scriptCount]...)
+		materialized, assetIssue := javarunner.MaterializeClasspathAssets(scriptPortion, localClasspathAssets(cfg.ClasspathAssets), cfg.WorkDir)
+		if assetIssue != nil {
+			// The parenthesized category is the machine-readable, value-free
+			// signal; keep the prose neutral so it does not mislabel an integrity
+			// or workdir failure as "unavailable".
+			if assetIssue.Index >= 0 {
+				return configuration{}, fmt.Errorf("java_vuser classpath asset for entry %d failed (%s)", assetIssue.Index, assetIssue.Category)
+			}
+			return configuration{}, fmt.Errorf("java_vuser classpath asset failed (%s)", assetIssue.Category)
+		}
+		cfg.Classpath = append(materialized, cfg.Classpath[scriptCount:]...)
+	}
 	resolvedClasspath, issue := javarunner.ResolveClasspath(cfg.Classpath, cfg.WorkDir)
 	if issue != nil {
 		if issue.Index >= 0 {
@@ -2865,6 +2943,82 @@ func exactStringSliceValue(cfg map[string]any, key string) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("java_vuser %s must be an array of exact string tokens", key)
 	}
+}
+
+// exactClasspathAssetsValue reads user-supplied classpath JAR bindings from the
+// flattened protocol config. It tolerates both the in-process typed slice and a
+// JSON round-trip ([]any of map[string]any).
+func exactClasspathAssetsValue(cfg map[string]any, key string) ([]dsl.JavaClasspathAsset, error) {
+	raw, present := cfg[key]
+	if !present || raw == nil {
+		return nil, nil
+	}
+	var items []any
+	switch value := raw.(type) {
+	case []dsl.JavaClasspathAsset:
+		if len(value) > javarunner.MaxClasspathEntries {
+			return nil, fmt.Errorf("java_vuser %s exceeds %d entries", key, javarunner.MaxClasspathEntries)
+		}
+		return append([]dsl.JavaClasspathAsset(nil), value...), nil
+	case []any:
+		items = value
+	default:
+		return nil, fmt.Errorf("java_vuser %s must be an array of classpath asset objects", key)
+	}
+	if len(items) > javarunner.MaxClasspathEntries {
+		return nil, fmt.Errorf("java_vuser %s exceeds %d entries", key, javarunner.MaxClasspathEntries)
+	}
+	out := make([]dsl.JavaClasspathAsset, 0, len(items))
+	for index, item := range items {
+		asset, err := classpathAssetFromAny(item)
+		if err != nil {
+			return nil, fmt.Errorf("java_vuser %s entry %d: %w", key, index, err)
+		}
+		out = append(out, asset)
+	}
+	return out, nil
+}
+
+func classpathAssetFromAny(item any) (dsl.JavaClasspathAsset, error) {
+	switch typed := item.(type) {
+	case dsl.JavaClasspathAsset:
+		return typed, nil
+	case map[string]any:
+		return dsl.JavaClasspathAsset{
+			Entry:       stringFromAny(typed["entry"]),
+			FileName:    stringFromAny(typed["file_name"]),
+			SHA256:      stringFromAny(typed["sha256"]),
+			SizeBytes:   int64FromAny(typed["size_bytes"]),
+			ContentType: stringFromAny(typed["content_type"]),
+			StorageRef:  stringFromAny(typed["storage_ref"]),
+			StagedAsset: stringFromAny(typed["staged_asset"]),
+		}, nil
+	default:
+		return dsl.JavaClasspathAsset{}, fmt.Errorf("classpath asset must be an object")
+	}
+}
+
+func stringFromAny(value any) string {
+	if text, ok := value.(string); ok {
+		return strings.TrimSpace(text)
+	}
+	return ""
+}
+
+func int64FromAny(value any) int64 {
+	switch typed := value.(type) {
+	case float64:
+		return int64(typed)
+	case int64:
+		return typed
+	case int:
+		return int64(typed)
+	case json.Number:
+		if parsed, err := typed.Int64(); err == nil {
+			return parsed
+		}
+	}
+	return 0
 }
 
 func hasJavaVuserRuntimeOverrides(cfg map[string]any) bool {

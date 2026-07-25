@@ -35,6 +35,7 @@ const (
 	RuleSalesforceViewState          = "salesforce.viewstate"
 	RuleSalesforceFrontdoorSID       = "salesforce.frontdoor_sid"
 	RuleSalesforceConfirmationToken  = "salesforce.confirmation_token"
+	RuleSalesforceCSHC               = "salesforce.cshc"
 	RuleSalesforceNextRecordsURL     = "salesforce.next_records_url"
 	RuleSalesforceBulkContentURL     = "salesforce.bulk_content_url"
 	RuleSalesforceBulkQueryLocator   = "salesforce.bulk_query_locator"
@@ -75,6 +76,7 @@ func RuleCatalog() []RuleInfo {
 		{RuleSalesforceAuraContextFWUID, FamilyForm, "Salesforce Aura fwuid", "fwuid values inside aura.context that bind a Lightning component/app bundle version.", 0.94},
 		{RuleSalesforceViewState, FamilyForm, "Salesforce Visualforce ViewState", "com.salesforce.visualforce.ViewState and related ViewStateMAC/CSRF hidden fields.", 0.94},
 		{RuleSalesforceConfirmationToken, FamilyForm, "Salesforce confirmation token", "_CONFIRMATIONTOKEN values used by Salesforce login and challenge flows.", 0.93},
+		{RuleSalesforceCSHC, FamilyForm, "Salesforce cshc handoff", "cshc values passed through Salesforce content-door and Visualforce session handoff requests.", 0.92},
 		{RuleSalesforceAuraAppDescriptor, FamilyForm, "Salesforce Aura app descriptor", "Aura app descriptors from aura.context/app that are replay-sensitive in Lightning flows.", 0.9},
 		{RuleSalesforceAuraLoaded, FamilyForm, "Salesforce Aura loaded map", "Aura loaded component maps from Lightning bootstrap/context payloads.", 0.88},
 		{RuleSalesforceAuraPageURI, FamilyForm, "Salesforce Aura page URI", "Aura pageURI values that may need environment-aware replacement across Salesforce orgs.", 0.86},
