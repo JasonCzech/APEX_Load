@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -161,7 +161,7 @@ func configuredSessionCapacity() int64 {
 // delivery resolver installed.
 func DistributedExecutionAvailable() bool {
 	return featureEnabled("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED", false) &&
-		brunoartifact.ResolverAvailable() &&
+		importartifact.ResolverAvailable() &&
 		GovernedEgressConfigured()
 }
 
@@ -339,7 +339,7 @@ func (p *Protocol) Init(ctx context.Context, config map[string]any) error {
 		bundleReader = io.NopCloser(bytes.NewReader(bundle))
 		bundleSize = int64(len(bundle))
 	} else {
-		opened, size, openErr := brunoartifact.Open(ctx, brunoartifact.Request{
+		opened, size, openErr := importartifact.Open(ctx, importartifact.Request{
 			Reference: stringValue(config, "bruno_bundle_ref"),
 			ProjectID: p.projectID,
 			SHA256:    stringValue(config, "bruno_bundle_sha256"),

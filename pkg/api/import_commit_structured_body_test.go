@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 )
 
 func TestSharedImportCommitProjectsStructuredBodyKinds(t *testing.T) {
@@ -231,7 +231,7 @@ func TestSharedImportCommitBlocksXMLMixedCredentialContent(t *testing.T) {
 }
 
 func TestProtectedImportCommitPreservesNonJSONBodyBytes(t *testing.T) {
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x5d}, 32),
 		KeyID: "protected-structured-wire-test",
 	})

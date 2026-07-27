@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -139,7 +139,7 @@ func TestNewConfiguredPrioritizesAtomicDatabaseForCreateAndResolution(t *testing
 	if err := records.SaveProject(&storage.Project{ID: "configured-project", Name: "Configured", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x71}, 32)})
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x71}, 32)})
 	if err != nil {
 		t.Fatal(err)
 	}

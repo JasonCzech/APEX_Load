@@ -15,8 +15,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 )
 
 func TestOpenAPIAndPostmanCredentialValuesRoundTripOnlyInEncryptedCandidate(t *testing.T) {
@@ -103,7 +103,7 @@ func TestOpenAPIAndPostmanCredentialValuesRoundTripOnlyInEncryptedCandidate(t *t
 				protectedValue = test.protected(value)
 			}
 			artifactDir := t.TempDir()
-			wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+			wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 				Key:   bytes.Repeat([]byte{0x5a}, 32),
 				KeyID: "protected-import-credential-test",
 			})
@@ -281,7 +281,7 @@ func TestOpenAPIAndPostmanCredentialValuesRoundTripOnlyInEncryptedCandidate(t *t
 
 func TestProtectedOpenAPICredentialValueMigratesWithoutDisclosure(t *testing.T) {
 	_, records, managed, projectID := newProjectSecretAPIServer(t)
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x6b}, 32),
 		KeyID: "protected-openapi-migration-test",
 	})

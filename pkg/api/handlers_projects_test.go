@@ -15,9 +15,9 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -329,7 +329,7 @@ func TestDeleteProjectRetainsAndAttributesAuditHistory(t *testing.T) {
 
 	// No active Key Vault provider is configured. Deletion must still discover
 	// the externally retained value through the durable metadata index.
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x6d}, 32),
 		KeyID: "project-delete-test",
 	})
@@ -428,14 +428,14 @@ func TestDeleteProjectPartialCleanupResponseRetainsExternalSecretGuidance(t *tes
 	if err != nil || !created {
 		t.Fatalf("CreateProjectSecretMetadata returned created=%t error=%v", created, err)
 	}
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key: bytes.Repeat([]byte{0x4f}, 32),
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	artifactRoot := t.TempDir()
-	artifacts, err := brunoartifact.NewEncryptedStore(brunoartifact.StoreOptions{
+	artifacts, err := importartifact.NewEncryptedStore(importartifact.StoreOptions{
 		RootDir: artifactRoot, Wrapper: wrapper, ReadOnly: true,
 	})
 	if err != nil {
@@ -522,7 +522,7 @@ func TestProjectDeletionReportsKeyVaultPrefixWithoutPriorSecretProbe(t *testing.
 		BaseURL: vault.URL, APIVersion: "7.4", Credential: projectDeletionVaultCredential{},
 		Client: vault.Client(), Metadata: store,
 	}
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x37}, 32)})
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x37}, 32)})
 	if err != nil {
 		t.Fatal(err)
 	}

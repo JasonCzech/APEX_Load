@@ -17,10 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	brunoconvert "github.com/jasonczech/apexload/pkg/convert/bruno"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -37,7 +37,7 @@ func newProjectSecretAPIServer(t *testing.T) (*Server, *storage.SQLiteStore, sec
 	if err := records.SaveProject(&storage.Project{ID: projectID, Name: "Secrets", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x44}, 32)})
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x44}, 32)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -841,7 +841,7 @@ func TestConsumedSourceSecretSessionFailuresAlwaysDirectManualConfiguration(t *t
 
 func TestProjectSecretListAndDeletionContinueWhenOptionalDiscoveryFails(t *testing.T) {
 	server, records, _, projectID := newProjectSecretAPIServer(t)
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x71}, 32)})
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x71}, 32)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1110,7 +1110,7 @@ func TestSourceSecretMigrationConsumesEncryptedSessionAcrossControllerReplicas(t
 	if err := records.SaveProject(&storage.Project{ID: projectID, Name: "HA protected sessions", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x28}, 32)})
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x28}, 32)})
 	if err != nil {
 		t.Fatal(err)
 	}

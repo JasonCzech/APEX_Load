@@ -17,7 +17,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
 
@@ -31,7 +31,7 @@ func TestProtocolLifecycleAndStreamingResults(t *testing.T) {
 	bundle := []byte("deterministic tar bytes")
 	sum := sha256.Sum256(bundle)
 	digest := hex.EncodeToString(sum[:])
-	restore := brunoartifact.SetResolver(brunoartifact.ResolverFunc(func(_ context.Context, request brunoartifact.Request) ([]byte, error) {
+	restore := importartifact.SetResolver(importartifact.ResolverFunc(func(_ context.Context, request importartifact.Request) ([]byte, error) {
 		if request.Reference != "artifact://bundle" || request.ProjectID != "project-a" {
 			return nil, fmt.Errorf("unexpected artifact request: %#v", request)
 		}
@@ -176,7 +176,7 @@ func TestProtocolSharesBundleAcrossVUsers(t *testing.T) {
 	bundle := []byte("shared bundle")
 	sum := sha256.Sum256(bundle)
 	digest := hex.EncodeToString(sum[:])
-	restore := brunoartifact.SetResolver(brunoartifact.ResolverFunc(func(context.Context, brunoartifact.Request) ([]byte, error) {
+	restore := importartifact.SetResolver(importartifact.ResolverFunc(func(context.Context, importartifact.Request) ([]byte, error) {
 		return bundle, nil
 	}))
 	defer restore()

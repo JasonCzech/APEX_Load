@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/importsession"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -611,7 +611,7 @@ func TestSharedImportCommitRejectsSensitiveTypedJSONAcrossLegacyRoutes(t *testin
 }
 
 func TestProtectedImportCommitPreservesJSONBodyBytes(t *testing.T) {
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x4b}, 32),
 		KeyID: "protected-json-wire-test",
 	})
@@ -705,7 +705,7 @@ func TestProtectedImportCommitPreservesJSONBodyBytes(t *testing.T) {
 }
 
 func TestProtectedImportCommitPreservesBase64RepresentationAndWireBytes(t *testing.T) {
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x6d}, 32),
 		KeyID: "protected-base64-json-wire-test",
 	})
@@ -810,7 +810,7 @@ func TestMaskScriptSecretsFailsClosedForSensitiveTypedJSONBody(t *testing.T) {
 }
 
 func TestPostmanProtectedImportSessionCommitsServerCandidate(t *testing.T) {
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x63}, 32),
 		KeyID: "postman-import-session-test",
 	})
@@ -901,7 +901,7 @@ func TestProtectedImportCreateReconcilesInterruptedClaimCompletion(t *testing.T)
 		t.Fatal(err)
 	}
 	defer store.Close()
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x5d}, 32),
 		KeyID: "protected-create-reconciliation-test",
 	})
@@ -999,7 +999,7 @@ func TestProtectedImportCreateReconcilesInterruptedClaimCompletion(t *testing.T)
 
 func TestProtectedImportCompletionNeverFinalizesNewerClaimEpoch(t *testing.T) {
 	artifactDir := t.TempDir()
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x6e}, 32),
 		KeyID: "protected-claim-fencing-test",
 	})
@@ -1201,7 +1201,7 @@ func TestImportReplaceRejectsConcurrentTargetMutation(t *testing.T) {
 
 func TestProtectedImportCorruptSessionIsInternalFailure(t *testing.T) {
 	artifactDir := t.TempDir()
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x3a}, 32),
 		KeyID: "protected-corrupt-session-test",
 	})
@@ -1284,7 +1284,7 @@ func TestProtectedImportFolderOverrideIsProjectScopedAndNonEnumerating(t *testin
 			t.Fatal(err)
 		}
 	}
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x4f}, 32),
 		KeyID: "protected-folder-override-test",
 	})
@@ -1361,7 +1361,7 @@ func TestProtectedImportFolderOverrideIsProjectScopedAndNonEnumerating(t *testin
 }
 
 func TestProtectedImportSessionProfileIsolationAndDryRunRelease(t *testing.T) {
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x42}, 32),
 		KeyID: "profile-isolation-test",
 	})
@@ -1425,7 +1425,7 @@ func TestProtectedImportSessionProfileIsolationAndDryRunRelease(t *testing.T) {
 }
 
 func TestProtectedImportReplaceCannotCrossCandidateProjectScope(t *testing.T) {
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x32}, 32),
 		KeyID: "protected-replace-project-scope-test",
 	})
@@ -1526,7 +1526,7 @@ func TestProtectedImportReplaceCannotCrossCandidateProjectScope(t *testing.T) {
 }
 
 func TestProtectedImportSessionAcceptsOnlyExplicitCandidateOverrides(t *testing.T) {
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x71}, 32),
 		KeyID: "explicit-overrides-test",
 	})
@@ -1831,7 +1831,7 @@ func TestImportCommitReplaceRejectsInvalidMergedScriptBeforeResponseOrPersistenc
 
 func TestProtectedImportCandidateClaimHeartbeatPreventsStaleRecovery(t *testing.T) {
 	artifactDir := t.TempDir()
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x29}, 32),
 		KeyID: "candidate-heartbeat-test",
 	})

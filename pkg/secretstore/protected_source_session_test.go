@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/keywrap"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -51,7 +51,7 @@ func TestProtectedSourceSessionSharedAtomicConsumeSurvivesDatabaseTimePrecision(
 	if err := records.SaveProject(&storage.Project{ID: projectID, Name: "Protected", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x5a}, 32)})
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x5a}, 32)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestProtectedSourceSessionTransientDecryptFailureReleasesDurableClaim(t *te
 	if err := records.SaveProject(&storage.Project{ID: projectID, Name: "Protected retry", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x6b}, 32)})
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x6b}, 32)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestProtectedSourceSessionDiscardIsScopedAtomicAndIdempotent(t *testing.T) 
 	if err := records.SaveProject(&storage.Project{ID: projectID, Name: "Protected discard", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x71}, 32)})
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{Key: bytes.Repeat([]byte{0x71}, 32)})
 	if err != nil {
 		t.Fatal(err)
 	}

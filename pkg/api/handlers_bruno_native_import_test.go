@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	brunoconvert "github.com/jasonczech/apexload/pkg/convert/bruno"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -274,7 +274,7 @@ func TestBrunoNativeBatchKeepsSourceArtifactsWithoutReferenceChecker(t *testing.
 		t.Fatalf("native commit status = %d body=%s", response.Code, response.Body.String())
 	}
 	for _, artifact := range []storage.BrunoSourceArtifact{rawArtifact, sanitizedArtifact} {
-		reader, _, err := server.brunoArtifacts.Open(context.Background(), brunoartifact.OpenRequest{
+		reader, _, err := server.brunoArtifacts.Open(context.Background(), importartifact.OpenRequest{
 			BackendKey: artifact.BackendKey,
 			ProjectID:  artifact.ProjectID,
 			Kind:       artifact.ArtifactKind,
@@ -304,7 +304,7 @@ func TestBrunoNativeCleanupRetainsArtifactsReferencedByActiveInspection(t *testi
 	server.cleanupUnreferencedBrunoArtifacts(artifacts)
 
 	for _, artifact := range artifacts {
-		reader, _, err := server.brunoArtifacts.Open(context.Background(), brunoartifact.OpenRequest{
+		reader, _, err := server.brunoArtifacts.Open(context.Background(), importartifact.OpenRequest{
 			BackendKey: artifact.BackendKey,
 			ProjectID:  artifact.ProjectID,
 			Kind:       artifact.ArtifactKind,
@@ -390,7 +390,7 @@ func TestBrunoNativeReceiptRetryCleansClaimAfterPostCommitInterruption(t *testin
 	); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("committed session descriptor survived receipt cleanup: %v", err)
 	}
-	if _, _, err := objects.Open(context.Background(), brunoartifact.OpenRequest{
+	if _, _, err := objects.Open(context.Background(), importartifact.OpenRequest{
 		BackendKey: sessionDescriptor.BackendKey,
 		ProjectID:  sessionDescriptor.ProjectID,
 		Kind:       "session",
