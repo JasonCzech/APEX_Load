@@ -8,9 +8,12 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/devweb"
 	"github.com/jasonczech/apexload/pkg/convert/har"
+	"github.com/jasonczech/apexload/pkg/convert/jmeter"
+	k6import "github.com/jasonczech/apexload/pkg/convert/k6"
 	"github.com/jasonczech/apexload/pkg/convert/openapi"
 	"github.com/jasonczech/apexload/pkg/convert/postman"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
+	"github.com/jasonczech/apexload/pkg/convert/wsdl"
 )
 
 const disclosureCanary = "import-disclosure-canary-7Q4Z"
@@ -128,6 +131,68 @@ func TestPublicConversionResultsNeverDiscloseAuthoredCredentials(t *testing.T) {
 					t.Fatalf("har.Convert: %v", err)
 				}
 				result.ProtectedRequirements.Take()
+				return result
+			},
+		},
+		{
+			name: "wsdl",
+			convert: func(t *testing.T) any {
+				t.Helper()
+				result, err := wsdl.Convert(wsdl.ImportRequest{Content: credentialWSDL(disclosureCanary)})
+				if err != nil {
+					t.Fatalf("wsdl.Convert: %v", err)
+				}
+				return result
+			},
+		},
+		{
+			name: "jmeter",
+			convert: func(t *testing.T) any {
+				t.Helper()
+				result, err := jmeter.ConvertJMX([]byte(fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2">
+  <hashTree>
+    <TestPlan testname="disclosure"><boolProp name="TestPlan.functional_mode">false</boolProp></TestPlan>
+    <hashTree>
+      <ThreadGroup testname="Group"><stringProp name="ThreadGroup.num_threads">1</stringProp><stringProp name="ThreadGroup.ramp_time">1</stringProp></ThreadGroup>
+      <hashTree>
+        <HeaderManager testname="Headers" enabled="true">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">X-Api-Key</stringProp>
+              <stringProp name="Header.value">%s</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <HTTPSamplerProxy testname="login" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.contract.test</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/login</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`, disclosureCanary)), jmeter.ConvertOptions{})
+				if err != nil {
+					t.Fatalf("jmeter.ConvertJMX: %v", err)
+				}
+				return result
+			},
+		},
+		{
+			name: "k6",
+			convert: func(t *testing.T) any {
+				t.Helper()
+				result, err := k6import.Convert(k6import.ImportRequest{Content: fmt.Sprintf(`import http from 'k6/http';
+export default function () {
+  http.get('https://api.contract.test/login', { headers: { 'X-Api-Key': '%s' } });
+}`, disclosureCanary)})
+				if err != nil {
+					t.Fatalf("k6.Convert: %v", err)
+				}
 				return result
 			},
 		},
