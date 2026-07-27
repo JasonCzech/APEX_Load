@@ -352,17 +352,14 @@ func projectScriptBaseURLCredentials(
 	provenanceScript := *script
 	provenanceScript.Parameters = nil
 	variableReadiness := AnalyzeVariableReadiness(&provenanceScript, nil)
-	baseProvenVars, err := provenBaseURLVariables(
-		script,
-		rawBaseURL,
-		variableReadiness,
-	)
-	if err != nil {
-		return Report{RequestKey: report.RequestKey, Disposition: Rejected}, fmt.Errorf(
-			"analyze base URL variable provenance: %w",
-			err,
-		)
-	}
+
+	// Note that per-action surfaces below DO consult this provenance, but
+	// config.base_url never can: buildProtoConfigWithSecretResolver flattens
+	// base_url once at protocol init and resolves only {{secret.*}} there, and
+	// HTTP.ResolveURL then concatenates the stored string verbatim per request.
+	// A preserved {{var.*}} would go on the wire literally, so base URL
+	// credentials always govern. Pinned by
+	// TestProjectScriptCredentialsGovernsBaseURLRuntimeVariables.
 	var baseFindings []importreview.Finding
 	if strings.TrimSpace(script.Config.BaseURL) != "" {
 		projected, result, err := credentialpolicy.ProjectRawURL(
@@ -374,7 +371,6 @@ func projectScriptBaseURLCredentials(
 				TargetField: "base_url",
 				NamePrefix:  "IMPORT_BASE_URL",
 				Registry:    registry,
-				ProvenVars:  baseProvenVars,
 			},
 		)
 		if err != nil {
@@ -403,7 +399,7 @@ func projectScriptBaseURLCredentials(
 	// provenance into the second projection pass, a correctly correlated token
 	// is mistaken for an authored static credential and rewritten to a secret.
 	var actionFindings []importreview.Finding
-	err = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+	err := dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
 		surfaces := importURLCredentialSurfaces(ref)
 		if len(surfaces) == 0 {
 			return nil
@@ -600,45 +596,6 @@ func projectURLFromBase(raw, authoredBase, projectedBase string) (string, bool) 
 		return "", false
 	}
 	return projectedPrefix + suffix, true
-}
-
-func provenBaseURLVariables(
-	script *dsl.Script,
-	rawBaseURL string,
-	readiness VariableReadiness,
-) (map[string]struct{}, error) {
-	proven := make(map[string]struct{})
-	collectVariableReferences(rawBaseURL, proven)
-	if len(proven) == 0 {
-		return nil, nil
-	}
-	baseUsed := false
-	err := dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
-		if !runtimeSurfaceIsHTTPRequest(ref) {
-			return nil
-		}
-		target := ""
-		if ref.Action != nil {
-			target = ref.Action.Target
-		} else if ref.Request != nil {
-			target, _ = ref.Request["target"].(string)
-		}
-		if strings.TrimSpace(target) == "" || absoluteHTTPActionTarget(target) {
-			return nil
-		}
-		baseUsed = true
-		for _, missing := range readiness.ByAction[ref.Path] {
-			delete(proven, strings.TrimSpace(missing))
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	if !baseUsed || len(proven) == 0 {
-		return nil, nil
-	}
-	return proven, nil
 }
 
 func credentialProjectionRejectedCodes(result credentialpolicy.Result) []string {

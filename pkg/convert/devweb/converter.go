@@ -592,5 +592,35 @@ func detectBaseURL(actions []dsl.Action) string {
 			return parsed.Scheme + "://" + parsed.Host
 		}
 	}
+	// A DevWeb script whose host comes from a parameter has no literal
+	// scheme+host to detect, so this used to leave config.base_url empty and the
+	// generated script failed validateScript — it could not be saved even though
+	// the fully-templated absolute target resolves fine at runtime. Adopt the
+	// leading template as the base URL instead; HTTP.ResolveURL returns an
+	// absolute target unchanged, so execution is unaffected.
+	for _, action := range actions {
+		if base := leadingTemplateBaseURL(action.Target); base != "" {
+			return base
+		}
+	}
 	return ""
+}
+
+// leadingTemplateBaseURL returns the whole-template prefix of a target whose
+// host is supplied by a runtime reference, for example
+// "{{data.AOS_URL.AOS_URL}}/account/1" -> "{{data.AOS_URL.AOS_URL}}".
+func leadingTemplateBaseURL(target string) string {
+	trimmed := strings.TrimSpace(target)
+	if !strings.HasPrefix(trimmed, "{{") {
+		return ""
+	}
+	end := strings.Index(trimmed, "}}")
+	if end < 0 {
+		return ""
+	}
+	candidate := trimmed[:end+2]
+	if strings.Contains(candidate[2:end], "{{") {
+		return ""
+	}
+	return candidate
 }

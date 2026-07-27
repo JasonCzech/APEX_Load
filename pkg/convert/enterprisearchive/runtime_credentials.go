@@ -321,11 +321,11 @@ func applyEnterpriseRuntimeBindings(
 		projected, projectionErr := requestimport.ProjectScriptCredentials(
 			script,
 			requestimport.ScriptCredentialProjectionOptions{
-				SourceProfile:  "enterprise_script_archive",
-				CandidateKey:   candidateKey,
-				NamePrefix:     "ENTERPRISE_REQUEST",
-				Registry:       registry,
-				AdditionalURLs: additionalURLs,
+				SourceProfile:          "enterprise_script_archive",
+				CandidateKey:           candidateKey,
+				NamePrefix:             "ENTERPRISE_REQUEST",
+				Registry:               registry,
+				AdditionalURLs:         additionalURLs,
 				RuntimeParameterPolicy: requestimport.RuntimeParametersPreserveGoverned,
 			},
 		)
