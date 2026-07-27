@@ -20,9 +20,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	brunoconvert "github.com/jasonczech/apexload/pkg/convert/bruno"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -1362,7 +1362,7 @@ http:
 	server.brunoImportSessions = make(map[string]*brunoImportSession)
 	server.brunoImportMu.Unlock()
 
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x5a}, 32),
 		KeyID: "test-key",
 	})
@@ -1408,7 +1408,7 @@ http:
 	if err != nil {
 		t.Fatal(err)
 	}
-	var descriptor brunoartifact.SessionDescriptor
+	var descriptor importartifact.SessionDescriptor
 	if err := json.Unmarshal(descriptorData, &descriptor); err != nil {
 		t.Fatal(err)
 	}
@@ -1424,7 +1424,7 @@ http:
 		t.Fatal(err)
 	}
 
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x5a}, 32),
 		KeyID: "test-key",
 	})
@@ -1482,7 +1482,7 @@ http: {method: GET, url: https://example.test/grace}
 	if err != nil {
 		t.Fatal(err)
 	}
-	request := brunoartifact.OpenRequest{
+	request := importartifact.OpenRequest{
 		BackendKey: rawArtifact.BackendKey,
 		ProjectID:  rawArtifact.ProjectID,
 		Kind:       rawArtifact.ArtifactKind,
@@ -1536,7 +1536,7 @@ http: {method: GET, url: https://example.test/unknown}
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := objects.ReadAll(context.Background(), brunoartifact.OpenRequest{
+	if _, err := objects.ReadAll(context.Background(), importartifact.OpenRequest{
 		BackendKey: rawArtifact.BackendKey,
 		ProjectID:  rawArtifact.ProjectID,
 		Kind:       rawArtifact.ArtifactKind,
@@ -1557,7 +1557,7 @@ func expireBrunoSessionDescriptor(t *testing.T, artifactDir, sessionID string, e
 	if err != nil {
 		t.Fatal(err)
 	}
-	var descriptor brunoartifact.SessionDescriptor
+	var descriptor importartifact.SessionDescriptor
 	if err := json.Unmarshal(descriptorData, &descriptor); err != nil {
 		t.Fatal(err)
 	}
@@ -1764,11 +1764,11 @@ func TestExpiredBrunoPublicationJournalRecoversInterruptedSourceWrite(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := objects.SavePublication(brunoartifact.PublicationDescriptor{
+	if err := objects.SavePublication(importartifact.PublicationDescriptor{
 		ID:        "interrupted-source",
 		ProjectID: brunoImportTestProject,
 		ExpiresAt: time.Now().UTC().Add(-time.Minute),
-		Objects:   []brunoartifact.OpenRequest{planned},
+		Objects:   []importartifact.OpenRequest{planned},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -1799,11 +1799,11 @@ func TestExpiredBrunoPublicationJournalFailsClosedWithoutReferenceChecker(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := objects.SavePublication(brunoartifact.PublicationDescriptor{
+	if err := objects.SavePublication(importartifact.PublicationDescriptor{
 		ID:        "unknown-reference-publication",
 		ProjectID: brunoImportTestProject,
 		ExpiresAt: time.Now().UTC().Add(-time.Minute),
-		Objects:   []brunoartifact.OpenRequest{planned},
+		Objects:   []importartifact.OpenRequest{planned},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -2022,7 +2022,7 @@ func newBrunoImportAPITestServer(t *testing.T) (*Server, *storage.SQLiteStore, s
 	}); err != nil {
 		t.Fatal(err)
 	}
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x5a}, 32),
 		KeyID: "test-key",
 	})

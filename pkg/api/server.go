@@ -18,9 +18,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/fileasset"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/importsession"
 	"github.com/jasonczech/apexload/pkg/keywrap"
 	"github.com/jasonczech/apexload/pkg/recorder"
@@ -179,7 +179,7 @@ type Server struct {
 	brunoImportMu               sync.Mutex
 	brunoImportSessions         map[string]*brunoImportSession
 	brunoArtifactMu             sync.Mutex
-	brunoArtifacts              *brunoartifact.EncryptedStore
+	brunoArtifacts              *importartifact.EncryptedStore
 	importSessions              *importsession.Manager
 	brunoArtifactDir            string
 	brunoArtifactWrapper        keywrap.KeyWrapper

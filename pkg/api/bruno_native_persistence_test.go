@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 )
 
@@ -288,7 +288,7 @@ func TestBrunoNativeBatchRejectsTrulyExpiredPersistedSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read protected session descriptor: %v", err)
 	}
-	var descriptor brunoartifact.SessionDescriptor
+	var descriptor importartifact.SessionDescriptor
 	if err := json.Unmarshal(data, &descriptor); err != nil {
 		t.Fatalf("decode protected session descriptor: %v", err)
 	}

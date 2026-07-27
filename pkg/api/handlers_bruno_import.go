@@ -25,11 +25,11 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	brunoconvert "github.com/jasonczech/apexload/pkg/convert/bruno"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/keywrap"
 	brunoprotocol "github.com/jasonczech/apexload/pkg/protocol/bruno"
 	"github.com/jasonczech/apexload/pkg/refkey"
@@ -337,11 +337,11 @@ func (s *Server) handleInspectBrunoImport(w http.ResponseWriter, r *http.Request
 		writeError(w, http.StatusUnprocessableEntity, "plan sanitized Bruno source: "+err.Error())
 		return
 	}
-	if err := objects.SavePublication(brunoartifact.PublicationDescriptor{
+	if err := objects.SavePublication(importartifact.PublicationDescriptor{
 		ID:        sessionID,
 		ProjectID: input.ProjectID,
 		ExpiresAt: now,
-		Objects:   []brunoartifact.OpenRequest{rawPlan, sanitizedPlan},
+		Objects:   []importartifact.OpenRequest{rawPlan, sanitizedPlan},
 	}); err != nil {
 		writeError(w, http.StatusServiceUnavailable, "journal protected Bruno source publication: "+err.Error())
 		return
@@ -640,7 +640,7 @@ func (s *Server) handleCommitBrunoImport(w http.ResponseWriter, r *http.Request)
 			})
 			return
 		}
-		if errors.Is(err, brunoartifact.ErrSessionClaimed) {
+		if errors.Is(err, importartifact.ErrSessionClaimed) {
 			writeJSON(w, http.StatusConflict, map[string]any{
 				"error": "Bruno import session is already claimed by another commit",
 				"code":  "bruno_import_session_claimed",
@@ -1261,7 +1261,7 @@ func (s *Server) handleCommitBrunoNativeImport(
 				"error": "Bruno import session was already claimed, consumed, or expired",
 				"code":  "bruno_import_session_consumed",
 			})
-		} else if errors.Is(err, brunoartifact.ErrSessionClaimed) {
+		} else if errors.Is(err, importartifact.ErrSessionClaimed) {
 			writeJSON(w, http.StatusConflict, map[string]any{
 				"error": "Bruno import session is already claimed by another commit",
 				"code":  "bruno_import_session_claimed",
@@ -2386,7 +2386,7 @@ func (s *Server) handleGetBrunoImportSource(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusServiceUnavailable, "Bruno source decryption is unavailable: "+err.Error())
 		return
 	}
-	reader, size, err := objects.Open(r.Context(), brunoartifact.OpenRequest{
+	reader, size, err := objects.Open(r.Context(), importartifact.OpenRequest{
 		BackendKey: artifact.BackendKey,
 		ProjectID:  projectID,
 		Kind:       artifact.ArtifactKind,
@@ -2588,7 +2588,7 @@ func (s *Server) handleCommitBrunoProjection(w http.ResponseWriter, r *http.Requ
 	})
 }
 
-func (s *Server) brunoArtifactStore() (*brunoartifact.EncryptedStore, error) {
+func (s *Server) brunoArtifactStore() (*importartifact.EncryptedStore, error) {
 	s.brunoArtifactMu.Lock()
 	defer s.brunoArtifactMu.Unlock()
 	if s.brunoArtifacts != nil {
@@ -2606,7 +2606,7 @@ func (s *Server) brunoArtifactStore() (*brunoartifact.EncryptedStore, error) {
 			return nil, err
 		}
 	}
-	objects, err := brunoartifact.NewEncryptedStore(brunoartifact.StoreOptions{
+	objects, err := importartifact.NewEncryptedStore(importartifact.StoreOptions{
 		RootDir:         root,
 		Wrapper:         wrapper,
 		SessionCapacity: brunoImportSessionLimit,
@@ -2615,8 +2615,8 @@ func (s *Server) brunoArtifactStore() (*brunoartifact.EncryptedStore, error) {
 		return nil, err
 	}
 	s.brunoArtifacts = objects
-	if metadata, ok := s.store.(brunoartifact.ArtifactMetadataReader); ok && metadata != nil {
-		brunoartifact.SetResolver(&brunoartifact.StoreResolver{Objects: s.brunoArtifacts, Metadata: metadata})
+	if metadata, ok := s.store.(importartifact.ArtifactMetadataReader); ok && metadata != nil {
+		importartifact.SetResolver(&importartifact.StoreResolver{Objects: s.brunoArtifacts, Metadata: metadata})
 	}
 	return s.brunoArtifacts, nil
 }
@@ -2910,7 +2910,7 @@ func (s *Server) consumeBrunoImportSession(r *http.Request, id, projectID string
 }
 
 type brunoImportSessionClaimLease struct {
-	objects   *brunoartifact.EncryptedStore
+	objects   *importartifact.EncryptedStore
 	sessionID string
 	projectID string
 	actor     string
@@ -2922,7 +2922,7 @@ type brunoImportSessionClaimLease struct {
 }
 
 func startBrunoImportSessionClaimLease(
-	objects *brunoartifact.EncryptedStore,
+	objects *importartifact.EncryptedStore,
 	sessionID, projectID, actor, token string,
 ) *brunoImportSessionClaimLease {
 	lease := &brunoImportSessionClaimLease{
@@ -2986,7 +2986,7 @@ func (l *brunoImportSessionClaimLease) stop() {
 func (s *Server) claimBrunoImportSession(
 	r *http.Request,
 	id, projectID string,
-) (*brunoImportSession, *brunoartifact.EncryptedStore, string, string, error) {
+) (*brunoImportSession, *importartifact.EncryptedStore, string, string, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return nil, nil, "", "", errors.New("import_session_id is required")
@@ -3378,20 +3378,20 @@ func (s *Server) persistBrunoImportSession(ctx context.Context, session *brunoIm
 		return err
 	}
 	defer clear(data)
-	return objects.SaveSessionBytes(ctx, brunoartifact.SessionDescriptor{
+	return objects.SaveSessionBytes(ctx, importartifact.SessionDescriptor{
 		ID:        session.ID,
 		ProjectID: session.ProjectID,
 		Actor:     session.Actor,
 		ExpiresAt: session.ExpiresAt,
-		RelatedObjects: []brunoartifact.OpenRequest{
+		RelatedObjects: []importartifact.OpenRequest{
 			brunoArtifactOpenRequest(session.RawArtifact),
 			brunoArtifactOpenRequest(session.SanitizedArtifact),
 		},
 	}, data, brunoImportSessionMaxBytes)
 }
 
-func brunoArtifactOpenRequest(artifact storage.BrunoSourceArtifact) brunoartifact.OpenRequest {
-	return brunoartifact.OpenRequest{
+func brunoArtifactOpenRequest(artifact storage.BrunoSourceArtifact) importartifact.OpenRequest {
+	return importartifact.OpenRequest{
 		BackendKey: artifact.BackendKey,
 		ProjectID:  artifact.ProjectID,
 		Kind:       artifact.ArtifactKind,
@@ -3559,7 +3559,7 @@ func (s *Server) cleanupUnreferencedBrunoArtifacts(artifacts []storage.BrunoSour
 }
 
 func (s *Server) cleanupUnreferencedBrunoArtifactsLocked(
-	objects *brunoartifact.EncryptedStore,
+	objects *importartifact.EncryptedStore,
 	artifacts []storage.BrunoSourceArtifact,
 	excludedSessionID string,
 ) error {

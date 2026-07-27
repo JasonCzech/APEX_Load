@@ -1,8 +1,8 @@
-// Package brunoartifact provides the narrow process boundary used by the
+// Package importartifact provides the narrow process boundary used by the
 // Bruno protocol to resolve immutable source bundles. Controller and generator
 // processes install a project-aware resolver; the protocol never opens an
 // author-supplied filesystem path directly.
-package brunoartifact
+package importartifact
 
 import (
 	"bytes"

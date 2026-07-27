@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	"github.com/jasonczech/apexload/pkg/convert/enterprisearchive"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 )
 
@@ -182,7 +182,7 @@ func TestSanitizedACMEArchivePreservesSafeBodyAndRuntimeProfile(t *testing.T) {
 	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
 		t.Fatalf("enable source-secret migration: %v", err)
 	}
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x5d}, 32),
 		KeyID: "acme-parameter-protected-source-session",
 	})

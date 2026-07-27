@@ -14,11 +14,11 @@ import (
 	"time"
 
 	pb "github.com/jasonczech/apexload/api/proto"
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	"github.com/jasonczech/apexload/pkg/buildinfo"
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/debugserver"
 	"github.com/jasonczech/apexload/pkg/distributed/generatorrpc"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
 	"github.com/jasonczech/apexload/pkg/runtimetuning"
 	"github.com/jasonczech/apexload/pkg/telemetry"
@@ -199,11 +199,11 @@ func configureBrunoResolver() (func(), error) {
 	if root == "" {
 		return nil, errors.New("APEXLOAD_BRUNO_ARTIFACT_ROOT is required when distributed Bruno execution is enabled")
 	}
-	wrapper, err := brunoartifact.NewConfiguredKeyWrapper(false)
+	wrapper, err := importartifact.NewConfiguredKeyWrapper(false)
 	if err != nil {
 		return nil, err
 	}
-	objects, err := brunoartifact.NewEncryptedStore(brunoartifact.StoreOptions{
+	objects, err := importartifact.NewEncryptedStore(importartifact.StoreOptions{
 		RootDir:  root,
 		Wrapper:  wrapper,
 		ReadOnly: true,
@@ -211,7 +211,7 @@ func configureBrunoResolver() (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	return brunoartifact.SetResolver(&brunoartifact.ContentAddressedResolver{
+	return importartifact.SetResolver(&importartifact.ContentAddressedResolver{
 		Objects: objects,
 		Kind:    "sanitized",
 	}), nil

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/secretstore"
 )
 
@@ -90,7 +90,7 @@ func TestSampleAndHARProtectedCredentialEndpointsUseDurableSourceSessions(t *tes
 			)
 			assertProtectedCredentialImportResponse(t, unavailable, unavailableCanary, false)
 
-			wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+			wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 				Key:   bytes.Repeat([]byte{0x7c}, 32),
 				KeyID: "sample-har-protected-source-session",
 			})
@@ -263,7 +263,7 @@ func TestScriptImportResponseCombinesLegacyAndProtectedSourceValues(t *testing.T
 	if _, err := server.runner.UpdateSystemSettings(settings); err != nil {
 		t.Fatal(err)
 	}
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key:   bytes.Repeat([]byte{0x2d}, 32),
 		KeyID: "combined-import-source-session",
 	})

@@ -1,4 +1,4 @@
-package brunoartifact
+package importartifact
 
 import (
 	"bytes"

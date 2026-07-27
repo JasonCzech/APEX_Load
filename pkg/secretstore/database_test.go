@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
 
@@ -25,7 +25,7 @@ func TestDatabaseStoreEncryptsAndResolvesProjectSecret(t *testing.T) {
 	if err := records.SaveProject(&storage.Project{ID: "project-a", Name: "A", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
-	wrapper, err := brunoartifact.NewLocalAESKeyWrapper(brunoartifact.LocalKeyOptions{
+	wrapper, err := importartifact.NewLocalAESKeyWrapper(importartifact.LocalKeyOptions{
 		Key: bytes.Repeat([]byte{0x31}, 32),
 	})
 	if err != nil {

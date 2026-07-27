@@ -6,12 +6,12 @@ import (
 	"testing"
 
 	pb "github.com/jasonczech/apexload/api/proto"
-	"github.com/jasonczech/apexload/pkg/brunoartifact"
+	"github.com/jasonczech/apexload/pkg/importartifact"
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
 )
 
 func TestSupportedProtocolNamesHideBrunoWithoutArtifactDelivery(t *testing.T) {
-	restore := brunoartifact.SetResolver(nil)
+	restore := importartifact.SetResolver(nil)
 	t.Cleanup(restore)
 	t.Setenv("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED", "true")
 	if containsProtocol(supportedProtocolNames(), "bruno") {
@@ -20,7 +20,7 @@ func TestSupportedProtocolNamesHideBrunoWithoutArtifactDelivery(t *testing.T) {
 }
 
 func TestSupportedProtocolNamesAdvertiseConfiguredBrunoRunner(t *testing.T) {
-	restore := brunoartifact.SetResolver(brunoartifact.ResolverFunc(func(context.Context, brunoartifact.Request) ([]byte, error) {
+	restore := importartifact.SetResolver(importartifact.ResolverFunc(func(context.Context, importartifact.Request) ([]byte, error) {
 		return []byte("bundle"), nil
 	}))
 	t.Cleanup(restore)
@@ -38,7 +38,7 @@ func TestSupportedProtocolNamesAdvertiseConfiguredBrunoRunner(t *testing.T) {
 }
 
 func TestAssignWorkRejectsBrunoWhenDistributedDeliveryIsUnavailable(t *testing.T) {
-	restore := brunoartifact.SetResolver(nil)
+	restore := importartifact.SetResolver(nil)
 	t.Cleanup(restore)
 	t.Setenv("APEXLOAD_BRUNO_DISTRIBUTED_EXECUTION_ENABLED", "false")
 	service := newIsolatedService(t, 10, WithExecution())
@@ -70,7 +70,7 @@ func TestAssignWorkRejectsBrunoWhenDistributedDeliveryIsUnavailable(t *testing.T
 }
 
 func TestAssignWorkRejectsBrunoAboveRunnerSessionCapacity(t *testing.T) {
-	restore := brunoartifact.SetResolver(brunoartifact.ResolverFunc(func(context.Context, brunoartifact.Request) ([]byte, error) {
+	restore := importartifact.SetResolver(importartifact.ResolverFunc(func(context.Context, importartifact.Request) ([]byte, error) {
 		return []byte("bundle"), nil
 	}))
 	t.Cleanup(restore)
