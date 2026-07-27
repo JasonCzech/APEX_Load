@@ -70,9 +70,9 @@ var (
 	// is the common one; JMeter JDBC samplers and connection-failure messages
 	// carry it verbatim. Anchoring on the jdbc: scheme keeps ordinary text such
 	// as "a/b@c.example" untouched.
-	opaqueDSNCredential      = regexp.MustCompile(`(?i)(\bjdbc:[a-z0-9+.-]+:(?:[a-z0-9+.-]+:)*[^\s/"'@]+/)([^\s/"'@]+)(@)`)
-	jwtPattern               = regexp.MustCompile(`\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)
-	highEntropyToken         = regexp.MustCompile(`\b[A-Za-z0-9+/=_-]{24,}\b`)
+	opaqueDSNCredential = regexp.MustCompile(`(?i)(\bjdbc:[a-z0-9+.-]+:(?:[a-z0-9+.-]+:)*[^\s/"'@]+/)([^\s/"'@]+)(@)`)
+	jwtPattern          = regexp.MustCompile(`\b[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b`)
+	highEntropyToken    = regexp.MustCompile(`\b[A-Za-z0-9+/=_-]{24,}\b`)
 	// embeddedURLPattern lets Value redact URL/DSN userinfo inside error and log
 	// prose, not only when the whole input is a URL. Quotes and whitespace are
 	// excluded so common net/http errors retain their surrounding syntax.

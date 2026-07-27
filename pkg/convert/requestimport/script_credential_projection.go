@@ -200,16 +200,14 @@ func ProjectScriptCredentials(
 		trustedWholeValues = trustedScriptParameterValues(script)
 		runtimeParameterSourcesRedacted = redactSensitiveRuntimeParameterValues(script)
 	}
-	baseProvenVars, err := provenBaseURLVariables(
-		script,
-		script.Config.BaseURL,
-		variableReadiness,
-	)
-	if err != nil {
-		replaceScriptWithCredentialTraversalReviewDraft(script, options.SourceProfile)
-		result.FallbackDraft = true
-		return result, fmt.Errorf("analyze base URL credential provenance: %w", err)
-	}
+	// A {{var.*}} reference inside config.base_url is never proven, however well
+	// an extractor's execution path is guaranteed:
+	// buildProtoConfigWithSecretResolver flattens base_url once at protocol init
+	// and resolves only {{secret.*}} there, and HTTP.ResolveURL then concatenates
+	// the stored string verbatim per request. A preserved {{var.*}} would go on
+	// the wire literally, so base URL credentials always govern. Pinned by
+	// TestProjectScriptCredentialsGovernsBaseURLRuntimeVariables.
+	var baseProvenVars map[string]struct{}
 	requirementIndexes := make(map[string]int)
 	requirementConflict := false
 	appendRequirements := func(input []credentialpolicy.Requirement) {

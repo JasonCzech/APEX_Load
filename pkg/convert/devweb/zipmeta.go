@@ -155,11 +155,18 @@ func applyDevWebParameters(result *ConvertResult, ctx *convertContext, diagnosti
 			dataSource := dsl.DataSource{
 				Name:           sourceName,
 				Type:           "csv",
-				Path:           param.FileName,
 				InlineData:     inline,
 				Strategy:       devWebCSVStrategy(param.NextRow),
 				Delimiter:      ",",
 				FirstRowHeader: true,
+			}
+			if inline == "" {
+				// Path is only meaningful when the rows were not inlined. The
+				// archive-relative name is not a resolvable file asset (those must
+				// be absolute and registered), so setting it alongside inline data
+				// made the script fail validation while the data was already
+				// present.
+				dataSource.Path = param.FileName
 			}
 			dsByFile[param.FileName] = &dataSource
 			result.Script.DataSources = append(result.Script.DataSources, dataSource)
@@ -169,12 +176,24 @@ func applyDevWebParameters(result *ConvertResult, ctx *convertContext, diagnosti
 		if column != "" {
 			ctx.parameterTemplates[param.Name] = fmt.Sprintf("{{data.%s.%s}}", sourceName, column)
 		}
+		update, updateKnown := devWebParameterUpdate(param.NextValue)
+		if !updateKnown && diagnostics != nil {
+			diagnostics.Add(diag.Warning, "DevWeb parameter nextValue", parametersPath,
+				fmt.Sprintf("parameter %q declares nextValue %q, which has no APEX equivalent; using %s and requiring review",
+					param.Name, strings.TrimSpace(param.NextValue), update))
+		}
+		onExhaustion, onEndKnown := devWebOnExhaustion(param.OnEnd)
+		if !onEndKnown && diagnostics != nil {
+			diagnostics.Add(diag.Warning, "DevWeb parameter onEnd", parametersPath,
+				fmt.Sprintf("parameter %q declares onEnd %q, which has no APEX equivalent; using %s and requiring review",
+					param.Name, strings.TrimSpace(param.OnEnd), onExhaustion))
+		}
 		result.Script.Parameters = append(result.Script.Parameters, dsl.Parameter{
 			Name:         param.Name,
 			Type:         "file",
-			Update:       devWebParameterUpdate(param.NextValue),
+			Update:       update,
 			Selection:    devWebCSVStrategy(param.NextRow),
-			OnExhaustion: devWebOnExhaustion(param.OnEnd),
+			OnExhaustion: onExhaustion,
 			SameLineAs:   devWebSameLineAs(param.NextRow),
 			DataSource:   sourceName,
 			Column:       column,
@@ -304,21 +323,43 @@ func devWebCSVStrategy(value string) string {
 	}
 }
 
-func devWebParameterUpdate(value string) string {
-	if strings.TrimSpace(value) == "" {
-		return "iteration"
+// devWebParameterUpdate maps a DevWeb "nextValue" to the DSL update vocabulary
+// (once, each_iteration, each_occurrence).
+//
+// These previously passed the DevWeb spelling straight through, so an imported
+// parameter carried update="iteration" and on_exhaustion="loop". Those are not
+// DSL values, so every zip import with a parameter file produced a script that
+// failed validateScript and could not be saved. ok=false means the source value
+// was not recognized; callers record a review diagnostic rather than silently
+// picking a behavior.
+func devWebParameterUpdate(value string) (string, bool) {
+	switch strings.ReplaceAll(strings.ToLower(strings.TrimSpace(value)), " ", "_") {
+	case "", "iteration", "each_iteration":
+		// DevWeb's default is per-iteration.
+		return "each_iteration", true
+	case "occurrence", "each_occurrence":
+		return "each_occurrence", true
+	case "once", "unique":
+		return "once", true
+	default:
+		return "each_iteration", false
 	}
-	return strings.ReplaceAll(strings.ToLower(strings.TrimSpace(value)), " ", "_")
 }
 
-func devWebOnExhaustion(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "loop", "cycle":
-		return "loop"
-	case "stop", "abort":
-		return "stop"
+// devWebOnExhaustion maps a DevWeb "onEnd" to the DSL on_exhaustion vocabulary
+// (wrap, empty, error, last).
+func devWebOnExhaustion(value string) (string, bool) {
+	switch strings.ReplaceAll(strings.ToLower(strings.TrimSpace(value)), " ", "_") {
+	case "", "loop", "cycle", "cyclic", "wrap":
+		return "wrap", true
+	case "stop", "abort", "error":
+		return "error", true
+	case "last", "continue", "keep", "last_value":
+		return "last", true
+	case "empty", "none":
+		return "empty", true
 	default:
-		return strings.ToLower(strings.TrimSpace(value))
+		return "wrap", false
 	}
 }
 

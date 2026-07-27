@@ -683,3 +683,109 @@ func devWebHeaderValue(headers map[string]string, name string) string {
 	}
 	return ""
 }
+
+// TestConvertZipProducesSaveableScript pins that a DevWeb archive with a
+// parameter file yields a script that passes DSL validation.
+//
+// It previously did not: the importer emitted the DevWeb spellings verbatim
+// (update="iteration", on_exhaustion="loop"), set a data-source Path to an
+// archive-relative name alongside inline rows, and left config.base_url empty
+// whenever the host came from a parameter. Each of those fails validateScript,
+// which is a hard 400 on POST /scripts — so every zip import with parameters
+// produced a draft that could be converted but never saved.
+func TestConvertZipProducesSaveableScript(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	writeDevWebZipFile(t, zw, "AOS/main.js", `load.action("Action", async function() {
+  const Login = new load.WebRequest({
+    url: `+"`${load.params.AOS_URL}/account/${load.params.loginUser}`"+`,
+    method: "POST",
+    body: { "password": `+"`${load.params.loginPassword}`"+` },
+  }).sendSync();
+});`)
+	writeDevWebZipFile(t, zw, "AOS/parameters.yml", `
+parameters:
+- name: loginUser
+  type: csv
+  fileName: credentials.csv
+  columnName: loginUser
+  nextRow: random
+  nextValue: iteration
+  onEnd: loop
+`)
+	writeDevWebZipFile(t, zw, "AOS/credentials.csv", "loginUser,loginPassword\nalice,secret\n")
+	if err := zw.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("generated script is not saveable: %v", issues)
+	}
+
+	if len(result.Script.Parameters) != 1 {
+		t.Fatalf("parameters = %#v, want one", result.Script.Parameters)
+	}
+	parameter := result.Script.Parameters[0]
+	if parameter.Update != "each_iteration" {
+		t.Errorf("update = %q, want the DSL spelling each_iteration", parameter.Update)
+	}
+	if parameter.OnExhaustion != "wrap" {
+		t.Errorf("on_exhaustion = %q, want the DSL spelling wrap", parameter.OnExhaustion)
+	}
+
+	if len(result.Script.DataSources) != 1 {
+		t.Fatalf("data sources = %#v, want one", result.Script.DataSources)
+	}
+	source := result.Script.DataSources[0]
+	if source.InlineData == "" {
+		t.Error("inline rows were not carried over from the archive")
+	}
+	if source.Path != "" {
+		t.Errorf("path = %q, want empty when rows are inlined", source.Path)
+	}
+	// The host comes from a parameter, so the base URL is the leading template.
+	if result.Script.Config.BaseURL == "" {
+		t.Error("config.base_url is empty for a fully templated target")
+	}
+}
+
+// TestConvertZipFlagsUnknownParameterVocabulary keeps the mapping honest: an
+// unrecognized DevWeb value falls back to a safe default AND is surfaced for
+// review, rather than being silently reinterpreted.
+func TestConvertZipFlagsUnknownParameterVocabulary(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	writeDevWebZipFile(t, zw, "AOS/main.js", `load.action("Action", async function() {
+  await new load.WebRequest({url: "https://api.example.test/orders", method: "GET"}).send();
+});`)
+	writeDevWebZipFile(t, zw, "AOS/parameters.yml", `
+parameters:
+- name: loginUser
+  type: csv
+  fileName: credentials.csv
+  columnName: loginUser
+  nextRow: sequential
+  nextValue: everyThirdTuesday
+  onEnd: explodeGracefully
+`)
+	writeDevWebZipFile(t, zw, "AOS/credentials.csv", "loginUser\nalice\n")
+	if err := zw.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	result, err := ConvertZip(buf.Bytes(), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertZip returned error: %v", err)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("unknown vocabulary produced an unsaveable script: %v", issues)
+	}
+	reported := strings.Join(result.Unsupported.Strings(), " | ")
+	if !strings.Contains(reported, "everyThirdTuesday") || !strings.Contains(reported, "explodeGracefully") {
+		t.Fatalf("unknown parameter vocabulary was not surfaced for review: %s", reported)
+	}
+}
