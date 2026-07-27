@@ -1241,13 +1241,13 @@ export function useScriptApi() {
 
   const listBrunoRevisions = useCallback(
     (scriptId: string) =>
-      request<{ revisions: BrunoSourceRevision[]; count: number }>(`/scripts/${scriptId}/bruno-imports/revisions`),
+      request<{ revisions: BrunoSourceRevision[]; count: number }>(`/scripts/${scriptId}/imports/revisions`),
     [],
   )
 
   const rollbackBrunoRevision = useCallback(
     (scriptId: string, revisionId: string, expectedActiveRevisionId?: string) =>
-      request<{ revision: BrunoSourceRevision }>(`/scripts/${scriptId}/bruno-imports/rollback`, {
+      request<{ revision: BrunoSourceRevision }>(`/scripts/${scriptId}/imports/rollback`, {
         method: 'POST',
         body: JSON.stringify({
           revision_id: revisionId,

@@ -11070,6 +11070,57 @@ export interface operations {
       };
     };
   };
+  "handleGetBrunoImportSource_2": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+      "query"?: {
+        "raw"?: boolean;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": unknown;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleGetCIRun": {
     parameters: {
       "path": {
@@ -20000,6 +20051,49 @@ export interface operations {
     };
   };
   "handleListBrunoImportRevisions": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody?: never;
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
+  "handleListBrunoImportRevisions_2": {
     parameters: {
       "path": {
         "id": string;
@@ -29426,6 +29520,71 @@ export interface operations {
       };
     };
   };
+  "handleRollbackBrunoImport_2": {
+    parameters: {
+      "path": {
+        "id": string;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": {
+          "expected_active_revision_id"?: string;
+          "revision_id"?: string;
+        };
+      };
+    };
+    responses: {
+      "200": {
+        content: {
+          "application/json": Record<string, unknown>;
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "401": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "403": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "404": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "422": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "500": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "503": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "default": {
+        content?: never;
+      };
+    };
+  };
   "handleRotateMonitoringCollectorToken": {
     parameters: {
       "path": {
@@ -37580,6 +37739,15 @@ export interface paths {
   };
   "/api/v1/scripts/{id}/github/status": {
     "get": operations["handleScriptGitHubStatus"];
+  };
+  "/api/v1/scripts/{id}/imports/revisions": {
+    "get": operations["handleListBrunoImportRevisions_2"];
+  };
+  "/api/v1/scripts/{id}/imports/rollback": {
+    "post": operations["handleRollbackBrunoImport_2"];
+  };
+  "/api/v1/scripts/{id}/imports/source": {
+    "get": operations["handleGetBrunoImportSource_2"];
   };
   "/api/v1/scripts/{id}/move": {
     "patch": operations["handleMoveScript"];

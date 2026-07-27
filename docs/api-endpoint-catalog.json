@@ -4143,6 +4143,36 @@
       "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
     },
     {
+      "method": "GET",
+      "path": "/api/v1/scripts/{id}/imports/revisions",
+      "operationId": "handleListBrunoImportRevisions_2",
+      "summary": "List Bruno Import Revisions",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Viewer, Editor, ProjectAdmin, SystemAdmin; project roles: Viewer, Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/scripts/{id}/imports/rollback",
+      "operationId": "handleRollbackBrunoImport_2",
+      "summary": "Rollback Bruno Import",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/scripts/{id}/imports/source",
+      "operationId": "handleGetBrunoImportSource_2",
+      "summary": "Get Bruno Import Source",
+      "category": "Script Authoring",
+      "public": false,
+      "authenticated": true,
+      "access": "Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: read"
+    },
+    {
       "method": "PATCH",
       "path": "/api/v1/scripts/{id}/move",
       "operationId": "handleMoveScript",

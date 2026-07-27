@@ -337,8 +337,11 @@ func isAllowedDesktopBrowserDownloadSegments(segments []string) bool {
 	if len(segments) == 7 && segments[2] == "tests" && segments[3] != "" && segments[4] == "archive" && segments[5] == "files" {
 		return true
 	}
-	// Bruno source bundles.
-	if len(segments) == 6 && segments[2] == "scripts" && segments[3] != "" && segments[4] == "bruno-imports" && segments[5] == "source" {
+	// Protected import source bundles, under both the canonical and the legacy
+	// alias path. Missing the alias here would not fail loudly -- the desktop
+	// client would fall back to an in-webview navigation and the download would
+	// silently not reach disk.
+	if len(segments) == 6 && segments[2] == "scripts" && segments[3] != "" && (segments[4] == "imports" || segments[4] == "bruno-imports") && segments[5] == "source" {
 		return true
 	}
 	// Staged workstation clients.

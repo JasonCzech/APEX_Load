@@ -293,6 +293,12 @@ var legacyRouteCatalogAuthRules = []apiRouteAuthRule{
 	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/github/push", editorProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/scripts/{id}/github/status", viewerProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/scripts/{id}/recording/status", viewerProjectAccess(resolveScriptProjectID)),
+	routeAuth(http.MethodGet, "/api/v1/scripts/{id}/imports/source", editorProjectAccess(resolveScriptProjectID)),
+	routeAuth(http.MethodGet, "/api/v1/scripts/{id}/imports/revisions", viewerProjectAccess(resolveScriptProjectID)),
+	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/imports/rollback", editorProjectAccess(resolveScriptProjectID)),
+	// Legacy aliases. An entry missing here does not merely lose a name: the
+	// route would resolve to the default access policy instead of the intended
+	// one, so the alias must carry the same access as its canonical twin.
 	routeAuth(http.MethodGet, "/api/v1/scripts/{id}/bruno-imports/source", editorProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodGet, "/api/v1/scripts/{id}/bruno-imports/revisions", viewerProjectAccess(resolveScriptProjectID)),
 	routeAuth(http.MethodPost, "/api/v1/scripts/{id}/bruno-imports/rollback", editorProjectAccess(resolveScriptProjectID)),
