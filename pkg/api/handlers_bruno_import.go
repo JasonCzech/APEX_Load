@@ -2366,6 +2366,17 @@ func (s *Server) handleGetBrunoImportSource(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, "active Bruno source revision not found")
 		return
 	}
+	if !raw && !revision.SanitizedAvailable {
+		// The revision retains source raw-only: sanitized_artifact_id is a second
+		// reference to the raw artifact, not a scrubbed copy. Serving it under the
+		// sanitized gate would hand unredacted source to every editor, which is
+		// precisely the disclosure this flag exists to prevent. Callers entitled
+		// to the raw bundle can still ask for it explicitly and be role-checked
+		// above.
+		s.recordAuditEvent(r, "script.import.bruno.source.sanitized", "denied", "script", script.ID, projectID, map[string]any{"reason": "no_sanitized_artifact"})
+		writeError(w, http.StatusConflict, "this import retains raw source only; request the raw bundle, which requires project_admin or system_admin permission")
+		return
+	}
 	privateKeyFiles := brunoRevisionHasPrivateKeyFiles(revision)
 	if !raw && privateKeyFiles && !s.canReadRawBrunoSource(r, projectID) {
 		s.recordAuditEvent(r, "script.import.bruno.source.sanitized", "denied", "script", script.ID, projectID, map[string]any{"reason": "private_key_material"})

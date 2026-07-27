@@ -64,6 +64,11 @@ func (s *SQLiteStore) CommitBrunoImport(commit *BrunoImportCommit) (*BrunoImport
 	}
 	commit.Revision.RawArtifactID = rawArtifact.ID
 	commit.Revision.SanitizedArtifactID = sanitizedArtifact.ID
+	// Bruno is currently the only importer that produces a separately sanitized
+	// document, and it always does -- normalizeBrunoArtifact above requires a
+	// "sanitized" artifact. Declaring it here rather than at each caller keeps
+	// the claim next to the evidence for it.
+	commit.Revision.SanitizedAvailable = true
 	script.Config.Bruno.BundleRef = "artifact://" + sanitizedArtifact.ID
 	script.Config.Bruno.BundleSHA256 = sanitizedArtifact.SHA256
 	script.Config.Bruno.ManifestSHA256 = sanitizedArtifact.ManifestSHA256
@@ -117,11 +122,12 @@ func (s *SQLiteStore) CommitBrunoImport(commit *BrunoImportCommit) (*BrunoImport
 	}
 	if _, err := tx.Exec(`INSERT INTO import_source_revisions (
 		id, script_id, project_id, parent_revision_id, active_flag, raw_artifact_id, sanitized_artifact_id,
-		source_format, compatibility_version, identity_map_json, import_options_json, dependency_snapshot_ref,
+		sanitized_available, source_format, compatibility_version, identity_map_json, import_options_json, dependency_snapshot_ref,
 		security_profile_json, change_summary_json, secret_bindings_json, canonical_script_json, created_by, created_at
-	) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	) VALUES (?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		commit.Revision.ID, script.ID, script.ProjectID, nullableString(parentID),
 		commit.Revision.RawArtifactID, commit.Revision.SanitizedArtifactID,
+		boolToSQLite(commit.Revision.SanitizedAvailable),
 		commit.Revision.SourceFormat, commit.Revision.CompatibilityVersion,
 		encodedRevision.identityMap, encodedRevision.importOptions, nullableString(commit.Revision.DependencySnapshotRef),
 		encodedRevision.securityProfile, encodedRevision.changeSummary, encodedRevision.secretBindings,
@@ -406,7 +412,7 @@ func (s *SQLiteStore) ActivateBrunoSourceRevision(scriptID string, projectID str
 }
 
 const brunoRevisionSelect = `SELECT id, script_id, project_id, COALESCE(parent_revision_id, ''), active_flag,
-	raw_artifact_id, sanitized_artifact_id, source_format, compatibility_version, identity_map_json,
+	raw_artifact_id, sanitized_artifact_id, sanitized_available, source_format, compatibility_version, identity_map_json,
 	import_options_json, COALESCE(dependency_snapshot_ref, ''), security_profile_json, change_summary_json,
 	secret_bindings_json, canonical_script_json, COALESCE(created_by, ''), created_at
 	FROM import_source_revisions`
@@ -414,14 +420,16 @@ const brunoRevisionSelect = `SELECT id, script_id, project_id, COALESCE(parent_r
 func scanBrunoRevision(row rowScanner) (*BrunoSourceRevision, error) {
 	var revision BrunoSourceRevision
 	var active int
+	var sanitizedAvailable int
 	var identityMapJSON, importOptionsJSON, securityProfileJSON, changeSummaryJSON, secretBindingsJSON, canonicalScriptJSON string
 	if err := row.Scan(&revision.ID, &revision.ScriptID, &revision.ProjectID, &revision.ParentRevisionID, &active,
-		&revision.RawArtifactID, &revision.SanitizedArtifactID, &revision.SourceFormat, &revision.CompatibilityVersion,
+		&revision.RawArtifactID, &revision.SanitizedArtifactID, &sanitizedAvailable, &revision.SourceFormat, &revision.CompatibilityVersion,
 		&identityMapJSON, &importOptionsJSON, &revision.DependencySnapshotRef, &securityProfileJSON,
 		&changeSummaryJSON, &secretBindingsJSON, &canonicalScriptJSON, &revision.CreatedBy, &revision.CreatedAt); err != nil {
 		return nil, err
 	}
 	revision.Active = active != 0
+	revision.SanitizedAvailable = sanitizedAvailable != 0
 	for _, field := range []struct {
 		name string
 		raw  string

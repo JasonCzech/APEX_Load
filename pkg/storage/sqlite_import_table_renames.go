@@ -79,6 +79,28 @@ func (s *SQLiteStore) tableExists(name string) (bool, error) {
 	return count > 0, nil
 }
 
+// backfillSanitizedSourceAvailability marks pre-existing revisions as having a
+// real sanitized document.
+//
+// Every revision written before the sanitized_available column existed came from
+// the Bruno importer, which always produces two distinct artifacts -- a raw
+// bundle and a separately sanitized one -- so its two artifact columns never
+// hold the same id. Formats that retain source raw-only satisfy the NOT NULL
+// constraint by pointing both columns at the same raw artifact.
+//
+// That difference is the discriminator, which makes this safe to run on every
+// start rather than once: a raw-only revision can never match, so repeated runs
+// cannot promote one into an editor-visible sanitized download. A flag-based
+// "run once" migration would have to be trusted not to re-run; this one does not
+// need to be trusted at all.
+func (s *SQLiteStore) backfillSanitizedSourceAvailability() error {
+	if _, err := s.db.Exec(`UPDATE import_source_revisions SET sanitized_available = 1
+		WHERE sanitized_available = 0 AND sanitized_artifact_id <> raw_artifact_id`); err != nil {
+		return fmt.Errorf("failed to backfill import_source_revisions.sanitized_available: %w", err)
+	}
+	return nil
+}
+
 // renameLegacyImportTables migrates a pre-rename database in place. It is a
 // no-op on a fresh database and safe to run on every start.
 func (s *SQLiteStore) renameLegacyImportTables() error {
