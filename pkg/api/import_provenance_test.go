@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/importsession"
 )
 
@@ -107,5 +108,75 @@ func TestImportSessionCapacityIsRetryableNotInternal(t *testing.T) {
 	}
 	if got := importSessionClaimStatus(errors.New("unexpected backend failure")); got != http.StatusInternalServerError {
 		t.Fatalf("status for an unclassified error = %d, want %d", got, http.StatusInternalServerError)
+	}
+}
+
+// TestCreateScriptDurableReportsIdempotentReplay pins the outcome signal the
+// shared import commit now surfaces.
+//
+// Create-only persistence was already idempotent: a caller supplying a
+// deterministic script id (protectedImportCreateScriptID) that retries after an
+// interrupted commit gets the existing row back rather than an error. What was
+// missing is that the outcome was invisible, so a retrying client could not
+// distinguish "I committed this" from "this was already committed" and had to
+// assume the former — the exact ambiguity the Bruno commit path solves with a
+// durable receipt.
+func TestCreateScriptDurableReportsIdempotentReplay(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	script := &dsl.Script{
+		ID:       protectedImportCreateScriptID("openapi", "session-replay"),
+		Name:     "orders",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://api.example.test"},
+		Actions: []dsl.Action{{
+			Name: "request", Type: "GET", Method: "GET", Target: "/orders",
+		}},
+	}
+
+	first, created, err := server.runner.CreateScriptDurableReportingReplay(cloneScriptDefinition(script))
+	if err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	if !created {
+		t.Fatal("first create reported a replay")
+	}
+
+	second, created, err := server.runner.CreateScriptDurableReportingReplay(cloneScriptDefinition(script))
+	if err != nil {
+		t.Fatalf("retry of an interrupted commit failed instead of replaying: %v", err)
+	}
+	if created {
+		t.Fatal("retry reported a fresh create; a client would double-count the import")
+	}
+	if second.ID != first.ID {
+		t.Fatalf("replay returned script %q, want the original %q", second.ID, first.ID)
+	}
+	if second.RefKey != first.RefKey {
+		t.Fatalf("replay allocated a new reference key %q, want %q", second.RefKey, first.RefKey)
+	}
+}
+
+// TestCreateScriptDurableStillRejectsForeignScriptID keeps the replay narrow:
+// an id collision with a script this import does not own is a genuine conflict,
+// not a replay.
+func TestCreateScriptDurableStillRejectsForeignScriptID(t *testing.T) {
+	server := NewServer(ServerConfig{})
+	base := &dsl.Script{
+		ID:       protectedImportCreateScriptID("openapi", "session-foreign"),
+		Name:     "orders",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://api.example.test"},
+		Actions: []dsl.Action{{
+			Name: "request", Type: "GET", Method: "GET", Target: "/orders",
+		}},
+	}
+	if _, _, err := server.runner.CreateScriptDurableReportingReplay(cloneScriptDefinition(base)); err != nil {
+		t.Fatalf("seed create: %v", err)
+	}
+
+	different := cloneScriptDefinition(base)
+	different.Actions[0].Target = "/something-else"
+	if _, _, err := server.runner.CreateScriptDurableReportingReplay(different); err == nil {
+		t.Fatal("a different script reusing the id was accepted as a replay")
 	}
 }

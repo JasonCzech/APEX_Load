@@ -299,6 +299,20 @@ func (tr *TestRunner) storeScriptDurable(script *dsl.Script, restoringExistingJa
 // an existing durable ID. It is idempotent for an identical prior create, which
 // lets an interrupted authoring approval resume safely across HA replicas.
 func (tr *TestRunner) CreateScriptDurable(script *dsl.Script) (*StoredScript, error) {
+	stored, _, err := tr.createScriptDurable(script, false)
+	return stored, err
+}
+
+// CreateScriptDurableReportingReplay behaves like CreateScriptDurable and also
+// reports whether this call created the durable row or found an equivalent one
+// already present.
+//
+// Create-only persistence is already idempotent: a caller that supplies a
+// deterministic script ID (see protectedImportCreateScriptID) and retries after
+// an interrupted commit gets the existing row back rather than an error. Only
+// the outcome was invisible, so a retrying client could not distinguish "I
+// created this" from "this was already committed" and had to assume the former.
+func (tr *TestRunner) CreateScriptDurableReportingReplay(script *dsl.Script) (*StoredScript, bool, error) {
 	return tr.createScriptDurable(script, false)
 }
 
@@ -308,18 +322,20 @@ func (tr *TestRunner) createAuthoringApprovedScriptDurable(script *dsl.Script) (
 			return nil, fmt.Errorf("Java Vuser authoring approval evidence is missing")
 		}
 	}
-	return tr.createScriptDurable(script, true)
+	stored, _, err := tr.createScriptDurable(script, true)
+	return stored, err
 }
 
-func (tr *TestRunner) createScriptDurable(script *dsl.Script, authoringApprovedJava bool) (*StoredScript, error) {
+func (tr *TestRunner) createScriptDurable(script *dsl.Script, authoringApprovedJava bool) (*StoredScript, bool, error) {
+	created := true
 	if script == nil {
-		return nil, fmt.Errorf("script is required")
+		return nil, false, fmt.Errorf("script is required")
 	}
 	if scriptRequiresJavaVuserAuthoringApproval(script) && !authoringApprovedJava {
-		return nil, fmt.Errorf("Java Vuser scripts must be saved through authoring-session review and approval")
+		return nil, false, fmt.Errorf("Java Vuser scripts must be saved through authoring-session review and approval")
 	}
 	if err := validatePersistentLibraryScript(script); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	tr.mu.Lock()
 	defer tr.mu.Unlock()
@@ -328,17 +344,17 @@ func (tr *TestRunner) createScriptDurable(script *dsl.Script, authoringApprovedJ
 		scriptID = uuid.New().String()
 	}
 	if err := tr.rejectActivePrivateCISnapshotMutationLocked(scriptID); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	projected, err := preparePersistentLibraryScript(script, nil)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	script = projected
 	script.ID = scriptID
 	script.ProjectID = normalizeProjectID(script.ProjectID)
 	if err := tr.projectDeletionErrorLocked(script.ProjectID); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if strings.TrimSpace(script.Version) == "" {
 		script.Version = "1"
@@ -358,42 +374,43 @@ func (tr *TestRunner) createScriptDurable(script *dsl.Script, authoringApprovedJ
 		if strings.TrimSpace(script.RefKey) == "" {
 			sequence, err := tr.nextScriptSeqLocked()
 			if err != nil {
-				return nil, fmt.Errorf("allocate script reference key: %w", err)
+				return nil, false, fmt.Errorf("allocate script reference key: %w", err)
 			}
 			script.RefKey = refkey.Script(tr.envCode, sequence, 1)
 		}
 		created, err := store.CreateScriptIfAbsent(script)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		if !created {
 			existing, err := store.GetScript(script.ID)
 			if err != nil {
-				return nil, fmt.Errorf("load conflicting script %s: %w", script.ID, err)
+				return nil, false, fmt.Errorf("load conflicting script %s: %w", script.ID, err)
 			}
 			if normalizeProjectID(existing.ProjectID) != script.ProjectID || !equivalentCreateOnlyScript(existing, script) {
-				return nil, fmt.Errorf("%w: script %s already exists and is not owned by this approval", errScriptConcurrentChange, script.ID)
+				return nil, false, fmt.Errorf("%w: script %s already exists and is not owned by this approval", errScriptConcurrentChange, script.ID)
 			}
 			persisted = existing
+			created = false
 		}
 	} else if tr.scriptStore != nil {
-		return nil, fmt.Errorf("durable script store does not support atomic create-only persistence")
+		return nil, false, fmt.Errorf("durable script store does not support atomic create-only persistence")
 	} else {
 		if existing := tr.scripts[script.ID]; existing != nil {
 			if normalizeProjectID(existing.ProjectID) != script.ProjectID || !equivalentCreateOnlyScript(existing.Script, script) {
-				return nil, fmt.Errorf("%w: script %s already exists and is not owned by this approval", errScriptConcurrentChange, script.ID)
+				return nil, false, fmt.Errorf("%w: script %s already exists and is not owned by this approval", errScriptConcurrentChange, script.ID)
 			}
-			return cloneStoredScriptForReadLocked(existing), nil
+			return cloneStoredScriptForReadLocked(existing), false, nil
 		}
 		if strings.TrimSpace(script.RefKey) == "" {
 			sequence, err := tr.nextScriptSeqLocked()
 			if err != nil {
-				return nil, fmt.Errorf("allocate script reference key: %w", err)
+				return nil, false, fmt.Errorf("allocate script reference key: %w", err)
 			}
 			script.RefKey = refkey.Script(tr.envCode, sequence, 1)
 		}
 		if err := tr.saveStoredScript(script); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
 
@@ -419,7 +436,7 @@ func (tr *TestRunner) createScriptDurable(script *dsl.Script, authoringApprovedJ
 	tr.scripts[stored.ID] = stored
 	tr.contentRevision++
 	tr.observeAndIndexRefKeyLocked(stored.RefKey, stored.ID)
-	return cloneStoredScriptForReadLocked(stored), nil
+	return cloneStoredScriptForReadLocked(stored), created, nil
 }
 
 // UpdateScriptDurableIfUnchanged applies a synchronized library update only if

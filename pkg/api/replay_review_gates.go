@@ -80,7 +80,7 @@ func scriptReviewGateIssuesWithBrowserPolicy(
 				operation,
 			))
 		}
-		if nativeBrunoReviewRequiredAction(action) {
+		if durableImportReviewGateAction(action) {
 			issues = append(issues, fmt.Sprintf("%s: review-required action blocks %s until review metadata is removed", label, operation))
 		} else if browserProtocol && enforceBrowserPolicy && reviewGatedJavaScriptAction(action) {
 			if !policy.AllowReviewedJavaScript {
@@ -129,7 +129,7 @@ func scriptHasNativeBrunoReviewGate(script *dsl.Script) bool {
 	}
 	found := false
 	err := dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
-		if nativeBrunoReviewRequiredAction(reviewGateSurfaceAction(ref)) {
+		if durableImportReviewGateAction(reviewGateSurfaceAction(ref)) {
 			found = true
 		}
 		return nil
@@ -153,15 +153,48 @@ func reviewRequiredAction(action dsl.Action) bool {
 		metadataString(action.Metadata, "review_gate") == "bruno_javascript"
 }
 
-func nativeBrunoReviewRequiredAction(action dsl.Action) bool {
-	// The gate itself is the durable enforcement marker. Requiring its
-	// companion flags would let an author bypass the blocker by deleting only
-	// review_required or promotion_blocker while leaving untranslated Bruno
-	// behavior in place.
+// durableReviewGateSource declares an importer whose review gates are durable:
+// the block survives browser review policy and cannot be waived per replay.
+//
+// This is a registry rather than a hard-coded prefix so a second importer can
+// opt in by adding an entry. It is deliberately NOT "any non-empty
+// review_gate": TrueClient writes review_gate="javascript"
+// (pkg/convert/trueclient/javascript.go) and converters going through
+// importreview.ApplyToAction write the first review finding's code. Those are
+// review markers under the browser policy, which an operator can knowingly
+// override. Promoting them to permanent blocks would retroactively make
+// existing TrueClient and enterprise-archive imports unrunnable.
+type durableReviewGateSource struct {
+	// gatePrefix matches review_gate values this importer owns.
+	gatePrefix string
+	// sourceProfile additionally hardens an action carrying the ordinary
+	// review_required/promotion_blocker flags when it came from this importer.
+	sourceProfile string
+}
+
+var durableReviewGateSources = []durableReviewGateSource{
+	{gatePrefix: "bruno_", sourceProfile: "bruno_native"},
+}
+
+// durableImportReviewGateAction reports whether an action carries a gate whose
+// block is durable.
+//
+// The gate itself is the enforcement marker. Requiring its companion flags
+// would let an author bypass the blocker by deleting only review_required or
+// promotion_blocker while leaving the untranslated source behavior in place.
+func durableImportReviewGateAction(action dsl.Action) bool {
 	gate := metadataString(action.Metadata, "review_gate")
-	return strings.HasPrefix(gate, "bruno_") ||
-		(metadataString(action.Metadata, "source_profile") == "bruno_native" &&
-			reviewRequiredAction(action))
+	profile := metadataString(action.Metadata, "source_profile")
+	for _, source := range durableReviewGateSources {
+		if source.gatePrefix != "" && strings.HasPrefix(gate, source.gatePrefix) {
+			return true
+		}
+		if source.sourceProfile != "" && profile == source.sourceProfile &&
+			reviewRequiredAction(action) {
+			return true
+		}
+	}
+	return false
 }
 
 // metadataBool, metadataString and metadataStringSlice adapt the shared
