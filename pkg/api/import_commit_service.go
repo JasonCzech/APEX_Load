@@ -575,7 +575,7 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 				return
 			}
 		}
-		stored, err := s.runner.CreateScriptDurable(script)
+		stored, createdNow, err := s.runner.CreateScriptDurableReportingReplay(script)
 		if err != nil {
 			if errors.Is(err, errScriptConcurrentChange) {
 				writeError(w, http.StatusConflict, err.Error())
@@ -591,15 +591,29 @@ func (s *Server) handleImportCommit(w http.ResponseWriter, r *http.Request, spec
 			}
 			candidateClaim = nil
 		}
-		s.recordAuditEvent(r, "script.import."+spec.auditProfile+".create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": stored.Name})
-		spec.writeResponse(w, http.StatusCreated, map[string]any{
-			"scripts":       maskStoredScripts([]*StoredScript{stored}),
-			"script":        maskScriptSecrets(stored.Script),
-			"stored_script": maskStoredScript(stored),
-			"replaced":      false,
-			"dry_run":       false,
-			"diff":          diff,
-			"preflight":     preflight,
+		// A retry after an interrupted commit resolves to the same deterministic
+		// script id and create-only persistence hands the existing row back
+		// instead of erroring. Report that outcome so a client — or the CLI's
+		// ambiguous-failure retry — can tell "I committed this" from "this was
+		// already committed" rather than assuming the former. 201 stays the
+		// first-write status; a replay is 200, matching the native Bruno commit.
+		status := http.StatusCreated
+		auditOutcome := "create"
+		if !createdNow {
+			status = http.StatusOK
+			auditOutcome = "create.idempotent_replay"
+		}
+		s.recordAuditEvent(r, "script.import."+spec.auditProfile+"."+auditOutcome, "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": stored.Name})
+		spec.writeResponse(w, status, map[string]any{
+			"scripts":           maskStoredScripts([]*StoredScript{stored}),
+			"script":            maskScriptSecrets(stored.Script),
+			"stored_script":     maskStoredScript(stored),
+			"replaced":          false,
+			"created":           createdNow,
+			"idempotent_replay": !createdNow,
+			"dry_run":           false,
+			"diff":              diff,
+			"preflight":         preflight,
 		})
 		return
 	}
