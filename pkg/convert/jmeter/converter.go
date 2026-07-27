@@ -463,7 +463,20 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			ctx.assertions = append(ctx.assertions, assertions...)
 			result.Stats.Assertions += len(assertions)
 		case "HTTPSamplerProxy":
-			action, warnings, convertErr := convertHTTPSampler(child, ctx, opts, diagnostics)
+			// A HeaderManager nested under a sampler's own hashTree applies to
+			// that sampler alone in JMeter. Sampler children are not walked (see
+			// the recursion guard at the end of this loop), and HeaderManager is
+			// in the known-supported set, so it produced no diagnostic either:
+			// the headers were silently dropped and the imported request went out
+			// without them, auth headers included.
+			samplerCtx := ctx
+			if scoped := jmeterSamplerScopedHeaders(child); len(scoped) > 0 {
+				next := *ctx
+				next.headers = append(append(dsl.HeaderList(nil), ctx.headers...), scoped...)
+				samplerCtx = &next
+				result.Stats.Headers += len(scoped)
+			}
+			action, warnings, convertErr := convertHTTPSampler(child, samplerCtx, opts, diagnostics)
 			if convertErr != nil {
 				if ctx.importErr != nil {
 					*ctx.importErr = convertErr
@@ -717,3 +730,25 @@ func simpleJMeterCondition(raw string) (dsl.Condition, bool) {
 // whiles are unbounded, but a replayed loop whose exit condition never fires
 // must not hang a VUser.
 const jmeterWhileLoopSafetyCap = 100
+
+// jmeterSamplerScopedHeaders collects HeaderManager entries nested beneath one
+// sampler. In JMeter a HeaderManager placed inside a sampler's hashTree applies
+// to that sampler only, unlike a thread-group-level manager which applies to
+// every sampler beneath it. Nested controllers are not descended into: their
+// samplers are converted separately and would inherit the wrong scope.
+func jmeterSamplerScopedHeaders(sampler *treeNode) dsl.HeaderList {
+	if sampler == nil {
+		return nil
+	}
+	var headers dsl.HeaderList
+	for _, child := range sampler.Children {
+		if child == nil || child.Element == nil {
+			continue
+		}
+		if child.Element.Name != "HeaderManager" {
+			continue
+		}
+		headers = append(headers, parseHeaders(child.Element)...)
+	}
+	return headers
+}

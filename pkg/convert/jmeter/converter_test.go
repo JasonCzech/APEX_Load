@@ -1461,3 +1461,94 @@ func TestConvertJMXProjectsCredentialsWithoutDisclosureAndIsDeterministic(t *tes
 		}
 	}
 }
+
+// TestConvertJMXAppliesSamplerScopedHeaderManager pins per-sampler header
+// scoping.
+//
+// In JMeter a HeaderManager nested inside a sampler's own hashTree applies to
+// that sampler only. The importer skipped sampler children entirely and
+// classified HeaderManager as a supported element, so those headers were
+// dropped with no warning: the converted request went out without them, auth
+// headers included, and nothing in the review surfaced the loss.
+func TestConvertJMXAppliesSamplerScopedHeaderManager(t *testing.T) {
+	result, err := ConvertJMX([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2">
+  <hashTree>
+    <TestPlan testname="scoped"><boolProp name="TestPlan.functional_mode">false</boolProp></TestPlan>
+    <hashTree>
+      <ThreadGroup testname="Group"><stringProp name="ThreadGroup.num_threads">1</stringProp><stringProp name="ThreadGroup.ramp_time">1</stringProp></ThreadGroup>
+      <hashTree>
+        <HeaderManager testname="Shared" enabled="true">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">X-Shared</stringProp>
+              <stringProp name="Header.value">shared-value</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <HTTPSamplerProxy testname="scoped" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.example.test</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/scoped</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <HeaderManager testname="Scoped" enabled="true">
+            <collectionProp name="HeaderManager.headers">
+              <elementProp name="" elementType="Header">
+                <stringProp name="Header.name">X-Scoped</stringProp>
+                <stringProp name="Header.value">scoped-value</stringProp>
+              </elementProp>
+            </collectionProp>
+          </HeaderManager>
+          <hashTree/>
+        </hashTree>
+        <HTTPSamplerProxy testname="plain" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.example.test</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/plain</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`), ConvertOptions{})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	if len(result.Scripts) != 1 || len(result.Scripts[0].Actions) != 2 {
+		t.Fatalf("actions = %#v, want two", result.Scripts)
+	}
+	scoped := result.Scripts[0].Actions[0]
+	plain := result.Scripts[0].Actions[1]
+
+	if headerValue(scoped, "X-Scoped") != "scoped-value" {
+		t.Fatalf("sampler-scoped header was dropped: %#v", scoped.HeaderList)
+	}
+	if headerValue(scoped, "X-Shared") != "shared-value" {
+		t.Fatalf("thread-group header did not reach the scoped sampler: %#v", scoped.HeaderList)
+	}
+	// Scoping is the point: the second sampler must not inherit it.
+	if headerValue(plain, "X-Scoped") != "" {
+		t.Fatalf("sampler-scoped header leaked to a sibling sampler: %#v", plain.HeaderList)
+	}
+	if headerValue(plain, "X-Shared") != "shared-value" {
+		t.Fatalf("thread-group header did not reach the sibling sampler: %#v", plain.HeaderList)
+	}
+}
+
+func headerValue(action dsl.Action, name string) string {
+	for _, header := range action.HeaderList {
+		if strings.EqualFold(header.Name, name) {
+			return header.Value
+		}
+	}
+	for key, value := range action.Headers {
+		if strings.EqualFold(key, name) {
+			return value
+		}
+	}
+	return ""
+}
