@@ -382,7 +382,7 @@ func (s *SQLiteStore) DeleteScriptIfUnchanged(id string, expectedUpdatedAt time.
 	)`, id, id, currentUpdatedRaw); err != nil {
 		return false, err
 	}
-	result, err := tx.Exec(`DELETE FROM bruno_source_revisions WHERE script_id = ? AND EXISTS (
+	result, err := tx.Exec(`DELETE FROM import_source_revisions WHERE script_id = ? AND EXISTS (
 		SELECT 1 FROM scripts WHERE id = ? AND CAST(updated_at AS TEXT) = ?
 	)`, id, id, currentUpdatedRaw)
 	if err != nil {
@@ -545,7 +545,7 @@ func (s *SQLiteStore) DeleteScript(id string) error {
 		{query: `DELETE FROM github_check_links WHERE script_id = ?`, args: []any{id}},
 		{query: `DELETE FROM github_script_links WHERE script_id = ?`, args: []any{id}},
 		{query: `DELETE FROM script_recordings WHERE script_id = ?`, args: []any{id}},
-		{query: `DELETE FROM bruno_source_revisions WHERE script_id = ?`, args: []any{id}},
+		{query: `DELETE FROM import_source_revisions WHERE script_id = ?`, args: []any{id}},
 		{query: deleteUnreferencedImportArtifactsSQL},
 		{query: `DELETE FROM scripts WHERE id = ?`, args: []any{id}},
 	} {
@@ -991,11 +991,11 @@ func decodeAuthoringSessionJSON(session *AuthoringSession, draftJSON string, rev
 // script delete silently remove artifacts a live import batch still points at —
 // the failure would surface much later as an unreadable source or a failed
 // rollback, with nothing tying it back to the delete. Any new table that
-// references bruno_source_artifacts must be added to this UNION, and
+// references import_source_artifacts must be added to this UNION, and
 // TestScriptDeleteKeepsArtifactsReferencedByAnImportBatch covers it.
-const deleteUnreferencedImportArtifactsSQL = `DELETE FROM bruno_source_artifacts WHERE id NOT IN (
-	SELECT raw_artifact_id FROM bruno_source_revisions
-	UNION SELECT sanitized_artifact_id FROM bruno_source_revisions
-	UNION SELECT raw_artifact_id FROM bruno_native_import_batches
-	UNION SELECT sanitized_artifact_id FROM bruno_native_import_batches
+const deleteUnreferencedImportArtifactsSQL = `DELETE FROM import_source_artifacts WHERE id NOT IN (
+	SELECT raw_artifact_id FROM import_source_revisions
+	UNION SELECT sanitized_artifact_id FROM import_source_revisions
+	UNION SELECT raw_artifact_id FROM import_batches
+	UNION SELECT sanitized_artifact_id FROM import_batches
 )`
