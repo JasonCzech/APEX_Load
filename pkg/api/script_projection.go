@@ -5,8 +5,11 @@ package api
 // viewer, export, federation, and source-control representations must not.
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -14,8 +17,11 @@ import (
 	"unicode"
 
 	"github.com/google/uuid"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/engine"
+	"github.com/jasonczech/apexload/pkg/javarunner"
 	"github.com/jasonczech/apexload/pkg/scrub"
 	"github.com/jasonczech/apexload/pkg/storage"
 )
@@ -28,6 +34,11 @@ var scriptPortableReferencePattern = regexp.MustCompile(`^(?:(?:env|data|var|par
 var scriptPortableRandomPattern = regexp.MustCompile(`^fn\.random\(\s*-?\d+\s*,\s*-?\d+\s*\)$`)
 var scriptPortableRandomStringPattern = regexp.MustCompile(`^fn\.random_string\(\s*\d+\s*\)$`)
 var redactedXMLMessageIDPattern = regexp.MustCompile(`(?is)(<(?:(?:[\w.-]+):)?messageId\b[^>]*>)\s*\[REDACTED\]\s*(</(?:(?:[\w.-]+):)?messageId\s*>)`)
+var xmlMessageIDValuePattern = regexp.MustCompile(`(?is)(<(?:(?:[\w.-]+):)?messageId\b[^>]*>)([^<>]*)(</(?:(?:[\w.-]+):)?messageId\s*>)`)
+var portableXMLSecretElementPattern = regexp.MustCompile(`(?is)<(?:[\w.-]+:)?[\w.-]+\b[^>]*>\s*\{\{\s*secret\.` + engine.LogicalSecretNameInputPattern + `\s*\}\}\s*</(?:[\w.-]+:)?[\w.-]+\s*>`)
+var portableXMLSecretAttributePattern = regexp.MustCompile(`(?is)(?:[\w.-]+:)?[\w.-]+\s*=\s*(?:"\s*\{\{\s*secret\.` + engine.LogicalSecretNameInputPattern + `\s*\}\}\s*"|'\s*\{\{\s*secret\.` + engine.LogicalSecretNameInputPattern + `\s*\}\}\s*')`)
+var portableXMLTemplateElementPattern = regexp.MustCompile(`(?is)<(?:[\w.-]+:)?[\w.-]+\b[^>]*>\s*\{\{[^{}\r\n]{1,256}\}\}\s*</(?:[\w.-]+:)?[\w.-]+\s*>`)
+var portableXMLTemplateAttributePattern = regexp.MustCompile(`(?is)(?:[\w.-]+:)?[\w.-]+\s*=\s*(?:"\s*\{\{[^{}\r\n]{1,256}\}\}\s*"|'\s*\{\{[^{}\r\n]{1,256}\}\}\s*')`)
 
 // maskScriptSecrets returns a deep, portable copy of script with inline
 // credentials removed. It intentionally preserves explicit secret references
@@ -38,6 +49,19 @@ func maskScriptSecrets(script *dsl.Script) *dsl.Script {
 		return nil
 	}
 	payload, err := json.Marshal(script)
+	if err != nil {
+		return nil
+	}
+	var working dsl.Script
+	if err := json.Unmarshal(payload, &working); err != nil {
+		return nil
+	}
+	maskJavaVuserVMParameterValues(&working)
+	protectedBodies, ok := projectScriptRequestBodies(&working)
+	if !ok {
+		return nil
+	}
+	payload, err = json.Marshal(&working)
 	if err != nil {
 		return nil
 	}
@@ -54,7 +78,142 @@ func maskScriptSecrets(script *dsl.Script) *dsl.Script {
 	if err := json.Unmarshal(projectedPayload, &masked); err != nil {
 		return nil
 	}
+	restored := 0
+	if err := dslwalk.Walk(&masked, func(ref dslwalk.SurfaceRef) error {
+		body, exists := protectedBodies[ref.Path]
+		if !exists {
+			return nil
+		}
+		setImportCommitSurfaceBody(ref, body)
+		restored++
+		return nil
+	}); err != nil || restored != len(protectedBodies) {
+		return nil
+	}
+	restoreBrunoNativeCompactProvenance(&masked, script)
 	return &masked
+}
+
+// maskJavaVuserVMParameterValues is a read/export defense for legacy rows and
+// any response assembled before current DSL validation runs. JVM arguments are
+// observable in the operating-system process table, so an unsafe value must
+// never be copied back through an API projection. Safe JVM tuning flags and
+// ordinary configuration values remain visible and round-trip unchanged.
+func maskJavaVuserVMParameterValues(script *dsl.Script) {
+	if script == nil {
+		return
+	}
+	for index, parameter := range script.Config.JavaVuser.AdditionalVMParameters {
+		if javarunner.ContainsSensitiveVMParameterValue(parameter) {
+			script.Config.JavaVuser.AdditionalVMParameters[index] = maskedScriptSecret
+		}
+	}
+}
+
+// validateJavaVMParameterDisclosureSafety is the write-side companion to the
+// legacy response masker above. JVM arguments intentionally do not support
+// {{secret.*}} resolution because argv is process-observable. Reject unsafe
+// values with value-free diagnostics before generic secret-binding discovery
+// can offer an invalid project-secret binding for this surface.
+func validateJavaVMParameterDisclosureSafety(script *dsl.Script) error {
+	if script == nil {
+		return nil
+	}
+	issues := javarunner.ValidateVMParameters(script.Config.JavaVuser.AdditionalVMParameters)
+	if len(issues) == 0 {
+		return nil
+	}
+	issue := issues[0]
+	if issue.Index < 0 {
+		return fmt.Errorf(
+			"config.java_vuser.additional_vm_parameters is invalid (%s) and cannot be stored or injected securely; correct or remove the argument list",
+			issue.Category,
+		)
+	}
+	return fmt.Errorf(
+		"config.java_vuser.additional_vm_parameters[%d] is invalid (%s) and cannot be stored or injected securely; use a non-sensitive governed option or remove the argument",
+		issue.Index,
+		issue.Category,
+	)
+}
+
+// projectScriptRequestBodies keeps every request body out of the generic
+// free-text projector. Shared structured codecs preserve source bytes and
+// rewrite only credential spans; unrecognized raw/file bytes pass through
+// exactly. Unsafe typed or mixed content fails closed.
+func projectScriptRequestBodies(script *dsl.Script) (map[string]string, bool) {
+	protected := make(map[string]string)
+	err := dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		body, ok, err := decodeImportCommitProjectionBody(ref)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return nil
+		}
+		projected, result, err := credentialpolicy.ProjectRequestBody(
+			body.wire,
+			importCommitSurfaceContentType(ref),
+			credentialpolicy.Options{
+				Mode: credentialpolicy.Redact,
+				Source: credentialpolicy.SourceRef{
+					Format:  "script_projection",
+					Path:    ref.Path,
+					Pointer: "/body",
+				},
+				RequestKey:         ref.Path,
+				TrustedWholeValues: portableBodyTemplateValues(body.text()),
+				TargetField:        "body",
+			},
+		)
+		for index := range result.Requirements {
+			result.Requirements[index].Value = ""
+		}
+		if err != nil || result.Disposition == credentialpolicy.Rejected || projected == nil {
+			return errors.New("request body cannot be projected safely")
+		}
+		if result.Disposition == credentialpolicy.BlockedDraft {
+			applyImportCommitBodyReviewGate(ref, "script_projection", result)
+		}
+		projected = projectMaskedXMLMessageIDs(projected)
+		protected[ref.Path] = body.encode(projected)
+		setImportCommitSurfaceBody(ref, "")
+		return nil
+	})
+	if err != nil {
+		return nil, false
+	}
+	return protected, true
+}
+
+func projectMaskedXMLMessageIDs(payload []byte) []byte {
+	value := string(payload)
+	matches := xmlMessageIDValuePattern.FindAllStringSubmatchIndex(value, -1)
+	if len(matches) == 0 {
+		return payload
+	}
+	var builder strings.Builder
+	builder.Grow(len(value))
+	cursor := 0
+	changed := false
+	for _, match := range matches {
+		if len(match) != 8 {
+			continue
+		}
+		content := value[match[4]:match[5]]
+		if scrubScriptText(content, false) != maskedScriptSecret {
+			continue
+		}
+		builder.WriteString(value[cursor:match[4]])
+		builder.WriteString("{{fn.uuid()}}")
+		cursor = match[5]
+		changed = true
+	}
+	if !changed {
+		return payload
+	}
+	builder.WriteString(value[cursor:])
+	return []byte(builder.String())
 }
 
 func maskStoredScript(stored *StoredScript) *StoredScript {
@@ -126,6 +285,7 @@ type scriptProjectionContext struct {
 	headers        bool
 	headerList     bool
 	secretBindings bool
+	metadata       bool
 }
 
 func projectScriptNode(value any, ctx scriptProjectionContext) any {
@@ -181,6 +341,7 @@ func projectScriptNode(value any, ctx scriptProjectionContext) any {
 				headers:        isScriptHeaderMap(key),
 				headerList:     isScriptHeaderList(key),
 				secretBindings: isScriptSecretBindingsMap(key),
+				metadata:       ctx.metadata || normalizeScriptFieldName(key) == "metadata",
 			}
 			if ctx.headers {
 				out[key] = projectHeaderValue(key, child)
@@ -289,12 +450,18 @@ func projectHeaderValue(name string, value any) any {
 		}
 		return projectSensitiveScriptValue(text)
 	}
+	if isNonSecretIdentifierHeader(name) {
+		return scrub.ValueURL(text, scrub.Policy{})
+	}
 	return scrubScriptText(text, false)
 }
 
 func projectScriptString(value string, ctx scriptProjectionContext) string {
 	if value == "" || isPortableTemplateBinding(value) {
 		return value
+	}
+	if ctx.metadata && isPortableImportProvenanceIdentifierKey(ctx.key) {
+		return scrub.ValueURL(value, scrub.Policy{})
 	}
 	if isSecretReferenceKey(ctx.key) && isNamedSecretReference(value) {
 		return value
@@ -309,6 +476,24 @@ func projectScriptString(value string, ctx scriptProjectionContext) string {
 		return scrubScriptText(value, false)
 	}
 	return value
+}
+
+func isNonSecretIdentifierHeader(name string) bool {
+	normalized := normalizeScriptFieldName(name)
+	if normalized == "" {
+		return false
+	}
+	for _, sensitive := range []string{"authorization", "password", "secret", "token", "cookie", "session", "credential", "apikey", "accesskey", "privatekey"} {
+		if strings.Contains(normalized, sensitive) {
+			return false
+		}
+	}
+	for _, suffix := range []string{"messageid", "traceid", "correlationid", "requestid"} {
+		if strings.HasSuffix(normalized, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 func maskScriptURL(value string) string {
@@ -354,15 +539,14 @@ func isSensitiveScriptKey(key string) bool {
 		return false
 	}
 	// Keep script projection aligned with the shared credential vocabulary used
-	// by URL/body/archive scrubbers. Script-specific handling below deliberately
-	// adds usernames and common password aliases because source exports should
-	// not disclose even low-entropy static login material.
+	// by URL/body/archive scrubbers. Usernames are identity material rather than
+	// credentials and must survive the legacy inspection/commit round trip.
 	if scrub.SensitiveName(key) {
 		return true
 	}
 	switch normalized {
 	case "authorization", "proxyauthorization", "password", "passwd", "passphrase",
-		"pwd", "pass", "username",
+		"pwd", "pass",
 		"token", "accesstoken", "refreshtoken", "idtoken", "authtoken",
 		"apikey", "accesskey", "accesskeyid", "secretkey", "secretaccesskey",
 		"awsaccesskeyid", "awssecretaccesskey", "clientsecret", "privatekey",
@@ -370,7 +554,7 @@ func isSensitiveScriptKey(key string) bool {
 		"cookie", "setcookie", "session", "sessionid", "csrftoken", "xsrftoken":
 		return true
 	default:
-		for _, suffix := range []string{"authorization", "password", "passwd", "passphrase", "username", "token", "secret", "apikey", "credential", "cookie", "sessionid", "privatekey", "accesskey", "accesskeyid", "secretaccesskey"} {
+		for _, suffix := range []string{"authorization", "password", "passwd", "passphrase", "token", "secret", "apikey", "credential", "cookie", "sessionid", "privatekey", "accesskey", "accesskeyid", "secretaccesskey"} {
 			if strings.HasSuffix(normalized, suffix) {
 				return true
 			}
@@ -479,18 +663,40 @@ func scrubScriptText(value string, urlValue bool) string {
 		if json.Unmarshal([]byte(value), &structured) == nil {
 			switch structured.(type) {
 			case map[string]any, []any:
-				projected := projectScriptNode(structured, scriptProjectionContext{opaqueMap: true})
-				if payload, err := json.Marshal(projected); err == nil {
-					return string(payload)
+				projected, result, err := credentialpolicy.ProjectJSON(
+					[]byte(value),
+					credentialpolicy.Options{
+						Mode:               credentialpolicy.Redact,
+						Source:             credentialpolicy.SourceRef{Format: "script_projection"},
+						RequestKey:         "script_projection",
+						TrustedWholeValues: portableBodyTemplateValues(value),
+						TargetField:        "text",
+					},
+				)
+				if err == nil && result.Disposition != credentialpolicy.Rejected && projected != nil {
+					return string(projected)
 				}
 			}
 		}
 	}
+	var urlSeparators map[string]string
+	if urlValue {
+		// A URL has only one formal query delimiter, but imported and generated
+		// targets sometimes repeat "?name=value" instead of joining later
+		// parameters with '&'. ValueURL correctly treats everything after the
+		// first '?' as the query; without this reversible normalization, many
+		// protected template bindings become one high-entropy query value and
+		// the safe references are redacted together. Expose each later segment
+		// to the ordinary parameter scrubber, then restore the source bytes.
+		value, urlSeparators = protectAdditionalURLParamSeparators(value)
+	}
+	value, xmlSecretBindings := protectPortableXMLSecretBindings(value)
 	value, templateBindings := protectTemplateBindings(value)
 	references := portableScriptTemplateReferences(value)
 	protected := value
+	referencePlaceholderPrefix := scriptProjectionPlaceholderPrefix(value, "binding")
 	for i, reference := range references {
-		placeholder := fmt.Sprintf("apexbindingref%d", i)
+		placeholder := referencePlaceholderPrefix + strconv.Itoa(i) + "Z"
 		protected = strings.Replace(protected, reference, placeholder, 1)
 	}
 	if urlValue {
@@ -499,29 +705,167 @@ func scrubScriptText(value string, urlValue bool) string {
 		protected = scrub.Value(protected, scrub.Policy{})
 	}
 	for i, reference := range references {
-		placeholder := fmt.Sprintf("apexbindingref%d", i)
+		placeholder := referencePlaceholderPrefix + strconv.Itoa(i) + "Z"
 		protected = strings.Replace(protected, placeholder, reference, 1)
 	}
 	for placeholder, binding := range templateBindings {
 		protected = strings.ReplaceAll(protected, placeholder, binding)
 	}
+	for placeholder, binding := range xmlSecretBindings {
+		protected = strings.ReplaceAll(protected, placeholder, binding)
+	}
+	for placeholder, separator := range urlSeparators {
+		protected = strings.ReplaceAll(protected, placeholder, separator)
+	}
 	protected = redactedXMLMessageIDPattern.ReplaceAllString(protected, `${1}{{fn.uuid()}}${2}`)
 	return protected
 }
 
+func portableBodyTemplateValues(value string) map[string]struct{} {
+	decoder := json.NewDecoder(strings.NewReader(value))
+	trusted := make(map[string]struct{})
+	for _, reference := range portableScriptTemplateReferences(value) {
+		trusted[strings.TrimSpace(reference)] = struct{}{}
+	}
+	for {
+		token, err := decoder.Token()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			break
+		}
+		text, ok := token.(string)
+		if !ok || !isPortableTemplateBinding(text) {
+			continue
+		}
+		trusted[strings.TrimSpace(text)] = struct{}{}
+	}
+	if len(trusted) == 0 {
+		return nil
+	}
+	return trusted
+}
+
+// protectAdditionalURLParamSeparators temporarily represents every '?' after
+// the URL's first query delimiter (and every '?' in the fragment) as an
+// ordinary '&'-delimited, low-entropy parameter. This lets ValueURL inspect
+// each imported parameter independently while the collision-safe marker makes
+// restoration exact even when the source already contains marker-like text.
+func protectAdditionalURLParamSeparators(value string) (string, map[string]string) {
+	if !strings.Contains(value, "?") {
+		return value, nil
+	}
+	placeholderPrefix := scriptProjectionPlaceholderPrefix(value, "urlseparator")
+	replacements := map[string]string{}
+	var protected strings.Builder
+	protected.Grow(len(value))
+	queryStarted := false
+	inFragment := false
+	for offset := 0; offset < len(value); offset++ {
+		switch value[offset] {
+		case '#':
+			inFragment = true
+			protected.WriteByte(value[offset])
+		case '?':
+			if !queryStarted && !inFragment {
+				queryStarted = true
+				protected.WriteByte(value[offset])
+				continue
+			}
+			placeholder := "&" + placeholderPrefix + strconv.Itoa(len(replacements)) + "Z=safe&"
+			replacements[placeholder] = "?"
+			protected.WriteString(placeholder)
+		default:
+			protected.WriteByte(value[offset])
+		}
+	}
+	if len(replacements) == 0 {
+		return value, nil
+	}
+	return protected.String(), replacements
+}
+
+// protectPortableXMLSecretBindings preserves already-governed secret
+// references when they are the complete value of an XML element or attribute.
+// The generic scrubber intentionally replaces the entire value of
+// credential-named XML nodes, so protecting only the inner {{secret.*}} token
+// would still lose the executable reference.
+func protectPortableXMLSecretBindings(value string) (string, map[string]string) {
+	protected := value
+	replacements := map[string]string{}
+	placeholderPrefix := scriptProjectionPlaceholderPrefix(value, "xmlbinding")
+	nextPlaceholder := func(binding string) string {
+		// The trailing delimiter keeps index 1 from being a prefix of index 10,
+		// so restoration remains safe regardless of map iteration order.
+		placeholder := placeholderPrefix + strconv.Itoa(len(replacements)) + "Z"
+		replacements[placeholder] = binding
+		return placeholder
+	}
+	protected = portableXMLSecretElementPattern.ReplaceAllStringFunc(protected, func(candidate string) string {
+		return nextPlaceholder(scrubPortableXMLElementOpeningTag(candidate))
+	})
+	protected = portableXMLSecretAttributePattern.ReplaceAllStringFunc(protected, nextPlaceholder)
+	protectPortable := func(candidate string) string {
+		reference := scriptPortableTemplatePattern.FindString(candidate)
+		if !isPortableScriptTemplateReference(reference) {
+			return candidate
+		}
+		return nextPlaceholder(scrubPortableXMLElementOpeningTag(candidate))
+	}
+	protected = portableXMLTemplateElementPattern.ReplaceAllStringFunc(protected, protectPortable)
+	protected = portableXMLTemplateAttributePattern.ReplaceAllStringFunc(protected, protectPortable)
+	return protected, replacements
+}
+
+// scrubPortableXMLElementOpeningTag keeps whole-element template protection from
+// hiding plaintext credentials in sibling attributes. Only the element text
+// template needs preservation; the opening tag must still pass through the
+// ordinary credential scrubber before the complete element is hidden behind a
+// placeholder.
+func scrubPortableXMLElementOpeningTag(candidate string) string {
+	end := strings.IndexByte(candidate, '>')
+	if end < 0 {
+		return candidate
+	}
+	return scrub.Value(candidate[:end+1], scrub.Policy{}) + candidate[end+1:]
+}
+
 func protectTemplateBindings(value string) (string, map[string]string) {
 	replacements := map[string]string{}
+	placeholderPrefix := scriptProjectionPlaceholderPrefix(value, "querybinding")
 	parts := strings.FieldsFunc(value, func(r rune) bool { return r == '?' || r == '&' || r == '#' })
 	for _, part := range parts {
 		_, rawValue, ok := strings.Cut(part, "=")
 		if !ok || !isPortableTemplateBinding(rawValue) {
 			continue
 		}
-		placeholder := fmt.Sprintf("apexsafe%d=apexref%d", len(replacements), len(replacements))
+		placeholder := placeholderPrefix + strconv.Itoa(len(replacements)) + "=safe"
 		replacements[placeholder] = part
 		value = strings.Replace(value, part, placeholder, 1)
 	}
 	return value, replacements
+}
+
+// scriptProjectionPlaceholderPrefix returns a deterministic marker namespace
+// that cannot occur in the input. Digest groups are deliberately shorter than
+// the generic high-entropy-token threshold so the scrubber cannot redact its
+// own temporary markers.
+func scriptProjectionPlaceholderPrefix(value, domain string) string {
+	digest := fmt.Sprintf("%x", sha256.Sum256([]byte(domain+"\x00"+value)))
+	var prefix strings.Builder
+	prefix.WriteString("apex")
+	prefix.WriteString(domain)
+	prefix.WriteByte('~')
+	for offset := 0; offset < len(digest); offset += 4 {
+		prefix.WriteString(digest[offset : offset+4])
+		prefix.WriteByte('~')
+	}
+	result := prefix.String()
+	for strings.Contains(value, result) {
+		result += "~"
+	}
+	return result
 }
 
 func isNamedSecretReference(value string) bool {
@@ -667,11 +1011,16 @@ func reconcileProjectedJSON(incoming any, projectedPrior any, rawPrior any, path
 	case map[string]any:
 		projectedMap, _ := projectedPrior.(map[string]any)
 		rawMap, _ := rawPrior.(map[string]any)
-		priorWasReviewOnly := isNonExecutableReviewAction(projectedMap) || isNonExecutableReviewAction(rawMap)
-		if priorWasReviewOnly && !isNonExecutableReviewAction(typed) && jsonValueContainsExecutableMaskedSecret(typed, path) {
+		priorWasReviewOnly := isNonExecutableReviewAction(projectedMap) ||
+			isNonExecutableReviewAction(rawMap) ||
+			isDurablyImportReviewGatedAction(projectedMap) ||
+			isDurablyImportReviewGatedAction(rawMap)
+		incomingReviewOnly := isNonExecutableReviewAction(typed) ||
+			isDurablyImportReviewGatedAction(typed)
+		if priorWasReviewOnly && !incomingReviewOnly && jsonValueContainsExecutableMaskedSecret(typed, path) {
 			return nil, fmt.Errorf("%s promotes redacted review evidence into executable fields; bind a secret reference instead", path)
 		}
-		if isNonExecutableReviewAction(typed) {
+		if incomingReviewOnly {
 			return incoming, nil
 		}
 		out := make(map[string]any, len(typed))
@@ -712,8 +1061,13 @@ func reconcileProjectedJSON(incoming any, projectedPrior any, rawPrior any, path
 				if i < len(rawSlice) {
 					rawMap, _ = rawSlice[i].(map[string]any)
 				}
-				priorWasReviewOnly := isNonExecutableReviewAction(projectedMap) || isNonExecutableReviewAction(rawMap)
-				if priorWasReviewOnly && !isNonExecutableReviewAction(incomingMap) && jsonValueContainsExecutableMaskedSecret(incomingMap, path) {
+				priorWasReviewOnly := isNonExecutableReviewAction(projectedMap) ||
+					isNonExecutableReviewAction(rawMap) ||
+					isDurablyImportReviewGatedAction(projectedMap) ||
+					isDurablyImportReviewGatedAction(rawMap)
+				incomingReviewOnly := isNonExecutableReviewAction(incomingMap) ||
+					isDurablyImportReviewGatedAction(incomingMap)
+				if priorWasReviewOnly && !incomingReviewOnly && jsonValueContainsExecutableMaskedSecret(incomingMap, path) {
 					return nil, fmt.Errorf("%s[%d] promotes redacted review evidence into executable fields; bind a secret reference instead", path, i)
 				}
 			}
@@ -745,7 +1099,7 @@ func jsonValueContainsExecutableMaskedSecret(value any, path string) bool {
 	case string:
 		return strings.Contains(typed, maskedScriptSecret)
 	case map[string]any:
-		if isNonExecutableReviewAction(typed) {
+		if isNonExecutableReviewAction(typed) || isDurablyImportReviewGatedAction(typed) {
 			return false
 		}
 		for key, child := range typed {
@@ -796,7 +1150,7 @@ func projectEmbeddedScriptNodes(value any) any {
 	switch typed := value.(type) {
 	case map[string]any:
 		if isScriptJSONObject(typed) {
-			return projectScriptNode(typed, scriptProjectionContext{})
+			return maskScriptJSONObject(typed)
 		}
 		out := make(map[string]any, len(typed))
 		for key, child := range typed {
@@ -812,6 +1166,31 @@ func projectEmbeddedScriptNodes(value any) any {
 	default:
 		return value
 	}
+}
+
+// maskScriptJSONObject routes script-shaped values through the typed projection
+// boundary. In particular, maskScriptSecrets decodes body_encoding=base64,
+// projects the wire bytes, and re-encodes them; sending an encoded body directly
+// through the generic free-text projector would corrupt it as a high-entropy
+// token while leaving the base64 encoding marker in place.
+func maskScriptJSONObject(value map[string]any) any {
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil
+	}
+	var script dsl.Script
+	if err := json.Unmarshal(payload, &script); err != nil {
+		return nil
+	}
+	masked := maskScriptSecrets(&script)
+	if masked == nil {
+		return nil
+	}
+	projected, err := scriptAsJSONValue(masked)
+	if err != nil {
+		return nil
+	}
+	return projected
 }
 
 func isScriptJSONObject(value map[string]any) bool {

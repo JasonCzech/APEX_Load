@@ -12,6 +12,7 @@ import type {
   ScriptDefinition,
 } from '../types/scripts'
 import { jmsConfigForProtocol, jmsProviderForProtocol } from './scriptEditorHelpers'
+import { formatMillisecondsAsSecondsLabel } from './runtimeTiming'
 import {
   EMPTY_ACTION,
   EMPTY_BROWSER_ACTION,
@@ -209,28 +210,11 @@ export function formatScriptProtocolLabel(protocol: string): string {
   return SCRIPT_PROTOCOL_OPTIONS.find(option => option.value === protocol)?.label || protocol.toUpperCase()
 }
 
-export function formatMillisecondsAsSecondsValue(
-  valueMs: number | null | undefined,
-  fallbackMs = 0,
-  emptyWhenUndefined = false,
-): string {
-  if ((valueMs === undefined || valueMs === null) && emptyWhenUndefined) return ''
-  const safeMs = valueMs ?? fallbackMs
-  if (!Number.isFinite(safeMs)) return '0'
-  const roundedSeconds = Math.round((safeMs / 1000) * 1000) / 1000
-  return roundedSeconds.toFixed(3).replace(/\.?0+$/, '')
-}
-
-export function formatMillisecondsAsSecondsLabel(valueMs: number | null | undefined, fallbackMs = 0): string {
-  return `${formatMillisecondsAsSecondsValue(valueMs, fallbackMs)}s`
-}
-
-export function parseSecondsInputAsMilliseconds(value: string, minSeconds = 0): number | null | undefined {
-  if (value.trim() === '') return undefined
-  const seconds = Number(value)
-  if (!Number.isFinite(seconds)) return null
-  return Math.round(Math.max(minSeconds, seconds) * 1000)
-}
+export {
+  formatMillisecondsAsSecondsLabel,
+  formatMillisecondsAsSecondsValue,
+  parseSecondsInputAsMilliseconds,
+} from './runtimeTiming'
 
 export function buildScriptRuntimeSummary(script: Pick<ScriptDefinition, 'config'>): ScriptRuntimeSummary {
   const httpProxyMode = script.config.http?.proxy_mode || 'none'
@@ -241,7 +225,9 @@ export function buildScriptRuntimeSummary(script: Pick<ScriptDefinition, 'config
       : 'Default'
   const thinkTimeLabel = script.config.think_time?.ignore
     ? 'Disabled'
-    : `${script.config.think_time?.type || 'fixed'} / ${formatMillisecondsAsSecondsLabel(script.config.think_time?.mean_ms)}`
+    : script.config.think_time?.type === 'recorded'
+      ? 'Replay recorded think time'
+      : `${script.config.think_time?.type || 'fixed'} / ${formatMillisecondsAsSecondsLabel(script.config.think_time?.mean_ms)}`
   const runLogic = script.config.run_logic
   const runLogicLabel = runLogic?.global_iterations !== undefined
     ? `${runLogic.global_iterations} shared iterations`
@@ -371,33 +357,48 @@ export function syncSOAPEnvelopeNamespace(
   return nextNamespaces
 }
 
-export function getImportedRuntimeSectionId(area?: string | null): RuntimeSettingsSectionId | null {
+export interface ImportedRuntimeSettingsDestination {
+  section: RuntimeSettingsSectionId
+  httpTransportTab?: HTTPTransportTabId
+}
+
+export function getImportedRuntimeSettingsDestination(area?: string | null): ImportedRuntimeSettingsDestination | null {
   switch (area?.trim().toLowerCase()) {
-    case 'think time': return 'think'
-    case 'pacing': return 'pacing'
-    case 'run logic': return 'runlogic'
-    case 'error handling': return 'errors'
-    case 'logging': return 'log'
-    case 'http': return 'http'
-    case 'browser emulation': return 'browser_emulation'
+    case 'think time': return { section: 'think' }
+    case 'pacing': return { section: 'pacing' }
+    case 'run logic': return { section: 'runlogic' }
+    case 'error handling': return { section: 'errors' }
+    case 'logging': return { section: 'log' }
+    case 'http': return { section: 'http' }
+    case 'proxy': return { section: 'http', httpTransportTab: 'proxy' }
+    case 'authentication': return { section: 'http', httpTransportTab: 'authentication' }
+    case 'security':
+    case 'tls':
+    case 'ssl':
+    case 'tls / ssl': return { section: 'http', httpTransportTab: 'tls' }
+    case 'browser emulation': return { section: 'browser_emulation' }
     case 'web http/html':
-    case 'web runtime': return 'web_runtime'
+    case 'web runtime': return { section: 'web_runtime' }
     case 'soap':
-    case 'soap settings': return 'soap'
+    case 'soap settings': return { section: 'soap' }
     case 'java http':
-    case 'java over http': return 'java_http'
+    case 'java over http': return { section: 'java_http' }
     case 'java vm':
     case 'java environment':
-    case 'java environment settings': return 'java_vuser'
-    case 'jms': return 'jms'
-    case 'websocket': return 'websocket'
-    case 'grpc': return 'grpc'
+    case 'java environment settings': return { section: 'java_vuser' }
+    case 'jms': return { section: 'jms' }
+    case 'websocket': return { section: 'websocket' }
+    case 'grpc': return { section: 'grpc' }
     case 'database':
-    case 'database runtime': return 'database'
+    case 'database runtime': return { section: 'database' }
     case 'network':
-    case 'network runtime': return 'network'
+    case 'network runtime': return { section: 'network' }
     default: return null
   }
+}
+
+export function getImportedRuntimeSectionId(area?: string | null): RuntimeSettingsSectionId | null {
+  return getImportedRuntimeSettingsDestination(area)?.section ?? null
 }
 
 export function formatRuntimeSettingStatusLabel(status: string): string {

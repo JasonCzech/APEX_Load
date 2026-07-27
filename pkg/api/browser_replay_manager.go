@@ -209,6 +209,12 @@ func (m *BrowserReplayManager) Close() {
 }
 
 func (m *BrowserReplayManager) Start(scriptID string, script *dsl.Script, req BrowserReplayStartRequest) (*BrowserReplaySession, error) {
+	if err := replayReviewGateError(script); err != nil {
+		if req.releaseExecutionContext != nil {
+			req.releaseExecutionContext()
+		}
+		return nil, err
+	}
 	executionCtx := req.executionContext
 	if executionCtx == nil {
 		executionCtx = context.Background()

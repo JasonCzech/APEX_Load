@@ -2,14 +2,79 @@ package api
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+func TestProtectedImportCredentialBindingRewritesDecodedBase64Body(t *testing.T) {
+	requirement, replacement, err := credentialpolicy.NewRequirement(credentialpolicy.RequirementSpec{
+		Key:      "password",
+		Label:    "Password",
+		Context:  "body",
+		NameHint: "login_password",
+		Source:   credentialpolicy.SourceRef{Format: "fixture", Path: "login.json"},
+		Targets: []credentialpolicy.TargetRef{{
+			RequestKey: "login", Field: "json", Pointer: "/password",
+		}},
+		Value: "protected-source-value",
+		Mode:  credentialpolicy.SecretReference,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wireBody := `{"password":"` + replacement + `","note":"unchanged"}`
+	script := &dsl.Script{
+		ID: "base64-binding", Name: "Base64 binding", Version: "1", Protocol: "http",
+		Actions: []dsl.Action{{
+			Name: "login", Type: "request", Method: "POST", Target: "/login",
+			Body: base64.StdEncoding.EncodeToString([]byte(wireBody)), BodyEncoding: "base64",
+		}},
+	}
+	public, err := attachProtectedImportCredentialReview(script, []credentialpolicy.Requirement{requirement})
+	if err != nil {
+		t.Fatalf("attachProtectedImportCredentialReview: %v", err)
+	}
+	if len(public) != 1 || public[0].Path != "/actions/0/body" {
+		t.Fatalf("public requirements = %#v", public)
+	}
+	descriptors, err := loadProtectedImportCredentialDescriptors(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(descriptors) != 1 || len(descriptors[0].Locations) != 1 ||
+		descriptors[0].Locations[0].Encoding != "base64" {
+		t.Fatalf("protected descriptors = %#v", descriptors)
+	}
+
+	resolved, legacy, remaining, err := applyProtectedImportCredentialBindings(script, []secretBindingSelection{{
+		RequirementID: requirement.ID,
+		SecretName:    "CUSTOM_LOGIN_PASSWORD",
+	}})
+	if err != nil {
+		t.Fatalf("applyProtectedImportCredentialBindings: %v", err)
+	}
+	if len(legacy) != 0 || len(remaining) != 0 {
+		t.Fatalf("binding leftovers = legacy %#v remaining %#v", legacy, remaining)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(resolved.Actions[0].Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantWire := `{"password":"{{secret.CUSTOM_LOGIN_PASSWORD}}","note":"unchanged"}`
+	if string(decoded) != wantWire || resolved.Actions[0].BodyEncoding != "base64" {
+		t.Fatalf("resolved wire body = %q (%q), want %q base64", decoded, resolved.Actions[0].BodyEncoding, wantWire)
+	}
+}
 
 func redactedBindingTestScript() *dsl.Script {
 	return &dsl.Script{
@@ -56,6 +121,7 @@ func TestDiscoverSecretBindingRequirementsFindsExecutableValuesOnly(t *testing.T
 	script.Actions[0].Metadata = map[string]any{
 		"original_url":       "https://csi-bau.it.att.com:[REDACTED].jws",
 		"source_transaction": "[REDACTED]",
+		"asyncapi_channel":   "[REDACTED]",
 	}
 	first := discoverSecretBindingRequirements(script, 3)
 	second := discoverSecretBindingRequirements(script, 3)
@@ -93,7 +159,9 @@ func TestDiscoverSecretBindingRequirementsFindsExecutableValuesOnly(t *testing.T
 	if seenPaths["/actions/0/headers/Authorization"] != 1 || seenPaths["/actions/0/target"] != 1 || seenPaths["/config/http/auth/password"] != 1 {
 		t.Fatalf("requirement paths = %#v", seenPaths)
 	}
-	if seenPaths["/actions/0/metadata/original_url"] != 0 || seenPaths["/actions/0/metadata/source_transaction"] != 0 {
+	if seenPaths["/actions/0/metadata/original_url"] != 0 ||
+		seenPaths["/actions/0/metadata/source_transaction"] != 0 ||
+		seenPaths["/actions/0/metadata/asyncapi_channel"] != 0 {
 		t.Fatalf("action metadata incorrectly produced requirements: %#v", seenPaths)
 	}
 
@@ -103,6 +171,38 @@ func TestDiscoverSecretBindingRequirementsFindsExecutableValuesOnly(t *testing.T
 	}
 	if !strings.HasPrefix(header.Replacement, "Bearer {{secret.") {
 		t.Errorf("header replacement = %q, want Bearer wrapper preserved", header.Replacement)
+	}
+}
+
+func TestAsyncAPIActionMetadataIsNonExecutableForBindingAndSentinelChecks(t *testing.T) {
+	script := &dsl.Script{
+		Name: "AsyncAPI provenance", Version: "1", Protocol: "kafka",
+		Actions: []dsl.Action{{
+			Name: "publish", Type: "kafka_produce", Target: "orders",
+			Metadata: map[string]any{
+				"asyncapi_channel":        maskedScriptSecret,
+				"asyncapi_correlation_id": "prefix-" + maskedScriptSecret,
+			},
+		}},
+	}
+	if requirements := discoverSecretBindingRequirements(script, 0); len(requirements) != 0 {
+		t.Fatalf("AsyncAPI provenance created secret requirements: %#v", requirements)
+	}
+	projected, err := scriptAsJSONValue(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jsonValueContainsExecutableMaskedSecret(projected, "") {
+		t.Fatal("AsyncAPI provenance was treated as an executable orphan sentinel")
+	}
+
+	script.Actions[0].Body = maskedScriptSecret
+	projected, err = scriptAsJSONValue(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !jsonValueContainsExecutableMaskedSecret(projected, "") {
+		t.Fatal("executable Kafka body sentinel was incorrectly exempted")
 	}
 }
 
@@ -280,6 +380,191 @@ func TestApplySecretBindingsDiscoversSentinelsFromReturnedProjection(t *testing.
 	password := findSecretBindingRequirement(t, remaining, "/config/http/auth/password", 0)
 	if password.ScriptIndex != 0 {
 		t.Fatalf("projected requirement = %+v", password)
+	}
+}
+
+func TestApplySecretBindingsClearsOnlyResolvedCredentialManagementBlockers(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "Managed credentials",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{
+			{
+				Name:   "Singular credential blocker",
+				Type:   "request",
+				Target: "/one",
+				Headers: map[string]string{
+					"Authorization": "Bearer " + maskedScriptSecret,
+				},
+				Metadata: map[string]any{
+					"execution_blocker":  "import_credentials_unmanaged",
+					"execution_blockers": []string{"import_credentials_unmanaged", "import_review_required"},
+				},
+			},
+			{
+				Name:   "Mixed blockers",
+				Type:   "request",
+				Target: "/two?token=" + maskedScriptSecret,
+				Metadata: map[string]any{
+					"execution_blocker":  "import_missing_variables",
+					"execution_blockers": []any{"import_credentials_unmanaged", "import_missing_file_bindings", 7},
+					"review_gate":        "source_behavior_review",
+				},
+			},
+		},
+	}
+	requirements := discoverSecretBindingRequirements(script, 0)
+	if len(requirements) != 2 {
+		t.Fatalf("requirements = %#v, want two", requirements)
+	}
+	bindings := make([]secretBindingSelection, 0, len(requirements))
+	for index, requirement := range requirements {
+		bindings = append(bindings, secretBindingSelection{
+			RequirementID: requirement.ID,
+			SecretName:    fmt.Sprintf("MANAGED_%d", index+1),
+		})
+	}
+	resolved, remaining, err := applySecretBindings(script, 0, bindings)
+	if err != nil {
+		t.Fatalf("applySecretBindings: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("remaining requirements = %#v", remaining)
+	}
+
+	first := resolved.Actions[0].Metadata
+	if _, exists := first["execution_blocker"]; exists {
+		t.Fatalf("resolved singular credential blocker remains: %#v", first)
+	}
+	if got := first["execution_blockers"]; !reflect.DeepEqual(got, []any{"import_review_required"}) {
+		t.Fatalf("first execution blockers = %#v", got)
+	}
+
+	second := resolved.Actions[1].Metadata
+	if got := second["execution_blocker"]; got != "import_missing_variables" {
+		t.Fatalf("unrelated singular blocker = %#v", got)
+	}
+	if got := second["execution_blockers"]; !reflect.DeepEqual(got, []any{"import_missing_file_bindings", float64(7)}) {
+		t.Fatalf("mixed execution blockers = %#v", got)
+	}
+	if got := second["review_gate"]; got != "source_behavior_review" {
+		t.Fatalf("review gate = %#v", got)
+	}
+}
+
+func TestApplySecretBindingsKeepsCredentialBlockerUntilEveryOccurrenceIsGoverned(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "Partially managed credentials",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{{
+			Name:   "Request",
+			Type:   "request",
+			Target: "/resource?token=" + maskedScriptSecret,
+			Headers: map[string]string{
+				"Authorization": "Bearer " + maskedScriptSecret,
+			},
+			Metadata: map[string]any{
+				"execution_blocker":  "import_credentials_unmanaged",
+				"execution_blockers": []string{"import_credentials_unmanaged"},
+			},
+		}},
+	}
+	requirements := discoverSecretBindingRequirements(script, 0)
+	if len(requirements) != 2 {
+		t.Fatalf("requirements = %#v, want two", requirements)
+	}
+	resolved, remaining, err := applySecretBindings(script, 0, []secretBindingSelection{{
+		RequirementID: requirements[0].ID,
+		SecretName:    "MANAGED_ONE",
+	}})
+	if err != nil {
+		t.Fatalf("applySecretBindings: %v", err)
+	}
+	if len(remaining) != 1 {
+		t.Fatalf("remaining requirements = %#v, want one", remaining)
+	}
+	if got := resolved.Actions[0].Metadata["execution_blocker"]; got != "import_credentials_unmanaged" {
+		t.Fatalf("credential blocker cleared early: %#v", got)
+	}
+	if got := resolved.Actions[0].Metadata["execution_blockers"]; !reflect.DeepEqual(got, []any{"import_credentials_unmanaged"}) {
+		t.Fatalf("credential blocker list changed early: %#v", got)
+	}
+}
+
+func TestApplySecretBindingsClearsOnlyTheFullyResolvedActionScope(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "Scoped credential management",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: "https://example.test"},
+		Actions: []dsl.Action{
+			{
+				Name:   "Resolved request",
+				Type:   "request",
+				Target: "/resolved",
+				Headers: map[string]string{
+					"Authorization": "Bearer " + maskedScriptSecret,
+				},
+				Metadata: map[string]any{
+					"execution_blocker": "import_credentials_unmanaged",
+				},
+			},
+			{
+				Name:   "Unrelated unmanaged request",
+				Type:   "request",
+				Target: "/unrelated",
+				Metadata: map[string]any{
+					"execution_blocker":  "import_credentials_unmanaged",
+					"execution_blockers": []string{"import_credentials_unmanaged"},
+				},
+			},
+		},
+	}
+	requirements := discoverSecretBindingRequirements(script, 0)
+	if len(requirements) != 1 {
+		t.Fatalf("requirements = %#v, want one", requirements)
+	}
+	resolved, remaining, err := applySecretBindings(script, 0, []secretBindingSelection{{
+		RequirementID: requirements[0].ID,
+		SecretName:    "SCOPED_TOKEN",
+	}})
+	if err != nil {
+		t.Fatalf("applySecretBindings: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Fatalf("remaining requirements = %#v", remaining)
+	}
+	if _, exists := resolved.Actions[0].Metadata["execution_blocker"]; exists {
+		t.Fatalf("resolved action kept credential blocker: %#v", resolved.Actions[0].Metadata)
+	}
+	if got := resolved.Actions[1].Metadata["execution_blocker"]; got != "import_credentials_unmanaged" {
+		t.Fatalf("unrelated action blocker = %#v", got)
+	}
+	if got := resolved.Actions[1].Metadata["execution_blockers"]; !reflect.DeepEqual(got, []any{"import_credentials_unmanaged"}) {
+		t.Fatalf("unrelated action blocker list = %#v", got)
+	}
+}
+
+func TestSecretBindingActionScopeMatchesRecursiveWalkerPaths(t *testing.T) {
+	tests := map[string]string{
+		"/init/0/auth/password":                              "/init/0",
+		"/actions/1/control/steps/2/headers/Authorization":   "/actions/1/control/steps/2",
+		"/actions/1/control/else/0/params/requests/3/target": "/actions/1/control/else/0/params/requests/3",
+		"/teardown/4/body":                                   "/teardown/4",
+		"/config/http/auth/password":                         "",
+	}
+	for pointer, want := range tests {
+		if got := secretBindingActionScope(pointer); got != want {
+			t.Errorf("secretBindingActionScope(%q) = %q, want %q", pointer, got, want)
+		}
+		if want == "" {
+			continue
+		}
+		walkPath := strings.TrimPrefix(strings.ReplaceAll(want, "/", "."), ".")
+		walkPath = regexp.MustCompile(`\.([0-9]+)(\.|$)`).ReplaceAllString(walkPath, `[$1]$2`)
+		if got := dslWalkPathJSONPointer(walkPath); got != want {
+			t.Errorf("dslWalkPathJSONPointer(%q) = %q, want %q", walkPath, got, want)
+		}
 	}
 }
 

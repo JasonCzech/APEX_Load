@@ -58,6 +58,9 @@ func validatePersistentLibraryScript(script *dsl.Script) error {
 // invariant: executable credentials require {{secret.*}} references, and only
 // the disclosure-safe projection may reach storage.
 func preparePersistentLibraryScript(script, prior *dsl.Script) (*dsl.Script, error) {
+	if err := validateJavaVMParameterDisclosureSafety(script); err != nil {
+		return nil, err
+	}
 	projected := maskScriptSecrets(script)
 	if projected == nil {
 		return nil, fmt.Errorf("failed to project script for durable secret binding")
@@ -340,6 +343,13 @@ func (tr *TestRunner) createScriptDurable(script *dsl.Script, authoringApprovedJ
 	if strings.TrimSpace(script.Version) == "" {
 		script.Version = "1"
 	}
+	if tr.scriptStore == nil {
+		now := time.Now().UTC()
+		if script.CreatedAt.IsZero() {
+			script.CreatedAt = now
+		}
+		script.UpdatedAt = now
+	}
 	persisted := script
 	if store, ok := tr.scriptStore.(createOnlyScriptPersistence); ok {
 		// Shared storage is authoritative. A replica can have an equivalent but
@@ -362,7 +372,7 @@ func (tr *TestRunner) createScriptDurable(script *dsl.Script, authoringApprovedJ
 				return nil, fmt.Errorf("load conflicting script %s: %w", script.ID, err)
 			}
 			if normalizeProjectID(existing.ProjectID) != script.ProjectID || !equivalentCreateOnlyScript(existing, script) {
-				return nil, fmt.Errorf("script %s already exists and is not owned by this approval", script.ID)
+				return nil, fmt.Errorf("%w: script %s already exists and is not owned by this approval", errScriptConcurrentChange, script.ID)
 			}
 			persisted = existing
 		}
@@ -371,7 +381,7 @@ func (tr *TestRunner) createScriptDurable(script *dsl.Script, authoringApprovedJ
 	} else {
 		if existing := tr.scripts[script.ID]; existing != nil {
 			if normalizeProjectID(existing.ProjectID) != script.ProjectID || !equivalentCreateOnlyScript(existing.Script, script) {
-				return nil, fmt.Errorf("script %s already exists and is not owned by this approval", script.ID)
+				return nil, fmt.Errorf("%w: script %s already exists and is not owned by this approval", errScriptConcurrentChange, script.ID)
 			}
 			return cloneStoredScriptForReadLocked(existing), nil
 		}
@@ -640,6 +650,9 @@ func (tr *TestRunner) ReplayScriptDefinitionContext(ctx context.Context, script 
 	}
 	if ctx == nil {
 		ctx = context.Background()
+	}
+	if err := replayReviewGateError(script); err != nil {
+		return nil, err
 	}
 	effectiveRedactionRules, err := tr.resolveEffectiveRedactionRules(script.ProjectID, opts.RedactionRules)
 	if err != nil {

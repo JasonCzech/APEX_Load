@@ -74,7 +74,10 @@ func TestHandleReplayScriptReturnsStructuredReport(t *testing.T) {
 		},
 	})
 
-	body, _ := json.Marshal(map[string]any{"group_name": "editor-replay"})
+	body, _ := json.Marshal(map[string]any{
+		"group_name": "editor-replay",
+		"variables":  map[string]string{"session": "s-123"},
+	})
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/"+stored.ID+"/replay", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	resp := httptest.NewRecorder()
@@ -1363,11 +1366,10 @@ func TestReplayPreflightWalksNestedControlFlow(t *testing.T) {
 	if preflight.ExpectedActionCount != 5 {
 		t.Fatalf("ExpectedActionCount = %d, want 5 with fixed loop expansion", preflight.ExpectedActionCount)
 	}
-	if !slices.Contains(preflight.MissingVariables, "sku") {
-		t.Fatalf("missing variables = %v, want nested sku", preflight.MissingVariables)
-	}
-	if slices.Contains(preflight.MissingVariables, "cart_id") {
-		t.Fatalf("missing variables = %v, cart_id should be available from nested extractor", preflight.MissingVariables)
+	// cart_id is extracted only by the then branch, so it is not guaranteed at
+	// checkout when the else branch remains reachable.
+	if !slices.Equal(preflight.MissingVariables, []string{"cart_id", "sku"}) {
+		t.Fatalf("missing variables = %v, want nested sku and branch-local cart_id", preflight.MissingVariables)
 	}
 }
 

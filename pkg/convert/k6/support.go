@@ -13,12 +13,12 @@ type SupportMatrixEntry struct {
 
 func GetSupportMatrix() []SupportMatrixEntry {
 	return []SupportMatrixEntry{
-		{ID: "k6-http", Area: "HTTP", Construct: "http.get/post/put/delete", Status: "supported", ExecutionStatus: "executable", Fields: []string{"url", "method", "headers", "body"}, Notes: "Converted into APEX Load HTTP request actions when arguments are statically parseable."},
+		{ID: "k6-http", Area: "HTTP", Construct: "http.get/post/put/patch/delete/del/head/options", Status: "supported", ExecutionStatus: "executable", Fields: []string{"url", "method", "headers", "body"}, Notes: "Converted into APEX Load HTTP request actions only when wire-affecting arguments are proven string literals."},
 		{ID: "k6-options", Area: "Runtime", Construct: "options.vus/duration/stages", Status: "partial", ExecutionStatus: "review_required", ReviewRequired: true, Fields: []string{"vus", "duration", "stages"}, Notes: "Preserved as metadata for scenario review; APEX scenario sizing remains the execution source of truth."},
-		{ID: "k6-checks", Area: "Assertions", Construct: "check()", Status: "partial", ExecutionStatus: "review_required", ReviewRequired: true, Notes: "Detected and reported; recreate important checks as APEX Load assertions before promotion."},
-		{ID: "k6-thresholds", Area: "Release Gates", Construct: "options.thresholds", Status: "partial", ExecutionStatus: "review_required", ReviewRequired: true, Notes: "Detected and preserved as evidence; map to APEX goal_config/SLA governance before execution."},
+		{ID: "k6-checks", Area: "Assertions", Construct: "check()", Status: "partial", ExecutionStatus: "not_executable", ReviewRequired: true, Notes: "Detected and durably gated; recreate important checks as APEX Load assertions before execution."},
+		{ID: "k6-thresholds", Area: "Release Gates", Construct: "options.thresholds", Status: "partial", ExecutionStatus: "not_executable", ReviewRequired: true, Notes: "Detected, preserved as evidence, and durably gated; map to APEX goal_config/SLA governance before execution."},
 		{ID: "k6-browser", Area: "Browser", Construct: "k6/browser", Status: "review_only", ExecutionStatus: "not_executable", ReviewRequired: true, Notes: "Use APEX browser canary authoring instead; browser scripts are not converted into protocol-load scripts."},
-		{ID: "k6-javascript", Area: "JavaScript Runtime", Construct: "modules, loops, branches, dynamic expressions", Status: "review_only", ExecutionStatus: "not_executable", ReviewRequired: true, Notes: "APEX Load does not run k6 JavaScript; static import preserves review evidence only."},
+		{ID: "k6-javascript", Area: "JavaScript Runtime", Construct: "modules, loops, branches, dynamic expressions", Status: "review_only", ExecutionStatus: "not_executable", ReviewRequired: true, Notes: "APEX Load does not run k6 JavaScript; structural review evidence is retained, requests are durably gated, and residual source text is omitted from public results."},
 	}
 }
 

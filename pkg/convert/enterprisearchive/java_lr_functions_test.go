@@ -7,11 +7,13 @@ import (
 	"testing"
 )
 
-// publishedJavaLRFunctionExpectations pins the disposition of every method in the
-// published OpenText/Micro Focus VuGen 26.1 Java Vuser lr API (the lrapi.lr class,
-// "Alphabetical Listing - Java Utility Functions"). Shared names resolve through
-// the C lr_* registry; Java aliases and Java-only methods live in the supplement.
-// Any reclassification must be a deliberate edit here AND in the registry data.
+// publishedJavaLRFunctionExpectations pins the shared registry baseline of every
+// method in the published OpenText/Micro Focus VuGen 26.1 Java Vuser lr API (the
+// lrapi.lr class, "Alphabetical Listing - Java Utility Functions"). Shared names
+// resolve through the native C lr_* registry; Java aliases and Java-only methods
+// live in the supplement. Combined-runner overrides are tested separately so the
+// native C runtime can stay honest without downgrading faithfully implemented
+// Java sidecar calls.
 var publishedJavaLRFunctionExpectations = map[string]struct {
 	family string
 	mode   SourceFunctionSupportMode
@@ -37,9 +39,9 @@ var publishedJavaLRFunctionExpectations = map[string]struct {
 	"lr_get_debug_message":          {"message", SourceFunctionSupportExecutable},
 	"lr_get_host_name":              {"info", SourceFunctionSupportExecutable},
 	"lr_get_master_host_name":       {"info", SourceFunctionSupportExecutable},
-	"lr_get_transaction_status":     {"transaction", SourceFunctionSupportExecutable},
-	"lr_get_transaction_duration":   {"transaction", SourceFunctionSupportExecutable},
-	"lr_get_transaction_think_time": {"transaction", SourceFunctionSupportExecutable},
+	"lr_get_transaction_status":     {"transaction", SourceFunctionSupportReviewOnly},
+	"lr_get_transaction_duration":   {"transaction", SourceFunctionSupportReviewOnly},
+	"lr_get_transaction_think_time": {"transaction", SourceFunctionSupportReviewOnly},
 	"lr_log_message":                {"message", SourceFunctionSupportExecutable},
 	"lr_message":                    {"message", SourceFunctionSupportExecutable},
 	"lr_next_row":                   {"parameter", SourceFunctionSupportReviewOnly},
@@ -59,7 +61,7 @@ var publishedJavaLRFunctionExpectations = map[string]struct {
 	"lr_unmask":                     {"parameter", SourceFunctionSupportReviewOnly},
 	"lr_user_data_point":            {"metric", SourceFunctionSupportExecutable},
 	"lr_vuser_status_message":       {"message", SourceFunctionSupportExecutable},
-	"lr_wasted_time":                {"transaction", SourceFunctionSupportExecutable},
+	"lr_wasted_time":                {"transaction", SourceFunctionSupportReviewOnly},
 	// --- Java-only/alias supplement ---
 	"lr_deserialize":                 {"parameter", SourceFunctionSupportReviewOnly},
 	"lr_enable_redirection":          {"runtime", SourceFunctionSupportNativeNoop},
@@ -245,6 +247,44 @@ func TestJavaLRResolvesEveryPublishedFunction(t *testing.T) {
 				t.Fatalf("%s: missing runner disposition", name)
 			}
 			assertSourceReviewSupportMode(t, result.SourceReview.Mappings, name, want.SupportMode)
+		})
+	}
+}
+
+func TestJavaTransactionValueRunnerOverridesRemainExecutable(t *testing.T) {
+	tests := []struct {
+		function string
+		call     string
+		baseMode SourceFunctionSupportMode
+	}{
+		{"lr_get_transaction_duration", `lr.get_transaction_duration("Checkout");`, SourceFunctionSupportReviewOnly},
+		{"lr_get_transaction_status", `lr.get_transaction_status("Checkout");`, SourceFunctionSupportReviewOnly},
+		{"lr_get_transaction_think_time", `lr.get_transaction_think_time("Checkout");`, SourceFunctionSupportReviewOnly},
+		{"lr_get_transaction_wasted_time", `lr.get_transaction_wasted_time("Checkout");`, SourceFunctionSupportExecutable},
+		{"lr_wasted_time", `lr.wasted_time(250);`, SourceFunctionSupportReviewOnly},
+	}
+
+	for _, test := range tests {
+		t.Run(test.function, func(t *testing.T) {
+			base, ok := lookupSourceFunction(test.function)
+			if !ok || base.SupportMode != test.baseMode {
+				t.Fatalf("base registry = (%#v, %v), want %s", base, ok, test.baseMode)
+			}
+			runner, notes, ok := javaLRRunnerDisposition(test.function)
+			if !ok || runner.SupportMode != SourceFunctionSupportExecutable {
+				t.Fatalf("Java runner disposition = (%#v, %q, %v), want executable override", runner, notes, ok)
+			}
+			if descriptor := javaLRRunnerABIDescriptors[test.function]; descriptor == "" {
+				t.Fatal("missing verified Java runner ABI descriptor")
+			}
+
+			result := convertCombinedJavaLRBody(t, test.call)
+			assertSourceReviewSupportMode(t, result.SourceReview.Mappings, test.function, SourceFunctionSupportExecutable)
+			for _, warning := range result.Warnings {
+				if strings.Contains(warning, test.function) && strings.Contains(strings.ToLower(warning), "block") {
+					t.Fatalf("warnings = %#v, Java sidecar call was incorrectly blocked", result.Warnings)
+				}
+			}
 		})
 	}
 }

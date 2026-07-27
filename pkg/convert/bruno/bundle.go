@@ -16,9 +16,8 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode"
-	"unicode/utf8"
 
+	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
 )
@@ -27,6 +26,12 @@ type sourceFile struct {
 	Path string
 	Data []byte
 	Mode int64
+	// nativeAliasGroups maps every scalar YAML anchor definition and alias use
+	// to the complete set of authored locations sharing that node. It is
+	// populated only for native inspection and lets later credential projection
+	// scrub all source copies even after an intermediate map marshal expands
+	// aliases.
+	nativeAliasGroups map[string][]string
 }
 
 // Inspect intentionally retains the normalized source, a sanitized copy, raw
@@ -101,6 +106,9 @@ func normalizeLimits(value Limits) Limits {
 }
 
 func loadZIP(data []byte, limits Limits) ([]sourceFile, error) {
+	if err := archiveingest.ValidateZIPDirectory(data, limits.MaxFiles); err != nil {
+		return nil, fmt.Errorf("validate Bruno ZIP directory: %w", err)
+	}
 	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return nil, fmt.Errorf("open Bruno ZIP: %w", err)
@@ -253,35 +261,15 @@ func exceedsByteBudget(total, next, limit int64) bool {
 }
 
 func safeRelativePath(value string, maxDepth int) (string, error) {
-	if !utf8.ValidString(value) {
-		return "", fmt.Errorf("Bruno bundle path contains invalid UTF-8")
-	}
-	if strings.TrimSpace(value) != value {
-		return "", fmt.Errorf("Bruno bundle path %q has leading or trailing whitespace", value)
-	}
-	value = strings.ReplaceAll(value, "\\", "/")
-	if value == "" || strings.HasPrefix(value, "/") || path.IsAbs(value) {
-		return "", fmt.Errorf("Bruno bundle path %q must be relative", value)
-	}
-	for _, r := range value {
-		if r == 0 || unicode.IsControl(r) {
-			return "", fmt.Errorf("Bruno bundle path %q contains control characters", value)
+	cleaned, err := archiveingest.ValidateFilePath(value, maxDepth)
+	if err != nil {
+		normalized := strings.ReplaceAll(value, "\\", "/")
+		if normalized == ".." || strings.HasPrefix(normalized, "../") {
+			return "", fmt.Errorf("Bruno bundle path %q escapes the collection root", value)
 		}
+		return "", fmt.Errorf("unsafe Bruno bundle path: %w", err)
 	}
-	cleaned := norm.NFC.String(path.Clean(value))
-	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
-		return "", fmt.Errorf("Bruno bundle path %q escapes the collection root", value)
-	}
-	parts := strings.Split(cleaned, "/")
-	if len(parts) > maxDepth {
-		return "", fmt.Errorf("Bruno bundle path %q exceeds maximum depth %d", value, maxDepth)
-	}
-	for _, part := range parts {
-		if part == "" || part == "." || part == ".." {
-			return "", fmt.Errorf("Bruno bundle path %q is invalid", value)
-		}
-	}
-	return cleaned, nil
+	return norm.NFC.String(cleaned), nil
 }
 
 func exceedsCompressionRatio(expanded, compressed, maximum int64) bool {
@@ -359,9 +347,9 @@ func classifyFileRole(filename string, data []byte) string {
 	lower := strings.ToLower(filename)
 	base := path.Base(lower)
 	switch {
-	case base == "opencollection.yml" || base == "collection.bru" || base == "bruno.json":
+	case base == "opencollection.yml" || base == "opencollection.yaml" || base == "collection.bru" || base == "bruno.json":
 		return "collection"
-	case base == "folder.yml" || base == "folder.bru":
+	case base == "folder.yml" || base == "folder.yaml" || base == "folder.bru":
 		return "folder"
 	case strings.Contains(lower, "/environments/") || strings.HasPrefix(lower, "environments/") || strings.HasSuffix(lower, ".env"):
 		return "environment"

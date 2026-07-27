@@ -157,6 +157,16 @@ func newBrunoImportTestStore(t *testing.T) *SQLiteStore {
 	if err := store.SaveProject(&Project{ID: "project-bruno", Name: "Bruno", CreatedAt: now, UpdatedAt: now}); err != nil {
 		t.Fatal(err)
 	}
+	if err := store.SaveFolder(&Folder{
+		ID:        "native-folder",
+		ProjectID: "project-bruno",
+		Name:      "Native imports",
+		Category:  "scripts",
+		CreatedAt: now,
+		UpdatedAt: now,
+	}); err != nil {
+		t.Fatal(err)
+	}
 	return store
 }
 

@@ -1,5 +1,8 @@
 import type { StoredScenario, StoredScript } from './storedContent'
 import { type ReplayPreflight, type ScriptDataSource, type SourceReview, type ScriptDefinition } from './scripts'
+import type { components as GeneratedOpenAPIComponents } from './generated/openapi'
+
+type BrunoAPISchemas = GeneratedOpenAPIComponents['schemas']
 
 export interface SupportMatrix {
   supported: string[]
@@ -196,6 +199,8 @@ export interface ScriptImportResult<
   source_secret_session_id?: string
   source_secret_session_expires_at?: string
   source_secret_migration_allowed?: boolean
+  import_session_id?: string
+  expires_at?: string
   preflight?: ReplayPreflight
 }
 
@@ -942,6 +947,12 @@ export interface SaveJMeterImportResponse {
 
 export interface SavePostmanImportRequest {
   script: ScriptDefinition
+  import_session_id?: string
+  secret_bindings?: Record<string, string>
+  parameterization_selected_ids?: string[]
+  project_id?: string
+  name?: string
+  folder_id?: string | null
   mode?: 'create' | 'replace'
   target_script_id?: string
 }
@@ -966,6 +977,12 @@ export interface OpenAPIImportDiff {
 
 export interface CommitOpenAPIImportRequest {
   script: ScriptDefinition
+  import_session_id?: string
+  secret_bindings?: Record<string, string>
+  parameterization_selected_ids?: string[]
+  project_id?: string
+  name?: string
+  folder_id?: string | null
   mode?: 'create' | 'replace'
   target_script_id?: string
   replace_mode?: 'full' | 'merge_by_operation_id'
@@ -985,165 +1002,55 @@ export interface CommitOpenAPIImportResponse {
 export type CommitAsyncAPIImportRequest = CommitOpenAPIImportRequest
 export type CommitAsyncAPIImportResponse = CommitOpenAPIImportResponse
 
-export interface BrunoCollectionItem {
-  uid: string
-  name: string
-  path: string
-  type: string
-  sequence?: number
-  tags?: string[]
-  executable: boolean
-  has_scripts?: boolean
-  has_tests?: boolean
-  children?: BrunoCollectionItem[]
-}
+export type BrunoCollectionItem = BrunoAPISchemas['BrunoCollectionItem']
+export type BrunoSecretRequirement = BrunoAPISchemas['BrunoSecretRequirement']
+export type BrunoSecurityFinding = BrunoAPISchemas['BrunoSecurityFinding']
+export type BrunoNativeDiagnostic = BrunoAPISchemas['BrunoNativeDiagnostic']
+export type BrunoImportConflict = BrunoAPISchemas['BrunoImportConflict']
+export type BrunoSyncPreview = BrunoAPISchemas['BrunoSyncPreview']
+export type BrunoSourceRevision = BrunoAPISchemas['BrunoSourceRevision']
+export type BrunoExecutionPreflight = BrunoAPISchemas['BrunoExecutionPreflight']
+export type BrunoCommitErrorResponse = BrunoAPISchemas['BrunoCommitErrorResponse']
 
-export interface BrunoSecretRequirement {
-  id: string
-  path: string
-  key: string
-  suggested_name: string
-  replacement: string
-  context: string
-  source_value_available?: boolean
-  existing_reference?: boolean
-}
-
-export interface BrunoSecurityFinding {
-  severity: string
-  code: string
-  path?: string
-  summary: string
-}
-
-export interface BrunoImportConflict {
-  id: string
-  field: string
-  summary: string
-  required_resolution: string
-}
-
-export interface BrunoSyncPreview {
-  target_script_id: string
-  expected_updated_at: string
-  active_revision?: string
-  changes: Record<string, unknown>
-  conflicts?: BrunoImportConflict[]
-}
-
-export interface BrunoInspectResponse {
-	import_session_id: string
-	expires_at: string
-	execution_preflight?: { ready: boolean; blockers: string[] }
-  parameterization?: Parameterization
-  result: {
-    schema_version: string
-    source_format: string
-    root_path: string
-    manifest: {
-      version: string
-      sha256: string
-      raw_archive_sha256: string
-      bundle_sha256: string
-      total_bytes: number
-      files: Array<{
-        path: string
-        role: string
-        media_type?: string
-        size_bytes: number
-        sha256: string
-        mode: number
-        executable?: boolean
-      }>
-    }
-    collection: {
-      name: string
-      uid?: string
-      items: BrunoCollectionItem[]
-    }
-    environments?: Array<{ name: string; path: string; type: string }>
-    capabilities: {
-      request_types: string[]
-      has_javascript: boolean
-      has_npm_dependencies: boolean
-      has_local_modules: boolean
-      has_file_bodies: boolean
-      has_certificates: boolean
-      has_bruno_apps: boolean
-      required_sandbox: string
-      runner_profile?: string
-    }
-    secret_requirements?: BrunoSecretRequirement[]
-    security_findings?: BrunoSecurityFinding[]
-    fidelity: {
-      status: string
-      preserved_files: number
-      executable_items: number
-      preserved_apps: number
-      dropped_items: number
-      compatibility: string
-      intentional_extensions?: string[]
-    }
-    native_projection: {
-      eligible: boolean
-      reasons?: string[]
-    }
-    missing_variables?: string[]
+export type BrunoNativeScriptCandidate =
+  Omit<BrunoAPISchemas['BrunoNativeScriptCandidate'], 'script'> & {
     script: ScriptDefinition
-    inspected_at: string
   }
-  artifacts: Array<{
-    id: string
-    artifact_kind: string
-    sha256: string
-    size_bytes: number
-    manifest_sha256?: string
-  }>
-  sync_preview?: BrunoSyncPreview
-}
 
-export interface CommitBrunoImportRequest {
-  project_id: string
-  import_session_id: string
-  mode?: 'create' | 'sync'
-  script_id?: string
-  sync_script_id?: string
-  name?: string
-  folder_id?: string | null
-  expected_updated_at?: string
-  expected_active_revision_id?: string
-  migrate_secrets?: boolean
-  parameterization_selected_ids?: string[]
-  secret_bindings?: Record<string, string>
-  conflict_resolutions?: Record<string, string>
-}
+type BrunoCanonicalInspectResult =
+  Omit<BrunoAPISchemas['BrunoCanonicalInspectResult'], 'script'> & {
+    script: ScriptDefinition
+  }
 
-export interface BrunoSourceRevision {
-  id: string
-  script_id: string
-  project_id: string
-  parent_revision_id?: string
-  raw_artifact_id?: string
-  sanitized_artifact_id: string
-  source_format: string
-  compatibility_version: string
-  identity_map?: Record<string, string>
-  import_options?: Record<string, unknown>
-  dependency_snapshot_ref?: string
-  security_profile?: Record<string, unknown>
-  change_summary?: Record<string, unknown>
-  secret_bindings?: Record<string, string>
-  active: boolean
-  created_by?: string
-  created_at: string
-}
+type BrunoNativeInspectResult =
+  Omit<BrunoAPISchemas['BrunoNativeInspectResult'], 'scripts'> & {
+    scripts: BrunoNativeScriptCandidate[]
+  }
 
-export interface CommitBrunoImportResponse {
-  script: ScriptDefinition
-  revision: BrunoSourceRevision
-  created: boolean
-  change_summary?: Record<string, unknown>
-}
+export type BrunoInspectResponse =
+  Omit<BrunoAPISchemas['BrunoInspectResponse'], 'parameterization' | 'result'> & {
+    parameterization: Parameterization | null
+    result: BrunoCanonicalInspectResult | BrunoNativeInspectResult
+  }
+
+export type CommitBrunoCanonicalRequest = BrunoAPISchemas['BrunoCanonicalCommitRequest']
+export type CommitBrunoNativeBatchRequest = BrunoAPISchemas['BrunoNativeBatchCommitRequest']
+export type CommitBrunoImportRequest = BrunoAPISchemas['BrunoCommitRequest']
+
+export type CommitBrunoCanonicalResponse =
+  Omit<BrunoAPISchemas['BrunoCanonicalCommitResponse'], 'script'> & {
+    script: ScriptDefinition
+    readonly _http_status: 200 | 201
+  }
+
+export type CommitBrunoNativeBatchResponse =
+  Omit<BrunoAPISchemas['BrunoNativeBatchCommitResponse'], 'scripts'> & {
+    scripts: ScriptDefinition[]
+    readonly _http_status: 200 | 201
+  }
+
+export type CommitBrunoImportResponse =
+  CommitBrunoCanonicalResponse | CommitBrunoNativeBatchResponse
 
 export interface BrunoSupportMatrixResponse {
   schema_version: string

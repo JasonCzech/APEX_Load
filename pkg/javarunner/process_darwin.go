@@ -369,7 +369,7 @@ func killProcessTree(cmd *exec.Cmd) error {
 		return treeErr
 	}
 	if managed {
-		if !owned && (cmd.ProcessState == nil || !cmd.ProcessState.Exited()) {
+		if !owned {
 			err := cmd.Process.Kill()
 			if err != nil && !errors.Is(err, os.ErrProcessDone) {
 				return err
@@ -377,7 +377,12 @@ func killProcessTree(cmd *exec.Cmd) error {
 		}
 		return nil
 	}
-	if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+	// os.Process serializes Kill against Wait and returns ErrProcessDone once
+	// the exact process handle has been reaped. Probe the identity-bound handle
+	// before using a numeric process group so concurrent failed-start reaping
+	// cannot race on exec.Cmd.ProcessState or signal a reused PGID.
+	directErr := cmd.Process.Kill()
+	if errors.Is(directErr, os.ErrProcessDone) {
 		return nil
 	}
 	// Compatibility fallback for callers that bypassed StartProcessTree. Never
@@ -386,8 +391,7 @@ func killProcessTree(cmd *exec.Cmd) error {
 	if groupErr == nil || errors.Is(groupErr, syscall.ESRCH) {
 		return nil
 	}
-	directErr := cmd.Process.Kill()
-	if directErr == nil || errors.Is(directErr, os.ErrProcessDone) {
+	if directErr == nil {
 		return nil
 	}
 	return errors.Join(groupErr, directErr)

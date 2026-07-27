@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { useApi } from '../hooks/useApi'
 import { useProject } from '../hooks/useProject'
 import { StoredScript, TestSummary } from '../types'
-import CreateTestModal from './CreateTestModal'
 import { buildScenarioDraftFromTest } from './scenarioDraftUtils'
+
+const CreateTestModal = lazy(() => import('./CreateTestModal'))
 
 interface Props {
   open: boolean
@@ -47,18 +48,20 @@ export default function TestExecutionScenarioEditor({ open, test, onClose, onSel
   }
 
   return (
-    <CreateTestModal
-      mode="revise-queued-run"
-      projectId={activeProject?.id}
-      scripts={availableScripts}
-      initialScenario={initialScenario}
-      onClose={onClose}
-      onCreated={(createdTest) => {
-        onClose()
-        if (createdTest?.id) {
-          onSelectTest(createdTest.id)
-        }
-      }}
-    />
+    <Suspense fallback={<div className="page-loading" role="status">Loading scenario editor…</div>}>
+      <CreateTestModal
+        mode="revise-queued-run"
+        projectId={activeProject?.id}
+        scripts={availableScripts}
+        initialScenario={initialScenario}
+        onClose={onClose}
+        onCreated={(createdTest) => {
+          onClose()
+          if (createdTest?.id) {
+            onSelectTest(createdTest.id)
+          }
+        }}
+      />
+    </Suspense>
   )
 }

@@ -156,6 +156,8 @@ describe('ProtocolAssetImport', () => {
       },
     })
     const postmanResult = {
+      import_session_id: 'postman-session-1',
+      expires_at: '2099-07-26T12:30:00Z',
       scripts: [],
       script: {
         name: 'Imported Postman',
@@ -209,6 +211,8 @@ describe('ProtocolAssetImport', () => {
     })
 
     apiMock.importOpenAPI.mockResolvedValue({
+      import_session_id: 'openapi-session-1',
+      expires_at: '2099-07-26T12:30:00Z',
       scripts: [],
       script: {
         name: 'Imported Orders API',
@@ -830,6 +834,343 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).not.toContain('Supported protocols')
   })
 
+  it('keeps the OpenAPI protected candidate while forwarding credential and parameterization overrides', async () => {
+    const sourceScript = {
+      name: 'Protected Orders API',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [{
+        name: 'Get Order',
+        type: 'request',
+        method: 'GET',
+        target: '/orders/123',
+        headers: { Authorization: 'Bearer {{secret.OPENAPI_TOKEN}}' },
+      }],
+    }
+    const parameterizedScript = {
+      ...sourceScript,
+      actions: [{ ...sourceScript.actions[0], target: '/orders/{{param.ORDER_ID}}' }],
+    }
+    apiMock.importOpenAPI.mockResolvedValueOnce({
+      import_session_id: 'openapi-protected-overrides',
+      expires_at: '2099-07-26T12:30:00Z',
+      scripts: [],
+      script: sourceScript,
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: { format: 'openapi', converted_actions: 1 },
+      summary: { title: 'Protected Orders API' },
+      parameterization: {
+        suggestions: [{
+          id: 'pz_openapi_order_id',
+          kind: 'data_param',
+          var_name: 'ORDER_ID',
+          replacement: '{{param.ORDER_ID}}',
+          literal_value: '123',
+          confidence: 1,
+          rule_id: 'fixture',
+          rationale: 'Stable order identifier',
+          auto_apply: true,
+          high_risk: false,
+        }],
+        summary: { total: 1, by_kind: { data_param: 1 }, auto_apply_count: 1, review_count: 0, high_risk_count: 0, pre_applied_count: 0 },
+      },
+      secret_binding_requirements: [{
+        id: 'cred-openapi-token',
+        path: '/actions/0/headers/Authorization',
+        label: 'Authorization header',
+        context: 'Get Order',
+        suggested_name: 'OPENAPI_TOKEN',
+        replacement: '{{secret.OPENAPI_TOKEN}}',
+      }],
+    })
+    apiMock.applyImportParameterization.mockResolvedValueOnce({
+      script: parameterizedScript,
+      diffs: [{
+        suggestion_id: 'pz_openapi_order_id',
+        kind: 'data_param',
+        path: '/actions/0/target',
+        before: '/orders/123',
+        after: '/orders/{{param.ORDER_ID}}',
+      }],
+      applied_count: 1,
+    })
+    apiMock.applySecretBindings.mockImplementationOnce(async ({ script }: { script: typeof parameterizedScript }) => ({
+      script,
+      secret_binding_requirements: [],
+    }))
+    apiMock.commitOpenAPIImport.mockResolvedValueOnce({
+      stored_script: {
+        id: 'saved-protected-openapi',
+        name: parameterizedScript.name,
+        protocol: 'http',
+        version: '1.0.0',
+        project_id: 'project-1',
+        created_at: '2026-01-01T00:00:00Z',
+        script: parameterizedScript,
+      },
+    })
+
+    await act(async () => root.render(<ProtocolAssetImport kind="openapi" projectId="project-1" />))
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['{}'], 'orders.yaml', { type: 'application/yaml' })] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert OpenAPI'))?.click()
+    })
+    await flushPromises()
+
+    const applyParameterization = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Apply Selected'))
+    expect(applyParameterization).toBeDefined()
+    await act(async () => applyParameterization?.click())
+    await flushPromises()
+
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save with 1 secret to configure'))
+    expect(save).toBeDefined()
+    await act(async () => save?.click())
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.applySecretBindings).toHaveBeenCalledWith(expect.objectContaining({
+      script: expect.objectContaining({
+        actions: [expect.objectContaining({ target: '/orders/{{param.ORDER_ID}}' })],
+      }),
+      bindings: [{ requirement_id: 'cred-openapi-token', secret_name: 'OPENAPI_TOKEN' }],
+    }))
+    expect(apiMock.commitOpenAPIImport).toHaveBeenCalledWith(expect.objectContaining({
+      import_session_id: 'openapi-protected-overrides',
+      secret_bindings: { 'cred-openapi-token': 'OPENAPI_TOKEN' },
+      parameterization_selected_ids: ['pz_openapi_order_id'],
+    }))
+  })
+
+  it('keeps the Postman protected candidate while forwarding credential overrides', async () => {
+    const sourceScript = {
+      name: 'Protected Postman',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.test' },
+      actions: [{
+        name: 'Login',
+        type: 'request',
+        method: 'POST',
+        target: '/login',
+        body: '{"password":"{{secret.POSTMAN_PASSWORD}}"}',
+      }],
+    }
+    apiMock.importPostman.mockResolvedValueOnce({
+      import_session_id: 'postman-protected-overrides',
+      expires_at: '2099-07-26T12:30:00Z',
+      scripts: [],
+      script: sourceScript,
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: { format: 'postman', converted_actions: 1 },
+      summary: { collection_name: 'Protected Postman' },
+      secret_binding_requirements: [{
+        id: 'cred-postman-password',
+        path: '/actions/0/body',
+        label: 'Password',
+        context: 'Login',
+        suggested_name: 'POSTMAN_PASSWORD',
+        replacement: '{{secret.POSTMAN_PASSWORD}}',
+      }],
+    })
+    apiMock.applySecretBindings.mockImplementationOnce(async ({ script }: { script: typeof sourceScript }) => ({
+      script,
+      secret_binding_requirements: [],
+    }))
+    apiMock.savePostmanImport.mockResolvedValueOnce({
+      stored_script: {
+        id: 'saved-protected-postman',
+        name: sourceScript.name,
+        protocol: 'http',
+        version: '1.0.0',
+        project_id: 'project-1',
+        created_at: '2026-01-01T00:00:00Z',
+        script: sourceScript,
+      },
+    })
+
+    await act(async () => root.render(<ProtocolAssetImport kind="postman" projectId="project-1" />))
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['{}'], 'collection.json', { type: 'application/json' })] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert Postman Collection'))?.click()
+    })
+    await flushPromises()
+
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save with 1 secret to configure'))
+    expect(save).toBeDefined()
+    await act(async () => save?.click())
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.savePostmanImport).toHaveBeenCalledWith(expect.objectContaining({
+      import_session_id: 'postman-protected-overrides',
+      secret_bindings: { 'cred-postman-password': 'POSTMAN_PASSWORD' },
+    }))
+  })
+
+  it('does not retry an unavailable OpenAPI protected session through the legacy create path', async () => {
+    apiMock.commitOpenAPIImport.mockRejectedValueOnce(Object.assign(
+      new Error('import session not found or expired'),
+      { status: 404 },
+    ))
+
+    await act(async () => root.render(<ProtocolAssetImport kind="openapi" projectId="project-1" />))
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['{}'], 'orders.yaml', { type: 'application/yaml' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Convert OpenAPI'))
+        ?.click()
+    })
+    await flushPromises()
+
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save To Script Library'))
+    expect(save).toBeDefined()
+    await act(async () => save?.click())
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.commitOpenAPIImport).toHaveBeenCalledTimes(1)
+    expect(apiMock.commitOpenAPIImport).toHaveBeenCalledWith(expect.objectContaining({
+      import_session_id: 'openapi-session-1',
+    }))
+    expect(container.textContent).toContain('import session not found or expired')
+  })
+
+  it('retains the same OpenAPI protected candidate for an explicit retry after a transient failure', async () => {
+    apiMock.commitOpenAPIImport.mockRejectedValueOnce(new Error('temporary network failure'))
+
+    await act(async () => root.render(<ProtocolAssetImport kind="openapi" projectId="project-1" />))
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['{}'], 'orders.yaml', { type: 'application/yaml' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Convert OpenAPI'))
+        ?.click()
+    })
+    await flushPromises()
+
+    const findSave = () => Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save To Script Library'))
+    await act(async () => findSave()?.click())
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.commitOpenAPIImport).toHaveBeenCalledTimes(1)
+    expect(container.textContent).toContain('temporary network failure')
+    const firstPayload = apiMock.commitOpenAPIImport.mock.calls[0][0]
+
+    await act(async () => findSave()?.click())
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.commitOpenAPIImport).toHaveBeenCalledTimes(2)
+    expect(apiMock.commitOpenAPIImport.mock.calls[1][0]).toEqual(firstPayload)
+    expect(firstPayload).toEqual(expect.objectContaining({
+      import_session_id: 'openapi-session-1',
+      project_id: 'project-1',
+    }))
+  })
+
+  it('does not retry an unavailable Postman protected session through the legacy create path', async () => {
+    apiMock.savePostmanImport.mockRejectedValueOnce(Object.assign(
+      new Error('import session not found or expired'),
+      { status: 404 },
+    ))
+
+    await act(async () => root.render(<ProtocolAssetImport kind="postman" projectId="project-1" />))
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', {
+        configurable: true,
+        value: [new File(['{}'], 'collection.json', { type: 'application/json' })],
+      })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+        .find(button => button.textContent?.includes('Convert Postman Collection'))
+        ?.click()
+    })
+    await flushPromises()
+
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save To Script Library'))
+    expect(save).toBeDefined()
+    await act(async () => save?.click())
+    await flushPromises()
+    await flushPromises()
+
+    expect(apiMock.savePostmanImport).toHaveBeenCalledTimes(1)
+    expect(apiMock.savePostmanImport).toHaveBeenCalledWith(expect.objectContaining({
+      import_session_id: 'postman-session-1',
+    }))
+    expect(container.textContent).toContain('import session not found or expired')
+  })
+
+  it('invalidates the protected OpenAPI candidate after an arbitrary runtime edit', async () => {
+    await act(async () => root.render(<ProtocolAssetImport kind="openapi" projectId="project-1" />))
+    const fileInput = container.querySelector<HTMLInputElement>('input[type="file"]')!
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [new File(['{}'], 'orders.yaml', { type: 'application/yaml' })] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await act(async () => {
+      Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(button => button.textContent?.includes('Convert OpenAPI'))?.click()
+    })
+    await flushPromises()
+
+    const thinkTimeInput = Array.from(container.querySelectorAll<HTMLLabelElement>('label'))
+      .find(label => label.textContent?.includes('Think Time (ms)'))
+      ?.querySelector<HTMLInputElement>('input')
+    expect(thinkTimeInput).toBeDefined()
+    await act(async () => {
+      if (thinkTimeInput) setInputValue(thinkTimeInput, '1750')
+    })
+    const save = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Save To Script Library'))
+    await act(async () => save?.click())
+    await flushPromises()
+
+    expect(apiMock.commitOpenAPIImport).toHaveBeenCalledWith(expect.objectContaining({
+      import_session_id: undefined,
+    }))
+  })
+
   it('renders DevWeb supported protocols and limitations from its support matrix', async () => {
     apiMock.getDevWebSupportMatrix.mockResolvedValueOnce({
       support_matrix: [
@@ -909,6 +1250,8 @@ describe('ProtocolAssetImport', () => {
       count: 1,
     })
     apiMock.importOpenAPI.mockResolvedValueOnce({
+      import_session_id: 'openapi-session-replace',
+      expires_at: '2099-07-26T12:30:00Z',
       scripts: [],
       script: {
         name: 'Imported Orders API',
@@ -1020,6 +1363,8 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     expect(apiMock.commitOpenAPIImport).toHaveBeenCalledWith(expect.objectContaining({
+      import_session_id: 'openapi-session-replace',
+      project_id: 'project-1',
       mode: 'replace',
       target_script_id: 'script-openapi-existing',
       replace_mode: 'merge_by_operation_id',
@@ -1700,6 +2045,62 @@ describe('ProtocolAssetImport', () => {
     expect(container.textContent).toContain('environment values')
   })
 
+  it('renders generic blocked-draft preflight for Postman imports', async () => {
+    apiMock.importPostman.mockResolvedValueOnce({
+      import_session_id: 'postman-blocked-session',
+      expires_at: '2099-07-26T12:30:00Z',
+      scripts: [],
+      script: {
+        name: 'Blocked Postman Draft',
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://api.example.test' },
+        actions: [{ name: 'Blocked request', type: 'request', method: 'GET', target: '/orders' }],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      correlations: [],
+      stats: { format: 'postman', converted_actions: 1 },
+      summary: {},
+      preflight: {
+        valid: false,
+        action_count: 1,
+        expected_action_count: 1,
+        data_source_count: 0,
+        parameter_count: 0,
+        browser_required: false,
+        warnings: ['Residual source behavior requires review.'],
+        checks: [{
+          id: 'import_review_required',
+          label: 'Import behavior review',
+          status: 'fail',
+          detail: 'Replace unsupported source logic before replay.',
+        }],
+      },
+    })
+
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="postman" projectId="project-1" />)
+    })
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const file = new File(['{"info":{"name":"Orders"},"item":[]}'], 'orders.postman_collection.json', { type: 'application/json' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [file] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const convertButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Convert Postman Collection'))
+    await act(async () => convertButton?.click())
+    await flushPromises()
+
+    expect(container.textContent).toContain('Preflight')
+    expect(container.textContent).toContain('Import behavior review')
+    expect(container.textContent).toContain('Replace unsupported source logic before replay.')
+  })
+
   it('rejects Postman collection files in the environment dropzone', async () => {
     await act(async () => {
       root.render(<ProtocolAssetImport kind="postman" projectId="project-1" />)
@@ -1806,6 +2207,8 @@ describe('ProtocolAssetImport', () => {
     await flushPromises()
 
     expect(apiMock.savePostmanImport).toHaveBeenCalledWith(expect.objectContaining({
+      import_session_id: 'postman-session-1',
+      project_id: 'project-1',
       mode: 'replace',
       target_script_id: 'script-existing',
       script: expect.objectContaining({ name: 'Imported Postman' }),
@@ -1813,6 +2216,72 @@ describe('ProtocolAssetImport', () => {
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [expect.objectContaining({ id: 'script-existing', name: 'Imported Postman' })],
     }))
+  })
+
+  it('clears a Postman replace target when the project scope changes', async () => {
+    const storedScript = (id: string, projectID: string, name: string) => ({
+      id,
+      name,
+      protocol: 'http',
+      version: '1.0.0',
+      project_id: projectID,
+      created_at: '2026-01-01T00:00:00Z',
+      script: {
+        name,
+        version: '1.0.0',
+        protocol: 'http',
+        config: { base_url: 'https://api.example.test' },
+        actions: [],
+      },
+    })
+    apiMock.listScripts
+      .mockResolvedValueOnce({ scripts: [storedScript('project-1-script', 'project-1', 'Project One')], count: 1 })
+      .mockResolvedValueOnce({ scripts: [storedScript('project-2-script', 'project-2', 'Project Two')], count: 1 })
+
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="postman" projectId="project-1" />)
+    })
+    await flushPromises()
+
+    const collectionInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const collectionFile = new File(['{"info":{"name":"Orders"},"item":[]}'], 'orders.postman_collection.json', { type: 'application/json' })
+    await act(async () => {
+      Object.defineProperty(collectionInput, 'files', { configurable: true, value: [collectionFile] })
+      collectionInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const convertButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Convert Postman Collection'))
+    await act(async () => convertButton?.click())
+    await flushPromises()
+
+    const modeSelect = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
+      .find(select => select.closest('label')?.textContent?.includes('Mode'))
+    await act(async () => {
+      if (!modeSelect) return
+      modeSelect.value = 'replace'
+      modeSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    const projectOneTarget = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
+      .find(select => select.closest('label')?.textContent?.includes('Script'))
+    await act(async () => {
+      if (!projectOneTarget) return
+      projectOneTarget.value = 'project-1-script'
+      projectOneTarget.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(projectOneTarget?.value).toBe('project-1-script')
+
+    await act(async () => {
+      root.render(<ProtocolAssetImport kind="postman" projectId="project-2" />)
+    })
+    await flushPromises()
+    await act(async () => convertButton?.click())
+    await flushPromises()
+
+    const projectTwoTarget = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
+      .find(select => select.closest('label')?.textContent?.includes('Script'))
+    expect(projectTwoTarget?.value).toBe('')
+    expect(projectTwoTarget?.textContent).toContain('Project Two')
+    expect(projectTwoTarget?.textContent).not.toContain('Project One')
   })
 
   it('deduplicates rapid saves of the same reviewed import', async () => {

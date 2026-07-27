@@ -50,12 +50,22 @@ func TestEnvironmentDropsJavaOptionInjectionNames(t *testing.T) {
 	environment := Environment(map[string]string{
 		"JAVA_TOOL_OPTIONS":              "-javaagent:/tmp/evil.jar",
 		"jdk_java_options":               "-Xbootclasspath/a:/tmp/x",
+		"OPENJ9_JAVA_OPTIONS":            "-Xoptionsfile=/tmp/openj9.options",
+		"ibm_java_options":               "-Dcom.ibm.tools.attach.enable=yes",
+		"JDK_ALTERNATE_VM":               "/tmp/alternate",
+		"JDK_AOT_VM_OPTIONS":             "-XX:AOTLibrary=/tmp/native.so",
+		"_JDK_AOT_VM_OPTIONS":            "-XX:AOTCache=/tmp/cache.aot",
 		"CLASSPATH":                      "/tmp/evil",
 		"APEXLOAD_JAVA_VUSER_EVENT_FILE": "/tmp/events",
 	})
 	joined := strings.Join(environment, "\n")
 	if strings.Contains(joined, "JAVA_TOOL_OPTIONS") || strings.Contains(joined, "JDK_JAVA_OPTIONS") ||
-		strings.Contains(joined, "jdk_java_options") || strings.Contains(joined, "CLASSPATH") {
+		strings.Contains(joined, "jdk_java_options") || strings.Contains(joined, "OPENJ9_JAVA_OPTIONS") ||
+		strings.Contains(joined, "IBM_JAVA_OPTIONS") || strings.Contains(joined, "ibm_java_options") ||
+		strings.Contains(joined, "JDK_ALTERNATE_VM") ||
+		strings.Contains(joined, "JDK_AOT_VM_OPTIONS") ||
+		strings.Contains(joined, "_JDK_AOT_VM_OPTIONS") ||
+		strings.Contains(joined, "CLASSPATH") {
 		t.Fatalf("environment forwarded a JVM-option injection variable: %v", environment)
 	}
 	if !strings.Contains(joined, "APEXLOAD_JAVA_VUSER_EVENT_FILE=/tmp/events") {

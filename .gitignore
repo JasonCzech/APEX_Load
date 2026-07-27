@@ -154,3 +154,8 @@ deck_build/*.pptx
 # Local environment template. .env.example carries corporate proxy/registry
 # hostnames that must not be published in this PUBLIC repo; keep it local.
 .env.example
+
+# Artifacts written into the repo root by legacy Java middleware (UAMS) when a
+# Java Vuser runs locally. They are runtime state, not source.
+/uams.properties
+/uams_mm.store

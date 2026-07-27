@@ -1,0 +1,47 @@
+{
+  "log": {
+    "version": "1.2",
+    "creator": {"name": "import-contract", "version": "1"},
+    "entries": [
+      {
+        "startedDateTime": "2026-01-02T03:04:05.000Z",
+        "time": 10,
+        "request": {
+          "method": "POST",
+          "url": "https://api.contract.test/orders",
+          "httpVersion": "HTTP/1.1",
+          "headers": [
+            {"name": "Content-Type", "value": "application/json"}
+          ],
+          "queryString": [],
+          "cookies": [],
+          "headersSize": -1,
+          "bodySize": 13,
+          "postData": {
+            "mimeType": "application/json",
+            "text": "{\"sku\":\"A-1\"}"
+          }
+        },
+        "response": {
+          "status": 201,
+          "statusText": "Created",
+          "httpVersion": "HTTP/1.1",
+          "headers": [
+            {"name": "Content-Type", "value": "application/json"}
+          ],
+          "cookies": [],
+          "content": {
+            "size": 2,
+            "mimeType": "application/json",
+            "text": "{}"
+          },
+          "redirectURL": "",
+          "headersSize": -1,
+          "bodySize": 2
+        },
+        "cache": {},
+        "timings": {"send": 1, "wait": 8, "receive": 1}
+      }
+    ]
+  }
+}

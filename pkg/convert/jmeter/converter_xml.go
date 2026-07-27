@@ -10,6 +10,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
 func parseXML(data []byte) (*xmlNode, error) {
@@ -121,8 +122,8 @@ func applyHTTPDefaults(node *xmlNode, ctx *convertContext) {
 	ctx.defaultPath = convertutil.FirstNonEmpty(prop(node, "HTTPSampler.path"), ctx.defaultPath)
 }
 
-func parseHeaders(node *xmlNode) map[string]string {
-	headers := map[string]string{}
+func parseHeaders(node *xmlNode) dsl.HeaderList {
+	var headers dsl.HeaderList
 	for _, element := range childProps(node, "Header.name") {
 		parent := parentElement(node, element)
 		if parent == nil {
@@ -131,7 +132,7 @@ func parseHeaders(node *xmlNode) map[string]string {
 		name := prop(parent, "Header.name")
 		value := prop(parent, "Header.value")
 		if name != "" {
-			headers[name] = value
+			headers = append(headers, dsl.HeaderEntry{Name: name, Value: value})
 		}
 	}
 	return headers

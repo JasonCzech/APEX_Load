@@ -2,21 +2,28 @@ package postman
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mime"
 	"net/url"
+	"path"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/convert/srcparse"
 	"github.com/jasonczech/apexload/pkg/convert/tmpl"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"golang.org/x/net/http/httpguts"
 )
 
 type ImportRequest struct {
@@ -81,6 +88,13 @@ type ConvertResult struct {
 	Stats        ConvertStats       `json:"stats"`
 	Summary      ReviewSummary      `json:"summary"`
 	SourceReview *sourceview.Review `json:"source_review,omitempty"`
+	// finalization is deliberately package-private and excluded from the wire.
+	// Raw requirement values are cleared before it is attached.
+	finalization *postmanFinalization
+
+	// ProtectedRequirements is an in-memory, one-shot adapter-to-API handoff.
+	// Its contents are never part of the JSON conversion result.
+	ProtectedRequirements credentialpolicy.ProtectedRequirements `json:"-"`
 }
 
 type collection struct {
@@ -101,6 +115,7 @@ type item struct {
 	Item    []item     `json:"item"`
 	Request requestRaw `json:"request"`
 	Event   []event    `json:"event"`
+	Auth    *auth      `json:"auth"`
 }
 
 type event struct {
@@ -137,10 +152,12 @@ type body struct {
 }
 
 type keyValueEntry struct {
-	Key      string `json:"key"`
-	Value    string `json:"value"`
-	Type     string `json:"type"`
-	Disabled bool   `json:"disabled"`
+	Key         string `json:"key"`
+	Value       string `json:"value"`
+	Type        string `json:"type"`
+	ContentType string `json:"contentType"`
+	Src         any    `json:"src"`
+	Disabled    bool   `json:"disabled"`
 }
 
 type graphqlBody struct {
@@ -221,10 +238,11 @@ func (r *requestRaw) UnmarshalJSON(data []byte) error {
 }
 
 type requestItem struct {
-	Name    string
-	Folder  string
-	Request requestRaw
-	Events  []event
+	Name          string
+	Folder        string
+	Request       requestRaw
+	Events        []event
+	InheritedAuth *auth
 }
 
 var variablePattern = regexp.MustCompile(`\{\{\s*([A-Za-z0-9_.-]+)\s*\}\}`)
@@ -235,6 +253,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		return nil, errors.New("content is required")
 	}
 
+	// A Postman collection is attacker-supplied JSON. encoding/json silently
+	// keeps the last of a duplicate key, so a collection can present one request
+	// to a reviewer and convert another — including one whose auth block differs.
+	// Reject that ambiguity before decoding.
+	if err := srcparse.ValidateJSON([]byte(content), srcparse.Limits{}); err != nil {
+		return nil, fmt.Errorf("invalid Postman collection: %w", err)
+	}
 	var col collection
 	if err := json.Unmarshal([]byte(content), &col); err != nil {
 		return nil, fmt.Errorf("invalid Postman collection: %w", err)
@@ -245,7 +270,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	requests := []requestItem{}
 	folders := 0
-	collectItems(col.Item, "", col.Event, &requests, &folders)
+	collectItems(col.Item, "", col.Event, col.Auth, &requests, &folders)
 	if len(requests) == 0 {
 		return nil, errors.New("Postman collection contains no requests")
 	}
@@ -254,12 +279,14 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	sourceFileName := "postman_collection.json"
 	sources := map[string]string{sourceFileName: content}
 	sourceMappings := make([]sourceview.Mapping, 0)
-	vars := collectionVariables(col.Variable)
+	sourceVars := collectionVariables(col.Variable)
 	envVars := environmentVariables(req.EnvironmentContent, &diagnostics)
 	for key, value := range envVars {
-		vars[key] = value
+		sourceVars[key] = value
 	}
-	applyPostmanEventVariables(vars, requests, &diagnostics)
+	applyPostmanEventVariables(sourceVars, requests, &diagnostics)
+	variableBindings := resolvePostmanVariableBindings(sourceVars, &diagnostics)
+	vars := variableBindings.Lookup
 	baseURL, warnings := deriveBaseURL(requests, vars, req.Options.BaseURL)
 	scriptName := sanitizeName(convertutil.FirstNonEmpty(req.Options.ScriptName, req.Name, col.Info.Name, "Imported_Postman_Collection"))
 	authSchemes := sortedAuthSchemes(requests, col.Auth)
@@ -309,10 +336,13 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		},
 	}
 
-	result.Script.Parameters = buildParameters(vars, baseURL)
+	result.Script.Parameters = buildParameters(variableBindings.RuntimeValues, baseURL)
 	result.Script.Parameters = mergeParameters(result.Script.Parameters, pathVariableParameters(requests))
 	if convertutil.BoolOption(req.Options.UseParameterDataSet, true) {
-		result.Script.Parameters, result.Script.DataSources = postmanParameterDataSource(result.Script.Parameters)
+		result.Script.Parameters, result.Script.DataSources = postmanParameterDataSource(
+			result.Script.Parameters,
+			variableBindings.ExcludeFromDataSource,
+		)
 	}
 	result.Stats.VariablesDetected = len(result.Script.Parameters)
 	result.Summary.Variables = parameterNames(result.Script.Parameters)
@@ -320,8 +350,14 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	sanitizeSensitive := convertutil.BoolOption(req.Options.SanitizeSensitive, true)
 	includeAssertions := convertutil.BoolOption(req.Options.IncludeAssertions, true)
+	requestPipeline := newPostmanRequestPipeline(
+		variableBindings.SourceValues,
+		sanitizeSensitive,
+		variableBindings.Dependencies,
+	)
 	chainItems := make([]postmanChainItem, 0, len(requests))
 	sourceLineIndex := sourceview.NewLineIndex(content)
+	eventSourceRedacted := false
 	for index, item := range requests {
 		reportPostmanEvents(item, &diagnostics)
 
@@ -333,7 +369,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			scriptContent := strings.Join(ev.Script.Exec, "\n")
 			listenType := convertutil.FirstNonEmpty(ev.Listen, "script")
 			filename := fmt.Sprintf("%s_%s_%d.js", sanitizeName(item.Name), listenType, i)
-			sources[filename] = scriptContent
+			publicScript := disclosureSafePostmanEventSource(scriptContent)
+			sources[filename] = publicScript
+			eventSourceRedacted = eventSourceRedacted || publicScript != scriptContent
 			sourceMappings = append(sourceMappings, sourceview.Mapping{
 				SourceFile: filename,
 				StartLine:  1,
@@ -345,14 +383,31 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			})
 		}
 
-		action, actionWarnings := buildAction(index, item, col.Auth, baseURL, vars, sanitizeSensitive, includeAssertions, &diagnostics)
+		action, assets, actionWarnings, invalidMultipartMetadata := buildAction(index, item, col.Auth, baseURL, vars, includeAssertions, &diagnostics)
 		if action.Name == "" {
 			result.Stats.SkippedItems = append(result.Stats.SkippedItems, item.Name)
 			diagnostics.Add(diag.Warning, "Postman item skipped", postmanItemLocation(item), "request item could not be converted into an executable action")
 			sourceMappings = append(sourceMappings, postmanSourceMapping(sourceFileName, content, sourceLineIndex, item, "", postmanItemLocation(item), "request", "review_only", "Postman item could not be converted into an executable action."))
 			continue
 		}
+		hasUnsupportedBody := item.Request.Body != nil && unsupportedBodyMode(item.Request.Body.Mode)
+		applyPostmanImportReview(
+			&action,
+			item,
+			len(assets) != 0,
+			hasUnsupportedBody,
+			variableBindings.ReviewRequired,
+			invalidMultipartMetadata,
+			&diagnostics,
+		)
+		actionPath := fmt.Sprintf("actions[%d]", len(result.Script.Actions))
+		finalizedAction, finalizeErr := requestPipeline.FinalizeAction(index, item, action, actionPath)
+		if finalizeErr != nil {
+			return nil, fmt.Errorf("finalize Postman request %q: %w", postmanItemLocation(item), finalizeErr)
+		}
+		action = finalizedAction
 		result.Warnings = append(result.Warnings, actionWarnings...)
+		result.Script.DataSources = mergePostmanDataSources(result.Script.DataSources, assets)
 		if action.Body == "" && item.Request.Body != nil && unsupportedBodyMode(item.Request.Body.Mode) {
 			result.Stats.UnsupportedBodies++
 		}
@@ -377,11 +432,58 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	for i := range result.Script.Actions {
 		result.Stats.Extractors += len(result.Script.Actions[i].Extractors)
 	}
+	credentialVariableNames := requestPipeline.consumedSourceVariableNames()
+	result.Script.Parameters, result.Script.DataSources = removePostmanProtectedSourceVariables(
+		result.Script.Parameters,
+		result.Script.DataSources,
+		credentialVariableNames,
+	)
+	result.Stats.VariablesDetected = len(result.Script.Parameters)
+	result.Summary.Variables = parameterNames(result.Script.Parameters)
+	finalization, err := requestPipeline.FinalizeScript(result.Script)
+	if err != nil {
+		return nil, fmt.Errorf("finalize Postman script: %w", err)
+	}
+	result.Script = finalization.Result.Script
+	result.Summary.BaseURL = result.Script.Config.BaseURL
+	result.finalization = finalization
+	protectedRequirements := finalization.takeProtectedRequirements()
+	result.ProtectedRequirements.Store(protectedRequirements)
+	for _, item := range finalization.Result.Diagnostics {
+		diagnostics.Add(item.Severity, item.Element, item.Location, item.Detail)
+	}
 	if gap := result.Stats.TotalRequests - result.Stats.ConvertedActions - len(result.Stats.SkippedItems); gap > 0 {
 		diagnostics.Add(diag.Warning, "Postman completeness guard", "collection", fmt.Sprintf("%d request item(s) were present but not converted or explicitly skipped", gap))
 	}
 	result.Unsupported = diagnostics.Items()
+	if eventSourceRedacted {
+		// Event scripts are embedded in the collection JSON as well as exposed as
+		// virtual .js files. Omit the public collection view too, otherwise an
+		// arbitrary literal in residual JavaScript could bypass field-aware
+		// source redaction through the encoded exec array.
+		sources[sourceFileName] = disclosureSafePostmanEventSource(sources[sourceFileName])
+	}
+	if variableBindings.OmitSourceReview {
+		sources[sourceFileName] = "// [POSTMAN SOURCE OMITTED: VARIABLE GRAPH REQUIRES REVIEW]"
+	}
+	protectedSourceRedacted := maskPostmanProtectedSourceValues(sources, protectedRequirements)
+	protectedSourceRedacted = maskPostmanSourceVariableValues(
+		sources,
+		credentialVariableNames,
+		requestPipeline.sourceVariables,
+	) || protectedSourceRedacted
+	protectedSourceRedacted = maskPostmanLiteralSourceValues(
+		sources,
+		variableBindings.InvalidSourceValues,
+	) || protectedSourceRedacted
+	for index := range protectedRequirements {
+		protectedRequirements[index].Value = ""
+	}
 	result.SourceReview = sourceview.Build(sources, sourceMappings)
+	if protectedSourceRedacted || eventSourceRedacted || variableBindings.OmitSourceReview {
+		markPostmanSourceReviewRedacted(result.SourceReview)
+	}
+	scrubPostmanSourceReview(result.SourceReview)
 	return result, nil
 }
 
@@ -412,7 +514,7 @@ func postmanItemLine(content string, lineIndex sourceview.LineIndex, item reques
 	return 1
 }
 
-func collectItems(items []item, folder string, inheritedEvents []event, requests *[]requestItem, folders *int) {
+func collectItems(items []item, folder string, inheritedEvents []event, inheritedAuth *auth, requests *[]requestItem, folders *int) {
 	for _, item := range items {
 		events := append([]event{}, inheritedEvents...)
 		events = append(events, item.Event...)
@@ -424,13 +526,27 @@ func collectItems(items []item, folder string, inheritedEvents []event, requests
 				nextFolder = folder
 			}
 			(*folders)++
-			collectItems(item.Item, nextFolder, events, requests, folders)
+			collectItems(item.Item, nextFolder, events, inheritedPostmanAuth(inheritedAuth, item.Auth), requests, folders)
 			continue
 		}
 		if item.Request.URL.Raw == "" && item.Request.raw == "" && item.Request.Method == "" {
 			continue
 		}
-		*requests = append(*requests, requestItem{Name: item.Name, Folder: folder, Request: item.Request, Events: events})
+		*requests = append(*requests, requestItem{
+			Name: item.Name, Folder: folder, Request: item.Request, Events: events, InheritedAuth: inheritedAuth,
+		})
+	}
+}
+
+func inheritedPostmanAuth(parent *auth, child *auth) *auth {
+	if child == nil {
+		return parent
+	}
+	switch strings.ToLower(strings.TrimSpace(child.Type)) {
+	case "", "inherit":
+		return parent
+	default:
+		return child
 	}
 }
 
@@ -473,9 +589,13 @@ func environmentVariables(content string, diagnostics *diag.Collector) map[strin
 	return out
 }
 
-func postmanParameterDataSource(params []dsl.Parameter) ([]dsl.Parameter, []dsl.DataSource) {
+func postmanParameterDataSource(params []dsl.Parameter, excludedSets ...map[string]struct{}) ([]dsl.Parameter, []dsl.DataSource) {
 	if len(params) == 0 {
 		return params, nil
+	}
+	var excluded map[string]struct{}
+	if len(excludedSets) > 0 {
+		excluded = excludedSets[0]
 	}
 	columns := make([]string, 0, len(params))
 	values := make([]string, 0, len(params))
@@ -485,6 +605,9 @@ func postmanParameterDataSource(params []dsl.Parameter) ([]dsl.Parameter, []dsl.
 			continue
 		}
 		column := normalizeVariableName(param.Name)
+		if _, keepAsList := excluded[strings.ToLower(column)]; keepAsList {
+			continue
+		}
 		if strings.TrimSpace(column) == "" || strings.Contains(param.Values[0], "{{") {
 			continue
 		}
@@ -525,6 +648,78 @@ func postmanParameterDataSource(params []dsl.Parameter) ([]dsl.Parameter, []dsl.
 		FirstRowHeader: true,
 		Columns:        columns,
 	}}
+}
+
+func removePostmanProtectedSourceVariables(
+	parameters []dsl.Parameter,
+	dataSources []dsl.DataSource,
+	names []string,
+) ([]dsl.Parameter, []dsl.DataSource) {
+	if len(names) == 0 {
+		return parameters, dataSources
+	}
+	protected := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		if normalized := normalizeVariableName(name); normalized != "" {
+			protected[strings.ToLower(normalized)] = struct{}{}
+		}
+	}
+	filteredParameters := make([]dsl.Parameter, 0, len(parameters))
+	for _, parameter := range parameters {
+		if _, credential := protected[strings.ToLower(normalizeVariableName(parameter.Name))]; credential {
+			continue
+		}
+		filteredParameters = append(filteredParameters, parameter)
+	}
+
+	filteredSources := make([]dsl.DataSource, 0, len(dataSources))
+	for _, source := range dataSources {
+		if !strings.EqualFold(source.Name, "postman") || !strings.EqualFold(source.Type, "csv") {
+			filteredSources = append(filteredSources, source)
+			continue
+		}
+		reader := csv.NewReader(strings.NewReader(source.InlineData))
+		records, err := reader.ReadAll()
+		if err != nil || len(records) == 0 {
+			// This source is generated locally immediately above. If its shape
+			// is unexpectedly unreadable, omit it rather than risk retaining a
+			// protected source variable in an opaque inline payload.
+			continue
+		}
+		header := records[0]
+		keep := make([]int, 0, len(header))
+		for index, column := range header {
+			if _, credential := protected[strings.ToLower(normalizeVariableName(column))]; !credential {
+				keep = append(keep, index)
+			}
+		}
+		if len(keep) == 0 {
+			continue
+		}
+		var buf bytes.Buffer
+		writer := csv.NewWriter(&buf)
+		for _, record := range records {
+			filtered := make([]string, 0, len(keep))
+			for _, index := range keep {
+				value := ""
+				if index < len(record) {
+					value = record[index]
+				}
+				filtered = append(filtered, value)
+			}
+			_ = writer.Write(filtered)
+		}
+		writer.Flush()
+		source.InlineData = buf.String()
+		source.Columns = make([]string, 0, len(keep))
+		for _, index := range keep {
+			if index < len(header) {
+				source.Columns = append(source.Columns, header[index])
+			}
+		}
+		filteredSources = append(filteredSources, source)
+	}
+	return filteredParameters, filteredSources
 }
 
 func containsString(values []string, candidate string) bool {
@@ -577,6 +772,125 @@ func reportPostmanEvents(item requestItem, diagnostics *diag.Collector) {
 	}
 }
 
+var postmanSafeStatusTestPattern = regexp.MustCompile(`(?s)^\s*pm\.test\(\s*["'][^"']*["']\s*,\s*function\s*\(\s*\)\s*\{\s*pm\.response\.to\.have\.status\s*\(\s*([1-5][0-9]{2})\s*\)\s*;?\s*\}\s*\)\s*;?\s*$`)
+
+// applyPostmanImportReview projects the intentionally narrow, source-script
+// subset whose behavior is fully represented by the DSL and durably gates any
+// residual behavior. Diagnostics alone are never treated as execution safety.
+func applyPostmanImportReview(
+	action *dsl.Action,
+	item requestItem,
+	hasFileBinding bool,
+	unsupportedBody bool,
+	variableGraphReview bool,
+	invalidMultipartMetadata bool,
+	diagnostics *diag.Collector,
+) {
+	if action == nil {
+		return
+	}
+	reasonSet := map[string]struct{}{}
+	sourceRefSet := map[string]struct{}{}
+	location := postmanItemLocation(item)
+	statuses := map[int]struct{}{}
+	for index, ev := range item.Events {
+		if len(ev.Script.Exec) == 0 {
+			continue
+		}
+		sourceRefSet[fmt.Sprintf("%s / event[%d]", location, index)] = struct{}{}
+		script := strings.Join(ev.Script.Exec, "\n")
+		if strings.EqualFold(strings.TrimSpace(ev.Listen), "test") {
+			if match := postmanSafeStatusTestPattern.FindStringSubmatch(script); len(match) == 2 {
+				status, err := strconv.Atoi(match[1])
+				if err == nil {
+					statuses[status] = struct{}{}
+					if diagnostics != nil {
+						diagnostics.Add(diag.Info, "Postman test assertion", location, fmt.Sprintf("translated exact response status assertion %d", status))
+					}
+					continue
+				}
+			}
+			if postmanCorrelationScriptFullyTranslated(ev) {
+				if diagnostics != nil {
+					diagnostics.Add(diag.Info, "Postman correlation script", location, "translated the complete response-capture script into deterministic extractors")
+				}
+				continue
+			}
+		}
+		reasonSet["unsupported_source_script"] = struct{}{}
+	}
+	if len(statuses) == 1 {
+		for status := range statuses {
+			action.Assertions = replacePostmanDefaultStatusAssertion(action.Assertions, status)
+		}
+	} else if len(statuses) > 1 {
+		reasonSet["conflicting_source_assertions"] = struct{}{}
+	}
+	if _, unsupportedAuth := action.Metadata["postman_auth_review_only"]; unsupportedAuth {
+		reasonSet["unsupported_auth"] = struct{}{}
+		sourceRefSet[location+" / auth"] = struct{}{}
+	}
+	if unsupportedBody {
+		reasonSet["unsupported_body"] = struct{}{}
+		sourceRefSet[location+" / body"] = struct{}{}
+	}
+	if hasFileBinding {
+		reasonSet["missing_file_binding"] = struct{}{}
+		sourceRefSet[location+" / body/formdata"] = struct{}{}
+	}
+	if variableGraphReview {
+		reasonSet["source_variable_graph_limit"] = struct{}{}
+		sourceRefSet["collection/environment variables"] = struct{}{}
+	}
+	if invalidMultipartMetadata {
+		reasonSet["invalid_multipart_metadata"] = struct{}{}
+		sourceRefSet[location+" / body/formdata"] = struct{}{}
+	}
+	if len(reasonSet) == 0 {
+		return
+	}
+
+	reasons := sortedPostmanSet(reasonSet)
+	sourceRefs := sortedPostmanSet(sourceRefSet)
+	blocker := "import_review_required"
+	resolution := "replace_behavior_and_remove_gate"
+	if len(reasons) == 1 && reasons[0] == "missing_file_binding" {
+		blocker = "import_missing_file_bindings"
+		resolution = "bind_file_assets_and_remove_gate"
+	}
+	action.Metadata["execution_blocker"] = blocker
+	action.Metadata["import_review"] = map[string]any{
+		"version":      1,
+		"source":       "postman",
+		"reason_codes": reasons,
+		"source_refs":  sourceRefs,
+		"resolution":   resolution,
+	}
+}
+
+func replacePostmanDefaultStatusAssertion(assertions []dsl.Assertion, status int) []dsl.Assertion {
+	out := make([]dsl.Assertion, 0, len(assertions)+1)
+	for _, assertion := range assertions {
+		if assertion.Type == "status_code_range" && assertion.Min == 200 && assertion.Max == 299 {
+			continue
+		}
+		if assertion.Type == "status_code" && assertion.Expected == status {
+			return assertions
+		}
+		out = append(out, assertion)
+	}
+	return append(out, dsl.Assertion{Type: "status_code", Expected: status})
+}
+
+func sortedPostmanSet(values map[string]struct{}) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func postmanItemLocation(item requestItem) string {
 	if item.Folder != "" && item.Name != "" {
 		return item.Folder + " / " + item.Name
@@ -584,12 +898,13 @@ func postmanItemLocation(item requestItem) string {
 	return convertutil.FirstNonEmpty(item.Name, item.Folder, "Postman request")
 }
 
-func deriveBaseURL(requests []requestItem, vars map[string]string, override string) (string, []string) {
+func deriveBaseURL(requests []requestItem, vars postmanVariableLookup, override string) (string, []string) {
 	if strings.TrimSpace(override) != "" {
 		return strings.TrimRight(strings.TrimSpace(override), "/"), nil
 	}
 	for _, key := range []string{"baseUrl", "base_url", "host", "url"} {
-		if value := strings.TrimSpace(vars[key]); looksAbsoluteURL(value) {
+		if value, _, ok := vars.Get(key); ok && looksAbsoluteURL(strings.TrimSpace(value)) {
+			value = strings.TrimSpace(value)
 			return strings.TrimRight(value, "/"), nil
 		}
 	}
@@ -671,43 +986,49 @@ func mergeParameters(existing []dsl.Parameter, extra []dsl.Parameter) []dsl.Para
 	return out
 }
 
-func buildAction(index int, item requestItem, collectionAuth *auth, baseURL string, vars map[string]string, sanitizeSensitive bool, includeAssertions bool, diagnostics *diag.Collector) (dsl.Action, []string) {
+func buildAction(index int, item requestItem, collectionAuth *auth, baseURL string, vars postmanVariableLookup, includeAssertions bool, diagnostics *diag.Collector) (dsl.Action, []dsl.DataSource, []string, bool) {
 	req := item.Request
 	location := postmanItemLocation(item)
 	method := strings.ToUpper(convertutil.FirstNonEmpty(req.Method, "GET"))
 	raw := rawURL(req.URL)
 	target := toTarget(raw, baseURL, vars, diagnostics, location)
 	headers := map[string]string{}
+	headerList := make(dsl.HeaderList, 0, len(req.Header)+1)
 	for _, h := range req.Header {
 		if h.Disabled || strings.TrimSpace(h.Key) == "" {
 			continue
 		}
-		if sanitizeSensitive && sensitiveHeader(h.Key) && !containsTemplateToken(h.Value) {
-			// Only redact hard-coded secrets; a value that references a variable
-			// (e.g. "Bearer {{token}}", incl. a chained/extracted token) is not a
-			// literal secret and must be preserved so the chain resolves at replay.
-			headers[h.Key] = "{{env." + sensitiveEnvName(h.Key) + "}}"
-			continue
-		}
-		headers[h.Key] = rewriteVariablesWithContext(h.Value, vars, diagnostics, location)
+		// Keep the effective source value intact until the shared credential
+		// projector sees this ordered occurrence. Pre-rewriting to {{env.*}}
+		// would suppress the protected requirement and lose migration material.
+		value := rewriteVariablesWithContext(h.Value, vars, diagnostics, location)
+		headerList = append(headerList, dsl.HeaderEntry{Name: h.Key, Value: value})
+		setHeaderSummary(headers, h.Key, value)
 	}
 
-	bodyText, contentType, warnings := requestBody(req.Body, diagnostics, location)
+	existingContentType := headerValue(headers, "Content-Type")
+	assetPrefix := fmt.Sprintf("postman_%d_%s", index+1, actionName(index, item))
+	bodyText, contentType, assets, warnings, invalidMultipartMetadata := requestBody(req.Body, existingContentType, assetPrefix, diagnostics, location)
 	if contentType != "" && headerValue(headers, "Content-Type") == "" {
-		headers["Content-Type"] = contentType
+		headerList = append(headerList, dsl.HeaderEntry{Name: "Content-Type", Value: contentType})
+		setHeaderSummary(headers, "Content-Type", contentType)
+	} else if contentType != "" && strings.Contains(strings.ToLower(contentType), "multipart/form-data") &&
+		multipartBoundary(existingContentType) == "" {
+		headerList = replaceHeaderListValue(headerList, "Content-Type", contentType)
+		setHeaderSummary(headers, "Content-Type", contentType)
 	}
-	if sanitizeSensitive {
-		bodyText = sanitizeBody(bodyText)
-	}
+	// JSON/XML/form/multipart literals are projected by requestimport. Do not
+	// decode, re-marshal, or replace fields before that byte-preserving stage.
 	bodyText = rewriteVariablesWithContext(bodyText, vars, diagnostics, location)
 
 	action := dsl.Action{
-		Name:    actionName(index, item),
-		Type:    "request",
-		Method:  method,
-		Target:  target,
-		Headers: headers,
-		Body:    bodyText,
+		Name:       actionName(index, item),
+		Type:       "request",
+		Method:     method,
+		Target:     target,
+		Headers:    headers,
+		HeaderList: headerList,
+		Body:       bodyText,
 		Metadata: map[string]any{
 			"postman_item": item.Name,
 		},
@@ -715,14 +1036,41 @@ func buildAction(index int, item requestItem, collectionAuth *auth, baseURL stri
 	if item.Folder != "" {
 		action.Metadata["postman_folder"] = item.Folder
 	}
-	applyPostmanAuth(&action, req.Auth, collectionAuth, vars, sanitizeSensitive, diagnostics, location)
+	inheritedAuth := item.InheritedAuth
+	if inheritedAuth == nil {
+		inheritedAuth = collectionAuth
+	}
+	applyPostmanAuth(&action, req.Auth, inheritedAuth, vars, diagnostics, location)
 	if len(action.Headers) == 0 {
 		action.Headers = nil
+	}
+	if len(action.HeaderList) == 0 {
+		action.HeaderList = nil
 	}
 	if includeAssertions {
 		action.Assertions = append(action.Assertions, dsl.Assertion{Type: "status_code_range", Min: 200, Max: 299})
 	}
-	return action, warnings
+	return action, assets, warnings, invalidMultipartMetadata
+}
+
+func setHeaderSummary(headers map[string]string, name string, value string) {
+	for existing := range headers {
+		if strings.EqualFold(existing, name) {
+			delete(headers, existing)
+		}
+	}
+	headers[name] = value
+}
+
+func replaceHeaderListValue(headers dsl.HeaderList, name string, value string) dsl.HeaderList {
+	out := make(dsl.HeaderList, 0, len(headers)+1)
+	for _, header := range headers {
+		if strings.EqualFold(header.Name, name) {
+			continue
+		}
+		out = append(out, header)
+	}
+	return append(out, dsl.HeaderEntry{Name: name, Value: value})
 }
 
 func rawURL(u postmanURL) string {
@@ -783,7 +1131,7 @@ func postmanQueryString(entries []keyValueEntry) string {
 	return strings.Join(parts, "&")
 }
 
-func toTarget(raw string, baseURL string, vars map[string]string, diagnostics *diag.Collector, location string) string {
+func toTarget(raw string, baseURL string, vars postmanVariableLookup, diagnostics *diag.Collector, location string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return "/"
@@ -799,6 +1147,16 @@ func toTarget(raw string, baseURL string, vars map[string]string, diagnostics *d
 		}
 	}
 	if parsed, err := url.Parse(expanded); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+		base, baseErr := url.Parse(strings.TrimSpace(baseURL))
+		if parsed.User != nil || baseErr != nil || !postmanURLSameOrigin(parsed, base) ||
+			(strings.TrimSpace(base.EscapedPath()) != "" && strings.TrimSpace(base.EscapedPath()) != "/") {
+			// Absolute targets on another origin must remain absolute. Otherwise
+			// the HTTP runtime would resolve their path against the collection's
+			// first-derived base URL and silently send the request to the wrong
+			// host. Userinfo likewise remains visible to the shared credential
+			// projector instead of being discarded during relativization.
+			return rewriteVariablesWithContext(rewritePathVariables(expanded), vars, diagnostics, location)
+		}
 		target := parsed.EscapedPath()
 		if target == "" {
 			target = "/"
@@ -817,57 +1175,263 @@ func toTarget(raw string, baseURL string, vars map[string]string, diagnostics *d
 	return rewriteVariablesWithContext(rewritePathVariables(raw), vars, diagnostics, location)
 }
 
-func requestBody(b *body, diagnostics *diag.Collector, location string) (string, string, []string) {
+func postmanURLSameOrigin(left, right *url.URL) bool {
+	if left == nil || right == nil || left.Scheme == "" || right.Scheme == "" ||
+		left.Host == "" || right.Host == "" {
+		return false
+	}
+	return strings.EqualFold(left.Scheme, right.Scheme) &&
+		strings.EqualFold(left.Hostname(), right.Hostname()) &&
+		postmanURLPort(left) == postmanURLPort(right)
+}
+
+func postmanURLPort(value *url.URL) string {
+	if value == nil {
+		return ""
+	}
+	if port := value.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(strings.TrimSpace(value.Scheme)) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
+}
+
+const (
+	postmanFilePlaceholder = "[APEXLOAD_IMPORT_FILE_PLACEHOLDER]"
+)
+
+func requestBody(b *body, authoredContentType string, assetPrefix string, diagnostics *diag.Collector, location string) (string, string, []dsl.DataSource, []string, bool) {
 	if b == nil {
-		return "", "", nil
+		return "", "", nil, nil, false
 	}
 	switch strings.ToLower(strings.TrimSpace(b.Mode)) {
 	case "", "raw":
-		return b.Raw, detectContentType(b.Raw), nil
+		return b.Raw, detectContentType(b.Raw), nil, nil, false
 	case "urlencoded":
-		values := url.Values{}
+		parts := make([]string, 0, len(b.URLEncoded))
 		for _, entry := range b.URLEncoded {
 			if entry.Disabled || entry.Key == "" {
 				continue
 			}
-			values.Add(entry.Key, tmpl.TranslateDynamic(entry.Value, diagnostics, location))
+			// Postman form fields are ordered and may repeat. Preserve both facts
+			// and leave template spans visible for the subsequent shared rewrite.
+			parts = append(parts,
+				encodeQueryComponentPreservingTemplates(entry.Key)+"="+
+					encodeQueryComponentPreservingTemplates(entry.Value),
+			)
 		}
-		return values.Encode(), "application/x-www-form-urlencoded", nil
+		return strings.Join(parts, "&"), "application/x-www-form-urlencoded", nil, nil, false
 	case "formdata":
-		values := map[string]string{}
-		diagnostics.Add(diag.Warning, "Postman form-data", location, "form-data body was flattened to JSON for review; multipart replay and file upload parts require manual validation")
-		for _, entry := range b.FormData {
-			if entry.Disabled || entry.Key == "" {
-				continue
-			}
-			if strings.EqualFold(entry.Type, "file") {
-				values[entry.Key] = "{{var." + normalizeVariableName(entry.Key) + "_file}}"
-				diagnostics.Add(diag.Warning, "Postman form-data file", location, "file part "+entry.Key+" cannot be seeded from the collection JSON; provide a governed file parameter before replay")
-				continue
-			}
-			values[entry.Key] = tmpl.TranslateDynamic(entry.Value, diagnostics, location)
+		boundary := multipartBoundary(authoredContentType)
+		if boundary == "" {
+			boundary = deterministicPostmanMultipartBoundary(assetPrefix, b.FormData)
 		}
-		data, _ := json.MarshalIndent(values, "", "  ")
-		return string(data), "application/json", nil
+		payload, assets, invalidMetadata := postmanMultipartBody(b.FormData, boundary, assetPrefix, diagnostics, location)
+		return payload, "multipart/form-data; boundary=" + boundary, assets, nil, invalidMetadata
 	case "graphql":
-		payload := map[string]any{}
-		if b.GraphQL != nil {
-			payload["query"] = b.GraphQL.Query
-			if strings.TrimSpace(b.GraphQL.Variables) != "" {
-				var decoded any
-				if err := json.Unmarshal([]byte(b.GraphQL.Variables), &decoded); err == nil {
-					payload["variables"] = decoded
-				} else {
-					payload["variables"] = b.GraphQL.Variables
-				}
-			}
-		}
-		data, _ := json.MarshalIndent(payload, "", "  ")
-		return string(data), "application/json", nil
+		return postmanGraphQLBody(b.GraphQL), "application/json", nil, nil, false
 	default:
 		diagnostics.Add(diag.Warning, "Postman body mode", location, fmt.Sprintf("body mode %q is not natively converted; add the payload manually before replay", b.Mode))
-		return "", "", nil
+		return "", "", nil, nil, false
 	}
+}
+
+// postmanGraphQLBody builds only the JSON envelope owned by the Postman
+// adapter. The variables string is itself authored JSON and remains verbatim
+// so the shared bounded JSON projector can detect duplicate keys, preserve
+// numeric spellings and member order, and assign malformed input its safe
+// blocked/rejected disposition. Decoding into interface{} here would silently
+// collapse duplicates; treating malformed JSON as a string would make it
+// executable with different wire semantics.
+func postmanGraphQLBody(graphQL *graphqlBody) string {
+	if graphQL == nil {
+		return "{}"
+	}
+	query, _ := json.Marshal(graphQL.Query)
+	var payload strings.Builder
+	payload.WriteString(`{"query":`)
+	payload.Write(query)
+	if strings.TrimSpace(graphQL.Variables) != "" {
+		payload.WriteString(`,"variables":`)
+		payload.WriteString(graphQL.Variables)
+	}
+	payload.WriteByte('}')
+	return payload.String()
+}
+
+func deterministicPostmanMultipartBoundary(candidateIdentity string, entries []keyValueEntry) string {
+	for attempt := 0; ; attempt++ {
+		boundary := postmanMultipartBoundaryCandidate(candidateIdentity, attempt)
+		if !postmanMultipartBoundaryOccursInParts(boundary, entries) {
+			return boundary
+		}
+	}
+}
+
+func postmanMultipartBoundaryCandidate(candidateIdentity string, attempt int) string {
+	digest := sha256.Sum256([]byte(fmt.Sprintf("postman-multipart-v1\x00%s\x00%d", candidateIdentity, attempt)))
+	return fmt.Sprintf("----apexload-postman-%x", digest[:12])
+}
+
+func postmanMultipartBoundaryOccursInParts(boundary string, entries []keyValueEntry) bool {
+	for _, entry := range entries {
+		if strings.Contains(entry.Value, boundary) ||
+			strings.Contains(postmanFormFileSource(entry), boundary) ||
+			strings.Contains(entry.ContentType, boundary) {
+			return true
+		}
+	}
+	return false
+}
+
+func multipartBoundary(contentType string) string {
+	mediaType, params, err := mime.ParseMediaType(strings.TrimSpace(contentType))
+	if err != nil || !strings.EqualFold(mediaType, "multipart/form-data") {
+		return ""
+	}
+	return strings.TrimSpace(params["boundary"])
+}
+
+func postmanMultipartBody(entries []keyValueEntry, boundary string, assetPrefix string, diagnostics *diag.Collector, location string) (string, []dsl.DataSource, bool) {
+	var body strings.Builder
+	assets := make([]dsl.DataSource, 0)
+	assetNames := map[string]int{}
+	invalidMetadata := false
+	for _, entry := range entries {
+		name := strings.TrimSpace(entry.Key)
+		if entry.Disabled || name == "" {
+			continue
+		}
+		name, nameChanged := credentialpolicy.SanitizeMultipartDispositionToken(name)
+		name = credentialpolicy.EscapeMultipartDispositionToken(name)
+		invalidMetadata = invalidMetadata || nameChanged
+		body.WriteString("--" + boundary + "\r\n")
+		if strings.EqualFold(strings.TrimSpace(entry.Type), "file") {
+			filename := postmanFormFileName(entry)
+			filename, filenameChanged := credentialpolicy.SanitizeMultipartDispositionToken(filename)
+			filename = credentialpolicy.EscapeMultipartDispositionToken(filename)
+			invalidMetadata = invalidMetadata || filenameChanged
+			assetName := postmanFileAssetName(assetPrefix, name, assetNames)
+			contentType := strings.TrimSpace(entry.ContentType)
+			if contentType == "" {
+				contentType = "application/octet-stream"
+			} else if !httpguts.ValidHeaderFieldValue(contentType) {
+				contentType = "application/octet-stream"
+				invalidMetadata = true
+			}
+			body.WriteString(`Content-Disposition: form-data; name="` + name + `"; filename="` + filename + `"` + "\r\n")
+			body.WriteString("Content-Type: " + contentType + "\r\n\r\n")
+			body.WriteString("{{file." + assetName + "}}\r\n")
+			assets = append(assets, dsl.DataSource{
+				Name: assetName,
+				Type: "file",
+				// Source workstation paths are not portable or controller-
+				// governed. The action is durably gated until this inert
+				// placeholder is replaced by an uploaded file binding.
+				InlineData:  postmanFilePlaceholder,
+				FileName:    filename,
+				ContentType: contentType,
+			})
+			if diagnostics != nil {
+				diagnostics.Add(diag.Warning, "Postman form-data file", location, "file part "+name+" references source file "+filename+"; bind the generated file data source before replay")
+			}
+			continue
+		}
+		body.WriteString(`Content-Disposition: form-data; name="` + name + `"` + "\r\n")
+		if contentType := strings.TrimSpace(entry.ContentType); contentType != "" {
+			if httpguts.ValidHeaderFieldValue(contentType) {
+				body.WriteString("Content-Type: " + contentType + "\r\n")
+			} else {
+				invalidMetadata = true
+			}
+		}
+		body.WriteString("\r\n")
+		body.WriteString(tmpl.TranslateDynamic(entry.Value, diagnostics, location))
+		body.WriteString("\r\n")
+	}
+	body.WriteString("--" + boundary + "--\r\n")
+	if invalidMetadata && diagnostics != nil {
+		diagnostics.Add(diag.Warning, "Postman multipart metadata", location, "invalid multipart field metadata was replaced in a blocked draft")
+	}
+	return body.String(), assets, invalidMetadata
+}
+
+func postmanFormFileName(entry keyValueEntry) string {
+	source := postmanFormFileSource(entry)
+	source = strings.ReplaceAll(strings.TrimSpace(source), "\\", "/")
+	if name := path.Base(source); name != "" && name != "." && name != "/" {
+		return name
+	}
+	name := normalizeVariableName(entry.Key)
+	if name == "" {
+		name = "upload"
+	}
+	return name + ".bin"
+}
+
+func postmanFormFileSource(entry keyValueEntry) string {
+	var source string
+	switch value := entry.Src.(type) {
+	case string:
+		source = value
+	case []any:
+		for _, item := range value {
+			if text, ok := item.(string); ok && strings.TrimSpace(text) != "" {
+				source = text
+				break
+			}
+		}
+	}
+	if strings.TrimSpace(source) == "" {
+		source = entry.Value
+	}
+	return strings.TrimSpace(source)
+}
+
+func postmanFileAssetName(prefix string, field string, seen map[string]int) string {
+	base := strings.ToLower(strings.Trim(normalizeVariableName(prefix+"_"+field), "_"))
+	if base == "" {
+		base = "postman_file"
+	}
+	seen[base]++
+	if seen[base] > 1 {
+		return fmt.Sprintf("%s_%d", base, seen[base])
+	}
+	return base
+}
+
+func mergePostmanDataSources(existing []dsl.DataSource, additions []dsl.DataSource) []dsl.DataSource {
+	if len(additions) == 0 {
+		return existing
+	}
+	out := append([]dsl.DataSource(nil), existing...)
+	seen := make(map[string]struct{}, len(existing)+len(additions))
+	for _, source := range existing {
+		seen[strings.ToLower(strings.TrimSpace(source.Name))] = struct{}{}
+	}
+	for _, source := range additions {
+		base := source.Name
+		if base == "" {
+			base = "postman_file"
+		}
+		name := base
+		for suffix := 2; ; suffix++ {
+			if _, duplicate := seen[strings.ToLower(name)]; !duplicate {
+				break
+			}
+			name = fmt.Sprintf("%s_%d", base, suffix)
+		}
+		source.Name = name
+		seen[strings.ToLower(name)] = struct{}{}
+		out = append(out, source)
+	}
+	return out
 }
 
 func unsupportedBodyMode(mode string) bool {
@@ -885,6 +1449,9 @@ func sortedAuthSchemes(requests []requestItem, collectionAuth *auth) []string {
 		seen[collectionAuth.Type] = struct{}{}
 	}
 	for _, item := range requests {
+		if item.InheritedAuth != nil && item.InheritedAuth.Type != "" {
+			seen[item.InheritedAuth.Type] = struct{}{}
+		}
 		if item.Request.Auth != nil && item.Request.Auth.Type != "" {
 			seen[item.Request.Auth.Type] = struct{}{}
 		}
@@ -902,14 +1469,14 @@ func reportUnsupportedPostmanAuth(value *auth, diagnostics *diag.Collector, loca
 		return
 	}
 	switch strings.ToLower(strings.TrimSpace(value.Type)) {
-	case "digest", "ntlm":
+	case "ntlm":
 		diagnostics.Add(diag.Warning, "Postman auth", location, value.Type+" auth is not replayable by the HTTP runtime; it was preserved as review-only metadata and no runnable auth override was emitted")
 	case "awsv4", "hawk":
 		diagnostics.Add(diag.Warning, "Postman auth", location, value.Type+" request signing cannot be executed during import; translate the signing flow before replay")
 	}
 }
 
-func applyPostmanAuth(action *dsl.Action, requestAuth *auth, collectionAuth *auth, vars map[string]string, sanitizeSensitive bool, diagnostics *diag.Collector, location string) {
+func applyPostmanAuth(action *dsl.Action, requestAuth *auth, collectionAuth *auth, vars postmanVariableLookup, diagnostics *diag.Collector, location string) {
 	explicitRequestAuth := requestAuth != nil && strings.TrimSpace(requestAuth.Type) != ""
 	if explicitRequestAuth && strings.EqualFold(strings.TrimSpace(requestAuth.Type), "noauth") {
 		action.Auth = &dsl.AuthConfig{Type: "noauth"}
@@ -917,10 +1484,8 @@ func applyPostmanAuth(action *dsl.Action, requestAuth *auth, collectionAuth *aut
 	}
 
 	effective := requestAuth
-	inherited := false
 	if effective == nil || strings.TrimSpace(effective.Type) == "" || strings.EqualFold(strings.TrimSpace(effective.Type), "inherit") {
 		effective = collectionAuth
-		inherited = true
 	}
 	if effective == nil {
 		return
@@ -930,16 +1495,14 @@ func applyPostmanAuth(action *dsl.Action, requestAuth *auth, collectionAuth *aut
 	case "", "inherit", "noauth":
 		return
 	case "apikey":
-		applyPostmanAPIKey(action, effective, vars, sanitizeSensitive, diagnostics, location)
-	case "bearer", "basic", "oauth2":
-		cfg := postmanAuthConfig(effective, vars, sanitizeSensitive, diagnostics, location)
+		applyPostmanAPIKey(action, effective, vars, diagnostics, location)
+	case "bearer", "basic", "digest", "oauth2":
+		cfg := postmanAuthConfig(effective, vars, diagnostics, location)
 		if strings.TrimSpace(cfg.Type) != "" {
 			action.Auth = &cfg
 		}
-	case "digest", "ntlm", "awsv4", "hawk":
-		if !inherited {
-			reportUnsupportedPostmanAuth(effective, diagnostics, location)
-		}
+	case "ntlm", "awsv4", "hawk":
+		reportUnsupportedPostmanAuth(effective, diagnostics, location)
 		if action.Metadata != nil {
 			action.Metadata["postman_auth_review_only"] = effective.Type
 		}
@@ -953,32 +1516,48 @@ func applyPostmanAuth(action *dsl.Action, requestAuth *auth, collectionAuth *aut
 	}
 }
 
-func applyPostmanAPIKey(action *dsl.Action, value *auth, vars map[string]string, sanitizeSensitive bool, diagnostics *diag.Collector, location string) {
+func applyPostmanAPIKey(action *dsl.Action, value *auth, vars postmanVariableLookup, diagnostics *diag.Collector, location string) {
+	markReview := func(secret string) {
+		if action == nil {
+			return
+		}
+		if action.Metadata == nil {
+			action.Metadata = make(map[string]any)
+		}
+		action.Metadata["postman_auth_review_only"] = "apikey"
+		// Carry source migration material only through the typed credential
+		// surface. The shared projector moves it into the protected requirement
+		// and replaces this unsupported auth mode with an inert no-auth draft.
+		action.Auth = &dsl.AuthConfig{
+			Type:  "postman_apikey",
+			Token: secret,
+		}
+	}
+
 	key := authValue(value.APIKey, "key", vars, diagnostics, location)
-	secret := authCredentialValue(value.APIKey, "value", vars, diagnostics, location, sanitizeSensitive, "POSTMAN_API_KEY")
+	secret := authCredentialValue(value.APIKey, "value", vars, diagnostics, location)
 	placement := strings.ToLower(strings.TrimSpace(authValue(value.APIKey, "in", vars, diagnostics, location)))
-	if strings.TrimSpace(key) == "" || strings.TrimSpace(secret) == "" {
+	if strings.TrimSpace(key) == "" || strings.TrimSpace(secret) == "" || placement == "" {
 		if diagnostics != nil {
 			diagnostics.Add(diag.Warning, "Postman auth", location, "API key auth is missing key, value, or placement and was not converted")
 		}
+		markReview(secret)
 		return
 	}
 	switch placement {
 	case "query", "queryparam", "queryparams":
 		action.Target = appendQueryParam(action.Target, key, secret)
-	case "", "header":
+	case "header":
 		if action.Headers == nil {
 			action.Headers = map[string]string{}
 		}
-		action.Headers[key] = secret
+		action.HeaderList = replaceHeaderListValue(action.HeaderList, key, secret)
+		setHeaderSummary(action.Headers, key, secret)
 	default:
 		if diagnostics != nil {
-			diagnostics.Add(diag.Warning, "Postman auth", location, "API key placement "+placement+" is not supported; converted as a header")
+			diagnostics.Add(diag.Warning, "Postman auth", location, "API key placement "+placement+" is not supported and was not converted")
 		}
-		if action.Headers == nil {
-			action.Headers = map[string]string{}
-		}
-		action.Headers[key] = secret
+		markReview(secret)
 	}
 }
 
@@ -1022,7 +1601,7 @@ func encodeQueryComponentPreservingTemplates(s string) string {
 	return b.String()
 }
 
-func postmanAuthConfig(value *auth, vars map[string]string, sanitizeSensitive bool, diagnostics *diag.Collector, location string) dsl.AuthConfig {
+func postmanAuthConfig(value *auth, vars postmanVariableLookup, diagnostics *diag.Collector, location string) dsl.AuthConfig {
 	if value == nil {
 		return dsl.AuthConfig{}
 	}
@@ -1030,18 +1609,24 @@ func postmanAuthConfig(value *auth, vars map[string]string, sanitizeSensitive bo
 	case "", "noauth", "inherit":
 		return dsl.AuthConfig{}
 	case "bearer":
-		return dsl.AuthConfig{Type: "bearer", Token: convertutil.FirstNonEmpty(authCredentialValue(value.Bearer, "token", vars, diagnostics, location, sanitizeSensitive, "POSTMAN_BEARER_TOKEN"), "{{env.API_TOKEN}}")}
+		return dsl.AuthConfig{Type: "bearer", Token: convertutil.FirstNonEmpty(authCredentialValue(value.Bearer, "token", vars, diagnostics, location), "{{env.API_TOKEN}}")}
 	case "basic":
 		return dsl.AuthConfig{
 			Type:     "basic",
 			Username: convertutil.FirstNonEmpty(authValue(value.Basic, "username", vars, diagnostics, location), "{{env.API_USERNAME}}"),
-			Password: convertutil.FirstNonEmpty(authCredentialValue(value.Basic, "password", vars, diagnostics, location, sanitizeSensitive, "POSTMAN_BASIC_PASSWORD"), "{{env.API_PASSWORD}}"),
+			Password: convertutil.FirstNonEmpty(authCredentialValue(value.Basic, "password", vars, diagnostics, location), "{{env.API_PASSWORD}}"),
+		}
+	case "digest":
+		return dsl.AuthConfig{
+			Type:     "digest",
+			Username: convertutil.FirstNonEmpty(authValue(value.Digest, "username", vars, diagnostics, location), "{{env.API_USERNAME}}"),
+			Password: convertutil.FirstNonEmpty(authCredentialValue(value.Digest, "password", vars, diagnostics, location), "{{env.API_PASSWORD}}"),
 		}
 	case "oauth2":
 		if diagnostics != nil {
 			diagnostics.Add(diag.Warning, "Postman auth", location, "OAuth2 auth was represented as a bearer token placeholder; review token acquisition before replay")
 		}
-		return dsl.AuthConfig{Type: "bearer", Token: convertutil.FirstNonEmpty(authCredentialValue(value.OAuth2, "accessToken", vars, diagnostics, location, sanitizeSensitive, "POSTMAN_OAUTH2_ACCESS_TOKEN"), authCredentialValue(value.OAuth2, "access_token", vars, diagnostics, location, sanitizeSensitive, "POSTMAN_OAUTH2_ACCESS_TOKEN"), "{{env.API_TOKEN}}")}
+		return dsl.AuthConfig{Type: "bearer", Token: convertutil.FirstNonEmpty(authCredentialValue(value.OAuth2, "accessToken", vars, diagnostics, location), authCredentialValue(value.OAuth2, "access_token", vars, diagnostics, location), "{{env.API_TOKEN}}")}
 	default:
 		if diagnostics != nil {
 			diagnostics.Add(diag.Warning, "Postman auth", location, "auth type "+value.Type+" was not converted")
@@ -1050,7 +1635,7 @@ func postmanAuthConfig(value *auth, vars map[string]string, sanitizeSensitive bo
 	}
 }
 
-func authValue(entries []keyValueEntry, key string, vars map[string]string, diagnostics *diag.Collector, location string) string {
+func authValue(entries []keyValueEntry, key string, vars postmanVariableLookup, diagnostics *diag.Collector, location string) string {
 	for _, entry := range entries {
 		if entry.Disabled {
 			continue
@@ -1062,15 +1647,12 @@ func authValue(entries []keyValueEntry, key string, vars map[string]string, diag
 	return ""
 }
 
-func authCredentialValue(entries []keyValueEntry, key string, vars map[string]string, diagnostics *diag.Collector, location string, sanitizeSensitive bool, envName string) string {
-	value := authValue(entries, key, vars, diagnostics, location)
-	if value == "" {
-		return ""
-	}
-	if sanitizeSensitive && !strings.Contains(value, "{{") {
-		return "{{env." + envName + "}}"
-	}
-	return value
+func authCredentialValue(entries []keyValueEntry, key string, vars postmanVariableLookup, diagnostics *diag.Collector, location string) string {
+	// Retain literal credentials until the shared EffectiveRequest projector
+	// creates a deterministic requirement and moves the value into the protected
+	// import-session handoff. sanitizeSensitive=false is handled by Audit mode
+	// in postmanRequestPipeline rather than by this source adapter.
+	return authValue(entries, key, vars, diagnostics, location)
 }
 
 func parameterNames(params []dsl.Parameter) []string {
@@ -1081,20 +1663,20 @@ func parameterNames(params []dsl.Parameter) []string {
 	return out
 }
 
-func expandVariables(value string, vars map[string]string) string {
+func expandVariables(value string, vars postmanVariableLookup) string {
 	return variablePattern.ReplaceAllStringFunc(value, func(token string) string {
 		matches := variablePattern.FindStringSubmatch(token)
 		if len(matches) != 2 {
 			return token
 		}
-		if replacement, ok := vars[matches[1]]; ok && replacement != "" {
+		if replacement, _, ok := vars.Get(matches[1]); ok && replacement != "" {
 			return replacement
 		}
 		return token
 	})
 }
 
-func expandBaseURLVariables(value string, vars map[string]string, baseURL string) string {
+func expandBaseURLVariables(value string, vars postmanVariableLookup, baseURL string) string {
 	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	return variablePattern.ReplaceAllStringFunc(value, func(token string) string {
 		matches := variablePattern.FindStringSubmatch(token)
@@ -1102,8 +1684,9 @@ func expandBaseURLVariables(value string, vars map[string]string, baseURL string
 			return token
 		}
 		name := matches[1]
-		replacement := strings.TrimSpace(vars[name])
-		if replacement == "" {
+		replacement, _, ok := vars.Get(name)
+		replacement = strings.TrimSpace(replacement)
+		if !ok || replacement == "" {
 			return token
 		}
 		if looksAbsoluteURL(replacement) && (base == "" || strings.TrimRight(replacement, "/") == base) {
@@ -1121,10 +1704,10 @@ func rewriteVariables(value string) string {
 }
 
 func rewriteVariablesWithDiagnostics(value string, diagnostics *diag.Collector, location string) string {
-	return rewriteVariablesWithContext(value, nil, diagnostics, location)
+	return rewriteVariablesWithContext(value, postmanVariableLookup{}, diagnostics, location)
 }
 
-func rewriteVariablesWithContext(value string, vars map[string]string, diagnostics *diag.Collector, location string) string {
+func rewriteVariablesWithContext(value string, vars postmanVariableLookup, diagnostics *diag.Collector, location string) string {
 	value = tmpl.TranslateDynamic(value, diagnostics, location)
 	return variablePattern.ReplaceAllStringFunc(value, func(token string) string {
 		matches := variablePattern.FindStringSubmatch(token)
@@ -1138,31 +1721,39 @@ func rewriteVariablesWithContext(value string, vars map[string]string, diagnosti
 		if replacement, ok := inlineRuntimeVariable(name, vars, diagnostics, location); ok {
 			return replacement
 		}
+		if _, bindingName, ok := vars.Get(name); ok && bindingName != "" {
+			return "{{var." + bindingName + "}}"
+		}
 		return "{{var." + normalizeVariableName(name) + "}}"
 	})
 }
 
-func inlineRuntimeVariable(name string, vars map[string]string, diagnostics *diag.Collector, location string) (string, bool) {
-	if len(vars) == 0 {
-		return "", false
-	}
-	value, ok := vars[name]
+func inlineRuntimeVariable(name string, vars postmanVariableLookup, diagnostics *diag.Collector, location string) (string, bool) {
+	value, _, ok := vars.Get(name)
 	if !ok {
 		return "", false
 	}
 	translated := strings.TrimSpace(tmpl.TranslateDynamic(value, diagnostics, location))
-	if !singleRuntimeExpression(translated) {
+	if !runtimeTemplateValue(translated) {
 		return "", false
 	}
 	return translated, true
 }
 
-func singleRuntimeExpression(value string) bool {
-	if !strings.HasPrefix(value, "{{") || !strings.HasSuffix(value, "}}") {
+var postmanRuntimeTemplatePattern = regexp.MustCompile(`\{\{([^{}\r\n]+)\}\}`)
+
+func runtimeTemplateValue(value string) bool {
+	matches := postmanRuntimeTemplatePattern.FindAllStringSubmatch(value, -1)
+	if len(matches) == 0 {
 		return false
 	}
-	expr := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(value, "{{"), "}}"))
-	return strings.HasPrefix(expr, "fn.") || strings.HasPrefix(expr, "fake.")
+	for _, match := range matches {
+		if len(match) != 2 || !isApexExpressionName(strings.TrimSpace(match[1])) {
+			return false
+		}
+	}
+	remainder := postmanRuntimeTemplatePattern.ReplaceAllString(value, "")
+	return !strings.Contains(remainder, "{{") && !strings.Contains(remainder, "}}")
 }
 
 var pathVariablePattern = regexp.MustCompile(`(^|/):([A-Za-z][A-Za-z0-9_-]*)`)
@@ -1209,90 +1800,11 @@ func headerValue(headers map[string]string, key string) string {
 	return ""
 }
 
-func sensitiveHeader(key string) bool {
-	normalized := strings.ToLower(strings.TrimSpace(key))
-	return normalized == "authorization" || normalized == "proxy-authorization" || normalized == "cookie" || normalized == "x-api-key" || normalized == "api-key"
-}
-
 // containsTemplateToken reports whether a value references a template variable
 // (e.g. "Bearer {{token}}"). Such values are not hard-coded secrets, so
 // sanitization must preserve them rather than masking the whole value.
 func containsTemplateToken(value string) bool {
 	return strings.Contains(value, "{{") && strings.Contains(value, "}}")
-}
-
-func sensitiveEnvName(key string) string {
-	normalized := strings.ToUpper(strings.TrimSpace(key))
-	var builder strings.Builder
-	lastUnderscore := false
-	for _, r := range normalized {
-		if (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') {
-			builder.WriteRune(r)
-			lastUnderscore = false
-			continue
-		}
-		if !lastUnderscore {
-			builder.WriteByte('_')
-			lastUnderscore = true
-		}
-	}
-	out := strings.Trim(builder.String(), "_")
-	if out == "" {
-		out = "SECRET"
-	}
-	return "POSTMAN_" + out
-}
-
-func sanitizeBody(value string) string {
-	if strings.TrimSpace(value) == "" {
-		return value
-	}
-	var decoded any
-	if err := json.Unmarshal([]byte(value), &decoded); err != nil {
-		return value
-	}
-	changed := sanitizeJSONValue(decoded)
-	if !changed {
-		return value
-	}
-	data, err := json.MarshalIndent(decoded, "", "  ")
-	if err != nil {
-		return value
-	}
-	return string(data)
-}
-
-func sanitizeJSONValue(value any) bool {
-	switch typed := value.(type) {
-	case map[string]any:
-		changed := false
-		for key, nested := range typed {
-			if sensitiveJSONKey(key) {
-				typed[key] = "{{var." + normalizeVariableName(key) + "}}"
-				changed = true
-				continue
-			}
-			if sanitizeJSONValue(nested) {
-				changed = true
-			}
-		}
-		return changed
-	case []any:
-		changed := false
-		for _, nested := range typed {
-			if sanitizeJSONValue(nested) {
-				changed = true
-			}
-		}
-		return changed
-	default:
-		return false
-	}
-}
-
-func sensitiveJSONKey(key string) bool {
-	key = strings.ToLower(key)
-	return strings.Contains(key, "password") || strings.Contains(key, "token") || strings.Contains(key, "secret") || strings.Contains(key, "apikey") || strings.Contains(key, "api_key")
 }
 
 func detectContentType(body string) string {
@@ -1346,7 +1858,7 @@ func isBaseURLVariableName(value string) bool {
 }
 
 func isApexExpressionName(value string) bool {
-	for _, prefix := range []string{"var.", "env.", "data.", "fn."} {
+	for _, prefix := range []string{"var.", "env.", "data.", "param.", "secret.", "file.", "fn.", "fake."} {
 		if strings.HasPrefix(value, prefix) {
 			return true
 		}

@@ -173,6 +173,9 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 		if g.Script == nil {
 			return nil, fmt.Errorf("group[%d] %q: script is required", i, g.Name)
 		}
+		if err := importExecutionGateError(g.Script, "launch"); err != nil {
+			return nil, fmt.Errorf("group[%d] %q: %w", i, g.Name, err)
+		}
 		if issues := dsl.ValidateWorkloadSettingsIssues(g.Script.Config.RunLogic, g.Script.Config.Pacing); len(issues) > 0 {
 			return nil, fmt.Errorf("group[%d] %q: invalid workload settings: %s", i, g.Name, issues[0])
 		}
@@ -204,6 +207,9 @@ func NewMultiGroup(cfg MultiGroupConfig) (*MultiGroupEngine, error) {
 			persistentJavaVUsers += javaCapacityPlan.Demand(g.VUsers)
 		} else if javaVuserScriptUsesLegacyOneShot(g.Script) {
 			legacyJavaConfigured = true
+		}
+		if groupLifecycleAtOnce(g) && sourceTransactionsCrossLifecycleBlocks(g.Script) {
+			return nil, fmt.Errorf("group[%d] %q: init_strategy at_once cannot preserve a source transaction across init, actions, and teardown; use at_runtime", i, g.Name)
 		}
 		if g.VUserIDSpan < 0 {
 			return nil, fmt.Errorf("group[%d] %q: vuser id span must be non-negative", i, g.Name)
@@ -322,6 +328,9 @@ func (mge *MultiGroupEngine) activeVUserCountByGroup() map[string]int {
 }
 
 func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, error) {
+	if err := mge.importExecutionGateError("launch"); err != nil {
+		return nil, err
+	}
 	if err := mge.preflightRuntimeAtStart(ctx); err != nil {
 		return nil, err
 	}
@@ -496,7 +505,7 @@ func (mge *MultiGroupEngine) Run(ctx context.Context) (*MultiGroupRunResult, err
 			protoConfig["group_name"] = group.Name
 			applyRuntimeMockNamespace(protoConfig, mge.mockNamespace)
 			tctx, tcancel := teardownContext()
-			mge.runGroupLifecycleBlock(tctx, group, protoConfig, group.Script.Teardown, "teardown")
+			_ = mge.runGroupLifecycleBlock(tctx, tctx, group, protoConfig, group.Script.Teardown, "teardown")
 			tcancel()
 		}
 	}
@@ -523,11 +532,17 @@ groupLoop:
 			if err := mge.WaitIfPaused(mge.loopCtx); err != nil {
 				break groupLoop
 			}
-			atOnceGroups = append(atOnceGroups, group)
-			if !mge.runGroupLifecycleBlock(mge.baseCtx, group, protoConfig, group.Script.Init, "init") {
+			outcome := mge.runGroupLifecycleBlock(mge.baseCtx, mge.loopCtx, group, protoConfig, group.Script.Init, "init")
+			if outcome.completed || outcome.userWorkStarted {
+				atOnceGroups = append(atOnceGroups, group)
+			}
+			if outcome.err != nil {
 				baseCancel()
 				wg.Wait()
-				return nil, fmt.Errorf("group %q init-once failed", group.Name)
+				return nil, fmt.Errorf("group %q init-once failed: %w", group.Name, outcome.err)
+			}
+			if !outcome.completed {
+				break groupLoop
 			}
 		}
 		if isOpenWorkload(group.Script) {
@@ -558,13 +573,16 @@ groupLoop:
 						mge.metrics.RecordSheddedArrival()
 						return
 					}
-					if err := mge.spawnOpenWorker(vuserID, group, protoConfig, &wg, limiter.release); err != nil {
+					launched, err := mge.spawnOpenWorker(vuserID, group, protoConfig, &wg, limiter.release)
+					if err != nil {
 						if firstInitErr == nil {
 							firstInitErr = err
 						}
 						return
 					}
-					initializedWorkers++
+					if launched {
+						initializedWorkers++
+					}
 				}, func(_ int, count int) {
 					limiter.recordShed(int64(count))
 					mge.metrics.RecordSheddedArrivals(int64(count))
@@ -610,10 +628,14 @@ groupLoop:
 				wg.Wait()
 				return nil, fmt.Errorf("group %q allocate vuser id: %w", group.Name, err)
 			}
-			if err := mge.spawnVUser(vuserID, group, protoConfig, &wg, false); err != nil {
+			launched, err := mge.spawnVUser(vuserID, group, protoConfig, &wg, false)
+			if err != nil {
 				baseCancel()
 				wg.Wait()
 				return nil, fmt.Errorf("group %q initialize vuser: %w", group.Name, err)
+			}
+			if !launched {
+				break
 			}
 		}
 	}
@@ -680,6 +702,9 @@ func (mge *MultiGroupEngine) PreflightRuntime(ctx context.Context) error {
 	if mge == nil {
 		return fmt.Errorf("multi-group engine is unavailable")
 	}
+	if err := mge.importExecutionGateError("runtime preflight"); err != nil {
+		return err
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -715,6 +740,9 @@ func (mge *MultiGroupEngine) RevalidateRuntime(ctx context.Context) error {
 	if mge == nil {
 		return fmt.Errorf("multi-group engine is unavailable")
 	}
+	if err := mge.importExecutionGateError("runtime preflight"); err != nil {
+		return err
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -728,6 +756,21 @@ func (mge *MultiGroupEngine) RevalidateRuntime(ctx context.Context) error {
 	mge.mu.Lock()
 	mge.javaVuserCapacityLimit = limit
 	mge.mu.Unlock()
+	return nil
+}
+
+func (mge *MultiGroupEngine) importExecutionGateError(operation string) error {
+	if mge == nil {
+		return fmt.Errorf("multi-group engine is unavailable")
+	}
+	mge.mu.Lock()
+	groups := append([]GroupConfig(nil), mge.groups...)
+	mge.mu.Unlock()
+	for index, group := range groups {
+		if err := importExecutionGateError(group.Script, operation); err != nil {
+			return fmt.Errorf("group[%d] %q: %w", index, group.Name, err)
+		}
+	}
 	return nil
 }
 
@@ -988,40 +1031,129 @@ func groupLifecycleAtOnce(group GroupConfig) bool {
 	return strings.EqualFold(strings.TrimSpace(group.InitStrategy), "at_once")
 }
 
-func (mge *MultiGroupEngine) runGroupLifecycleBlock(ctx context.Context, group GroupConfig, protoConfig map[string]any, actions []dsl.Action, phase string) bool {
+func sourceTransactionsCrossLifecycleBlocks(script *dsl.Script) bool {
+	if script == nil {
+		return false
+	}
+	for _, actions := range [][]dsl.Action{script.Init, script.Actions, script.Teardown} {
+		// At-once phases use different VUser instances. Source markers inside a
+		// branch or loop are path-dependent, so a net static count is not enough:
+		// one reachable path can strand ownership even when another path balances
+		// it. Reject that nonlinear shape conservatively.
+		if sourceTransactionsInNonlinearControlFlow(actions, false) {
+			return true
+		}
+		balance := make(map[string]int)
+		for _, action := range actions {
+			switch {
+			case sourceTransactionStarts(action):
+				key := strings.ToLower(strings.TrimSpace(sourceTransactionActionName(action)))
+				// Same-name source transactions are not nestable in the runtime
+				// state map; a duplicate start is rejected by the runtime.
+				if balance[key] != 0 {
+					return true
+				}
+				balance[key] = 1
+			case sourceTransactionEnds(action):
+				key := strings.ToLower(strings.TrimSpace(sourceTransactionActionName(action)))
+				if balance[key] != 1 {
+					return true
+				}
+				balance[key] = 0
+			}
+		}
+		for _, value := range balance {
+			if value != 0 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func sourceTransactionsInNonlinearControlFlow(actions []dsl.Action, nonlinear bool) bool {
+	for _, action := range actions {
+		if nonlinear && (sourceTransactionStarts(action) || sourceTransactionEnds(action)) {
+			return true
+		}
+		if action.Control != nil {
+			if sourceTransactionsInNonlinearControlFlow(action.Control.Steps, true) ||
+				sourceTransactionsInNonlinearControlFlow(action.Control.Else, true) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+type groupLifecycleBlockOutcome struct {
+	completed       bool
+	userWorkStarted bool
+	err             error
+}
+
+func (mge *MultiGroupEngine) runGroupLifecycleBlock(actionCtx, boundaryCtx context.Context, group GroupConfig, protoConfig map[string]any, actions []dsl.Action, phase string) groupLifecycleBlockOutcome {
 	if len(actions) == 0 {
-		return true
+		return groupLifecycleBlockOutcome{completed: true}
 	}
 	vuProto, err := protocol.Get(group.Script.Protocol)
 	if err != nil {
 		slog.Error("failed to create lifecycle protocol", "group", group.Name, "phase", phase, "err", scrubSensitiveError(err, group.RedactionConfig))
-		return false
+		return groupLifecycleBlockOutcome{err: err}
 	}
 	bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return group.RedactionConfig })
-	if err := callProtocolInit(ctx, vuProto, protoConfig, group.RedactionConfig); err != nil {
-		slog.Error("failed to init lifecycle protocol", "group", group.Name, "phase", phase, "err", err)
+	if err := callProtocolInit(boundaryCtx, vuProto, protoConfig, group.RedactionConfig); err != nil {
 		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
-		return false
+		if boundaryCtx.Err() != nil &&
+			(errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)) {
+			return groupLifecycleBlockOutcome{}
+		}
+		slog.Error("failed to init lifecycle protocol", "group", group.Name, "phase", phase, "err", err)
+		return groupLifecycleBlockOutcome{err: err}
 	}
 	defer runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
+	// Protocol adapters are allowed to ignore their Init context. Recheck the
+	// lifecycle boundary before creating any user-phase cleanup obligation.
+	if boundaryCtx.Err() != nil || actionCtx.Err() != nil {
+		return groupLifecycleBlockOutcome{}
+	}
 
+	entitledBoundaryCtx := actionCtx
+	if phase != "teardown" && mge.gracefulCtx != nil {
+		entitledBoundaryCtx = mge.gracefulCtx
+	}
 	vu := &VUser{
-		ID:              -1,
-		TotalVUsers:     group.VUsers,
-		Group:           group.Name,
-		Proto:           vuProto,
-		Script:          group.Script,
-		Metrics:         mge.metrics,
-		ResultSink:      group.ResultSink,
-		RedactionConfig: group.RedactionConfig,
-		SecretResolver:  group.SecretResolver,
-		Rendezvous:      group.rendezvous,
-		DataProvider:    group.dataProvider,
+		ID:                -1,
+		TotalVUsers:       group.VUsers,
+		Group:             group.Name,
+		Proto:             vuProto,
+		Script:            group.Script,
+		Metrics:           mge.metrics,
+		ResultSink:        group.ResultSink,
+		RedactionConfig:   group.RedactionConfig,
+		SecretResolver:    group.SecretResolver,
+		Rendezvous:        group.rendezvous,
+		ExecutionGoals:    group.executionGoals,
+		ActionBoundaryCtx: entitledBoundaryCtx,
+		DataProvider:      group.dataProvider,
 	}
 	if phase != "teardown" {
 		vu.PauseControl = mge
 	}
-	return vu.RunLifecycleBlock(ctx, actions, phase)
+	completed := vu.RunLifecycleBlockWithContexts(actionCtx, boundaryCtx, actions, phase)
+	stoppedByContext := boundaryCtx.Err() != nil || actionCtx.Err() != nil
+	// An at-once lifecycle VUser is phase-local. Finalize any path-dependent
+	// unclosed source scope before discarding it so its reservation cannot leak
+	// and the incomplete transaction is visible exactly once.
+	vu.finalizeOpenSourceTransactions("source transaction ended without a matching end marker in the at-once lifecycle phase")
+	outcome := groupLifecycleBlockOutcome{
+		completed:       completed,
+		userWorkStarted: vu.userWorkStarted,
+	}
+	if !completed && !stoppedByContext {
+		outcome.err = fmt.Errorf("%s lifecycle action failed", phase)
+	}
+	return outcome
 }
 
 func waitForBaselineWindow(ctx context.Context, duration time.Duration) error {
@@ -1055,7 +1187,7 @@ func waitForPostBaselineWindow(ctx context.Context, gracefulStop <-chan struct{}
 	}
 }
 
-func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup, reserved bool) error {
+func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup, reserved bool) (bool, error) {
 	if !reserved {
 		mge.mu.Lock()
 		mge.activeReserved++
@@ -1095,6 +1227,12 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 	mge.signalVUserChangeLocked()
 	mge.mu.Unlock()
 
+	if vuCtx.Err() != nil {
+		cancelVUser()
+		mge.finishReservedVUser(vuserID, wg)
+		return false, nil
+	}
+
 	runtimeVUserID := group.VUserIDOffset + vuserID
 	vuProto, err := protocol.Get(group.Script.Protocol)
 	if err != nil {
@@ -1102,16 +1240,29 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 		slog.Error("failed to create protocol", "group", group.Name, "vuser", runtimeVUserID, "err", safeErr)
 		cancelVUser()
 		mge.finishReservedVUser(vuserID, wg)
-		return safeErr
+		return false, safeErr
 	}
 	bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return group.RedactionConfig })
 	if err := callProtocolInit(vuCtx, vuProto, vuserProtoConfig(protoConfig, runtimeVUserID), group.RedactionConfig); err != nil {
 		safeErr := err
-		slog.Error("failed to init protocol", "group", group.Name, "vuser", runtimeVUserID, "err", safeErr)
+		launchCancellation := vuCtx.Err() != nil &&
+			(errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
+		if !launchCancellation {
+			slog.Error("failed to init protocol", "group", group.Name, "vuser", runtimeVUserID, "err", safeErr)
+		}
 		cancelVUser()
 		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
 		mge.finishReservedVUser(vuserID, wg)
-		return safeErr
+		if launchCancellation {
+			return false, nil
+		}
+		return false, safeErr
+	}
+	if vuCtx.Err() != nil {
+		cancelVUser()
+		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
+		mge.finishReservedVUser(vuserID, wg)
+		return false, nil
 	}
 
 	mge.mu.Lock()
@@ -1156,7 +1307,7 @@ func (mge *MultiGroupEngine) spawnVUser(vuserID int, group GroupConfig, protoCon
 		}
 		vu.Run(vuCtx)
 	}()
-	return nil
+	return true, nil
 }
 
 func (mge *MultiGroupEngine) finishReservedVUser(vuserID int, wg *sync.WaitGroup) {
@@ -1276,7 +1427,7 @@ func (mge *MultiGroupEngine) releaseVUserIDLocked(id int) {
 	heap.Push(&mge.freeVUserIDs, id)
 }
 
-func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup, release func()) error {
+func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, protoConfig map[string]any, wg *sync.WaitGroup, release func()) (bool, error) {
 	// release returns the in-flight slot reserved by the caller; it must run
 	// exactly once across every exit path (including the early protocol
 	// failures below) so the limiter does not leak capacity.
@@ -1307,6 +1458,16 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 	mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 	mge.mu.Unlock()
 
+	if vuCtx.Err() != nil {
+		cancelVUser()
+		mge.mu.Lock()
+		mge.unregisterVUserLocked(vuserID)
+		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
+		mge.mu.Unlock()
+		release()
+		return false, nil
+	}
+
 	runtimeVUserID := group.VUserIDOffset + vuserID
 	vuProto, err := protocol.Get(group.Script.Protocol)
 	if err != nil {
@@ -1318,12 +1479,16 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 		mge.mu.Unlock()
 		release()
-		return safeErr
+		return false, safeErr
 	}
 	bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return group.RedactionConfig })
 	if err := callProtocolInit(vuCtx, vuProto, vuserProtoConfig(protoConfig, runtimeVUserID), group.RedactionConfig); err != nil {
 		safeErr := err
-		slog.Error("failed to init protocol for open workload worker", "group", group.Name, "worker", runtimeVUserID, "err", safeErr)
+		launchCancellation := vuCtx.Err() != nil &&
+			(errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded))
+		if !launchCancellation {
+			slog.Error("failed to init protocol for open workload worker", "group", group.Name, "worker", runtimeVUserID, "err", safeErr)
+		}
 		cancelVUser()
 		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
 		mge.mu.Lock()
@@ -1331,7 +1496,20 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
 		mge.mu.Unlock()
 		release()
-		return safeErr
+		if launchCancellation {
+			return false, nil
+		}
+		return false, safeErr
+	}
+	if vuCtx.Err() != nil {
+		cancelVUser()
+		runProtocolTeardown(vuProto, func() *RedactionConfig { return group.RedactionConfig })
+		mge.mu.Lock()
+		mge.unregisterVUserLocked(vuserID)
+		mge.metrics.SetActiveVUsers(int64(mge.activeVUserCount()))
+		mge.mu.Unlock()
+		release()
+		return false, nil
 	}
 
 	iterationScript := cloneSingleIterationScript(group.Script)
@@ -1375,7 +1553,7 @@ func (mge *MultiGroupEngine) spawnOpenWorker(vuserID int, group GroupConfig, pro
 		}
 		vu.Run(vuCtx)
 	}()
-	return nil
+	return true, nil
 }
 
 // ScaleVUsers adds or removes VUsers for a specific group.
@@ -1535,11 +1713,15 @@ func (mge *MultiGroupEngine) ScaleVUsers(groupName string, targetVUsers int) err
 			mge.wg.Add(1)
 
 			mge.mu.Unlock()
-			spawnErr := mge.spawnVUser(vuserID, *group, protoConfig, mge.wg, true)
+			launched, spawnErr := mge.spawnVUser(vuserID, *group, protoConfig, mge.wg, true)
 			mge.mu.Lock()
 			if spawnErr != nil {
 				rollbackScaleUp()
 				return fmt.Errorf("initialize scaled vuser: %w", spawnErr)
+			}
+			if !launched {
+				rollbackScaleUp()
+				return fmt.Errorf("initialize scaled vuser: execution stopped before the VUser launched")
 			}
 			spawnedIDs = append(spawnedIDs, vuserID)
 		}

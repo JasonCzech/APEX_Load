@@ -64,6 +64,9 @@ func TestConvertPostmanChainsTestScriptCaptures(t *testing.T) {
 		t.Fatalf("actions = %d, want 2", len(result.Script.Actions))
 	}
 	login := result.Script.Actions[0]
+	if blocker := login.Metadata["execution_blocker"]; blocker != nil {
+		t.Fatalf("fully translated correlation script was gated: %#v", login.Metadata)
+	}
 
 	// Body capture via an aliased pm.response.json() variable.
 	if e, ok := findExtractor(login, "token"); !ok || e.Source != "body" || e.Type != "jsonpath" || e.Expression != "$.access_token" {

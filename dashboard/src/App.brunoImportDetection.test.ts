@@ -2,7 +2,12 @@
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { nativeImportTargetForFile, nativeImportTargetForFileName, resolveNativeImportRequest } from './nativeImportRouting'
+import {
+  filesContainNativeBrunoSource,
+  nativeImportTargetForFile,
+  nativeImportTargetForFileName,
+  resolveNativeImportRequest,
+} from './nativeImportRouting'
 
 describe('Bruno source auto-detection', () => {
   it('routes classic and explicitly named Bruno artifacts to the Bruno importer', () => {
@@ -22,7 +27,7 @@ runtime:
     - type: after-response
       code: expect(res.getStatus()).to.equal(500);
 `], 'ExecuteUnifiedCreditPolicyCheck_v246.yml', { type: 'application/yaml' })
-    await expect(nativeImportTargetForFile(attachedStyleRequest)).resolves.toEqual({ launcher: 'bruno' })
+    await expect(nativeImportTargetForFile(attachedStyleRequest)).resolves.toEqual({ launcher: 'bruno', mode: 'native_requests' })
   })
 
   it('keeps explicit OpenAPI documents in the OpenAPI importer', async () => {
@@ -33,6 +38,38 @@ runtime:
   it('opens an importer chooser for genuinely ambiguous YAML', async () => {
     const ambiguous = new File(['title: Example\nversion: 1\n'], 'example.yml', { type: 'application/yaml' })
     await expect(nativeImportTargetForFile(ambiguous)).resolves.toEqual({ launcher: 'yaml_chooser' })
+  })
+
+  it('classifies every dropped file before choosing a folder importer', async () => {
+    const incidental = new File(['metadata'], '.DS_Store', { type: 'application/octet-stream' })
+    const folder = new File(['meta:\n  name: Services\n'], 'folder.yml', { type: 'application/yaml' })
+    const request = new File(['info:\n  name: Get orders\n  type: http\nhttp:\n  method: GET\n  url: /orders\n'], 'get-orders.yml', { type: 'application/yaml' })
+
+    await expect(resolveNativeImportRequest(
+      [incidental, folder, request],
+      7,
+      requestID => requestID === 7,
+    )).resolves.toEqual({
+      id: 7,
+      files: [incidental, folder, request],
+      launcher: 'bruno',
+      mode: 'native_requests',
+    })
+  })
+
+  it('recognizes OpenCollection metadata anywhere in a selected file set', async () => {
+    const ordinaryYAML = new File(['title: unrelated\n'], 'first.yml', { type: 'application/yaml' })
+    const openCollection = new File(['meta:\n  name: Collection\n'], 'OpenCollection.yaml', { type: 'application/yaml' })
+
+    await expect(filesContainNativeBrunoSource([ordinaryYAML, openCollection])).resolves.toBe(true)
+    await expect(resolveNativeImportRequest(
+      [ordinaryYAML, openCollection],
+      9,
+      requestID => requestID === 9,
+    )).resolves.toMatchObject({
+      launcher: 'bruno',
+      mode: 'native_requests',
+    })
   })
 
   it('drops an older file classification that resolves after a newer request', async () => {

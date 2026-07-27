@@ -1,0 +1,18 @@
+openapi: 3.0.3
+info:
+  title: Import Contract
+  version: "1.0"
+servers:
+  - url: https://api.contract.test
+paths:
+  /orders:
+    post:
+      operationId: createOrder
+      requestBody:
+        content:
+          application/json:
+            example:
+              sku: A-1
+      responses:
+        "201":
+          description: Created

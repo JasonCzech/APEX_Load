@@ -208,6 +208,9 @@ export function parameterReferenceLines(text: string, ranges: ScriptCodeMatchRan
 
 export function codePathForParameterCandidateOccurrence(occurrence?: CandidateOccurrence | null): string {
   if (!occurrence) return ''
+  if (occurrence.field === 'header' && typeof occurrence.headerIndex === 'number') {
+    return `script.actions[${occurrence.actionIdx}].header_list[${occurrence.headerIndex}].value`
+  }
   if (occurrence.field === 'header' && occurrence.headerKey) {
     return `script.actions[${occurrence.actionIdx}].headers.${occurrence.headerKey}`
   }
@@ -216,7 +219,9 @@ export function codePathForParameterCandidateOccurrence(occurrence?: CandidateOc
 
 export function formatParameterCandidateOccurrence(occurrence?: CandidateOccurrence | null): string {
   if (!occurrence) return 'No occurrence selected'
-  const field = occurrence.field === 'header' && occurrence.headerKey
+  const field = occurrence.field === 'header' && typeof occurrence.headerIndex === 'number'
+    ? `header ${occurrence.headerKey || occurrence.headerIndex + 1} (occurrence ${occurrence.headerIndex + 1})`
+    : occurrence.field === 'header' && occurrence.headerKey
     ? `header ${occurrence.headerKey}`
     : occurrence.field
   return `Action ${occurrence.actionIdx + 1} / ${field}`
@@ -393,6 +398,7 @@ function extractParameterReferences(action: ScriptActionDefinition): string[] {
     selector: action.selector,
     value: action.value,
     headers: action.headers,
+    header_list: action.header_list,
     body: action.body,
     params: action.params,
     metadata: action.metadata,

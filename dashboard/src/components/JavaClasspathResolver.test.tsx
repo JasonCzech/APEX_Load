@@ -85,6 +85,102 @@ describe('JavaClasspathResolver', () => {
     expect(onChange).toHaveBeenCalledWith([{ entry: 'a.jar', file_name: 'new.jar', sha256: 'newsha11' }])
   })
 
+  const dropFileOnRow = (row: Element, file: File) => {
+    const drop = new Event('drop', { bubbles: true, cancelable: true })
+    Object.defineProperty(drop, 'dataTransfer', { value: { files: [file] } })
+    act(() => {
+      row.dispatchEvent(drop)
+    })
+  }
+
+  const dragOverRow = (row: Element) => {
+    const dataTransfer = { files: [] as File[], dropEffect: 'uninitialized' }
+    const dragOver = new Event('dragover', { bubbles: true, cancelable: true })
+    Object.defineProperty(dragOver, 'dataTransfer', { value: dataTransfer })
+    act(() => {
+      row.dispatchEvent(dragOver)
+    })
+    return { defaultPrevented: dragOver.defaultPrevented, dropEffect: dataTransfer.dropEffect }
+  }
+
+  it.each([
+    ['accepting', [] as JavaClasspathAsset[], false, 'copy'],
+    ['refusing', [{ entry: 'a.jar', file_name: 'a.jar', sha256: 'deadbeefcafebabe0000' }], true, 'none'],
+  ])('claims the dragover even when %s the drop', (_label, assets, refused, wantEffect) => {
+    // preventDefault must run in BOTH cases. Returning early when refusing would
+    // leave the row a non-target, so the browser would handle the dropped file
+    // itself and navigate away from the import, losing the in-progress review.
+    render({ classpath: ['a.jar'], assets: assets as JavaClasspathAsset[], onChange: vi.fn(), onUpload: vi.fn() })
+
+    const result = dragOverRow(container.querySelector('.java-classpath-resolver-row')!)
+    expect(result.defaultPrevented).toBe(true)
+    expect(result.dropEffect).toBe(wantEffect)
+    expect(refused).toBe(wantEffect === 'none')
+  })
+
+  it('uploads a JAR dropped onto its classpath row', async () => {
+    const onChange = vi.fn()
+    const onUpload = vi.fn().mockResolvedValue({ entry: 'a.jar', file_name: 'drop.jar', sha256: 'dropsha1' })
+    render({ classpath: ['a.jar'], assets: [], onChange, onUpload })
+
+    const file = new File(['bytes'], 'drop.jar', { type: 'application/java-archive' })
+    dropFileOnRow(container.querySelector('.java-classpath-resolver-row')!, file)
+    await act(async () => { await Promise.resolve() })
+
+    expect(onUpload).toHaveBeenCalledWith(file, 'a.jar')
+    expect(onChange).toHaveBeenCalledWith([{ entry: 'a.jar', file_name: 'drop.jar', sha256: 'dropsha1' }])
+  })
+
+  it('refuses a drop on a row that already has an attached JAR', async () => {
+    // Dropping must honor the same refusal conditions as the Attach button, or
+    // the serialized-upload invariant that keeps bindings from being lost breaks.
+    const onUpload = vi.fn()
+    const asset: JavaClasspathAsset = { entry: 'a.jar', file_name: 'a.jar', sha256: 'deadbeefcafebabe0000' }
+    render({ classpath: ['a.jar'], assets: [asset], onChange: vi.fn(), onUpload })
+
+    dropFileOnRow(container.querySelector('.java-classpath-resolver-row')!, new File(['bytes'], 'drop.jar'))
+    await act(async () => { await Promise.resolve() })
+
+    expect(onUpload).not.toHaveBeenCalled()
+  })
+
+  it('turns the fail-closed server gate into remediation instead of a bare error', async () => {
+    // The upload endpoint answers 404 with "java classpath upload is not
+    // enabled" when the operator has not opted in. Surfaced raw, the panel
+    // reads as broken rather than switched off.
+    const onUpload = vi.fn().mockRejectedValue(new Error('java classpath upload is not enabled'))
+    render({ classpath: ['a.jar'], assets: [], onChange: vi.fn(), onUpload })
+
+    const input = container.querySelector<HTMLInputElement>('.entry-asset.unattached input[type="file"]')
+    setFile(input!, new File(['bytes'], 'new.jar'))
+    await act(async () => { await Promise.resolve() })
+
+    const error = container.querySelector('.cell-error')
+    expect(error?.textContent).toContain('APEXLOAD_JAVA_VUSER_CLASSPATH_UPLOAD_ENABLED')
+    expect(error?.textContent).toContain('provision this dependency on the runners')
+  })
+
+  it('keeps the original message for other upload failures', async () => {
+    const onUpload = vi.fn().mockRejectedValue(new Error('jar exceeds the maximum allowed size'))
+    render({ classpath: ['a.jar'], assets: [], onChange: vi.fn(), onUpload })
+
+    const input = container.querySelector<HTMLInputElement>('.entry-asset.unattached input[type="file"]')
+    setFile(input!, new File(['bytes'], 'new.jar'))
+    await act(async () => { await Promise.resolve() })
+
+    expect(container.querySelector('.cell-error')?.textContent).toContain('jar exceeds the maximum allowed size')
+  })
+
+  it('refuses a drop while the resolver is disabled', async () => {
+    const onUpload = vi.fn()
+    render({ classpath: ['a.jar'], assets: [], onChange: vi.fn(), onUpload, disabled: true })
+
+    dropFileOnRow(container.querySelector('.java-classpath-resolver-row')!, new File(['bytes'], 'drop.jar'))
+    await act(async () => { await Promise.resolve() })
+
+    expect(onUpload).not.toHaveBeenCalled()
+  })
+
   it('serializes uploads: every attach control is disabled while one is in flight', async () => {
     // A second attach starting before the first resolves would merge from a
     // stale assets closure and silently drop the earlier binding.

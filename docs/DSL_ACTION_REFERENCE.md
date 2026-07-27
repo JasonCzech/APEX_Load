@@ -16,7 +16,7 @@ to their `source_*` equivalents.
 | `think_time` | object |  | Per-action think-time override (type, mean_ms, ...). |
 | `think_time_after` | bool |  | Apply think time after this action completes. |
 | `extractors` | array |  | Response extractors: {name, source, type, expression, on_miss, mode, save_offset, save_length, convert}. on_miss: "fail" fails the request when nothing matches, "empty" assigns an empty string; mode "all" saves every match as name_1..name_N plus name_count; save_offset/save_length trim each value (bytes); convert post-processes it (url_encode | url_decode | html_decode | html_url_encode). The behavior fields are honored by the HTTP protocol family. |
-| `assertions` | array |  | Response assertions: {type, expected, value, max}. |
+| `assertions` | array |  | Response assertions: {type, expected, value, max}. HTTP supports status/time/body checks plus header_contains (value is a case-insensitive header name; expected is a case-sensitive substring) and body_regex_capture_equals (value is a Go/RE2 pattern up to 4 KiB; expected equals the first capture group, or the full match when no group exists). |
 | `metadata` | object |  | Free-form metadata; importers preserve source details here. |
 | `timeout_ms` | int |  | Per-action timeout override in milliseconds. |
 | `max_redirects` | int |  | Per-action redirect-policy override (-1 disables). |
@@ -815,7 +815,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -832,7 +833,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -849,7 +851,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -866,7 +869,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -883,7 +887,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -900,7 +905,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -917,7 +923,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -950,7 +957,7 @@ Composite step that issues an ordered list of child HTTP requests as one reporte
 
 | Field | Kind | Required | Description |
 |-------|------|----------|-------------|
-| `params.requests` | array | yes | Child requests: {name, method (or type), target, headers, body}. At least one required. |
+| `params.requests` | array | yes | Child requests: {name, method (or type), target, headers, header_list, body}. Header occurrence and transport-normalization rules match top-level requests. At least one required. |
 
 ## Protocol: java_http
 
@@ -964,7 +971,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -981,7 +989,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -998,7 +1007,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -1015,7 +1025,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -1032,7 +1043,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -1049,7 +1061,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -1066,7 +1079,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -1606,7 +1620,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -1623,7 +1638,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -1640,7 +1656,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -1657,7 +1674,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -1674,7 +1692,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -1691,7 +1710,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |
@@ -1708,7 +1728,8 @@ Protocols: http, soap, java_http
 |-------|------|----------|-------------|
 | `target` | string | yes | Request path or absolute URL; relative paths resolve against config.base_url. |
 | `method` | string |  | Explicit HTTP method override; defaults to the action type. |
-| `headers` | object |  | Request headers merged over config.http.default_headers. |
+| `headers` | object |  | Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative. |
+| `header_list` | array |  | Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate. |
 | `body` | string |  | Request body; template variables are expanded. |
 | `body_file` | string |  | Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there. |
 | `body_encoding` | string |  | Body encoding hint, e.g. base64 for binary payloads. |

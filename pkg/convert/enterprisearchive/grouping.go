@@ -153,7 +153,6 @@ func buildSourceHTTPSequence(transaction string, requests []dsl.Action) dsl.Acti
 		metadata = make(map[string]any)
 	}
 	metadata["source_transaction"] = transaction
-	metadata["source_transaction"] = transaction
 	metadata["source_request_count"] = len(requests)
 	if subtransactions := sourceSubtransactions(requests); len(subtransactions) > 0 {
 		metadata["source_subtransactions"] = subtransactions
@@ -165,14 +164,12 @@ func buildSourceHTTPSequence(transaction string, requests []dsl.Action) dsl.Acti
 	}
 
 	return dsl.Action{
-		Name:           sanitizeName(convertutil.FirstNonEmpty(transaction, first.Name, "source_transaction")),
-		Type:           "http_sequence",
-		Method:         "SEQUENCE",
-		Target:         first.Target,
-		Params:         map[string]any{"requests": children},
-		Metadata:       metadata,
-		ThinkTime:      first.ThinkTime,
-		ThinkTimeAfter: first.ThinkTimeAfter,
+		Name:     sanitizeName(convertutil.FirstNonEmpty(transaction, first.Name, "source_transaction")),
+		Type:     "http_sequence",
+		Method:   "SEQUENCE",
+		Target:   first.Target,
+		Params:   map[string]any{"requests": children},
+		Metadata: metadata,
 	}
 }
 
@@ -183,8 +180,11 @@ func sourceSequenceChild(action dsl.Action) map[string]any {
 		"method": action.Method,
 		"target": action.Target,
 	}
-	if len(action.Headers) > 0 {
-		child["headers"] = cloneSourceStringMap(action.Headers)
+	if len(action.HeaderList) > 0 {
+		child["header_list"] = append(dsl.HeaderList(nil), action.HeaderList...)
+	}
+	if headers := sourceSequenceCompatibilityHeaders(action.HeaderList, action.Headers); len(headers) > 0 {
+		child["headers"] = headers
 	}
 	if action.Body != "" {
 		child["body"] = action.Body
@@ -213,16 +213,50 @@ func sourceSequenceChild(action dsl.Action) map[string]any {
 	if action.Auth != nil {
 		child["auth"] = action.Auth
 	}
+	if action.ThinkTime.Type != "" {
+		child["think_time"] = action.ThinkTime
+	}
+	if action.ThinkTimeAfter {
+		child["think_time_after"] = true
+	}
 	if action.SOAP != nil {
 		child["soap"] = action.SOAP
 	}
 	return child
 }
 
-func actionTransactionName(action dsl.Action) string {
-	if value := metadataString(action.Metadata, "source_transaction"); value != "" {
-		return value
+// sourceSequenceCompatibilityHeaders derives the legacy single-value map from
+// the authoritative ordered list. Map-only names are retained for older source
+// adapters, but they cannot shadow an identity represented by HeaderList.
+func sourceSequenceCompatibilityHeaders(list dsl.HeaderList, legacy map[string]string) map[string]string {
+	out := list.ToMap()
+	if out == nil && len(legacy) > 0 {
+		out = make(map[string]string, len(legacy))
 	}
+	listNames := make(map[string]struct{}, len(list))
+	for _, header := range list {
+		name := strings.TrimSpace(header.Name)
+		if name != "" {
+			listNames[strings.ToLower(name)] = struct{}{}
+		}
+	}
+	for name, value := range legacy {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		if _, authoritative := listNames[strings.ToLower(trimmed)]; authoritative {
+			continue
+		}
+		out[name] = value
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func actionTransactionName(action dsl.Action) string {
 	return metadataString(action.Metadata, "source_transaction")
 }
 
@@ -241,9 +275,6 @@ func sourceSubtransactions(actions []dsl.Action) []string {
 	out := make([]string, 0)
 	for _, action := range actions {
 		value := metadataString(action.Metadata, "source_subtransaction")
-		if value == "" {
-			value = metadataString(action.Metadata, "source_subtransaction")
-		}
 		if value == "" {
 			continue
 		}

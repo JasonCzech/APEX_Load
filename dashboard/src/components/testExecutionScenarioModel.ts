@@ -19,7 +19,11 @@ export interface ScenarioScriptDetail {
       pacing?: {
         type?: string
         delay_ms?: number
+        min_delay_ms?: number
+        max_delay_ms?: number
         interval_ms?: number
+        min_interval_ms?: number
+        max_interval_ms?: number
         tps?: number
       }
       run_logic?: {

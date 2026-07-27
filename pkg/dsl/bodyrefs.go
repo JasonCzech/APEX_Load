@@ -73,7 +73,7 @@ func resolveBodyRefInAction(action *Action, baseDir string, label string, remain
 			return err
 		}
 	}
-	if action.Type == "http_sequence" {
+	if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
 		if err := resolveBodyRefsInSequenceChildren(action.Params, baseDir, label, remaining); err != nil {
 			return err
 		}
@@ -98,17 +98,33 @@ func resolveBodyRefsInSequenceChildren(params map[string]any, baseDir string, la
 	switch typed := requests.(type) {
 	case []any:
 		for i, value := range typed {
-			child, ok := value.(map[string]any)
-			if !ok {
-				continue
-			}
-			if err := resolveBodyRefInSequenceChild(child, baseDir, fmt.Sprintf("%s.params.requests[%d]", label, i), remaining); err != nil {
-				return err
+			childLabel := fmt.Sprintf("%s.params.requests[%d]", label, i)
+			switch child := value.(type) {
+			case map[string]any:
+				if err := resolveBodyRefInSequenceChild(child, baseDir, childLabel, remaining); err != nil {
+					return err
+				}
+			case Action:
+				childCopy := child
+				if err := resolveBodyRefInAction(&childCopy, baseDir, childLabel, remaining); err != nil {
+					return err
+				}
+				typed[i] = childCopy
+			case *Action:
+				if err := resolveBodyRefInAction(child, baseDir, childLabel, remaining); err != nil {
+					return err
+				}
 			}
 		}
 	case []map[string]any:
 		for i := range typed {
 			if err := resolveBodyRefInSequenceChild(typed[i], baseDir, fmt.Sprintf("%s.params.requests[%d]", label, i), remaining); err != nil {
+				return err
+			}
+		}
+	case []Action:
+		for i := range typed {
+			if err := resolveBodyRefInAction(&typed[i], baseDir, fmt.Sprintf("%s.params.requests[%d]", label, i), remaining); err != nil {
 				return err
 			}
 		}

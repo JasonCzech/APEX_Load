@@ -64,7 +64,37 @@ func validateBrowserConfigIssues(script *Script) []string {
 	issues = append(issues, validateBrowserHTTPCredentialsConfigIssues(browser.HTTPCredentials)...)
 	issues = append(issues, validateBrowserProxyConfigIssues(browser.Proxy)...)
 	issues = append(issues, validateBrowserClientCertificateConfigIssues(browser.ClientCertificates)...)
+	if strings.EqualFold(strings.TrimSpace(browser.DownloadResources), "recorded") {
+		issues = append(issues, validateRecordedResourceURLMetadata(script)...)
+	}
 	return issues
+}
+
+func validateRecordedResourceURLMetadata(script *Script) []string {
+	if script == nil || script.Metadata == nil || script.Metadata.Import == nil || script.Metadata.Import.Preserved == nil {
+		return nil
+	}
+	raw, ok := script.Metadata.Import.Preserved["recorded_resource_urls"]
+	if !ok {
+		return nil
+	}
+	var urls []string
+	switch typed := raw.(type) {
+	case []string:
+		urls = typed
+	case []any:
+		for _, value := range typed {
+			if text, ok := value.(string); ok {
+				urls = append(urls, text)
+			}
+		}
+	}
+	for index, candidate := range urls {
+		if strings.Contains(candidate, "[REDACTED]") || strings.Contains(candidate, "{{secret.") {
+			return []string{fmt.Sprintf("metadata.import.preserved.recorded_resource_urls[%d] contains an unresolved credential and cannot be executed", index)}
+		}
+	}
+	return nil
 }
 
 func validateBrowserGeolocationConfigIssues(geo BrowserGeolocation) []string {

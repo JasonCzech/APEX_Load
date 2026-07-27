@@ -120,7 +120,7 @@ describe('applyCorrelationRepairToAction', () => {
       requestLocations: [{ field: 'request_headers.Authorization', start: 7, end: 10 }],
       replacement: '{{var.csrf}}',
     })
-    expect(repaired.headers).toEqual({ authorization: 'Bearer {{var.csrf}}', 'X-Audit': 'OLD' })
+    expect(repaired.headers).toEqual({ Authorization: 'Bearer {{var.csrf}}', 'X-Audit': 'OLD' })
     expect(repaired.header_list).toEqual([
       { name: 'Authorization', value: 'Bearer {{var.csrf}}' },
       { name: 'X-Audit', value: 'OLD' },
@@ -144,7 +144,10 @@ describe('applyCorrelationRepairToAction', () => {
       requestLocations: [{ field: 'request_headers.X-Session', start: 6, end: 12 }],
       replacement: '{{var.session}}',
     })
-    expect(repaired.headers?.['X-Session']).toBe('first\n{{var.session}}')
+    expect(repaired.headers).toEqual({
+      'x-session': '{{var.session}}',
+      'X-Audit': 'SECOND',
+    })
     expect(repaired.header_list).toEqual([
       { name: 'X-Session', value: 'first' },
       { name: 'x-session', value: '{{var.session}}' },

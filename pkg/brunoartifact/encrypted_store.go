@@ -8,6 +8,7 @@ import (
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
@@ -16,8 +17,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
+
+	"github.com/jasonczech/apexload/pkg/importsession"
+	"github.com/jasonczech/apexload/pkg/internal/filelock"
 )
 
 const (
@@ -27,11 +32,14 @@ const (
 	maxHeaderBytes         = 1 << 20
 	defaultSessionCapacity = 128
 	staleReservationGrace  = 5 * time.Minute
+	sessionClaimLease      = 30 * time.Second
 )
 
 var (
-	ErrProjectDeleted  = errors.New("Bruno artifact project is deleted")
-	ErrSessionCapacity = errors.New("Bruno import session capacity reached")
+	ErrProjectDeleted   = importsession.ErrProjectDeleted
+	ErrSessionCapacity  = importsession.ErrSessionCapacity
+	ErrSessionClaimed   = importsession.ErrSessionClaimed
+	ErrSessionClaimLost = importsession.ErrSessionClaimLost
 )
 
 type EncryptedStore struct {
@@ -40,6 +48,9 @@ type EncryptedStore struct {
 	chunkSize       int
 	readOnly        bool
 	sessionCapacity int
+	// syncDirectoryFn is injectable only for focused durability-ordering tests.
+	// Production stores always use the OS-specific syncDirectory implementation.
+	syncDirectoryFn func(string) error
 }
 
 type StoreOptions struct {
@@ -60,30 +71,19 @@ type StoredObject struct {
 	EncryptionMetadata map[string]any
 }
 
-type OpenRequest struct {
-	BackendKey string
-	ProjectID  string
-	Kind       string
-	SHA256     string
-	SizeBytes  int64
-}
+// These aliases preserve the original Bruno package API and persisted JSON
+// while exposing the same types through the importer-neutral session package.
+type OpenRequest = importsession.ObjectRef
+type SessionDescriptor = importsession.SessionDescriptor
+type PublicationDescriptor = importsession.PublicationDescriptor
 
-type SessionDescriptor struct {
-	ID             string        `json:"id"`
-	ProjectID      string        `json:"project_id"`
-	Actor          string        `json:"actor"`
-	BackendKey     string        `json:"backend_key"`
-	SHA256         string        `json:"sha256"`
-	SizeBytes      int64         `json:"size_bytes"`
-	ExpiresAt      time.Time     `json:"expires_at"`
-	RelatedObjects []OpenRequest `json:"related_objects,omitempty"`
-	CapacitySlot   *int          `json:"capacity_slot,omitempty"`
-}
+var _ importsession.ProtectedStore = (*EncryptedStore)(nil)
 
 type sessionCapacityReservation struct {
-	SessionID string    `json:"session_id"`
-	ProjectID string    `json:"project_id"`
-	ExpiresAt time.Time `json:"expires_at"`
+	SessionID string       `json:"session_id"`
+	ProjectID string       `json:"project_id"`
+	ExpiresAt time.Time    `json:"expires_at"`
+	Payload   *OpenRequest `json:"payload,omitempty"`
 }
 
 type artifactHeader struct {
@@ -134,20 +134,65 @@ func NewEncryptedStore(options StoreOptions) (*EncryptedStore, error) {
 			return nil, errors.New("read-only Bruno artifact root is not a directory")
 		}
 	} else {
-		if err := os.MkdirAll(absolute, 0o700); err != nil {
-			return nil, err
-		}
-		if err := os.Chmod(absolute, 0o700); err != nil {
+		if err := initializeWritableStoreRoot(absolute, syncDirectory); err != nil {
 			return nil, err
 		}
 		if err := pruneLegacyPlaintextStaging(absolute); err != nil {
 			return nil, err
 		}
 	}
-	return &EncryptedStore{
+	store := &EncryptedStore{
 		root: absolute, wrapper: options.Wrapper, chunkSize: chunkSize,
 		readOnly: options.ReadOnly, sessionCapacity: sessionCapacity,
-	}, nil
+		syncDirectoryFn: syncDirectory,
+	}
+	if !options.ReadOnly {
+		// Every encrypted-object writer takes the same cross-process lock, so
+		// initialization can remove only temporaries left by a terminated writer.
+		unlock, lockErr := store.lockEncryptedObjectWrites()
+		if lockErr != nil {
+			return nil, lockErr
+		}
+		cleanupErr := store.pruneStaleEncryptedTemps()
+		unlockErr := unlock()
+		if err := errors.Join(cleanupErr, unlockErr); err != nil {
+			return nil, err
+		}
+	}
+	return store, nil
+}
+
+// initializeWritableStoreRoot persists every directory entry that could have
+// been created by this or an interrupted earlier MkdirAll. Internal mutations
+// later stop their sync chain at s.root, so initialization syncs through the
+// volume root and does not assume that an already-visible parent is durable.
+func initializeWritableStoreRoot(root string, syncFn func(string) error) error {
+	root = filepath.Clean(root)
+	if syncFn == nil {
+		return errors.New("Bruno artifact directory sync is required")
+	}
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return err
+	}
+	if err := os.Chmod(root, 0o700); err != nil {
+		return err
+	}
+	for current := root; ; current = filepath.Dir(current) {
+		info, err := os.Stat(current)
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			return fmt.Errorf("Bruno artifact root ancestor %q is not a directory", current)
+		}
+		if err := syncFn(current); err != nil {
+			return fmt.Errorf("sync Bruno artifact root directory %q: %w", current, err)
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return nil
+		}
+	}
 }
 
 func (s *EncryptedStore) Put(ctx context.Context, projectID, kind string, reader io.Reader, maxBytes int64) (*StoredObject, error) {
@@ -234,6 +279,31 @@ func (s *EncryptedStore) PutBytes(ctx context.Context, projectID, kind string, p
 	return s.putKnown(ctx, projectID, kind, bytes.NewReader(payload), int64(len(payload)), hex.EncodeToString(digest[:]))
 }
 
+// PlanBytes returns the immutable object identity PutBytes will use. Callers use
+// it to durably journal a publication before the encrypted object is created.
+func (s *EncryptedStore) PlanBytes(projectID, kind string, payload []byte, maxBytes int64) (OpenRequest, error) {
+	projectID = strings.TrimSpace(projectID)
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	if projectID == "" || !validArtifactKind(kind) {
+		return OpenRequest{}, errors.New("Bruno artifact project and valid kind are required")
+	}
+	if maxBytes <= 0 {
+		return OpenRequest{}, errors.New("Bruno artifact maximum size must be positive")
+	}
+	if int64(len(payload)) > maxBytes {
+		return OpenRequest{}, fmt.Errorf("Bruno artifact exceeds maximum size %d", maxBytes)
+	}
+	digest := sha256.Sum256(payload)
+	sha := hex.EncodeToString(digest[:])
+	return OpenRequest{
+		BackendKey: artifactBackendKey(projectID, kind, sha),
+		ProjectID:  projectID,
+		Kind:       kind,
+		SHA256:     sha,
+		SizeBytes:  int64(len(payload)),
+	}, nil
+}
+
 func (s *EncryptedStore) putKnown(ctx context.Context, projectID, kind string, source io.Reader, size int64, sha string) (*StoredObject, error) {
 	backendKey := artifactBackendKey(projectID, kind, sha)
 	target, err := s.pathForBackendKey(backendKey)
@@ -270,6 +340,11 @@ func (s *EncryptedStore) putKnown(ctx context.Context, projectID, kind string, s
 	if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
 		return nil, s.projectWriteError(projectID, err)
 	}
+	unlockEncryptedWrites, err := s.lockEncryptedObjectWrites()
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = unlockEncryptedWrites() }()
 	dek := make([]byte, 32)
 	defer clear(dek)
 	if _, err := io.ReadFull(rand.Reader, dek); err != nil {
@@ -315,7 +390,7 @@ func (s *EncryptedStore) putKnown(ctx context.Context, projectID, kind string, s
 	if err := temp.Close(); err != nil {
 		return nil, err
 	}
-	if err := os.Link(tempPath, target); err != nil {
+	if err := s.linkDurably(tempPath, target); err != nil {
 		if !errors.Is(err, os.ErrExist) {
 			return nil, s.projectWriteError(projectID, err)
 		}
@@ -422,10 +497,139 @@ func (s *EncryptedStore) Delete(_ context.Context, request OpenRequest) error {
 	if err := validateArtifactHeader(header, request); err != nil {
 		return err
 	}
-	if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := s.removeDurably(target); err != nil {
 		return err
 	}
 	return nil
+}
+
+func (s *EncryptedStore) SavePublication(descriptor PublicationDescriptor) error {
+	if s.readOnly {
+		return errors.New("Bruno artifact store is read-only")
+	}
+	descriptor.ID = strings.TrimSpace(descriptor.ID)
+	descriptor.ProjectID = strings.TrimSpace(descriptor.ProjectID)
+	if descriptor.ID == "" || strings.ContainsAny(descriptor.ID, `/\`) || strings.Contains(descriptor.ID, "..") {
+		return errors.New("invalid Bruno publication id")
+	}
+	if descriptor.ProjectID == "" || descriptor.ExpiresAt.IsZero() || len(descriptor.Objects) == 0 {
+		return errors.New("Bruno publication project, expiry, and objects are required")
+	}
+	for _, request := range descriptor.Objects {
+		kind := strings.ToLower(strings.TrimSpace(request.Kind))
+		if strings.TrimSpace(request.ProjectID) != descriptor.ProjectID ||
+			!validArtifactKind(kind) ||
+			!validArtifactSHA256(request.SHA256) ||
+			request.BackendKey != artifactBackendKey(descriptor.ProjectID, kind, request.SHA256) ||
+			request.SizeBytes < 0 {
+			return errors.New("Bruno publication contains an invalid object identity")
+		}
+	}
+	if deleted, err := s.projectDeleted(descriptor.ProjectID); err != nil {
+		return err
+	} else if deleted {
+		return ErrProjectDeleted
+	}
+	data, err := json.Marshal(descriptor)
+	if err != nil {
+		return err
+	}
+	directory := filepath.Join(s.root, ".publications")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(directory, ".publication-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if err := temp.Chmod(0o600); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if _, err := temp.Write(data); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	target := filepath.Join(directory, descriptor.ID+".json")
+	if err := s.linkDurably(tempPath, target); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return errors.New("Bruno publication already exists")
+		}
+		return err
+	}
+	return nil
+}
+
+func (s *EncryptedStore) DeletePublication(id, projectID string) error {
+	if s.readOnly {
+		return errors.New("Bruno artifact store is read-only")
+	}
+	id = strings.TrimSpace(id)
+	projectID = strings.TrimSpace(projectID)
+	if id == "" || strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") {
+		return errors.New("invalid Bruno publication id")
+	}
+	target := filepath.Join(s.root, ".publications", id+".json")
+	data, err := os.ReadFile(target)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var descriptor PublicationDescriptor
+	if err := json.Unmarshal(data, &descriptor); err != nil {
+		return err
+	}
+	if descriptor.ID != id || strings.TrimSpace(descriptor.ProjectID) != projectID {
+		return errors.New("Bruno publication belongs to another project")
+	}
+	if err := s.removeDurably(target); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *EncryptedStore) ListExpiredPublications(now time.Time) ([]PublicationDescriptor, error) {
+	entries, err := os.ReadDir(filepath.Join(s.root, ".publications"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	var descriptors []PublicationDescriptor
+	var readErrors []error
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		target := filepath.Join(s.root, ".publications", entry.Name())
+		data, readErr := os.ReadFile(target)
+		if readErr != nil {
+			readErrors = append(readErrors, readErr)
+			continue
+		}
+		var descriptor PublicationDescriptor
+		if decodeErr := json.Unmarshal(data, &descriptor); decodeErr != nil {
+			readErrors = append(readErrors, decodeErr)
+			continue
+		}
+		if !descriptor.ExpiresAt.After(now.UTC()) {
+			descriptors = append(descriptors, descriptor)
+		}
+	}
+	sort.Slice(descriptors, func(i, j int) bool { return descriptors[i].ID < descriptors[j].ID })
+	return descriptors, errors.Join(readErrors...)
 }
 
 func (s *EncryptedStore) SaveSession(ctx context.Context, descriptor SessionDescriptor, reader io.Reader, maxBytes int64) error {
@@ -438,6 +642,13 @@ func (s *EncryptedStore) SaveSession(ctx context.Context, descriptor SessionDesc
 // is reserved before the encrypted payload is persisted, and plaintext never
 // touches the artifact filesystem.
 func (s *EncryptedStore) SaveSessionBytes(ctx context.Context, descriptor SessionDescriptor, payload []byte, maxBytes int64) error {
+	planned, err := s.PlanBytes(descriptor.ProjectID, "session", payload, maxBytes)
+	if err != nil {
+		return err
+	}
+	descriptor.BackendKey = planned.BackendKey
+	descriptor.SHA256 = planned.SHA256
+	descriptor.SizeBytes = planned.SizeBytes
 	return s.saveSession(ctx, descriptor, func() (*StoredObject, error) {
 		return s.PutBytes(ctx, descriptor.ProjectID, "session", payload, maxBytes)
 	})
@@ -450,7 +661,10 @@ func (s *EncryptedStore) saveSession(ctx context.Context, descriptor SessionDesc
 	descriptor.ID = strings.TrimSpace(descriptor.ID)
 	descriptor.ProjectID = strings.TrimSpace(descriptor.ProjectID)
 	descriptor.Actor = strings.TrimSpace(descriptor.Actor)
-	if descriptor.ID == "" || descriptor.ProjectID == "" || descriptor.Actor == "" || descriptor.ExpiresAt.IsZero() {
+	if !validSessionID(descriptor.ID) {
+		return errors.New("invalid Bruno import session id")
+	}
+	if descriptor.ProjectID == "" || descriptor.Actor == "" || descriptor.ExpiresAt.IsZero() {
 		return errors.New("Bruno import session id, project, actor, and expiry are required")
 	}
 	deleted, err := s.projectDeleted(descriptor.ProjectID)
@@ -460,6 +674,14 @@ func (s *EncryptedStore) saveSession(ctx context.Context, descriptor SessionDesc
 	if deleted {
 		return ErrProjectDeleted
 	}
+	// Session payloads are content-addressed. Keep publication under the same
+	// cross-process lock as claim cleanup so a concurrent finalizer cannot
+	// delete a deduplicated payload between Put and descriptor publication.
+	unlockClaims, err := s.lockSessionClaims()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlockClaims() }()
 	slot, err := s.reserveSessionCapacity(descriptor)
 	if err != nil {
 		deleted, deletedErr := s.projectDeleted(descriptor.ProjectID)
@@ -485,17 +707,25 @@ func (s *EncryptedStore) saveSession(ctx context.Context, descriptor SessionDesc
 	persisted := false
 	defer func() {
 		if !persisted {
-			referenced, _ := s.sessionPayloadReferenced(object.BackendKey, "")
+			referenced, referenceErr := s.sessionPayloadReferenced(object.BackendKey, "")
+			if referenceErr != nil {
+				// Leave the capacity reservation as a durable GC locator.
+				reservationPublished = true
+				return
+			}
 			if referenced {
 				return
 			}
-			_ = s.Delete(context.Background(), OpenRequest{
+			if deleteErr := s.Delete(context.Background(), OpenRequest{
 				BackendKey: object.BackendKey,
 				ProjectID:  descriptor.ProjectID,
 				Kind:       "session",
 				SHA256:     object.SHA256,
 				SizeBytes:  object.SizeBytes,
-			})
+			}); deleteErr != nil {
+				// Leave the capacity reservation as a durable GC locator.
+				reservationPublished = true
+			}
 		}
 	}()
 	descriptor.BackendKey = object.BackendKey
@@ -534,14 +764,14 @@ func (s *EncryptedStore) saveSession(ctx context.Context, descriptor SessionDesc
 	// Publish create-only. Replacing an existing descriptor would leak its
 	// capacity reservation and could turn a one-shot session into a replayable
 	// session after a controller race.
-	if err := os.Link(tempPath, target); err != nil {
+	if err := s.linkDurably(tempPath, target); err != nil {
 		return err
 	}
 	if deleted, err := s.projectDeleted(descriptor.ProjectID); err != nil {
-		_ = s.DeleteSession(context.Background(), descriptor.ID, descriptor.ProjectID)
+		_ = s.deleteSessionLocked(context.Background(), descriptor.ID, descriptor.ProjectID)
 		return err
 	} else if deleted {
-		_ = s.DeleteSession(context.Background(), descriptor.ID, descriptor.ProjectID)
+		_ = s.deleteSessionLocked(context.Background(), descriptor.ID, descriptor.ProjectID)
 		return ErrProjectDeleted
 	}
 	persisted = true
@@ -558,6 +788,15 @@ func (s *EncryptedStore) reserveSessionCapacity(descriptor SessionDescriptor) (i
 		SessionID: descriptor.ID,
 		ProjectID: descriptor.ProjectID,
 		ExpiresAt: descriptor.ExpiresAt.UTC(),
+	}
+	if descriptor.BackendKey != "" && descriptor.SHA256 != "" {
+		reservation.Payload = &OpenRequest{
+			BackendKey: descriptor.BackendKey,
+			ProjectID:  descriptor.ProjectID,
+			Kind:       "session",
+			SHA256:     descriptor.SHA256,
+			SizeBytes:  descriptor.SizeBytes,
+		}
 	}
 	data, err := json.Marshal(reservation)
 	if err != nil {
@@ -584,14 +823,14 @@ func (s *EncryptedStore) reserveSessionCapacity(descriptor SessionDescriptor) (i
 	for slot := 0; slot < s.sessionCapacity; slot++ {
 		path := s.sessionCapacityPath(slot)
 		for attempt := 0; attempt < 2; attempt++ {
-			linkErr := os.Link(tempPath, path)
+			linkErr := s.linkDurably(tempPath, path)
 			if linkErr == nil {
 				return slot, nil
 			}
 			if !errors.Is(linkErr, os.ErrExist) {
 				return 0, linkErr
 			}
-			reclaimed, reclaimErr := reclaimSessionCapacityReservation(path, now)
+			reclaimed, reclaimErr := s.reclaimSessionCapacityReservation(path, now)
 			if reclaimErr != nil {
 				return 0, reclaimErr
 			}
@@ -603,7 +842,7 @@ func (s *EncryptedStore) reserveSessionCapacity(descriptor SessionDescriptor) (i
 	return 0, ErrSessionCapacity
 }
 
-func reclaimSessionCapacityReservation(path string, now time.Time) (bool, error) {
+func (s *EncryptedStore) reclaimSessionCapacityReservation(path string, now time.Time) (bool, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return true, nil
@@ -628,10 +867,42 @@ func reclaimSessionCapacityReservation(path string, now time.Time) (bool, error)
 			return false, nil
 		}
 	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if reservation.Payload != nil {
+		referenced, referenceErr := s.sessionPayloadReferenced(reservation.Payload.BackendKey, "")
+		if referenceErr != nil {
+			return false, referenceErr
+		}
+		if !referenced {
+			if deleteErr := s.Delete(context.Background(), *reservation.Payload); deleteErr != nil {
+				return false, deleteErr
+			}
+		}
+	}
+	if err := s.removeDurably(path); err != nil {
 		return false, err
 	}
 	return true, nil
+}
+
+func (s *EncryptedStore) pruneExpiredSessionCapacityReservations(now time.Time) error {
+	directory := filepath.Join(s.root, ".sessions", ".capacity")
+	entries, err := os.ReadDir(directory)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var cleanupErrors []error
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), "slot-") || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		if _, reclaimErr := s.reclaimSessionCapacityReservation(filepath.Join(directory, entry.Name()), now.UTC()); reclaimErr != nil {
+			cleanupErrors = append(cleanupErrors, reclaimErr)
+		}
+	}
+	return errors.Join(cleanupErrors...)
 }
 
 func (s *EncryptedStore) releaseSessionCapacity(descriptor SessionDescriptor) error {
@@ -659,7 +930,7 @@ func (s *EncryptedStore) releaseSessionCapacity(descriptor SessionDescriptor) er
 		// reassigned. Never let late cleanup remove the new owner's admission.
 		return nil
 	}
-	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := s.removeDurably(path); err != nil {
 		return err
 	}
 	return nil
@@ -669,9 +940,129 @@ func (s *EncryptedStore) sessionCapacityPath(slot int) string {
 	return filepath.Join(s.root, ".sessions", ".capacity", fmt.Sprintf("slot-%06d.json", slot))
 }
 
+func (s *EncryptedStore) lockSessionClaims() (func() error, error) {
+	directory := filepath.Join(s.root, ".project-tombstones")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return nil, err
+	}
+	return filelock.Acquire(filepath.Join(directory, ".session-claims.lock"))
+}
+
+func (s *EncryptedStore) lockEncryptedObjectWrites() (func() error, error) {
+	directory := filepath.Join(s.root, ".project-tombstones")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return nil, err
+	}
+	return filelock.Acquire(filepath.Join(directory, ".encrypted-objects.lock"))
+}
+
+func (s *EncryptedStore) syncDirectoryChain(directory string) error {
+	directory = filepath.Clean(directory)
+	root := filepath.Clean(s.root)
+	relative, err := filepath.Rel(root, directory)
+	if err != nil {
+		return err
+	}
+	if relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+		return errors.New("Bruno artifact durability path escapes its store root")
+	}
+	syncFn := s.syncDirectoryFn
+	if syncFn == nil {
+		syncFn = syncDirectory
+	}
+	for current := directory; ; current = filepath.Dir(current) {
+		if err := syncFn(current); err != nil {
+			return fmt.Errorf("sync Bruno artifact directory %q: %w", current, err)
+		}
+		if current == root {
+			return nil
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return errors.New("Bruno artifact durability path did not reach its store root")
+		}
+	}
+}
+
+func (s *EncryptedStore) linkDurably(existingPath, targetPath string) error {
+	if err := os.Link(existingPath, targetPath); err != nil {
+		return err
+	}
+	if err := s.syncDirectoryChain(filepath.Dir(targetPath)); err != nil {
+		// The create-only caller has not accepted ownership yet. Roll the link
+		// back when durability cannot be established so a retry does not mistake
+		// an uncertain publication for a completed one.
+		return errors.Join(err, s.removeDurably(targetPath))
+	}
+	return nil
+}
+
+func (s *EncryptedStore) renameDurably(oldPath, newPath string) error {
+	if err := os.Rename(oldPath, newPath); err != nil {
+		return err
+	}
+	newDirectory := filepath.Dir(newPath)
+	if err := s.syncDirectoryChain(newDirectory); err != nil {
+		return err
+	}
+	oldDirectory := filepath.Dir(oldPath)
+	if filepath.Clean(oldDirectory) != filepath.Clean(newDirectory) {
+		return s.syncDirectoryChain(oldDirectory)
+	}
+	return nil
+}
+
+// removeDurably also syncs an existing parent when the target is already
+// absent. That makes a retry complete an earlier unlink whose directory sync
+// may have failed after the namespace mutation succeeded.
+func (s *EncryptedStore) removeDurably(path string) error {
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	directory := filepath.Dir(path)
+	if _, err := os.Stat(directory); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	return s.syncDirectoryChain(directory)
+}
+
+// LockSourcePublication serializes source-object publication with reference
+// checks and deletion across every controller sharing this artifact root.
+// Callers must hold this lock from the first raw/sanitized Put through durable
+// session descriptor publication. Cleanup paths hold the same lock while
+// checking references and deleting, closing the content-addressed Put-to-
+// descriptor publication gap.
+func (s *EncryptedStore) LockSourcePublication() (func() error, error) {
+	if s.readOnly {
+		return nil, errors.New("Bruno artifact store is read-only")
+	}
+	directory := filepath.Join(s.root, ".project-tombstones")
+	if err := os.MkdirAll(directory, 0o700); err != nil {
+		return nil, err
+	}
+	return filelock.Acquire(filepath.Join(directory, ".source-publication.lock"))
+}
+
 func (s *EncryptedStore) OpenSession(ctx context.Context, id, projectID, actor string) (io.ReadCloser, SessionDescriptor, error) {
+	return s.openSession(ctx, id, projectID, actor, "", false)
+}
+
+func (s *EncryptedStore) OpenSessionScoped(
+	ctx context.Context,
+	scope importsession.Scope,
+) (io.ReadCloser, SessionDescriptor, error) {
+	return s.openSession(ctx, scope.ID, scope.ProjectID, scope.Actor, scope.Profile, true)
+}
+
+func (s *EncryptedStore) openSession(
+	ctx context.Context,
+	id, projectID, actor, profile string,
+	enforceProfile bool,
+) (io.ReadCloser, SessionDescriptor, error) {
 	id = strings.TrimSpace(id)
-	if id == "" || strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") {
+	if !validSessionID(id) {
 		return nil, SessionDescriptor{}, errors.New("invalid Bruno import session id")
 	}
 	projectID = strings.TrimSpace(projectID)
@@ -679,7 +1070,17 @@ func (s *EncryptedStore) OpenSession(ctx context.Context, id, projectID, actor s
 	if projectID == "" || actor == "" {
 		return nil, SessionDescriptor{}, errors.New("Bruno import session project and actor are required")
 	}
-	data, err := os.ReadFile(filepath.Join(s.root, ".sessions", id+".json"))
+	target := filepath.Join(s.root, ".sessions", id+".json")
+	data, err := os.ReadFile(target)
+	if errors.Is(err, os.ErrNotExist) {
+		if recoverErr := s.recoverStaleSessionClaimScoped(
+			id, projectID, actor, profile, enforceProfile, time.Now().UTC(),
+		); recoverErr == nil {
+			data, err = os.ReadFile(target)
+		} else if !errors.Is(recoverErr, os.ErrNotExist) {
+			return nil, SessionDescriptor{}, recoverErr
+		}
+	}
 	if err != nil {
 		return nil, SessionDescriptor{}, err
 	}
@@ -690,9 +1091,14 @@ func (s *EncryptedStore) OpenSession(ctx context.Context, id, projectID, actor s
 	if descriptor.ID != id || strings.TrimSpace(descriptor.ProjectID) != projectID || strings.TrimSpace(descriptor.Actor) != actor {
 		return nil, SessionDescriptor{}, os.ErrNotExist
 	}
+	if enforceProfile && descriptor.EffectiveProfile() != effectiveSessionProfile(profile) {
+		return nil, SessionDescriptor{}, os.ErrNotExist
+	}
 	if time.Now().UTC().After(descriptor.ExpiresAt) {
-		_ = s.DeleteSession(ctx, id, projectID)
-		return nil, SessionDescriptor{}, errors.New("Bruno import session expired")
+		// Preserve the descriptor until the janitor can use RelatedObjects to
+		// clean raw and sanitized sources safely. Deleting it here would release
+		// capacity but permanently orphan every uncommitted source object.
+		return nil, descriptor, errors.New("Bruno import session expired")
 	}
 	reader, _, err := s.Open(ctx, OpenRequest{
 		BackendKey: descriptor.BackendKey,
@@ -704,18 +1110,34 @@ func (s *EncryptedStore) OpenSession(ctx context.Context, id, projectID, actor s
 	return reader, descriptor, err
 }
 
-// ConsumeSession atomically claims a persisted import session, reads its
-// encrypted payload within maxBytes, and removes both the claim and encrypted
-// payload before returning. A claim file prevents another controller sharing
-// the same artifact root from replaying the session while it is being consumed.
-func (s *EncryptedStore) ConsumeSession(ctx context.Context, id, projectID, actor string, maxBytes int64) ([]byte, SessionDescriptor, error) {
+// ClaimSession atomically leases a persisted import session while retaining its
+// encrypted payload. The caller must release the claim after failure or
+// complete it after the durable database transaction succeeds.
+func (s *EncryptedStore) ClaimSession(ctx context.Context, id, projectID, actor string, maxBytes int64) ([]byte, SessionDescriptor, error) {
+	return s.claimSession(ctx, id, projectID, actor, "", false, maxBytes)
+}
+
+func (s *EncryptedStore) ClaimSessionScoped(
+	ctx context.Context,
+	scope importsession.Scope,
+	maxBytes int64,
+) ([]byte, SessionDescriptor, error) {
+	return s.claimSession(ctx, scope.ID, scope.ProjectID, scope.Actor, scope.Profile, true, maxBytes)
+}
+
+func (s *EncryptedStore) claimSession(
+	ctx context.Context,
+	id, projectID, actor, profile string,
+	enforceProfile bool,
+	maxBytes int64,
+) ([]byte, SessionDescriptor, error) {
 	if s.readOnly {
 		return nil, SessionDescriptor{}, errors.New("Bruno artifact store is read-only")
 	}
 	id = strings.TrimSpace(id)
 	projectID = strings.TrimSpace(projectID)
 	actor = strings.TrimSpace(actor)
-	if id == "" || strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") {
+	if !validSessionID(id) {
 		return nil, SessionDescriptor{}, errors.New("invalid Bruno import session id")
 	}
 	if projectID == "" || actor == "" {
@@ -724,42 +1146,51 @@ func (s *EncryptedStore) ConsumeSession(ctx context.Context, id, projectID, acto
 	if maxBytes <= 0 {
 		return nil, SessionDescriptor{}, errors.New("Bruno import session maximum size must be positive")
 	}
+	unlock, err := s.lockSessionClaims()
+	if err != nil {
+		return nil, SessionDescriptor{}, err
+	}
+	defer func() { _ = unlock() }()
 	directory := filepath.Join(s.root, ".sessions")
 	target := filepath.Join(directory, id+".json")
-	descriptorData, descriptor, err := readSessionDescriptorFile(target)
+	_, descriptor, err := readSessionDescriptorFile(target)
+	if errors.Is(err, os.ErrNotExist) {
+		if recoverErr := s.recoverStaleSessionClaimScopedLocked(
+			id, projectID, actor, profile, enforceProfile, time.Now().UTC(),
+		); recoverErr == nil {
+			_, descriptor, err = readSessionDescriptorFile(target)
+		} else if !errors.Is(recoverErr, os.ErrNotExist) {
+			return nil, SessionDescriptor{}, recoverErr
+		}
+	}
 	if err != nil {
 		return nil, SessionDescriptor{}, err
 	}
 	if descriptor.ID != id || strings.TrimSpace(descriptor.ProjectID) != projectID || strings.TrimSpace(descriptor.Actor) != actor {
 		return nil, SessionDescriptor{}, os.ErrNotExist
 	}
-
-	claimPath := filepath.Join(directory, id+".claim.json")
-	claim, err := os.OpenFile(claimPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if enforceProfile && descriptor.EffectiveProfile() != effectiveSessionProfile(profile) {
+		return nil, SessionDescriptor{}, os.ErrNotExist
+	}
+	claimToken, err := newSessionClaimToken()
 	if err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return nil, SessionDescriptor{}, errors.New("Bruno import session is already being consumed")
-		}
 		return nil, SessionDescriptor{}, err
 	}
-	claimCreated := true
-	defer func() {
-		if claimCreated {
-			_ = os.Remove(claimPath)
-		}
-	}()
-	if _, err := claim.Write(descriptorData); err != nil {
-		_ = claim.Close()
+	descriptor.ClaimToken = claimToken
+	claimPath := filepath.Join(directory, id+".claim.json")
+	if _, err := os.Stat(claimPath); err == nil {
+		return nil, SessionDescriptor{}, ErrSessionClaimed
+	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, SessionDescriptor{}, err
 	}
-	if err := claim.Sync(); err != nil {
-		_ = claim.Close()
+	// Publish the epoch token in the normal descriptor first, then atomically
+	// rename that descriptor into the claim state. A crash between these two
+	// operations leaves a retryable normal descriptor rather than both normal
+	// and claim descriptors.
+	if err := s.replaceSessionDescriptorFile(target, descriptor); err != nil {
 		return nil, SessionDescriptor{}, err
 	}
-	if err := claim.Close(); err != nil {
-		return nil, SessionDescriptor{}, err
-	}
-	if err := os.Remove(target); err != nil {
+	if err := s.renameDurably(target, claimPath); err != nil {
 		return nil, SessionDescriptor{}, err
 	}
 
@@ -773,51 +1204,484 @@ func (s *EncryptedStore) ConsumeSession(ctx context.Context, id, projectID, acto
 	payload, readErr := s.ReadAll(ctx, request, maxBytes)
 	if readErr != nil {
 		clear(payload)
-		restoreErr := os.Rename(claimPath, target)
-		if restoreErr == nil {
-			claimCreated = false
-		} else {
-			// Preserve the claim descriptor for operator recovery instead of
-			// deleting the only GC/retry pointer in the deferred cleanup.
-			claimCreated = false
-		}
+		restoreErr := s.releaseSessionClaimLocked(id, projectID, actor, claimToken)
 		return nil, SessionDescriptor{}, errors.Join(readErr, restoreErr)
 	}
-	removeErr := os.Remove(claimPath)
-	if removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-		restoreErr := os.Rename(claimPath, target)
-		if restoreErr == nil {
-			claimCreated = false
-		}
-		clear(payload)
-		return nil, SessionDescriptor{}, errors.Join(removeErr, restoreErr)
+	return payload, descriptor, nil
+}
+
+// TouchSessionClaim refreshes an active lease so a slow live commit cannot be
+// reclaimed as though its controller had crashed.
+func (s *EncryptedStore) TouchSessionClaim(id, projectID, actor, claimToken string, now time.Time) error {
+	if s.readOnly {
+		return errors.New("Bruno artifact store is read-only")
 	}
-	claimCreated = false
-	referenced, referenceErr := s.sessionPayloadReferenced(request.BackendKey, "")
+	if !validSessionID(id) {
+		return errors.New("invalid Bruno import session id")
+	}
+	unlock, err := s.lockSessionClaims()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
+	claimPath := filepath.Join(s.root, ".sessions", strings.TrimSpace(id)+".claim.json")
+	_, descriptor, err := readSessionDescriptorFile(claimPath)
+	if err != nil {
+		return err
+	}
+	if err := validateSessionClaimDescriptor(descriptor, id, projectID, actor, claimToken); err != nil {
+		return err
+	}
+	now = now.UTC()
+	return os.Chtimes(claimPath, now, now)
+}
+
+// ReleaseSessionClaim restores the durable descriptor without re-encrypting
+// the retained payload.
+func (s *EncryptedStore) ReleaseSessionClaim(id, projectID, actor, claimToken string) error {
+	if s.readOnly {
+		return errors.New("Bruno artifact store is read-only")
+	}
+	if !validSessionID(id) {
+		return errors.New("invalid Bruno import session id")
+	}
+	unlock, err := s.lockSessionClaims()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
+	return s.releaseSessionClaimLocked(id, projectID, actor, claimToken)
+}
+
+// RestoreSessionClaim releases an unexpired claim for retry. If the session
+// has reached its original security expiry, it is consumed instead and false
+// is returned so callers never advertise retained credential material that is
+// no longer retryable.
+func (s *EncryptedStore) RestoreSessionClaim(
+	ctx context.Context,
+	id, projectID, actor, claimToken string,
+	now time.Time,
+) (bool, error) {
+	if s.readOnly {
+		return false, errors.New("Bruno artifact store is read-only")
+	}
+	if !validSessionID(id) {
+		return false, errors.New("invalid Bruno import session id")
+	}
+	unlock, err := s.lockSessionClaims()
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = unlock() }()
+	claimPath := filepath.Join(s.root, ".sessions", strings.TrimSpace(id)+".claim.json")
+	_, descriptor, err := readSessionDescriptorFile(claimPath)
+	if err != nil {
+		return false, err
+	}
+	if err := validateSessionClaimDescriptor(descriptor, id, projectID, actor, claimToken); err != nil {
+		return false, err
+	}
+	if !descriptor.ExpiresAt.After(now.UTC()) {
+		if err := s.consumeExpiredSessionClaimLocked(ctx, descriptor, claimPath); err != nil {
+			return false, err
+		}
+		return false, nil
+	}
+	if err := s.releaseSessionClaimLocked(id, projectID, actor, claimToken); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (s *EncryptedStore) releaseSessionClaimLocked(id, projectID, actor, claimToken string) error {
+	directory := filepath.Join(s.root, ".sessions")
+	claimPath := filepath.Join(directory, strings.TrimSpace(id)+".claim.json")
+	target := filepath.Join(directory, strings.TrimSpace(id)+".json")
+	_, descriptor, err := readSessionDescriptorFile(claimPath)
+	if err != nil {
+		return err
+	}
+	if err := validateSessionClaimDescriptor(descriptor, id, projectID, actor, claimToken); err != nil {
+		return err
+	}
+	if _, err := os.Stat(target); err == nil {
+		return errors.New("Bruno import session descriptor already exists")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := s.renameDurably(claimPath, target); err != nil {
+		return err
+	}
+	// The rename is the durable state transition. Clearing the now-inert epoch
+	// token is best effort: if this metadata rewrite fails, a future ClaimSession
+	// replaces it before publishing a new claim.
+	descriptor.ClaimToken = ""
+	_ = s.replaceSessionDescriptorFile(target, descriptor)
+	return nil
+}
+
+// CompleteSessionClaim removes the claim and encrypted session payload only
+// after the caller has committed its database transaction.
+func (s *EncryptedStore) CompleteSessionClaim(ctx context.Context, id, projectID, actor, claimToken string) error {
+	if s.readOnly {
+		return errors.New("Bruno artifact store is read-only")
+	}
+	if !validSessionID(id) {
+		return errors.New("invalid Bruno import session id")
+	}
+	unlock, err := s.lockSessionClaims()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
+	directory := filepath.Join(s.root, ".sessions")
+	claimPath := filepath.Join(directory, strings.TrimSpace(id)+".claim.json")
+	_, descriptor, err := readSessionDescriptorFile(claimPath)
+	if err != nil {
+		return err
+	}
+	if err := validateSessionClaimDescriptor(descriptor, id, projectID, actor, claimToken); err != nil {
+		return err
+	}
+	return s.completeSessionClaimLocked(ctx, descriptor, claimPath)
+}
+
+// consumeExpiredSessionClaimLocked keeps the descriptor—the only durable
+// locator for RelatedObjects—until payload and capacity cleanup have both
+// succeeded. If the final unlink has an uncertain durability result, restore
+// the descriptor in the live namespace so the janitor can finish cleanup.
+func (s *EncryptedStore) consumeExpiredSessionClaimLocked(
+	ctx context.Context,
+	descriptor SessionDescriptor,
+	claimPath string,
+) error {
+	if err := s.deleteSessionPayloadIfUnreferenced(ctx, descriptor, claimPath); err != nil {
+		return err
+	}
+	if releaseErr := s.releaseSessionCapacity(descriptor); releaseErr != nil {
+		return fmt.Errorf("release expired Bruno import session capacity: %w", releaseErr)
+	}
+	if err := s.removeDurably(claimPath); err != nil {
+		restoreErr := s.restoreSessionCleanupLocator(claimPath, descriptor)
+		return errors.Join(err, restoreErr)
+	}
+	return nil
+}
+
+func (s *EncryptedStore) completeSessionClaimLocked(
+	ctx context.Context,
+	descriptor SessionDescriptor,
+	claimPath string,
+) error {
+	if err := s.deleteSessionPayloadIfUnreferenced(ctx, descriptor, claimPath); err != nil {
+		return err
+	}
+	// Delete the credential-bearing payload before its final recovery pointer.
+	// A crash after payload deletion leaves a harmless claim descriptor that a
+	// receipt retry or stale-claim janitor can remove idempotently.
+	if err := s.removeDurably(claimPath); err != nil {
+		return err
+	}
+	if releaseErr := s.releaseSessionCapacity(descriptor); releaseErr != nil {
+		return fmt.Errorf("release consumed Bruno import session capacity: %w", releaseErr)
+	}
+	return nil
+}
+
+func (s *EncryptedStore) deleteSessionPayloadIfUnreferenced(
+	ctx context.Context,
+	descriptor SessionDescriptor,
+	excludedPath string,
+) error {
+	request := OpenRequest{
+		BackendKey: descriptor.BackendKey,
+		ProjectID:  descriptor.ProjectID,
+		Kind:       "session",
+		SHA256:     descriptor.SHA256,
+		SizeBytes:  descriptor.SizeBytes,
+	}
+	referenced, referenceErr := s.sessionPayloadReferenced(request.BackendKey, excludedPath)
 	if referenceErr != nil {
-		restoreErr := os.WriteFile(target, descriptorData, 0o600)
-		clear(payload)
-		return nil, SessionDescriptor{}, errors.Join(referenceErr, restoreErr)
+		return referenceErr
 	}
 	if !referenced {
 		if deleteErr := s.Delete(ctx, request); deleteErr != nil {
-			restoreErr := os.WriteFile(target, descriptorData, 0o600)
-			clear(payload)
-			return nil, SessionDescriptor{}, errors.Join(deleteErr, restoreErr)
+			return deleteErr
 		}
 	}
-	if releaseErr := s.releaseSessionCapacity(descriptor); releaseErr != nil {
+	return nil
+}
+
+func (s *EncryptedStore) restoreSessionCleanupLocator(path string, descriptor SessionDescriptor) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect expired Bruno import session cleanup locator: %w", err)
+	}
+	if err := s.replaceSessionDescriptorFile(path, descriptor); err != nil {
+		// renameDurably can report a directory-sync failure after publishing the
+		// replacement. If it is visible, the janitor still has its locator.
+		if _, statErr := os.Stat(path); statErr == nil {
+			return nil
+		}
+		return fmt.Errorf("restore expired Bruno import session cleanup locator: %w", err)
+	}
+	return nil
+}
+
+// FinalizeCommittedSession removes either a normal or claimed session after a
+// durable idempotency receipt proves that no retry needs its credential-bearing
+// payload. Actor validation prevents a receipt replay from cleaning up a
+// different principal's session if storage has been corrupted.
+func (s *EncryptedStore) FinalizeCommittedSession(ctx context.Context, id, projectID, actor string) error {
+	if s.readOnly {
+		return errors.New("Bruno artifact store is read-only")
+	}
+	id = strings.TrimSpace(id)
+	projectID = strings.TrimSpace(projectID)
+	actor = strings.TrimSpace(actor)
+	if !validSessionID(id) {
+		return errors.New("invalid Bruno import session id")
+	}
+	if projectID == "" || actor == "" {
+		return errors.New("Bruno import session project and actor are required")
+	}
+	unlock, err := s.lockSessionClaims()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
+	directory := filepath.Join(s.root, ".sessions")
+	found := false
+	for _, path := range []string{
+		filepath.Join(directory, id+".claim.json"),
+		filepath.Join(directory, id+".json"),
+	} {
+		_, descriptor, err := readSessionDescriptorFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		found = true
+		if descriptor.ID != id ||
+			strings.TrimSpace(descriptor.ProjectID) != projectID ||
+			strings.TrimSpace(descriptor.Actor) != actor {
+			return os.ErrNotExist
+		}
+	}
+	if !found {
+		return nil
+	}
+	return s.deleteSessionLocked(ctx, id, projectID)
+}
+
+// FinalizeCommittedSessionScoped is the importer-neutral, profile-fenced
+// finalizer. The legacy method above remains unchanged for Bruno callers that
+// predate descriptor profiles.
+func (s *EncryptedStore) FinalizeCommittedSessionScoped(ctx context.Context, scope importsession.Scope) error {
+	if s.readOnly {
+		return errors.New("Bruno artifact store is read-only")
+	}
+	id := strings.TrimSpace(scope.ID)
+	projectID := strings.TrimSpace(scope.ProjectID)
+	actor := strings.TrimSpace(scope.Actor)
+	if !validSessionID(id) {
+		return errors.New("invalid Bruno import session id")
+	}
+	if projectID == "" || actor == "" {
+		return errors.New("Bruno import session project and actor are required")
+	}
+	unlock, err := s.lockSessionClaims()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
+	found, err := s.validateScopedSessionDescriptorsLocked(id, projectID, actor, scope.Profile)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+	return s.deleteSessionLocked(ctx, id, projectID)
+}
+
+func (s *EncryptedStore) recoverStaleSessionClaim(
+	id, projectID, actor string,
+	now time.Time,
+) error {
+	return s.recoverStaleSessionClaimScoped(id, projectID, actor, "", false, now)
+}
+
+func (s *EncryptedStore) recoverStaleSessionClaimScoped(
+	id, projectID, actor, profile string,
+	enforceProfile bool,
+	now time.Time,
+) error {
+	if s.readOnly {
+		_, descriptor, err := readSessionDescriptorFile(
+			filepath.Join(s.root, ".sessions", strings.TrimSpace(id)+".claim.json"),
+		)
+		if err != nil {
+			return err
+		}
+		if strings.TrimSpace(descriptor.ProjectID) != strings.TrimSpace(projectID) ||
+			strings.TrimSpace(descriptor.Actor) != strings.TrimSpace(actor) ||
+			(enforceProfile && descriptor.EffectiveProfile() != effectiveSessionProfile(profile)) {
+			return os.ErrNotExist
+		}
+		return ErrSessionClaimed
+	}
+	unlock, err := s.lockSessionClaims()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
+	return s.recoverStaleSessionClaimScopedLocked(
+		id, projectID, actor, profile, enforceProfile, now,
+	)
+}
+
+func (s *EncryptedStore) recoverStaleSessionClaimLocked(
+	id, projectID, actor string,
+	now time.Time,
+) error {
+	return s.recoverStaleSessionClaimScopedLocked(id, projectID, actor, "", false, now)
+}
+
+func (s *EncryptedStore) recoverStaleSessionClaimScopedLocked(
+	id, projectID, actor, profile string,
+	enforceProfile bool,
+	now time.Time,
+) error {
+	if !validSessionID(id) {
+		return errors.New("invalid Bruno import session id")
+	}
+	directory := filepath.Join(s.root, ".sessions")
+	claimPath := filepath.Join(directory, strings.TrimSpace(id)+".claim.json")
+	target := filepath.Join(directory, strings.TrimSpace(id)+".json")
+	info, err := os.Stat(claimPath)
+	if err != nil {
+		return err
+	}
+	_, descriptor, err := readSessionDescriptorFile(claimPath)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(descriptor.ProjectID) != strings.TrimSpace(projectID) ||
+		strings.TrimSpace(descriptor.Actor) != strings.TrimSpace(actor) ||
+		(enforceProfile && descriptor.EffectiveProfile() != effectiveSessionProfile(profile)) {
+		return os.ErrNotExist
+	}
+	if now.UTC().Sub(info.ModTime().UTC()) <= sessionClaimLease {
+		return ErrSessionClaimed
+	}
+	if _, err := os.Stat(target); err == nil {
+		return errors.New("Bruno import session descriptor already exists")
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := s.renameDurably(claimPath, target); err != nil {
+		return err
+	}
+	// As in ReleaseSessionClaim, the token is inert once the claim path is gone.
+	// Keep recovery atomic and clear it opportunistically afterward.
+	descriptor.ClaimToken = ""
+	_ = s.replaceSessionDescriptorFile(target, descriptor)
+	return nil
+}
+
+// ConsumeSession preserves the canonical import's existing one-shot behavior.
+// Native batches use the leased lifecycle directly.
+func (s *EncryptedStore) ConsumeSession(ctx context.Context, id, projectID, actor string, maxBytes int64) ([]byte, SessionDescriptor, error) {
+	payload, descriptor, err := s.ClaimSession(ctx, id, projectID, actor, maxBytes)
+	if err != nil {
+		return nil, SessionDescriptor{}, err
+	}
+	if err := s.CompleteSessionClaim(ctx, id, projectID, actor, descriptor.ClaimToken); err != nil {
 		clear(payload)
-		return nil, SessionDescriptor{}, fmt.Errorf("release consumed Bruno import session capacity: %w", releaseErr)
+		_ = s.ReleaseSessionClaim(id, projectID, actor, descriptor.ClaimToken)
+		return nil, SessionDescriptor{}, err
 	}
 	return payload, descriptor, nil
 }
 
 func (s *EncryptedStore) DeleteSession(ctx context.Context, id, projectID string) error {
+	if s.readOnly {
+		return errors.New("Bruno artifact store is read-only")
+	}
 	id = strings.TrimSpace(id)
-	if id == "" || strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") {
+	if !validSessionID(id) {
 		return errors.New("invalid Bruno import session id")
 	}
+	unlock, err := s.lockSessionClaims()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
+	return s.deleteSessionLocked(ctx, id, projectID)
+}
+
+// DeleteSessionScoped removes a session only when all persisted scope fields,
+// including its importer profile, match. Missing sessions remain idempotent.
+func (s *EncryptedStore) DeleteSessionScoped(ctx context.Context, scope importsession.Scope) error {
+	if s.readOnly {
+		return errors.New("Bruno artifact store is read-only")
+	}
+	id := strings.TrimSpace(scope.ID)
+	projectID := strings.TrimSpace(scope.ProjectID)
+	actor := strings.TrimSpace(scope.Actor)
+	if !validSessionID(id) {
+		return errors.New("invalid Bruno import session id")
+	}
+	if projectID == "" || actor == "" {
+		return errors.New("Bruno import session project and actor are required")
+	}
+	unlock, err := s.lockSessionClaims()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlock() }()
+	found, err := s.validateScopedSessionDescriptorsLocked(id, projectID, actor, scope.Profile)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return nil
+	}
+	return s.deleteSessionLocked(ctx, id, projectID)
+}
+
+func (s *EncryptedStore) validateScopedSessionDescriptorsLocked(
+	id, projectID, actor, profile string,
+) (bool, error) {
+	directory := filepath.Join(s.root, ".sessions")
+	found := false
+	for _, path := range []string{
+		filepath.Join(directory, id+".claim.json"),
+		filepath.Join(directory, id+".json"),
+	} {
+		_, descriptor, err := readSessionDescriptorFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		found = true
+		if descriptor.ID != id ||
+			strings.TrimSpace(descriptor.ProjectID) != projectID ||
+			strings.TrimSpace(descriptor.Actor) != actor ||
+			descriptor.EffectiveProfile() != effectiveSessionProfile(profile) {
+			return false, os.ErrNotExist
+		}
+	}
+	return found, nil
+}
+
+func (s *EncryptedStore) deleteSessionLocked(ctx context.Context, id, projectID string) error {
 	directory := filepath.Join(s.root, ".sessions")
 	paths := []string{
 		filepath.Join(directory, id+".json"),
@@ -826,7 +1690,7 @@ func (s *EncryptedStore) DeleteSession(ctx context.Context, id, projectID string
 	found := false
 	var cleanupErrors []error
 	for _, target := range paths {
-		descriptorData, descriptor, err := readSessionDescriptorFile(target)
+		_, descriptor, err := readSessionDescriptorFile(target)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
@@ -839,15 +1703,8 @@ func (s *EncryptedStore) DeleteSession(ctx context.Context, id, projectID string
 			cleanupErrors = append(cleanupErrors, errors.New("Bruno import session belongs to another project"))
 			continue
 		}
-		if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
-			cleanupErrors = append(cleanupErrors, err)
-			continue
-		}
-		referenced, referenceErr := s.sessionPayloadReferenced(descriptor.BackendKey, "")
+		referenced, referenceErr := s.sessionPayloadReferenced(descriptor.BackendKey, target)
 		if referenceErr != nil {
-			if restoreErr := os.WriteFile(target, descriptorData, 0o600); restoreErr != nil {
-				referenceErr = errors.Join(referenceErr, fmt.Errorf("restore Bruno import session cleanup descriptor: %w", restoreErr))
-			}
 			cleanupErrors = append(cleanupErrors, referenceErr)
 			continue
 		}
@@ -860,7 +1717,12 @@ func (s *EncryptedStore) DeleteSession(ctx context.Context, id, projectID string
 				SizeBytes:  descriptor.SizeBytes,
 			}); deleteErr != nil {
 				cleanupErrors = append(cleanupErrors, deleteErr)
+				continue
 			}
+		}
+		if err := s.removeDurably(target); err != nil {
+			cleanupErrors = append(cleanupErrors, err)
+			continue
 		}
 		if releaseErr := s.releaseSessionCapacity(descriptor); releaseErr != nil {
 			cleanupErrors = append(cleanupErrors, fmt.Errorf("release Bruno import session capacity: %w", releaseErr))
@@ -886,6 +1748,21 @@ func (s *EncryptedStore) DeleteProject(ctx context.Context, projectID string) er
 	if err := s.markProjectDeleted(projectID); err != nil {
 		return err
 	}
+	// Project tombstoning stops new writes; serialize the sweep with claim
+	// transitions so a concurrent release cannot recreate a session descriptor
+	// after the project has been removed.
+	unlockClaims, err := s.lockSessionClaims()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlockClaims() }()
+	// Serialize the sweep with temp creation as well. This makes every
+	// .encrypted-* file under this project stale by construction.
+	unlockEncryptedWrites, err := s.lockEncryptedObjectWrites()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = unlockEncryptedWrites() }()
 	var cleanupErrors []error
 	sessionsDir := filepath.Join(s.root, ".sessions")
 	entries, err := os.ReadDir(sessionsDir)
@@ -912,7 +1789,7 @@ func (s *EncryptedStore) DeleteProject(ctx context.Context, projectID string) er
 		if strings.TrimSpace(descriptor.ProjectID) != projectID {
 			continue
 		}
-		if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		if removeErr := s.removeDurably(path); removeErr != nil {
 			cleanupErrors = append(cleanupErrors, fmt.Errorf("delete Bruno import session %q: %w", descriptor.ID, removeErr))
 			continue
 		}
@@ -931,6 +1808,36 @@ func (s *EncryptedStore) DeleteProject(ctx context.Context, projectID string) er
 	}
 	if releaseErr := s.releaseProjectSessionCapacity(projectID); releaseErr != nil {
 		cleanupErrors = append(cleanupErrors, releaseErr)
+	}
+	publicationsDir := filepath.Join(s.root, ".publications")
+	publications, publicationErr := os.ReadDir(publicationsDir)
+	if publicationErr != nil && !errors.Is(publicationErr, os.ErrNotExist) {
+		cleanupErrors = append(cleanupErrors, fmt.Errorf("enumerate Bruno publications: %w", publicationErr))
+	}
+	for _, entry := range publications {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		path := filepath.Join(publicationsDir, entry.Name())
+		data, readErr := os.ReadFile(path)
+		if errors.Is(readErr, os.ErrNotExist) {
+			continue
+		}
+		if readErr != nil {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("read Bruno publication %q: %w", entry.Name(), readErr))
+			continue
+		}
+		var descriptor PublicationDescriptor
+		if decodeErr := json.Unmarshal(data, &descriptor); decodeErr != nil {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("decode Bruno publication %q: %w", entry.Name(), decodeErr))
+			continue
+		}
+		if strings.TrimSpace(descriptor.ProjectID) != projectID {
+			continue
+		}
+		if removeErr := s.removeDurably(path); removeErr != nil {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("delete Bruno publication %q: %w", descriptor.ID, removeErr))
+		}
 	}
 
 	digest := projectDigest(projectID)
@@ -953,6 +1860,9 @@ func (s *EncryptedStore) DeleteProject(ctx context.Context, projectID string) er
 			return nil
 		}
 		if strings.HasPrefix(entry.Name(), ".encrypted-") {
+			if removeErr := s.removeDurably(path); removeErr != nil {
+				cleanupErrors = append(cleanupErrors, fmt.Errorf("delete stale Bruno encrypted temporary %q: %w", path, removeErr))
+			}
 			return nil
 		}
 		if entry.Type()&os.ModeSymlink != 0 {
@@ -970,7 +1880,7 @@ func (s *EncryptedStore) DeleteProject(ctx context.Context, projectID string) er
 		if header.ProjectDigest != digest {
 			return nil
 		}
-		if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		if removeErr := s.removeDurably(path); removeErr != nil {
 			cleanupErrors = append(cleanupErrors, fmt.Errorf("delete Bruno artifact %q: %w", path, removeErr))
 		}
 		return nil
@@ -978,9 +1888,9 @@ func (s *EncryptedStore) DeleteProject(ctx context.Context, projectID string) er
 	if walkErr != nil && !errors.Is(walkErr, os.ErrNotExist) {
 		cleanupErrors = append(cleanupErrors, fmt.Errorf("delete Bruno project artifacts: %w", walkErr))
 	}
-	removeEmptyTree(projectRoot, filepath.Join(s.root, "bruno"))
-	_ = os.Remove(filepath.Join(sessionsDir, ".capacity"))
-	_ = os.Remove(sessionsDir)
+	s.removeEmptyTreeDurably(projectRoot, filepath.Join(s.root, "bruno"))
+	_ = s.removeDurably(filepath.Join(sessionsDir, ".capacity"))
+	_ = s.removeDurably(sessionsDir)
 	return errors.Join(cleanupErrors...)
 }
 
@@ -1015,7 +1925,7 @@ func (s *EncryptedStore) releaseProjectSessionCapacity(projectID string) error {
 		if strings.TrimSpace(reservation.ProjectID) != projectID {
 			continue
 		}
-		if removeErr := os.Remove(path); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+		if removeErr := s.removeDurably(path); removeErr != nil {
 			cleanupErrors = append(cleanupErrors, fmt.Errorf("delete Bruno import session capacity %q: %w", entry.Name(), removeErr))
 		}
 	}
@@ -1023,28 +1933,37 @@ func (s *EncryptedStore) releaseProjectSessionCapacity(projectID string) error {
 }
 
 // DeleteExpiredSessions removes normal descriptors whose durable expiry has
-// passed. In-flight claim descriptors are skipped to avoid racing a consume;
-// project deletion and explicit session cleanup still sweep abandoned claims.
-// RelatedObjects are returned so the API can apply
+// passed and recovers expired claim descriptors only after their heartbeat
+// lease is stale. Fresh in-flight claims are left alone. RelatedObjects are
+// returned so the API can apply
 // its database reference check before deleting uncommitted source artifacts.
 func (s *EncryptedStore) DeleteExpiredSessions(ctx context.Context, now time.Time) ([]SessionDescriptor, error) {
 	if s.readOnly {
 		return nil, errors.New("Bruno artifact store is read-only")
 	}
-	entries, err := os.ReadDir(filepath.Join(s.root, ".sessions"))
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
-	}
+	unlockClaims, err := s.lockSessionClaims()
 	if err != nil {
 		return nil, err
 	}
+	defer func() { _ = unlockClaims() }()
+	capacityErr := s.pruneExpiredSessionCapacityReservations(now.UTC())
+	entries, err := os.ReadDir(filepath.Join(s.root, ".sessions"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, capacityErr
+	}
+	if err != nil {
+		return nil, errors.Join(capacityErr, err)
+	}
 	expired := make([]SessionDescriptor, 0)
 	var cleanupErrors []error
+	if capacityErr != nil {
+		cleanupErrors = append(cleanupErrors, capacityErr)
+	}
 	for _, entry := range entries {
 		if err := ctx.Err(); err != nil {
 			return expired, errors.Join(append(cleanupErrors, err)...)
 		}
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") || strings.HasSuffix(entry.Name(), ".claim.json") {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
 		path := filepath.Join(s.root, ".sessions", entry.Name())
@@ -1058,6 +1977,25 @@ func (s *EncryptedStore) DeleteExpiredSessions(ctx context.Context, now time.Tim
 		}
 		if descriptor.ExpiresAt.After(now) {
 			continue
+		}
+		if strings.HasSuffix(entry.Name(), ".claim.json") {
+			sessionID := descriptor.ID
+			recoverErr := s.recoverStaleSessionClaimLocked(
+				descriptor.ID, descriptor.ProjectID, descriptor.Actor, now.UTC(),
+			)
+			if errors.Is(recoverErr, ErrSessionClaimed) || errors.Is(recoverErr, os.ErrNotExist) {
+				continue
+			}
+			if recoverErr != nil {
+				cleanupErrors = append(cleanupErrors, fmt.Errorf("recover expired Bruno import session claim %q: %w", descriptor.ID, recoverErr))
+				continue
+			}
+			path = filepath.Join(s.root, ".sessions", descriptor.ID+".json")
+			_, descriptor, readErr = readSessionDescriptorFile(path)
+			if readErr != nil {
+				cleanupErrors = append(cleanupErrors, fmt.Errorf("read recovered Bruno import session %q: %w", sessionID, readErr))
+				continue
+			}
 		}
 		referenced, referenceErr := s.sessionPayloadReferenced(descriptor.BackendKey, path)
 		if referenceErr != nil {
@@ -1086,6 +2024,18 @@ func (s *EncryptedStore) IsSessionRelatedObjectReferenced(backendKey, excludedSe
 	if backendKey == "" {
 		return false, nil
 	}
+	unlock, err := s.lockSessionClaims()
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = unlock() }()
+	return s.isSessionRelatedObjectReferencedLocked(backendKey, excludedSessionID)
+}
+
+// isSessionRelatedObjectReferencedLocked exists for code that already owns the
+// claim-transition lock. The exported scanner acquires that lock exactly once,
+// preventing a descriptor rename from falling between its snapshot and reads.
+func (s *EncryptedStore) isSessionRelatedObjectReferencedLocked(backendKey, excludedSessionID string) (bool, error) {
 	entries, err := os.ReadDir(filepath.Join(s.root, ".sessions"))
 	if errors.Is(err, os.ErrNotExist) {
 		return false, nil
@@ -1146,6 +2096,73 @@ func readSessionDescriptorFile(path string) ([]byte, SessionDescriptor, error) {
 	return data, descriptor, nil
 }
 
+func newSessionClaimToken() (string, error) {
+	token := make([]byte, 32)
+	defer clear(token)
+	if _, err := io.ReadFull(rand.Reader, token); err != nil {
+		return "", fmt.Errorf("generate Bruno import session claim token: %w", err)
+	}
+	return hex.EncodeToString(token), nil
+}
+
+func validateSessionClaimDescriptor(descriptor SessionDescriptor, id, projectID, actor, claimToken string) error {
+	if descriptor.ID != strings.TrimSpace(id) ||
+		strings.TrimSpace(descriptor.ProjectID) != strings.TrimSpace(projectID) ||
+		strings.TrimSpace(descriptor.Actor) != strings.TrimSpace(actor) {
+		return os.ErrNotExist
+	}
+	expected := strings.TrimSpace(descriptor.ClaimToken)
+	actual := strings.TrimSpace(claimToken)
+	if expected == "" || actual == "" || len(expected) != len(actual) ||
+		subtle.ConstantTimeCompare([]byte(expected), []byte(actual)) != 1 {
+		return ErrSessionClaimLost
+	}
+	return nil
+}
+
+func validSessionID(id string) bool {
+	id = strings.TrimSpace(id)
+	return id != "" && !strings.ContainsAny(id, `/\`) && !strings.Contains(id, "..")
+}
+
+func effectiveSessionProfile(profile string) string {
+	profile = strings.TrimSpace(profile)
+	if profile == "" {
+		return importsession.LegacyBrunoProfile
+	}
+	return profile
+}
+
+func (s *EncryptedStore) replaceSessionDescriptorFile(path string, descriptor SessionDescriptor) error {
+	data, err := json.Marshal(descriptor)
+	if err != nil {
+		return err
+	}
+	directory := filepath.Dir(path)
+	temp, err := os.CreateTemp(directory, ".session-descriptor-*")
+	if err != nil {
+		return err
+	}
+	tempPath := temp.Name()
+	defer os.Remove(tempPath)
+	if err := temp.Chmod(0o600); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if _, err := temp.Write(data); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Sync(); err != nil {
+		_ = temp.Close()
+		return err
+	}
+	if err := temp.Close(); err != nil {
+		return err
+	}
+	return s.renameDurably(tempPath, path)
+}
+
 func (s *EncryptedStore) sessionPayloadReferenced(backendKey, excludedPath string) (bool, error) {
 	backendKey = strings.TrimSpace(backendKey)
 	if backendKey == "" {
@@ -1200,22 +2217,27 @@ func (s *EncryptedStore) markProjectDeleted(projectID string) error {
 	path := s.projectTombstonePath(projectID)
 	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if errors.Is(err, os.ErrExist) {
-		return nil
+		// A previous attempt may have created the entry but failed while syncing
+		// its directory. Retrying the tombstone operation completes durability.
+		return s.syncDirectoryChain(directory)
 	}
 	if err != nil {
 		return err
 	}
 	if _, err := file.WriteString(time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
 		_ = file.Close()
-		_ = os.Remove(path)
+		_ = s.removeDurably(path)
 		return err
 	}
 	if err := file.Sync(); err != nil {
 		_ = file.Close()
-		_ = os.Remove(path)
+		_ = s.removeDurably(path)
 		return err
 	}
-	return file.Close()
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return s.syncDirectoryChain(directory)
 }
 
 func (s *EncryptedStore) projectTombstonePath(projectID string) string {
@@ -1247,11 +2269,11 @@ func (s *EncryptedStore) projectWriteError(projectID string, writeErr error) err
 	return writeErr
 }
 
-func removeEmptyTree(path, stop string) {
+func (s *EncryptedStore) removeEmptyTreeDurably(path, stop string) {
 	path = filepath.Clean(path)
 	stop = filepath.Clean(stop)
 	for path != stop && strings.HasPrefix(path, stop+string(filepath.Separator)) {
-		if err := os.Remove(path); err != nil {
+		if err := s.removeDurably(path); err != nil {
 			return
 		}
 		path = filepath.Dir(path)
@@ -1283,6 +2305,33 @@ func pruneLegacyPlaintextStaging(root string) error {
 		}
 	}
 	_ = os.Remove(directory)
+	return errors.Join(cleanupErrors...)
+}
+
+// pruneStaleEncryptedTemps runs only while the encrypted-object writer lock is
+// held. Consequently every matching file is from a terminated writer; active
+// writers cannot create or retain a temporary concurrently with this sweep.
+func (s *EncryptedStore) pruneStaleEncryptedTemps() error {
+	artifactRoot := filepath.Join(s.root, "bruno")
+	var cleanupErrors []error
+	walkErr := filepath.WalkDir(artifactRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if errors.Is(walkErr, os.ErrNotExist) {
+				return nil
+			}
+			return walkErr
+		}
+		if entry.IsDir() || !strings.HasPrefix(entry.Name(), ".encrypted-") {
+			return nil
+		}
+		if removeErr := s.removeDurably(path); removeErr != nil {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("remove stale Bruno encrypted temporary %q: %w", path, removeErr))
+		}
+		return nil
+	})
+	if walkErr != nil && !errors.Is(walkErr, os.ErrNotExist) {
+		cleanupErrors = append(cleanupErrors, fmt.Errorf("inspect stale Bruno encrypted temporaries: %w", walkErr))
+	}
 	return errors.Join(cleanupErrors...)
 }
 
@@ -1548,6 +2597,14 @@ func validArtifactKind(kind string) bool {
 	default:
 		return false
 	}
+}
+
+func validArtifactSHA256(value string) bool {
+	if len(value) != sha256.Size*2 {
+		return false
+	}
+	decoded, err := hex.DecodeString(value)
+	return err == nil && len(decoded) == sha256.Size
 }
 
 func copyBounded(ctx context.Context, destination io.Writer, source io.Reader, maximum int64) (int64, error) {

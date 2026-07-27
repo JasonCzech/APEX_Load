@@ -2,11 +2,13 @@ package engine
 
 import (
 	"bufio"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/shirou/gopsutil/v3/cpu"
@@ -35,6 +37,8 @@ type ResourceCollector struct {
 
 const tcpDiagnosticsInterval = 5 * time.Second
 
+var systemResourceCollectionPanicWarning sync.Once
+
 func NewResourceCollector() *ResourceCollector {
 	p, _ := process.NewProcess(int32(os.Getpid()))
 	return &ResourceCollector{
@@ -45,6 +49,33 @@ func NewResourceCollector() *ResourceCollector {
 }
 
 func (rc *ResourceCollector) Collect() *SystemResources {
+	return collectSystemResourcesSafely(rc.collect)
+}
+
+// collectSystemResourcesSafely is the process boundary around gopsutil. Some
+// platform implementations invoke and parse host utilities; malformed or
+// unexpectedly restricted output must make optional telemetry unavailable,
+// not panic the metrics goroutine and terminate the entire load generator.
+func collectSystemResourcesSafely(collect func() *SystemResources) (resources *SystemResources) {
+	resources = &SystemResources{}
+	defer func() {
+		if recover() != nil {
+			systemResourceCollectionPanicWarning.Do(func() {
+				slog.Warn("system resource collection panicked; publishing empty snapshots")
+			})
+			resources = &SystemResources{}
+		}
+	}()
+	if collect == nil {
+		return resources
+	}
+	if collected := collect(); collected != nil {
+		resources = collected
+	}
+	return resources
+}
+
+func (rc *ResourceCollector) collect() *SystemResources {
 	now := time.Now()
 	res := &SystemResources{}
 	dt := 0.0

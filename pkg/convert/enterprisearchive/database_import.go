@@ -106,23 +106,12 @@ func appendDatabaseReviewAction(result *ConvertResult, fn ParsedFunction, reason
 		Params:   map[string]any{"function": fn.Name},
 		Metadata: sourceFunctionMetadata(fn),
 	}
+	makeSourceReviewActionDisclosureSafe(&action, fn, SourceFunctionSupportReviewOnly)
 	if action.Metadata == nil {
 		action.Metadata = map[string]any{}
 	}
 	action.Metadata["review_reason"] = reason
 	action.Metadata["source"] = "java_jdbc_idiom"
-	args := make([]any, 0, len(fn.RawArgs)+1)
-	if strings.TrimSpace(fn.RawBlock) != "" {
-		args = append(args, strings.TrimSpace(fn.RawBlock))
-	}
-	for _, raw := range fn.RawArgs {
-		if strings.TrimSpace(raw) != "" {
-			args = append(args, strings.TrimSpace(raw))
-		}
-	}
-	if len(args) > 0 {
-		action.Params["args"] = args
-	}
 	actionIndex := actionCountForPhase(result.Script, fn.Phase)
 	appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, sourceReviewActionPath(fn.Phase, actionIndex), action.Name, "action", "review_only", notes, SourceFunctionSupportReviewOnly))
 	appendActionForPhase(result.Script, fn.Phase, action)

@@ -21,7 +21,7 @@ web_add_cookie,web,executable
 web_add_cookie_ex,web,executable
 web_add_filter,web,native_noop
 web_add_header,web,executable
-web_cache_cleanup,web,native_noop
+web_cache_cleanup,web,executable
 web_cleanup_auto_headers,web,executable
 web_cleanup_cookies,web,executable
 web_concurrent_end,web,native_noop

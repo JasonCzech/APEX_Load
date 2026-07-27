@@ -9,9 +9,13 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 type ImportRequest struct {
@@ -67,6 +71,11 @@ type ConvertResult struct {
 	Stats        ConvertStats       `json:"stats"`
 	Correlations []Correlation      `json:"correlations,omitempty"`
 	SourceReview *sourceview.Review `json:"source_review,omitempty"`
+
+	// ProtectedRequirements is a one-shot adapter-to-API handoff for source
+	// values needed to bind the generated {{secret.*}} references. It is never
+	// serialized with the conversion result.
+	ProtectedRequirements credentialpolicy.ProtectedRequirements `json:"-"`
 }
 
 type exchange struct {
@@ -84,6 +93,10 @@ type exchange struct {
 	HasStartedAt bool
 	DurationMs   float64
 	TimeoutMs    int
+	// SourceSecrets retains source-only values that do not survive in a
+	// projected request surface (for example cURL -u input or arguments of an
+	// unsupported option). It is consumed only by source-review redaction.
+	SourceSecrets []string
 }
 
 type response struct {
@@ -211,6 +224,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			SkippedRequests: skipped,
 		},
 	}
+	if format == "raw_http" && rawHTTP11Only(exchanges) {
+		// Raw HTTP/1.1 connection-specific headers are executable only when the
+		// script requires HTTP/1.1. Leaving the config in automatic negotiation
+		// mode would make import-time validation and runtime replay disagree.
+		result.Script.Config.HTTP.Version = "1.1"
+	}
 	if javaHTTPConfig, ok := detectJavaHTTPConfig(exchanges); ok {
 		result.Script.Protocol = "java_http"
 		result.Script.Config.JavaHTTP = javaHTTPConfig
@@ -220,6 +239,11 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	redactedSourceFiles := redactSourceReviewSecrets(sourceFiles, exchanges)
 	sourceLocations := sampleSourceLocations(format, req.Content, req.ResponseContent, exchanges)
 	sourceMappings := make([]sourceview.Mapping, 0, len(exchanges))
+	finalizationReports := make([]requestimport.Report, 0, len(exchanges))
+	defer func() {
+		clearSampleReportRequirementValues(finalizationReports)
+	}()
+	credentialNames := credentialpolicy.NewNameRegistry()
 
 	for idx, ex := range exchanges {
 		stepVars := correlationVarsAvailableAtStep(correlationVars, correlationVarSources, idx+1)
@@ -227,24 +251,14 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		target := relativeTarget(ex.URL, baseURL)
 		headers := cloneHeaders(ex.Headers)
 		headerList := cloneHeaderList(ex.HeaderList)
-		if len(headerList) == 0 {
-			headerList = dsl.HeaderListFromMap(headers)
-		}
 
 		body := ex.Body
 		if ex.BodyEncoding == "" {
 			body = applyCorrelationVars(body, stepVars)
-			if sanitizeSensitive {
-				body = sanitizeBody(body)
-			}
 		}
 		target = applyCorrelationVars(target, stepVars)
 		headers = applyCorrelationVarsToHeaders(headers, stepVars)
 		headerList = applyCorrelationVarsToHeaderList(headerList, stepVars)
-		if sanitizeSensitive {
-			headers = sanitizeHeaders(headers)
-			headerList = sanitizeHeaderList(headerList)
-		}
 
 		action := dsl.Action{
 			Name:         actionName(idx, ex.Method, ex.URL),
@@ -346,12 +360,27 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 
 		location := requestSourceLocation(sourceLocations, idx)
+		actionPath := fmt.Sprintf("actions[%d]", idx)
+		action, report, err := finalizeSampleRequestAction(
+			action,
+			ex,
+			actionPath,
+			location,
+			format,
+			sanitizeSensitive,
+			credentialNames,
+			sampleProvenVariables(stepVars),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("finalize sample request %d: %w", idx+1, err)
+		}
+		finalizationReports = append(finalizationReports, report)
 		sourceMappings = append(sourceMappings, sourceview.Mapping{
 			SourceFile: location.SourceFile,
 			StartLine:  location.StartLine,
 			EndLine:    location.EndLine,
 			Function:   sampleSourceFunction(format),
-			TargetPath: fmt.Sprintf("actions[%d]", idx),
+			TargetPath: actionPath,
 			TargetName: action.Name,
 			TargetKind: "action",
 			Status:     "converted",
@@ -362,12 +391,22 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	applySOAPSampleProtocol(result.Script, &result.Warnings)
+	finalized, err := requestimport.FinalizeScript(result.Script, finalizationReports, requestimport.FinalizeOptions{})
+	if err != nil {
+		return nil, err
+	}
+	result.ProtectedRequirements.Store(finalized.Requirements)
+	clearSampleRequirements(finalized.Requirements)
+	result.Script = finalized.Script
 
 	if gap := result.Stats.TotalRequests - result.Stats.FilteredAssets - result.Stats.SkippedRequests - result.Stats.ConvertedActions; gap > 0 {
 		diagnostics.Add(diag.Warning, "Sample completeness guard", format, fmt.Sprintf("%d request(s) were parsed but not converted into actions", gap))
 	}
-	result.Unsupported = diagnostics.Items()
+	result.Unsupported = append(diagnostics.Items(), finalized.Diagnostics...)
 	result.Stats.CorrelationsDetected = len(correlations)
+	if sanitizeSensitive {
+		sanitizePublicCorrelationSamples(result.Correlations)
+	}
 	result.SourceReview = sourceview.Build(sourceFiles, sourceMappings)
 	if result.SourceReview != nil {
 		for index := range result.SourceReview.SourceFiles {
@@ -377,6 +416,21 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		}
 	}
 	return result, nil
+}
+
+func sanitizePublicCorrelationSamples(correlations []Correlation) {
+	for index := range correlations {
+		sample := correlations[index].SampleValue
+		if sample == "" {
+			continue
+		}
+		if credential.SensitiveName(correlations[index].Name) ||
+			credential.SensitiveName(correlations[index].Expression) {
+			correlations[index].SampleValue = scrub.Redacted
+			continue
+		}
+		correlations[index].SampleValue = scrub.Value(sample, scrub.Policy{})
+	}
 }
 
 func isExplicitRedirectStep(ex exchange) bool {
@@ -475,6 +529,12 @@ func relativeTarget(rawURL, baseURL string) string {
 	}
 	parsedRaw, rawErr := url.Parse(rawURL)
 	parsedBase, baseErr := url.Parse(baseURL)
+	if rawErr == nil && parsedRaw.User != nil {
+		// Userinfo is a credential-bearing request surface. Relativizing would
+		// silently discard it before the shared projector can externalize and
+		// review-gate the value.
+		return rawURL
+	}
 	if rawErr == nil && baseErr == nil && parsedRaw.Scheme != "" && parsedBase.Scheme != "" &&
 		strings.EqualFold(parsedRaw.Scheme, parsedBase.Scheme) &&
 		strings.EqualFold(parsedRaw.Hostname(), parsedBase.Hostname()) &&

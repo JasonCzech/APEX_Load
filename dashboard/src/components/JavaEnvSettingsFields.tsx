@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 
 import type { JavaVuserConfig } from '../types/scripts'
 import { ExactStringListRows } from './ExactStringListRows'
@@ -54,17 +54,14 @@ export function JavaEnvSettingsFields({
   const vmParameters = value.additional_vm_parameters ?? []
   const classpathAssets = value.classpath_assets ?? []
 
-  const [pendingImport, setPendingImport] = useState('')
   const importCandidates = useMemo(() => {
     const current = new Set(vmParameters)
     return (importedVMParameters ?? []).filter(token => token.trim() !== '' && !current.has(token))
   }, [importedVMParameters, vmParameters])
 
-  const addImportedParameter = () => {
-    const token = pendingImport
+  const addImportedParameter = (token: string) => {
     if (!token || vmParameters.includes(token)) return
     patch({ additional_vm_parameters: [...vmParameters, token] })
-    setPendingImport('')
   }
 
   return (
@@ -109,23 +106,31 @@ export function JavaEnvSettingsFields({
 
         <div className="settings-field-block">
           <span className="settings-field-label">Additional VM Parameters</span>
+          {/* Listing every candidate beats a single-select picker here: a
+              LoadRunner script routinely imports a dozen tokens, and the user
+              needs to compare them before deciding which to carry over. */}
           {importCandidates.length > 0 && (
             <div className="java-env-import-picker">
-              <select
-                aria-label="Imported VM parameters"
-                value={pendingImport}
-                onChange={event => setPendingImport(event.target.value)}
-              >
-                <option value="">Add from imported script…</option>
-                {importCandidates.map(token => (
-                  <option key={token} value={token}>
-                    {token}
-                  </option>
+              <div className="java-env-import-picker-header">
+                <span>Imported from script ({importCandidates.length})</span>
+                <button
+                  type="button"
+                  className="row-add"
+                  onClick={() => patch({ additional_vm_parameters: [...vmParameters, ...importCandidates] })}
+                >
+                  Add all
+                </button>
+              </div>
+              <ul aria-label="Imported VM parameters">
+                {importCandidates.map((token, index) => (
+                  <li key={`${token}:${index}`}>
+                    <code>{token}</code>
+                    <button type="button" className="row-add" onClick={() => addImportedParameter(token)}>
+                      Add
+                    </button>
+                  </li>
                 ))}
-              </select>
-              <button type="button" className="row-add" disabled={!pendingImport} onClick={addImportedParameter}>
-                + Add
-              </button>
+              </ul>
             </div>
           )}
           <ExactStringListRows

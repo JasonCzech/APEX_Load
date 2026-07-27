@@ -242,9 +242,11 @@ func (s *Server) handleImportGitHub(w http.ResponseWriter, r *http.Request) {
 	attachSourceReviewToScript(script, "github", sourceName, review)
 
 	var warnings []string
-	if issues := validateScript(script); len(issues) > 0 {
+	issues := validateScript(script)
+	if len(issues) > 0 {
 		warnings = append(warnings, issues...)
 	}
+	preflight := buildAndAttachImportPreflight(script, "github", issues, warnings)
 
 	s.recordAuditEvent(r, "github.script.import", "success", "script", script.Name, script.ProjectID, map[string]any{
 		"owner": req.Owner, "repo": req.Repo, "path": contents.File.Path,
@@ -253,6 +255,7 @@ func (s *Server) handleImportGitHub(w http.ResponseWriter, r *http.Request) {
 		Script:           script,
 		Warnings:         warnings,
 		Parameterization: buildImportParameterization(script, nil),
+		Preflight:        preflight,
 		Summary: map[string]any{
 			"owner":             req.Owner,
 			"repo":              req.Repo,

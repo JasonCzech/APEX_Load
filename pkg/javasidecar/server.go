@@ -430,9 +430,12 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 		failure = &safeFailure{code: "process_containment_unavailable"}
 	}
 	response := CapabilitiesResponse{
-		Contract:              ContractVersion,
-		Features:              capabilityFeatures(strongContainment),
-		MinimumJavaMajor:      javarunner.MinimumJavaMajor,
+		Contract: ContractVersion,
+		Features: capabilityFeatures(strongContainment),
+		// Advertise the floor this sidecar actually enforces. Reporting the
+		// unconditional constant while accepting a legacy JVM would make the
+		// wire contract disagree with behavior on both sides of it.
+		MinimumJavaMajor:      javarunner.EffectiveMinimumJavaMajor(s.operator.AllowLegacyJava),
 		MaxProcesses:          cap(s.slots),
 		MaxExecutionTimeoutMS: MaximumExecutionTimeout.Milliseconds(),
 		MaxCaptureBytes:       MaxCaptureBytes,
@@ -1323,7 +1326,12 @@ func (s *Server) prepareRuntime(ctx context.Context, settings RuntimeSettings) (
 		SpecifiedHome:       settings.JDKHome,
 		ExplicitJavaCommand: explicitCommand,
 		DefaultHome:         s.operator.DefaultJDKHome,
-		ProbeTimeout:        s.probeTimeout,
+		// The sidecar reads its own operator environment, so the legacy opt-in
+		// has to be honored here as well. Resolving without it would fail the
+		// sidecar's own health probe on a legacy JVM, and the caller would then
+		// see zero capacity rather than a version error naming this check.
+		AllowLegacyJava: s.operator.AllowLegacyJava,
+		ProbeTimeout:    s.probeTimeout,
 	})
 	if err != nil {
 		if errors.Is(err, javarunner.ErrProcessContainmentFailed) {

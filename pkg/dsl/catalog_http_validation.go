@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-	"time"
 
+	"github.com/jasonczech/apexload/pkg/protocol"
 	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
@@ -22,7 +22,7 @@ func validateHTTPSequenceActionIssues(index int, action Action) []string {
 			issues = append(issues, fmt.Sprintf("%s: http_sequence requires at least one child request", label))
 		}
 		for requestIndex, value := range typed {
-			request, ok := value.(map[string]any)
+			request, ok := httpSequenceRequestMap(value)
 			if !ok {
 				issues = append(issues, fmt.Sprintf("%s.params.requests[%d]: must be an object", label, requestIndex))
 				continue
@@ -37,10 +37,48 @@ func validateHTTPSequenceActionIssues(index int, action Action) []string {
 		for requestIndex, request := range typed {
 			issues = append(issues, validateHTTPSequenceRequestIssues(label, requestIndex, request)...)
 		}
+	case []Action:
+		if len(typed) == 0 {
+			issues = append(issues, fmt.Sprintf("%s: http_sequence requires at least one child request", label))
+		}
+		for requestIndex, requestAction := range typed {
+			request, ok := httpSequenceRequestMap(requestAction)
+			if !ok {
+				issues = append(issues, fmt.Sprintf("%s.params.requests[%d]: must be an object", label, requestIndex))
+				continue
+			}
+			issues = append(issues, validateHTTPSequenceRequestIssues(label, requestIndex, request)...)
+		}
 	default:
 		issues = append(issues, fmt.Sprintf("%s: http_sequence params.requests must be an array", label))
 	}
 	return issues
+}
+
+func httpSequenceRequestMap(value any) (map[string]any, bool) {
+	if request, ok := value.(map[string]any); ok {
+		return request, request != nil
+	}
+	switch typed := value.(type) {
+	case Action:
+		value = typed
+	case *Action:
+		if typed == nil {
+			return nil, false
+		}
+		value = typed
+	default:
+		return nil, false
+	}
+	payload, err := json.Marshal(value)
+	if err != nil {
+		return nil, false
+	}
+	var request map[string]any
+	if err := json.Unmarshal(payload, &request); err != nil || request == nil {
+		return nil, false
+	}
+	return request, true
 }
 
 func validateHTTPSequenceRequestIssues(label string, requestIndex int, request map[string]any) []string {
@@ -49,9 +87,28 @@ func validateHTTPSequenceRequestIssues(label string, requestIndex int, request m
 	method := strings.ToUpper(strings.TrimSpace(firstNonEmptyString(stringAnyValue(request["method"]), stringAnyValue(request["type"]))))
 	target := stringAnyValue(request["target"])
 	childLabel := fmt.Sprintf("%s.params.requests[%d] %q", label, requestIndex, name)
-	switch method {
-	case "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS":
-	default:
+	payload, marshalErr := json.Marshal(request)
+	var decodedChild Action
+	childDecodeErr := marshalErr
+	if childDecodeErr == nil {
+		childDecodeErr = json.Unmarshal(payload, &decodedChild)
+	}
+	knownMalformedField := false
+	if raw, ok := request["headers"]; ok && raw != nil {
+		var headers map[string]string
+		if err := decodeHTTPSequenceChildField(raw, &headers); err != nil {
+			// The header-contract pass emits the field-specific issue and still
+			// validates any independently decodable header_list occurrences.
+			knownMalformedField = true
+		}
+	}
+	if raw, ok := request["header_list"]; ok && raw != nil {
+		var headers HeaderList
+		if err := decodeHTTPSequenceChildField(raw, &headers); err != nil {
+			knownMalformedField = true
+		}
+	}
+	if err := httpprotocol.ValidateMethod(method); err != nil {
 		issues = append(issues, fmt.Sprintf("%s: unsupported HTTP method/type %q", childLabel, method))
 	}
 	if strings.TrimSpace(target) == "" {
@@ -68,13 +125,43 @@ func validateHTTPSequenceRequestIssues(label string, requestIndex int, request m
 	// round-trip uniformly handles the wire form ([]any of maps) and the
 	// importer's in-memory form ([]Extractor).
 	if raw, ok := request["extractors"]; ok && raw != nil {
-		if payload, err := json.Marshal(raw); err == nil {
-			var extractors []Extractor
-			if json.Unmarshal(payload, &extractors) == nil {
-				// http_sequence child requests are HTTP by construction.
-				issues = append(issues, validateExtractorIssues("http", childLabel, Action{Extractors: extractors})...)
-			}
+		var extractors []Extractor
+		if err := decodeHTTPSequenceChildField(raw, &extractors); err != nil {
+			knownMalformedField = true
+			issues = append(issues, fmt.Sprintf("%s.extractors must be a valid extractor array", childLabel))
+		} else {
+			// http_sequence child requests are HTTP by construction.
+			issues = append(issues, validateExtractorIssues("http", childLabel, Action{Extractors: extractors})...)
 		}
+	}
+	if raw, ok := request["assertions"]; ok && raw != nil {
+		payload, err := json.Marshal(raw)
+		var assertions []Assertion
+		if err != nil || json.Unmarshal(payload, &assertions) != nil {
+			knownMalformedField = true
+			issues = append(issues, fmt.Sprintf("%s.assertions must be a valid assertion array", childLabel))
+		} else {
+			issues = append(issues, validateHTTPAssertionIssues(childLabel, assertions)...)
+		}
+	}
+	if raw, ok := request["think_time"]; ok && raw != nil {
+		payload, err := json.Marshal(raw)
+		var think ThinkTimeConfig
+		if err != nil || json.Unmarshal(payload, &think) != nil {
+			knownMalformedField = true
+			issues = append(issues, fmt.Sprintf("%s.think_time must be a valid think-time object", childLabel))
+		} else {
+			issues = append(issues, validateThinkTimeResourceIssues(childLabel+".think_time", think)...)
+		}
+	}
+	if raw, ok := request["think_time_after"]; ok {
+		if _, valid := raw.(bool); !valid {
+			knownMalformedField = true
+			issues = append(issues, fmt.Sprintf("%s.think_time_after must be a boolean", childLabel))
+		}
+	}
+	if childDecodeErr != nil && !knownMalformedField {
+		issues = append(issues, fmt.Sprintf("%s must be a valid HTTP request object", childLabel))
 	}
 	return issues
 }
@@ -117,18 +204,84 @@ func firstNonEmptyString(values ...string) string {
 
 func validateHTTPActionBoundsIssues(path string, action Action) []string {
 	label := actionLabel(path, action)
-	maxTimeoutMS := int(httpprotocol.MaxConfiguredTimeout / time.Millisecond)
+	capabilities := httpprotocol.Capabilities()
+	maxTimeoutMS := capabilities.MaxTimeoutMS
 	var issues []string
-	if action.TimeoutMs < 0 || action.TimeoutMs > maxTimeoutMS {
+	// http_sequence is catalogued for the HTTP protocol but dispatched by the
+	// engine; its import representation uses the synthetic method SEQUENCE.
+	// Each child request is validated separately above.
+	if !isEngineActionType(action.Type) && !strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
+		if err := httpprotocol.ValidateMethod(httpprotocol.ResolveMethod(action.Method, action.Type)); err != nil {
+			issues = append(issues, fmt.Sprintf("%s: %v", label, err))
+		}
+	}
+	if err := httpprotocol.ValidateTimeoutMS(action.TimeoutMs); err != nil {
 		issues = append(issues, fmt.Sprintf("%s: timeout_ms must be between 0 and %d", label, maxTimeoutMS))
 	}
-	if action.MaxRedirects != nil && (*action.MaxRedirects < -1 || *action.MaxRedirects > httpprotocol.MaxConfiguredRedirects) {
-		issues = append(issues, fmt.Sprintf("%s: max_redirects must be between -1 and %d", label, httpprotocol.MaxConfiguredRedirects))
+	if err := httpprotocol.ValidateMaxRedirects(action.MaxRedirects); err != nil {
+		issues = append(issues, fmt.Sprintf("%s: max_redirects must be between -1 and %d", label, capabilities.MaxRedirects))
 	}
+	if action.Auth != nil {
+		if err := httpprotocol.ValidateAuthType(action.Auth.Type); err != nil && !hasDurableExecutionBlocker(action.Metadata) {
+			issues = append(issues, fmt.Sprintf("%s: auth.type: %v", label, err))
+		}
+	}
+	issues = append(issues, validateHTTPAssertionIssues(label, action.Assertions)...)
 	if raw, present := action.Params["stream_timeout_ms"]; present {
 		value, ok := actionParamIntValue(action.Params, "stream_timeout_ms")
 		if !ok || value < 0 || value > maxTimeoutMS {
 			issues = append(issues, fmt.Sprintf("%s: params.stream_timeout_ms must be an integer between 0 and %d (got %v)", label, maxTimeoutMS, raw))
+		}
+	}
+	return issues
+}
+
+func hasDurableExecutionBlocker(metadata map[string]any) bool {
+	if metadata == nil {
+		return false
+	}
+	if value, ok := metadata["execution_blocker"].(string); ok && strings.TrimSpace(value) != "" {
+		return true
+	}
+	// Bruno's native-v1 compatibility contract predates generic execution
+	// blocker metadata. Its auth review gate is enforced by the existing Bruno
+	// replay policy and must remain a valid saveable draft until that public
+	// contract is revised.
+	if value, ok := metadata["review_gate"].(string); ok &&
+		strings.EqualFold(strings.TrimSpace(value), "bruno_auth") {
+		return true
+	}
+	switch values := metadata["execution_blockers"].(type) {
+	case []string:
+		for _, value := range values {
+			if strings.TrimSpace(value) != "" {
+				return true
+			}
+		}
+	case []any:
+		for _, value := range values {
+			if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func validateHTTPAssertionIssues(label string, assertions []Assertion) []string {
+	var issues []string
+	if len(assertions) > MaxActionAssertions {
+		issues = append(issues, fmt.Sprintf("%s: assertions must not exceed %d", label, MaxActionAssertions))
+	}
+	for index, assertion := range assertions {
+		if err := httpprotocol.ValidateAssertionDefinition(protocol.Assertion{
+			Type:     assertion.Type,
+			Expected: assertion.Expected,
+			Value:    assertion.Value,
+			Min:      assertion.Min,
+			Max:      assertion.Max,
+		}); err != nil {
+			issues = append(issues, fmt.Sprintf("%s: assertions[%d]: %v", label, index, err))
 		}
 	}
 	return issues

@@ -12,6 +12,7 @@ import {
   formatRuntimeSettingStatusLabel,
   formatScriptProtocolLabel,
   getImportedRuntimeSectionId,
+  getImportedRuntimeSettingsDestination,
   getRuntimeProtocolCapabilities,
   httpTransportTabIsAvailable,
   parseContentChecks,
@@ -122,6 +123,12 @@ describe('scriptEditorRuntimeSettingsModel', () => {
     expect(summary.thinkTimeLabel).toBe('fixed / 0s')
   })
 
+  it('summarizes recorded think time without a meaningless zero duration', () => {
+    const config = runtimeConfig()
+    config.think_time = { type: 'recorded', mean_ms: 0, multiplier: 1 }
+    expect(buildScriptRuntimeSummary({ config }).thinkTimeLabel).toBe('Replay recorded think time')
+  })
+
   it('normalizes protocol defaults without overwriting explicit false and zero settings', () => {
     const script: ScriptDefinition = {
       name: 'Protocol draft',
@@ -218,6 +225,18 @@ describe('scriptEditorRuntimeSettingsModel', () => {
     expect(getImportedRuntimeSectionId('Java VM')).toBe('java_vuser')
     expect(getImportedRuntimeSectionId('Java Environment Settings')).toBe('java_vuser')
     expect(getImportedRuntimeSectionId('Web HTTP/HTML')).toBe('web_runtime')
+    expect(getImportedRuntimeSettingsDestination('Proxy')).toEqual({
+      section: 'http',
+      httpTransportTab: 'proxy',
+    })
+    expect(getImportedRuntimeSettingsDestination('Authentication')).toEqual({
+      section: 'http',
+      httpTransportTab: 'authentication',
+    })
+    expect(getImportedRuntimeSettingsDestination('Security')).toEqual({
+      section: 'http',
+      httpTransportTab: 'tls',
+    })
     expect(getImportedRuntimeSectionId('unknown')).toBeNull()
     expect(formatRuntimeSettingStatusLabel('compatibility_only')).toBe('Compatibility-only')
     expect(formatScriptProtocolLabel('java_vuser')).toBe('Java Vuser')

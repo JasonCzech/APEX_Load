@@ -103,7 +103,7 @@ func ReferencedSecretNames(script *dsl.Script) ([]string, error) {
 		return nil, err
 	}
 	seen := make(map[string]struct{})
-	if err := collectExecutableSecretNames(definition, true, false, seen, nil); err != nil {
+	if err := collectExecutableSecretNames(definition, "", true, false, seen, nil); err != nil {
 		return nil, err
 	}
 	names := make([]string, 0, len(seen))
@@ -114,11 +114,22 @@ func ReferencedSecretNames(script *dsl.Script) ([]string, error) {
 	return names, nil
 }
 
-func collectExecutableSecretNames(value any, root, dedicatedField bool, seen, dedicated map[string]struct{}) error {
+func collectExecutableSecretNames(value any, path string, root, dedicatedField bool, seen, dedicated map[string]struct{}) error {
 	switch typed := value.(type) {
 	case map[string]any:
 		if isNonExecutableSecretReviewMap(typed) {
 			return nil
+		}
+		if body, ok := typed["body"].(string); ok {
+			encoding, _ := typed["body_encoding"].(string)
+			if decoded, encoded, err := dsl.DecodeBodyEncoding(body, encoding, 0); encoded && err == nil {
+				// The stored base64 text is not the executable credential
+				// surface. Decode the wire bytes so static secret preflight and
+				// redaction configuration see references before transport.
+				if err := collectExecutableSecretNames(string(decoded), path+"/body", false, false, seen, dedicated); err != nil {
+					return err
+				}
+			}
 		}
 		for key, child := range typed {
 			normalizedKey := strings.ToLower(strings.TrimSpace(key))
@@ -126,6 +137,14 @@ func collectExecutableSecretNames(value any, root, dedicatedField bool, seen, de
 				if _, skip := nonExecutableRootSecretFields[normalizedKey]; skip {
 					continue
 				}
+			}
+			// Java VM parameters are deliberately never secret-resolved: argv is
+			// observable to sibling processes. Current authoring/DSL validation
+			// rejects templates there, while this skip keeps a legacy row from
+			// creating a misleading project-secret requirement that runtime
+			// would preserve literally and the Java runner would reject.
+			if path == "/config/java_vuser" && normalizedKey == "additional_vm_parameters" {
+				continue
 			}
 			// NOTHING in action metadata is exempt here. ReferencedSecretNames
 			// drives the runtime RedactionConfig and the fail-closed missing-secret
@@ -138,13 +157,13 @@ func collectExecutableSecretNames(value any, root, dedicatedField bool, seen, de
 			// Suppressing the "configure this secret" PROMPT is a UI concern and is
 			// handled separately in pkg/api (isImportProvenanceMetadataPath).
 			_, childDedicated := dedicatedLogicalSecretFields[normalizedKey]
-			if err := collectExecutableSecretNames(child, false, childDedicated, seen, dedicated); err != nil {
+			if err := collectExecutableSecretNames(child, path+"/"+normalizedKey, false, childDedicated, seen, dedicated); err != nil {
 				return err
 			}
 		}
 	case []any:
 		for _, child := range typed {
-			if err := collectExecutableSecretNames(child, false, dedicatedField, seen, dedicated); err != nil {
+			if err := collectExecutableSecretNames(child, path, false, dedicatedField, seen, dedicated); err != nil {
 				return err
 			}
 		}
@@ -212,7 +231,7 @@ func dedicatedLogicalSecretNames(script *dsl.Script) (map[string]struct{}, error
 	}
 	names := make(map[string]struct{})
 	allNames := make(map[string]struct{})
-	if err := collectExecutableSecretNames(definition, true, false, allNames, names); err != nil {
+	if err := collectExecutableSecretNames(definition, "", true, false, allNames, names); err != nil {
 		return nil, err
 	}
 	return names, nil

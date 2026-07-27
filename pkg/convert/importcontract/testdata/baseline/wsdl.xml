@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<definitions name="ImportContract"
+  targetNamespace="urn:contract"
+  xmlns="http://schemas.xmlsoap.org/wsdl/"
+  xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+  xmlns:tns="urn:contract">
+  <portType name="ContractPortType">
+    <operation name="CreateOrder"/>
+  </portType>
+  <binding name="ContractBinding" type="tns:ContractPortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="CreateOrder">
+      <soap:operation soapAction="urn:CreateOrder"/>
+    </operation>
+  </binding>
+  <service name="ContractService">
+    <port name="ContractPort" binding="tns:ContractBinding">
+      <soap:address location="https://api.contract.test/soap"/>
+    </port>
+  </service>
+</definitions>

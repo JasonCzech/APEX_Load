@@ -8,11 +8,13 @@ import {
   buildJsonParameterDraft,
   buildScriptOutlineSummary,
   codePathForAuthorFocus,
+  codePathForParameterCandidateOccurrence,
   deriveScriptJsonDraftState,
   findCandidateLiteralRangeInJson,
   findParameterReferencesInJson,
   formatScriptJson,
   formatScriptJsonDraft,
+  formatParameterCandidateOccurrence,
   offsetForLine,
   parameterReferenceLines,
   parseScriptJsonDraft,
@@ -185,6 +187,19 @@ describe('Script JSON path and line navigation', () => {
     expect(ranges).toHaveLength(1)
     expect(text.slice(ranges[0].from, ranges[0].to)).toBe('literal-value')
     expect(offsetForLine(text, 3)).toBe(text.indexOf('  "body"'))
+  })
+
+  it('targets an exact ordered-header occurrence in JSON authoring', () => {
+    const occurrence = {
+      actionIdx: 2,
+      field: 'header' as const,
+      headerKey: 'X-Trace',
+      headerIndex: 1,
+    }
+    expect(codePathForParameterCandidateOccurrence(occurrence))
+      .toBe('script.actions[2].header_list[1].value')
+    expect(formatParameterCandidateOccurrence(occurrence))
+      .toBe('Action 3 / header X-Trace (occurrence 2)')
   })
 })
 

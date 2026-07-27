@@ -1,0 +1,5 @@
+package enterprisearchive
+
+func projectEnterpriseURL(value string) string {
+	return value
+}

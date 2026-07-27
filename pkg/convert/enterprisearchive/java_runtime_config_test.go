@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -161,6 +162,136 @@ Java_Env_ClassPath="C:\fixtures\folder;with-semicolon\actions.jar";D:\shared\hel
 	}
 }
 
+func TestParseRuntimeCfgImportsNumberedJavaVMParameterRowsInOrder(t *testing.T) {
+	// LoadRunner spills a long "Additional VM Parameters" line across numbered
+	// companion keys. Reading only the base key dropped every argument past the
+	// first row, and an ASCII key sort would place _extra_arg_10 before _2.
+	runtimeCfg := ParseRuntimeCfg(`[JavaVM:Options]
+Java_VM_Params=-Dbase=true
+Java_VM_Params_extra_arg_10=-Dlast=true
+Java_VM_Params_extra_arg_2=-Dlabel="hello world" -Dsecond=true
+Java_VM_Params_extra_arg_1=-Xmx512m
+`)
+
+	wantArguments := []string{"-Dbase=true", "-Xmx512m", "-Dlabel=hello world", "-Dsecond=true", "-Dlast=true"}
+	if !reflect.DeepEqual(runtimeCfg.JavaVMAdditionalParameters, wantArguments) {
+		t.Fatalf("VM arguments = %#v, want %#v", runtimeCfg.JavaVMAdditionalParameters, wantArguments)
+	}
+	if runtimeCfg.JavaVMParametersParseError != "" {
+		t.Fatalf("VM parameter parse error = %q", runtimeCfg.JavaVMParametersParseError)
+	}
+	// The base row stays the correctable source line named by review evidence.
+	if runtimeCfg.JavaVMParametersRaw != "-Dbase=true" {
+		t.Fatalf("raw VM parameters = %q, want the base row", runtimeCfg.JavaVMParametersRaw)
+	}
+	wantRows := []string{"-Dbase=true", "-Xmx512m", `-Dlabel="hello world" -Dsecond=true`, "-Dlast=true"}
+	if !reflect.DeepEqual(runtimeCfg.JavaVMParameterRows, wantRows) {
+		t.Fatalf("VM parameter rows = %#v, want %#v", runtimeCfg.JavaVMParameterRows, wantRows)
+	}
+}
+
+func TestParseRuntimeCfgImportsNumberedJavaVMParameterRowsWithoutBaseKey(t *testing.T) {
+	runtimeCfg := ParseRuntimeCfg(`[JavaVM:Options]
+java_vm_params_EXTRA_ARG_2=-Dsecond=true
+java_vm_params_EXTRA_ARG_1=-Xmx256m
+`)
+
+	wantArguments := []string{"-Xmx256m", "-Dsecond=true"}
+	if !reflect.DeepEqual(runtimeCfg.JavaVMAdditionalParameters, wantArguments) {
+		t.Fatalf("VM arguments = %#v, want %#v", runtimeCfg.JavaVMAdditionalParameters, wantArguments)
+	}
+}
+
+func TestParseRuntimeCfgFailsClosedOnMalformedNumberedJavaVMParameterRow(t *testing.T) {
+	// A partial command line is more dangerous than an unimported one, so one
+	// bad row discards the whole set and the error names the row to correct.
+	runtimeCfg := ParseRuntimeCfg(`[JavaVM:Options]
+Java_VM_Params=-Dbase=true
+Java_VM_Params_extra_arg_1="-Dlabel=unterminated
+`)
+
+	if runtimeCfg.JavaVMAdditionalParameters != nil {
+		t.Fatalf("VM arguments = %#v, want none imported", runtimeCfg.JavaVMAdditionalParameters)
+	}
+	if !strings.Contains(runtimeCfg.JavaVMParametersParseError, "Java_VM_Params_extra_arg_1") {
+		t.Fatalf("parse error = %q, want the offending row named", runtimeCfg.JavaVMParametersParseError)
+	}
+}
+
+func TestParseRuntimeCfgSurvivesNonASCIIKeysNearTheSpillMarker(t *testing.T) {
+	// strings.ToLower is not byte-length preserving (U+023A is 2 bytes, its
+	// lowercase U+2C65 is 3), so locating the "_extra_arg_" marker in the
+	// lowercased key and then slicing the ORIGINAL key panics. Any uploaded
+	// runtime.cfg could reach it, taking the whole archive import down with it.
+	runtimeCfg := ParseRuntimeCfg("[JavaVM:Options]\nJava_VM_Params=-Xmx1g\n" +
+		strings.Repeat("Ⱥ", 20) + "_extra_arg_1=-Dboom=1\n")
+
+	wantArguments := []string{"-Xmx1g"}
+	if !reflect.DeepEqual(runtimeCfg.JavaVMAdditionalParameters, wantArguments) {
+		t.Fatalf("VM arguments = %#v, want %#v (unrecognized key ignored, not fatal)", runtimeCfg.JavaVMAdditionalParameters, wantArguments)
+	}
+}
+
+func TestParseRuntimeCfgKeepsEveryRowAsProvenanceWhenOneFailsToParse(t *testing.T) {
+	// The argv list is discarded on a parse error, so JavaVMParameterRows is the
+	// only remaining record of what the archive configured. Truncating it at the
+	// malformed row would silently erase the rows after it from the review and
+	// round-trip evidence.
+	runtimeCfg := ParseRuntimeCfg(`[JavaVM:Options]
+Java_VM_Params=-Dbase=true
+Java_VM_Params_extra_arg_1=-Xmx512m
+Java_VM_Params_extra_arg_2="-Dbroken
+Java_VM_Params_extra_arg_3=-Dlast=true
+`)
+
+	if runtimeCfg.JavaVMAdditionalParameters != nil {
+		t.Fatalf("VM arguments = %#v, want none imported (fail closed)", runtimeCfg.JavaVMAdditionalParameters)
+	}
+	if !strings.Contains(runtimeCfg.JavaVMParametersParseError, "Java_VM_Params_extra_arg_2") {
+		t.Fatalf("parse error = %q, want the offending row named", runtimeCfg.JavaVMParametersParseError)
+	}
+	wantRows := []string{"-Dbase=true", "-Xmx512m", credential.Redacted, "-Dlast=true"}
+	if !reflect.DeepEqual(runtimeCfg.JavaVMParameterRows, wantRows) {
+		t.Fatalf("VM parameter rows = %#v, want every row position preserved disclosure-safely %#v", runtimeCfg.JavaVMParameterRows, wantRows)
+	}
+}
+
+func TestParseRuntimeCfgIgnoresUnrelatedExtraArgKeys(t *testing.T) {
+	runtimeCfg := ParseRuntimeCfg(`[JavaVM:Options]
+Java_VM_Params=-Dbase=true
+Some_Other_Setting_extra_arg_1=-Dignored=true
+Java_VM_Params_extra_arg_0=-Dzero=true
+Java_VM_Params_extra_arg_x=-Dnotanumber=true
+`)
+
+	wantArguments := []string{"-Dbase=true"}
+	if !reflect.DeepEqual(runtimeCfg.JavaVMAdditionalParameters, wantArguments) {
+		t.Fatalf("VM arguments = %#v, want %#v", runtimeCfg.JavaVMAdditionalParameters, wantArguments)
+	}
+}
+
+func TestRTSParityCoversNumberedJavaVMParameterRows(t *testing.T) {
+	// Without the numbered-key predicate, a cfg that carries only spill rows
+	// reports no java_vm_parameters coverage even though the arguments import.
+	runtimeSections := map[string]map[string]map[string]string{
+		"default.cfg": {
+			"JavaVM:Options": {"Java_VM_Params_extra_arg_1": "-Xmx512m"},
+		},
+	}
+	entries := buildRTSParityReportForProtocol(runtimeSections, "java_vuser")
+
+	found := false
+	for _, entry := range entries {
+		if entry.ID == "java_vm_parameters" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("parity entries = %#v, want java_vm_parameters coverage", entries)
+	}
+}
+
 func TestMergeJavaVuserRuntimeSettingsTargetsEveryJavaLaneAndPreservesDefaults(t *testing.T) {
 	useXBoot := false
 	dedicated := true
@@ -295,8 +426,8 @@ Java_VM_Params=-Xmx512m "-Dlabel=unterminated
 	if len(result.Script.Config.JavaVuser.AdditionalVMParameters) != 0 {
 		t.Fatalf("partially imported VM parameters = %#v", result.Script.Config.JavaVuser.AdditionalVMParameters)
 	}
-	if result.ReviewArtifact == nil || result.ReviewArtifact.Metadata["java_vm_parameters_raw"] != `-Xmx512m "-Dlabel=unterminated` {
-		t.Fatalf("review artifact = %#v, want raw malformed value", result.ReviewArtifact)
+	if result.ReviewArtifact == nil || result.ReviewArtifact.Metadata["java_vm_parameters_raw"] != credential.Redacted {
+		t.Fatalf("review artifact = %#v, want disclosure-safe malformed value", result.ReviewArtifact)
 	}
 	blockers := javaReviewArtifactBlockers(result, javaSourceIntegrityKey)
 	if !stringSliceContains(blockers, javaVMParametersReviewBlocker) {
@@ -486,6 +617,28 @@ Use_Xboot=1
 	parity, ok := javaPreserved["runtime_settings_parity"].([]RuntimeSettingParityEntry)
 	if !ok || len(parity) != 1 || parity[0].ID != "java_vm_xbootclasspath" {
 		t.Fatalf("Java script parity = %#v, want scoped Xboot entry", javaPreserved["runtime_settings_parity"])
+	}
+}
+
+func TestAttachSourceMetadataParityUsesOnlySelectedRuntimeFiles(t *testing.T) {
+	files := map[string]string{
+		"active.cfg": `[ThinkTime]
+Options=RECORDED`,
+		"stale.cfg": `[JavaVM:Options]
+Use_Xboot=1`,
+	}
+	script := &dsl.Script{Protocol: "java_vuser"}
+	runtimeCfg := &RuntimeConfig{RuntimeFiles: []string{"active.cfg"}}
+	attachSourceMetadata(script, nil, "", nil, nil, files, "active.cfg", runtimeCfg, nil, nil, nil)
+	preserved := script.Metadata.Import.Preserved
+	parity, _ := preserved["runtime_settings_parity"].([]RuntimeSettingParityEntry)
+	for _, entry := range parity {
+		if entry.ID == "java_vm_xbootclasspath" {
+			t.Fatalf("stale unselected cfg produced executed parity: %#v", parity)
+		}
+	}
+	if runtimeFiles, ok := preserved["runtime_files"].(map[string]map[string]map[string]string); !ok || len(runtimeFiles) != 2 {
+		t.Fatalf("preserved source sections were not retained: %#v", preserved["runtime_files"])
 	}
 }
 
@@ -762,23 +915,24 @@ Options=NOTHINK
 	}
 }
 
-func TestParseRuntimeCfgJavaVMFirstAliasWinsWithinOneSetting(t *testing.T) {
-	// use_jdk is the first selector alias, so it must win even when a later
-	// alias (UseSpecifiedJdk) or a case variant is also present.
-	runtimeCfg := ParseRuntimeCfg(`[JavaVM:Options]
+func TestParseRuntimeCfgJavaVMConflictingSelectorAliasesDefaultForReview(t *testing.T) {
+	for _, content := range []string{
+		`[JavaVM:Options]
 UseSpecifiedJdk=specified_jdk
 use_jdk=search_jdk
-`)
-	if runtimeCfg.JavaVMJDKSelection != "internal" {
-		t.Fatalf("selection = %q, want first alias (use_jdk=search_jdk) to win", runtimeCfg.JavaVMJDKSelection)
-	}
-
-	// A case variant of the first alias still beats an exact later alias.
-	runtimeCfg = ParseRuntimeCfg(`[JavaVM:Options]
+`,
+		`[JavaVM:Options]
 jdk_selection=specified_jdk
 USE_JDK=search_jdk
-`)
-	if runtimeCfg.JavaVMJDKSelection != "internal" {
-		t.Fatalf("selection = %q, want case-variant first alias to win", runtimeCfg.JavaVMJDKSelection)
+`,
+	} {
+		runtimeCfg := ParseRuntimeCfg(content)
+		if runtimeCfg.JavaVMJDKSelection != "" {
+			t.Fatalf("selection = %q, want APEX default for contradictory aliases", runtimeCfg.JavaVMJDKSelection)
+		}
+		issue, ok := runtimeConfigIssueByID(runtimeCfg, "java_vm_jdk")
+		if !ok || !strings.Contains(issue.Notes, "Conflicting") {
+			t.Fatalf("JDK conflict issue = %#v, want review-required ambiguity", issue)
+		}
 	}
 }

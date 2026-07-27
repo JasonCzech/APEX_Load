@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"fmt"
+	"io/fs"
 	"strings"
 	"testing"
 )
@@ -52,7 +53,7 @@ func TestConvertZipSurfacesCorruptEntry(t *testing.T) {
 func TestConvertZipRejectsDuplicateNormalizedNames(t *testing.T) {
 	var archive bytes.Buffer
 	writer := zip.NewWriter(&archive)
-	for _, name := range []string{"root/Action.c", "other/Action.c"} {
+	for _, name := range []string{"root/Action.c", `root\Action.c`} {
 		entry, err := writer.Create(name)
 		if err != nil {
 			t.Fatalf("create entry: %v", err)
@@ -82,6 +83,45 @@ func TestConvertZipRejectsCaseInsensitiveDuplicateNormalizedNames(t *testing.T) 
 	}
 	if _, err := ConvertZip(archive.Bytes(), ConvertOptions{}); err == nil || !strings.Contains(err.Error(), "case-insensitive duplicate") {
 		t.Fatalf("ConvertZip error = %v, want case-insensitive duplicate-name rejection", err)
+	}
+}
+
+func TestConvertZipRejectsUnsafeArchiveEntryPathsAndTypes(t *testing.T) {
+	tests := []struct {
+		name       string
+		entryNames []string
+		symlink    bool
+	}{
+		{name: "traversal", entryNames: []string{"root/../../Action.c"}},
+		{name: "absolute", entryNames: []string{"/root/Action.c"}},
+		{name: "drive", entryNames: []string{`C:\root\Action.c`}},
+		{name: "trimmed", entryNames: []string{"root/ Action.c "}},
+		{name: "separator collision", entryNames: []string{`root\src\Action.c`, "root/src/Action.c"}},
+		{name: "unicode collision", entryNames: []string{"root/café.c", "root/cafe\u0301.c"}},
+		{name: "symlink", entryNames: []string{"root/Action.c"}, symlink: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var archive bytes.Buffer
+			writer := zip.NewWriter(&archive)
+			for _, name := range test.entryNames {
+				header := &zip.FileHeader{Name: name}
+				if test.symlink {
+					header.SetMode(fs.ModeSymlink | 0o777)
+				}
+				entry, err := writer.CreateHeader(header)
+				if err != nil {
+					t.Fatalf("CreateHeader: %v", err)
+				}
+				_, _ = entry.Write([]byte("Action(){}"))
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+			if _, err := ConvertZip(archive.Bytes(), ConvertOptions{}); err == nil {
+				t.Fatal("ConvertZip accepted unsafe archive")
+			}
+		})
 	}
 }
 

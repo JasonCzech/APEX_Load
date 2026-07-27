@@ -369,21 +369,45 @@ func normalizeSourceContentCheckScope(value string) string {
 	}
 }
 
-func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, string) {
+func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, SourceFunctionSupportMode, string) {
 	text := firstNonEmptyArg(fn, "Text")
 	if text == "" {
-		return nil, nil, fmt.Sprintf("line %d: web_reg_find '%s' — manual review recommended because no Text argument was found", fn.LineNumber, fn.StepName)
+		return nil, nil, SourceFunctionSupportReviewOnly, fmt.Sprintf("line %d: web_reg_find '%s' — manual review recommended because no Text argument was found", fn.LineNumber, fn.StepName)
 	}
 
-	assertionType := "body_contains"
-	failMode := strings.ToLower(firstNonEmptyArg(fn, "Fail"))
-	if failMode == "found" {
-		assertionType = "body_not_contains"
-	}
-
+	mode := SourceFunctionSupportExecutable
+	searchScope := strings.ToLower(strings.TrimSpace(firstNonEmptyArg(fn, "Search")))
 	warnings := make([]string, 0, 2)
+	if searchScope == "all" {
+		// LoadRunner's ALL scope spans the main response body, response headers,
+		// and downloaded resources. APEX extractors can scan one response surface
+		// at a time and resource responses are not available to the parent request
+		// extractor. Preserve the useful body count, but make the scope loss an
+		// explicit review gate instead of claiming exact execution.
+		mode = SourceFunctionSupportReviewOnly
+		warnings = append(warnings, fmt.Sprintf("line %d: web_reg_find Search=ALL is replayed against the main response body only; response headers and downloaded resources require review", fn.LineNumber))
+	}
+
+	var assertion *dsl.Assertion
+	failMode := strings.ToLower(firstNonEmptyArg(fn, "Fail"))
+	saveCount := firstNonEmptyArg(fn, "SaveCount")
+	// OpenText semantics are special when SaveCount is present: omitting Fail
+	// makes this a non-failing count operation. Adding the default
+	// body_contains assertion here caused the request to fail before imported C
+	// code could inspect a zero count.
+	if saveCount == "" || failMode != "" {
+		assertionType := "body_contains"
+		if failMode == "found" {
+			assertionType = "body_not_contains"
+		}
+		assertion = &dsl.Assertion{
+			Type:  assertionType,
+			Value: convertParamReferences(text),
+		}
+	}
+
 	var saveCountExtractor *dsl.Extractor
-	if saveCount := firstNonEmptyArg(fn, "SaveCount"); saveCount != "" {
+	if saveCount != "" {
 		if name := canonicalSourceParameterName(saveCount); name != "" {
 			saveCountExtractor = &dsl.Extractor{
 				Name:       name,
@@ -394,10 +418,7 @@ func convertFindAssertion(fn ParsedFunction) (*dsl.Assertion, *dsl.Extractor, st
 		}
 	}
 
-	return &dsl.Assertion{
-		Type:  assertionType,
-		Value: convertParamReferences(text),
-	}, saveCountExtractor, strings.Join(warnings, "; ")
+	return assertion, saveCountExtractor, mode, strings.Join(warnings, "; ")
 }
 
 func sourceExtractorSource(scope string) string {

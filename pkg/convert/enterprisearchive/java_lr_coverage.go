@@ -137,6 +137,26 @@ var javaLRRunnerOverrides = map[string]javaLRRunnerOverride{
 		mode:  SourceFunctionSupportReviewOnly,
 		notes: "The shim records a bounded metric event in protocol evidence, but the runner does not yet publish it as an engine or telemetry metric sample.",
 	},
+	"lr_get_transaction_duration": {
+		mode:  SourceFunctionSupportExecutable,
+		notes: "The combined Java runner returns the tracked transaction duration through the verified lrapi descriptor.",
+	},
+	"lr_get_transaction_status": {
+		mode:  SourceFunctionSupportExecutable,
+		notes: "The combined Java runner returns the tracked transaction status through the verified lrapi descriptor.",
+	},
+	"lr_get_transaction_think_time": {
+		mode:  SourceFunctionSupportExecutable,
+		notes: "The combined Java runner returns the tracked transaction think time through the verified lrapi descriptor.",
+	},
+	"lr_get_transaction_wasted_time": {
+		mode:  SourceFunctionSupportExecutable,
+		notes: "The combined Java runner returns tracked transaction wasted time through the verified lrapi descriptor.",
+	},
+	"lr_wasted_time": {
+		mode:  SourceFunctionSupportExecutable,
+		notes: "The combined Java runner records wasted time on open transactions through the verified lrapi descriptor.",
+	},
 }
 
 // javaLRRunnerABIDescriptors is the exact published Java bytecode surface that

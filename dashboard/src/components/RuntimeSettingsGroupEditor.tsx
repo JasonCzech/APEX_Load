@@ -5,6 +5,7 @@ import { type ScriptConfig } from '../types/scripts'
 import { inheritedPlaceholder as inh } from './runtimeFieldParsers'
 import {
   EMPTY_RUNTIME_DRAFT,
+  HTTP_VERSION_OPTIONS,
   formatEffectiveRuntimeField,
   isRuntimeDraftEmpty,
   isRuntimeFieldApplicable,
@@ -19,6 +20,17 @@ import { useBrowserEmulationCatalog } from '../hooks/useBrowserEmulationCatalog'
 import WebHttpTab from './runtimeTabs/WebHttpTab'
 import { JavaEnvSettingsFields, type JavaEnvSettingsValue } from './JavaEnvSettingsFields'
 import { type RuntimeJavaVuserSettings } from '../types'
+import {
+  canonicalThinkTimeType,
+  normalizeThinkTimeMultiplier,
+  thinkTimeConfigForType,
+  thinkTimeUsesBounds,
+  thinkTimeUsesMean,
+  thinkTimeUsesStdDeviation,
+} from './thinkTimeConfig'
+import ThinkTimeMultiplierInput from './ThinkTimeMultiplierInput'
+import { formatMillisecondsAsSecondsValue } from './runtimeTiming'
+import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
 
 export interface RuntimeEditorGroup {
   name: string
@@ -31,6 +43,8 @@ export interface RuntimeEditorGroup {
 }
 
 export interface RuntimeSettingsGroupEditorProps {
+  /** Identity of the surrounding project/scenario resource. */
+  draftScope?: string
   groups: RuntimeEditorGroup[]
   focusedIndex: number
   onFocusChange: (index: number) => void
@@ -139,6 +153,7 @@ function groupLabel(group: RuntimeEditorGroup, index: number): string {
 }
 
 export default function RuntimeSettingsGroupEditor({
+  draftScope,
   groups,
   focusedIndex,
   onFocusChange,
@@ -312,17 +327,11 @@ export default function RuntimeSettingsGroupEditor({
     patch({ http: edited })
   }
 
-  // think_time / pacing carry the full DSL config; merge into the section, keeping the
-  // required type/mean_ms so the section stays valid. Clearing routes through the type
-  // select (Inherit) which sets the whole section undefined.
+  // think_time / pacing carry the full DSL config. Clearing routes through the
+  // type select (Inherit), which sets the whole section undefined.
   const patchThinkTime = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['think_time']>>) => {
     const edited = editReplacementSection(draft.think_time, next, inheritedThink)
-    const effective = {
-      type: edited.type || 'fixed',
-      mean_ms: edited.mean_ms ?? 0,
-      ...edited,
-    }
-    patch({ think_time: effective })
+    patch({ think_time: thinkTimeConfigForType(edited, edited.type || 'fixed') })
   }
 
   const patchPacing = (next: Partial<NonNullable<ScenarioRuntimeSettingsDraft['pacing']>>) => {
@@ -686,7 +695,7 @@ export default function RuntimeSettingsGroupEditor({
                 <span>Distribution</span>
                 <select
                   className="settings-input"
-                  value={effectiveThink.ignore ? '' : (draft.think_time?.type || '')}
+                  value={effectiveThink.ignore ? '' : canonicalThinkTimeType(draft.think_time?.type)}
                   disabled={Boolean(effectiveThink.ignore)}
                   onChange={event => {
                     const type = event.target.value
@@ -698,22 +707,26 @@ export default function RuntimeSettingsGroupEditor({
                   }}
                 >
                   <option value="">Inherit</option>
+                  <option value="none">None</option>
                   <option value="fixed">Fixed</option>
+                  <option value="recorded">Replay think time as recorded</option>
                   <option value="gaussian">Gaussian</option>
                   <option value="uniform">Uniform</option>
                 </select>
               </label>
-              <label>
-                <span>Mean (ms)</span>
-                <input className="settings-input" type="number" min={0} value={draft.think_time?.mean_ms ?? ''} disabled={Boolean(effectiveThink.ignore)} onChange={event => patchThinkTime({ mean_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.mean_ms)} />
-              </label>
-              {draft.think_time?.type === 'gaussian' && (
+              {thinkTimeUsesMean(effectiveThink.type) && (
+                <label>
+                  <span>Mean (ms)</span>
+                  <input className="settings-input" type="number" min={0} value={draft.think_time?.mean_ms ?? ''} disabled={Boolean(effectiveThink.ignore)} onChange={event => patchThinkTime({ mean_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.mean_ms)} />
+                </label>
+              )}
+              {thinkTimeUsesStdDeviation(effectiveThink.type) && (
                 <label>
                   <span>Std dev (ms)</span>
                   <input className="settings-input" type="number" min={0} value={draft.think_time?.std_ms ?? ''} onChange={event => patchThinkTime({ std_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.std_ms)} />
                 </label>
               )}
-              {(draft.think_time?.type === 'uniform' || draft.think_time?.type === 'gaussian') && (
+              {thinkTimeUsesBounds(effectiveThink.type) && (
                 <>
                   <label>
                     <span>Min (ms)</span>
@@ -725,10 +738,15 @@ export default function RuntimeSettingsGroupEditor({
                   </label>
                 </>
               )}
-              <label>
-                <span>Multiplier</span>
-                <input className="settings-input" type="number" min={0} step="0.1" value={draft.think_time?.multiplier ?? ''} onChange={event => patchThinkTime({ multiplier: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.multiplier)} />
-              </label>
+              <ThinkTimeMultiplierInput
+                draftScope={`${draftScope ?? ''}:${index}:${focusGroup.scriptId}`}
+                label="Multiplier"
+                className="settings-input"
+                value={draft.think_time?.multiplier}
+                fallbackValue=""
+                onValueChange={multiplier => patchThinkTime({ multiplier })}
+                placeholder={inh(normalizeThinkTimeMultiplier(inheritedThink.multiplier))}
+              />
               <label>
                 <span>Limit (ms)</span>
                 <input className="settings-input" type="number" min={0} value={draft.think_time?.limit_ms ?? ''} onChange={event => patchThinkTime({ limit_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedThink.limit_ms)} />
@@ -771,37 +789,37 @@ export default function RuntimeSettingsGroupEditor({
             </label>
             {pacingType === 'fixed_delay' && (
               <label>
-                <span>Pacing delay (ms)</span>
-                <input className="settings-input" type="number" min={0} value={draft.pacing?.delay_ms ?? ''} onChange={event => patchPacing({ delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedPacing.delay_ms, '0')} />
+                <span>Pacing delay (seconds)</span>
+                <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.delay_ms} emptyWhenUndefined onChangeMs={delayMs => patchPacing({ delay_ms: delayMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.delay_ms)} />
               </label>
             )}
             {pacingType === 'random_delay' && (
               <>
                 <label>
-                  <span>Min delay (ms)</span>
-                  <input className="settings-input" type="number" min={0} value={draft.pacing?.min_delay_ms ?? ''} onChange={event => patchPacing({ min_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedPacing.min_delay_ms, '0')} />
+                  <span>Min delay (seconds)</span>
+                  <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.min_delay_ms} emptyWhenUndefined onChangeMs={minDelayMs => patchPacing({ min_delay_ms: minDelayMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.min_delay_ms)} />
                 </label>
                 <label>
-                  <span>Max delay (ms)</span>
-                  <input className="settings-input" type="number" min={0} value={draft.pacing?.max_delay_ms ?? ''} onChange={event => patchPacing({ max_delay_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedPacing.max_delay_ms, '0')} />
+                  <span>Max delay (seconds)</span>
+                  <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.max_delay_ms} emptyWhenUndefined onChangeMs={maxDelayMs => patchPacing({ max_delay_ms: maxDelayMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.max_delay_ms)} />
                 </label>
               </>
             )}
             {pacingType === 'fixed_interval' && (
               <label>
-                <span>Pacing interval (ms)</span>
-                <input className="settings-input" type="number" min={0} value={draft.pacing?.interval_ms ?? ''} onChange={event => patchPacing({ interval_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedPacing.interval_ms, '0')} />
+                <span>Pacing interval (seconds)</span>
+                <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.interval_ms} emptyWhenUndefined onChangeMs={intervalMs => patchPacing({ interval_ms: intervalMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.interval_ms)} />
               </label>
             )}
             {pacingType === 'random_interval' && (
               <>
                 <label>
-                  <span>Min interval (ms)</span>
-                  <input className="settings-input" type="number" min={0} value={draft.pacing?.min_interval_ms ?? ''} onChange={event => patchPacing({ min_interval_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedPacing.min_interval_ms, '0')} />
+                  <span>Min interval (seconds)</span>
+                  <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.min_interval_ms} emptyWhenUndefined onChangeMs={minIntervalMs => patchPacing({ min_interval_ms: minIntervalMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.min_interval_ms)} />
                 </label>
                 <label>
-                  <span>Max interval (ms)</span>
-                  <input className="settings-input" type="number" min={0} value={draft.pacing?.max_interval_ms ?? ''} onChange={event => patchPacing({ max_interval_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedPacing.max_interval_ms, '0')} />
+                  <span>Max interval (seconds)</span>
+                  <SecondsFromMillisecondsInput className="settings-input" valueMs={draft.pacing?.max_interval_ms} emptyWhenUndefined onChangeMs={maxIntervalMs => patchPacing({ max_interval_ms: maxIntervalMs })} placeholder={formatMillisecondsAsSecondsValue(inheritedPacing.max_interval_ms)} />
                 </label>
               </>
             )}
@@ -988,11 +1006,14 @@ export default function RuntimeSettingsGroupEditor({
                     <span>HTTP version</span>
                     <select className="settings-input" value={draft.http?.version || ''} onChange={event => patchHttp({ version: event.target.value || undefined })}>
                       <option value="">Inherit</option>
-                      <option value="1.0">1.0</option>
-                      <option value="1.1">1.1</option>
-                      <option value="2">2</option>
+                      {HTTP_VERSION_OPTIONS.slice(1).map(option => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
                     </select>
                   </label>
+                  <div className="form-hint">
+                    Inherit uses the next configured layer; an effective empty value auto-negotiates. Explicit versions are exact, and required HTTP/2 never falls back to HTTP/1.1.
+                  </div>
                   <label><span>Max connections / host</span><input className="settings-input" type="number" min={0} value={draft.http?.max_conns_per_host ?? ''} onChange={event => patchHttp({ max_conns_per_host: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_conns_per_host)} /></label>
                   <label><span>Max redirects</span><input className="settings-input" type="number" min={0} value={draft.http?.max_redirects ?? ''} onChange={event => patchHttp({ max_redirects: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder={inh(inheritedHttp.max_redirects)} /></label>
                   <label>

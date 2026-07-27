@@ -130,7 +130,7 @@ describe('TestExecutionScenarioPreview', () => {
               id: 'script-1',
               name: 'Checkout Script',
               protocol: 'http',
-              script: { actions: [] },
+              script: { config: { http: { version: '2' } }, actions: [] },
             },
             actionCount: 0,
             initCount: 0,
@@ -175,7 +175,7 @@ describe('TestExecutionScenarioPreview', () => {
     expect(container.textContent).toContain('Stop On SLA Breach')
     expect(container.textContent).toContain('Stop On Max Errors')
     expect(container.textContent).toContain('Pacing')
-    expect(container.textContent).toContain('Fixed delay · 1200ms')
+    expect(container.textContent).toContain('Fixed delay · 1.2 seconds')
     expect(container.textContent).toContain('Think Time')
     expect(container.textContent).toContain('fixed · 900ms')
     expect(container.textContent).toContain('Browser Runtime')
@@ -201,6 +201,7 @@ describe('TestExecutionScenarioPreview', () => {
 
     expect(onExpandedScenarioScriptChange).toHaveBeenCalledWith('Checkout')
     expect(container.textContent).toContain('3 (group override)')
+    expect(container.textContent).toContain('HTTP/2 required (no fallback) · 100 conns/host')
 
     await act(async () => {
       editButton.dispatchEvent(new MouseEvent('click', { bubbles: true }))

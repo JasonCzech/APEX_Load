@@ -313,3 +313,36 @@ func TestExtractJSONPathNumericObjectKeyVsArrayIndex(t *testing.T) {
 		t.Fatalf("array index: got %q, err %v; want b", got, err)
 	}
 }
+
+func TestMetadataKeyIsProvenanceExcludesImporterFieldsFromWireHeaders(t *testing.T) {
+	for _, key := range []string{
+		"original_url", "source_path", "source_step_id", "source_profile", "source_uid",
+		"asyncapi_operation",
+	} {
+		if !metadataKeyIsProvenance(key) {
+			t.Errorf("metadataKeyIsProvenance(%q) = false", key)
+		}
+	}
+	if metadataKeyIsProvenance("customer_header") {
+		t.Fatal("ordinary metadata header was classified as provenance")
+	}
+	// source_transaction was historically copied to Kafka headers. Preserve
+	// that wire contract for existing stored scripts while filtering the newer
+	// source-only metadata keys above.
+	if metadataKeyIsProvenance("source_transaction") {
+		t.Fatal("source_transaction compatibility header was classified as provenance")
+	}
+
+	record := (&Kafka{}).buildRecord(&protocol.Action{
+		Metadata: map[string]any{
+			"source_transaction": "checkout",
+			"source_profile":     "import-only",
+		},
+	}, "orders")
+	if record.Headers["source_transaction"] != "checkout" {
+		t.Fatalf("source_transaction header = %q, want compatibility value", record.Headers["source_transaction"])
+	}
+	if _, exists := record.Headers["source_profile"]; exists {
+		t.Fatal("source_profile import provenance leaked into Kafka headers")
+	}
+}

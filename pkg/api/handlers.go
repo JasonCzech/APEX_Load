@@ -707,6 +707,10 @@ func (s *Server) handleCreateScript(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if err := validateJavaVMParameterDisclosureSafety(script); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 	// Always inspect the disclosure-safe projection. A draft that contains only
 	// an inline credential (and no literal sentinel) must receive the same
 	// guided binding response as a previously redacted import.
@@ -1245,7 +1249,7 @@ func buildScriptValidationResponseWithVariables(scriptID string, script *dsl.Scr
 		MigrationReadiness:          readiness,
 		DataSourceFit:               dataSourceFit,
 		AIGuardrails:                aiGuardrails,
-		AuthoringHealth:             buildAuthoringHealth(issues, warnings, counts, dataSourceFit, aiGuardrails, scriptHasAuthoringProvenance(script)),
+		AuthoringHealth:             buildAuthoringHealth(issues, warnings, counts, dataSourceFit, aiGuardrails, scriptHasAuthoringProvenance(script), replayReviewGateIssues(script)...),
 	}
 }
 
@@ -1329,15 +1333,66 @@ func buildValidationRuntimeSettingsParity(script *dsl.Script) []enterprisearchiv
 		preservedByID[entry.ID] = entry
 	}
 
-	merged := make([]enterprisearchive.RuntimeSettingParityEntry, 0, len(derived))
+	merged := make([]enterprisearchive.RuntimeSettingParityEntry, 0, len(derived)+len(preserved))
 	for _, entry := range derived {
-		if preservedEntry, ok := preservedByID[entry.ID]; ok && len(entry.RuntimeFiles) == 0 {
-			entry.RuntimeFiles = append([]string(nil), preservedEntry.RuntimeFiles...)
+		if preservedEntry, ok := preservedByID[entry.ID]; ok {
+			entry.RuntimeFiles = appendUniqueStrings(
+				append([]string(nil), preservedEntry.RuntimeFiles...),
+				entry.RuntimeFiles...,
+			)
+			if len(entry.Fields) == 0 {
+				entry.Fields = append([]string(nil), preservedEntry.Fields...)
+			}
+			// A script-derived report can prove that the destination field is now
+			// configured, but it cannot disprove an import-time fidelity finding
+			// (for example RANDOM think time mapped to recorded defaults). Keep
+			// that source finding until review relaxes the migration policy.
+			if validationMustPreserveImportedRuntimeFinding(preservedEntry.Status) {
+				entry.Status = preservedEntry.Status
+				if preservedEntry.Area != "" {
+					entry.Area = preservedEntry.Area
+				}
+				if preservedEntry.Concept != "" {
+					entry.Concept = preservedEntry.Concept
+				}
+				if len(preservedEntry.Fields) > 0 {
+					entry.Fields = append([]string(nil), preservedEntry.Fields...)
+				}
+				if preservedEntry.Notes != "" {
+					entry.Notes = preservedEntry.Notes
+				}
+			}
+			delete(preservedByID, entry.ID)
 		}
 		merged = append(merged, entry)
 	}
 
+	// Some source-only controls deliberately have no destination field and
+	// therefore cannot appear in BuildRTSParityReportFromScript. Retain them as
+	// review evidence instead of silently dropping them during validation.
+	for _, entry := range preserved {
+		if _, ok := preservedByID[entry.ID]; !ok {
+			continue
+		}
+		entry.Fields = append([]string(nil), entry.Fields...)
+		entry.RuntimeFiles = append([]string(nil), entry.RuntimeFiles...)
+		merged = append(merged, entry)
+		delete(preservedByID, entry.ID)
+	}
+
 	return merged
+}
+
+func validationMustPreserveImportedRuntimeFinding(status enterprisearchive.RuntimeSettingStatus) bool {
+	switch status {
+	case enterprisearchive.RuntimeSettingStatusPartial,
+		enterprisearchive.RuntimeSettingStatusCompatibilityOnly,
+		enterprisearchive.RuntimeSettingStatusNonApplicable,
+		enterprisearchive.RuntimeSettingStatusBlocked:
+		return true
+	default:
+		return false
+	}
 }
 
 func validationRuntimeSettingMigrationPolicy(script *dsl.Script) enterprisearchive.RuntimeSettingMigrationPolicy {

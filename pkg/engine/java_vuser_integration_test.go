@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -490,6 +491,7 @@ func TestPersistentJavaScaleCapacityKeepsSessionsThatAreStillStopping(t *testing
 }
 
 type javaLikeStreamingProtocol struct{}
+type finalBusinessTransactionProtocol struct{}
 
 func (*javaLikeStreamingProtocol) Name() string { return "java_vuser" }
 func (*javaLikeStreamingProtocol) Init(context.Context, map[string]any) error {
@@ -520,6 +522,21 @@ func (*javaLikeStreamingProtocol) ExecuteStream(_ context.Context, action *proto
 }
 func (*javaLikeStreamingProtocol) Teardown(context.Context) error    { return nil }
 func (*javaLikeStreamingProtocol) HealthCheck(context.Context) error { return nil }
+
+func (*finalBusinessTransactionProtocol) Name() string { return "final-business-transaction" }
+func (*finalBusinessTransactionProtocol) Init(context.Context, map[string]any) error {
+	return nil
+}
+func (*finalBusinessTransactionProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	return &protocol.Result{
+		ActionName:          action.Name,
+		BusinessTransaction: true,
+		Success:             true,
+		Duration:            time.Millisecond,
+	}, nil
+}
+func (*finalBusinessTransactionProtocol) Teardown(context.Context) error    { return nil }
+func (*finalBusinessTransactionProtocol) HealthCheck(context.Context) error { return nil }
 
 func TestJavaStreamingBusinessTransactionsUpdateRunTotalsWithoutDuplicateSinkRecords(t *testing.T) {
 	metrics := NewMetricsCollector(16)
@@ -574,5 +591,141 @@ func TestJavaStreamingBusinessTransactionsUpdateRunTotalsWithoutDuplicateSinkRec
 	}
 	if snapshot.ByTransaction["Login"] == nil || snapshot.ByTransaction["Checkout"] == nil {
 		t.Fatalf("snapshot transaction dimensions = %#v", snapshot.ByTransaction)
+	}
+}
+
+func TestJavaStreamingBusinessTransactionsRespectMaxTransactions(t *testing.T) {
+	runLogic := dsl.RunLogicConfig{
+		Iterations:      10,
+		MaxTransactions: 1,
+	}
+	softCtx, softCancel := context.WithCancel(context.Background())
+	defer softCancel()
+	limiter := NewExecutionGoalLimiter(runLogic, softCancel)
+	metrics := NewMetricsCollector(16)
+	sink := &sequenceCaptureSink{}
+	vu := &VUser{
+		ID:             1,
+		Group:          "java",
+		Proto:          &javaLikeStreamingProtocol{},
+		Metrics:        metrics,
+		ResultSink:     sink,
+		ExecutionGoals: limiter,
+		HardStopCtx:    context.Background(),
+		Script: &dsl.Script{
+			Name:     "goal-bounded-java",
+			Protocol: "java_vuser",
+			Config:   dsl.ScriptConfig{RunLogic: runLogic},
+			Actions: []dsl.Action{{
+				Name:     "Actions.action",
+				Type:     "java_vuser_run",
+				Metadata: map[string]any{"emits_business_transactions": true},
+			}},
+		},
+	}
+
+	vu.Run(softCtx)
+
+	if got := metrics.TotalTransactions(); got != 1 {
+		t.Fatalf("TotalTransactions = %d, want only the first streamed transaction", got)
+	}
+	if got := metrics.TotalErrors(); got != 0 {
+		t.Fatalf("TotalErrors = %d, want the over-goal child gated before recording", got)
+	}
+	if len(sink.results) != 1 || sink.results[0].ActionName != "Login" {
+		t.Fatalf("streamed results = %#v, want only the claimed Login transaction", sink.results)
+	}
+	if limiter.TryStartTransaction() {
+		t.Fatal("streamed business transaction did not consume MaxTransactions capacity")
+	}
+}
+
+func TestPerActionStreamingGoalPreservesClaimedAutomaticTransaction(t *testing.T) {
+	for _, maxTransactions := range []int{1, 2} {
+		t.Run(fmt.Sprintf("max_%d", maxTransactions), func(t *testing.T) {
+			runLogic := dsl.RunLogicConfig{
+				Iterations:       1,
+				AutoTransactions: "per_action",
+				MaxTransactions:  int64(maxTransactions),
+			}
+			softCtx, softCancel := context.WithCancel(context.Background())
+			defer softCancel()
+			limiter := NewExecutionGoalLimiter(runLogic, softCancel)
+			metrics := NewMetricsCollector(16)
+			sink := &sequenceCaptureSink{}
+			vu := &VUser{
+				Proto:          &javaLikeStreamingProtocol{},
+				Metrics:        metrics,
+				ResultSink:     sink,
+				ExecutionGoals: limiter,
+				HardStopCtx:    context.Background(),
+				Script: &dsl.Script{
+					Protocol: "java_vuser",
+					Config:   dsl.ScriptConfig{RunLogic: runLogic},
+					Actions: []dsl.Action{{
+						Name:     "Actions.action",
+						Type:     "java_vuser_run",
+						Metadata: map[string]any{"emits_business_transactions": true},
+					}},
+				},
+			}
+
+			vu.Run(softCtx)
+
+			recorded := metrics.TotalTransactions() + metrics.TotalErrors()
+			if recorded != int64(maxTransactions) {
+				t.Fatalf("recorded transaction metrics = %d, want claimed goal count %d", recorded, maxTransactions)
+			}
+			if len(sink.transactions) != 1 || sink.transactions[0].ActionName != "Actions.action" {
+				t.Fatalf("automatic transaction records = %#v, want one claimed action metric", sink.transactions)
+			}
+			wantChildren := maxTransactions - 1
+			if len(sink.results) != wantChildren {
+				t.Fatalf("streamed child results = %d, want %d before goal refusal", len(sink.results), wantChildren)
+			}
+		})
+	}
+}
+
+func TestPerActionFinalBusinessTransactionGoalPreservesClaimedAutomaticTransaction(t *testing.T) {
+	for _, maxTransactions := range []int{1, 2} {
+		t.Run(fmt.Sprintf("max_%d", maxTransactions), func(t *testing.T) {
+			runLogic := dsl.RunLogicConfig{
+				Iterations:       1,
+				AutoTransactions: "per_action",
+				MaxTransactions:  int64(maxTransactions),
+			}
+			softCtx, softCancel := context.WithCancel(context.Background())
+			defer softCancel()
+			limiter := NewExecutionGoalLimiter(runLogic, softCancel)
+			metrics := NewMetricsCollector(16)
+			sink := &sequenceCaptureSink{}
+			vu := &VUser{
+				Proto:          &finalBusinessTransactionProtocol{},
+				Metrics:        metrics,
+				ResultSink:     sink,
+				ExecutionGoals: limiter,
+				HardStopCtx:    context.Background(),
+				Script: &dsl.Script{
+					Protocol: "final-business-transaction",
+					Config:   dsl.ScriptConfig{RunLogic: runLogic},
+					Actions:  []dsl.Action{{Name: "final transaction", Type: "request", Target: "/"}},
+				},
+			}
+
+			vu.Run(softCtx)
+
+			recorded := metrics.TotalTransactions() + metrics.TotalErrors()
+			if recorded != int64(maxTransactions) {
+				t.Fatalf("recorded transaction metrics = %d, want claimed goal count %d", recorded, maxTransactions)
+			}
+			if len(sink.transactions) != 1 {
+				t.Fatalf("automatic transaction records = %d, want one", len(sink.transactions))
+			}
+			wantFinalResults := maxTransactions - 1
+			if len(sink.results) != wantFinalResults {
+				t.Fatalf("final business-transaction results = %d, want %d", len(sink.results), wantFinalResults)
+			}
+		})
 	}
 }

@@ -34,6 +34,22 @@ func TestValidateScriptIssues_Parameters(t *testing.T) {
 	assertIssue(t, issues, "parameters[5] \"password\": same_line_as references unknown parameter \"missing\"")
 }
 
+func TestValidateScriptIssues_RejectsCaseInsensitiveParameterDuplicates(t *testing.T) {
+	script := &Script{
+		Name:     "case-duplicate",
+		Protocol: "http",
+		Config:   ScriptConfig{BaseURL: "https://example.com"},
+		Parameters: []Parameter{
+			{Name: "Token", Type: "list", Values: []string{"first"}},
+			{Name: " token ", Type: "list", Values: []string{"second"}},
+		},
+		Actions: []Action{{Name: "call", Type: "request", Target: "/{{var.TOKEN}}"}},
+	}
+
+	issues := ValidateScriptIssues(script)
+	assertIssue(t, issues, `parameters[1] "token": duplicate name`)
+}
+
 func TestValidateScriptIssuesRejectsHeaderAsData(t *testing.T) {
 	script := &Script{
 		Name: "soap", Protocol: "http", Config: ScriptConfig{BaseURL: "https://example.test"},

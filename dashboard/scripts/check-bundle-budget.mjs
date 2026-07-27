@@ -46,7 +46,7 @@ export const DEFAULT_ROUTE_BUDGETS = Object.freeze([
     label: 'Test execution route',
     entryKey: 'src/components/TestExecution.tsx',
     maxGzipBytes: kib(380),
-    forbiddenAssets: [/vendor-three/i, /LoadImpact3DHeatmap/i],
+    forbiddenAssets: [/codemirror/i, /vendor-three/i, /LoadImpact3DHeatmap/i],
   }),
 ])
 

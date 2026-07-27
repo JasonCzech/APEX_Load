@@ -4,7 +4,7 @@ import { act, type ReactNode } from 'react'
 import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import NewTestPage from './NewTestPage'
+import NewTestPage, { pacingFromEdit } from './NewTestPage'
 import { NavigationGuardProvider } from '../hooks/NavigationGuardRoot'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
@@ -87,6 +87,36 @@ describe('NewTestPage', () => {
   let container: HTMLDivElement
   let root: Root
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>
+
+  it('serializes newly selected random pacing with explicit safe bounds', () => {
+    expect(pacingFromEdit('random_delay', '', undefined)).toEqual({
+      type: 'random_delay',
+      min_delay_ms: 1000,
+      max_delay_ms: 1000,
+    })
+    expect(pacingFromEdit('random_interval', '', {
+      type: 'random_interval',
+      min_interval_ms: 7500,
+      max_interval_ms: 2500,
+    })).toEqual({
+      type: 'random_interval',
+      min_interval_ms: 2500,
+      max_interval_ms: 7500,
+    })
+    expect(pacingFromEdit('fixed_delay', '0.75')).toEqual({
+      type: 'fixed_delay',
+      delay_ms: 750,
+    })
+    expect(pacingFromEdit('fixed_interval', '5')).toEqual({
+      type: 'fixed_interval',
+      interval_ms: 5000,
+    })
+    expect(pacingFromEdit('random_delay', '2.5')).toEqual({
+      type: 'random_delay',
+      min_delay_ms: 2500,
+      max_delay_ms: 2500,
+    })
+  })
 
   beforeEach(() => {
     projectMock.activeProject = { id: 'project-1', name: 'Checkout', created_at: '', updated_at: '' }
@@ -227,6 +257,57 @@ describe('NewTestPage', () => {
     consoleErrorSpy.mockRestore()
     vi.clearAllMocks()
     vi.useRealTimers()
+  })
+
+  it('edits and round-trips random delay bounds in the global run-default editor', async () => {
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const runtimeDefaultsToggle = container.querySelector('.new-test-runtime-defaults summary')
+    await act(async () => runtimeDefaultsToggle?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const pacingCard = Array.from(container.querySelectorAll('button.new-test-default-card'))
+      .find(button => button.textContent?.includes('Pacing'))
+    expect(pacingCard).toBeTruthy()
+    await act(async () => pacingCard?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    const modal = document.querySelector('.run-default-modal') as HTMLElement | null
+    expect(modal).toBeTruthy()
+    if (!modal) return
+    const pacing = findControlByLabel<HTMLSelectElement>(modal, 'Pacing', 'select')
+    expect(pacing).toBeTruthy()
+    if (!pacing) return
+    await act(async () => setSelectValue(pacing, 'random_delay'))
+
+    const minimum = findControlByLabel<HTMLInputElement>(modal, 'Minimum delay (seconds)', 'input')
+    const maximum = findControlByLabel<HTMLInputElement>(modal, 'Maximum delay (seconds)', 'input')
+    expect(minimum?.value).toBe('1')
+    expect(maximum?.value).toBe('1')
+    if (!minimum || !maximum) return
+    await act(async () => {
+      setInputValue(minimum, '0.25')
+      setInputValue(maximum, '0.75')
+    })
+    const save = Array.from(modal.querySelectorAll('button'))
+      .find(button => button.textContent === 'Save Run Override')
+    await act(async () => save?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    expect(pacingCard?.textContent).toContain('Random delay · 0.25–0.75 seconds')
+    await act(async () => pacingCard?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const reopened = document.querySelector('.run-default-modal') as HTMLElement | null
+    expect(reopened).toBeTruthy()
+    if (!reopened) return
+    expect(findControlByLabel<HTMLInputElement>(reopened, 'Minimum delay (seconds)', 'input')?.value).toBe('0.25')
+    expect(findControlByLabel<HTMLInputElement>(reopened, 'Maximum delay (seconds)', 'input')?.value).toBe('0.75')
   })
 
   it('links from the scenario selection section to the scenario builder', async () => {
@@ -954,12 +1035,12 @@ describe('NewTestPage', () => {
     expect(initiallyDisabledSaveButton?.disabled).toBe(false)
     expect(modal.querySelectorAll('.new-test-changed-pill').length).toBeGreaterThanOrEqual(4)
 
-    const pacingAmountInput = Array.from(modal.querySelectorAll('label')).find(label => label.textContent?.includes('Milliseconds'))?.querySelector('input') as HTMLInputElement | null
+    const pacingAmountInput = Array.from(modal.querySelectorAll('label')).find(label => label.textContent?.includes('Seconds'))?.querySelector('input') as HTMLInputElement | null
     expect(pacingAmountInput).toBeTruthy()
     if (!pacingAmountInput) return
 
     await act(async () => {
-      setInputValue(pacingAmountInput, '750')
+      setInputValue(pacingAmountInput, '0.75')
     })
 
     const saveButton = Array.from(modal.querySelectorAll('button')).find(button => button.textContent === 'Save For This Run')
@@ -973,7 +1054,7 @@ describe('NewTestPage', () => {
     expect(scriptGroupsTable).toBeTruthy()
     const scriptGroupsTableText = scriptGroupsTable?.textContent || ''
     expect(scriptGroupsTableText).toContain('4')
-    expect(scriptGroupsTableText).toContain('Fixed delay · 750ms')
+    expect(scriptGroupsTableText).toContain('Fixed delay · 0.75 seconds')
     expect(scriptGroupsTableText).toContain('Extended')
     expect(scriptGroupsTableText).not.toMatch(/\bdefault\b/i)
     expect(container.textContent).toContain('Run override')
@@ -1003,6 +1084,79 @@ describe('NewTestPage', () => {
       })],
     }))
     expect(apiMock.startTest).not.toHaveBeenCalled()
+  })
+
+  it('edits and round-trips random interval bounds in the per-script run editor', async () => {
+    apiMock.listScenarios.mockResolvedValue({
+      scenarios: [{
+        id: 'scenario-1',
+        name: 'Random pacing',
+        duration: '10m',
+        scenario_mode: 'vuser_driven',
+        scripts: [{
+          order: 1,
+          name: 'Checkout',
+          script_id: 'script-1',
+          script_name: 'Checkout Script',
+          protocol: 'http',
+          vusers: 10,
+        }],
+        script_count: 1,
+        created_at: '2026-05-12T20:00:00Z',
+        updated_at: '2026-05-12T20:00:00Z',
+        associated_releases: [],
+      }],
+    })
+
+    await act(async () => {
+      root.render(
+        <NewTestPage
+          activeApplication={{ id: 'app-1', name: 'ACC', created_at: '', updated_at: '' }}
+          activeRelease={{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }}
+          releases={[{ id: 'release-1', name: 'PI29', application_id: 'app-1', created_at: '', updated_at: '' }]}
+          onSelectTest={vi.fn()}
+          onCreateRelease={vi.fn().mockResolvedValue(null)}
+        />,
+      )
+    })
+    await flushPromises()
+
+    const scenarioRow = container.querySelector('.new-test-scenario-table-row')
+    await act(async () => scenarioRow?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const groupRow = Array.from(container.querySelectorAll('.new-test-script-row'))
+      .find(row => row.textContent?.includes('Checkout'))
+    await act(async () => groupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    const modal = document.querySelector('.run-group-modal') as HTMLElement | null
+    expect(modal).toBeTruthy()
+    if (!modal) return
+    const pacing = findControlByLabel<HTMLSelectElement>(modal, 'Pacing', 'select')
+    expect(pacing).toBeTruthy()
+    if (!pacing) return
+    await act(async () => setSelectValue(pacing, 'random_interval'))
+
+    const minimum = findControlByLabel<HTMLInputElement>(modal, 'Minimum interval (seconds)', 'input')
+    const maximum = findControlByLabel<HTMLInputElement>(modal, 'Maximum interval (seconds)', 'input')
+    expect(minimum?.value).toBe('1')
+    expect(maximum?.value).toBe('1')
+    if (!minimum || !maximum) return
+    await act(async () => {
+      setInputValue(minimum, '2.5')
+      setInputValue(maximum, '7.5')
+    })
+    const save = Array.from(modal.querySelectorAll('button'))
+      .find(button => button.textContent === 'Save For This Run')
+    await act(async () => save?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    expect(container.querySelector('.new-test-script-table')?.textContent)
+      .toContain('Random interval · 2.5–7.5 seconds')
+
+    await act(async () => groupRow?.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+    const reopened = document.querySelector('.run-group-modal') as HTMLElement | null
+    expect(reopened).toBeTruthy()
+    if (!reopened) return
+    expect(findControlByLabel<HTMLInputElement>(reopened, 'Minimum interval (seconds)', 'input')?.value).toBe('2.5')
+    expect(findControlByLabel<HTMLInputElement>(reopened, 'Maximum interval (seconds)', 'input')?.value).toBe('7.5')
   })
 
   it('keeps staged group VUsers immutable at the peak stage target', async () => {

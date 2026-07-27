@@ -31,6 +31,7 @@ import { buildLocalReplayPreflight } from './replayPreflightUtils'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { isValidSecretBindingName, refreshedSecretBindingRequirements, secretBindingReference } from './secretBindingUtils'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
+import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
 import './SampleScriptImport.css'
 
 type AuthType = 'none' | 'basic' | 'bearer'
@@ -1055,8 +1056,13 @@ export default function SampleScriptImport({ initialFiles, projectId, onImported
             </select>
           </label>
           <label className="sample-import-field">
-            <span>Pacing Delay (ms)</span>
-            <input value={options.pacing_delay_ms} onChange={e => updateOption('pacing_delay_ms', e.target.value)} inputMode="numeric" disabled={options.pacing_type !== 'fixed_delay'} />
+            <span>Pacing Delay (seconds)</span>
+            <SecondsFromMillisecondsInput
+              valueMs={options.pacing_delay_ms.trim() === '' ? undefined : Number(options.pacing_delay_ms)}
+              emptyWhenUndefined
+              onChangeMs={valueMs => updateOption('pacing_delay_ms', valueMs === undefined ? '' : String(valueMs))}
+              disabled={options.pacing_type !== 'fixed_delay'}
+            />
           </label>
 
           <label className="sample-import-field">

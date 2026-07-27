@@ -17,18 +17,51 @@ import (
 // is scaled/ramped down or the run is hard-stopped, instead of holding load for
 // the full sleep duration.
 func sleepCtx(ctx context.Context, d time.Duration) {
+	_, _ = sleepCtxElapsed(ctx, d)
+}
+
+// sleepCtxElapsed waits for d or context cancellation and reports both the
+// time actually spent waiting and whether the full delay completed. Callers
+// that exclude think time from response measurements must account the elapsed
+// value, not the requested delay, because cancellation can interrupt the wait.
+func sleepCtxElapsed(ctx context.Context, d time.Duration) (time.Duration, bool) {
 	if d <= 0 {
-		return
+		return 0, true
 	}
 	if ctx == nil {
 		time.Sleep(d)
-		return
+		return d, true
 	}
+	started := time.Now()
 	timer := time.NewTimer(d)
 	defer timer.Stop()
+	return waitForDelayOrCancellation(ctx, d, started, timer.C)
+}
+
+func waitForDelayOrCancellation(ctx context.Context, d time.Duration, started time.Time, timer <-chan time.Time) (time.Duration, bool) {
 	select {
 	case <-ctx.Done():
-	case <-timer.C:
+		elapsed := time.Since(started)
+		if elapsed > d {
+			elapsed = d
+		}
+		return elapsed, false
+	case <-timer:
+		// A suspended or heavily loaded process can resume after both the delay
+		// timer and an earlier context deadline became ready. select chooses
+		// randomly in that state, so accepting the timer unconditionally can
+		// report a canceled wait as complete and execute the next source action.
+		// Recheck cancellation after receiving the timer: once the caller's
+		// boundary is closed, failing closed is the only disposition that cannot
+		// run work after cancellation.
+		if ctx.Err() != nil {
+			elapsed := time.Since(started)
+			if elapsed > d {
+				elapsed = d
+			}
+			return elapsed, false
+		}
+		return d, true
 	}
 }
 
@@ -57,7 +90,7 @@ func computeThinkTime(cfg protocol.ThinkTimeConfig) time.Duration {
 	var ms float64
 
 	switch strings.ToLower(strings.TrimSpace(cfg.Type)) {
-	case "fixed":
+	case "fixed", "recorded":
 		ms = cfg.MeanMs
 
 	case "gaussian", "normal":
@@ -84,9 +117,15 @@ func computeThinkTime(cfg protocol.ThinkTimeConfig) time.Duration {
 
 	ms = math.Max(0, ms)
 
-	// Apply multiplier (1.0 = as recorded, 0.5 = half, 2.0 = double)
-	if cfg.Multiplier > 0 && cfg.Multiplier != 1.0 {
-		ms *= cfg.Multiplier
+	// Zero is the wire-compatible omitted/inherit sentinel. Treat it exactly as
+	// the documented default of 1; Ignore is the explicit zero-delay control.
+	multiplier := cfg.Multiplier
+	if multiplier <= 0 {
+		multiplier = 1
+	}
+	// Apply multiplier (1.0 = as recorded, 0.5 = half, 2.0 = double).
+	if multiplier != 1 {
+		ms *= multiplier
 	}
 
 	// Apply limit cap
@@ -95,7 +134,7 @@ func computeThinkTime(cfg protocol.ThinkTimeConfig) time.Duration {
 	}
 	ms = min(ms, float64(dsl.MaxConfiguredProtocolTimeoutMS))
 
-	return time.Duration(ms) * time.Millisecond
+	return time.Duration(ms * float64(time.Millisecond))
 }
 
 func boundedRuntimeDelayMilliseconds(value int) int {

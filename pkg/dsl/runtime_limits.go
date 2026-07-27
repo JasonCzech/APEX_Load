@@ -1,5 +1,7 @@
 package dsl
 
+import httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+
 // Runtime hard limits are enforced both by validation and by allocation hot
 // paths. They are deliberately far above normal authoring values while keeping
 // malformed scripts from turning integer fields into generator-sized
@@ -19,6 +21,7 @@ const (
 	// action has depth 1.
 	MaxScriptActionDepth    = 64
 	MaxActionExtractors     = 256
+	MaxActionAssertions     = httpprotocol.MaxActionAssertions
 	MaxRunIterations        = 1_000_000_000
 	MaxOpenWorkloadInFlight = 100_000
 	MaxPacingTPS            = 1_000_000

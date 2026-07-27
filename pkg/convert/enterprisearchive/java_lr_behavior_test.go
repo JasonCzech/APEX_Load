@@ -32,15 +32,72 @@ func TestJavaLRTransactionsFeedStats(t *testing.T) {
 	}
 }
 
-// TestJavaLRThinkTimeFeedsDistribution verifies lr.think_time feeds the generated
-// think-time distribution on the script config.
-func TestJavaLRThinkTimeFeedsDistribution(t *testing.T) {
-	result := convertJavaLRBody(t, `lr.think_time(3);`)
+// TestJavaLRThinkTimeIsPositionalFixedActionWait verifies a literal wait remains
+// at its source position instead of being collapsed into script-global timing.
+func TestJavaLRThinkTimeIsPositionalFixedActionWait(t *testing.T) {
+	result := convertJavaLRBody(t, `lr.output_message("before");
+    lr.think_time(3);
+    lr.output_message("after");`)
 	if result.Stats.ThinkTimes != 1 {
 		t.Fatalf("Stats.ThinkTimes = %d, want 1", result.Stats.ThinkTimes)
 	}
-	if result.Script.Config.ThinkTime.Type != "normal" || result.Script.Config.ThinkTime.MeanMs != 3000 {
-		t.Fatalf("think_time config = %#v, want normal mean 3000ms", result.Script.Config.ThinkTime)
+	if result.Script.Config.ThinkTime.Type != "" || result.Script.Config.ThinkTime.MeanMs != 0 {
+		t.Fatalf("global think_time config = %#v, want unchanged", result.Script.Config.ThinkTime)
+	}
+	if len(result.Script.Actions) != 3 {
+		t.Fatalf("actions = %#v, want before/wait/after", result.Script.Actions)
+	}
+	wait := result.Script.Actions[1]
+	if wait.Type != "source_runtime" || !wait.ThinkTimeAfter ||
+		wait.ThinkTime.Type != "fixed" || wait.ThinkTime.MeanMs != 3000 {
+		t.Fatalf("wait action = %#v, want positional fixed 3000ms wait", wait)
+	}
+	if result.Script.Actions[0].ThinkTimeAfter || result.Script.Actions[2].ThinkTimeAfter {
+		t.Fatalf("neighboring actions inherited the wait: %#v", result.Script.Actions)
+	}
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "lr_think_time", "actions[1].think_time", "converted")
+}
+
+func TestJavaLRThinkTimesRemainDistinctActionLocalWaits(t *testing.T) {
+	result := convertJavaLRBody(t, `lr.think_time(1.25);
+    lr.think_time(2.75);`)
+	if result.Stats.ThinkTimes != 2 {
+		t.Fatalf("Stats.ThinkTimes = %d, want 2", result.Stats.ThinkTimes)
+	}
+	if len(result.Script.Actions) != 2 {
+		t.Fatalf("actions = %#v, want two positional wait actions", result.Script.Actions)
+	}
+	for index, wantMs := range []float64{1250, 2750} {
+		wait := result.Script.Actions[index]
+		if !wait.ThinkTimeAfter || wait.ThinkTime.Type != "fixed" || wait.ThinkTime.MeanMs != wantMs {
+			t.Fatalf("actions[%d] = %#v, want fixed %.0fms wait", index, wait, wantMs)
+		}
+	}
+	if result.Script.Config.ThinkTime.Type != "" {
+		t.Fatalf("global think_time config = %#v, waits must not aggregate", result.Script.Config.ThinkTime)
+	}
+}
+
+func TestJavaLRDynamicThinkTimeUsesReviewRequiredZeroDelay(t *testing.T) {
+	result := convertJavaLRBody(t, `double delay = 3;
+    lr.think_time(delay);`)
+	wait, ok := javaActionByType(result.Script.Actions, "source_runtime")
+	if !ok {
+		t.Fatalf("expected preserved source_runtime marker, got %v", actionTypes(result.Script.Actions))
+	}
+	if wait.ThinkTimeAfter || wait.ThinkTime.Type != "" || wait.ThinkTime.MeanMs != 0 {
+		t.Fatalf("dynamic wait = %#v, want zero-delay fallback", wait)
+	}
+	if wait.Params["support_mode"] != string(SourceFunctionSupportReviewOnly) ||
+		wait.Metadata["support_mode"] != string(SourceFunctionSupportReviewOnly) {
+		t.Fatalf("dynamic wait support metadata = %#v / %#v, want review_only", wait.Params, wait.Metadata)
+	}
+	if result.Stats.ThinkTimes != 0 {
+		t.Fatalf("Stats.ThinkTimes = %d, dynamic wait must not count as exact", result.Stats.ThinkTimes)
+	}
+	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "lr_think_time", SourceFunctionSupportReviewOnly)
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "zero delay") {
+		t.Fatalf("warnings = %#v, want zero-delay review evidence", result.Warnings)
 	}
 }
 

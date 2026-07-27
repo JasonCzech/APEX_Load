@@ -769,7 +769,7 @@ func TestProjectSecretBatchProbesHonorOneSharedDeadline(t *testing.T) {
 		started := time.Now()
 		_, _, _, _, err := server.bindOrMigrateBrunoImportSecrets(request, []brunoconvert.SecretRequirement{{
 			ID: "requirement", SuggestedName: "TOKEN",
-		}}, map[string]string{"requirement": "TOKEN"}, nil, projectID, "admin", false)
+		}}, map[string]string{"requirement": "TOKEN"}, nil, projectID, "admin", false, brunoSecretMigrationWindow{}, nil)
 		if err == nil || time.Since(started) > time.Second || blocking.getCalls.Load() != 1 {
 			t.Fatalf("Bruno preflight error = %v elapsed=%s GET calls=%d", err, time.Since(started), blocking.getCalls.Load())
 		}
@@ -891,6 +891,13 @@ func TestProjectSecretDiscoveryRotatesBoundedBatchesUntilEveryReferencedNameIsCo
 		ID: "bounded-discovery-script", Name: "Bounded discovery", Version: "1", Protocol: "http", ProjectID: projectID,
 		Config:  dsl.ScriptConfig{BaseURL: "https://example.test"},
 		Actions: []dsl.Action{{Name: "Call", Type: "request", Target: target.String()}},
+	}
+	projected := maskScriptSecrets(script)
+	if projected == nil || len(projected.Actions) != 1 {
+		t.Fatalf("projected script = %#v, want one action", projected)
+	}
+	if got := strings.Count(projected.Actions[0].Target, "{{secret."); got != referenceCount {
+		t.Fatalf("projected portable secret references = %d, want %d (redactions=%d)", got, referenceCount, strings.Count(projected.Actions[0].Target, maskedScriptSecret))
 	}
 	if _, err := server.runner.StoreScriptDurable(script); err != nil {
 		t.Fatal(err)

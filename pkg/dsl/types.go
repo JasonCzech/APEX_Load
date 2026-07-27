@@ -1,6 +1,7 @@
 package dsl
 
 import (
+	"sort"
 	"strings"
 	"time"
 )
@@ -583,8 +584,8 @@ type LogConfig struct {
 // the configuration surface exposed by LoadRunner VuGen.
 type HTTPConfig struct {
 	// Connection
-	Version         string `json:"version,omitempty"`            // "1.0", "1.1", "2" (default: auto-negotiate)
-	MaxConnsPerHost int    `json:"max_conns_per_host,omitempty"` // default: 100
+	Version         string `json:"version,omitempty" jsonschema:"enum=,enum=1.1,enum=2"` // "1.1" exact, "2" required/no fallback; empty auto-negotiates HTTP/1.1 or HTTP/2
+	MaxConnsPerHost int    `json:"max_conns_per_host,omitempty"`                         // default: 100
 	MaxIdleConns    int    `json:"max_idle_conns,omitempty"`
 	KeepAlive       *bool  `json:"keep_alive,omitempty"` // default: true
 
@@ -663,9 +664,9 @@ type ThinkTimeConfig struct {
 	StdMs      float64 `json:"std_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
 	MinMs      float64 `json:"min_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
 	MaxMs      float64 `json:"max_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`
-	Multiplier float64 `json:"multiplier,omitempty" jsonschema:"minimum=0,maximum=100"`   // 1.0 = as recorded, 0.5 = half, 2.0 = double
-	LimitMs    float64 `json:"limit_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"` // max think time cap (0 = no limit)
-	Ignore     bool    `json:"ignore,omitempty"`                                          // skip all think times
+	Multiplier float64 `json:"multiplier,omitempty" jsonschema:"exclusiveMinimum=0,maximum=100"` // omitted/0 in Go inherits 1; authored JSON must be >0
+	LimitMs    float64 `json:"limit_ms,omitempty" jsonschema:"minimum=0,maximum=3600000"`        // max think time cap (0 = no limit)
+	Ignore     bool    `json:"ignore,omitempty"`                                                 // skip all think times
 }
 
 type PacingConfig struct {
@@ -723,9 +724,12 @@ type Parameter struct {
 	Seed              *int64   `json:"seed,omitempty"`
 }
 
-// HeaderEntry preserves a single header occurrence. The legacy Headers map
-// remains a single-value summary; HeaderList carries duplicate/order-sensitive
-// headers for wire-faithful HTTP-style replay.
+// HeaderEntry preserves one logical authored header occurrence in the DSL.
+// The legacy Headers map remains a single-value compatibility summary.
+// HeaderList retains authored order, casing, and duplicates, but an HTTP
+// transport may normalize casing/order or combine protocol-compatible values.
+// Imports whose special headers would lose semantics must omit those unsafe
+// occurrences and retain a durable review gate with value-free fidelity evidence.
 type HeaderEntry struct {
 	Name  string `json:"name"`
 	Value string `json:"value"`
@@ -737,9 +741,21 @@ func HeaderListFromMap(headers map[string]string) HeaderList {
 	if len(headers) == 0 {
 		return nil
 	}
-	list := make(HeaderList, 0, len(headers))
-	for name, value := range headers {
-		list = append(list, HeaderEntry{Name: name, Value: value})
+	names := make([]string, 0, len(headers))
+	for name := range headers {
+		names = append(names, name)
+	}
+	sort.SliceStable(names, func(i, j int) bool {
+		left := strings.ToLower(strings.TrimSpace(names[i]))
+		right := strings.ToLower(strings.TrimSpace(names[j]))
+		if left == right {
+			return names[i] < names[j]
+		}
+		return left < right
+	})
+	list := make(HeaderList, 0, len(names))
+	for _, name := range names {
+		list = append(list, HeaderEntry{Name: name, Value: headers[name]})
 	}
 	return list
 }
@@ -749,11 +765,18 @@ func (headers HeaderList) ToMap() map[string]string {
 		return nil
 	}
 	out := make(map[string]string, len(headers))
+	spelling := make(map[string]string, len(headers))
 	for _, header := range headers {
-		if strings.TrimSpace(header.Name) == "" {
+		name := strings.TrimSpace(header.Name)
+		if name == "" {
 			continue
 		}
-		out[header.Name] = header.Value
+		identity := strings.ToLower(name)
+		if previous, exists := spelling[identity]; exists && previous != name {
+			delete(out, previous)
+		}
+		spelling[identity] = name
+		out[name] = header.Value
 	}
 	if len(out) == 0 {
 		return nil

@@ -33,14 +33,110 @@ var (
 )
 
 func Inspect(input Input) (*Result, error) {
+	outputMode := strings.ToLower(strings.TrimSpace(input.Options.OutputMode))
+	if outputMode == "" {
+		outputMode = OutputModeCanonical
+	}
+	switch outputMode {
+	case OutputModeCanonical, OutputModeNativeRequests:
+	default:
+		return nil, fmt.Errorf("unsupported Bruno output_mode %q", input.Options.OutputMode)
+	}
+	if outputMode == OutputModeNativeRequests {
+		if err := validateNativeInspectInput(input); err != nil {
+			return nil, err
+		}
+	}
 	rawFiles, original, err := loadSourceFiles(input)
 	if err != nil {
 		return nil, err
 	}
+	if outputMode == OutputModeNativeRequests {
+		// Validate the authored scalar types before sanitization replaces
+		// credential values with string templates. Otherwise a structured JSON
+		// number or boolean could be silently converted into a JSON string.
+		if err := validateNativeYAMLFiles(rawFiles); err != nil {
+			return nil, err
+		}
+	}
 	root := detectRoot(rawFiles, input.RootPath)
-	sanitizedFiles, requirements, findings, err := sanitizeFiles(rawFiles)
+	if outputMode == OutputModeNativeRequests {
+		if err := validateNativeEffectiveCredentialShapes(rawFiles, root); err != nil {
+			return nil, err
+		}
+	}
+	sanitizedFiles, requirements, findings, err := sanitizeFiles(
+		rawFiles,
+		outputMode == OutputModeNativeRequests,
+	)
 	if err != nil {
 		return nil, err
+	}
+	if outputMode == OutputModeNativeRequests {
+		var headerRequirements []SecretRequirement
+		var sanitizedHeaderValues int
+		sanitizedFiles, headerRequirements, sanitizedHeaderValues, err = sanitizeNativePolicyHeaders(sanitizedFiles)
+		if err != nil {
+			return nil, err
+		}
+		if sanitizedHeaderValues > 0 {
+			requirements = appendUniqueSecretRequirements(requirements, headerRequirements)
+			findings = append(findings, SecurityFinding{
+				Severity: "warning",
+				Code:     "native_header_credentials_sanitized",
+				Summary:  fmt.Sprintf("%d additional header credential value(s) were removed from the native executable bundle and require governed secret bindings.", sanitizedHeaderValues),
+			})
+		}
+		var jsonRequirements []SecretRequirement
+		var sanitizedJSONValues int
+		sanitizedFiles, jsonRequirements, sanitizedJSONValues, err = sanitizeNativeJSONBodies(sanitizedFiles)
+		if err != nil {
+			return nil, err
+		}
+		if sanitizedJSONValues > 0 {
+			requirements = appendUniqueSecretRequirements(requirements, jsonRequirements)
+			findings = append(findings, SecurityFinding{
+				Severity: "warning",
+				Code:     "native_json_credentials_sanitized",
+				Summary:  fmt.Sprintf("%d JSON credential value(s) were removed from the native executable bundle and require governed secret bindings.", sanitizedJSONValues),
+			})
+		}
+		var xmlRequirements []SecretRequirement
+		var sanitizedXMLValues int
+		var reviewedXMLValues int
+		sanitizedFiles, xmlRequirements, sanitizedXMLValues, reviewedXMLValues, err = sanitizeNativeXMLBodies(sanitizedFiles)
+		if err != nil {
+			return nil, err
+		}
+		if sanitizedXMLValues > 0 {
+			requirements = appendUniqueSecretRequirements(requirements, xmlRequirements)
+			findings = append(findings, SecurityFinding{
+				Severity: "warning",
+				Code:     "native_xml_credentials_sanitized",
+				Summary:  fmt.Sprintf("%d XML credential value(s) were removed from the native executable bundle and require governed secret bindings.", sanitizedXMLValues),
+			})
+		}
+		if reviewedXMLValues > 0 {
+			findings = append(findings, SecurityFinding{
+				Severity: "warning",
+				Code:     "native_xml_unsupported_markup_sanitized",
+				Summary:  fmt.Sprintf("%d XML body value(s) used credential-bearing markup that was redacted and requires request review.", reviewedXMLValues),
+			})
+		}
+		var urlRequirements []SecretRequirement
+		var sanitizedURLValues int
+		sanitizedFiles, urlRequirements, sanitizedURLValues, err = sanitizeNativeURLCredentials(sanitizedFiles)
+		if err != nil {
+			return nil, err
+		}
+		if sanitizedURLValues > 0 {
+			requirements = appendUniqueSecretRequirements(requirements, urlRequirements)
+			findings = append(findings, SecurityFinding{
+				Severity: "warning",
+				Code:     "native_url_credentials_sanitized",
+				Summary:  fmt.Sprintf("%d URL credential value(s) were removed from the native executable bundle and require governed secret bindings.", sanitizedURLValues),
+			})
+		}
 	}
 	rawArchive, err := deterministicTAR(rawFiles)
 	if err != nil {
@@ -57,6 +153,49 @@ func Inspect(input Input) (*Result, error) {
 	collection, environments, capabilities, missing, sourceFormat, err := inspectCollection(sanitizedFiles, root)
 	if err != nil {
 		return nil, err
+	}
+	nativeExecutionFiles := sanitizedFiles
+	if outputMode == OutputModeNativeRequests {
+		_, projectedRequirements, _, _, projectionErr := nativeRequestScripts(
+			input,
+			nativeExecutionFiles,
+			root,
+			collection,
+			manifest,
+			requirements,
+			findings,
+		)
+		if projectionErr != nil {
+			return nil, projectionErr
+		}
+		projectedRequirements = nativeProjectedVariableRequirements(projectedRequirements)
+		if len(projectedRequirements) > 0 {
+			sanitizedFiles, _, err = applyNativeProjectedVariableSecrets(sanitizedFiles, projectedRequirements)
+			if err != nil {
+				return nil, err
+			}
+			requirements = appendUniqueSecretRequirements(requirements, projectedRequirements)
+			findings = append(findings, SecurityFinding{
+				Severity: "warning",
+				Code:     "native_credential_variables_sanitized",
+				Summary:  fmt.Sprintf("%d credential variable definition(s) were removed from the native executable bundle and require governed secret bindings.", len(projectedRequirements)),
+			})
+			sanitizedArchive, err = deterministicTAR(sanitizedFiles)
+			if err != nil {
+				return nil, fmt.Errorf("rebuild sanitized Bruno bundle: %w", err)
+			}
+			manifest, err = buildManifest(sanitizedFiles, rawArchive, sanitizedArchive)
+			if err != nil {
+				return nil, err
+			}
+			collection, environments, capabilities, missing, sourceFormat, err = inspectCollection(sanitizedFiles, root)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if err := validateNoUnprojectedNativeCredentialTemplates(sanitizedFiles); err != nil {
+			return nil, err
+		}
 	}
 	if strings.TrimSpace(input.Name) != "" {
 		collection.Name = strings.TrimSpace(input.Name)
@@ -76,14 +215,32 @@ func Inspect(input Input) (*Result, error) {
 		})
 	}
 	capabilities.RequiredSandbox = sandboxRequirement(capabilities, sandbox)
-	script := canonicalScript(input, collection, manifest, sourceFormat, root, sandbox, missing, requirements)
-	if issues := dsl.ValidateScriptIssues(script); len(issues) > 0 {
-		return nil, fmt.Errorf("invalid Bruno execution selection: %s", strings.Join(issues, "; "))
+	var script *dsl.Script
+	var nativeCandidates []NativeScriptCandidate
+	if outputMode == OutputModeCanonical {
+		script = canonicalScript(input, collection, manifest, sourceFormat, root, sandbox, missing, requirements)
+		if issues := dsl.ValidateScriptIssues(script); len(issues) > 0 {
+			return nil, fmt.Errorf("invalid Bruno execution selection: %s", strings.Join(issues, "; "))
+		}
+	} else {
+		nativeCandidates, requirements, missing, findings, err = nativeRequestScripts(
+			input,
+			nativeExecutionFiles,
+			root,
+			collection,
+			manifest,
+			requirements,
+			findings,
+		)
+		if err != nil {
+			return nil, err
+		}
 	}
 	executable, apps := countItems(collection.Items)
 	projection := analyzeProjection(collection, capabilities)
 	result := &Result{
 		SchemaVersion:      ImporterVersion,
+		OutputMode:         outputMode,
 		SourceFormat:       sourceFormat,
 		RootPath:           root,
 		Manifest:           manifest,
@@ -108,12 +265,56 @@ func Inspect(input Input) (*Result, error) {
 		NativeProjection: projection,
 		MissingVariables: missing,
 		Script:           script,
+		Scripts:          nativeCandidates,
 		RawArchive:       rawArchive,
 		SanitizedArchive: sanitizedArchive,
 		OriginalUpload:   original,
 		InspectedAt:      time.Now().UTC(),
 	}
 	return result, nil
+}
+
+func appendUniqueSecretRequirements(existing, additional []SecretRequirement) []SecretRequirement {
+	out := append([]SecretRequirement(nil), existing...)
+	positions := make(map[string]int, len(existing)+len(additional))
+	for index, requirement := range existing {
+		positions[requirement.ID] = index
+	}
+	for _, requirement := range additional {
+		if index, duplicate := positions[requirement.ID]; duplicate {
+			out[index] = mergeNativeSecretRequirements(out[index], requirement)
+			continue
+		}
+		positions[requirement.ID] = len(out)
+		out = append(out, requirement)
+	}
+	return out
+}
+
+func validateNativeInspectInput(input Input) error {
+	if strings.TrimSpace(input.Name) != "" {
+		return errors.New("Bruno native_requests does not accept a singular script name override")
+	}
+	if strings.TrimSpace(input.Sandbox) != "" {
+		return errors.New("Bruno native_requests does not accept a JavaScript sandbox selection")
+	}
+	options := input.Options
+	if strings.TrimSpace(options.DefaultEnvironment) != "" ||
+		strings.TrimSpace(options.DefaultGlobalEnvironment) != "" ||
+		strings.TrimSpace(options.Selection) != "" ||
+		len(options.Paths) > 0 ||
+		len(options.IncludeTags) > 0 ||
+		len(options.ExcludeTags) > 0 ||
+		options.Recursive ||
+		strings.TrimSpace(options.Execution) != "" ||
+		options.Bail ||
+		options.TestsOnly ||
+		options.DelayMS != 0 ||
+		options.StreamTimeoutMS != 0 ||
+		options.PersistSession {
+		return errors.New("Bruno native_requests does not accept canonical run-selection or tests-only options")
+	}
+	return nil
 }
 
 func inspectCollection(files []sourceFile, root string) (Collection, []Environment, Capabilities, []string, string, error) {
@@ -385,7 +586,10 @@ func structuredRuntimeFlags(value map[string]any) (bool, bool) {
 	return hasScripts, hasTests
 }
 
-func sanitizeFiles(files []sourceFile) ([]sourceFile, []SecretRequirement, []SecurityFinding, error) {
+func sanitizeFiles(
+	files []sourceFile,
+	preserveNativeCredentialTemplates bool,
+) ([]sourceFile, []SecretRequirement, []SecurityFinding, error) {
 	out := make([]sourceFile, 0, len(files))
 	requirements := make([]SecretRequirement, 0)
 	findings := make([]SecurityFinding, 0)
@@ -406,7 +610,13 @@ func sanitizeFiles(files []sourceFile) ([]sourceFile, []SecretRequirement, []Sec
 		var sanitizeErr error
 		switch {
 		case (ext == ".yml" || ext == ".yaml" || ext == ".json") && roleSupportsStructuredSanitization(role):
-			content, current, sanitizeErr = sanitizeStructuredFile(file.Path, file.Data, ext, suggestionNames)
+			content, current, sanitizeErr = sanitizeStructuredFile(
+				file.Path,
+				file.Data,
+				ext,
+				suggestionNames,
+				preserveNativeCredentialTemplates,
+			)
 		case ext == ".env" || path.Base(file.Path) == ".env":
 			content, current = sanitizeDotEnv(file.Path, file.Data, suggestionNames)
 		case ext == ".bru":
@@ -421,6 +631,14 @@ func sanitizeFiles(files []sourceFile) ([]sourceFile, []SecretRequirement, []Sec
 				return nil, nil, nil, fmt.Errorf("canonicalize secret reference in %q: %w", file.Path, sanitizeErr)
 			}
 		}
+		var nativeAliasGroups map[string][]string
+		if preserveNativeCredentialTemplates &&
+			(ext == ".yml" || ext == ".yaml") {
+			nativeAliasGroups, sanitizeErr = nativeYAMLAliasGroups(file.Data)
+			if sanitizeErr != nil {
+				return nil, nil, nil, fmt.Errorf("index YAML aliases in %q: %w", file.Path, sanitizeErr)
+			}
+		}
 		for _, requirement := range current {
 			if _, exists := seenRequirement[requirement.ID]; exists {
 				continue
@@ -428,7 +646,12 @@ func sanitizeFiles(files []sourceFile) ([]sourceFile, []SecretRequirement, []Sec
 			seenRequirement[requirement.ID] = struct{}{}
 			requirements = append(requirements, requirement)
 		}
-		out = append(out, sourceFile{Path: file.Path, Data: content, Mode: file.Mode})
+		out = append(out, sourceFile{
+			Path:              file.Path,
+			Data:              content,
+			Mode:              file.Mode,
+			nativeAliasGroups: nativeAliasGroups,
+		})
 	}
 	sanitizedValueCount := len(requirements)
 	for _, reference := range existingReferences {
@@ -575,9 +798,15 @@ func roleSupportsStructuredSanitization(role string) bool {
 	}
 }
 
-func sanitizeStructuredFile(filename string, data []byte, ext string, suggestionNames *secretSuggestionRegistry) ([]byte, []SecretRequirement, error) {
+func sanitizeStructuredFile(
+	filename string,
+	data []byte,
+	ext string,
+	suggestionNames *secretSuggestionRegistry,
+	preserveNativeCredentialTemplates bool,
+) ([]byte, []SecretRequirement, error) {
 	if ext == ".json" {
-		return sanitizeJSONFile(filename, data, suggestionNames)
+		return sanitizeJSONFile(filename, data, suggestionNames, preserveNativeCredentialTemplates)
 	}
 	role := classifyFileRole(filename, data)
 	var node yaml.Node
@@ -628,13 +857,40 @@ func sanitizeStructuredFile(filename string, data []byte, ext string, suggestion
 				if strings.EqualFold(key, "value") && isStructuredCredentialName(namedCredential, context, role) {
 					secretKey = namedCredential
 				}
-				if isSecretKey(secretKey, context, role) {
+				secretField := isSecretKey(secretKey, context, role) ||
+					(nativeJSONCredentialContainerKey(key) &&
+						isStructuredRequestBodyContext(context, role))
+				if strings.EqualFold(key, "value") &&
+					nativeCredentialContainerContext(context) {
+					secretField = true
+				}
+				if secretField {
+					if nativeJSONCredentialContainerKey(key) {
+						resolvedNode, resolveErr := resolveYAMLAliasNode(valueNode, maxAliasDepth)
+						if resolveErr != nil {
+							return fmt.Errorf("credential field %q: %w", strings.Join(nextContext, "."), resolveErr)
+						}
+						if resolvedNode.Kind == yaml.MappingNode ||
+							resolvedNode.Kind == yaml.SequenceNode {
+							if err := walk(valueNode, nextContext, aliasDepth, aliasStack); err != nil {
+								return err
+							}
+							continue
+						}
+					}
 					scalarNode, resolveErr := resolveYAMLScalarNode(valueNode, maxAliasDepth)
 					if resolveErr != nil {
 						return fmt.Errorf("credential field %q: %w", strings.Join(nextContext, "."), resolveErr)
 					}
-					if scalarNode != nil && shouldSanitizeValue(scalarNode.Value) &&
-						!isGovernedSecretHeaderValue(secretKey, scalarNode.Value, context, role) {
+					scalarValue, stringWireValue, decodeErr := resolvedYAMLStringScalar(scalarNode)
+					if decodeErr != nil {
+						return fmt.Errorf("credential field %q: %w", strings.Join(nextContext, "."), decodeErr)
+					}
+					if stringWireValue &&
+						shouldSanitizeCredentialValue(scalarValue) &&
+						!isGovernedSecretHeaderValue(secretKey, scalarValue, context, role) &&
+						!(preserveNativeCredentialTemplates &&
+							isDeferredNativeCredentialValue(secretKey, scalarValue, context, role)) {
 						keyPath := strings.Join(nextContext, ".")
 						identityOccurrences[keyPath]++
 						requirement := newSecretRequirement(
@@ -643,7 +899,7 @@ func sanitizeStructuredFile(filename string, data []byte, ext string, suggestion
 							fmt.Sprintf("%s#%d", keyPath, identityOccurrences[keyPath]),
 							keyPath,
 							structuredSecretSuggestionKey(secretKey, context, role),
-							scalarNode.Value,
+							scalarValue,
 						)
 						scalarNode.Value = requirement.Replacement
 						scalarNode.Tag = "!!str"
@@ -694,6 +950,17 @@ func sanitizeStructuredFile(filename string, data []byte, ext string, suggestion
 // its definition as well as every alias use. Complex aliases at a scalar
 // credential position are rejected instead of being retained ambiguously.
 func resolveYAMLScalarNode(node *yaml.Node, maxDepth int) (*yaml.Node, error) {
+	node, err := resolveYAMLAliasNode(node, maxDepth)
+	if err != nil {
+		return nil, err
+	}
+	if node.Kind != yaml.ScalarNode {
+		return nil, errors.New("YAML credential alias does not resolve to a scalar")
+	}
+	return node, nil
+}
+
+func resolveYAMLAliasNode(node *yaml.Node, maxDepth int) (*yaml.Node, error) {
 	seen := make(map[*yaml.Node]struct{})
 	for depth := 0; node != nil && node.Kind == yaml.AliasNode; depth++ {
 		if depth >= maxDepth {
@@ -711,24 +978,42 @@ func resolveYAMLScalarNode(node *yaml.Node, maxDepth int) (*yaml.Node, error) {
 	if node == nil {
 		return nil, errors.New("YAML credential value is empty")
 	}
-	if node.Kind != yaml.ScalarNode {
-		return nil, errors.New("YAML credential alias does not resolve to a scalar")
-	}
 	return node, nil
 }
 
-func sanitizeJSONFile(filename string, data []byte, suggestionNames *secretSuggestionRegistry) ([]byte, []SecretRequirement, error) {
+func resolvedYAMLStringScalar(node *yaml.Node) (string, bool, error) {
+	if node == nil || node.Kind != yaml.ScalarNode {
+		return "", false, nil
+	}
+	var resolved any
+	if err := node.Decode(&resolved); err != nil {
+		return "", false, err
+	}
+	value, ok := resolved.(string)
+	return value, ok, nil
+}
+
+func sanitizeJSONFile(
+	filename string,
+	data []byte,
+	suggestionNames *secretSuggestionRegistry,
+	preserveNativeCredentialTemplates bool,
+) ([]byte, []SecretRequirement, error) {
 	var value any
 	if err := json.Unmarshal(data, &value); err != nil {
 		return nil, nil, err
 	}
 	role := classifyFileRole(filename, data)
 	var requirements []SecretRequirement
+	var walkErr error
 	var walk func(any, []string)
 	walk = func(current any, context []string) {
+		if walkErr != nil {
+			return
+		}
 		switch typed := current.(type) {
 		case map[string]any:
-			namedCredential, _ := typed["name"].(string)
+			namedCredential := structuredNamedCredential(typed)
 			keys := make([]string, 0, len(typed))
 			for key := range typed {
 				keys = append(keys, key)
@@ -741,8 +1026,31 @@ func sanitizeJSONFile(filename string, data []byte, suggestionNames *secretSugge
 				if strings.EqualFold(key, "value") && isStructuredCredentialName(namedCredential, context, role) {
 					secretKey = namedCredential
 				}
-				if scalar, ok := structuredScalarString(child); ok && isSecretKey(secretKey, context, role) &&
-					shouldSanitizeValue(scalar) && !isGovernedSecretHeaderValue(secretKey, scalar, context, role) {
+				secretField := isSecretKey(secretKey, context, role) ||
+					(nativeJSONCredentialContainerKey(key) &&
+						isStructuredRequestBodyContext(context, role))
+				if strings.EqualFold(key, "value") &&
+					nativeCredentialContainerContext(context) {
+					secretField = true
+				}
+				if secretField && preserveNativeCredentialTemplates {
+					switch child.(type) {
+					case map[string]any, []any:
+						if nativeJSONCredentialContainerKey(key) {
+							walk(child, nextContext)
+							continue
+						}
+						walkErr = fmt.Errorf(
+							"composite JSON credential field %q cannot be governed without changing its wire shape",
+							strings.Join(nextContext, "."),
+						)
+						return
+					}
+				}
+				if scalar, ok := structuredScalarString(child); ok && secretField &&
+					shouldSanitizeCredentialValue(scalar) && !isGovernedSecretHeaderValue(secretKey, scalar, context, role) &&
+					!(preserveNativeCredentialTemplates &&
+						isDeferredNativeCredentialValue(secretKey, scalar, context, role)) {
 					keyPath := strings.Join(nextContext, ".")
 					requirement := newSecretRequirement(
 						suggestionNames,
@@ -765,6 +1073,9 @@ func sanitizeJSONFile(filename string, data []byte, suggestionNames *secretSugge
 		}
 	}
 	walk(value, nil)
+	if walkErr != nil {
+		return nil, nil, walkErr
+	}
 	if len(requirements) == 0 {
 		return append([]byte(nil), data...), nil, nil
 	}
@@ -781,6 +1092,8 @@ func structuredScalarString(value any) (string, bool) {
 		return typed, true
 	case float64:
 		return strconv.FormatFloat(typed, 'g', -1, 64), true
+	case json.Number:
+		return typed.String(), true
 	case bool:
 		return strconv.FormatBool(typed), true
 	default:
@@ -832,7 +1145,7 @@ func sanitizeBRU(filename string, data []byte, suggestionNames *secretSuggestion
 			}
 			headerName := strings.Trim(strings.TrimSpace(match[3]), `"'`)
 			value := strings.TrimSpace(strings.Trim(match[5], `"'`))
-			if !isStructuredSensitiveHeader(headerName) || !shouldSanitizeValue(value) ||
+			if !isStructuredSensitiveHeader(headerName) || !shouldSanitizeCredentialValue(value) ||
 				isGovernedSecretHeaderValue(headerName, value, []string{"headers"}, "request") {
 				continue
 			}
@@ -852,7 +1165,7 @@ func sanitizeBRU(filename string, data []byte, suggestionNames *secretSuggestion
 	})
 	content = bruSecretLinePattern.ReplaceAllStringFunc(content, func(line string) string {
 		match := bruSecretLinePattern.FindStringSubmatch(line)
-		if len(match) < 4 || !shouldSanitizeValue(strings.Trim(match[3], `"'`)) {
+		if len(match) < 4 || !shouldSanitizeCredentialValue(strings.Trim(match[3], `"'`)) {
 			return line
 		}
 		occurrence++
@@ -987,7 +1300,9 @@ func secretName(filename, key string) string {
 
 func isSecretKey(key string, context []string, role string) bool {
 	normalized := strings.ToLower(strings.NewReplacer("-", "", "_", "", ".", "").Replace(key))
-	credentialContext := role == "environment" || isStructuredRequestBodyContext(context, role)
+	credentialContext := role == "environment" ||
+		isStructuredRequestBodyContext(context, role) ||
+		isStructuredVariableContext(context, role)
 	if isStructuredHeaderContext(context, role) && isStructuredSensitiveHeader(key) {
 		return true
 	}
@@ -1039,7 +1354,8 @@ func isStructuredSensitiveHeader(name string) bool {
 }
 
 func isGovernedSecretHeaderValue(name, value string, context []string, role string) bool {
-	if !isStructuredHeaderContext(context, role) || !isStructuredSensitiveHeader(name) {
+	if !isStructuredHeaderContext(context, role) ||
+		(!isStructuredSensitiveHeader(name) && !nativeSensitiveHeaderName(name)) {
 		return false
 	}
 	value = strings.TrimSpace(strings.Trim(strings.TrimSpace(value), `"'`))
@@ -1076,6 +1392,87 @@ func isGovernedSecretHeaderValue(name, value string, context []string, role stri
 	}
 }
 
+// isDeferredNativeCredentialHeaderValue keeps every template-bearing sensitive
+// header out of the generic source sanitizer. Native conversion can then
+// resolve and scrub its dependencies before deciding whether protocol syntax
+// may remain outside the governed secret.
+func isDeferredNativeCredentialHeaderValue(name, value string, context []string, role string) bool {
+	if !isStructuredHeaderContext(context, role) ||
+		(!isStructuredSensitiveHeader(name) && !nativeSensitiveHeaderName(name)) {
+		return false
+	}
+	return brunoTemplatePattern.MatchString(value)
+}
+
+func isDeferredNativeCredentialValue(name, value string, context []string, role string) bool {
+	if !brunoTemplatePattern.MatchString(value) {
+		return false
+	}
+	if isDeferredNativeCredentialHeaderValue(name, value, context, role) {
+		return true
+	}
+	return isSecretKey(name, context, role)
+}
+
+// isNativeCredentialHeaderSyntaxTemplate recognizes the narrow forms whose
+// non-template bytes are protocol syntax rather than credential material.
+func isNativeCredentialHeaderSyntaxTemplate(name, value string, context []string, role string) bool {
+	if !isStructuredHeaderContext(context, role) ||
+		(!isStructuredSensitiveHeader(name) && !nativeSensitiveHeaderName(name)) {
+		return false
+	}
+	value = strings.TrimSpace(strings.Trim(strings.TrimSpace(value), `"'`))
+	normalized := strings.ToLower(strings.NewReplacer("-", "", "_", "", ".", "").Replace(strings.TrimSpace(name)))
+	switch normalized {
+	case "authorization", "proxyauthorization":
+		fields := strings.Fields(value)
+		if len(fields) != 2 {
+			return false
+		}
+		switch strings.ToLower(fields[0]) {
+		case "bearer", "basic", "token", "digest":
+			return isExactOrdinaryBrunoVariableReference(fields[1])
+		default:
+			return false
+		}
+	case "cookie", "setcookie":
+		parts := strings.Split(value, ";")
+		if len(parts) == 0 {
+			return false
+		}
+		for _, part := range parts {
+			pair := strings.SplitN(strings.TrimSpace(part), "=", 2)
+			if len(pair) != 2 || strings.TrimSpace(pair[0]) == "" ||
+				!isExactOrdinaryBrunoVariableReference(pair[1]) {
+				return false
+			}
+		}
+		return true
+	default:
+		return false
+	}
+}
+
+func isExactOrdinaryBrunoVariableReference(value string) bool {
+	value = strings.TrimSpace(strings.Trim(strings.TrimSpace(value), `"'`))
+	match := brunoTemplatePattern.FindStringSubmatch(value)
+	if len(match) < 2 || match[0] != value {
+		return false
+	}
+	expression := strings.TrimSpace(match[1])
+	if expression == "" || strings.Contains(expression, "(") ||
+		!nativeTemplateNamePattern.MatchString(expression) {
+		return false
+	}
+	lower := strings.ToLower(expression)
+	for _, prefix := range []string{"env.", "data.", "var.", "param.", "secret.", "fn.", "fake.", "file."} {
+		if strings.HasPrefix(lower, prefix) {
+			return false
+		}
+	}
+	return true
+}
+
 func isExactGovernedSecretReference(value string) bool {
 	value = strings.TrimSpace(strings.Trim(strings.TrimSpace(value), `"'`))
 	match := brunoTemplatePattern.FindStringSubmatch(value)
@@ -1097,7 +1494,7 @@ func structuredSecretSuggestionKey(key string, context []string, role string) st
 }
 
 func isStructuredHeaderContext(context []string, role string) bool {
-	if role != "request" {
+	if role != "request" && role != "folder" && role != "collection" {
 		return false
 	}
 	for _, parent := range context {
@@ -1121,6 +1518,19 @@ func isStructuredRequestBodyContext(context []string, role string) bool {
 	return false
 }
 
+func isStructuredVariableContext(context []string, role string) bool {
+	if role != "request" && role != "folder" && role != "collection" {
+		return false
+	}
+	for _, parent := range context {
+		switch strings.ToLower(strings.NewReplacer("-", "", "_", "", ".", "").Replace(parent)) {
+		case "var", "vars", "variable", "variables":
+			return true
+		}
+	}
+	return false
+}
+
 func shouldSanitizeValue(value string) bool {
 	value = strings.TrimSpace(value)
 	if value == "" || isExactBrunoTemplateValue(value) {
@@ -1128,6 +1538,36 @@ func shouldSanitizeValue(value string) bool {
 	}
 	lower := strings.ToLower(value)
 	return lower != "null" && lower != "none" && lower != "inherit"
+}
+
+// shouldSanitizeCredentialValue differs from the broad source-value heuristic:
+// Bruno's words "none", "null", and "inherit" are configuration sentinels only
+// where the schema says they are. Inside a password, token, sensitive header,
+// URL credential, or body credential field they are literal wire values and
+// must be governed like any other credential.
+func shouldSanitizeCredentialValue(value string) bool {
+	value = strings.TrimSpace(value)
+	return value != "" && !isExactBrunoTemplateValue(value)
+}
+
+func nativeCredentialContainerContext(context []string) bool {
+	for _, parent := range context {
+		if nativeJSONCredentialContainerKey(parent) {
+			return true
+		}
+	}
+	return false
+}
+
+func structuredNamedCredential(value map[string]any) string {
+	for key, raw := range value {
+		if !strings.EqualFold(strings.TrimSpace(key), "name") {
+			continue
+		}
+		name, _ := raw.(string)
+		return strings.TrimSpace(name)
+	}
+	return ""
 }
 
 func isExactBrunoTemplateValue(value string) bool {
@@ -1239,7 +1679,7 @@ func detectRoot(files []sourceFile, requested string) string {
 	candidates := make([]string, 0)
 	for _, file := range files {
 		switch strings.ToLower(path.Base(file.Path)) {
-		case "opencollection.yml", "collection.bru", "bruno.json":
+		case "opencollection.yml", "opencollection.yaml", "collection.bru", "bruno.json":
 			dir := path.Dir(file.Path)
 			if dir == "." {
 				dir = ""

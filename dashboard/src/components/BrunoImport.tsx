@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import { type StoredScript } from '../types'
+import { type Folder, type StoredScript } from '../types'
 import { type ScriptDefinition } from '../types/scripts'
 import {
   type BrunoCollectionItem,
   type BrunoInspectResponse,
+  type BrunoNativeDiagnostic,
+  type BrunoNativeScriptCandidate,
   type BrunoProjectionPreview,
   type BrunoSourceRevision,
   type BrunoSupportMatrixResponse,
+  type CommitBrunoCanonicalResponse,
   type CommitBrunoImportResponse,
+  type CommitBrunoNativeBatchResponse,
   type SecretBindingRequirement,
   type SecretBindingSelection,
 } from '../types/scriptImports'
@@ -26,10 +30,17 @@ import {
   formatSourceSecretSessionFailure,
   getSourceSecretSessionFailureMetadata,
 } from './sourceSecretSession'
+import {
+  filesContainNativeBrunoSource,
+  isOpenCollectionFileName,
+} from '../nativeImportRouting'
+import { brunoDestinationFolderOptions } from './brunoFolderOptions'
+import { mergeProtectedParameterizationSelectionIds } from './protectedImportSession'
 import './BrunoImport.css'
 
 interface Props {
   initialFiles?: File[] | null
+  initialOutputMode?: OutputMode | null
   projectId?: string
   onImported?: (result: ImportedSaveResult) => void
   onConfigureSecrets?: (projectId: string) => void
@@ -52,6 +63,8 @@ type RunOptions = {
   defaultGlobalEnvironment: string
 }
 
+type OutputMode = 'canonical' | 'native_requests'
+
 const DEFAULT_RUN_OPTIONS: RunOptions = {
   selection: 'collection',
   paths: '',
@@ -72,8 +85,16 @@ function splitList(value: string) {
   return value.split(',').map(item => item.trim()).filter(Boolean)
 }
 
-function storedScriptFromCommit(response: CommitBrunoImportResponse): StoredScript {
-  const script = response.script
+function isOpenCollectionYAML(files: File[]) {
+  return files.some(isOpenCollectionFileName)
+}
+
+function needsBrunoContentModeDetection(files: File[]) {
+  if (files.length === 0 || isOpenCollectionYAML(files)) return false
+  return files.some(file => /\.(?:ya?ml|json)$/i.test(file.name))
+}
+
+function storedScriptFromDefinition(script: ScriptDefinition): StoredScript {
   return {
     id: script.id || '',
     ref_key: script.ref_key,
@@ -85,6 +106,99 @@ function storedScriptFromCommit(response: CommitBrunoImportResponse): StoredScri
     created_at: script.created_at || new Date().toISOString(),
     script,
   }
+}
+
+function nativeCandidateIdentityError(candidates: BrunoNativeScriptCandidate[]) {
+  const candidateIds = new Set<string>()
+  const plannedScriptIds = new Set<string>()
+  for (const candidate of candidates) {
+    const candidateId = candidate.candidate_id?.trim()
+    if (!candidateId) return `Native Bruno inspection candidate ${candidate.source_path || '(unknown source)'} is missing candidate_id.`
+    if (candidateIds.has(candidateId)) return `Native Bruno inspection contains duplicate candidate_id ${candidateId}.`
+    candidateIds.add(candidateId)
+
+    const plannedScriptId = candidate.planned_script_id?.trim()
+    if (!plannedScriptId) return `Native Bruno inspection candidate ${candidate.source_path || candidateId} is missing planned_script_id.`
+    if (plannedScriptIds.has(plannedScriptId)) return `Native Bruno inspection contains duplicate planned_script_id ${plannedScriptId}.`
+    plannedScriptIds.add(plannedScriptId)
+  }
+  return ''
+}
+
+function validatedNativeCommitScripts(
+  response: CommitBrunoImportResponse,
+  selectedCandidates: BrunoNativeScriptCandidate[],
+) {
+  const identityError = nativeCandidateIdentityError(selectedCandidates)
+  if (identityError) throw new Error(identityError)
+  if (!isNativeCommitResponse(response) || !response.batch_id.trim()) {
+    throw new Error('Native Bruno commit response is missing batch_id.')
+  }
+  const receipt = response as unknown as Record<string, unknown>
+  if (!Object.prototype.hasOwnProperty.call(receipt, 'created') ||
+    !Object.prototype.hasOwnProperty.call(receipt, 'idempotent_replay') ||
+    typeof receipt.created !== 'boolean' ||
+    typeof receipt.idempotent_replay !== 'boolean') {
+    throw new Error('Native Bruno commit response must include boolean created and idempotent_replay fields.')
+  }
+  if (receipt.created === receipt.idempotent_replay) {
+    throw new Error('Native Bruno commit response must identify exactly one of creation or idempotent replay.')
+  }
+  if (response._http_status === 201 && !receipt.created) {
+    throw new Error('Native Bruno HTTP 201 response must identify a newly created batch.')
+  }
+  if (response._http_status === 200 && !receipt.idempotent_replay) {
+    throw new Error('Native Bruno HTTP 200 response must identify an idempotent replay.')
+  }
+  if (response._http_status !== 200 && response._http_status !== 201) {
+    throw new Error('Native Bruno commit response has an unsupported HTTP status.')
+  }
+  if (response.scripts.length !== selectedCandidates.length) {
+    throw new Error(`Native Bruno commit returned ${response.scripts.length} of ${selectedCandidates.length} selected scripts.`)
+  }
+  if (response.count !== response.scripts.length) {
+    throw new Error('Native Bruno commit response count does not match its scripts.')
+  }
+  const expectedIds = new Set(selectedCandidates.map(candidate => (candidate.planned_script_id || '').trim()))
+  const receivedIds = new Set<string>()
+  for (const script of response.scripts) {
+    const id = script.id?.trim()
+    if (!id || receivedIds.has(id) || !expectedIds.has(id)) {
+      throw new Error('Native Bruno commit response contains an unknown, duplicate, or missing script identity.')
+    }
+    receivedIds.add(id)
+  }
+  return response.scripts.map(storedScriptFromDefinition)
+}
+
+function isNativeCommitResponse(response: CommitBrunoImportResponse): response is CommitBrunoNativeBatchResponse {
+  return 'batch_id' in response
+}
+
+function isCanonicalCommitResponse(response: CommitBrunoImportResponse): response is CommitBrunoCanonicalResponse {
+  return 'script' in response
+}
+
+function nativeFindingID(diagnostic: BrunoNativeDiagnostic) {
+  return diagnostic.id || diagnostic.finding_id || ''
+}
+
+function nativeCandidateReviewFindings(candidate: BrunoNativeScriptCandidate) {
+  const ids = new Set<string>()
+  ;(candidate.diagnostics || []).forEach(diagnostic => {
+    if (!diagnostic.acknowledgement_required) return
+    const id = nativeFindingID(diagnostic)
+    if (id) ids.add(id)
+  })
+  return Array.from(ids).sort()
+}
+
+function nativeCandidateMethod(candidate: BrunoNativeScriptCandidate) {
+  return candidate.method || candidate.script.actions[0]?.method || candidate.script.actions[0]?.type || 'HTTP'
+}
+
+function nativeCandidateTarget(candidate: BrunoNativeScriptCandidate) {
+  return candidate.target || candidate.script.actions[0]?.target || candidate.script.config?.base_url || ''
 }
 
 function CollectionTree({ items }: { items: BrunoCollectionItem[] }) {
@@ -107,11 +221,20 @@ function CollectionTree({ items }: { items: BrunoCollectionItem[] }) {
   )
 }
 
-export default function BrunoImport({ initialFiles, projectId, onImported, onConfigureSecrets, onClose }: Props) {
+export default function BrunoImport({ initialFiles, initialOutputMode, projectId, onImported, onConfigureSecrets, onClose }: Props) {
   const api = useApi()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const directoryInputRef = useRef<HTMLInputElement>(null)
   const [files, setFiles] = useState<File[]>(initialFiles || [])
+  const [outputMode, setOutputMode] = useState<OutputMode>(() => initialOutputMode || (isOpenCollectionYAML(initialFiles || []) ? 'native_requests' : 'canonical'))
+  const initiallyDetectingMode = !initialOutputMode && needsBrunoContentModeDetection(initialFiles || [])
+  const [modeDetectionPending, setModeDetectionPending] = useState(initiallyDetectingMode)
+  const modeDetectionPendingRef = useRef(initiallyDetectingMode)
+  const modeDetectionRequestRef = useRef(0)
+  const updateModeDetectionPending = useCallback((pending: boolean) => {
+    modeDetectionPendingRef.current = pending
+    setModeDetectionPending(pending)
+  }, [])
   const [name, setName] = useState('')
   const [sandbox, setSandbox] = useState<'safe' | 'developer'>('safe')
   const [syncScriptId, setSyncScriptId] = useState('')
@@ -121,6 +244,13 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
   inspectionRef.current = inspection
   const [support, setSupport] = useState<BrunoSupportMatrixResponse | null>(null)
   const [scripts, setScripts] = useState<StoredScript[]>([])
+  const [folders, setFolders] = useState<Folder[]>([])
+  const [folderLoadError, setFolderLoadError] = useState('')
+  const [folderReloadToken, setFolderReloadToken] = useState(0)
+  const [destinationFolderId, setDestinationFolderId] = useState('')
+  const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([])
+  const [nativeNameOverrides, setNativeNameOverrides] = useState<Record<string, string>>({})
+  const [acknowledgedFindingIds, setAcknowledgedFindingIds] = useState<string[]>([])
   const [migrateSecrets, setMigrateSecrets] = useState(false)
   const [preparedSecrets, setPreparedSecrets] = useState<PreparedSecretBindings | null>(null)
   const secretBindingsRef = useRef<Record<string, string>>({})
@@ -137,6 +267,7 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const sourceGenerationRef = useRef(0)
+  const mountedRef = useRef(true)
   const [sourceGeneration, setSourceGeneration] = useState(0)
   const advanceSourceGeneration = useCallback(() => {
     const next = sourceGenerationRef.current + 1
@@ -146,6 +277,19 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
   }, [])
   const sourceProjectIdRef = useRef(projectId)
   sourceProjectIdRef.current = projectId
+  const resetProjectIdRef = useRef(projectId)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => {
+      mountedRef.current = false
+      // Invalidate inspection and commit continuations before they can invoke
+      // callbacks or update state after this import view has been left.
+      sourceGenerationRef.current += 1
+      modeDetectionRequestRef.current += 1
+      modeDetectionPendingRef.current = false
+    }
+  }, [])
 
   useEffect(() => {
     directoryInputRef.current?.setAttribute('webkitdirectory', '')
@@ -153,8 +297,14 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
   }, [])
 
   useEffect(() => {
+    const nextFiles = initialFiles || []
     advanceSourceGeneration()
-    setFiles(initialFiles || [])
+    const modeDetectionRequest = modeDetectionRequestRef.current + 1
+    modeDetectionRequestRef.current = modeDetectionRequest
+    const shouldDetectMode = !initialOutputMode && needsBrunoContentModeDetection(nextFiles)
+    updateModeDetectionPending(shouldDetectMode)
+    setFiles(nextFiles)
+    setOutputMode(initialOutputMode || (isOpenCollectionYAML(nextFiles) ? 'native_requests' : 'canonical'))
     setInspection(null)
     setCommitted(null)
     setCommittedDeferredSecretCount(0)
@@ -164,9 +314,22 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
     setLoading(false)
     setError('')
     setNotice('')
-  }, [advanceSourceGeneration, initialFiles])
+    setSelectedCandidateIds([])
+    setNativeNameOverrides({})
+    setAcknowledgedFindingIds([])
+    if (shouldDetectMode) {
+      void filesContainNativeBrunoSource(nextFiles).then(isNative => {
+        if (!mountedRef.current ||
+          modeDetectionRequestRef.current !== modeDetectionRequest) return
+        setOutputMode(isNative ? 'native_requests' : 'canonical')
+        updateModeDetectionPending(false)
+      })
+    }
+  }, [advanceSourceGeneration, initialFiles, initialOutputMode, updateModeDetectionPending])
 
   useEffect(() => {
+    if (resetProjectIdRef.current === projectId) return
+    resetProjectIdRef.current = projectId
     advanceSourceGeneration()
     setInspection(null)
     setCommitted(null)
@@ -177,6 +340,11 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
     setLoading(false)
     setError('')
     setNotice('')
+    setSelectedCandidateIds([])
+    setNativeNameOverrides({})
+    setAcknowledgedFindingIds([])
+    setDestinationFolderId('')
+    setSyncScriptId('')
   }, [advanceSourceGeneration, projectId])
 
   useEffect(() => {
@@ -184,15 +352,42 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
     void Promise.all([
       api.getBrunoSupportMatrix().catch(() => null),
       projectId ? api.listScripts(projectId).catch(() => ({ scripts: [] as StoredScript[], count: 0 })) : Promise.resolve({ scripts: [] as StoredScript[], count: 0 }),
-    ]).then(([matrix, response]) => {
+      projectId
+        ? api.listFolders(projectId, 'scripts')
+          .then(response => ({ ...response, loadError: '' }))
+          .catch(cause => ({
+            folders: [] as Folder[],
+            count: 0,
+            loadError: getErrorMessage(cause, 'Unable to load destination folders.'),
+          }))
+        : Promise.resolve({ folders: [] as Folder[], count: 0, loadError: '' }),
+    ]).then(([matrix, response, folderResponse]) => {
       if (cancelled) return
       setSupport(matrix)
       setScripts((response.scripts || []).filter(script => script.protocol === 'bruno'))
+      setFolders(folderResponse.folders || [])
+      setFolderLoadError(folderResponse.loadError)
     })
     return () => { cancelled = true }
-  }, [api, projectId])
+  }, [api, folderReloadToken, projectId])
 
-  const requirements = useMemo(() => inspection?.result.secret_requirements || [], [inspection])
+  const nativeCandidates = useMemo(
+    () => inspection?.result.output_mode === 'native_requests' ? inspection.result.scripts : [],
+    [inspection],
+  )
+  const destinationFolderOptions = useMemo(
+    () => brunoDestinationFolderOptions(folders),
+    [folders],
+  )
+  const requirements = useMemo(() => {
+    const selectedRequirements = nativeCandidates
+      .filter(candidate => selectedCandidateIds.includes(candidate.candidate_id))
+      .flatMap(candidate => candidate.secret_requirements || [])
+    const all = outputMode === 'native_requests' && nativeCandidates.length > 0
+      ? selectedRequirements
+      : inspection?.result.secret_requirements || []
+    return Array.from(new Map(all.map(requirement => [requirement.id, requirement])).values())
+  }, [inspection, nativeCandidates, outputMode, selectedCandidateIds])
   const credentialRequirements = useMemo<SecretBindingRequirement[]>(() => requirements.map(requirement => ({
     id: requirement.id,
     path: requirement.path,
@@ -210,25 +405,45 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
   const conflicts = inspection?.sync_preview?.conflicts || []
   const unresolvedConflicts = conflicts.filter(conflict => conflictResolutions[conflict.id] !== conflict.required_resolution)
   const selectedBytes = useMemo(() => files.reduce((total, file) => total + file.size, 0), [files])
-  const canInspect = Boolean(projectId && files.length > 0 && !loading)
-	const selectionMissing = (runOptions.selection === 'folder' || runOptions.selection === 'request') && splitList(runOptions.paths).length === 0
+  const importDisabled = support?.import_enabled === false
+  const canInspect = Boolean(projectId && files.length > 0 && !loading && !modeDetectionPending && !importDisabled)
+  const selectionMissing = outputMode === 'canonical'
+    && (runOptions.selection === 'folder' || runOptions.selection === 'request')
+    && splitList(runOptions.paths).length === 0
+  const selectedNativeCandidates = nativeCandidates.filter(candidate => selectedCandidateIds.includes(candidate.candidate_id))
+  const allNativeCandidatesSelected = nativeCandidates.length > 0
+    && selectedNativeCandidates.length === nativeCandidates.length
+  const someNativeCandidatesSelected = selectedNativeCandidates.length > 0 && !allNativeCandidatesSelected
+  const nativeIdentityError = outputMode === 'native_requests'
+    ? nativeCandidateIdentityError(nativeCandidates)
+    : ''
+  const nativeReviewFindingIds = Array.from(new Set(selectedNativeCandidates.flatMap(nativeCandidateReviewFindings))).sort()
+  const unacknowledgedFindingIds = nativeReviewFindingIds.filter(id => !acknowledgedFindingIds.includes(id))
+  const selectedNativeNames = selectedNativeCandidates.map(candidate => (nativeNameOverrides[candidate.candidate_id] ?? candidate.script.name).trim())
+  const duplicateNativeNames = new Set(selectedNativeNames.map(value => value.toLowerCase())).size !== selectedNativeNames.length
+  const nativeNamesValid = selectedNativeNames.every(Boolean) && !duplicateNativeNames
   const credentialsValid = requirements.length === 0 || preparedSecrets?.valid === true
   const canCommit = Boolean(
     inspection &&
     !loading &&
     !parameterizationApplying &&
     credentialsValid &&
-	!selectionMissing && unresolvedConflicts.length === 0 &&
-    (!syncScriptId || inspection.sync_preview),
+    !selectionMissing &&
+    (outputMode === 'native_requests'
+      ? destinationFolderId !== '' && selectedNativeCandidates.length > 0 && nativeNamesValid && unacknowledgedFindingIds.length === 0
+        && nativeIdentityError === ''
+      : unresolvedConflicts.length === 0 && (!syncScriptId || inspection.sync_preview)),
   )
   const deferredSecretCount = preparedSecrets?.configureLaterCount ?? 0
-  const commitActionLabel = syncScriptId ? 'Synchronize Bruno source' : 'Import Bruno collection'
+  const commitActionLabel = outputMode === 'native_requests'
+    ? `Save ${selectedNativeCandidates.length} native script${selectedNativeCandidates.length === 1 ? '' : 's'}`
+    : syncScriptId ? 'Synchronize Bruno source' : 'Import Bruno collection'
   const commitButtonLabel = loading
     ? 'Committing…'
     : deferredSecretCount > 0
       ? `${commitActionLabel} with ${deferredSecretCount} ${deferredSecretCount === 1 ? 'secret' : 'secrets'} to configure`
       : commitActionLabel
-  const developerBlocked = sandbox === 'developer' && support && !support.developer_execution_enabled
+  const developerBlocked = outputMode === 'canonical' && sandbox === 'developer' && support && !support.developer_execution_enabled
 
   useEffect(() => {
     if (!sourceMigrationAvailable) setMigrateSecrets(false)
@@ -241,7 +456,12 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
 
   const selectFiles = (next: File[]) => {
     advanceSourceGeneration()
+    const modeDetectionRequest = modeDetectionRequestRef.current + 1
+    modeDetectionRequestRef.current = modeDetectionRequest
+    const shouldDetectMode = needsBrunoContentModeDetection(next)
+    updateModeDetectionPending(shouldDetectMode)
     setFiles(next)
+    setOutputMode(isOpenCollectionYAML(next) ? 'native_requests' : 'canonical')
     setInspection(null)
     setCommitted(null)
     setCommittedDeferredSecretCount(0)
@@ -251,13 +471,51 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
     setConflictResolutions({})
     setError('')
     setNotice('')
+    setSelectedCandidateIds([])
+    setNativeNameOverrides({})
+    setAcknowledgedFindingIds([])
+    if (shouldDetectMode) {
+      void filesContainNativeBrunoSource(next).then(isNative => {
+        if (!mountedRef.current ||
+          modeDetectionRequestRef.current !== modeDetectionRequest) return
+        setOutputMode(isNative ? 'native_requests' : 'canonical')
+        updateModeDetectionPending(false)
+      })
+    }
+  }
+
+  const selectOutputMode = (mode: OutputMode) => {
+    if (mode === outputMode && !modeDetectionPendingRef.current) return
+    modeDetectionRequestRef.current += 1
+    updateModeDetectionPending(false)
+    advanceSourceGeneration()
+    setOutputMode(mode)
+    setInspection(null)
+    setCommitted(null)
+    setPreparedSecrets(null)
+    setMigrateSecrets(false)
+    secretBindingsRef.current = {}
+    setSelectedCandidateIds([])
+    setNativeNameOverrides({})
+    setAcknowledgedFindingIds([])
+    setConflictResolutions({})
+    setError('')
+    setNotice('')
+  }
+
+  const confirmPendingOutputMode = (mode: OutputMode) => {
+    if (mode === outputMode && modeDetectionPendingRef.current) {
+      selectOutputMode(mode)
+    }
   }
 
   const inspect = async () => {
-    if (!projectId || files.length === 0) return
+    if (!projectId || files.length === 0 || modeDetectionPendingRef.current) return
     const sourceRequestGeneration = advanceSourceGeneration()
     const sourceProjectId = sourceProjectIdRef.current
-    const requestIsCurrent = () => sourceGenerationRef.current === sourceRequestGeneration && sourceProjectIdRef.current === sourceProjectId
+    const requestIsCurrent = () => mountedRef.current
+      && sourceGenerationRef.current === sourceRequestGeneration
+      && sourceProjectIdRef.current === sourceProjectId
     setLoading(true)
     setError('')
     setNotice('')
@@ -267,10 +525,11 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
     try {
       const response = await api.inspectBrunoImport(files, {
         project_id: projectId,
-        name: name.trim() || undefined,
-        sandbox,
-        sync_script_id: syncScriptId || undefined,
-        run_options: {
+        output_mode: outputMode,
+        name: outputMode === 'canonical' ? name.trim() || undefined : undefined,
+        sandbox: outputMode === 'canonical' ? sandbox : undefined,
+        sync_script_id: outputMode === 'canonical' ? syncScriptId || undefined : undefined,
+        run_options: outputMode === 'canonical' ? {
           default_environment: runOptions.defaultEnvironment || undefined,
           default_global_environment: runOptions.defaultGlobalEnvironment || undefined,
           selection: runOptions.selection,
@@ -284,17 +543,37 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
           bail: runOptions.bail,
           tests_only: runOptions.testsOnly,
           persist_session: runOptions.persistSession,
-        },
+        } : undefined,
       })
       if (!requestIsCurrent()) return
       setInspection(response)
       const nextBindings: Record<string, string> = {}
-      ;(response.result.secret_requirements || []).forEach(requirement => {
+      const inspectedRequirements = [
+        ...(response.result.secret_requirements || []),
+        ...(response.result.output_mode === 'native_requests'
+          ? response.result.scripts.flatMap(candidate => candidate.secret_requirements || [])
+          : []),
+      ]
+      ;inspectedRequirements.forEach(requirement => {
         nextBindings[requirement.id] = secretBindingsRef.current[requirement.id] || requirement.suggested_name
       })
       secretBindingsRef.current = nextBindings
       setConflictResolutions({})
-      setNotice(`Inspection preserved ${response.result.fidelity.preserved_files} source artifacts with ${response.result.fidelity.dropped_items} dropped items.`)
+      const candidates = response.result.output_mode === 'native_requests' ? response.result.scripts : []
+      setSelectedCandidateIds(candidates.map(candidate => candidate.candidate_id))
+      setNativeNameOverrides(Object.fromEntries(candidates.map(candidate => [candidate.candidate_id, candidate.script.name])))
+      setAcknowledgedFindingIds([])
+      const identityError = outputMode === 'native_requests'
+        ? nativeCandidateIdentityError(candidates)
+        : ''
+      if (identityError) {
+        setError(identityError)
+        setNotice('')
+      } else {
+        setNotice(outputMode === 'native_requests'
+          ? `${candidates.length} API request${candidates.length === 1 ? '' : 's'} found → ${candidates.length} native script${candidates.length === 1 ? '' : 's'}.`
+          : `Inspection preserved ${response.result.fidelity.preserved_files} source artifacts with ${response.result.fidelity.dropped_items} dropped items.`)
+      }
     } catch (cause) {
       if (requestIsCurrent()) setError(getErrorMessage(cause, 'Unable to inspect the Bruno source.'))
     } finally {
@@ -317,7 +596,8 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
     const sourceRequestGeneration = sourceGenerationRef.current
     const sourceProjectId = sourceProjectIdRef.current
     const sourceImportSessionId = inspection.import_session_id
-    const requestIsCurrent = () => sourceGenerationRef.current === sourceRequestGeneration
+    const requestIsCurrent = () => mountedRef.current
+      && sourceGenerationRef.current === sourceRequestGeneration
       && sourceProjectIdRef.current === sourceProjectId
       && inspectionRef.current?.import_session_id === sourceImportSessionId
     setLoading(true)
@@ -329,27 +609,55 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
         if (!committedCredentials) return
       }
       if (!requestIsCurrent()) return
-      const response = await api.commitBrunoImport({
-        project_id: projectId,
-        import_session_id: inspection.import_session_id,
-        mode: syncScriptId ? 'sync' : 'create',
-        sync_script_id: syncScriptId || undefined,
-        name: name.trim() || undefined,
-        expected_updated_at: inspection.sync_preview?.expected_updated_at,
-        expected_active_revision_id: inspection.sync_preview?.active_revision,
-        migrate_secrets: migrateSecrets,
-        parameterization_selected_ids: parameterizationSelectedIds,
-        secret_bindings: secretBindingsRef.current,
-        conflict_resolutions: conflictResolutions,
-      })
+      const response = outputMode === 'native_requests'
+        ? await api.commitBrunoImport({
+          project_id: projectId,
+          import_session_id: inspection.import_session_id,
+          mode: 'create_native_batch',
+          folder_id: destinationFolderId,
+          candidate_ids: selectedNativeCandidates.map(candidate => candidate.candidate_id),
+          name_overrides: Object.fromEntries(selectedNativeCandidates.map(candidate => [
+            candidate.candidate_id,
+            (nativeNameOverrides[candidate.candidate_id] ?? candidate.script.name).trim(),
+          ])),
+          migrate_secrets: migrateSecrets,
+          secret_bindings: Object.fromEntries(requirements
+            .filter(requirement => secretBindingsRef.current[requirement.id])
+            .map(requirement => [requirement.id, secretBindingsRef.current[requirement.id]])),
+          acknowledged_finding_ids: nativeReviewFindingIds,
+        })
+        : await api.commitBrunoImport({
+          project_id: projectId,
+          import_session_id: inspection.import_session_id,
+          mode: syncScriptId ? 'sync' : 'create',
+          sync_script_id: syncScriptId || undefined,
+          name: name.trim() || undefined,
+          expected_updated_at: inspection.sync_preview?.expected_updated_at,
+          expected_active_revision_id: inspection.sync_preview?.active_revision,
+          migrate_secrets: migrateSecrets,
+          parameterization_selected_ids: parameterizationSelectedIds,
+          secret_bindings: secretBindingsRef.current,
+          conflict_resolutions: conflictResolutions,
+        })
       if (!requestIsCurrent()) return
+      const importedScripts = outputMode === 'native_requests'
+        ? validatedNativeCommitScripts(response, selectedNativeCandidates)
+        : null
+      if (outputMode === 'canonical' && !isCanonicalCommitResponse(response)) {
+        throw new Error('Canonical Bruno commit response is missing its script and revision.')
+      }
       setMigrateSecrets(false)
       setPreparedSecrets(null)
       secretBindingsRef.current = {}
       setCommitted(response)
       setCommittedDeferredSecretCount(deferredSecretCount)
-      setNotice(syncScriptId ? 'Bruno source synchronized as a new immutable revision.' : 'Bruno collection imported as a canonical APEX script.')
-      if (response.script.id) {
+      if (outputMode === 'native_requests') {
+        setNotice(`${importedScripts!.length} native APEX script${importedScripts!.length === 1 ? '' : 's'} saved atomically.`)
+        onImported?.({ scripts: importedScripts! })
+      } else {
+        setNotice(syncScriptId ? 'Bruno source synchronized as a new immutable revision.' : 'Bruno collection imported as a canonical APEX script.')
+      }
+      if (outputMode === 'canonical' && isCanonicalCommitResponse(response) && response.script.id) {
         await refreshRevisionState(response.script.id, requestIsCurrent)
         try {
           const status = await api.getScriptSecretStatus(response.script.id)
@@ -362,7 +670,12 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
     } catch (cause) {
       if (requestIsCurrent()) {
         const sourceSessionFailure = getSourceSecretSessionFailureMetadata(cause)
-        if (migrateSecrets && (sourceSessionFailure.consumed || sourceSessionFailure.manualConfigurationRequired)) {
+        if (migrateSecrets && sourceSessionFailure.retained) {
+          // Native Bruno migration and script persistence share an import session.
+          // Provider writes can survive while the server restores that session
+          // specifically so the identical reviewed batch can be retried.
+          setError(formatSourceSecretSessionFailure(cause))
+        } else if (migrateSecrets && (sourceSessionFailure.consumed || sourceSessionFailure.manualConfigurationRequired)) {
           // The server reports only logical names here. Clear the consumed
           // import session and require a fresh inspection; never retain or
           // reconstruct any source credential material in the browser.
@@ -381,7 +694,7 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
   }
 
   const rollback = async (revision: BrunoSourceRevision) => {
-    const scriptId = committed?.script.id
+    const scriptId = committed && isCanonicalCommitResponse(committed) ? committed.script.id : ''
     const activeRevision = revisions.find(candidate => candidate.active)
     if (!scriptId || revision.active) return
     setRollbackLoading(revision.id)
@@ -407,7 +720,7 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
     if (!importSessionId) return
     credentialReviewRef.current?.preserveEditsForNextReviewGeneration()
     advanceSourceGeneration()
-    setParameterizationSelectedIds(selectedIds)
+    setParameterizationSelectedIds(previous => mergeProtectedParameterizationSelectionIds(previous, selectedIds))
     setInspection(current => current?.import_session_id === importSessionId
       ? { ...current, result: { ...current.result, script: parameterizedScript } }
       : current)
@@ -415,7 +728,7 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
   }
 
   const commitProjection = async () => {
-    if (!committed?.script.id || !projection?.eligible) return
+    if (!committed || !isCanonicalCommitResponse(committed) || !committed.script.id || !projection?.eligible) return
     setLoading(true)
     setError('')
     try {
@@ -429,8 +742,14 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
   }
 
   const openCommitted = () => {
-    if (!committed) return
-    onImported?.({ scripts: [storedScriptFromCommit(committed)] })
+    if (!committed || !isCanonicalCommitResponse(committed)) return
+    onImported?.({ scripts: [storedScriptFromDefinition(committed.script)] })
+  }
+
+  const close = () => {
+    advanceSourceGeneration()
+    setLoading(false)
+    onClose?.()
   }
 
   const updateRunOption = <K extends keyof RunOptions>(key: K, value: RunOptions[K]) => {
@@ -443,11 +762,13 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
     <div className="bruno-import">
       <header className="bruno-import-header">
         <div>
-          <span className="bruno-kicker">Full-fidelity source adapter</span>
+          <span className="bruno-kicker">{outputMode === 'native_requests' ? 'Native API conversion' : 'Full-fidelity source adapter'}</span>
           <h2>Import Bruno Collection</h2>
-          <p>Preserve and execute classic <code>.bru</code>, OpenCollection YAML, archives, environments, scripts, dependencies, certificates, fixtures, and Bruno Apps without translating behavior away.</p>
+          <p>{outputMode === 'native_requests'
+            ? 'Convert every HTTP API in an OpenCollection YAML folder into its own native APEX script.'
+            : <>Preserve and execute classic <code>.bru</code>, OpenCollection YAML, archives, environments, scripts, dependencies, certificates, fixtures, and Bruno Apps without translating behavior away.</>}</p>
         </div>
-        {onClose && <button className="btn btn-secondary" onClick={onClose}>Back</button>}
+        {onClose && <button className="btn btn-secondary" onClick={close}>Back</button>}
       </header>
 
       {requirements.length > 0 && !committed && (
@@ -466,7 +787,7 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
         />
       )}
 
-      {inspection?.parameterization && inspection.parameterization.suggestions.length > 0 && !committed && (
+      {outputMode === 'canonical' && inspection?.result.output_mode === 'canonical' && inspection.parameterization && inspection.parameterization.suggestions.length > 0 && !committed && (
         <ParameterizationReview
           parameterization={inspection.parameterization}
           script={inspection.result.script}
@@ -525,9 +846,23 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
         <div className="bruno-card-heading">
           <div>
             <h3>2. Import and execution profile</h3>
-            <p>These settings become the canonical <code>bruno_run</code> selection. Operator limits can only reduce them.</p>
+            <p>{outputMode === 'native_requests'
+              ? 'Create one native HTTP script per API and save the selected batch to one destination.'
+              : <>These settings become the canonical <code>bruno_run</code> selection. Operator limits can only reduce them.</>}</p>
           </div>
         </div>
+        <div className="bruno-mode-selector" role="radiogroup" aria-label="Bruno import mode">
+          <label className={outputMode === 'native_requests' ? 'active' : ''}>
+            <input type="radio" name="bruno-output-mode" checked={outputMode === 'native_requests'} disabled={loading} onClick={() => confirmPendingOutputMode('native_requests')} onChange={() => selectOutputMode('native_requests')} />
+            <span><strong>Native scripts per API</strong><small>Recommended for OpenCollection YAML HTTP requests.</small></span>
+          </label>
+          <label className={outputMode === 'canonical' ? 'active' : ''}>
+            <input type="radio" name="bruno-output-mode" checked={outputMode === 'canonical'} disabled={loading} onClick={() => confirmPendingOutputMode('canonical')} onChange={() => selectOutputMode('canonical')} />
+            <span><strong>Canonical Bruno collection</strong><small>Required for classic .bru and full Bruno runtime behavior.</small></span>
+          </label>
+        </div>
+        {outputMode === 'canonical' ? (
+          <>
         <div className="bruno-options-grid">
           <label>
             <span>Script name</span>
@@ -608,19 +943,52 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
           <label><input type="checkbox" disabled={loading} checked={runOptions.testsOnly} onChange={event => updateRunOption('testsOnly', event.target.checked)} /> Tests only</label>
           <label><input type="checkbox" disabled={loading} checked={runOptions.persistSession} onChange={event => updateRunOption('persistSession', event.target.checked)} /> Persist VUser session across APEX iterations</label>
         </div>
+          </>
+        ) : (
+          <>
+          <div className="bruno-options-grid">
+            <label>
+              <span>Destination folder</span>
+              <select disabled={loading} value={destinationFolderId} onChange={event => setDestinationFolderId(event.target.value)}>
+                <option value="">Select a script folder…</option>
+                {destinationFolderOptions.map(({ folder, label }) => (
+                  <option key={folder.id} value={folder.id}>{label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {folderLoadError && (
+            <div className="bruno-preflight warning" role="alert">
+              {folderLoadError}{' '}
+              <button
+                className="btn btn-ghost"
+                disabled={loading}
+                onClick={() => setFolderReloadToken(value => value + 1)}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+          </>
+        )}
         {developerBlocked && (
           <div className="bruno-preflight warning">
             Developer execution is disabled or no isolated worker class is available. Import remains available, but execution will fail preflight until an operator enables it.
           </div>
         )}
+        {importDisabled && (
+          <div className="bruno-preflight warning" role="alert">
+            Bruno import is disabled by an operator.
+          </div>
+        )}
 		{selectionMissing && <div className="bruno-preflight warning">Choose at least one path for {runOptions.selection} selection.</div>}
-		{inspection?.execution_preflight && !inspection.execution_preflight.ready && (
+		{outputMode === 'canonical' && inspection?.execution_preflight && !inspection.execution_preflight.ready && Array.isArray(inspection.execution_preflight.blockers) && (
 		  <div className="bruno-preflight warning" role="status">
 			Execution preflight is blocked: {inspection.execution_preflight.blockers.join(', ')}. The source can be preserved, but it cannot run until these operator prerequisites are resolved.
 		  </div>
-		)}
+        )}
         <button className="btn btn-primary" disabled={!canInspect} onClick={() => void inspect()}>
-          {loading ? 'Inspecting…' : inspection ? 'Re-inspect source' : 'Inspect source'}
+          {modeDetectionPending ? 'Detecting source type…' : loading ? 'Inspecting…' : inspection ? 'Re-inspect source' : 'Inspect source'}
         </button>
       </section>
 
@@ -652,6 +1020,150 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
               </div>
             </article>
           </section>
+
+          {outputMode === 'native_requests' && (
+            <section className="bruno-card bruno-native-review">
+              <div className="bruno-card-heading">
+                <div>
+                  <h3>{nativeCandidates.length} API request{nativeCandidates.length === 1 ? '' : 's'} found → {nativeCandidates.length} native script{nativeCandidates.length === 1 ? '' : 's'}</h3>
+                  <p>Scripts stay in deterministic Bruno sequence/path order and will be committed as one atomic batch.</p>
+                </div>
+                <label className="bruno-select-all">
+                  <input
+                    type="checkbox"
+                    disabled={loading || nativeCandidates.length === 0}
+                    ref={node => {
+                      if (node) node.indeterminate = someNativeCandidatesSelected
+                    }}
+                    aria-checked={someNativeCandidatesSelected ? 'mixed' : undefined}
+                    checked={allNativeCandidatesSelected}
+                    onChange={event => setSelectedCandidateIds(event.target.checked ? nativeCandidates.map(candidate => candidate.candidate_id) : [])}
+                  />
+                  Select all
+                </label>
+              </div>
+              <div className="bruno-native-table-wrap">
+                <table className="bruno-native-table">
+                  <thead>
+                    <tr>
+                      <th aria-label="Selected" />
+                      <th>Source</th>
+                      <th>Script name</th>
+                      <th>Request</th>
+                      <th>Status</th>
+                      <th>Details</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {nativeCandidates.map(candidate => {
+                      const selected = selectedCandidateIds.includes(candidate.candidate_id)
+                      const reviewFindings = nativeCandidateReviewFindings(candidate)
+                      const diagnosticCount = (candidate.diagnostics || []).length
+                      const missingVariableCount = (candidate.missing_variables || []).length
+                      const secretCount = (candidate.secret_requirements || []).length
+                      const status = reviewFindings.length > 0
+                        ? 'review'
+                        : missingVariableCount > 0
+                          ? 'blocked'
+                          : secretCount > 0
+                            ? 'configure'
+                            : diagnosticCount > 0 ? 'warning' : 'ready'
+                      const statusLabel = status === 'review'
+                        ? 'Review required'
+                        : status === 'blocked'
+                          ? 'Execution blocked'
+                          : status === 'configure'
+                            ? 'Configure secrets'
+                            : status
+                      const inheritedSources = (candidate.source_mappings || [])
+                        .filter(mapping => mapping.role !== 'request')
+                        .map(mapping => `${mapping.role || 'source'}: ${mapping.path || ''}`)
+                      const inheritedBadges = inheritedSources
+                      return (
+                        <tr key={candidate.candidate_id}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={selected}
+                              disabled={loading}
+                              aria-label={`Select ${candidate.script.name}`}
+                              onChange={event => setSelectedCandidateIds(previous => event.target.checked
+                                ? [...previous, candidate.candidate_id]
+                                : previous.filter(id => id !== candidate.candidate_id))}
+                            />
+                          </td>
+                          <td>
+                            <strong>{candidate.source_path}</strong>
+                            {candidate.sequence !== undefined && <small>Sequence {candidate.sequence}</small>}
+                            {inheritedBadges.length > 0 && (
+                              <span className="bruno-native-badges">
+                                {inheritedBadges.map(field => <em key={field}>inherited {field}</em>)}
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            <input
+                              aria-label={`Name for ${candidate.source_path}`}
+                              disabled={loading || !selected}
+                              value={nativeNameOverrides[candidate.candidate_id] ?? candidate.script.name}
+                              onChange={event => setNativeNameOverrides(previous => ({ ...previous, [candidate.candidate_id]: event.target.value }))}
+                            />
+                          </td>
+                          <td><code>{nativeCandidateMethod(candidate)}</code><small>{nativeCandidateTarget(candidate)}</small></td>
+                          <td><span className={`bruno-native-status ${status}`}>{statusLabel}</span></td>
+                          <td>
+                            <details>
+                              <summary>Review</summary>
+                              {(candidate.missing_variables || []).length > 0 && (
+                                <div><strong>Missing variables</strong><p>{candidate.missing_variables?.join(', ')}</p></div>
+                              )}
+                              {(candidate.secret_requirements || []).length > 0 && (
+                                <div><strong>Secrets</strong><p>{candidate.secret_requirements?.map(requirement => requirement.suggested_name).join(', ')}</p></div>
+                              )}
+                              {(candidate.diagnostics || []).length > 0 && (
+                                <div className="bruno-native-diagnostics">
+                                  <strong>Diagnostics</strong>
+                                  {candidate.diagnostics?.map((diagnostic, index) => (
+                                    <p key={nativeFindingID(diagnostic) || `${diagnostic.code}-${index}`}>
+                                      <code>{diagnostic.code || diagnostic.id || 'finding'}</code> {diagnostic.message}
+                                    </p>
+                                  ))}
+                                </div>
+                              )}
+                              {(candidate.source_mappings || []).length > 0 && (
+                                <div><strong>Source mappings</strong><pre className="bruno-json">{JSON.stringify(candidate.source_mappings, null, 2)}</pre></div>
+                              )}
+                              <strong>Masked native script</strong>
+                              <BrunoImportPreviewScript script={candidate.script} />
+                            </details>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              {nativeReviewFindingIds.length > 0 && (
+                <div className="bruno-native-acknowledgements">
+                  <h4>Review-gated conversions</h4>
+                  <p>These scripts can be saved as drafts, but replay remains blocked until the unsupported behavior is translated and its gate removed.</p>
+                  {nativeReviewFindingIds.map(findingId => (
+                    <label key={findingId}>
+                      <input
+                        type="checkbox"
+                        disabled={loading}
+                        checked={acknowledgedFindingIds.includes(findingId)}
+                        onChange={event => setAcknowledgedFindingIds(previous => event.target.checked
+                          ? [...previous, findingId]
+                          : previous.filter(id => id !== findingId))}
+                      />
+                      I reviewed and acknowledge <code>{findingId}</code>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
 
           {(inspection.result.security_findings || []).length > 0 && (
             <section className="bruno-card">
@@ -706,8 +1218,16 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
           {!committed && (
             <section className="bruno-commit-bar">
               <div>
-                <strong>{syncScriptId ? 'Create synchronized revision' : 'Commit canonical Bruno script'}</strong>
-                <span>Raw and sanitized source artifacts are immutable, encrypted, and content-addressed.</span>
+                <strong>{outputMode === 'native_requests'
+                  ? `Save ${selectedNativeCandidates.length} native script${selectedNativeCandidates.length === 1 ? '' : 's'}`
+                  : syncScriptId ? 'Create synchronized revision' : 'Commit canonical Bruno script'}</strong>
+                <span>{outputMode === 'native_requests'
+                  ? destinationFolderId
+                    ? 'All selected scripts will be saved atomically to the selected folder.'
+                    : 'Select a destination folder before saving.'
+                  : 'Raw and sanitized source artifacts are immutable, encrypted, and content-addressed.'}</span>
+                {unacknowledgedFindingIds.length > 0 && <span>{unacknowledgedFindingIds.length} review finding{unacknowledgedFindingIds.length === 1 ? '' : 's'} must be acknowledged before saving.</span>}
+                {duplicateNativeNames && <span>Selected script names must be unique.</span>}
               </div>
               <button className="btn btn-primary" disabled={!canCommit} onClick={() => void commit()}>
                 {commitButtonLabel}
@@ -717,7 +1237,7 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
         </>
       )}
 
-      {committed && (
+      {committed && outputMode === 'canonical' && isCanonicalCommitResponse(committed) && (
         <section className="bruno-card bruno-committed">
           <div className="bruno-card-heading">
             <div>
@@ -767,6 +1287,23 @@ export default function BrunoImport({ initialFiles, projectId, onImported, onCon
               </button>
             </div>
           )}
+        </section>
+      )}
+
+      {committed && outputMode === 'native_requests' && isNativeCommitResponse(committed) && (
+        <section className="bruno-card bruno-committed">
+          <div className="bruno-card-heading">
+            <div>
+              <span className="bruno-kicker">Native batch saved</span>
+              <h3>{committed.count ?? committed.scripts?.length ?? 0} API script{(committed.count ?? committed.scripts?.length ?? 0) === 1 ? '' : 's'} created</h3>
+              <p>{committed.idempotent_replay ? 'The existing idempotent batch receipt was returned.' : 'The complete selected batch was committed atomically.'}</p>
+            </div>
+          </div>
+          <div className="bruno-native-saved-list">
+            {(committed.scripts || []).map(script => (
+              <span key={script.id || script.name}><strong>{script.name}</strong><small>{script.ref_key || script.id}</small></span>
+            ))}
+          </div>
         </section>
       )}
     </div>

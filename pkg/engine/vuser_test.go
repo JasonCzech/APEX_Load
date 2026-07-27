@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,6 +21,19 @@ type iterationResetProtocol struct {
 	executeCalls  int
 }
 
+type iterationSetupFailureProtocol struct {
+	executeCalls    int
+	teardownStarted chan struct{}
+	releaseTeardown <-chan struct{}
+}
+
+type iterationContextIgnoringResetProtocol struct {
+	executeCalls int
+	resetStarted chan struct{}
+	releaseReset <-chan struct{}
+	resetOnce    sync.Once
+}
+
 type loggingProtocol struct {
 	result       *protocol.Result
 	executeCalls int
@@ -31,7 +45,48 @@ type sequenceProtocol struct {
 	actions      []*protocol.Action
 }
 
+type firstErrorProtocol struct {
+	executeTimes []time.Time
+}
+
 type perActionExtractionProtocol struct{}
+
+type teardownGoalDenialState struct {
+	mu             sync.Mutex
+	actions        []string
+	initCalls      int
+	teardownCalls  int
+	emitterStarted chan struct{}
+	releaseEmitter <-chan struct{}
+	emitterOnce    sync.Once
+}
+
+type teardownGoalDenialProtocol struct {
+	state *teardownGoalDenialState
+}
+
+var (
+	teardownGoalDenialStateMu      sync.Mutex
+	teardownGoalDenialStateCurrent *teardownGoalDenialState
+)
+
+type blockingPacingController struct {
+	started chan struct{}
+}
+
+func (c *blockingPacingController) WaitIfPaused(ctx context.Context) error {
+	return ctx.Err()
+}
+
+func (c *blockingPacingController) SleepActive(ctx context.Context, _ time.Duration) bool {
+	close(c.started)
+	<-ctx.Done()
+	return false
+}
+
+func (*blockingPacingController) ActiveElapsed() time.Duration {
+	return 0
+}
 
 func (*perActionExtractionProtocol) Name() string { return "http" }
 func (*perActionExtractionProtocol) Init(context.Context, map[string]any) error {
@@ -46,6 +101,87 @@ func (*perActionExtractionProtocol) Execute(_ context.Context, action *protocol.
 }
 func (*perActionExtractionProtocol) Teardown(context.Context) error    { return nil }
 func (*perActionExtractionProtocol) HealthCheck(context.Context) error { return nil }
+
+func (*teardownGoalDenialProtocol) Name() string { return "teardown-goal-denial-test" }
+func (p *teardownGoalDenialProtocol) Init(context.Context, map[string]any) error {
+	if p.state != nil {
+		p.state.mu.Lock()
+		p.state.initCalls++
+		p.state.mu.Unlock()
+	}
+	return nil
+}
+func (*teardownGoalDenialProtocol) Execute(context.Context, *protocol.Action) (*protocol.Result, error) {
+	panic("teardown goal denial protocol requires ExecuteStream")
+}
+func (p *teardownGoalDenialProtocol) ExecuteStream(_ context.Context, action *protocol.Action, emit func(*protocol.Result) error) (*protocol.Result, error) {
+	if p.state != nil {
+		p.state.mu.Lock()
+		p.state.actions = append(p.state.actions, action.Name)
+		p.state.mu.Unlock()
+	}
+	switch action.Name {
+	case "no transaction emitter":
+		if p.state != nil && p.state.emitterStarted != nil {
+			p.state.emitterOnce.Do(func() { close(p.state.emitterStarted) })
+			if p.state.releaseEmitter != nil {
+				<-p.state.releaseEmitter
+			}
+		}
+	case "stream transaction":
+		if emit != nil {
+			if err := emit(&protocol.Result{
+				ActionName:          action.Name,
+				BusinessTransaction: true,
+				Success:             true,
+				Duration:            time.Millisecond,
+			}); err != nil {
+				return nil, err
+			}
+		}
+	case "final transaction":
+		return &protocol.Result{
+			ActionName:          action.Name,
+			BusinessTransaction: true,
+			Success:             true,
+			Duration:            time.Millisecond,
+		}, nil
+	}
+	return &protocol.Result{ActionName: action.Name, Success: true, Duration: time.Millisecond}, nil
+}
+func (p *teardownGoalDenialProtocol) Teardown(context.Context) error {
+	if p.state != nil {
+		p.state.mu.Lock()
+		p.state.teardownCalls++
+		p.state.mu.Unlock()
+	}
+	return nil
+}
+func (*teardownGoalDenialProtocol) HealthCheck(context.Context) error { return nil }
+
+func init() {
+	protocol.Register("teardown-goal-denial-test", func() protocol.Protocol {
+		teardownGoalDenialStateMu.Lock()
+		defer teardownGoalDenialStateMu.Unlock()
+		return &teardownGoalDenialProtocol{state: teardownGoalDenialStateCurrent}
+	})
+}
+
+func installTeardownGoalDenialState(t *testing.T) *teardownGoalDenialState {
+	t.Helper()
+	state := &teardownGoalDenialState{}
+	teardownGoalDenialStateMu.Lock()
+	teardownGoalDenialStateCurrent = state
+	teardownGoalDenialStateMu.Unlock()
+	t.Cleanup(func() {
+		teardownGoalDenialStateMu.Lock()
+		if teardownGoalDenialStateCurrent == state {
+			teardownGoalDenialStateCurrent = nil
+		}
+		teardownGoalDenialStateMu.Unlock()
+	})
+	return state
+}
 
 type sequenceCaptureSink struct {
 	results      []*protocol.Result
@@ -70,6 +206,38 @@ func (p *iterationResetProtocol) Teardown(_ context.Context) error {
 	return nil
 }
 func (p *iterationResetProtocol) HealthCheck(_ context.Context) error { return nil }
+
+func (*iterationSetupFailureProtocol) Name() string { return "browser" }
+func (*iterationSetupFailureProtocol) Init(context.Context, map[string]any) error {
+	return fmt.Errorf("injected iteration setup failure")
+}
+func (p *iterationSetupFailureProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	p.executeCalls++
+	if action.Name == "cleanup" && p.teardownStarted != nil {
+		close(p.teardownStarted)
+		if p.releaseTeardown != nil {
+			<-p.releaseTeardown
+		}
+	}
+	return &protocol.Result{ActionName: action.Name, Success: true, Duration: time.Millisecond}, nil
+}
+func (*iterationSetupFailureProtocol) Teardown(context.Context) error    { return nil }
+func (*iterationSetupFailureProtocol) HealthCheck(context.Context) error { return nil }
+
+func (*iterationContextIgnoringResetProtocol) Name() string { return "browser" }
+func (p *iterationContextIgnoringResetProtocol) Init(context.Context, map[string]any) error {
+	p.resetOnce.Do(func() {
+		close(p.resetStarted)
+		<-p.releaseReset
+	})
+	return nil
+}
+func (p *iterationContextIgnoringResetProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	p.executeCalls++
+	return &protocol.Result{ActionName: action.Name, Success: true, Duration: time.Millisecond}, nil
+}
+func (*iterationContextIgnoringResetProtocol) Teardown(context.Context) error    { return nil }
+func (*iterationContextIgnoringResetProtocol) HealthCheck(context.Context) error { return nil }
 
 func (p *loggingProtocol) Name() string                                   { return "http" }
 func (p *loggingProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
@@ -110,6 +278,18 @@ func (p *sequenceProtocol) Execute(_ context.Context, action *protocol.Action) (
 }
 func (p *sequenceProtocol) Teardown(_ context.Context) error    { return nil }
 func (p *sequenceProtocol) HealthCheck(_ context.Context) error { return nil }
+
+func (p *firstErrorProtocol) Name() string                                   { return "http" }
+func (p *firstErrorProtocol) Init(_ context.Context, _ map[string]any) error { return nil }
+func (p *firstErrorProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	p.executeTimes = append(p.executeTimes, time.Now())
+	if len(p.executeTimes) == 1 {
+		return nil, fmt.Errorf("first action failed")
+	}
+	return &protocol.Result{ActionName: action.Name, Success: true, Duration: time.Millisecond}, nil
+}
+func (p *firstErrorProtocol) Teardown(_ context.Context) error    { return nil }
+func (p *firstErrorProtocol) HealthCheck(_ context.Context) error { return nil }
 
 func (s *sequenceCaptureSink) RecordResult(result *protocol.Result) error {
 	s.results = append(s.results, result)
@@ -267,6 +447,714 @@ func TestHTTPSequenceAggregateExtractionBudgetFailsClosed(t *testing.T) {
 	}
 	if len(result.Extractions) != 0 {
 		t.Fatalf("sequence retained %d partial extractions", len(result.Extractions))
+	}
+}
+
+func TestHTTPSequenceTypedChildRequiresTarget(t *testing.T) {
+	_, err := httpSequenceChildActions(dsl.Action{
+		Name: "sequence",
+		Type: "http_sequence",
+		Params: map[string]any{
+			"requests": []dsl.Action{{
+				Name:   "missing target",
+				Type:   "GET",
+				Method: "GET",
+			}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "missing target") {
+		t.Fatalf("httpSequenceChildActions() error = %v, want typed-child target rejection", err)
+	}
+}
+
+func TestHTTPSequenceChildMetadataProjectionDoesNotMutateSharedScript(t *testing.T) {
+	childMetadata := map[string]any{"source_step_id": "child-step"}
+	action := dsl.Action{
+		Name:     "sequence",
+		Type:     "http_sequence",
+		Metadata: map[string]any{"source_transaction": "parent-transaction"},
+		Params: map[string]any{
+			"requests": []dsl.Action{{
+				Name:     "child",
+				Type:     "GET",
+				Method:   "GET",
+				Target:   "/child",
+				Metadata: childMetadata,
+			}},
+		},
+	}
+
+	const workers = 32
+	errs := make(chan error, workers)
+	var wg sync.WaitGroup
+	for worker := 0; worker < workers; worker++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			children, err := httpSequenceChildActions(action)
+			if err != nil {
+				errs <- err
+				return
+			}
+			if got := children[0].Metadata["source_transaction"]; got != "parent-transaction" {
+				errs <- fmt.Errorf("inherited source transaction = %#v", got)
+				return
+			}
+			children[0].Metadata["worker-local"] = true
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Error(err)
+	}
+	if _, mutated := childMetadata["source_transaction"]; mutated {
+		t.Fatal("sequence projection mutated shared child metadata with parent inheritance")
+	}
+	if _, mutated := childMetadata["worker-local"]; mutated {
+		t.Fatal("sequence projection returned the shared child metadata map")
+	}
+}
+
+func TestHTTPSequenceCarriesChildThinkTimeWithoutInflatingResponseDuration(t *testing.T) {
+	vu := &VUser{
+		Proto: &sequenceProtocol{},
+		Script: &dsl.Script{Config: dsl.ScriptConfig{ThinkTime: dsl.ThinkTimeConfig{
+			Type: "recorded", Multiplier: 2, LimitMs: 30,
+		}}},
+		Metrics: NewMetricsCollector(16), Variables: map[string]string{},
+	}
+	start := time.Now()
+	result, err := vu.executeHTTPSequenceAction(context.Background(), dsl.Action{
+		Name: "sequence", Type: "http_sequence", Params: map[string]any{"requests": []dsl.Action{
+			{Name: "first", Type: "GET", Method: "GET", Target: "/", ThinkTimeAfter: true, ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 20}},
+			{Name: "second", Type: "GET", Method: "GET", Target: "/next"},
+		}},
+	}, dsl.ErrorHandlingConfig{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(start); elapsed < 25*time.Millisecond {
+		t.Fatalf("child think time did not execute: elapsed=%s", elapsed)
+	}
+	if result.Duration != 2*time.Millisecond {
+		t.Fatalf("aggregate response duration = %s, want child response durations only", result.Duration)
+	}
+}
+
+func TestVUserDoesNotPaceAfterLastFiniteIteration(t *testing.T) {
+	vu := &VUser{
+		Proto: &iterationResetProtocol{},
+		Script: &dsl.Script{
+			Protocol: "browser",
+			Config: dsl.ScriptConfig{
+				RunLogic: dsl.RunLogicConfig{Iterations: 1},
+				Pacing:   dsl.PacingConfig{Type: "fixed_delay", DelayMs: 400},
+			},
+		},
+		Metrics: NewMetricsCollector(16),
+	}
+	start := time.Now()
+	vu.Run(context.Background())
+	if elapsed := time.Since(start); elapsed >= 250*time.Millisecond {
+		t.Fatalf("single finite iteration paced after completion: elapsed=%s", elapsed)
+	}
+}
+
+func TestVUserInterruptedPacingReleasesIterationAndAutomaticTransactionReservations(t *testing.T) {
+	runLogic := dsl.RunLogicConfig{
+		AutoTransactions: "per_iteration",
+		GlobalIterations: 2,
+		MaxTransactions:  2,
+	}
+	limiter := NewExecutionGoalLimiter(runLogic, func() {})
+	pauseControl := &blockingPacingController{started: make(chan struct{})}
+	protoStub := &iterationResetProtocol{}
+	vu := &VUser{
+		Proto:          protoStub,
+		Metrics:        NewMetricsCollector(16),
+		PauseControl:   pauseControl,
+		ExecutionGoals: limiter,
+		Script: &dsl.Script{
+			Name:     "interruptible-reservations",
+			Protocol: "browser",
+			Config: dsl.ScriptConfig{
+				RunLogic: runLogic,
+				Pacing:   dsl.PacingConfig{Type: "fixed_delay", DelayMs: 5_000},
+			},
+			Actions: []dsl.Action{{Name: "request", Type: "request", Target: "/"}},
+		},
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		vu.Run(ctx)
+	}()
+
+	select {
+	case <-pauseControl.started:
+		cancel()
+	case <-time.After(time.Second):
+		cancel()
+		t.Fatal("second iteration did not enter pacing")
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("VUser did not stop after pacing cancellation")
+	}
+
+	if protoStub.executeCalls != 1 {
+		t.Fatalf("executions = %d, want only the first committed iteration", protoStub.executeCalls)
+	}
+	if !limiter.TryStartIteration() {
+		t.Fatal("interrupted pacing permanently consumed the second global-iteration slot")
+	}
+	if !limiter.TryStartTransaction() {
+		t.Fatal("interrupted pacing permanently consumed the second per-iteration transaction slot")
+	}
+}
+
+func TestVUserDoesNotPaceAfterPerActionTransactionGoal(t *testing.T) {
+	protoStub := &iterationResetProtocol{}
+	sink := &sequenceCaptureSink{}
+	runLogic := dsl.RunLogicConfig{AutoTransactions: "per_action", MaxTransactions: 1}
+	vu := &VUser{
+		Proto: protoStub, Metrics: NewMetricsCollector(16), ResultSink: sink,
+		ExecutionGoals: NewExecutionGoalLimiter(runLogic, func() {}),
+		Script: &dsl.Script{
+			Protocol: "browser",
+			Config: dsl.ScriptConfig{
+				RunLogic: runLogic,
+				Pacing:   dsl.PacingConfig{Type: "fixed_delay", DelayMs: 350},
+			},
+			Actions: []dsl.Action{{Name: "only action", Type: "request", Target: "/"}},
+		},
+	}
+	start := time.Now()
+	vu.Run(context.Background())
+	if elapsed := time.Since(start); elapsed >= 200*time.Millisecond {
+		t.Fatalf("per-action transaction goal paced after its final transaction: elapsed=%s", elapsed)
+	}
+	if protoStub.executeCalls != 1 || len(sink.transactions) != 1 {
+		t.Fatalf("executions=%d transactions=%d, want one reserved transaction executed once", protoStub.executeCalls, len(sink.transactions))
+	}
+}
+
+func TestVUserReservesFirstTPSActionTransactionBeforeTokenWait(t *testing.T) {
+	runLogic := dsl.RunLogicConfig{
+		Iterations:       1,
+		AutoTransactions: "per_action",
+		MaxTransactions:  1,
+	}
+	softCtx, softCancel := context.WithCancel(context.Background())
+	defer softCancel()
+	limiter := NewExecutionGoalLimiter(runLogic, softCancel)
+	rateLimiter := &TokenBucket{
+		tokens: make(chan struct{}, 1),
+		done:   make(chan struct{}),
+	}
+	script := &dsl.Script{
+		Protocol: "browser",
+		Config: dsl.ScriptConfig{
+			RunLogic: runLogic,
+			Pacing:   dsl.PacingConfig{Type: "tps", TPS: 1},
+		},
+		Actions: []dsl.Action{{Name: "only action", Type: "request", Target: "/"}},
+	}
+
+	protocols := make([]*iterationResetProtocol, 3)
+	done := make(chan struct{}, len(protocols))
+	for index := range protocols {
+		protocols[index] = &iterationResetProtocol{}
+		vu := &VUser{
+			ID:                   index,
+			Proto:                protocols[index],
+			Script:               script,
+			Metrics:              NewMetricsCollector(16),
+			IterationRateLimiter: rateLimiter,
+			ExecutionGoals:       limiter,
+			HardStopCtx:          context.Background(),
+		}
+		go func() {
+			vu.Run(softCtx)
+			done <- struct{}{}
+		}()
+	}
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		limiter.transactionMu.Lock()
+		pending := limiter.pendingTransactions
+		limiter.transactionMu.Unlock()
+		if pending == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("first TPS iteration did not reserve its transaction before waiting")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	rateLimiter.tokens <- struct{}{}
+
+	for range protocols {
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			softCancel()
+			t.Fatal("TPS VUsers remained blocked after the sole transaction committed")
+		}
+	}
+	executions := 0
+	for _, protoStub := range protocols {
+		executions += protoStub.executeCalls
+	}
+	if executions != 1 {
+		t.Fatalf("executions = %d, want exactly one transaction-bearing action", executions)
+	}
+}
+
+func TestVUserTPSIterationAndSourceTransactionsDoNotWaitOnOwnReservation(t *testing.T) {
+	runLogic := dsl.RunLogicConfig{
+		Iterations:       1,
+		AutoTransactions: "per_iteration",
+		MaxTransactions:  1,
+	}
+	softCtx, softCancel := context.WithCancel(context.Background())
+	defer softCancel()
+	limiter := NewExecutionGoalLimiter(runLogic, softCancel)
+	rateLimiter := &TokenBucket{
+		tokens: make(chan struct{}, 1),
+		done:   make(chan struct{}),
+	}
+	sink := &sequenceCaptureSink{}
+	vu := &VUser{
+		Proto:                &iterationResetProtocol{},
+		Metrics:              NewMetricsCollector(16),
+		ResultSink:           sink,
+		IterationRateLimiter: rateLimiter,
+		ExecutionGoals:       limiter,
+		HardStopCtx:          context.Background(),
+		Script: &dsl.Script{
+			Protocol: "browser",
+			Config: dsl.ScriptConfig{
+				RunLogic: runLogic,
+				Pacing:   dsl.PacingConfig{Type: "tps", TPS: 1},
+			},
+			Actions: []dsl.Action{sourceTransactionAction("lr_start_transaction", "")},
+		},
+	}
+	done := make(chan struct{})
+	go func() {
+		vu.Run(softCtx)
+		close(done)
+	}()
+
+	deadline := time.Now().Add(time.Second)
+	for {
+		limiter.transactionMu.Lock()
+		pending := limiter.pendingTransactions
+		limiter.transactionMu.Unlock()
+		if pending == 1 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("automatic iteration transaction was not reserved")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	rateLimiter.tokens <- struct{}{}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		softCancel()
+		t.Fatal("VUser waited on a second transaction slot while holding its own reservation")
+	}
+	if len(sink.transactions) != 1 {
+		t.Fatalf("recorded automatic transactions = %d, want the one reserved iteration transaction", len(sink.transactions))
+	}
+}
+
+func TestVUserSetupFailureReleasesIterationAndAutomaticTransactionReservations(t *testing.T) {
+	newUserPerIteration := true
+	runLogic := dsl.RunLogicConfig{
+		Iterations:       2,
+		AutoTransactions: "per_iteration",
+		GlobalIterations: 2,
+		MaxTransactions:  2,
+	}
+	limiter := NewExecutionGoalLimiter(runLogic, func() {})
+	protoStub := &iterationSetupFailureProtocol{}
+	sink := &sequenceCaptureSink{}
+	vu := &VUser{
+		Proto:          protoStub,
+		Metrics:        NewMetricsCollector(16),
+		ResultSink:     sink,
+		ExecutionGoals: limiter,
+		Script: &dsl.Script{
+			Protocol: "browser",
+			Config: dsl.ScriptConfig{
+				RunLogic: runLogic,
+				Browser:  dsl.BrowserConfig{NewUserPerIter: &newUserPerIteration},
+			},
+			Actions: []dsl.Action{{Name: "request", Type: "request", Target: "/"}},
+		},
+	}
+
+	vu.Run(context.Background())
+
+	if protoStub.executeCalls != 1 {
+		t.Fatalf("executions = %d, want only the first successfully prepared iteration", protoStub.executeCalls)
+	}
+	if len(sink.transactions) != 1 {
+		t.Fatalf("recorded automatic transactions = %d, want one", len(sink.transactions))
+	}
+	if !limiter.TryStartIteration() {
+		t.Fatal("failed setup consumed the second global-iteration reservation")
+	}
+	if !limiter.TryStartTransaction() {
+		t.Fatal("failed setup consumed the second automatic-transaction reservation")
+	}
+}
+
+func TestVUserSetupFailureReleasesReservationsBeforeTeardown(t *testing.T) {
+	newUserPerIteration := true
+	runLogic := dsl.RunLogicConfig{
+		Iterations:       2,
+		AutoTransactions: "per_iteration",
+		GlobalIterations: 2,
+		MaxTransactions:  2,
+	}
+	limiter := NewExecutionGoalLimiter(runLogic, func() {})
+	teardownStarted := make(chan struct{})
+	releaseTeardown := make(chan struct{})
+	protoStub := &iterationSetupFailureProtocol{
+		teardownStarted: teardownStarted,
+		releaseTeardown: releaseTeardown,
+	}
+	vu := &VUser{
+		Proto:          protoStub,
+		Metrics:        NewMetricsCollector(16),
+		ExecutionGoals: limiter,
+		Script: &dsl.Script{
+			Protocol: "browser",
+			Config: dsl.ScriptConfig{
+				RunLogic: runLogic,
+				Browser:  dsl.BrowserConfig{NewUserPerIter: &newUserPerIteration},
+			},
+			Actions:  []dsl.Action{{Name: "request", Type: "request", Target: "/"}},
+			Teardown: []dsl.Action{{Name: "cleanup", Type: "request", Target: "/cleanup"}},
+		},
+	}
+	done := make(chan struct{})
+	go func() {
+		vu.Run(context.Background())
+		close(done)
+	}()
+
+	select {
+	case <-teardownStarted:
+	case <-time.After(time.Second):
+		t.Fatal("setup failure did not enter teardown")
+	}
+	if !limiter.TryStartIteration() {
+		close(releaseTeardown)
+		t.Fatal("failed setup held its iteration reservation throughout teardown")
+	}
+	if !limiter.TryStartTransaction() {
+		close(releaseTeardown)
+		t.Fatal("failed setup held its transaction reservation throughout teardown")
+	}
+	close(releaseTeardown)
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("VUser did not finish after teardown was released")
+	}
+}
+
+func TestIterationResetUsesDynamicGoalBoundaryAndRechecksIgnoredContext(t *testing.T) {
+	newUserPerIteration := true
+	for _, entitled := range []bool{false, true} {
+		name := "soft"
+		if entitled {
+			name = "goal-entitled"
+		}
+		t.Run(name, func(t *testing.T) {
+			resetStarted := make(chan struct{})
+			releaseReset := make(chan struct{})
+			protoStub := &iterationContextIgnoringResetProtocol{
+				resetStarted: resetStarted,
+				releaseReset: releaseReset,
+			}
+			runLogic := dsl.RunLogicConfig{Iterations: 2}
+			softCtx, softCancel := context.WithCancel(context.Background())
+			defer softCancel()
+			var limiter *ExecutionGoalLimiter
+			if entitled {
+				runLogic.GlobalIterations = 2
+				limiter = NewExecutionGoalLimiter(runLogic, softCancel)
+			}
+			vu := &VUser{
+				Proto:             protoStub,
+				Metrics:           NewMetricsCollector(16),
+				ExecutionGoals:    limiter,
+				HardStopCtx:       context.Background(),
+				ActionBoundaryCtx: context.Background(),
+				Script: &dsl.Script{
+					Protocol: "browser",
+					Config: dsl.ScriptConfig{
+						RunLogic: runLogic,
+						Browser:  dsl.BrowserConfig{NewUserPerIter: &newUserPerIteration},
+					},
+					Actions: []dsl.Action{{Name: "request", Type: "request", Target: "/"}},
+				},
+			}
+			done := make(chan struct{})
+			go func() {
+				vu.Run(softCtx)
+				close(done)
+			}()
+			select {
+			case <-resetStarted:
+			case <-time.After(time.Second):
+				t.Fatal("second iteration did not enter protocol reset")
+			}
+			softCancel()
+			close(releaseReset)
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("VUser did not finish after reset returned")
+			}
+			wantExecutions := 1
+			if entitled {
+				wantExecutions = 2
+			}
+			if protoStub.executeCalls != wantExecutions {
+				t.Fatalf("executions = %d, want %d", protoStub.executeCalls, wantExecutions)
+			}
+		})
+	}
+}
+
+func TestVUserReleasesUnusedPrePacingTransactionReservation(t *testing.T) {
+	protoStub := &iterationResetProtocol{}
+	runLogic := dsl.RunLogicConfig{
+		Iterations:       2,
+		AutoTransactions: "per_action",
+		MaxTransactions:  1,
+	}
+	limiter := NewExecutionGoalLimiter(runLogic, func() {})
+	vu := &VUser{
+		Proto: protoStub, Metrics: NewMetricsCollector(16), ExecutionGoals: limiter,
+		Script: &dsl.Script{
+			Protocol: "browser",
+			Config:   dsl.ScriptConfig{RunLogic: runLogic},
+			Actions: []dsl.Action{{
+				Name: "skipped request", Type: "control_if",
+				Control: &dsl.ControlFlow{
+					Condition: &dsl.Condition{Expr: "false"},
+					Steps:     []dsl.Action{{Name: "never", Type: "request", Target: "/never"}},
+				},
+			}},
+		},
+	}
+	vu.Run(context.Background())
+	if protoStub.executeCalls != 0 {
+		t.Fatalf("skipped control branch executed %d requests", protoStub.executeCalls)
+	}
+	if !limiter.TryStartTransaction() {
+		t.Fatal("unused pre-pacing reservation consumed the transaction goal")
+	}
+}
+
+func TestUnusedKnownEmitterReservationRestoresSoftActionBoundary(t *testing.T) {
+	state := installTeardownGoalDenialState(t)
+	emitterStarted := make(chan struct{})
+	releaseEmitter := make(chan struct{})
+	state.emitterStarted = emitterStarted
+	state.releaseEmitter = releaseEmitter
+	runLogic := dsl.RunLogicConfig{
+		Iterations:      1,
+		MaxTransactions: 1,
+	}
+	softCtx, softCancel := context.WithCancel(context.Background())
+	defer softCancel()
+	limiter := NewExecutionGoalLimiter(runLogic, softCancel)
+	vu := &VUser{
+		Proto:             &teardownGoalDenialProtocol{state: state},
+		Metrics:           NewMetricsCollector(16),
+		ExecutionGoals:    limiter,
+		HardStopCtx:       context.Background(),
+		ActionBoundaryCtx: context.Background(),
+		Script: &dsl.Script{
+			Protocol: "teardown-goal-denial-test",
+			Config: dsl.ScriptConfig{
+				RunLogic:  runLogic,
+				ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 1_000},
+			},
+			Actions: []dsl.Action{
+				{
+					Name:           "no transaction emitter",
+					Type:           "java_vuser_run",
+					Target:         "/emitter",
+					ThinkTimeAfter: true,
+					Metadata:       map[string]any{"emits_business_transactions": true},
+				},
+				{Name: "must not run after peer goal", Type: "request", Target: "/after"},
+			},
+		},
+	}
+	done := make(chan struct{})
+	go func() {
+		vu.Run(softCtx)
+		close(done)
+	}()
+	select {
+	case <-emitterStarted:
+	case <-time.After(time.Second):
+		t.Fatal("known emitter did not start after reserving its transaction")
+	}
+	peerClaimed := make(chan bool, 1)
+	go func() {
+		peerClaimed <- limiter.WaitStartTransaction(softCtx)
+	}()
+	close(releaseEmitter)
+	select {
+	case claimed := <-peerClaimed:
+		if !claimed {
+			t.Fatal("peer did not inherit the emitter's unused reservation")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("peer remained blocked after the unused emitter reservation was released")
+	}
+	select {
+	case <-done:
+	case <-time.After(500 * time.Millisecond):
+		t.Fatal("VUser retained a hard boundary after releasing its sole entitlement")
+	}
+	state.mu.Lock()
+	got := append([]string(nil), state.actions...)
+	state.mu.Unlock()
+	if len(got) != 1 || got[0] != "no transaction emitter" {
+		t.Fatalf("protocol executions = %v, want only the unentitled emitter action", got)
+	}
+}
+
+func TestVUserContinuedHardErrorRetainsActionThinkTime(t *testing.T) {
+	waitAction := dsl.Action{
+		Name: "failed", Type: "GET", Target: "/failed", ThinkTimeAfter: true,
+		ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 35},
+	}
+	nextAction := dsl.Action{Name: "next", Type: "GET", Target: "/next"}
+
+	t.Run("main", func(t *testing.T) {
+		protoStub := &firstErrorProtocol{}
+		vu := &VUser{
+			Proto: protoStub, Metrics: NewMetricsCollector(16),
+			Script: &dsl.Script{
+				Protocol: "http",
+				Config: dsl.ScriptConfig{
+					RunLogic:      dsl.RunLogicConfig{Iterations: 1},
+					ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true},
+				},
+				Actions: []dsl.Action{waitAction, nextAction},
+			},
+		}
+		vu.Run(context.Background())
+		assertContinuedActionWait(t, protoStub.executeTimes)
+	})
+
+	t.Run("teardown", func(t *testing.T) {
+		protoStub := &firstErrorProtocol{}
+		vu := &VUser{
+			Proto: protoStub, Metrics: NewMetricsCollector(16),
+			Script: &dsl.Script{
+				Protocol: "http",
+				Config:   dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+				Teardown: []dsl.Action{waitAction, nextAction},
+			},
+		}
+		vu.Run(context.Background())
+		assertContinuedActionWait(t, protoStub.executeTimes)
+	})
+}
+
+func TestVUserMalformedHTTPSequenceRetainsParentThinkTimeWhenContinuing(t *testing.T) {
+	protoStub := &sequenceProtocol{}
+	vu := &VUser{
+		Proto: protoStub, Metrics: NewMetricsCollector(16),
+		Script: &dsl.Script{
+			Protocol: "http",
+			Config: dsl.ScriptConfig{
+				RunLogic:      dsl.RunLogicConfig{Iterations: 1},
+				ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true},
+			},
+			Actions: []dsl.Action{
+				{
+					Name: "malformed", Type: "http_sequence",
+					Params:         map[string]any{"requests": "not-an-array"},
+					ThinkTimeAfter: true,
+					ThinkTime:      dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 45},
+				},
+				{Name: "after", Type: "GET", Method: "GET", Target: "/after"},
+			},
+		},
+	}
+	start := time.Now()
+	vu.Run(context.Background())
+	if elapsed := time.Since(start); elapsed < 35*time.Millisecond {
+		t.Fatalf("continued malformed sequence skipped parent think time: elapsed=%s", elapsed)
+	}
+	if len(protoStub.actions) != 1 || protoStub.actions[0].Name != "after" {
+		t.Fatalf("protocol actions = %#v, want only the action after the malformed container", protoStub.actions)
+	}
+}
+
+func assertContinuedActionWait(t *testing.T, executeTimes []time.Time) {
+	t.Helper()
+	if len(executeTimes) != 2 {
+		t.Fatalf("executed actions = %d, want 2", len(executeTimes))
+	}
+	if gap := executeTimes[1].Sub(executeTimes[0]); gap < 25*time.Millisecond {
+		t.Fatalf("continued action started after %s, want retained think time", gap)
+	}
+}
+
+func TestVUserLifecycleHTTPSequenceExecutesChildrenAndActionWaits(t *testing.T) {
+	protoStub := &sequenceProtocol{}
+	sink := &sequenceCaptureSink{}
+	vu := &VUser{
+		Proto: protoStub, Metrics: NewMetricsCollector(16), ResultSink: sink,
+		Variables: map[string]string{},
+		Script: &dsl.Script{
+			Protocol: "http",
+			Config: dsl.ScriptConfig{
+				RunLogic:  dsl.RunLogicConfig{Iterations: 1},
+				ThinkTime: dsl.ThinkTimeConfig{Type: "recorded", Multiplier: 1},
+			},
+			Init: []dsl.Action{{
+				Name: "init sequence", Type: "http_sequence",
+				Params: map[string]any{"requests": []dsl.Action{
+					{Name: "Login", Type: "GET", Method: "GET", Target: "/login", ThinkTimeAfter: true, ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 25}},
+					{Name: "warmup", Type: "GET", Method: "GET", Target: "/warmup"},
+				}},
+			}},
+		},
+	}
+	start := time.Now()
+	vu.Run(context.Background())
+	if len(protoStub.actions) != 2 || len(sink.results) != 2 || len(sink.transactions) != 1 {
+		t.Fatalf("lifecycle sequence actions=%d results=%d transactions=%d", len(protoStub.actions), len(sink.results), len(sink.transactions))
+	}
+	if sink.transactions[0].ActionName != "init sequence" {
+		t.Fatalf("first transaction = %#v, want lifecycle sequence aggregate", sink.transactions[0])
+	}
+	if elapsed := time.Since(start); elapsed < 20*time.Millisecond {
+		t.Fatalf("lifecycle sequence skipped child wait: elapsed=%s", elapsed)
 	}
 }
 
@@ -518,7 +1406,7 @@ func TestToProtocolExtractors(t *testing.T) {
 		{Name: "header_val", Source: "header", Type: "regex", Expression: "X-Request-Id: (.+)"},
 	}
 
-	result := toProtocolExtractors(exts)
+	result := toProtocolExtractors(exts, nil)
 	if len(result) != 2 {
 		t.Fatalf("count = %d, want 2", len(result))
 	}
@@ -533,7 +1421,7 @@ func TestToProtocolAssertions(t *testing.T) {
 		{Type: "status_code_range", Min: 200, Max: 299},
 	}
 
-	result := toProtocolAssertions(asserts)
+	result := toProtocolAssertions(asserts, nil)
 	if len(result) != 2 {
 		t.Fatalf("count = %d, want 2", len(result))
 	}
@@ -542,6 +1430,71 @@ func TestToProtocolAssertions(t *testing.T) {
 	}
 	if result[1].Min != 200 || result[1].Max != 299 {
 		t.Errorf("assertion[1] range = %d-%d, want 200-299", result[1].Min, result[1].Max)
+	}
+}
+
+func TestResolveActionInterpolatesExtractorAndAssertionInputs(t *testing.T) {
+	vu := &VUser{Variables: map[string]string{
+		"capture_pattern": `token=([a-z]+)`,
+		"expected_body":   "ready",
+		"expected_header": "application/json",
+	}}
+	action := dsl.Action{
+		Name: "templated checks",
+		Extractors: []dsl.Extractor{{
+			Name:       "token",
+			Source:     "body",
+			Type:       "regex",
+			Expression: "{{var.capture_pattern}}",
+		}},
+		Assertions: []dsl.Assertion{
+			{Type: "body_contains", Value: "{{var.expected_body}}"},
+			{Type: "header_contains", Value: "Content-Type", Expected: "{{var.expected_header}}"},
+		},
+	}
+
+	resolved := vu.resolveAction(action)
+	if got := resolved.Extractors[0].Expression; got != `token=([a-z]+)` {
+		t.Fatalf("extractor expression = %q, want interpolated pattern", got)
+	}
+	if got := resolved.Assertions[0].Value; got != "ready" {
+		t.Fatalf("body assertion value = %q, want interpolated value", got)
+	}
+	if got := resolved.Assertions[1].Expected; got != "application/json" {
+		t.Fatalf("header assertion expected = %#v, want interpolated value", got)
+	}
+	if action.Extractors[0].Expression != "{{var.capture_pattern}}" ||
+		action.Assertions[0].Value != "{{var.expected_body}}" {
+		t.Fatal("resolveAction mutated the shared source action")
+	}
+}
+
+func TestResolveActionTracksUnresolvedParameterInAssertionInput(t *testing.T) {
+	adapter := &loggingProtocol{}
+	vu := &VUser{
+		Variables: map[string]string{},
+		Proto:     adapter,
+		Script:    &dsl.Script{Protocol: "http"},
+	}
+	resolved := vu.resolveAction(dsl.Action{
+		Name: "unresolved assertion",
+		Assertions: []dsl.Assertion{{
+			Type:  "body_contains",
+			Value: "{{param.expected_body}}",
+		}},
+	})
+	if got := resolved.Assertions[0].Value; got != "{{param.expected_body}}" {
+		t.Fatalf("unresolved assertion = %q, want retained token", got)
+	}
+	if got := strings.Join(vu.unresolvedParameterRefs, ","); !strings.Contains(got, "param.expected_body") {
+		t.Fatalf("unresolved parameter refs = %#v, want assertion reference", vu.unresolvedParameterRefs)
+	}
+	if _, err := vu.safeProtoExecute(context.Background(), resolved); err == nil ||
+		!strings.Contains(err.Error(), "unresolved {{param.*}}") {
+		t.Fatalf("safeProtoExecute() error = %v, want pre-transport assertion binding rejection", err)
+	}
+	if adapter.executeCalls != 0 {
+		t.Fatalf("protocol execute calls = %d, want rejection before transport", adapter.executeCalls)
 	}
 }
 
@@ -1307,5 +2260,880 @@ func TestSourceTransactionNameAcceptsLegacyKey(t *testing.T) {
 		"loadrunner_transaction": "Old",
 	}); got != "New" {
 		t.Errorf("canonical key should win, got %q, want New", got)
+	}
+}
+
+func TestVUserInitStopsAfterPeerSatisfiesTransactionGoal(t *testing.T) {
+	state := installGracefulBoundaryState(t)
+	runLogic := dsl.RunLogicConfig{
+		Iterations:       1,
+		AutoTransactions: "per_action",
+		MaxTransactions:  1,
+	}
+	softCtx, softCancel := context.WithCancel(context.Background())
+	defer softCancel()
+	limiter := NewExecutionGoalLimiter(runLogic, softCancel)
+
+	target := &VUser{
+		Proto:             &gracefulBoundaryTestProtocol{state: state},
+		Metrics:           NewMetricsCollector(16),
+		ExecutionGoals:    limiter,
+		HardStopCtx:       context.Background(),
+		ActionBoundaryCtx: context.Background(),
+		Script: &dsl.Script{
+			Protocol: "graceful-boundary-test",
+			Config:   dsl.ScriptConfig{RunLogic: runLogic},
+			Init: []dsl.Action{
+				{Name: "first", Type: "request", Target: "/first"},
+				{Name: "second", Type: "request", Target: "/second"},
+			},
+			Actions: []dsl.Action{{Name: "target-main", Type: "request", Target: "/main"}},
+		},
+	}
+	targetDone := make(chan struct{})
+	go func() {
+		target.Run(softCtx)
+		close(targetDone)
+	}()
+	select {
+	case <-state.firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("target VUser did not start its first init action")
+	}
+
+	peerProto := &iterationResetProtocol{}
+	peer := &VUser{
+		Proto:          peerProto,
+		Metrics:        NewMetricsCollector(16),
+		ExecutionGoals: limiter,
+		HardStopCtx:    context.Background(),
+		Script: &dsl.Script{
+			Protocol: "browser",
+			Config:   dsl.ScriptConfig{RunLogic: runLogic},
+			Actions:  []dsl.Action{{Name: "peer-main", Type: "request", Target: "/peer"}},
+		},
+	}
+	peerDone := make(chan struct{})
+	go func() {
+		peer.Run(softCtx)
+		close(peerDone)
+	}()
+	select {
+	case <-peerDone:
+	case <-time.After(time.Second):
+		t.Fatal("peer VUser did not satisfy the transaction goal")
+	}
+	select {
+	case <-softCtx.Done():
+	default:
+		t.Fatal("peer transaction did not cancel the shared soft context")
+	}
+
+	close(state.releaseFirst)
+	select {
+	case <-targetDone:
+	case <-time.After(time.Second):
+		t.Fatal("target VUser did not stop after its in-flight init action completed")
+	}
+	select {
+	case <-state.firstReturned:
+	default:
+		t.Fatal("soft goal cancellation interrupted the in-flight init action")
+	}
+	if got := boundaryActionNames(state); len(got) != 1 || got[0] != "first" {
+		t.Fatalf("target actions = %v, want only the in-flight first init action", got)
+	}
+	if peerProto.executeCalls != 1 {
+		t.Fatalf("peer executions = %d, want one goal-owning action", peerProto.executeCalls)
+	}
+}
+
+func TestLifecycleHTTPSequencesRespectTransactionGoal(t *testing.T) {
+	sequence := func(name string) dsl.Action {
+		return dsl.Action{
+			Name: name,
+			Type: "http_sequence",
+			Params: map[string]any{"requests": []dsl.Action{{
+				Name: name + " child", Type: "GET", Method: "GET", Target: "/",
+			}}},
+		}
+	}
+	for _, phase := range []string{"init", "teardown"} {
+		t.Run(phase, func(t *testing.T) {
+			runLogic := dsl.RunLogicConfig{
+				Iterations:       1,
+				AutoTransactions: "per_action",
+				MaxTransactions:  1,
+			}
+			softCtx, softCancel := context.WithCancel(context.Background())
+			defer softCancel()
+			limiter := NewExecutionGoalLimiter(runLogic, softCancel)
+			protoStub := &iterationResetProtocol{}
+			sink := &sequenceCaptureSink{}
+			script := &dsl.Script{
+				Protocol: "browser",
+				Config:   dsl.ScriptConfig{RunLogic: runLogic},
+			}
+			lifecycle := []dsl.Action{sequence("first sequence"), sequence("second sequence")}
+			if phase == "init" {
+				script.Init = lifecycle
+			} else {
+				script.Teardown = lifecycle
+			}
+			vu := &VUser{
+				Proto:          protoStub,
+				Script:         script,
+				Metrics:        NewMetricsCollector(16),
+				ResultSink:     sink,
+				ExecutionGoals: limiter,
+				HardStopCtx:    context.Background(),
+			}
+
+			vu.Run(softCtx)
+
+			if protoStub.executeCalls != 1 {
+				t.Fatalf("lifecycle child executions = %d, want only the claimed first sequence", protoStub.executeCalls)
+			}
+			if len(sink.transactions) != 1 || sink.transactions[0].ActionName != "first sequence" {
+				t.Fatalf("lifecycle transactions = %#v, want only first sequence", sink.transactions)
+			}
+			if limiter.TryStartTransaction() {
+				t.Fatal("lifecycle sequence did not consume MaxTransactions capacity")
+			}
+		})
+	}
+}
+
+func TestKnownStreamEmittersReserveBeforeProtocolExecution(t *testing.T) {
+	for _, phase := range []string{"init", "actions"} {
+		t.Run(phase, func(t *testing.T) {
+			state := installTeardownGoalDenialState(t)
+			runLogic := dsl.RunLogicConfig{
+				Iterations:      1,
+				MaxTransactions: 1,
+			}
+			softCtx, softCancel := context.WithCancel(context.Background())
+			defer softCancel()
+			limiter := NewExecutionGoalLimiter(runLogic, softCancel)
+			metrics := NewMetricsCollector(16)
+			emitter := dsl.Action{
+				Name:     "stream transaction",
+				Type:     "java_vuser_run",
+				Metadata: map[string]any{"emits_business_transactions": true},
+			}
+			script := &dsl.Script{
+				Protocol: "teardown-goal-denial-test",
+				Config:   dsl.ScriptConfig{RunLogic: runLogic},
+			}
+			if phase == "init" {
+				script.Init = []dsl.Action{emitter}
+			} else {
+				script.Actions = []dsl.Action{emitter}
+			}
+			var wait sync.WaitGroup
+			wait.Add(2)
+			for index := 0; index < 2; index++ {
+				vu := &VUser{
+					ID:                index,
+					Proto:             &teardownGoalDenialProtocol{state: state},
+					Metrics:           metrics,
+					ExecutionGoals:    limiter,
+					HardStopCtx:       context.Background(),
+					ActionBoundaryCtx: context.Background(),
+					Script:            script,
+				}
+				go func() {
+					defer wait.Done()
+					vu.Run(softCtx)
+				}()
+			}
+			done := make(chan struct{})
+			go func() {
+				wait.Wait()
+				close(done)
+			}()
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("peer emitter remained blocked after exact goal completion")
+			}
+			state.mu.Lock()
+			executions := append([]string(nil), state.actions...)
+			state.mu.Unlock()
+			if len(executions) != 1 || executions[0] != "stream transaction" {
+				t.Fatalf("protocol executions = %v, want exactly one pre-reserved emitter", executions)
+			}
+			if got := metrics.TotalTransactions(); got != 1 {
+				t.Fatalf("transactions = %d, want one emitted business transaction", got)
+			}
+		})
+	}
+}
+
+func TestTeardownTransactionGoalDenialContinuesCleanup(t *testing.T) {
+	cleanup := dsl.Action{Name: "unrelated cleanup", Type: "request", Target: "/cleanup"}
+	tests := []struct {
+		name           string
+		init           []dsl.Action
+		denied         dsl.Action
+		wantExecutions []string
+	}{
+		{
+			name:           "source end",
+			denied:         sourceTransactionAction("lr_end_transaction", "LR_PASS"),
+			wantExecutions: []string{"main", "unrelated cleanup"},
+		},
+		{
+			name: "http sequence",
+			denied: dsl.Action{
+				Name: "denied sequence",
+				Type: "http_sequence",
+				Params: map[string]any{"requests": []dsl.Action{{
+					Name: "sequence child", Type: "GET", Method: "GET", Target: "/denied",
+				}}},
+			},
+			wantExecutions: []string{"main", "unrelated cleanup"},
+		},
+		{
+			name:           "streamed child transaction",
+			denied:         dsl.Action{Name: "stream transaction", Type: "request", Target: "/stream"},
+			wantExecutions: []string{"main", "stream transaction", "unrelated cleanup"},
+		},
+		{
+			name:           "final result transaction",
+			denied:         dsl.Action{Name: "final transaction", Type: "request", Target: "/final"},
+			wantExecutions: []string{"main", "final transaction", "unrelated cleanup"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			state := installTeardownGoalDenialState(t)
+			runLogic := dsl.RunLogicConfig{
+				Iterations:       1,
+				AutoTransactions: "per_action",
+				MaxTransactions:  1,
+			}
+			script := &dsl.Script{
+				Name:     "teardown-denial-" + tc.name,
+				Protocol: "teardown-goal-denial-test",
+				Config:   dsl.ScriptConfig{RunLogic: runLogic},
+				Init:     tc.init,
+				Actions:  []dsl.Action{{Name: "main", Type: "request", Target: "/main"}},
+				Teardown: []dsl.Action{tc.denied, cleanup},
+			}
+			engine, err := New(Config{Script: script, VUsers: 1, Duration: 2 * time.Second})
+			if err != nil {
+				t.Fatalf("New: %v", err)
+			}
+
+			result, err := engine.Run(context.Background())
+			if err != nil {
+				t.Fatalf("Run: %v", err)
+			}
+			if result.TotalTransactions != 1 {
+				t.Fatalf("total transactions = %d, want only the main action transaction", result.TotalTransactions)
+			}
+
+			state.mu.Lock()
+			gotExecutions := append([]string(nil), state.actions...)
+			initCalls := state.initCalls
+			teardownCalls := state.teardownCalls
+			state.mu.Unlock()
+			if len(gotExecutions) != len(tc.wantExecutions) {
+				t.Fatalf("protocol executions = %v, want %v", gotExecutions, tc.wantExecutions)
+			}
+			for index := range tc.wantExecutions {
+				if gotExecutions[index] != tc.wantExecutions[index] {
+					t.Fatalf("protocol executions = %v, want %v", gotExecutions, tc.wantExecutions)
+				}
+			}
+			if initCalls != 1 || teardownCalls != 1 {
+				t.Fatalf("protocol init/teardown calls = %d/%d, want 1/1", initCalls, teardownCalls)
+			}
+		})
+	}
+}
+
+func TestTeardownDeniedSourceStartSkipsEnclosedWorkThenResumesCleanup(t *testing.T) {
+	state := installTeardownGoalDenialState(t)
+	runLogic := dsl.RunLogicConfig{
+		Iterations:       1,
+		AutoTransactions: "per_action",
+		MaxTransactions:  1,
+	}
+	script := &dsl.Script{
+		Name:     "teardown-denied-source-scope",
+		Protocol: "teardown-goal-denial-test",
+		Config:   dsl.ScriptConfig{RunLogic: runLogic},
+		Actions:  []dsl.Action{{Name: "main", Type: "request", Target: "/main"}},
+		Teardown: []dsl.Action{
+			sourceTransactionAction("lr_start_transaction", ""),
+			{
+				Name: "nested denied scope", Type: "control_if",
+				Control: &dsl.ControlFlow{
+					Condition: &dsl.Condition{Expr: "true"},
+					Steps: []dsl.Action{
+						{Name: "must not execute", Type: "request", Target: "/unreported"},
+						sourceTransactionAction("lr_end_transaction", "LR_PASS"),
+					},
+				},
+			},
+			{Name: "unrelated cleanup", Type: "request", Target: "/cleanup"},
+		},
+	}
+	engine, err := New(Config{Script: script, VUsers: 1, Duration: 2 * time.Second})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	result, err := engine.Run(context.Background())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if result.TotalTransactions != 1 {
+		t.Fatalf("total transactions = %d, want only the main action", result.TotalTransactions)
+	}
+	state.mu.Lock()
+	got := append([]string(nil), state.actions...)
+	state.mu.Unlock()
+	want := []string{"main", "unrelated cleanup"}
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] {
+		t.Fatalf("protocol executions = %v, want %v", got, want)
+	}
+}
+
+func TestCanceledVUserBeforeFirstUserActionDoesNotRunUserTeardown(t *testing.T) {
+	state := installTeardownGoalDenialState(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	vu := &VUser{
+		Proto:   &teardownGoalDenialProtocol{state: state},
+		Metrics: NewMetricsCollector(16),
+		Script: &dsl.Script{
+			Protocol: "teardown-goal-denial-test",
+			Actions:  []dsl.Action{{Name: "main", Type: "request", Target: "/main"}},
+			Teardown: []dsl.Action{{Name: "user teardown", Type: "request", Target: "/cleanup"}},
+		},
+	}
+	vu.Run(ctx)
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	if len(state.actions) != 0 {
+		t.Fatalf("protocol executions = %v, want no user actions after pre-start cancellation", state.actions)
+	}
+}
+
+func TestSourceTransactionSpanningLifecycleClaimsGoalAtEnd(t *testing.T) {
+	runLogic := dsl.RunLogicConfig{
+		Iterations:       1,
+		AutoTransactions: "none",
+		MaxTransactions:  1,
+	}
+	softCtx, softCancel := context.WithCancel(context.Background())
+	defer softCancel()
+	limiter := NewExecutionGoalLimiter(runLogic, softCancel)
+	protoStub := &iterationResetProtocol{}
+	sink := &sequenceCaptureSink{}
+	vu := &VUser{
+		Proto:             protoStub,
+		Metrics:           NewMetricsCollector(16),
+		ResultSink:        sink,
+		ExecutionGoals:    limiter,
+		HardStopCtx:       context.Background(),
+		ActionBoundaryCtx: context.Background(),
+		Script: &dsl.Script{
+			Name:     "lifecycle-source-transaction",
+			Protocol: "browser",
+			Config:   dsl.ScriptConfig{RunLogic: runLogic},
+			Init:     []dsl.Action{sourceTransactionAction("lr_start_transaction", "")},
+			Actions: []dsl.Action{{
+				Name:     "owned sequence",
+				Type:     "http_sequence",
+				Metadata: map[string]any{"source_transaction": "ACME_ISBA"},
+				Params: map[string]any{"requests": []dsl.Action{{
+					Name: "owned child", Type: "GET", Method: "GET", Target: "/",
+				}}},
+			}},
+			Teardown: []dsl.Action{sourceTransactionAction("lr_end_transaction", "LR_PASS")},
+		},
+	}
+
+	vu.Run(softCtx)
+
+	if protoStub.executeCalls != 1 {
+		t.Fatalf("owned sequence child executions = %d, want 1", protoStub.executeCalls)
+	}
+	if len(sink.transactions) != 1 || sink.transactions[0].ActionName != "ACME_ISBA" {
+		t.Fatalf("transactions = %#v, want one lifecycle-spanning ACME_ISBA transaction", sink.transactions)
+	}
+	if limiter.TryStartTransaction() {
+		t.Fatal("lifecycle source transaction end did not consume MaxTransactions capacity")
+	}
+}
+
+func TestLifecycleSourceReservationAdmitsOnlyOneVUserAtExactGoal(t *testing.T) {
+	state := installTeardownGoalDenialState(t)
+	runLogic := dsl.RunLogicConfig{
+		Iterations:      1,
+		MaxTransactions: 1,
+	}
+	softCtx, softCancel := context.WithCancel(context.Background())
+	defer softCancel()
+	limiter := NewExecutionGoalLimiter(runLogic, softCancel)
+	metrics := NewMetricsCollector(16)
+	script := &dsl.Script{
+		Name:     "lifecycle-source-owner",
+		Protocol: "teardown-goal-denial-test",
+		Config:   dsl.ScriptConfig{RunLogic: runLogic},
+		Init:     []dsl.Action{sourceTransactionAction("lr_start_transaction", "")},
+		Actions:  []dsl.Action{{Name: "owned main", Type: "request", Target: "/main"}},
+		Teardown: []dsl.Action{sourceTransactionAction("lr_end_transaction", "LR_PASS")},
+	}
+	var wait sync.WaitGroup
+	wait.Add(2)
+	for index := 0; index < 2; index++ {
+		vu := &VUser{
+			ID:                index,
+			Proto:             &teardownGoalDenialProtocol{state: state},
+			Metrics:           metrics,
+			ExecutionGoals:    limiter,
+			HardStopCtx:       context.Background(),
+			ActionBoundaryCtx: context.Background(),
+			Script:            script,
+		}
+		go func() {
+			defer wait.Done()
+			vu.Run(softCtx)
+		}()
+	}
+	done := make(chan struct{})
+	go func() {
+		wait.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("peer VUser remained blocked on the pending lifecycle source reservation")
+	}
+	state.mu.Lock()
+	got := append([]string(nil), state.actions...)
+	state.mu.Unlock()
+	if len(got) != 1 || got[0] != "owned main" {
+		t.Fatalf("protocol executions = %v, want only the admitted source owner", got)
+	}
+	if got := metrics.TotalTransactions(); got != 1 {
+		t.Fatalf("transactions = %d, want one completed source transaction", got)
+	}
+}
+
+func TestVUserFinalizesUnclosedAndRestartedSourceTransactionsAsFailed(t *testing.T) {
+	tests := []struct {
+		name    string
+		actions []dsl.Action
+		want    int
+	}{
+		{
+			name:    "unclosed",
+			actions: []dsl.Action{sourceTransactionAction("lr_start_transaction", "")},
+			want:    1,
+		},
+		{
+			// A duplicate start is rejected and must not synthesize a second
+			// business transaction. The authoritative original remains open
+			// and is finalized once as failed when execution stops.
+			name: "same name restart rejected",
+			actions: []dsl.Action{
+				sourceTransactionAction("lr_start_transaction", ""),
+				sourceTransactionAction("lr_start_transaction", ""),
+			},
+			want: 1,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sink := &sequenceCaptureSink{}
+			vu := &VUser{
+				Proto:      &iterationResetProtocol{},
+				Metrics:    NewMetricsCollector(16),
+				ResultSink: sink,
+				Script: &dsl.Script{
+					Protocol: "browser",
+					Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{
+						Iterations:       1,
+						AutoTransactions: "none",
+					}},
+					Actions: tc.actions,
+				},
+			}
+			vu.Run(context.Background())
+			if len(sink.transactions) != tc.want {
+				t.Fatalf("transactions = %#v, want %d failed incomplete transactions", sink.transactions, tc.want)
+			}
+			for _, transaction := range sink.transactions {
+				if transaction.Success || transaction.ErrorMessage == "" {
+					t.Fatalf("incomplete source transaction = %#v, want visible failed evidence", transaction)
+				}
+			}
+		})
+	}
+}
+
+func TestInterruptedHTTPSequenceRecordsFailedClaimedAggregate(t *testing.T) {
+	for _, phase := range []string{"init", "actions", "teardown"} {
+		t.Run(phase, func(t *testing.T) {
+			if phase == "teardown" {
+				// Teardown intentionally ignores the load run's active-time pause
+				// controller. Interrupt this phase through its own bounded cleanup
+				// context instead.
+				t.Setenv("APEXLOAD_TEARDOWN_TIMEOUT", "20ms")
+			}
+			sink := &sequenceCaptureSink{}
+			sequence := dsl.Action{
+				Name: "interrupted sequence", Type: "http_sequence",
+				Params: map[string]any{"requests": []dsl.Action{{
+					Name: "child", Type: "GET", Method: "GET", Target: "/",
+					ThinkTimeAfter: true,
+					ThinkTime:      dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 100},
+				}}},
+			}
+			script := &dsl.Script{
+				Protocol: "http",
+				Config: dsl.ScriptConfig{
+					RunLogic: dsl.RunLogicConfig{Iterations: 1},
+				},
+			}
+			switch phase {
+			case "init":
+				script.Init = []dsl.Action{sequence}
+			case "actions":
+				script.Actions = []dsl.Action{sequence}
+			case "teardown":
+				script.Actions = []dsl.Action{{Name: "main", Type: "GET", Method: "GET", Target: "/main"}}
+				script.Teardown = []dsl.Action{sequence}
+			}
+			vu := &VUser{
+				Proto:        &sequenceProtocol{},
+				Metrics:      NewMetricsCollector(16),
+				ResultSink:   sink,
+				PauseControl: &partialActiveThinkController{},
+				Script:       script,
+			}
+			vu.Run(context.Background())
+			if len(sink.transactions) != 1 {
+				t.Fatalf("transactions = %#v, want one claimed sequence aggregate", sink.transactions)
+			}
+			if sink.transactions[0].Success {
+				t.Fatalf("interrupted aggregate = %#v, want failed", sink.transactions[0])
+			}
+		})
+	}
+}
+
+func TestCrossPhaseSourceTransactionSuppressesFallbackIterationTransaction(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "cross-phase-source-transaction",
+		Protocol: "browser",
+		Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{
+			Iterations:       1,
+			AutoTransactions: "none",
+		}},
+		Init:     []dsl.Action{sourceTransactionAction("lr_start_transaction", "")},
+		Actions:  []dsl.Action{{Name: "ordinary main request", Type: "request", Target: "/"}},
+		Teardown: []dsl.Action{sourceTransactionAction("lr_end_transaction", "LR_PASS")},
+	}
+	if !scriptHasExplicitTransactions(script) {
+		t.Fatal("cross-phase lifecycle transaction was not classified as explicit")
+	}
+	protoStub := &iterationResetProtocol{}
+	sink := &sequenceCaptureSink{}
+	vu := &VUser{
+		Proto:      protoStub,
+		Script:     script,
+		Metrics:    NewMetricsCollector(16),
+		ResultSink: sink,
+	}
+
+	vu.Run(context.Background())
+
+	if protoStub.executeCalls != 1 {
+		t.Fatalf("ordinary main executions = %d, want 1", protoStub.executeCalls)
+	}
+	if len(sink.transactions) != 1 || sink.transactions[0].ActionName != "ACME_ISBA" {
+		t.Fatalf("transactions = %#v, want only the cross-phase ACME_ISBA transaction", sink.transactions)
+	}
+}
+
+func TestLifecycleOnlySequenceSuppressesFallbackIterationTransaction(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "lifecycle-only-sequence",
+		Protocol: "browser",
+		Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{
+			Iterations:       1,
+			AutoTransactions: "none",
+		}},
+		Init: []dsl.Action{{
+			Name: "init sequence",
+			Type: "http_sequence",
+			Params: map[string]any{"requests": []dsl.Action{{
+				Name: "init child", Type: "GET", Method: "GET", Target: "/init",
+			}}},
+		}},
+		Actions: []dsl.Action{{Name: "ordinary main request", Type: "request", Target: "/main"}},
+	}
+	if !scriptHasExplicitTransactions(script) {
+		t.Fatal("lifecycle-only sequence was not classified as explicit")
+	}
+	protoStub := &iterationResetProtocol{}
+	sink := &sequenceCaptureSink{}
+	vu := &VUser{
+		Proto:      protoStub,
+		Script:     script,
+		Metrics:    NewMetricsCollector(16),
+		ResultSink: sink,
+	}
+
+	vu.Run(context.Background())
+
+	if protoStub.executeCalls != 2 {
+		t.Fatalf("protocol executions = %d, want init child plus ordinary main request", protoStub.executeCalls)
+	}
+	if len(sink.transactions) != 1 || sink.transactions[0].ActionName != "init sequence" {
+		t.Fatalf("transactions = %#v, want only the lifecycle sequence aggregate", sink.transactions)
+	}
+}
+
+func TestMetadataLessHTTPSequenceIsOnlyDefaultTransactionAtGoal(t *testing.T) {
+	runLogic := dsl.RunLogicConfig{Iterations: 1, MaxTransactions: 1}
+	softCtx, softCancel := context.WithCancel(context.Background())
+	defer softCancel()
+	limiter := NewExecutionGoalLimiter(runLogic, softCancel)
+	protoStub := &iterationResetProtocol{}
+	sink := &sequenceCaptureSink{}
+	script := &dsl.Script{
+		Name:     "metadata-less-sequence",
+		Protocol: "browser",
+		Config:   dsl.ScriptConfig{RunLogic: runLogic},
+		Actions: []dsl.Action{{
+			Name: "sequence",
+			Type: "http_sequence",
+			Params: map[string]any{"requests": []dsl.Action{{
+				Name: "child", Type: "GET", Method: "GET", Target: "/",
+			}}},
+		}},
+	}
+	if !scriptHasExplicitTransactions(script) {
+		t.Fatal("metadata-less http_sequence was not classified as an explicit transaction")
+	}
+	vu := &VUser{
+		Proto:          protoStub,
+		Script:         script,
+		Metrics:        NewMetricsCollector(16),
+		ResultSink:     sink,
+		ExecutionGoals: limiter,
+		HardStopCtx:    context.Background(),
+	}
+
+	vu.Run(softCtx)
+
+	if protoStub.executeCalls != 1 {
+		t.Fatalf("sequence child executions = %d, want 1", protoStub.executeCalls)
+	}
+	if len(sink.transactions) != 1 || sink.transactions[0].ActionName != "sequence" {
+		t.Fatalf("transactions = %#v, want the sequence aggregate only", sink.transactions)
+	}
+}
+
+func TestActionScopedTransactionGoalRestoresSoftBoundary(t *testing.T) {
+	t.Run("http sequence", func(t *testing.T) {
+		runLogic := dsl.RunLogicConfig{Iterations: 1, MaxTransactions: 1, AutoTransactions: "none"}
+		softCtx, softCancel := context.WithCancel(context.Background())
+		defer softCancel()
+		protoStub := &iterationResetProtocol{}
+		vu := &VUser{
+			Proto:          protoStub,
+			Metrics:        NewMetricsCollector(16),
+			ExecutionGoals: NewExecutionGoalLimiter(runLogic, softCancel),
+			HardStopCtx:    context.Background(),
+			Script: &dsl.Script{
+				Name:     "sequence-goal-boundary",
+				Protocol: "browser",
+				Config:   dsl.ScriptConfig{RunLogic: runLogic},
+				Actions: []dsl.Action{
+					{
+						Name: "sequence",
+						Type: "http_sequence",
+						Params: map[string]any{"requests": []dsl.Action{{
+							Name: "sequence child", Type: "GET", Method: "GET", Target: "/sequence",
+						}}},
+					},
+					{Name: "must not run", Type: "GET", Method: "GET", Target: "/after"},
+				},
+			},
+		}
+
+		vu.Run(softCtx)
+
+		if protoStub.executeCalls != 1 {
+			t.Fatalf("protocol executions = %d, ordinary action ran after sequence exhausted MaxTransactions", protoStub.executeCalls)
+		}
+	})
+
+	t.Run("per action", func(t *testing.T) {
+		runLogic := dsl.RunLogicConfig{Iterations: 1, MaxTransactions: 1, AutoTransactions: "per_action"}
+		softCtx, softCancel := context.WithCancel(context.Background())
+		defer softCancel()
+		protoStub := &iterationResetProtocol{}
+		sink := &sequenceCaptureSink{}
+		vu := &VUser{
+			Proto:          protoStub,
+			Metrics:        NewMetricsCollector(16),
+			ResultSink:     sink,
+			ExecutionGoals: NewExecutionGoalLimiter(runLogic, softCancel),
+			HardStopCtx:    context.Background(),
+			Script: &dsl.Script{
+				Name:     "per-action-goal-boundary",
+				Protocol: "browser",
+				Config:   dsl.ScriptConfig{RunLogic: runLogic},
+				Actions: []dsl.Action{
+					{Name: "claimed", Type: "GET", Method: "GET", Target: "/claimed"},
+					{Name: "must not run", Type: "GET", Method: "GET", Target: "/after"},
+				},
+			},
+		}
+
+		vu.Run(softCtx)
+
+		if protoStub.executeCalls != 1 || len(sink.transactions) != 1 {
+			t.Fatalf("executions/transactions = %d/%d, ordinary action ran after per-action goal", protoStub.executeCalls, len(sink.transactions))
+		}
+	})
+
+	t.Run("unknown streamed transaction", func(t *testing.T) {
+		runLogic := dsl.RunLogicConfig{Iterations: 1, MaxTransactions: 1, AutoTransactions: "none"}
+		softCtx, softCancel := context.WithCancel(context.Background())
+		defer softCancel()
+		state := &teardownGoalDenialState{}
+		vu := &VUser{
+			Proto:          &teardownGoalDenialProtocol{state: state},
+			Metrics:        NewMetricsCollector(16),
+			ExecutionGoals: NewExecutionGoalLimiter(runLogic, softCancel),
+			HardStopCtx:    context.Background(),
+			Script: &dsl.Script{
+				Name:     "unknown-stream-goal-boundary",
+				Protocol: "teardown-goal-denial-test",
+				Config:   dsl.ScriptConfig{RunLogic: runLogic},
+				Actions: []dsl.Action{
+					{
+						Name: "untaken explicit marker",
+						Type: "control_if",
+						Control: &dsl.ControlFlow{
+							Condition: &dsl.Condition{Expr: "false"},
+							Steps: []dsl.Action{
+								sourceTransactionAction("lr_start_transaction", ""),
+								sourceTransactionAction("lr_end_transaction", "LR_PASS"),
+							},
+						},
+					},
+					{Name: "stream transaction", Type: "request", Target: "/stream"},
+					{Name: "must not run", Type: "request", Target: "/after"},
+				},
+			},
+		}
+
+		vu.Run(softCtx)
+
+		state.mu.Lock()
+		executions := append([]string(nil), state.actions...)
+		state.mu.Unlock()
+		if len(executions) != 1 || executions[0] != "stream transaction" {
+			t.Fatalf("protocol executions = %v, ordinary action ran after streamed transaction goal", executions)
+		}
+	})
+}
+
+// TestHTTPSequenceFailingBeforeAnyChildReportsElapsedDuration pins the
+// measurement gap on the early-error path.
+//
+// An http_sequence aggregate reports the sum of its children's measured
+// durations so think time is excluded from response time. When the first child
+// errors before producing a result there is nothing to sum, and reporting the
+// resulting zero is not "instant" — recordActionResult pins
+// ActionMetrics.MinDuration to 0 and recordDurationSample feeds a 0 into the
+// latency digest, skewing P50/P90 for every occurrence of that action.
+func TestHTTPSequenceFailingBeforeAnyChildReportsElapsedDuration(t *testing.T) {
+	sink := &sequenceCaptureSink{}
+	script := &dsl.Script{
+		Protocol: "http",
+		Config: dsl.ScriptConfig{
+			RunLogic: dsl.RunLogicConfig{Iterations: 1},
+		},
+		Actions: []dsl.Action{{
+			Name: "failing sequence", Type: "http_sequence",
+			Params: map[string]any{"requests": []dsl.Action{{
+				Name: "child", Type: "GET", Method: "GET", Target: "/",
+			}}},
+		}},
+	}
+	vu := &VUser{
+		Proto:      &sequenceProtocol{executeError: "adapter unavailable"},
+		Metrics:    NewMetricsCollector(16),
+		ResultSink: sink,
+		Script:     script,
+	}
+	vu.Run(context.Background())
+
+	if len(sink.transactions) != 1 {
+		t.Fatalf("transactions = %#v, want one sequence aggregate", sink.transactions)
+	}
+	aggregate := sink.transactions[0]
+	if aggregate.Success {
+		t.Fatalf("aggregate = %#v, want failure", aggregate)
+	}
+	if aggregate.Duration <= 0 {
+		t.Fatalf("aggregate duration = %v, want elapsed wall time when no child was measured", aggregate.Duration)
+	}
+}
+
+// TestHTTPSequenceSucceedingReportsSummedChildDuration keeps the companion
+// invariant: when children were measured, the aggregate reports their sum and
+// does not fall back to wall time (which would reintroduce think time).
+func TestHTTPSequenceSucceedingReportsSummedChildDuration(t *testing.T) {
+	sink := &sequenceCaptureSink{}
+	script := &dsl.Script{
+		Protocol: "http",
+		Config: dsl.ScriptConfig{
+			RunLogic: dsl.RunLogicConfig{Iterations: 1},
+		},
+		Actions: []dsl.Action{{
+			Name: "sequence", Type: "http_sequence",
+			Params: map[string]any{"requests": []dsl.Action{
+				{
+					Name: "first", Type: "GET", Method: "GET", Target: "/first",
+					ThinkTimeAfter: true,
+					ThinkTime:      dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 50},
+				},
+				{Name: "second", Type: "GET", Method: "GET", Target: "/second"},
+			}},
+		}},
+	}
+	vu := &VUser{
+		Proto:      &sequenceProtocol{},
+		Metrics:    NewMetricsCollector(16),
+		ResultSink: sink,
+		Script:     script,
+	}
+	vu.Run(context.Background())
+
+	if len(sink.transactions) != 1 {
+		t.Fatalf("transactions = %#v, want one sequence aggregate", sink.transactions)
+	}
+	aggregate := sink.transactions[0]
+	if !aggregate.Success {
+		t.Fatalf("aggregate = %#v, want success", aggregate)
+	}
+	// Two children at 1ms each; the 50ms think time must not be counted.
+	if aggregate.Duration != 2*time.Millisecond {
+		t.Fatalf("aggregate duration = %v, want the 2ms sum of child durations", aggregate.Duration)
 	}
 }

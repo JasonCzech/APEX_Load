@@ -325,6 +325,23 @@ func TestParameterRuntime_ResolvesParameterNamesCaseInsensitively(t *testing.T) 
 	}
 }
 
+func TestParameterRuntime_CaseInsensitiveDuplicateFallbackIsDeterministic(t *testing.T) {
+	runtime := NewParameterRuntime([]dsl.Parameter{
+		{Name: "Token", Type: "list", Values: []string{"first"}},
+		{Name: "token", Type: "list", Values: []string{"second"}},
+	}, nil, 0)
+	runtime.Prime()
+
+	for i := 0; i < 100; i++ {
+		if got, ok := runtime.ResolveNamed("TOKEN"); !ok || got != "first" {
+			t.Fatalf("ResolveNamed(\"TOKEN\") iteration %d = %q, %v, want deterministic first declaration", i, got, ok)
+		}
+	}
+	if got, ok := runtime.ResolveNamed("token"); !ok || got != "second" {
+		t.Fatalf("exact ResolveNamed(\"token\") = %q, %v, want exact legacy declaration", got, ok)
+	}
+}
+
 func TestVUser_Interpolate_ParametersAndFunctions(t *testing.T) {
 	vu := &VUser{
 		Variables: map[string]string{},

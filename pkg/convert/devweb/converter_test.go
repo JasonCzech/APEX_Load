@@ -3,7 +3,9 @@ package devweb
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"fmt"
+	"io/fs"
 	"strings"
 	"testing"
 
@@ -537,4 +539,147 @@ func TestConvertZipRejectsTooManyEntries(t *testing.T) {
 	if _, err := ConvertZip(buf.Bytes(), ConvertOptions{}); err == nil {
 		t.Fatal("expected too-many-entries rejection")
 	}
+}
+
+func TestConvertZipRejectsUnsafeEntries(t *testing.T) {
+	tests := []struct {
+		name       string
+		entryNames []string
+		symlink    bool
+	}{
+		{name: "traversal", entryNames: []string{"../main.js"}},
+		{name: "absolute", entryNames: []string{"/main.js"}},
+		{name: "control character", entryNames: []string{"bad\x01/main.js"}},
+		{name: "separator collision", entryNames: []string{`root\main.js`, "root/main.js"}},
+		{name: "case collision", entryNames: []string{"root/main.js", "ROOT/MAIN.JS"}},
+		{name: "symlink", entryNames: []string{"main.js"}, symlink: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var archive bytes.Buffer
+			writer := zip.NewWriter(&archive)
+			for _, name := range test.entryNames {
+				header := &zip.FileHeader{Name: name}
+				if test.symlink {
+					header.SetMode(fs.ModeSymlink | 0o777)
+				}
+				entry, err := writer.CreateHeader(header)
+				if err != nil {
+					t.Fatalf("CreateHeader: %v", err)
+				}
+				_, _ = entry.Write([]byte(`load.action("x", function() {});`))
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+			if _, err := ConvertZip(archive.Bytes(), ConvertOptions{}); err == nil {
+				t.Fatal("ConvertZip accepted unsafe archive")
+			}
+		})
+	}
+}
+
+// TestConvertGovernsAuthoredCredentialHeaders pins the shared credential
+// projection for DevWeb.
+//
+// The converter used to emit authored header values verbatim, so an
+// "Authorization: Bearer <token>" in the source became a literal in the
+// executable draft. The API response boundary masked it to [REDACTED] on the
+// way out, which left an operator with a redaction and nothing to migrate —
+// they had to retype the credential. It is now governed at conversion time and
+// the source value travels in the protected channel.
+func TestConvertGovernsAuthoredCredentialHeaders(t *testing.T) {
+	const canary = "devweb-authored-credential-canary-9Z1"
+	result, err := Convert(ImportRequest{
+		Name: "credentials",
+		Content: `load.action(async function () {
+  await new load.WebRequest({
+    url: "https://api.example.test/orders",
+    method: "GET",
+    headers: {"Authorization": "Bearer ` + canary + `", "X-Api-Key": "` + canary + `"},
+  }).send();
+});`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	for name, value := range action.Headers {
+		if strings.Contains(value, canary) {
+			t.Fatalf("header %q retained the authored credential: %q", name, value)
+		}
+	}
+	if !strings.Contains(devWebHeaderValue(action.Headers, "authorization"), "{{secret.") {
+		t.Fatalf("authorization = %q, want a governed secret reference", devWebHeaderValue(action.Headers, "authorization"))
+	}
+
+	// The public payload must not carry the source value...
+	payload, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("json.Marshal returned error: %v", err)
+	}
+	if strings.Contains(string(payload), canary) {
+		t.Fatalf("public conversion result disclosed the authored credential: %s", payload)
+	}
+	// ...but the protected channel must, so the operator can migrate it instead
+	// of retyping it.
+	protected := result.ProtectedRequirements.Take()
+	if len(protected) == 0 {
+		t.Fatal("no protected requirements were produced for authored credentials")
+	}
+	found := false
+	for _, requirement := range protected {
+		if strings.Contains(requirement.Value, canary) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("protected requirements did not carry the source value: %#v", protected)
+	}
+}
+
+// TestConvertPreservesCorrelatedCredentialHeader is the companion invariant: a
+// header assembled from a DevWeb extractor output is response-derived and must
+// stay executable. Governing it would replace a working correlation with a
+// binding the operator cannot satisfy, because the credential never existed as
+// a literal.
+func TestConvertPreservesCorrelatedCredentialHeader(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Name: "correlated",
+		Content: `load.action(async function () {
+  const Login = new load.WebRequest({
+    url: "https://api.example.test/login",
+    method: "POST",
+    extractors: [new load.BoundaryExtractor("token", "<token>", "<")],
+  }).send();
+  await new load.WebRequest({
+    url: "https://api.example.test/orders",
+    method: "GET",
+    headers: {"Authorization": ` + "`Basic ${Login.extractors.token}`" + `},
+  }).send();
+});`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	for _, action := range result.Script.Actions {
+		if value := devWebHeaderValue(action.Headers, "authorization"); value != "" {
+			if value != "Basic {{var.token}}" {
+				t.Fatalf("correlated authorization = %q, want the extractor reference preserved", value)
+			}
+			return
+		}
+	}
+	t.Fatalf("no authorization header found in %#v", result.Script.Actions)
+}
+
+// devWebHeaderValue looks a header up case-insensitively. The shared finalizer
+// preserves the authored header casing, so tests must not assume lowercase.
+func devWebHeaderValue(headers map[string]string, name string) string {
+	for key, value := range headers {
+		if strings.EqualFold(key, name) {
+			return value
+		}
+	}
+	return ""
 }

@@ -1,4 +1,5 @@
 import type { ScriptActionDefinition, ScriptDefinition, ScriptExtractorDefinition } from '../types/scripts'
+import { headerListToCompatibilityMap } from './scriptActionHelpers'
 
 export interface CorrelationRepairLocation {
   field: string
@@ -110,7 +111,6 @@ export function applyCorrelationRepairToAction(action: ScriptActionDefinition, r
         .filter(index => index >= 0)
 
       if (matchingIndexes.length > 0 && headerList) {
-        const originalAggregate = matchingIndexes.map(index => headerList[index].value).join('\n')
         let offset = 0
         const rangesByIndex = new Map<number, Array<Pick<CorrelationRepairLocation, 'start' | 'end'>>>()
         let mappedRangeCount = 0
@@ -139,17 +139,6 @@ export function applyCorrelationRepairToAction(action: ScriptActionDefinition, r
             headerListChanged = true
           }
         }
-        // Keep the optional summary map in sync only when it can be proven to
-        // represent exactly the same aggregate as the authoritative list.
-        const matchingHeaderKeys = Object.keys(headers || {}).filter(name => name.trim().toLowerCase() === headerName)
-        if (headers && matchingHeaderKeys.length === 1) {
-          const key = matchingHeaderKeys[0]
-          const nextAggregate = matchingIndexes.map(index => headerList[index].value).join('\n')
-          if (headers[key] === originalAggregate && nextAggregate !== originalAggregate) {
-            headers[key] = nextAggregate
-            headersChanged = true
-          }
-        }
         continue
       }
 
@@ -164,7 +153,9 @@ export function applyCorrelationRepairToAction(action: ScriptActionDefinition, r
       }
     }
 
-    if (headersChanged) nextHeaders = headers
+    if (headerListChanged && headerList) {
+      nextHeaders = headerListToCompatibilityMap(headerList, headers)
+    } else if (headersChanged) nextHeaders = headers
     if (headerListChanged) nextHeaderList = headerList
     changed ||= headersChanged || headerListChanged
   }

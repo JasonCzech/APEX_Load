@@ -7,6 +7,7 @@ import type {
 import type { ScenarioFormGroup, ScenarioFormState } from './TestHub'
 import type { ScenarioSeed } from './scenarioWizardUtils'
 import { runtimeDraftFromOverride } from './runtimeSettingsModel'
+import { canonicalThinkTimeType, thinkTimeConfigForType } from './thinkTimeConfig'
 
 export function cloneAssignment(
   assignment?: GeneratorAssignmentSettings,
@@ -95,31 +96,54 @@ function pacingFromForm(form: ScenarioFormState): RuntimeSettingsOverride['pacin
   if (form.runtime_pacing_type === 'fixed_interval') {
     return { ...(sameType ? preserved : {}), type: 'fixed_interval', interval_ms: form.runtime_pacing_interval_ms }
   }
+  if (form.runtime_pacing_type === 'random_interval') {
+    return {
+      ...(sameType ? preserved : {}),
+      type: 'random_interval',
+      min_interval_ms: form.runtime_pacing_min_interval_ms,
+      max_interval_ms: form.runtime_pacing_max_interval_ms,
+    }
+  }
   if (form.runtime_pacing_type === 'tps') {
     return { ...(sameType ? preserved : {}), type: 'tps', tps: form.runtime_pacing_tps }
   }
   if (form.runtime_pacing_type === 'fixed_delay') {
     return { ...(sameType ? preserved : {}), type: 'fixed_delay', delay_ms: form.runtime_pacing_delay_ms }
   }
-  return sameType ? { ...preserved } : { type: form.runtime_pacing_type }
+  if (form.runtime_pacing_type === 'random_delay') {
+    return {
+      ...(sameType ? preserved : {}),
+      type: 'random_delay',
+      min_delay_ms: form.runtime_pacing_min_delay_ms,
+      max_delay_ms: form.runtime_pacing_max_delay_ms,
+    }
+  }
+  return undefined
 }
 
 function thinkTimeFromForm(form: ScenarioFormState): RuntimeSettingsOverride['think_time'] | undefined {
   const preserved = form.runtime_settings?.think_time
-  if (preserved) {
-    return {
-      ...preserved,
-      ...(form.runtime_think_time_ms !== undefined ? { mean_ms: form.runtime_think_time_ms } : {}),
-      ignore: form.runtime_ignore_think_time,
-    }
+  const type = canonicalThinkTimeType(form.runtime_think_time_type || preserved?.type)
+  if (!type) return undefined
+  const sameType = canonicalThinkTimeType(preserved?.type) === type
+  const next = {
+    ...(sameType ? preserved : {}),
+    type,
+    multiplier: form.runtime_think_time_multiplier,
+    limit_ms: form.runtime_think_time_limit_ms,
+    ignore: form.runtime_ignore_think_time,
+    ...(type === 'recorded' ? {} : { mean_ms: form.runtime_think_time_ms ?? 0 }),
+    ...(type === 'gaussian' ? {
+      std_ms: form.runtime_think_time_std_ms,
+      min_ms: form.runtime_think_time_min_ms,
+      max_ms: form.runtime_think_time_max_ms,
+    } : {}),
+    ...(type === 'uniform' ? {
+      min_ms: form.runtime_think_time_min_ms,
+      max_ms: form.runtime_think_time_max_ms,
+    } : {}),
   }
-  if (form.runtime_ignore_think_time) {
-    return { type: 'fixed', mean_ms: form.runtime_think_time_ms ?? 0, ignore: true }
-  }
-  if (form.runtime_think_time_ms !== undefined) {
-    return { type: 'fixed', mean_ms: form.runtime_think_time_ms, ignore: false }
-  }
-  return undefined
+  return thinkTimeConfigForType(next, type)
 }
 
 export function runtimeSettingsFromForm(
@@ -255,9 +279,19 @@ export function scenarioFormStateFromStoredScenario(
     runtime_iterations: runtimeSettings?.run_logic?.iterations ?? runtimeSettings?.iterations,
     runtime_pacing_type: (pacing?.type || '') as ScenarioFormState['runtime_pacing_type'],
     runtime_pacing_delay_ms: pacing?.delay_ms,
+    runtime_pacing_min_delay_ms: pacing?.min_delay_ms,
+    runtime_pacing_max_delay_ms: pacing?.max_delay_ms,
     runtime_pacing_interval_ms: pacing?.interval_ms,
+    runtime_pacing_min_interval_ms: pacing?.min_interval_ms,
+    runtime_pacing_max_interval_ms: pacing?.max_interval_ms,
     runtime_pacing_tps: pacing?.tps,
+    runtime_think_time_type: canonicalThinkTimeType(thinkTime?.type) as ScenarioFormState['runtime_think_time_type'],
     runtime_think_time_ms: thinkTime?.mean_ms,
+    runtime_think_time_std_ms: thinkTime?.std_ms,
+    runtime_think_time_min_ms: thinkTime?.min_ms,
+    runtime_think_time_max_ms: thinkTime?.max_ms,
+    runtime_think_time_multiplier: thinkTime?.multiplier,
+    runtime_think_time_limit_ms: thinkTime?.limit_ms,
     runtime_ignore_think_time: Boolean(thinkTime?.ignore),
     runtime_log_level: runtimeSettings?.log?.level ?? runtimeSettings?.log_level ?? '',
     runtime_auto_transactions: runtimeSettings?.run_logic?.auto_transactions ?? runtimeSettings?.auto_transactions ?? '',

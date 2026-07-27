@@ -43,6 +43,12 @@ func TestApexctlBundlesExecutableProtocols(t *testing.T) {
 	}
 }
 
+func TestApexctlCommandCatalogIncludesImport(t *testing.T) {
+	if handler, ok := apexctlCommandHandlers["import"]; !ok || handler == nil {
+		t.Fatal("apexctl import is not wired into the command dispatcher")
+	}
+}
+
 func TestParseRunArgs_RuntimeOverrides(t *testing.T) {
 	args := parseRunArgs([]string{
 		"--script", "example.json",

@@ -1502,6 +1502,9 @@ func (tr *TestRunner) compileManagedTestGroupForModeWithRevisionLocked(index int
 	if !ok {
 		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: script not found: %s", index, group.ScriptID)
 	}
+	if issues := launchReviewGateIssues(script.Script); len(issues) > 0 {
+		return TestGroup{}, engine.GroupConfig{}, fmt.Errorf("group[%d]: %s", index, strings.Join(issues, "; "))
+	}
 
 	role, err := normalizeGroupRole(group.Role, script.Protocol, index)
 	if err != nil {

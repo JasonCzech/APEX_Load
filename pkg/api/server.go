@@ -21,6 +21,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/brunoartifact"
 	"github.com/jasonczech/apexload/pkg/config"
 	"github.com/jasonczech/apexload/pkg/fileasset"
+	"github.com/jasonczech/apexload/pkg/importsession"
 	"github.com/jasonczech/apexload/pkg/keywrap"
 	"github.com/jasonczech/apexload/pkg/recorder"
 	"github.com/jasonczech/apexload/pkg/secretstore"
@@ -179,6 +180,7 @@ type Server struct {
 	brunoImportSessions         map[string]*brunoImportSession
 	brunoArtifactMu             sync.Mutex
 	brunoArtifacts              *brunoartifact.EncryptedStore
+	importSessions              *importsession.Manager
 	brunoArtifactDir            string
 	brunoArtifactWrapper        keywrap.KeyWrapper
 	brunoSessionCleanupCancel   context.CancelFunc

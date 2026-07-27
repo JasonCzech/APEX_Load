@@ -1728,7 +1728,7 @@ func TestCommandArgsHarnessJarOnlyUsesJar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(args, " "); got != "-jar /opt/apex/harness.jar --class Actions --method full_lifecycle" {
+	if got := strings.Join(args, " "); got != "-XX:+DisableAttachMechanism -Dcom.ibm.tools.attach.enable=no -XX:-HeapDumpOnOutOfMemoryError -jar /opt/apex/harness.jar --class Actions --method full_lifecycle" {
 		t.Fatalf("args = %q, want -jar form", got)
 	}
 }
@@ -1751,6 +1751,7 @@ func TestCommandArgsApplyVMParametersAndDedicatedClassLoader(t *testing.T) {
 	}
 	want := []string{
 		"-Xmx512m", "-Dlabel=hello world",
+		"-XX:+DisableAttachMechanism", "-Dcom.ibm.tools.attach.enable=no", "-XX:-HeapDumpOnOutOfMemoryError",
 		"-cp", "/opt/apex/harness.jar", defaultHarnessMain,
 		"--class", "Actions", "--method", "full_lifecycle",
 	}
@@ -2010,7 +2011,16 @@ func TestJavaVuserLocalPreflightValidatesWithoutInitializingTarget(t *testing.T)
 	if err := os.MkdirAll(classes, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	marker := filepath.Join(dir, "initialized")
+	// Keep the argv fixture deterministic and short: the production validator
+	// intentionally rejects high-entropy process-visible values, while the
+	// temp directory itself carries a randomized segment.
+	markerRoot := "/private/tmp"
+	if runtime.GOOS == "windows" {
+		markerRoot = filepath.Join(os.Getenv("SystemRoot"), "Temp")
+	}
+	marker := filepath.Join(markerRoot, "apm")
+	_ = os.Remove(marker)
+	t.Cleanup(func() { _ = os.Remove(marker) })
 	actionsPath := filepath.Join(dir, "Actions.java")
 	actionsSource := `import java.nio.file.Files;
 import java.nio.file.Paths;

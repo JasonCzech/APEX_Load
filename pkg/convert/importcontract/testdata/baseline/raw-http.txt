@@ -1,0 +1,4 @@
+POST https://api.contract.test/orders HTTP/1.1
+Content-Type: application/json
+
+{"sku":"A-1"}

@@ -367,6 +367,23 @@ func schemaCreateTableStatements() []string {
 			created_by TEXT,
 			created_at DATETIME NOT NULL
 		)`,
+		`CREATE TABLE IF NOT EXISTS bruno_native_import_batches (
+			id TEXT PRIMARY KEY,
+			project_id TEXT NOT NULL REFERENCES projects(id),
+			source_profile TEXT NOT NULL DEFAULT 'bruno_native',
+			receipt_version INTEGER NOT NULL DEFAULT 1,
+			idempotency_key TEXT NOT NULL,
+			request_digest_profile TEXT NOT NULL DEFAULT 'bruno-native-commit-v1',
+			request_sha256 TEXT NOT NULL,
+			raw_artifact_id TEXT NOT NULL REFERENCES bruno_source_artifacts(id),
+			sanitized_artifact_id TEXT NOT NULL REFERENCES bruno_source_artifacts(id),
+			candidate_ids_json TEXT NOT NULL,
+			script_ids_json TEXT NOT NULL,
+			scripts_json TEXT NOT NULL DEFAULT '[]',
+			created_by TEXT,
+			created_at DATETIME NOT NULL,
+			UNIQUE(project_id, idempotency_key)
+		)`,
 		`CREATE TABLE IF NOT EXISTS tests (
 			id TEXT PRIMARY KEY,
 			ref_key TEXT,
@@ -1174,6 +1191,10 @@ func schemaColumnMigrations() []optionalSchemaMigration {
 		{name: "runtime_secret_provisioning_attempts.audit_actor_type", query: `ALTER TABLE runtime_secret_provisioning_attempts ADD COLUMN audit_actor_type TEXT NOT NULL DEFAULT 'system'`},
 		{name: "runtime_secret_provisioning_attempts.audit_actor_subject", query: `ALTER TABLE runtime_secret_provisioning_attempts ADD COLUMN audit_actor_subject TEXT NOT NULL DEFAULT 'controller:test-creation'`},
 		{name: "runtime_secret_provisioning_attempts.audit_actor_display_name", query: `ALTER TABLE runtime_secret_provisioning_attempts ADD COLUMN audit_actor_display_name TEXT NOT NULL DEFAULT ''`},
+		{name: "bruno_native_import_batches.source_profile", query: `ALTER TABLE bruno_native_import_batches ADD COLUMN source_profile TEXT NOT NULL DEFAULT 'bruno_native'`},
+		{name: "bruno_native_import_batches.receipt_version", query: `ALTER TABLE bruno_native_import_batches ADD COLUMN receipt_version INTEGER NOT NULL DEFAULT 1`},
+		{name: "bruno_native_import_batches.request_digest_profile", query: `ALTER TABLE bruno_native_import_batches ADD COLUMN request_digest_profile TEXT NOT NULL DEFAULT 'bruno-native-commit-v1'`},
+		{name: "bruno_native_import_batches.scripts_json", query: `ALTER TABLE bruno_native_import_batches ADD COLUMN scripts_json TEXT NOT NULL DEFAULT '[]'`},
 	}
 }
 
@@ -1231,6 +1252,7 @@ var schemaIndexes = []schemaIndex{
 	{`CREATE INDEX IF NOT EXISTS idx_bruno_revisions_script_created ON bruno_source_revisions(script_id, created_at)`, "idx_bruno_revisions_script_created"},
 	{`CREATE INDEX IF NOT EXISTS idx_bruno_revisions_project_active ON bruno_source_revisions(project_id, active_flag)`, "idx_bruno_revisions_project_active"},
 	{`CREATE UNIQUE INDEX IF NOT EXISTS idx_bruno_revisions_one_active ON bruno_source_revisions(script_id, project_id) WHERE active_flag = 1`, "idx_bruno_revisions_one_active"},
+	{`CREATE INDEX IF NOT EXISTS idx_bruno_native_batches_project_created ON bruno_native_import_batches(project_id, created_at)`, "idx_bruno_native_batches_project_created"},
 	{`CREATE INDEX IF NOT EXISTS idx_project_secrets_project_updated ON project_secrets(project_id, updated_at)`, "idx_project_secrets_project_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_project_secret_provider_metadata_project_updated ON project_secret_provider_metadata(project_id, updated_at)`, "idx_project_secret_provider_metadata_project_updated"},
 	{`CREATE INDEX IF NOT EXISTS idx_protected_source_secret_sessions_expiry ON protected_source_secret_sessions(expires_at)`, "idx_protected_source_secret_sessions_expiry"},

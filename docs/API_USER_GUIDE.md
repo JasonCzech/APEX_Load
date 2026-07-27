@@ -320,6 +320,25 @@ Import endpoints:
 | `GET` | `/api/v1/protocols/native-support-matrix` | Runtime-native protocol implementation status. |
 | `GET` | `/api/v1/protocol-bundles/support-matrix` | Protocol bundle, governance, and entitlement projection. |
 
+#### Shared HTTP import finalization
+
+Postman, JMeter HTTP samplers, OpenAPI, WSDL-generated SOAP requests, the constrained k6 HTTP subset, and sample/HAR request families now converge on a shared effective-request, credential, review, and DSL-finalization pipeline. Source-specific parsing and inheritance remain in each importer. Ordered headers, runtime capability bounds, structured body projection, credential requirements, recursive binding readiness, durable gates, and final validation use the shared contract.
+
+The four conversion dispositions are:
+
+| Disposition | API behavior |
+| --- | --- |
+| `executable_exact` | Supported wire behavior is preserved. Runtime preflight still verifies deployed values for valid secret/file/data references. |
+| `executable_bounded` | A native runtime ceiling was applied with a stable diagnostic; replay remains safe. |
+| `blocked_draft` | The valid sanitized draft may be reviewed and saved, but replay, debug, scenario materialization, and launch fail before transport until the affected behavior or binding is repaired and its durable gate is removed. |
+| `rejected` | No valid disclosure-safe draft exists, so conversion fails without returning a runnable script. |
+
+These names are shared review semantics, not new required fields on every legacy response. Existing routes, request fields, response compatibility fields, merge behavior, and status-code contracts remain in place; older envelopes may surface the result through `preflight`, diagnostics, review sections, and action metadata. Finding acknowledgement can permit commit where that workflow already supports acknowledgement, but cannot make an execution-blocked draft runnable.
+
+Credential-bearing URL components, ordered headers, typed auth, JSON, XML, forms, multipart, and GraphQL are projected without embedding source literals in scripts or public review data. When an inspection response supplies optional `import_session_id` and `expires_at`, clients should commit through that protected server-side candidate; legacy script-posting remains supported and still passes through finalization and stored-gate enforcement. Missing configured project-secret values are checked dynamically at execution rather than written as permanent import findings.
+
+Archive-backed WSDL, DevWeb, and Enterprise Script Archive imports accept regular files only and enforce bounded entry count, per-entry and total expanded size, path depth, and compression ratio. Traversal, absolute/drive paths, links/devices, invalid UTF-8 or control characters, names with leading or trailing whitespace, case/NFC/separator collisions, size mismatches, excessive compression ratios, and decompression bombs are rejected before source-root selection. See the [Web/API Execution Support Matrix](WEB_API_EXECUTION_SUPPORT_MATRIX.md#shared-request-import-pipeline) for the per-importer tested disposition matrix.
+
 Enterprise Script Archive requests are multipart form uploads. Common fields are `file` (`.zip`), `name`, `base_url`, `include_assertions`, `preserve_transactions`, `migration_block_statuses`, and `salesforce_native`. The deprecated `allow_java_vuser_runner` field is still accepted for compatibility but has no effect. Every LoadRunner Java archive produces one combined `java_vuser` draft: `script` and the sole item in `scripts` describe the same draft, and HTTP, JDBC, JMS, SOAP, LoadRunner utility calls, and custom Java are not split into native lanes. Java responses use `import_mode: "external_runner_required"` with `runner_requirement: "java_vuser_jvm_runner"`; launch requires an enabled runner advertising both `java_vuser_persistent_lifecycle_v1` and `java_vuser_session_frame_token_v1`. A qualified local or loopback-sidecar runner that advertises both capabilities keeps one JVM and one `Actions` instance alive per VUser across `init`, repeated `action` iterations, and `end`, preserving Java fields and saved LoadRunner parameters for that lifecycle. Windows Job Object containment or a narrowly delegated Linux cgroup can qualify; the stock non-privileged Helm, Kustomize, and Compose sidecars remain legacy `full_lifecycle` only.
 
 A complete Java external-runner draft is review-required, not fidelity-loss blocked. Save it as one authoring session and approve it through the normal authoring workflow. Approval may place the draft in the script library, but test launch remains blocked until a governed Java runner advertises the required capability and capacity. The importer does not compile or distribute Java source; operators provision the compiled `Actions` class and its reviewed third-party dependencies on the runner classpath.

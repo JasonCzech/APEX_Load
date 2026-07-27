@@ -18,6 +18,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/convert/srcparse"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"gopkg.in/yaml.v3"
 )
@@ -275,7 +276,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if content == "" {
 		return nil, errors.New("content is required")
 	}
-	doc, err := decodeDocument([]byte(content))
+	doc, sourceFindings, err := decodeDocument([]byte(content))
 	if err != nil {
 		return nil, err
 	}
@@ -284,6 +285,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	var diagnostics diag.Collector
+	for _, finding := range sourceFindings {
+		diagnostics.Add(diag.Warning, "source document", finding.Location, finding.Detail)
+	}
 	sourceFile := sourceFileName(content)
 	mappings := make([]sourceview.Mapping, 0)
 
@@ -435,18 +439,29 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	return result, nil
 }
 
-func decodeDocument(data []byte) (*document, error) {
+// decodeDocument parses an AsyncAPI document and reports structural
+// ambiguities alongside it. Duplicate and non-scalar mapping keys make the
+// document mean different things to different readers and are rejected; merge
+// keys are idiomatic in hand-authored specs and are returned for review instead.
+func decodeDocument(data []byte) (*document, []srcparse.Finding, error) {
 	var doc document
 	if err := json.Unmarshal(data, &doc); err == nil && doc.AsyncAPI != "" {
-		return &doc, nil
+		if validateErr := srcparse.ValidateJSON(data, srcparse.Limits{}); validateErr != nil {
+			return nil, nil, fmt.Errorf("invalid AsyncAPI document: %w", validateErr)
+		}
+		return &doc, nil, nil
+	}
+	findings, err := srcparse.ValidateYAMLMappingKeys(data, srcparse.SpecYAMLPolicy(), srcparse.Limits{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid AsyncAPI document: %w", err)
 	}
 	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("invalid AsyncAPI document: %w", err)
+		return nil, nil, fmt.Errorf("invalid AsyncAPI document: %w", err)
 	}
 	if doc.AsyncAPI == "" {
-		return nil, errors.New("invalid AsyncAPI document: missing asyncapi version")
+		return nil, nil, errors.New("invalid AsyncAPI document: missing asyncapi version")
 	}
-	return &doc, nil
+	return &doc, findings, nil
 }
 
 func buildScriptForOps(scriptName string, target opTarget, ops []kafkaOp, opts ConvertOptions, brokers []string, kafkaProfile, securityProtocol, kafkaSASLMechanism, jmsBroker string, mock bool, suffix bool) *dsl.Script {

@@ -51,6 +51,101 @@ func TestReferencedSecretNamesCoversConfigActionsAndNestedValues(t *testing.T) {
 	}
 }
 
+func TestReferencedSecretNamesNeverTreatsJavaVMArgumentsAsProjectSecrets(t *testing.T) {
+	script := &dsl.Script{
+		Protocol: "java_vuser",
+		Config: dsl.ScriptConfig{JavaVuser: dsl.JavaVuserConfig{
+			AdditionalVMParameters: []string{
+				"-Dlabel={{secret.JAVA_VM_ARG_MUST_NOT_RESOLVE}}",
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name: "Ordinary action value",
+			Type: "custom_call",
+			Params: map[string]any{
+				"additional_vm_parameters": "{{secret.ACTION_VALUE_STILL_RESOLVES}}",
+			},
+		}},
+	}
+	names, err := ReferencedSecretNames(script)
+	if err != nil {
+		t.Fatalf("ReferencedSecretNames: %v", err)
+	}
+	if len(names) != 1 || names[0] != "ACTION_VALUE_STILL_RESOLVES" {
+		t.Fatalf("referenced names = %v, want only the ordinary action value", names)
+	}
+}
+
+func TestBase64WireBodySecretPreflightAndTransport(t *testing.T) {
+	const secretName = "BASE64_BODY_PASSWORD"
+	const secretValue = "runtime-base64-secret-4d91"
+	wireTemplate := `{"password":"{{secret.` + secretName + `}}","note":"unchanged"}`
+	storedBody := base64.StdEncoding.EncodeToString([]byte(wireTemplate))
+	var calls atomic.Int64
+	var received bytes.Buffer
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		received.Reset()
+		_, _ = received.ReadFrom(r.Body)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	script := &dsl.Script{
+		Name:     "base64 wire credential",
+		Protocol: "http",
+		Config:   dsl.ScriptConfig{BaseURL: server.URL},
+		Actions: []dsl.Action{{
+			Name:         "submit",
+			Type:         "request",
+			Method:       http.MethodPost,
+			Target:       "/login",
+			Body:         storedBody,
+			BodyEncoding: "base64",
+		}},
+	}
+	names, err := ReferencedSecretNames(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(names, []string{secretName}) {
+		t.Fatalf("ReferencedSecretNames() = %v, want decoded body secret", names)
+	}
+
+	missing := SecretResolverFunc(func(string) (string, bool) { return "", false })
+	if _, err := ReplayScript(context.Background(), script, ReplayOptions{
+		SecretResolver: missing, IgnoreThinkTime: true,
+	}); err == nil || !strings.Contains(err.Error(), secretName) {
+		t.Fatalf("missing-secret replay error = %v, want %s preflight failure", err, secretName)
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("missing-secret replay reached transport %d time(s)", calls.Load())
+	}
+
+	resolver := SecretResolverFunc(func(name string) (string, bool) {
+		return secretValue, name == secretName
+	})
+	report, err := ReplayScript(context.Background(), script, ReplayOptions{
+		SecretResolver: resolver, IgnoreThinkTime: true,
+	})
+	if err != nil {
+		t.Fatalf("ReplayScript: %v", err)
+	}
+	if report == nil || !report.Success {
+		t.Fatalf("ReplayScript report = %#v", report)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("resolved replay transport calls = %d, want 1", calls.Load())
+	}
+	wantWire := `{"password":"` + secretValue + `","note":"unchanged"}`
+	if received.String() != wantWire {
+		t.Fatalf("wire body = %q, want %q", received.String(), wantWire)
+	}
+	if script.Actions[0].Body != storedBody {
+		t.Fatal("runtime mutated the stored base64 body")
+	}
+}
+
 func TestReferencedSecretNamesSkipsProvenanceAndReviewOnlyActions(t *testing.T) {
 	script := &dsl.Script{
 		ID:            "{{secret.IDENTITY_ID}}",

@@ -116,6 +116,63 @@ func TestMaskScriptSecretsProjectsEveryCredentialSurface(t *testing.T) {
 	}
 }
 
+func TestMaskScriptSecretsRedactsUnsafeJavaVMArgumentsWithoutChangingSafeSiblings(t *testing.T) {
+	const canary = "q7W9pL2xN8vC4mR6tY1kH5sF3dJ0aB9uE2zG"
+	script := &dsl.Script{
+		ID: "legacy-java-vm-argument", Name: "Legacy Java", Version: "1", Protocol: "java_vuser",
+		Config: dsl.ScriptConfig{JavaVuser: dsl.JavaVuserConfig{
+			AdditionalVMParameters: []string{
+				"-Xmx512m",
+				"-Dlabel=" + canary,
+				"-Dendpoint=https://example.test/path#token=short-secret",
+			},
+		}},
+	}
+
+	masked := maskScriptSecrets(script)
+	if masked == nil {
+		t.Fatal("maskScriptSecrets returned nil")
+	}
+	got := masked.Config.JavaVuser.AdditionalVMParameters
+	if len(got) != 3 || got[0] != "-Xmx512m" ||
+		got[1] != maskedScriptSecret || got[2] != maskedScriptSecret {
+		t.Fatalf("projected Java VM parameters = %#v", got)
+	}
+	payload, err := json.Marshal(masked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(payload), canary) ||
+		strings.Contains(string(payload), "short-secret") {
+		t.Fatalf("projected script leaked Java VM credential material: %s", payload)
+	}
+	if requirements := discoverSecretBindingRequirements(masked, 0); len(requirements) != 0 {
+		t.Fatalf("Java VM argv produced forbidden secret-binding requirements: %#v", requirements)
+	}
+	if script.Config.JavaVuser.AdditionalVMParameters[1] != "-Dlabel="+canary {
+		t.Fatal("projection mutated the stored Java VM parameter list")
+	}
+}
+
+func TestSecretBindingApplicationRejectsJavaVMTemplatesWithoutRequirements(t *testing.T) {
+	script := &dsl.Script{
+		Name: "Java VM template", Version: "1", Protocol: "java_vuser",
+		Config: dsl.ScriptConfig{JavaVuser: dsl.JavaVuserConfig{
+			AdditionalVMParameters: []string{"-Dlabel={{secret.JAVA_VM_ARG}}"},
+		}},
+	}
+	if requirements := discoverSecretBindingRequirements(maskScriptSecrets(script), 0); len(requirements) != 0 {
+		t.Fatalf("Java VM template produced secret-binding requirements: %#v", requirements)
+	}
+	resolved, remaining, err := applySecretBindings(script, 0, nil)
+	if err == nil || !strings.Contains(err.Error(), "template_forbidden") {
+		t.Fatalf("applySecretBindings = %#v, %#v, %v; want value-free template rejection", resolved, remaining, err)
+	}
+	if strings.Contains(err.Error(), "JAVA_VM_ARG") {
+		t.Fatalf("Java VM template rejection leaked logical name: %v", err)
+	}
+}
+
 func TestMaskScriptSecretsPreservesPortableVariableBindings(t *testing.T) {
 	script := &dsl.Script{
 		ID: "portable-binding", Name: "Portable binding", Version: "1", Protocol: "http",
@@ -138,6 +195,33 @@ func TestMaskScriptSecretsPreservesPortableVariableBindings(t *testing.T) {
 	}
 	if script.Actions[0].Body != "aura.token={{var.corr_access_token}}&password=raw-secret&safe=yes" {
 		t.Fatalf("projection mutated runtime script: %q", script.Actions[0].Body)
+	}
+}
+
+func TestMaskScriptSecretsGovernsCredentialNamedRawBody(t *testing.T) {
+	const canary = "raw-body-credential-never-disclose"
+	script := &dsl.Script{
+		ID: "raw-body", Name: "Raw credential body", Version: "1", Protocol: "http",
+		Actions: []dsl.Action{{
+			Name:    "submit",
+			Type:    "request",
+			Method:  http.MethodPost,
+			Target:  "/submit",
+			Headers: map[string]string{"Content-Type": "text/plain"},
+			Body:    "password = " + canary + "\nordinary prose",
+		}},
+	}
+
+	masked := maskScriptSecrets(script)
+	if masked == nil || len(masked.Actions) != 1 {
+		t.Fatalf("masked script = %#v", masked)
+	}
+	if strings.Contains(masked.Actions[0].Body, canary) ||
+		masked.Actions[0].Body != maskedScriptSecret {
+		t.Fatalf("masked raw body = %q", masked.Actions[0].Body)
+	}
+	if !strings.Contains(script.Actions[0].Body, canary) {
+		t.Fatal("projection mutated the stored script")
 	}
 }
 
@@ -166,6 +250,124 @@ func TestMaskScriptSecretsGeneratesRedactedXMLMessageIDs(t *testing.T) {
 	requirements := discoverSecretBindingRequirements(masked, 0)
 	if len(requirements) != 1 || !strings.Contains(requirements[0].Replacement, `<mes:password>{{secret.`) {
 		t.Fatalf("secret requirements = %#v, want only the password", requirements)
+	}
+}
+
+func TestMaskScriptSecretsPreservesGovernedXMLSecretReferences(t *testing.T) {
+	script := &dsl.Script{
+		ID: "soap-secret-refs", Name: "SOAP secret references", Version: "1", Protocol: "http",
+		Actions: []dsl.Action{{
+			Name: "submit", Type: "request", Method: http.MethodPost, Target: "/soap",
+			Body: `<Envelope password="{{ secret.envelope_password }}"><mes:password>{{secret.soap_password}}</mes:password>` +
+				`<mes:token>source-token</mes:token></Envelope>`,
+		}},
+	}
+
+	masked := maskScriptSecrets(script)
+	if masked == nil || len(masked.Actions) != 1 {
+		t.Fatalf("masked script = %#v", masked)
+	}
+	body := masked.Actions[0].Body
+	for _, reference := range []string{"{{ secret.envelope_password }}", "{{secret.soap_password}}"} {
+		if !strings.Contains(body, reference) {
+			t.Fatalf("governed XML reference %q was lost: %q", reference, body)
+		}
+	}
+	if strings.Contains(body, "source-token") || !strings.Contains(body, `<mes:token>`+maskedScriptSecret+`</mes:token>`) {
+		t.Fatalf("inline XML credential was not redacted: %q", body)
+	}
+	if strings.Contains(script.Actions[0].Body, maskedScriptSecret) {
+		t.Fatalf("projection mutated runtime script: %q", script.Actions[0].Body)
+	}
+}
+
+func TestMaskScriptSecretsScrubsSiblingAttributeOnPortableXMLElement(t *testing.T) {
+	script := &dsl.Script{
+		ID: "xml-sibling-secret", Name: "XML sibling secret", Version: "1", Protocol: "http",
+		Actions: []dsl.Action{{
+			Name: "submit", Type: "request", Method: http.MethodPost, Target: "/soap",
+			Body: `<Envelope password="plaintext-password"><value>{{param.safe_value}}</value></Envelope>`,
+		}},
+	}
+
+	masked := maskScriptSecrets(script)
+	body := masked.Actions[0].Body
+	if strings.Contains(body, "plaintext-password") {
+		t.Fatalf("whole-element template protection leaked sibling attribute: %q", body)
+	}
+	if !strings.Contains(body, `password="`+maskedScriptSecret+`"`) ||
+		!strings.Contains(body, `<value>{{param.safe_value}}</value>`) {
+		t.Fatalf("projection did not scrub sibling while preserving portable template: %q", body)
+	}
+}
+
+func TestMaskScriptSecretsPreservesNativeSourceAndMessageIdentifiers(t *testing.T) {
+	const findingID = "bruno-native-0123456789abcdef01234567"
+	script := &dsl.Script{
+		ID: "native-identifiers", Name: "Native identifiers", Version: "1", Protocol: "http",
+		GeneratedBy: brunoNativeImporterIdentity,
+		Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+			Source: "bruno",
+			Preserved: map[string]any{
+				"effective_auth": "basic",
+				"diagnostic_ids": []string{findingID},
+				"finding_ids":    []string{findingID},
+				"effective_fields": map[string]any{
+					"auth_mode": "basic",
+				},
+			},
+		}},
+		Actions: []dsl.Action{{
+			Name: "submit", Type: "request", Method: http.MethodPost, Target: "/soap",
+			Headers: map[string]string{
+				"idpctx-message-id": "02d90c91f908a3d31a80a7f48f805508",
+				"idpctx-session-id": "source-session-credential",
+			},
+			HeaderList: dsl.HeaderList{
+				{Name: "idpctx-message-id", Value: "02d90c91f908a3d31a80a7f48f805508"},
+				{Name: "idpctx-session-id", Value: "source-session-credential"},
+			},
+			Metadata: map[string]any{
+				"source_path":    "CTA/InquireSubscriptionEligibility_v120.yml",
+				"source_step_id": "0a3d7bb4aa0ff8b2b1512082a253b7af",
+				"source_profile": "bruno_native",
+			},
+		}},
+	}
+
+	masked := maskScriptSecrets(script)
+	if masked == nil || len(masked.Actions) != 1 {
+		t.Fatalf("masked script = %#v", masked)
+	}
+	action := masked.Actions[0]
+	if got := action.Headers["idpctx-message-id"]; got != "02d90c91f908a3d31a80a7f48f805508" {
+		t.Fatalf("message identifier = %q", got)
+	}
+	if got := action.HeaderList[0].Value; got != "02d90c91f908a3d31a80a7f48f805508" {
+		t.Fatalf("message identifier list value = %q", got)
+	}
+	if got := action.Metadata["source_path"]; got != "CTA/InquireSubscriptionEligibility_v120.yml" {
+		t.Fatalf("source path = %#v", got)
+	}
+	if got := action.Metadata["source_step_id"]; got != "0a3d7bb4aa0ff8b2b1512082a253b7af" {
+		t.Fatalf("source step id = %#v", got)
+	}
+	if got := action.Headers["idpctx-session-id"]; got != maskedScriptSecret {
+		t.Fatalf("session credential = %q, want redaction", got)
+	}
+	preserved := masked.Metadata.Import.Preserved
+	if preserved["effective_auth"] != "basic" {
+		t.Fatalf("effective auth = %#v", preserved["effective_auth"])
+	}
+	if got, ok := preserved["diagnostic_ids"].([]string); !ok || len(got) != 1 || got[0] != findingID {
+		t.Fatalf("diagnostic ids = %#v", preserved["diagnostic_ids"])
+	}
+	fields, ok := preserved["effective_fields"].(map[string]any)
+	if !ok || fields["auth_mode"] != "basic" {
+		t.Fatalf("effective fields = %#v", preserved["effective_fields"])
+	}
+	if unresolved := discoverSecretBindingRequirements(masked, 0); len(unresolved) != 2 {
+		t.Fatalf("unresolved requirements = %#v, want only the duplicated session credential surfaces", unresolved)
 	}
 }
 
@@ -322,6 +524,169 @@ func TestStoredScriptViewerDownloadAndPrivateExportUseProjection(t *testing.T) {
 	}
 	if strings.Contains(string(data), "global-password") || !strings.Contains(string(data), maskedScriptSecret) {
 		t.Fatalf("private export was not projected: %s", data)
+	}
+}
+
+func TestStoredScriptResponseMasksDecodedBase64JSONWithoutMutatingStoredWire(t *testing.T) {
+	const canary = "stored-base64-response-canary-8e45"
+	const wireBody = "{\n  \"password\": \"" + canary + "\",\n  \"count\": 1.00e+2,\n  \"ok\": true\n}"
+	encodedBody := base64.StdEncoding.EncodeToString([]byte(wireBody))
+	server := NewServer(ServerConfig{})
+	stored := seedLegacySecretScript(server, &dsl.Script{
+		ID:        "base64-response-projection",
+		Name:      "Base64 response projection",
+		Version:   "1",
+		Protocol:  "http",
+		ProjectID: "project-a",
+		Config:    dsl.ScriptConfig{BaseURL: "https://api.example.test"},
+		Actions: []dsl.Action{{
+			Name: "submit", Type: "request", Method: http.MethodPost, Target: "/records",
+			Headers:      map[string]string{"Content-Type": "application/json"},
+			Body:         encodedBody,
+			BodyEncoding: "base64",
+		}},
+	})
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/scripts/"+stored.ID, nil)
+	getReq.SetPathValue("id", stored.ID)
+	response := httptest.NewRecorder()
+	server.handleGetScript(response, getReq)
+	if response.Code != http.StatusOK {
+		t.Fatalf("get status = %d body=%s", response.Code, response.Body.String())
+	}
+	var projected StoredScript
+	if err := json.Unmarshal(response.Body.Bytes(), &projected); err != nil {
+		t.Fatal(err)
+	}
+	action := projected.Script.Actions[0]
+	if action.BodyEncoding != "base64" {
+		t.Fatalf("response body_encoding = %q, want base64", action.BodyEncoding)
+	}
+	decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(action.Body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantWire := strings.Replace(wireBody, canary, maskedScriptSecret, 1)
+	if string(decoded) != wantWire {
+		t.Fatalf("masked wire bytes changed outside credential occurrence:\n got: %q\nwant: %q", decoded, wantWire)
+	}
+	current, ok := server.runner.GetScript(stored.ID)
+	if !ok || current.Script.Actions[0].Body != encodedBody {
+		t.Fatalf("response projection mutated stored base64 body: %#v", current)
+	}
+	storedWire, err := base64.StdEncoding.DecodeString(current.Script.Actions[0].Body)
+	if err != nil || string(storedWire) != wireBody {
+		t.Fatalf("stored wire body = %q, %v; want original", storedWire, err)
+	}
+}
+
+func TestImportResponseMasksEmbeddedBase64BodyWithoutCorruptingWire(t *testing.T) {
+	const canary = "import-base64-response-canary-a81f"
+	const wireBody = "{\n  \"password\": \"" + canary + "\",\n  \"count\": 1.00e+2,\n  \"ok\": true\n}"
+	encodedBody := base64.StdEncoding.EncodeToString([]byte(wireBody))
+	script := &dsl.Script{
+		ID:        "base64-import-response",
+		Name:      "Base64 import response",
+		Version:   "1",
+		Protocol:  "http",
+		ProjectID: "project-a",
+		Config:    dsl.ScriptConfig{BaseURL: "https://api.example.test"},
+		Actions: []dsl.Action{{
+			Name: "submit", Type: "request", Method: http.MethodPost, Target: "/records",
+			Headers:      map[string]string{"Content-Type": "application/json"},
+			Body:         encodedBody,
+			BodyEncoding: "base64",
+		}},
+	}
+	response := newScriptImportResponse(scriptImportResponseOptions{
+		Script: script,
+		Result: struct {
+			Script *dsl.Script `json:"script"`
+		}{Script: script},
+	})
+	scripts, ok := response["scripts"].([]any)
+	if !ok || len(scripts) != 1 {
+		t.Fatalf("response scripts = %#v, want one projected script", response["scripts"])
+	}
+	result, ok := response["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("response result = %#v, want object", response["result"])
+	}
+	resultScript, ok := result["script"]
+	if !ok {
+		t.Fatalf("response result has no embedded script: %#v", result)
+	}
+
+	for label, value := range map[string]any{
+		"script":        response["script"],
+		"scripts":       scripts[0],
+		"result.script": resultScript,
+	} {
+		payload, err := json.Marshal(value)
+		if err != nil {
+			t.Fatalf("%s marshal: %v", label, err)
+		}
+		var projected dsl.Script
+		if err := json.Unmarshal(payload, &projected); err != nil {
+			t.Fatalf("%s unmarshal: %v", label, err)
+		}
+		action := projected.Actions[0]
+		if action.BodyEncoding != "base64" {
+			t.Fatalf("%s body_encoding = %q, want base64", label, action.BodyEncoding)
+		}
+		decoded, err := base64.StdEncoding.DecodeString(strings.TrimSpace(action.Body))
+		if err != nil {
+			t.Fatalf("%s body is not valid base64: %v (%q)", label, err, action.Body)
+		}
+		wantWire := strings.Replace(wireBody, canary, maskedScriptSecret, 1)
+		if string(decoded) != wantWire {
+			t.Fatalf("%s masked wire bytes changed outside credential occurrence:\n got: %q\nwant: %q", label, decoded, wantWire)
+		}
+	}
+	if script.Actions[0].Body != encodedBody {
+		t.Fatalf("import response projection mutated original base64 body: %q", script.Actions[0].Body)
+	}
+}
+
+func TestMaskScriptSecretsProjectsDecodedBase64HTTPSequenceRequest(t *testing.T) {
+	const canary = "sequence-base64-canary-d250"
+	const wireBody = `{"password":"` + canary + `","safe":"visible"}`
+	encodedBody := base64.StdEncoding.EncodeToString([]byte(wireBody))
+	script := &dsl.Script{
+		ID: "base64-sequence", Name: "Base64 sequence", Version: "1", Protocol: "http",
+		Actions: []dsl.Action{{
+			Name: "sequence", Type: "http_sequence", Target: "/sequence",
+			Params: map[string]any{"requests": []any{map[string]any{
+				"name": "nested", "method": http.MethodPost, "target": "/login",
+				"headers":       map[string]any{"Content-Type": "application/json"},
+				"body":          encodedBody,
+				"body_encoding": "base64",
+			}}},
+		}},
+	}
+
+	masked := maskScriptSecrets(script)
+	if masked == nil {
+		t.Fatal("maskScriptSecrets returned nil")
+	}
+	requests, _ := masked.Actions[0].Params["requests"].([]any)
+	if len(requests) != 1 {
+		t.Fatalf("masked sequence requests = %#v", masked.Actions[0].Params["requests"])
+	}
+	request, _ := requests[0].(map[string]any)
+	projectedBody, _ := request["body"].(string)
+	decoded, err := base64.StdEncoding.DecodeString(projectedBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantWire := strings.Replace(wireBody, canary, maskedScriptSecret, 1)
+	if string(decoded) != wantWire || request["body_encoding"] != "base64" {
+		t.Fatalf("masked nested wire = %q (%#v), want %q base64", decoded, request["body_encoding"], wantWire)
+	}
+	originalRequests, _ := script.Actions[0].Params["requests"].([]any)
+	originalRequest, _ := originalRequests[0].(map[string]any)
+	if originalRequest["body"] != encodedBody {
+		t.Fatalf("projection mutated original nested body: %#v", originalRequest["body"])
 	}
 }
 
@@ -534,5 +899,34 @@ func TestReconcileKeepsClientEditsOverStoredValue(t *testing.T) {
 	}
 	if got != "edited by user" {
 		t.Fatalf("reconciled = %q, want the client edit", got)
+	}
+}
+
+func TestACMEShapedSOAPURLsDoNotCreateBodySecretRequirements(t *testing.T) {
+	body := `<!-- endpoint http://p100csg8c1.vci.att.com:18000/Services/ACME_ISBA_WEB.jws -->` +
+		`<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" ` +
+		`xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">` +
+		`<request><user>{{param.username}}</user><password>{{param.password}}</password></request>` +
+		`</soap:Envelope>`
+	script := &dsl.Script{
+		Name: "ACME_ISBA_WEB", Version: "1", Protocol: "http",
+		Actions: []dsl.Action{{Name: "ACME_ISBA_WEB_CUSTOM_REQUEST", Type: "request", Method: "POST", Target: "/soap", Body: body}},
+	}
+	projected := maskScriptSecrets(script)
+	if projected == nil {
+		t.Fatal("maskScriptSecrets returned nil")
+	}
+	for _, value := range []string{
+		"http://p100csg8c1.vci.att.com:18000/Services/ACME_ISBA_WEB.jws",
+		"http://schemas.xmlsoap.org/soap/envelope/",
+		"http://www.w3.org/2001/XMLSchema-instance",
+		"{{param.username}}", "{{param.password}}",
+	} {
+		if !strings.Contains(projected.Actions[0].Body, value) {
+			t.Fatalf("projected body dropped %q: %s", value, projected.Actions[0].Body)
+		}
+	}
+	if requirements := discoverSecretBindingRequirements(projected, 0); len(requirements) != 0 {
+		t.Fatalf("safe SOAP body created secret requirements: %#v", requirements)
 	}
 }

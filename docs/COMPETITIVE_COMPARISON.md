@@ -241,7 +241,7 @@ These overstatements existed in earlier docs and are now corrected:
 - Published developer-facing examples and quick-start materials
 
 **Do not claim:**
-- k6 script compatibility until a real importer/exporter is implemented
+- Drop-in k6 or JavaScript-runtime compatibility; APEX Load supports only the tested static HTTP import/export subset
 - High-density browser load parity until benchmark evidence exists
 - Managed SaaS control plane
 
@@ -359,6 +359,12 @@ A comprehensive audit of APEX Load against enterprise performance testing platfo
 ## Migration and Import Reference
 
 The following sections carry functional tables referenced by `pkg/api/` evidence fields. Anchors are stable and load-bearing — do not rename headings.
+
+### Shared HTTP Import Safety Contract
+
+Postman, JMeter HTTP, OpenAPI, WSDL, the constrained k6 HTTP subset, and sample/HAR requests retain their source-specific parsers but share effective-request projection, structured credential handling, runtime capability checks, durable review gates, and final DSL validation.
+
+The shared result vocabulary is `executable_exact` (preserved supported behavior), `executable_bounded` (replay-safe runtime clamp plus diagnostic), `blocked_draft` (valid sanitized draft that cannot reach transport), and `rejected` (no valid disclosure-safe draft). These outcomes do not replace existing endpoint response fields or the broader `supported`/`partial`/`review_only` support labels. Full per-importer dispositions and archive-ingress rejection rules are documented in [Web/API Execution Support Matrix](WEB_API_EXECUTION_SUPPORT_MATRIX.md#tested-adopter-dispositions).
 
 ---
 
@@ -502,18 +508,19 @@ APEX Load converts `.jmx` test plans into APEX Load JSON DSL scripts and optiona
 | Element | Status |
 | --- | --- |
 | Test Plan, Thread Group | Supported |
-| HTTP Request Defaults, HTTP Header Manager, HTTP Cookie Manager | Supported |
+| HTTP Request Defaults, HTTP Header Manager, HTTP Cookie Manager | Supported; ordered HeaderManager duplicates and casing are preserved |
+| HTTP Authorization Manager | Basic, bearer, and digest supported; Kerberos/NTLM/negotiate become blocked drafts |
 | User Defined Variables, CSV Data Set Config | Supported |
 | HTTP Request samplers | Supported |
 | Constant Timer, Uniform Random Timer | Supported |
 | Response Assertions | Supported |
 | Regex / JSONPath / JMESPath / CSS / XPath / XPath2 post-processors | Supported — map to APEX Load action extractors |
 | Boundary extractors | Supported for HTTP response body and headers |
-| Simple controllers (flattenable) | Partial |
-| Loop behavior (mappable to runtime settings) | Partial |
+| Simple If / fixed Loop / Once Only / Transaction controllers | Supported for the tested deterministic subset |
+| Dynamic or complex controller behavior | Valid flattened draft with a durable review gate |
 | Basic variable substitution (`${variable}`) | Supported |
 
-**Explicitly unsupported in current scope:** JSR223 / BeanShell / Groovy, plugin samplers/listeners/controllers, JMS samplers, JDBC/FTP/SOAP/custom protocol plugins, complex conditional controllers, full JMeter listener/reporting model, distributed engine/controller settings.
+**Review/adapter boundaries:** Fully recognized safe single-statement JSR223 patterns can translate, while residual JSR223 / BeanShell / Groovy and third-party plugin behavior becomes disclosure-safe review evidence and cannot execute. JDBC, JMS, FTP/TCP, and SOAP-shaped samplers retain their existing protocol/adapter routes and are not part of the shared JMeter HTTP request pipeline. JMeter listeners remain reporting metadata rather than replay actions.
 
 **Import report contract:** Every import returns `warnings[]`, `unsupported_elements[]`, `assumptions[]`, and metadata (`file name`, `thread group count`, `sampler count`, `variables discovered`, `CSV sources discovered`).
 

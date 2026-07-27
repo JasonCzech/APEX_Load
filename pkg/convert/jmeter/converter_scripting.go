@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -154,9 +155,8 @@ func translateJSR223Script(samplerName, raw string) (actions []dsl.Action, recog
 					"args":     []any{value, key},
 				},
 				Metadata: map[string]any{
-					"source":        "jmeter",
-					"source_type":   "JSR223",
-					"jsr223_source": stmt,
+					"source":      "jmeter",
+					"source_type": "JSR223",
 				},
 			})
 			recognized++
@@ -172,9 +172,8 @@ func translateJSR223Script(samplerName, raw string) (actions []dsl.Action, recog
 						"level": jsr223LogLevel(match[1]),
 					},
 					Metadata: map[string]any{
-						"source":        "jmeter",
-						"source_type":   "JSR223",
-						"jsr223_source": stmt,
+						"source":      "jmeter",
+						"source_type": "JSR223",
 					},
 				})
 				recognized++
@@ -199,8 +198,9 @@ func jsr223LogLevel(level string) string {
 }
 
 // handleJMeterScriptSampler converts a standalone JSR223/BeanShell/BSF sampler.
-// Recognized statements become engine actions; unrecognized scripting is
-// preserved verbatim and flagged review_required.
+// Fully recognized statements become engine actions. Unrecognized or partially
+// recognized scripting becomes a disclosure-safe blocked placeholder. Raw JVM
+// source is never copied into the generated script or its review metadata.
 func handleJMeterScriptSampler(node *treeNode, script *dsl.Script, result *ConvertResult, diagnostics *diag.Collector, sourceFileName string, sourceMappings *[]sourceview.Mapping) {
 	element := node.Element
 	name := element.Name
@@ -216,8 +216,21 @@ func handleJMeterScriptSampler(node *treeNode, script *dsl.Script, result *Conve
 	actions, recognized, total := translateJSR223Script(samplerLabel, scriptText)
 	if recognized == 0 {
 		preserveJMeterScriptSource(script, name, scriptText)
-		diagnostics.Add(diag.Warning, "JMeter "+name, samplerLabel, "scripting could not be safely translated; the source was preserved for manual translation before replay")
-		*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, element, name, "", samplerLabel, "scripting", "review_only", truncateScriptNote(scriptText)))
+		actionIndex := appendJMeterSourceReviewPlaceholder(script, name, samplerLabel, sourceFileName, "unsupported_source_script")
+		diagnostics.Add(diag.Warning, "JMeter "+name, samplerLabel, "scripting could not be safely translated; source text was omitted from the draft and manual replacement is required before replay")
+		*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, element, name, fmt.Sprintf("actions[%d]", actionIndex), samplerLabel, "scripting", "review_only", truncateScriptNote(scriptText)))
+		return
+	}
+
+	if recognized != total {
+		// A partial translation cannot prove which source literals belong to the
+		// safe statement versus the omitted JVM behavior. Keep the draft useful
+		// and structurally valid, but do not copy either subset into API-facing
+		// action fields.
+		preserveJMeterScriptSource(script, name, scriptText)
+		actionIndex := appendJMeterSourceReviewPlaceholder(script, name, samplerLabel, sourceFileName, "partially_translated_source_script")
+		diagnostics.Add(diag.Warning, "JMeter "+name, samplerLabel, fmt.Sprintf("recognized %d of %d JSR223 statement(s); source text was omitted and the behavior must be replaced before replay", recognized, total))
+		*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, element, name, fmt.Sprintf("actions[%d]", actionIndex), samplerLabel, "scripting", "review_only", fmt.Sprintf("JMeter %s was partially recognized (%d of %d statements); the source was omitted from the blocked draft.", name, recognized, total)))
 		return
 	}
 
@@ -230,20 +243,14 @@ func handleJMeterScriptSampler(node *treeNode, script *dsl.Script, result *Conve
 	// SkippedSamplers for a successfully-translated script sampler.
 	countNativeSamplerConversion(result)
 
-	if recognized == total {
-		diagnostics.Add(diag.Info, "JMeter "+name, samplerLabel, fmt.Sprintf("translated %d JSR223 statement(s) into engine actions; verify semantics before replay", recognized))
-		*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, element, name, fmt.Sprintf("actions[%d]", startIndex), samplerLabel, "scripting", "converted", fmt.Sprintf("JMeter %s safe-subset script was translated into %d engine action(s).", name, recognized)))
-		return
-	}
-
-	// Partial translation: some statements were left untranslated.
-	preserveJMeterScriptSource(script, name, scriptText)
-	diagnostics.Add(diag.Warning, "JMeter "+name, samplerLabel, fmt.Sprintf("translated %d of %d JSR223 statement(s); the remaining logic was preserved for manual review", recognized, total))
-	*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, element, name, fmt.Sprintf("actions[%d]", startIndex), samplerLabel, "scripting", "review_only", fmt.Sprintf("JMeter %s was partially translated (%d of %d statements); review the remaining script.", name, recognized, total)))
+	diagnostics.Add(diag.Info, "JMeter "+name, samplerLabel, fmt.Sprintf("translated %d JSR223 statement(s) into engine actions; verify semantics before replay", recognized))
+	*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, element, name, fmt.Sprintf("actions[%d]", startIndex), samplerLabel, "scripting", "converted", fmt.Sprintf("JMeter %s safe-subset script was translated into %d engine action(s).", name, recognized)))
 }
 
-// preserveJMeterScriptSource stashes the verbatim script body on the script
-// metadata so reviewers can see exactly what was not translated.
+// preserveJMeterScriptSource retains the legacy metadata key without retaining
+// the source body. The protected source file remains the authority for an
+// operator-controlled re-import; public conversion results contain only this
+// disclosure-safe marker.
 func preserveJMeterScriptSource(script *dsl.Script, element, scriptText string) {
 	if script == nil {
 		return
@@ -258,15 +265,37 @@ func preserveJMeterScriptSource(script *dsl.Script, element, scriptText string) 
 		script.Metadata.Import.Preserved = map[string]any{}
 	}
 	existing, _ := script.Metadata.Import.Preserved["jsr223_sources"].([]string)
-	existing = append(existing, fmt.Sprintf("%s: %s", element, scriptText))
+	existing = append(existing, fmt.Sprintf("%s: [SOURCE LOGIC OMITTED]", element))
 	script.Metadata.Import.Preserved["jsr223_sources"] = existing
 }
 
 func truncateScriptNote(scriptText string) string {
-	const limit = 160
-	clean := strings.Join(strings.Fields(scriptText), " ")
-	if len(clean) > limit {
-		clean = clean[:limit] + "…"
+	return "JSR223/BeanShell source text was omitted from the public draft; replace the behavior before replay."
+}
+
+func appendJMeterSourceReviewPlaceholder(script *dsl.Script, element, location, sourceFileName, reasonCode string) int {
+	action := dsl.Action{
+		Name:  "Review " + element,
+		Type:  "review_required",
+		Value: "Replace unsupported JMeter source behavior before replay.",
+		Metadata: map[string]any{
+			"source":      "jmeter",
+			"source_type": element,
+		},
 	}
-	return "Preserved JSR223/BeanShell source for manual translation: " + clean
+	importreview.ApplyToAction(&action, []importreview.Finding{{
+		Code:       "import_review_required",
+		Severity:   diag.Blocker,
+		Element:    "JMeter " + element,
+		Detail:     "source behavior was omitted from the disclosure-safe draft and must be replaced before replay",
+		Location:   location,
+		Source:     "jmeter",
+		ReasonCode: reasonCode,
+		SourceRef:  sourceFileName + "#" + location,
+		Resolution: "replace_behavior_and_remove_gate",
+		Gate:       importreview.GateExecution,
+	}})
+	actionIndex := len(script.Actions)
+	script.Actions = append(script.Actions, action)
+	return actionIndex
 }

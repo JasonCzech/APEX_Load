@@ -206,6 +206,8 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "sample conversion failed: "+err.Error())
 		return
 	}
+	protectedRequirements := result.ProtectedRequirements.Take()
+	defer clearCredentialRequirementValues(protectedRequirements)
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(req.ProjectID)
 	}
@@ -219,16 +221,17 @@ func (s *Server) handleImportSample(w http.ResponseWriter, r *http.Request) {
 	attachImportReplayPreflight(result.Script, req.Format, preflight)
 
 	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
-		Result:              result,
-		Script:              result.Script,
-		Warnings:            result.Warnings,
-		Stats:               result.Stats,
-		Correlations:        result.Correlations,
-		UnsupportedElements: result.Unsupported.Strings(),
-		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
-		SourceReview:        result.SourceReview,
-		Parameterization:    buildImportParameterization(result.Script, sampleCorrelationsToPreApplied(result.Correlations)),
-		Preflight:           preflight,
+		Result:                result,
+		Script:                result.Script,
+		Warnings:              result.Warnings,
+		Stats:                 result.Stats,
+		Correlations:          result.Correlations,
+		UnsupportedElements:   result.Unsupported.Strings(),
+		ReviewSections:        importDiagnosticReviewSections(result.Unsupported),
+		SourceReview:          result.SourceReview,
+		Parameterization:      buildImportParameterization(result.Script, sampleCorrelationsToPreApplied(result.Correlations)),
+		Preflight:             preflight,
+		ProtectedRequirements: protectedRequirements,
 	}))
 }
 
@@ -374,6 +377,10 @@ func (s *Server) handleUpdateScript(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := validateScriptFolderProject(s.store, script); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := validateJavaVMParameterDisclosureSafety(script); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}

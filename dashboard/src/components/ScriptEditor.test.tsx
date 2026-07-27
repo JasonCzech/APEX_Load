@@ -34,6 +34,7 @@ const apiMock = {
   getProjectSecretStatuses: vi.fn(),
   createScript: vi.fn(),
   updateScript: vi.fn(),
+  createAuthoringSession: vi.fn(),
   validateScript: vi.fn(),
   validateDraftScript: vi.fn(),
   replayDraftScript: vi.fn(),
@@ -6460,6 +6461,176 @@ describe('ScriptEditor', () => {
       id: 'script-saved-1',
       name: 'Saved Callback Flow',
     }))
+    expect(container.textContent).toContain('Script saved successfully!')
+  })
+
+  it('queues a new runner-backed Java Vuser script for approval instead of creating it', async () => {
+    // POST /scripts answers 409 for a java_vuser script with java_vuser_run
+    // actions, so saving one from the editor was simply broken. It now creates
+    // a governed authoring session; approval stays a separate, explicit act.
+    const onSave = vi.fn()
+    apiMock.createAuthoringSession.mockResolvedValueOnce({
+      id: 'java-authoring-session-1',
+      source: 'manual',
+      name: 'Java Checkout Flow',
+      status: 'reviewing',
+      created_at: '2026-05-17T00:00:00Z',
+      updated_at: '2026-05-17T00:00:00Z',
+      last_accessed_at: '2026-05-17T00:00:00Z',
+    })
+
+    const javaScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'java_vuser',
+      name: 'Java Checkout Flow',
+      actions: [{ name: 'Java action', type: 'java_vuser_run', target: '', params: { method: 'action' } }],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={javaScript} initiallyDirty projectId="project-1" onSave={onSave} />)
+    })
+
+    const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
+    expect(saveButton).toBeTruthy()
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    expect(apiMock.createScript).not.toHaveBeenCalled()
+    expect(apiMock.createAuthoringSession).toHaveBeenCalledWith(expect.objectContaining({
+      project_id: 'project-1',
+      source: 'manual',
+      status: 'reviewing',
+      name: 'Java Checkout Flow',
+      draft: expect.objectContaining({ protocol: 'java_vuser', name: 'Java Checkout Flow' }),
+      idempotency_key: expect.stringContaining('script-editor-java-vuser'),
+    }))
+    // No library script exists yet, so onSave must not fire and the copy must
+    // not claim the script was saved.
+    expect(onSave).not.toHaveBeenCalled()
+    expect(container.textContent).toContain('queued for approval')
+    expect(container.textContent).not.toContain('Script saved successfully!')
+
+    // The editor deliberately stays dirty: a queued session is not a library
+    // script, so the baseline must not move and the navigation guard must stay
+    // armed. Clearing it here would make the editor claim work was saved that
+    // does not exist until someone approves it.
+    const saveButtonAfter = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
+    expect(saveButtonAfter?.disabled).toBe(false)
+    expect(saveButtonAfter?.getAttribute('title')).toBe('Save script')
+  })
+
+  it('carries the editor folder onto the authoring session', async () => {
+    // The whole backend folder_id path exists to receive this. Without it every
+    // reviewed Java script is filed at the project root regardless of where the
+    // author was working.
+    apiMock.createAuthoringSession.mockResolvedValueOnce({
+      id: 'java-authoring-session-folder',
+      source: 'manual',
+      name: 'Java Folder Flow',
+      status: 'reviewing',
+      created_at: '2026-05-17T00:00:00Z',
+      updated_at: '2026-05-17T00:00:00Z',
+      last_accessed_at: '2026-05-17T00:00:00Z',
+    })
+
+    const javaScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'java_vuser',
+      name: 'Java Folder Flow',
+      actions: [{ name: 'Java action', type: 'java_vuser_run', target: '', params: { method: 'action' } }],
+    }
+
+    await act(async () => {
+      root.render(
+        <ScriptEditor initialScript={javaScript} initiallyDirty projectId="project-1" folderId="folder-7" />,
+      )
+    })
+
+    const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    expect(apiMock.createAuthoringSession).toHaveBeenCalledWith(expect.objectContaining({
+      project_id: 'project-1',
+      folder_id: 'folder-7',
+    }))
+  })
+
+  it('reuses one authoring session when an unchanged Java draft is saved twice', async () => {
+    // The content-derived idempotency key is what stops a re-save (or a lost
+    // reply) from opening a second review session for the same draft.
+    apiMock.createAuthoringSession.mockResolvedValue({
+      id: 'java-authoring-session-repeat',
+      source: 'manual',
+      name: 'Java Repeat Flow',
+      status: 'reviewing',
+      created_at: '2026-05-17T00:00:00Z',
+      updated_at: '2026-05-17T00:00:00Z',
+      last_accessed_at: '2026-05-17T00:00:00Z',
+    })
+
+    const javaScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'java_vuser',
+      name: 'Java Repeat Flow',
+      actions: [{ name: 'Java action', type: 'java_vuser_run', target: '', params: { method: 'action' } }],
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={javaScript} initiallyDirty projectId="project-1" />)
+    })
+
+    const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await act(async () => {
+        saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+        await Promise.resolve()
+      })
+      await flushReact()
+    }
+
+    expect(apiMock.createAuthoringSession).toHaveBeenCalledTimes(2)
+    const [first, second] = apiMock.createAuthoringSession.mock.calls
+    expect(first[0].idempotency_key).toBe(second[0].idempotency_key)
+  })
+
+  it('still creates review-only Java Vuser scripts directly', async () => {
+    // The backend gate is narrower than the protocol: a Java draft with no
+    // executable runner actions saves through POST /scripts as before.
+    apiMock.createScript.mockResolvedValueOnce({
+      id: 'java-review-only-1',
+      name: 'Java Review Only',
+      protocol: 'java_vuser',
+      version: '1',
+      created_at: '2026-05-17T00:00:01Z',
+      script: { ...initialScript, protocol: 'java_vuser', name: 'Java Review Only' },
+    })
+
+    const javaScript: ScriptDefinition = {
+      ...initialScript,
+      protocol: 'java_vuser',
+      name: 'Java Review Only',
+    }
+
+    await act(async () => {
+      root.render(<ScriptEditor initialScript={javaScript} initiallyDirty projectId="project-1" />)
+    })
+
+    const saveButton = container.querySelector<HTMLButtonElement>('.actions-sidebar button[aria-label="Save script"]')
+    await act(async () => {
+      saveButton?.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+      await Promise.resolve()
+    })
+    await flushReact()
+
+    expect(apiMock.createAuthoringSession).not.toHaveBeenCalled()
+    expect(apiMock.createScript).toHaveBeenCalled()
     expect(container.textContent).toContain('Script saved successfully!')
   })
 

@@ -7,8 +7,10 @@ import (
 	"fmt"
 	"html"
 	"log/slog"
+	"math"
 	"net/url"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -35,8 +37,7 @@ func (vu *VUser) handleEngineAction(ctx context.Context, action dsl.Action) (boo
 	case "http_oauth2_token":
 		return true, vu.handleHTTPOAuth2TokenAction(ctx, action)
 	case "source_transaction":
-		vu.handleSourceTransactionAction(action)
-		return true, nil
+		return true, vu.handleSourceTransactionActionContext(ctx, action)
 	case "source_timer":
 		vu.handleSourceTimerAction(action)
 		return true, nil
@@ -195,6 +196,8 @@ func (vu *VUser) handleSourceRuntimeAction(ctx context.Context, action dsl.Actio
 		return fmt.Errorf("source runtime abort requested by %s", action.Name)
 	case "lr_exit":
 		vu.Variables["__source_exit_requested"] = strings.Join(sourceActionArgs(action), ",")
+	case "web_cache_cleanup":
+		return vu.clearProtocolCache(ctx)
 	case "lr_disable_ip_spoofing":
 		// Import-compatibility marker only — see lr_enable_ip_spoofing below.
 		vu.Variables["__lr_ip_spoofing"] = "disabled"
@@ -217,34 +220,681 @@ func (vu *VUser) handleSourceRuntimeAction(ctx context.Context, action dsl.Actio
 	return nil
 }
 
-func (vu *VUser) handleSourceTransactionAction(action dsl.Action) {
-	function := sourceActionFunction(action)
+func sourceTransactionStarts(action dsl.Action) bool {
+	if dsl.CanonicalActionType(action.Type) != "source_transaction" {
+		return false
+	}
+	switch normalizeSourceTransactionFunction(action) {
+	case "lr_start_transaction", "lr_start_sub_transaction":
+		return true
+	default:
+		return false
+	}
+}
+
+// sourceMainIterationExit recognizes the LoadRunner control transfer supported
+// by the native runner. The first return value reports that the action requests
+// "end this main iteration and continue with the next"; the second carries the
+// LR_FAIL status independently from that flow transfer.
+func sourceMainIterationExit(action dsl.Action) (bool, bool) {
+	if dsl.CanonicalActionType(action.Type) != "source_runtime" ||
+		!strings.EqualFold(strings.TrimSpace(sourceActionFunction(action)), "lr_exit") {
+		return false, false
+	}
 	args := sourceActionArgs(action)
-	name := firstEngineValue(action.Name, args...)
+	if len(args) == 0 || !strings.EqualFold(strings.TrimSpace(args[0]), "LR_EXIT_MAIN_ITERATION_AND_CONTINUE") {
+		return false, false
+	}
+	failed := len(args) > 1 && strings.EqualFold(strings.TrimSpace(args[1]), "LR_FAIL")
+	return true, failed
+}
+
+type sourceTransactionRuntimeState struct {
+	name             string
+	startedAt        time.Time
+	thinkTime        time.Duration
+	status           string
+	stoppedAt        time.Time
+	stoppedThinkTime time.Duration
+	parent           string
+	// goalClaimed distinguishes a transaction started in the main action phase,
+	// where its MaxTransactions slot is claimed at start, from one opened in
+	// init and recorded by a later main/teardown end marker.
+	goalClaimed bool
+	// goalReserved carries an uncommitted MaxTransactions reservation from a
+	// lifecycle start across init/main/teardown. It prevents peer VUsers from
+	// entering the enclosed SUT work without soft-cancelling this owner before
+	// the matching end marker can record the logical transaction.
+	goalReserved bool
+}
+
+// sourceTransactionEndNeedsGoalClaim reports whether an end marker will record
+// a transaction whose MaxTransactions slot has not already been claimed by its
+// matching main-phase start marker. An unmatched or malformed end is an action
+// error, not a zero-length business transaction, and therefore consumes no slot.
+func (vu *VUser) sourceTransactionEndNeedsGoalClaim(action dsl.Action) bool {
+	if vu == nil || !sourceTransactionEnds(action) {
+		return false
+	}
+	if !vu.sourceTransactionEndWillClose(action) {
+		return false
+	}
+	key := strings.ToLower(strings.TrimSpace(sourceTransactionActionName(action)))
+	state := vu.sourceTransactions[key]
+	return state != nil && !state.goalClaimed && !state.goalReserved
+}
+
+func (vu *VUser) markSourceTransactionGoalClaimed(action dsl.Action) {
+	if vu == nil || !sourceTransactionStarts(action) {
+		return
+	}
+	key := strings.ToLower(strings.TrimSpace(sourceTransactionActionName(action)))
+	if state := vu.sourceTransactions[key]; state != nil {
+		state.goalClaimed = true
+	}
+}
+
+func (vu *VUser) markSourceTransactionGoalReserved(action dsl.Action) {
+	if vu == nil || !sourceTransactionStarts(action) {
+		return
+	}
+	key := strings.ToLower(strings.TrimSpace(sourceTransactionActionName(action)))
+	if state := vu.sourceTransactions[key]; state != nil {
+		state.goalReserved = true
+	}
+}
+
+func (vu *VUser) sourceTransactionStartWillOpen(action dsl.Action) bool {
+	if vu == nil || !sourceTransactionStarts(action) {
+		return false
+	}
+	name, parent, ok := sourceTransactionStartArguments(action)
+	if !ok {
+		return false
+	}
+	key := strings.ToLower(name)
+	if vu.sourceTransactions[key] != nil {
+		return false
+	}
+	return parent == "" || vu.sourceTransactions[strings.ToLower(parent)] != nil
+}
+
+func (vu *VUser) hasOpenSourceTransactionGoalOwnership() bool {
+	if vu == nil {
+		return false
+	}
+	for _, state := range vu.sourceTransactions {
+		if state != nil && (state.goalClaimed || state.goalReserved) {
+			return true
+		}
+	}
+	return false
+}
+
+func (vu *VUser) finalizeSourceTransaction(key, reason string) *protocol.Result {
+	if vu == nil {
+		return nil
+	}
+	state := vu.sourceTransactions[key]
+	if state == nil {
+		return nil
+	}
+	delete(vu.sourceTransactions, key)
+	if state.goalReserved && vu.ExecutionGoals != nil {
+		vu.ExecutionGoals.CommitTransactionReservation()
+		state.goalReserved = false
+		state.goalClaimed = true
+	}
+	duration := sourceTransactionDuration(state, time.Now())
+	name := strings.TrimSpace(state.name)
+	if name == "" {
+		name = key
+	}
 	vu.ensureVariables()
-	switch {
-	case strings.Contains(function, "start"):
-		vu.Variables[sourceTransactionStartKey(name)] = strconv.FormatInt(time.Now().UnixNano(), 10)
-	case strings.Contains(function, "end"), strings.Contains(function, "stop"), function == "lr_fail_trans_with_error":
-		success := !strings.Contains(function, "fail")
+	// The map above is the authoritative open-transaction state. Its legacy
+	// timestamp mirror exists only for compatibility with older execution
+	// paths, so it must not outlive the authoritative transaction. Otherwise a
+	// later orphan end marker can reuse the stale start and synthesize a second
+	// long-running transaction.
+	delete(vu.Variables, sourceTransactionStartKey(name))
+	source := &protocol.Result{
+		ActionName:   name,
+		StartTime:    state.startedAt,
+		Success:      false,
+		ErrorMessage: reason,
+	}
+	result := vu.recordTransaction(name, duration, false, source)
+	vu.Variables[sourceTransactionStatusKey(name)] = strconv.FormatBool(false)
+	return result
+}
+
+func (vu *VUser) finalizeOpenSourceTransactions(reason string) []*protocol.Result {
+	if vu == nil || len(vu.sourceTransactions) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(vu.sourceTransactions))
+	for key := range vu.sourceTransactions {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	results := make([]*protocol.Result, 0, len(keys))
+	for _, key := range keys {
+		if result := vu.finalizeSourceTransaction(key, reason); result != nil {
+			results = append(results, result)
+		}
+	}
+	return results
+}
+
+// activeSourceTransactionOwnsHTTPSequence reports whether the sequence is
+// currently enclosed by a matching, successfully executed source transaction
+// start marker. Script-wide marker presence is insufficient: a marker in an
+// untaken branch, a later statement, or another completed phase must not
+// suppress the sequence's standalone aggregate transaction.
+func (vu *VUser) activeSourceTransactionOwnsHTTPSequence(action dsl.Action) bool {
+	if vu == nil || !strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
+		return false
+	}
+	name := strings.ToLower(strings.TrimSpace(sourceTransactionName(action.Metadata)))
+	if name == "" {
+		return false
+	}
+	state, open := vu.sourceTransactions[name]
+	return open && state != nil
+}
+
+func sourceTransactionActionName(action dsl.Action) string {
+	return firstEngineValue(action.Name, sourceActionArgs(action)...)
+}
+
+func sourceTransactionEnds(action dsl.Action) bool {
+	if dsl.CanonicalActionType(action.Type) != "source_transaction" {
+		return false
+	}
+	switch normalizeSourceTransactionFunction(action) {
+	case "lr_end_transaction", "lr_end_sub_transaction", "lr_end_sub_trans":
+		return true
+	default:
+		return false
+	}
+}
+
+func sourceTransactionRecordsImmediate(action dsl.Action) bool {
+	if dsl.CanonicalActionType(action.Type) != "source_transaction" ||
+		normalizeSourceTransactionFunction(action) != "lr_set_transaction" {
+		return false
+	}
+	_, _, _, ok := sourceSetTransactionArguments(action)
+	return ok
+}
+
+func sourceTransactionCompletes(action dsl.Action) bool {
+	return sourceTransactionEnds(action) || sourceTransactionRecordsImmediate(action)
+}
+
+func (vu *VUser) sourceTransactionCompletionWillExecute(action dsl.Action) bool {
+	if sourceTransactionRecordsImmediate(action) {
+		return true
+	}
+	return vu != nil && vu.sourceTransactionEndWillClose(action)
+}
+
+func normalizeSourceTransactionFunction(action dsl.Action) string {
+	return strings.ToLower(strings.TrimSpace(sourceActionFunction(action)))
+}
+
+const (
+	sourceTransactionPass = "pass"
+	sourceTransactionFail = "fail"
+	sourceTransactionStop = "stop"
+	sourceTransactionAuto = "auto"
+)
+
+func normalizeSourceTransactionStatus(raw string, allowAuto bool) (string, bool) {
+	status := strings.ToUpper(strings.TrimSpace(raw))
+	status = strings.TrimPrefix(status, "LR.")
+	status = strings.TrimPrefix(status, "LR_")
+	switch status {
+	case "PASS":
+		return sourceTransactionPass, true
+	case "FAIL":
+		return sourceTransactionFail, true
+	case "STOP":
+		return sourceTransactionStop, true
+	case "AUTO":
+		return sourceTransactionAuto, allowAuto
+	default:
+		return "", false
+	}
+}
+
+func sourceTransactionStartArguments(action dsl.Action) (name, parent string, ok bool) {
+	function := normalizeSourceTransactionFunction(action)
+	args := sourceActionArgs(action)
+	switch function {
+	case "lr_start_transaction":
 		if len(args) > 1 {
-			status := strings.ToLower(args[len(args)-1])
-			if strings.Contains(status, "fail") {
-				success = false
+			return "", "", false
+		}
+		name = strings.TrimSpace(action.Name)
+		if len(args) == 1 {
+			name = strings.TrimSpace(args[0])
+		}
+		return name, "", name != ""
+	case "lr_start_sub_transaction":
+		if len(args) != 2 {
+			return "", "", false
+		}
+		name = strings.TrimSpace(args[0])
+		parent = strings.TrimSpace(args[1])
+		return name, parent, name != "" && parent != ""
+	default:
+		return "", "", false
+	}
+}
+
+func sourceTransactionEndArguments(action dsl.Action) (name, status string, ok bool) {
+	if !sourceTransactionEnds(action) {
+		return "", "", false
+	}
+	args := sourceActionArgs(action)
+	if len(args) > 2 {
+		return "", "", false
+	}
+	name = strings.TrimSpace(action.Name)
+	if len(args) > 0 {
+		name = strings.TrimSpace(args[0])
+	}
+	if name == "" {
+		return "", "", false
+	}
+	// Preserve the historical hand-authored DSL shorthand where an end marker
+	// omitted args and used Name as its identity. Imported calls always carry the
+	// explicit status argument.
+	status = sourceTransactionPass
+	if len(args) == 2 {
+		status, ok = normalizeSourceTransactionStatus(args[1], true)
+		if !ok {
+			return "", "", false
+		}
+	}
+	return name, status, true
+}
+
+func (vu *VUser) sourceTransactionEndWillClose(action dsl.Action) bool {
+	if vu == nil {
+		return false
+	}
+	name, _, ok := sourceTransactionEndArguments(action)
+	if !ok {
+		return false
+	}
+	key := strings.ToLower(name)
+	state := vu.sourceTransactions[key]
+	if state == nil {
+		return false
+	}
+	function := normalizeSourceTransactionFunction(action)
+	if function == "lr_end_transaction" && state.parent != "" {
+		return false
+	}
+	if (function == "lr_end_sub_transaction" || function == "lr_end_sub_trans") &&
+		(state.parent == "" || vu.sourceTransactions[state.parent] == nil) {
+		return false
+	}
+	for _, child := range vu.sourceTransactions {
+		if child != nil && child.parent == key {
+			return false
+		}
+	}
+	return true
+}
+
+func sourceSetTransactionArguments(action dsl.Action) (name string, duration time.Duration, status string, ok bool) {
+	if normalizeSourceTransactionFunction(action) != "lr_set_transaction" {
+		return "", 0, "", false
+	}
+	args := sourceActionArgs(action)
+	if len(args) != 3 {
+		return "", 0, "", false
+	}
+	name = strings.TrimSpace(args[0])
+	seconds, err := strconv.ParseFloat(strings.TrimSpace(args[1]), 64)
+	if name == "" || err != nil || math.IsNaN(seconds) || math.IsInf(seconds, 0) ||
+		seconds < 0 || seconds > float64((1<<63)-1)/float64(time.Second) {
+		return "", 0, "", false
+	}
+	status, ok = normalizeSourceTransactionStatus(args[2], false)
+	if !ok {
+		return "", 0, "", false
+	}
+	return name, time.Duration(seconds * float64(time.Second)), status, true
+}
+
+func sourceTransactionDuration(state *sourceTransactionRuntimeState, now time.Time) time.Duration {
+	if state == nil {
+		return 0
+	}
+	end := now
+	thinkTime := state.thinkTime
+	if !state.stoppedAt.IsZero() {
+		end = state.stoppedAt
+		thinkTime = state.stoppedThinkTime
+	}
+	duration := end.Sub(state.startedAt) - thinkTime
+	if duration < 0 {
+		return 0
+	}
+	return duration
+}
+
+func sourceTransactionStatusSuccess(status string) bool {
+	return status == sourceTransactionPass
+}
+
+func sourceTransactionFailureResult(name, status string, startedAt time.Time) *protocol.Result {
+	if sourceTransactionStatusSuccess(status) {
+		return nil
+	}
+	message := "transaction failed"
+	if status == sourceTransactionStop {
+		message = "transaction stopped"
+	}
+	return &protocol.Result{
+		ActionName:   name,
+		StartTime:    startedAt,
+		Success:      false,
+		ErrorMessage: message,
+	}
+}
+
+func (vu *VUser) setSourceTransactionStatus(state *sourceTransactionRuntimeState, status string) {
+	if vu == nil || state == nil {
+		return
+	}
+	state.status = status
+	name := strings.TrimSpace(state.name)
+	if name == "" {
+		return
+	}
+	vu.Variables[sourceTransactionStatusKey(name)] = strconv.FormatBool(sourceTransactionStatusSuccess(status))
+}
+
+func (vu *VUser) logSourceTransactionError(ctx context.Context, action dsl.Action, args []string) {
+	messageAction := action
+	messageAction.Params = make(map[string]any, len(action.Params)+1)
+	for key, value := range action.Params {
+		messageAction.Params[key] = value
+	}
+	if len(args) > 0 {
+		messageAction.Value = args[0]
+		messageArgs := make([]any, 0, len(args)-1)
+		for _, arg := range args[1:] {
+			messageArgs = append(messageArgs, arg)
+		}
+		messageAction.Params["args"] = messageArgs
+	}
+	slog.Default().ErrorContext(ctx, "source transaction error",
+		"vuser", vu.ID,
+		"group", vu.Group,
+		"action", action.Name,
+		"function", normalizeSourceTransactionFunction(action),
+		"message", vu.renderErrorMessage(messageAction),
+	)
+}
+
+func unsupportedSourceTransactionOwnershipFunction(function string) bool {
+	switch function {
+	case "lr_start_cross_vuser_transaction", "lr_end_cross_vuser_transaction",
+		"lr_start_transaction_instance", "lr_end_transaction_instance",
+		"lr_stop_transaction_instance", "lr_resume_transaction_instance",
+		"lr_set_transaction_instance_status",
+		"lr_get_trans_instance_duration", "lr_get_trans_instance_status",
+		"lr_get_trans_instance_think_time", "lr_get_trans_instance_wasted_time":
+		return true
+	default:
+		return false
+	}
+}
+
+func unsupportedSourceTransactionValueFunction(function string) bool {
+	switch function {
+	case "lr_get_transaction_duration", "lr_get_transaction_status",
+		"lr_get_transaction_think_time", "lr_get_transaction_wasted_time",
+		"lr_wasted_time":
+		return true
+	default:
+		return false
+	}
+}
+
+// handleSourceTransactionAction retains the context-free helper used by focused
+// engine tests and older in-package callers.
+func (vu *VUser) handleSourceTransactionAction(action dsl.Action) error {
+	return vu.handleSourceTransactionActionContext(context.Background(), action)
+}
+
+func (vu *VUser) handleSourceTransactionActionContext(ctx context.Context, action dsl.Action) error {
+	function := normalizeSourceTransactionFunction(action)
+	args := sourceActionArgs(action)
+	// Marker names are display labels ("Start … transaction"/"End …
+	// transaction"). LoadRunner's first call argument is the authoritative
+	// business-transaction identity; fall back to Name for legacy scripts.
+	name := firstEngineValue(action.Name, args...)
+	key := strings.ToLower(strings.TrimSpace(name))
+	vu.ensureVariables()
+	switch function {
+	case "lr_start_transaction", "lr_start_sub_transaction":
+		startName, parentName, ok := sourceTransactionStartArguments(action)
+		if !ok {
+			if function == "lr_start_sub_transaction" {
+				return fmt.Errorf("lr_start_sub_transaction requires subtransaction and parent transaction names")
+			}
+			return fmt.Errorf("lr_start_transaction requires a transaction name")
+		}
+		name = startName
+		key = strings.ToLower(name)
+		if key == "" {
+			return fmt.Errorf("%s requires a transaction name", function)
+		}
+		if vu.sourceTransactions[key] != nil {
+			return fmt.Errorf("%s cannot restart already-open transaction %q", function, name)
+		}
+		parentKey := strings.ToLower(parentName)
+		if parentKey != "" && vu.sourceTransactions[parentKey] == nil {
+			return fmt.Errorf("lr_start_sub_transaction references parent transaction %q with no matching open transaction", parentName)
+		}
+		startedAt := time.Now()
+		vu.Variables[sourceTransactionStartKey(name)] = strconv.FormatInt(startedAt.UnixNano(), 10)
+		// LR_AUTO derives its final status from failures observed while the
+		// transaction is open. Start optimistic; any enclosed failed result
+		// flips this state to false.
+		vu.Variables[sourceTransactionStatusKey(name)] = strconv.FormatBool(true)
+		if vu.sourceTransactions == nil {
+			vu.sourceTransactions = make(map[string]*sourceTransactionRuntimeState)
+		}
+		vu.sourceTransactions[key] = &sourceTransactionRuntimeState{
+			name:      name,
+			startedAt: startedAt,
+			status:    sourceTransactionPass,
+			parent:    parentKey,
+		}
+		return nil
+	case "lr_end_transaction", "lr_end_sub_transaction", "lr_end_sub_trans":
+		endName, requestedStatus, ok := sourceTransactionEndArguments(action)
+		if !ok {
+			return fmt.Errorf("%s requires a transaction name and PASS, FAIL, STOP, or AUTO status", function)
+		}
+		key = strings.ToLower(strings.TrimSpace(endName))
+		state := vu.sourceTransactions[key]
+		if state == nil {
+			return fmt.Errorf("%s references transaction %q with no matching open transaction", function, endName)
+		}
+		if !vu.sourceTransactionEndWillClose(action) {
+			return fmt.Errorf("%s cannot close transaction %q while its parent/child transaction relationship is incomplete or mismatched", function, endName)
+		}
+		status := requestedStatus
+		if status == sourceTransactionAuto {
+			status = state.status
+			if status == "" {
+				status = sourceTransactionPass
 			}
 		}
-		start := time.Now()
-		if raw := vu.Variables[sourceTransactionStartKey(name)]; raw != "" {
-			if nanos, err := strconv.ParseInt(raw, 10, 64); err == nil {
-				start = time.Unix(0, nanos)
-			}
+		if state.goalReserved && vu.ExecutionGoals != nil {
+			vu.ExecutionGoals.CommitTransactionReservation()
+			state.goalReserved = false
+			state.goalClaimed = true
 		}
-		vu.recordTransaction(name, time.Since(start), success, nil)
-		vu.Variables[sourceTransactionStatusKey(name)] = strconv.FormatBool(success)
-	case strings.Contains(function, "status"):
-		if len(args) > 1 {
-			vu.Variables[sourceTransactionStatusKey(args[0])] = args[1]
+		delete(vu.sourceTransactions, key)
+		// The end marker consumes both authoritative state and its legacy mirror.
+		// Keeping the mirror would let a later orphan end reuse this start time.
+		delete(vu.Variables, sourceTransactionStartKey(endName))
+		duration := sourceTransactionDuration(state, time.Now())
+		success := sourceTransactionStatusSuccess(status)
+		vu.recordTransaction(endName, duration, success, sourceTransactionFailureResult(endName, status, state.startedAt))
+		vu.Variables[sourceTransactionStatusKey(endName)] = strconv.FormatBool(success)
+		return nil
+	case "lr_set_transaction_status":
+		if len(args) != 1 {
+			return fmt.Errorf("lr_set_transaction_status requires exactly one status argument")
 		}
+		status, ok := normalizeSourceTransactionStatus(args[0], false)
+		if !ok {
+			return fmt.Errorf("lr_set_transaction_status status %q is not PASS, FAIL, or STOP", args[0])
+		}
+		if len(vu.sourceTransactions) == 0 {
+			return fmt.Errorf("lr_set_transaction_status requires at least one open transaction")
+		}
+		for _, state := range vu.sourceTransactions {
+			vu.setSourceTransactionStatus(state, status)
+		}
+		return nil
+	case "lr_set_transaction_status_by_name":
+		if len(args) != 2 {
+			return fmt.Errorf("lr_set_transaction_status_by_name requires status and transaction name arguments")
+		}
+		status, ok := normalizeSourceTransactionStatus(args[0], false)
+		if !ok {
+			return fmt.Errorf("lr_set_transaction_status_by_name status %q is not PASS, FAIL, or STOP", args[0])
+		}
+		target := strings.TrimSpace(args[1])
+		state := vu.sourceTransactions[strings.ToLower(target)]
+		if target == "" || state == nil {
+			return fmt.Errorf("lr_set_transaction_status_by_name references transaction %q with no matching open transaction", target)
+		}
+		vu.setSourceTransactionStatus(state, status)
+		return nil
+	case "lr_fail_trans_with_error":
+		for _, state := range vu.sourceTransactions {
+			vu.setSourceTransactionStatus(state, sourceTransactionFail)
+		}
+		vu.logSourceTransactionError(ctx, action, args)
+		return nil
+	case "lr_stop_transaction":
+		if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
+			return fmt.Errorf("lr_stop_transaction requires exactly one transaction name")
+		}
+		target := strings.TrimSpace(args[0])
+		state := vu.sourceTransactions[strings.ToLower(strings.TrimSpace(target))]
+		if state == nil {
+			return fmt.Errorf("lr_stop_transaction references transaction %q with no matching open transaction", target)
+		}
+		if !state.stoppedAt.IsZero() {
+			return fmt.Errorf("lr_stop_transaction references already-stopped transaction %q", target)
+		}
+		state.stoppedAt = time.Now()
+		state.stoppedThinkTime = state.thinkTime
+		return nil
+	case "lr_resume_transaction":
+		if len(args) != 1 || strings.TrimSpace(args[0]) == "" {
+			return fmt.Errorf("lr_resume_transaction requires exactly one transaction name")
+		}
+		target := strings.TrimSpace(args[0])
+		state := vu.sourceTransactions[strings.ToLower(strings.TrimSpace(target))]
+		if state == nil {
+			return fmt.Errorf("lr_resume_transaction references transaction %q with no matching open transaction", target)
+		}
+		if state.stoppedAt.IsZero() {
+			return fmt.Errorf("lr_resume_transaction references transaction %q that is not stopped", target)
+		}
+		state.stoppedAt = time.Time{}
+		state.stoppedThinkTime = 0
+		return nil
+	case "lr_set_transaction":
+		transactionName, duration, status, ok := sourceSetTransactionArguments(action)
+		if !ok {
+			return fmt.Errorf("lr_set_transaction requires name, a finite non-negative duration in seconds, and PASS, FAIL, or STOP status")
+		}
+		success := sourceTransactionStatusSuccess(status)
+		vu.recordTransaction(transactionName, duration, success, sourceTransactionFailureResult(transactionName, status, time.Now().Add(-duration)))
+		vu.Variables[sourceTransactionStatusKey(transactionName)] = strconv.FormatBool(success)
+		return nil
+	default:
+		if unsupportedSourceTransactionOwnershipFunction(function) {
+			return fmt.Errorf("%s requires transaction instance or cross-VUser ownership semantics and is not executable in the native source-transaction runtime", function)
+		}
+		if unsupportedSourceTransactionValueFunction(function) {
+			return fmt.Errorf("%s requires a source-language return value or wasted-time bookkeeping and is not executable in the native source-transaction runtime", function)
+		}
+		_, hasParamFunction := actionParamString(action.Params, "function")
+		_, hasMetadataFunction := action.Metadata["source_function"].(string)
+		if function == "source_transaction" && !hasParamFunction && !hasMetadataFunction {
+			// Retain the catalog/legacy metadata-only marker as an intentional
+			// no-op. Imported and hand-authored function calls carry
+			// params.function; every non-empty unsupported function fails closed.
+			return nil
+		}
+		if function == "" {
+			function = "<missing>"
+		}
+		return fmt.Errorf("%s is not a supported native source-transaction function", function)
+	}
+}
+
+func (vu *VUser) sourceTransactionActionOutcome(action dsl.Action) (ended bool, name string, success bool) {
+	if vu == nil || !sourceTransactionCompletes(action) {
+		return false, "", true
+	}
+	name = sourceTransactionActionName(action)
+	success = true
+	if recorded, err := strconv.ParseBool(vu.Variables[sourceTransactionStatusKey(name)]); err == nil {
+		success = recorded
+	}
+	return true, name, success
+}
+
+func (vu *VUser) noteSourceTransactionThinkTime(delay time.Duration) {
+	if vu == nil || delay <= 0 {
+		return
+	}
+	for _, state := range vu.sourceTransactions {
+		if state != nil {
+			state.thinkTime += delay
+		}
+	}
+}
+
+func (vu *VUser) noteSourceTransactionResult(action dsl.Action, success bool) {
+	if vu == nil || success {
+		return
+	}
+	name := sourceTransactionName(action.Metadata)
+	vu.ensureVariables()
+	// Every runtime-open scope encloses the failed leaf, including a parent whose
+	// import metadata names only the innermost transaction. LR_AUTO must therefore
+	// fail in every enclosing scope.
+	for key, state := range vu.sourceTransactions {
+		transactionName := key
+		if state != nil && strings.TrimSpace(state.name) != "" {
+			transactionName = state.name
+			state.status = sourceTransactionFail
+		}
+		vu.Variables[sourceTransactionStatusKey(transactionName)] = strconv.FormatBool(false)
+	}
+	if len(vu.sourceTransactions) == 0 && name != "" {
+		// Preserve compatibility for metadata-only imported actions that predate
+		// executable transaction boundary actions.
+		vu.Variables[sourceTransactionStatusKey(name)] = strconv.FormatBool(false)
 	}
 }
 

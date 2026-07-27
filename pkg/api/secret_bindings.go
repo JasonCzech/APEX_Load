@@ -19,6 +19,7 @@ import (
 	"unicode"
 
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 	"github.com/jasonczech/apexload/pkg/engine"
 )
 
@@ -231,7 +232,7 @@ func discoverSecretBindingRequirementsValueWithRegistry(raw any, scriptIndex int
 func discoverRedactedValues(value any, path string, ctx redactionTraversalContext, scriptIndex int, scriptID, scriptName string, out *[]internalSecretBindingRequirement) {
 	switch typed := value.(type) {
 	case map[string]any:
-		if isNonExecutableReviewAction(typed) {
+		if isNonExecutableReviewAction(typed) || isDurablyImportReviewGatedAction(typed) {
 			return
 		}
 		ctx = redactionContextForMap(typed, path, ctx)
@@ -245,6 +246,23 @@ func discoverRedactedValues(value any, path string, ctx redactionTraversalContex
 				continue
 			}
 			childPath := appendJSONPointer(path, key)
+			// JVM argv has no secure secret-injection equivalent. Unsafe values
+			// are rejected by the write boundary and masked only for legacy read
+			// projections; never turn that response sentinel into a project
+			// secret requirement or a forbidden {{secret.*}} JVM argument.
+			if isJavaVMParameterJSONPath(childPath) {
+				continue
+			}
+			// A data source's inline rows are a runtime data table, not a
+			// credential field. When an importer redacts credential-named
+			// parameter rows it also attaches a durable execution gate whose
+			// resolution is "supply an approved data source" — one project
+			// secret cannot stand in for a multi-row table, so offering a
+			// binding here would let an operator clear the gate without
+			// restoring the data. Discovery-only, like the skips above.
+			if isRuntimeDataTableJSONPath(childPath) {
+				continue
+			}
 			// Import provenance recorded in action metadata (original_url,
 			// source_transaction) documents where the action came from and is
 			// never sent, so it must
@@ -279,6 +297,26 @@ func discoverRedactedValues(value any, path string, ctx redactionTraversalContex
 			}, sourceValue: typed})
 		}
 	}
+}
+
+// isRuntimeDataTableJSONPath reports whether path addresses the inline rows of
+// a script data source (/data_sources/{n}/inline_data).
+func isRuntimeDataTableJSONPath(path string) bool {
+	tokens, err := splitJSONPointer(path)
+	if err != nil || len(tokens) != 3 {
+		return false
+	}
+	return tokens[0] == "data_sources" && tokens[2] == "inline_data"
+}
+
+func isJavaVMParameterJSONPath(path string) bool {
+	tokens, err := splitJSONPointer(path)
+	if err != nil || len(tokens) < 3 {
+		return false
+	}
+	return tokens[0] == "config" &&
+		tokens[1] == "java_vuser" &&
+		tokens[2] == "additional_vm_parameters"
 }
 
 func redactionContextForMap(value map[string]any, path string, prior redactionTraversalContext) redactionTraversalContext {
@@ -332,6 +370,29 @@ func isNonExecutableReviewAction(value map[string]any) bool {
 	}
 }
 
+// isDurablyImportReviewGatedAction recognizes only a generic source-neutral
+// execution gate. A disclosure-safe blocked draft may retain [REDACTED] inside
+// the affected request because transport is impossible until the user replaces
+// that behavior and removes the gate. An explicit credential-management blocker
+// is different: those sentinels are intentionally bindable even when another
+// review gate remains on the action.
+func isDurablyImportReviewGatedAction(value map[string]any) bool {
+	if !isScriptActionJSONValue(value) {
+		return false
+	}
+	metadata, _ := value["metadata"].(map[string]any)
+	reviewRequired := false
+	for _, blocker := range executionReviewBlockerCodes(metadata) {
+		switch blocker {
+		case "import_credentials_unmanaged":
+			return false
+		case "import_review_required":
+			reviewRequired = true
+		}
+	}
+	return reviewRequired
+}
+
 // Script metadata/import identity and explicit review-only actions are
 // authoring provenance. They never participate in runtime credential use.
 // isImportProvenanceMetadataPath reports whether a JSON pointer addresses an
@@ -354,15 +415,6 @@ func isImportProvenanceMetadataPath(path string) bool {
 // "original_" is NOT a safe prefix: original_request holds captured raw review
 // evidence (headers, credentials) whose promotion into an executable action must
 // still be rejected. Only the specific provenance keys are exempt.
-func isImportProvenanceMetadataKey(key string) bool {
-	switch strings.ToLower(strings.TrimSpace(key)) {
-	case "original_url", "source_transaction":
-		return true
-	default:
-		return false
-	}
-}
-
 func isNonExecutableRedactionSubtree(parent map[string]any, key string, path string) bool {
 	if path == "" {
 		switch key {
@@ -595,6 +647,229 @@ func replaceRedactedOccurrence(value string, occurrence int, replacement string)
 }
 
 func applySecretBindings(script *dsl.Script, scriptIndex int, bindings []secretBindingSelection) (*dsl.Script, []SecretBindingRequirement, error) {
+	if err := validateJavaVMParameterDisclosureSafety(script); err != nil {
+		return nil, nil, err
+	}
+	selectedScopes := selectedSecretBindingScopes(script, scriptIndex, bindings)
+	protectedResolved, legacyBindings, protectedRemaining, err := applyProtectedImportCredentialBindings(script, bindings)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := validateJavaVMParameterDisclosureSafety(protectedResolved); err != nil {
+		return nil, nil, err
+	}
+	resolved, legacyRemaining, err := applyRedactedSecretBindings(protectedResolved, scriptIndex, legacyBindings)
+	if err != nil {
+		var stale *staleSecretBindingRequirementsError
+		if errors.As(err, &stale) {
+			combined := append(append([]SecretBindingRequirement(nil), protectedRemaining...), stale.requirements...)
+			return nil, combined, &staleSecretBindingRequirementsError{requirements: combined}
+		}
+		return nil, nil, err
+	}
+	if err := validateJavaVMParameterDisclosureSafety(resolved); err != nil {
+		return nil, nil, err
+	}
+	remaining := append(append([]SecretBindingRequirement(nil), protectedRemaining...), legacyRemaining...)
+	sort.SliceStable(remaining, func(i, j int) bool {
+		if remaining[i].ID != remaining[j].ID {
+			return remaining[i].ID < remaining[j].ID
+		}
+		if remaining[i].Path != remaining[j].Path {
+			return remaining[i].Path < remaining[j].Path
+		}
+		return remaining[i].Occurrence < remaining[j].Occurrence
+	})
+	if len(selectedScopes) > 0 {
+		for _, requirement := range remaining {
+			if scope := secretBindingActionScope(requirement.Path); scope != "" {
+				delete(selectedScopes, scope)
+			}
+		}
+		if descriptors, descriptorErr := loadProtectedImportCredentialDescriptors(resolved); descriptorErr == nil {
+			for _, descriptor := range descriptors {
+				for _, location := range descriptor.Locations {
+					if scope := secretBindingActionScope(location.Path); scope != "" {
+						delete(selectedScopes, scope)
+					}
+				}
+			}
+		}
+		if err := clearResolvedCredentialManagementBlockers(resolved, selectedScopes); err != nil {
+			return nil, nil, fmt.Errorf("clear resolved credential management blockers: %w", err)
+		}
+	}
+	return resolved, remaining, nil
+}
+
+// clearResolvedCredentialManagementBlockers removes only the credential
+// management execution code on request surfaces for which this binding
+// operation resolved every detected occurrence. Other surfaces and other
+// execution/review gates remain durable.
+func clearResolvedCredentialManagementBlockers(script *dsl.Script, resolvedScopes map[string]struct{}) error {
+	if len(resolvedScopes) == 0 {
+		return nil
+	}
+	return dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		if _, resolved := resolvedScopes[dslWalkPathJSONPointer(ref.Path)]; !resolved {
+			return nil
+		}
+		metadata := ref.Metadata()
+		if len(metadata) == 0 {
+			return nil
+		}
+		if blocker, ok := metadata["execution_blocker"].(string); ok &&
+			strings.TrimSpace(blocker) == "import_credentials_unmanaged" {
+			delete(metadata, "execution_blocker")
+		}
+		switch blockers := metadata["execution_blockers"].(type) {
+		case []string:
+			filtered := make([]string, 0, len(blockers))
+			for _, blocker := range blockers {
+				if strings.TrimSpace(blocker) != "import_credentials_unmanaged" {
+					filtered = append(filtered, blocker)
+				}
+			}
+			if len(filtered) == 0 {
+				delete(metadata, "execution_blockers")
+			} else {
+				metadata["execution_blockers"] = filtered
+			}
+		case []any:
+			filtered := make([]any, 0, len(blockers))
+			for _, raw := range blockers {
+				blocker, stringValue := raw.(string)
+				if stringValue && strings.TrimSpace(blocker) == "import_credentials_unmanaged" {
+					continue
+				}
+				filtered = append(filtered, raw)
+			}
+			if len(filtered) == 0 {
+				delete(metadata, "execution_blockers")
+			} else {
+				metadata["execution_blockers"] = filtered
+			}
+		}
+		ref.SetMetadata(metadata)
+		return nil
+	})
+}
+
+func selectedSecretBindingScopes(
+	script *dsl.Script,
+	scriptIndex int,
+	bindings []secretBindingSelection,
+) map[string]struct{} {
+	if script == nil || len(bindings) == 0 {
+		return nil
+	}
+	selected := make(map[string]struct{}, len(bindings))
+	for _, binding := range bindings {
+		if id := strings.TrimSpace(binding.RequirementID); id != "" {
+			selected[id] = struct{}{}
+		}
+	}
+	if len(selected) == 0 {
+		return nil
+	}
+	scopes := make(map[string]struct{})
+	if descriptors, err := loadProtectedImportCredentialDescriptors(script); err == nil {
+		for _, descriptor := range descriptors {
+			if _, ok := selected[descriptor.ID]; !ok {
+				continue
+			}
+			for _, location := range descriptor.Locations {
+				if scope := secretBindingActionScope(location.Path); scope != "" {
+					scopes[scope] = struct{}{}
+				}
+			}
+		}
+	}
+	projected := maskScriptSecrets(script)
+	if projected == nil {
+		return scopes
+	}
+	raw, err := scriptAsJSONValue(projected)
+	if err != nil {
+		return scopes
+	}
+	for _, requirement := range discoverSecretBindingRequirementsValue(raw, scriptIndex) {
+		if _, ok := selected[requirement.ID]; !ok {
+			continue
+		}
+		if scope := secretBindingActionScope(requirement.Path); scope != "" {
+			scopes[scope] = struct{}{}
+		}
+	}
+	return scopes
+}
+
+func secretBindingActionScope(path string) string {
+	tokens, err := splitJSONPointer(path)
+	if err != nil || len(tokens) < 2 || !isDecimalToken(tokens[1]) {
+		return ""
+	}
+	switch tokens[0] {
+	case "init", "actions", "teardown":
+	default:
+		return ""
+	}
+	scopeEnd := 2
+	for scopeEnd+2 < len(tokens) {
+		if tokens[scopeEnd] == "control" &&
+			(tokens[scopeEnd+1] == "steps" || tokens[scopeEnd+1] == "else") &&
+			isDecimalToken(tokens[scopeEnd+2]) {
+			scopeEnd += 3
+			continue
+		}
+		if tokens[scopeEnd] == "params" &&
+			tokens[scopeEnd+1] == "requests" &&
+			isDecimalToken(tokens[scopeEnd+2]) {
+			scopeEnd += 3
+		}
+		break
+	}
+	return "/" + strings.Join(tokens[:scopeEnd], "/")
+}
+
+func dslWalkPathJSONPointer(path string) string {
+	if strings.TrimSpace(path) == "" {
+		return ""
+	}
+	var tokens []string
+	for offset := 0; offset < len(path); {
+		start := offset
+		for offset < len(path) && path[offset] != '.' && path[offset] != '[' {
+			offset++
+		}
+		if offset > start {
+			tokens = append(tokens, path[start:offset])
+		}
+		if offset < len(path) && path[offset] == '.' {
+			offset++
+			continue
+		}
+		if offset < len(path) && path[offset] == '[' {
+			end := strings.IndexByte(path[offset:], ']')
+			if end < 0 {
+				return ""
+			}
+			end += offset
+			index := path[offset+1 : end]
+			if !isDecimalToken(index) {
+				return ""
+			}
+			tokens = append(tokens, index)
+			offset = end + 1
+		}
+	}
+	if len(tokens) < 2 {
+		return ""
+	}
+	return "/" + strings.Join(tokens, "/")
+}
+
+func applyRedactedSecretBindings(script *dsl.Script, scriptIndex int, bindings []secretBindingSelection) (*dsl.Script, []SecretBindingRequirement, error) {
 	if script == nil {
 		return nil, nil, fmt.Errorf("script is required")
 	}
@@ -795,6 +1070,9 @@ func (s *Server) handleApplyScriptSecretBindings(w http.ResponseWriter, r *http.
 		}
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
+	}
+	if remaining == nil {
+		remaining = []SecretBindingRequirement{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"script":                      maskScriptResponseValue(resolved),

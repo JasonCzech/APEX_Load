@@ -27,6 +27,15 @@ const (
 	EnvJavaVuserMaxProcesses    = "APEXLOAD_JAVA_VUSER_MAX_PROCESSES"
 	EnvJavaVuserRunnerAuthToken = "APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN"
 
+	// EnvJavaVuserAllowLegacyJava lowers the runner's Java floor from 17 to 8 so
+	// imported Vusers whose middleware only runs on a legacy JVM can execute.
+	// The version probe is otherwise the only content check standing between a
+	// script-specified JDK home and a forked JVM (there is deliberately no JDK
+	// path allowlist), so this is an operator decision, never a script one, and
+	// it still refuses anything older than Java 8. It also requires a Java
+	// 8-targeted harness jar — see `make java-vuser-runner-legacy`.
+	EnvJavaVuserAllowLegacyJava = "APEXLOAD_JAVA_VUSER_ALLOW_LEGACY_JAVA"
+
 	// EnvJavaVuserClasspathUploadEnabled opts an operator into honoring
 	// user-uploaded classpath JARs for imported Java Vusers. When unset, the
 	// upload endpoint is disabled and any attached classpath assets are ignored
@@ -86,11 +95,15 @@ type JavaVuserOperatorConfig struct {
 	RunnerMode            string
 	RunnerURL             string
 	DefaultJDKHome        string
-	HarnessJar            string
-	Classpath             []string
-	WorkDir               string
-	MaxProcesses          int
-	AuthToken             string
+	// AllowLegacyJava lowers the runner's Java floor from 17 to 8 for legacy
+	// middleware. See EnvJavaVuserAllowLegacyJava; it also requires a Java
+	// 8-targeted harness jar, since the shipped one is compiled --release 17.
+	AllowLegacyJava bool
+	HarnessJar      string
+	Classpath       []string
+	WorkDir         string
+	MaxProcesses    int
+	AuthToken       string
 	// ClasspathUploadEnabled gates honoring user-uploaded classpath JARs. When
 	// false, attached JavaClasspathAsset records are ignored and runtime
 	// behavior is identical to the pre-feature, fail-closed model.
@@ -128,6 +141,7 @@ func LoadJavaVuserOperatorConfig() JavaVuserOperatorConfig {
 		RunnerMode:             strings.ToLower(firstNonEmptyEnv(EnvJavaVuserRunnerMode, DefaultJavaVuserRunnerMode)),
 		RunnerURL:              firstNonEmptyEnv(EnvJavaVuserRunnerURL, DefaultJavaVuserRunnerURL),
 		DefaultJDKHome:         strings.TrimSpace(os.Getenv(EnvJavaVuserDefaultJDKHome)),
+		AllowLegacyJava:        envBool(EnvJavaVuserAllowLegacyJava),
 		HarnessJar:             strings.TrimSpace(os.Getenv(EnvJavaVuserHarnessJar)),
 		Classpath:              splitClasspath(os.Getenv(EnvJavaVuserClasspath)),
 		WorkDir:                strings.TrimSpace(os.Getenv(EnvJavaVuserWorkDir)),

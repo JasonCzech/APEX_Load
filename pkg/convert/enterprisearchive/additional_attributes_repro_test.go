@@ -7,11 +7,10 @@ import (
 )
 
 // These tests encode the exact stored configs observed for the production
-// re-import (apexload.db) so the parity outcome is proven, not assumed:
-//   - acc_wls_reg_1 auto-clears on the fixed binary with NO re-import.
-//   - the ACME scripts stay flagged until re-imported (their stored copy still
-//     carries the legacy flat web_cleanup_cookies attribute), and a fresh
-//     conversion clears them by emitting an executable cookie_clear action.
+// re-import (apexload.db) so the parity outcome is proven, not assumed. Stored
+// scripts that only have the former TLS-floor approximation or a legacy flat
+// cookie attribute remain flagged until re-imported; fresh imports emit exact
+// TLS bounds and executable positional cleanup actions.
 
 func compatibilityOnlyCount(t *testing.T, script *dsl.Script) int {
 	t.Helper()
@@ -19,10 +18,10 @@ func compatibilityOnlyCount(t *testing.T, script *dsl.Script) int {
 	return RuntimeSettingStatusCounts(parity)[string(RuntimeSettingStatusCompatibilityOnly)]
 }
 
-// acc_wls_reg_1 stored config: only native no-op (max_html_param_len) and a
-// TLS-mapped SSL_VERSION remain. The fixed recognizer clears it without any
-// re-import.
-func TestStoredAccWlsConfigAutoClearsAfterFix(t *testing.T) {
+// acc_wls_reg_1 stored config carries the former min-version-only
+// approximation. An exact SSL_VERSION mapping now requires matching minimum
+// and maximum bounds, so this stored copy honestly remains review-required.
+func TestStoredAccWlsConfigRequiresReimportForExactTLS(t *testing.T) {
 	script := &dsl.Script{
 		Name:     "acc_wls_reg_1",
 		Protocol: "http",
@@ -40,8 +39,8 @@ func TestStoredAccWlsConfigAutoClearsAfterFix(t *testing.T) {
 			},
 		},
 	}
-	if got := compatibilityOnlyCount(t, script); got != 0 {
-		t.Fatalf("acc_wls stored config compatibility_only = %d, want 0 (auto-clears, no re-import)", got)
+	if got := compatibilityOnlyCount(t, script); got != 1 {
+		t.Fatalf("acc_wls stored config compatibility_only = %d, want 1 (legacy TLS floor requires re-import)", got)
 	}
 }
 

@@ -178,10 +178,10 @@ describe('newTestRunModel', () => {
     scenario.scripts[0].runtime_settings = { pacing: { type: 'fixed_delay', delay_ms: 500 } }
     const runDefaults = { runtime_settings: { pacing: { type: 'fixed_delay', delay_ms: 200 } } }
 
-    expect(buildGroupRuntimeTableValues(scenario.scripts[0], scenario, runDefaults).pacing).toBe('Fixed delay · 500ms')
+    expect(buildGroupRuntimeTableValues(scenario.scripts[0], scenario, runDefaults).pacing).toBe('Fixed delay · 0.5 seconds')
     expect(buildGroupRuntimeTableValues(scenario.scripts[0], scenario, runDefaults, {
       runtime_settings: { pacing: { type: 'fixed_delay', delay_ms: 750 } },
-    }).pacing).toBe('Fixed delay · 750ms')
+    }).pacing).toBe('Fixed delay · 0.75 seconds')
     const cards = buildRunDefaultCards(scenario, { runtime_settings: {} })
     expect(cards.find(card => card.key === 'iterations')?.value).toBe('6')
     expect(cards.find(card => card.key === 'auto_transactions')?.value).toBe('per_iteration')

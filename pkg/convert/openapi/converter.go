@@ -1,6 +1,7 @@
 package openapi
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,9 +12,15 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/convert/srcparse"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/scrub"
 	"gopkg.in/yaml.v3"
 )
 
@@ -68,7 +75,15 @@ type ConvertResult struct {
 	Stats        ConvertStats       `json:"stats"`
 	Summary      ReviewSummary      `json:"summary"`
 	SourceReview *sourceview.Review `json:"source_review,omitempty"`
+
+	// ProtectedRequirements is an in-memory, one-shot adapter-to-API handoff.
+	// Its contents are never part of the JSON conversion result.
+	ProtectedRequirements credentialpolicy.ProtectedRequirements `json:"-"`
 }
+
+const openAPIMissingBaseURL = "https://missing-base-url.apexload.invalid"
+
+const openAPISourceReviewCredentialOmission = "# [OPENAPI SOURCE OMITTED: ENCODED CREDENTIAL VALUE REQUIRES PROTECTED BINDING]\n"
 
 type Correlation struct {
 	Name        string `json:"name"`
@@ -179,6 +194,7 @@ type parameter struct {
 	Type     string `json:"type,omitempty" yaml:"type,omitempty"`
 	Format   string `json:"format,omitempty" yaml:"format,omitempty"`
 	Example  any    `json:"example,omitempty" yaml:"example,omitempty"`
+	Default  any    `json:"default,omitempty" yaml:"default,omitempty"`
 }
 
 type requestBody struct {
@@ -188,8 +204,86 @@ type requestBody struct {
 }
 
 type mediaType struct {
-	Schema  schema `json:"schema,omitempty" yaml:"schema,omitempty"`
-	Example any    `json:"example,omitempty" yaml:"example,omitempty"`
+	Schema   schema               `json:"schema,omitempty" yaml:"schema,omitempty"`
+	Example  any                  `json:"example,omitempty" yaml:"example,omitempty"`
+	Examples orderedMediaExamples `json:"examples,omitempty" yaml:"examples,omitempty"`
+	Encoding map[string]any       `json:"encoding,omitempty" yaml:"encoding,omitempty"`
+}
+
+type namedMediaExample struct {
+	Name   string
+	Object any
+}
+
+// orderedMediaExamples retains the source order of an OpenAPI Media Type
+// Object's examples map. Go map iteration cannot be used here: examples are
+// alternatives, so the adapter deterministically selects the first authored
+// entry when the singular example field is absent.
+type orderedMediaExamples []namedMediaExample
+
+func (examples *orderedMediaExamples) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
+		*examples = nil
+		return nil
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	token, err := decoder.Token()
+	if err != nil {
+		return err
+	}
+	if delimiter, ok := token.(json.Delim); !ok || delimiter != '{' {
+		return errors.New("OpenAPI media type examples must be an object")
+	}
+	ordered := make(orderedMediaExamples, 0)
+	for decoder.More() {
+		nameToken, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		name, ok := nameToken.(string)
+		if !ok {
+			return errors.New("OpenAPI media type example name must be a string")
+		}
+		var object any
+		if err := decoder.Decode(&object); err != nil {
+			return err
+		}
+		ordered = append(ordered, namedMediaExample{Name: name, Object: object})
+	}
+	if _, err := decoder.Token(); err != nil {
+		return err
+	}
+	*examples = ordered
+	return nil
+}
+
+func (examples *orderedMediaExamples) UnmarshalYAML(value *yaml.Node) error {
+	if value == nil || value.Tag == "!!null" {
+		*examples = nil
+		return nil
+	}
+	if value.Kind == yaml.AliasNode {
+		value = value.Alias
+	}
+	if value == nil || value.Kind != yaml.MappingNode {
+		return errors.New("OpenAPI media type examples must be a mapping")
+	}
+	ordered := make(orderedMediaExamples, 0, len(value.Content)/2)
+	for index := 0; index+1 < len(value.Content); index += 2 {
+		nameNode := value.Content[index]
+		var name string
+		if err := nameNode.Decode(&name); err != nil {
+			return fmt.Errorf("decode OpenAPI media type example name: %w", err)
+		}
+		var object any
+		if err := value.Content[index+1].Decode(&object); err != nil {
+			return fmt.Errorf("decode OpenAPI media type example %q: %w", name, err)
+		}
+		ordered = append(ordered, namedMediaExample{Name: name, Object: object})
+	}
+	*examples = ordered
+	return nil
 }
 
 type schema struct {
@@ -200,6 +294,7 @@ type schema struct {
 	Required             []string          `json:"required,omitempty" yaml:"required,omitempty"`
 	Items                *schema           `json:"items,omitempty" yaml:"items,omitempty"`
 	Example              any               `json:"example,omitempty" yaml:"example,omitempty"`
+	Default              any               `json:"default,omitempty" yaml:"default,omitempty"`
 	Enum                 []any             `json:"enum,omitempty" yaml:"enum,omitempty"`
 	Nullable             bool              `json:"nullable,omitempty" yaml:"nullable,omitempty"`
 	AdditionalProperties any               `json:"additionalProperties,omitempty" yaml:"additionalProperties,omitempty"`
@@ -284,16 +379,17 @@ var supportedMethods = map[string]bool{
 }
 
 type builtOperation struct {
-	Index          int
-	Method         string
-	RawPath        string
-	Operation      *operation
-	PathParams     []parameter
-	ActionName     string
-	SuccessStatus  int
-	SuccessSchema  *schema
-	LocationHeader bool
-	Produced       []producedValue
+	Index                  int
+	Method                 string
+	RawPath                string
+	Operation              *operation
+	PathParams             []parameter
+	ActionName             string
+	SuccessStatus          int
+	SuccessSchema          *schema
+	LocationHeader         bool
+	Produced               []producedValue
+	SensitiveRequestFields map[string]string
 }
 
 type producedValue struct {
@@ -333,7 +429,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if content == "" {
 		return nil, errors.New("content is required")
 	}
-	doc, err := decodeDocument([]byte(content))
+	doc, sourceFindings, err := decodeDocument([]byte(content))
 	if err != nil {
 		return nil, err
 	}
@@ -342,7 +438,24 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	var diagnostics diag.Collector
+	for _, finding := range sourceFindings {
+		diagnostics.Add(
+			diag.Warning,
+			"source document",
+			finding.Location,
+			finding.Detail,
+		)
+	}
 	sourceFileName := openAPISourceFileName(content)
+	sensitiveSourceValues := sensitiveOpenAPISourceValues(doc)
+	reviewContent := scrub.Value(content, scrub.Policy{})
+	for _, sensitiveValue := range sensitiveSourceValues {
+		reviewContent = strings.ReplaceAll(reviewContent, sensitiveValue, scrub.Redacted)
+		if encoded, err := json.Marshal(sensitiveValue); err == nil && len(encoded) >= 2 {
+			reviewContent = strings.ReplaceAll(reviewContent, string(encoded[1:len(encoded)-1]), scrub.Redacted)
+		}
+	}
+	reviewContent, _ = scrub.RedactQuotedValues(reviewContent, sensitiveSourceValues)
 	sourceMappings := make([]sourceview.Mapping, 0)
 	res := resolver{doc: doc, diagnostics: &diagnostics}
 	baseURL, warnings := deriveBaseURL(doc, req.Options.BaseURL)
@@ -383,6 +496,12 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			Servers: serverURLs(doc),
 		},
 	}
+	if result.Script.Config.BaseURL == "" {
+		// HTTP scripts require a syntactically valid base URL. Preserve the
+		// source omission in Summary and diagnostics, but use a non-resolving
+		// .invalid placeholder in the blocked draft so it remains persistable.
+		result.Script.Config.BaseURL = openAPIMissingBaseURL
+	}
 
 	schemes := normalizedSecuritySchemes(doc)
 	authSchemes := sortedAuthSchemeNames(schemes)
@@ -392,8 +511,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	columns := columnRegistry{}
 	operationNames := []string{}
 	built := make([]builtOperation, 0)
+	finalizeReports := make([]requestimport.Report, 0)
+	credentialNames := credentialpolicy.NewNameRegistry()
 	auth := newAuthContext(result.Script, schemes, baseURL, req.Options, &result.Warnings, res)
-	sourceLineIndex := sourceview.NewLineIndex(content)
+	sourceLineIndex := sourceview.NewLineIndex(reviewContent)
 	for _, path := range sortedPathKeys(doc.Paths) {
 		item := doc.Paths[path]
 		for _, candidate := range operationsForPath(item) {
@@ -402,16 +523,25 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				skipped := strings.ToUpper(candidate.method) + " " + path
 				result.Stats.SkippedOperations = append(result.Stats.SkippedOperations, skipped)
 				diagnostics.Add(diag.Warning, "OpenAPI operation skipped", skipped, "operation was not converted because it was filtered or uses an unsupported HTTP method")
-				sourceMappings = append(sourceMappings, openAPISourceMapping(sourceFileName, content, sourceLineIndex, path, candidate.method, "", skipped, "operation", "review_only", "OpenAPI operation was filtered or used an unsupported HTTP method."))
+				sourceMappings = append(sourceMappings, openAPISourceMapping(sourceFileName, reviewContent, sourceLineIndex, path, candidate.method, "", skipped, "operation", "review_only", "OpenAPI operation was filtered or used an unsupported HTTP method."))
 				continue
 			}
 			action, bodyColumns, assertionAdded, opInfo := buildAction(path, candidate.method, item.Parameters, candidate.op, convertutil.BoolOption(req.Options.IncludeAssertions, true), res, columns, auth)
+			if baseURL == "" {
+				applyOpenAPIReviewGate(&action, []string{"missing_base_url"}, strings.ToUpper(candidate.method)+" "+path)
+			}
 			actionIndex := len(result.Script.Actions)
+			actionPath := fmt.Sprintf("actions[%d]", actionIndex)
+			action, report, err := finalizeOpenAPIRequestAction(action, path, candidate.method, sourceFileName, actionPath, credentialNames, openAPIProvenVariables(result.Script.Init), opInfo.SensitiveRequestFields)
+			if err != nil {
+				return nil, fmt.Errorf("finalize OpenAPI operation %s %s: %w", strings.ToUpper(candidate.method), path, err)
+			}
+			finalizeReports = append(finalizeReports, report)
 			opInfo.Index = actionIndex
 			opInfo.ActionName = action.Name
 			result.Script.Actions = append(result.Script.Actions, action)
 			built = append(built, opInfo)
-			sourceMappings = append(sourceMappings, openAPISourceMapping(sourceFileName, content, sourceLineIndex, path, candidate.method, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "OpenAPI operation was converted into a generated APEX Load action."))
+			sourceMappings = append(sourceMappings, openAPISourceMapping(sourceFileName, reviewContent, sourceLineIndex, path, candidate.method, actionPath, action.Name, "action", "converted", "OpenAPI operation was converted into a generated APEX Load action."))
 			result.Stats.ConvertedActions++
 			result.Stats.ParametersDetected += len(item.Parameters) + len(candidate.op.Parameters)
 			if action.Body != "" {
@@ -449,15 +579,117 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	} else {
 		result.Script.DataSources = openAPIFileDataSources(result.Script)
 	}
-	if result.Script.Config.BaseURL == "" {
+	finalized, err := requestimport.FinalizeScript(result.Script, finalizeReports, requestimport.FinalizeOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("finalize OpenAPI script: %w", err)
+	}
+	protectedSourceValues := make([]string, 0, len(finalized.Requirements))
+	for _, requirement := range finalized.Requirements {
+		if requirement.Value != "" {
+			protectedSourceValues = append(protectedSourceValues, requirement.Value)
+			reviewContent = strings.ReplaceAll(reviewContent, requirement.Value, scrub.Redacted)
+		}
+	}
+	reviewContent, _ = scrub.RedactQuotedValues(reviewContent, protectedSourceValues)
+	reviewContent, sourceReviewOmitted := disclosureSafeOpenAPISourceReview(
+		reviewContent,
+		append(append([]string(nil), sensitiveSourceValues...), protectedSourceValues...),
+	)
+	result.ProtectedRequirements.Store(finalized.Requirements)
+	for index := range finalized.Requirements {
+		finalized.Requirements[index].Value = ""
+	}
+	result.Script = finalized.Script
+	result.Summary.BaseURL = result.Script.Config.BaseURL
+	for index := range result.Summary.Servers {
+		result.Summary.Servers[index] = scrub.ValueURL(result.Summary.Servers[index], scrub.Policy{})
+	}
+	for _, item := range finalized.Diagnostics {
+		diagnostics.Add(item.Severity, item.Element, item.Location, item.Detail)
+	}
+	if baseURL == "" {
 		result.Warnings = append(result.Warnings, "base URL could not be derived; set options.base_url before saving the script")
 	}
 	if gap := result.Stats.TotalOperations - result.Stats.ConvertedActions - len(result.Stats.SkippedOperations); gap > 0 {
 		diagnostics.Add(diag.Warning, "OpenAPI completeness guard", "document", fmt.Sprintf("%d operation(s) were present but not converted or explicitly skipped", gap))
 	}
 	result.Unsupported = diagnostics.Items()
-	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: content}, sourceMappings)
+	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: reviewContent}, sourceMappings)
+	if sourceReviewOmitted && result.SourceReview != nil {
+		for index := range result.SourceReview.SourceFiles {
+			result.SourceReview.SourceFiles[index].Redacted = true
+		}
+	}
 	return result, nil
+}
+
+func disclosureSafeOpenAPISourceReview(content string, protected []string) (string, bool) {
+	seen := make(map[string]struct{}, len(protected))
+	normalized := make([]string, 0, len(protected))
+	for _, value := range protected {
+		if value == "" {
+			continue
+		}
+		if _, duplicate := seen[value]; duplicate {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	protected = normalized
+	if content == "" || len(protected) == 0 {
+		return content, false
+	}
+	var root yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
+		// The original document parsed successfully. If redaction made the
+		// review copy ambiguous, retaining it would make it impossible to prove
+		// that an alternate scalar encoding does not still disclose a secret.
+		return openAPISourceReviewCredentialOmission, true
+	}
+	seenNodes := make(map[*yaml.Node]struct{})
+	remainingNodes := len(content) + 1
+	remainingComparisons := (16 * int64(len(content))) + (1 << 20)
+	var containsProtected func(*yaml.Node) (bool, bool)
+	containsProtected = func(node *yaml.Node) (bool, bool) {
+		if node == nil {
+			return false, false
+		}
+		if _, duplicate := seenNodes[node]; duplicate {
+			return false, false
+		}
+		seenNodes[node] = struct{}{}
+		remainingNodes--
+		if remainingNodes < 0 {
+			return false, true
+		}
+		if node.Kind == yaml.ScalarNode {
+			for _, value := range protected {
+				if int64(len(node.Value)) > remainingComparisons {
+					return false, true
+				}
+				remainingComparisons -= int64(len(node.Value))
+				if strings.Contains(node.Value, value) {
+					return true, false
+				}
+			}
+		}
+		if node.Alias != nil {
+			if found, exhausted := containsProtected(node.Alias); found || exhausted {
+				return found, exhausted
+			}
+		}
+		for _, child := range node.Content {
+			if found, exhausted := containsProtected(child); found || exhausted {
+				return found, exhausted
+			}
+		}
+		return false, false
+	}
+	if found, exhausted := containsProtected(&root); found || exhausted {
+		return openAPISourceReviewCredentialOmission, true
+	}
+	return content, false
 }
 
 func openAPISourceFileName(content string) string {
@@ -465,6 +697,149 @@ func openAPISourceFileName(content string) string {
 		return "openapi.json"
 	}
 	return "openapi.yaml"
+}
+
+func sensitiveOpenAPISourceValues(doc *document) []string {
+	if doc == nil {
+		return nil
+	}
+	schemaResolver := resolver{doc: doc}
+	values := map[string]struct{}{}
+	add := func(value any) {
+		if text, ok := value.(string); ok && text != "" {
+			values[text] = struct{}{}
+		}
+	}
+	var walkExample func(any)
+	walkExample = func(value any) {
+		switch typed := value.(type) {
+		case map[string]any:
+			for key, child := range typed {
+				if credential.SensitiveName(key) {
+					add(child)
+					continue
+				}
+				walkExample(child)
+			}
+		case []any:
+			for _, child := range typed {
+				walkExample(child)
+			}
+		}
+	}
+	var walkSchemaValue func(any, schema, string, map[string]bool)
+	walkSchemaValue = func(value any, current schema, field string, seen map[string]bool) {
+		current = schemaResolver.resolveSchema(current, "source review", seen)
+		if schemaCredentialField(field, current) {
+			add(value)
+			return
+		}
+		switch typed := value.(type) {
+		case map[string]any:
+			for key, child := range typed {
+				childSchema := current.Properties[key]
+				if schemaCredentialField(key, childSchema) {
+					add(child)
+					continue
+				}
+				walkSchemaValue(child, childSchema, key, copySeen(seen))
+			}
+		case []any:
+			itemSchema := valueOrEmptySchema(current.Items)
+			for _, child := range typed {
+				walkSchemaValue(child, itemSchema, field, copySeen(seen))
+			}
+		default:
+			walkExample(value)
+		}
+	}
+	var walkSchema func(schema, string)
+	walkSchema = func(current schema, field string) {
+		if schemaCredentialField(field, current) {
+			add(current.Example)
+			add(current.Default)
+			for _, enum := range current.Enum {
+				add(enum)
+			}
+		}
+		walkSchemaValue(current.Example, current, field, map[string]bool{})
+		walkSchemaValue(current.Default, current, field, map[string]bool{})
+		walkExample(current.Example)
+		walkExample(current.Default)
+		for name, child := range current.Properties {
+			walkSchema(child, name)
+		}
+		if current.Items != nil {
+			walkSchema(*current.Items, field)
+		}
+		for _, child := range append(append([]schema(nil), current.OneOf...), append(current.AnyOf, current.AllOf...)...) {
+			walkSchema(child, field)
+		}
+	}
+	walkParameter := func(param parameter) {
+		if schemaCredentialField(param.Name, parameterSchema(param)) || (strings.EqualFold(param.In, "header") && credential.SensitiveHeader(param.Name)) {
+			add(param.Example)
+			add(param.Default)
+			add(param.Schema.Example)
+			add(param.Schema.Default)
+		}
+		walkSchema(param.Schema, param.Name)
+	}
+	walkBody := func(body *requestBody) {
+		if body == nil {
+			return
+		}
+		for _, media := range body.Content {
+			walkExample(media.Example)
+			walkSchemaValue(media.Example, media.Schema, "", map[string]bool{})
+			for _, named := range media.Examples {
+				// Walk the complete Example Object so credential-shaped
+				// fields in every alternative are disclosure-redacted, even
+				// though only the first alternative is projected.
+				walkExample(named.Object)
+				if value, present, _ := mediaExampleObjectValue(named.Object); present {
+					walkSchemaValue(value, media.Schema, "", map[string]bool{})
+				}
+			}
+			walkSchema(media.Schema, "")
+		}
+	}
+	for _, item := range doc.Paths {
+		for _, param := range item.Parameters {
+			walkParameter(param)
+		}
+		for _, candidate := range operationsForPath(item) {
+			if candidate.op == nil {
+				continue
+			}
+			for _, param := range candidate.op.Parameters {
+				walkParameter(param)
+			}
+			walkBody(candidate.op.RequestBody)
+		}
+	}
+	for _, param := range doc.Components.Parameters {
+		walkParameter(param)
+	}
+	for _, param := range doc.Parameters {
+		walkParameter(param)
+	}
+	for _, body := range doc.Components.RequestBodies {
+		bodyCopy := body
+		walkBody(&bodyCopy)
+	}
+	for name, current := range doc.Components.Schemas {
+		walkSchema(current, name)
+	}
+	for name, current := range doc.Definitions {
+		walkSchema(current, name)
+	}
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func openAPISourceMapping(sourceFile string, content string, lineIndex sourceview.LineIndex, path string, method string, targetPath string, targetName string, targetKind string, status string, notes string) sourceview.Mapping {
@@ -514,18 +889,31 @@ func lineForNeedle(content string, lineIndex sourceview.LineIndex, needle string
 	return lineIndex.LineForOffset(offset)
 }
 
-func decodeDocument(data []byte) (*document, error) {
+// decodeDocument parses an OpenAPI/Swagger document and reports structural
+// ambiguities alongside it. A spec whose objects carry duplicate or non-scalar
+// keys means different things to different readers, so the converter and a
+// human reviewer can disagree about what was imported; those are rejected.
+// Merge keys are tolerated — anchors plus "<<" are idiomatic in hand-authored
+// specs — but returned so the caller can surface them for review.
+func decodeDocument(data []byte) (*document, []srcparse.Finding, error) {
 	var doc document
 	if err := json.Unmarshal(data, &doc); err == nil && (doc.OpenAPI != "" || doc.Swagger != "" || len(doc.Paths) > 0) {
-		return &doc, nil
+		if validateErr := srcparse.ValidateJSON(data, srcparse.Limits{}); validateErr != nil {
+			return nil, nil, fmt.Errorf("invalid OpenAPI document: %w", validateErr)
+		}
+		return &doc, nil, nil
+	}
+	findings, err := srcparse.ValidateYAMLMappingKeys(data, srcparse.SpecYAMLPolicy(), srcparse.Limits{})
+	if err != nil {
+		return nil, nil, fmt.Errorf("invalid OpenAPI document: %w", err)
 	}
 	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("invalid OpenAPI document: %w", err)
+		return nil, nil, fmt.Errorf("invalid OpenAPI document: %w", err)
 	}
 	if doc.OpenAPI == "" && doc.Swagger == "" && len(doc.Paths) == 0 {
-		return nil, errors.New("invalid OpenAPI document: missing openapi/swagger version or paths")
+		return nil, nil, errors.New("invalid OpenAPI document: missing openapi/swagger version or paths")
 	}
-	return &doc, nil
+	return &doc, findings, nil
 }
 
 func deriveBaseURL(doc *document, override string) (string, []string) {
@@ -793,7 +1181,18 @@ func buildAction(path, method string, pathParams []parameter, op *operation, inc
 	if bodySource == nil {
 		bodySource = swagger2RequestBody(params, op, res, location)
 	}
-	body, contentType, bodyColumns := requestBodyExample(bodySource, res, location, columns)
+	body, contentType, bodyColumns, bodyReviewCodes, sensitiveRequestFields := requestBodyExample(bodySource, res, location, columns)
+	for _, param := range params {
+		name := strings.TrimSpace(param.Name)
+		if name == "" || credential.SensitiveName(name) ||
+			!schemaCredentialField(name, parameterSchema(param)) {
+			continue
+		}
+		if sensitiveRequestFields == nil {
+			sensitiveRequestFields = map[string]string{}
+		}
+		sensitiveRequestFields[strings.ToLower(name)] = name
+	}
 	if contentType != "" {
 		headers["Content-Type"] = contentType
 	}
@@ -823,16 +1222,21 @@ func buildAction(path, method string, pathParams []parameter, op *operation, inc
 		securityRequirements = res.doc.Security
 	}
 	applyOperationSecurity(&action, securityRequirements, auth, res, location)
+	bodyReviewCodes = append(bodyReviewCodes, sensitiveParameterReviewCodes(params)...)
+	if len(bodyReviewCodes) > 0 {
+		applyOpenAPIReviewGate(&action, bodyReviewCodes, location)
+	}
 	status, hasStatus := firstSuccessStatus(op.Responses)
 	successSchema, responseObject := successResponseSchema(op.Responses, status, res, location)
 	opInfo := builtOperation{
-		Method:         method,
-		RawPath:        path,
-		Operation:      op,
-		PathParams:     params,
-		SuccessStatus:  status,
-		SuccessSchema:  successSchema,
-		LocationHeader: responseDeclaresLocation(status, responseObject),
+		Method:                 method,
+		RawPath:                path,
+		Operation:              op,
+		PathParams:             params,
+		SuccessStatus:          status,
+		SuccessSchema:          successSchema,
+		LocationHeader:         responseDeclaresLocation(status, responseObject),
+		SensitiveRequestFields: sensitiveRequestFields,
 	}
 	if includeAssertion {
 		if hasStatus {
@@ -842,6 +1246,301 @@ func buildAction(path, method string, pathParams []parameter, op *operation, inc
 		}
 	}
 	return action, uniqueSorted(append(bodyColumns, paramColumns...)), false, opInfo
+}
+
+// finalizeOpenAPIRequestAction is the adapter boundary between OpenAPI
+// resolution and the source-neutral request import pipeline. Everything above
+// this point is source work (refs, parameter styles, security alternatives,
+// examples); everything below is the common wire projection and readiness
+// contract.
+func finalizeOpenAPIRequestAction(action dsl.Action, path, method, sourceFile, actionPath string, names *credentialpolicy.NameRegistry, provenVars map[string]struct{}, sensitiveNames map[string]string) (dsl.Action, requestimport.Report, error) {
+	source := credentialpolicy.SourceRef{
+		Format:  "openapi",
+		Path:    sourceFile,
+		Pointer: openAPIOperationPointer(path, method),
+		ItemID:  openAPIOperationKey(path, method),
+	}
+	headers := requestimport.HeaderListFromMap(action.Headers)
+	for index := range headers {
+		headers[index].Source = source
+	}
+	var findings []importreview.Finding
+	if len(headers) != 0 {
+		location := sourceFile + openAPIOperationPointer(path, method)
+		findings = append(findings, importreview.Finding{
+			Code:       "source_order_unavailable",
+			Severity:   diag.Info,
+			Element:    action.Name,
+			Detail:     "source_order_unavailable: the source adapter exposed effective headers as a map; deterministic name order was synthesized",
+			Location:   location,
+			Source:     "openapi",
+			ReasonCode: "source_order_unavailable",
+			SourceRef:  location,
+		})
+	}
+	body, err := openAPIEffectiveBody(action, source)
+	if err != nil {
+		return dsl.Action{}, requestimport.Report{
+			RequestKey:  openAPIOperationKey(path, method),
+			Disposition: requestimport.Rejected,
+		}, err
+	}
+	effective := requestimport.EffectiveRequest{
+		Key:       openAPIOperationKey(path, method),
+		Name:      action.Name,
+		Method:    action.Method,
+		Target:    action.Target,
+		Headers:   headers,
+		Body:      body,
+		Auth:      openAPIEffectiveAuth(action.Auth, source),
+		Timeout:   openAPIEffectiveTimeout(action.TimeoutMs),
+		Redirects: openAPIEffectiveRedirects(action.MaxRedirects),
+		Metadata:  action.Metadata,
+		Source:    source,
+	}
+	options := requestimport.FinalizeOptions{
+		ActionPath: actionPath,
+		Findings:   findings,
+		Overlay: requestimport.ActionOverlay{
+			Type:           action.Type,
+			Params:         action.Params,
+			Metadata:       action.Metadata,
+			Extractors:     action.Extractors,
+			Assertions:     action.Assertions,
+			ThinkTime:      action.ThinkTime,
+			ThinkTimeAfter: action.ThinkTimeAfter,
+			SOAP:           action.SOAP,
+		},
+	}
+	// OpenAPI already resolves source-generated composed Cookie values and
+	// disclosure-safe typed placeholders. Run the shared projector whenever it
+	// can operate on complete scalar values without re-governing those composed
+	// constructs or turning an intentionally blocked typed draft into a hard
+	// rejection.
+	if openAPISharedCredentialProjectionSafe(action) {
+		options.Credentials = &requestimport.CredentialProjectionOptions{
+			Mode:                         credentialpolicy.SecretReference,
+			Registry:                     names,
+			NamePrefix:                   "OPENAPI",
+			SensitiveNames:               sensitiveNames,
+			ProvenVars:                   provenVars,
+			PreGovernedHeaderOccurrences: openAPIPreGovernedHeaderOccurrences(headers),
+		}
+	}
+	return requestimport.FinalizeAction(effective, options)
+}
+
+func openAPIProvenVariables(init []dsl.Action) map[string]struct{} {
+	proven := make(map[string]struct{})
+	for _, action := range init {
+		if dsl.CanonicalActionType(action.Type) != "http_oauth2_token" {
+			continue
+		}
+		name, _ := action.Params["save_as"].(string)
+		name = strings.TrimSpace(name)
+		if name == "" {
+			name = "access_token"
+		}
+		proven[name] = struct{}{}
+	}
+	if len(proven) == 0 {
+		return nil
+	}
+	return proven
+}
+
+func openAPIOperationKey(path, method string) string {
+	return strings.ToUpper(strings.TrimSpace(method)) + " " + path
+}
+
+func openAPIOperationPointer(path, method string) string {
+	escapedPath := strings.ReplaceAll(strings.ReplaceAll(path, "~", "~0"), "/", "~1")
+	return "#/paths/" + escapedPath + "/" + strings.ToLower(strings.TrimSpace(method))
+}
+
+func openAPIEffectiveBody(action dsl.Action, source credentialpolicy.SourceRef) (requestimport.Body, error) {
+	mediaType := headerValue(action.Headers, "Content-Type")
+	kind := requestimport.BodyNone
+	if action.Body != "" || mediaType != "" {
+		switch {
+		case strings.Contains(strings.ToLower(mediaType), "json"):
+			kind = requestimport.BodyJSON
+		case strings.Contains(strings.ToLower(mediaType), "xml"):
+			kind = requestimport.BodyXML
+		case strings.Contains(strings.ToLower(mediaType), "application/x-www-form-urlencoded"):
+			kind = requestimport.BodyFormURLEncoded
+		case strings.Contains(strings.ToLower(mediaType), "multipart/"):
+			kind = requestimport.BodyMultipart
+		case strings.Contains(strings.ToLower(mediaType), "graphql"):
+			kind = requestimport.BodyGraphQL
+		default:
+			kind = requestimport.BodyRaw
+		}
+	}
+	encoding := requestimport.BodyEncodingText
+	if action.BodyEncoding == "" {
+		encoding = requestimport.BodyEncodingAuto
+	} else if strings.EqualFold(action.BodyEncoding, string(requestimport.BodyEncodingBase64)) {
+		encoding = requestimport.BodyEncodingBase64
+	}
+	payload := []byte(action.Body)
+	if encoding == requestimport.BodyEncodingBase64 {
+		decoded, _, err := dsl.DecodeBodyEncoding(action.Body, action.BodyEncoding, 0)
+		if err != nil {
+			return requestimport.Body{}, fmt.Errorf("decode OpenAPI action body: %w", err)
+		}
+		payload = decoded
+	}
+	return requestimport.Body{
+		Kind:      kind,
+		MediaType: mediaType,
+		Payload:   payload,
+		Encoding:  encoding,
+		Source:    source,
+	}, nil
+}
+
+func openAPIEffectiveAuth(auth *dsl.AuthConfig, source credentialpolicy.SourceRef) requestimport.Auth {
+	if auth == nil {
+		return requestimport.Auth{Mode: requestimport.AuthInherit, Source: source}
+	}
+	projected := requestimport.Auth{
+		Username: auth.Username,
+		Password: auth.Password,
+		Token:    auth.Token,
+		Domain:   auth.Domain,
+		Source:   source,
+	}
+	switch strings.ToLower(strings.TrimSpace(auth.Type)) {
+	case "", "inherit":
+		projected.Mode = requestimport.AuthInherit
+	case "none":
+		projected.Mode = requestimport.AuthNone
+	case "basic":
+		projected.Mode = requestimport.AuthBasic
+	case "bearer":
+		projected.Mode = requestimport.AuthBearer
+	case "digest":
+		projected.Mode = requestimport.AuthDigest
+	default:
+		projected.Mode = requestimport.AuthUnsupported
+		projected.SourceMode = strings.ToLower(strings.TrimSpace(auth.Type))
+	}
+	return projected
+}
+
+func openAPIEffectiveTimeout(milliseconds int) requestimport.Timeout {
+	if milliseconds <= 0 {
+		return requestimport.Timeout{Mode: requestimport.TimeoutInherit}
+	}
+	return requestimport.Timeout{Mode: requestimport.TimeoutBounded, Milliseconds: milliseconds}
+}
+
+func openAPIEffectiveRedirects(maximum *int) requestimport.Redirects {
+	if maximum == nil {
+		return requestimport.Redirects{Mode: requestimport.RedirectInherit}
+	}
+	if *maximum == 0 {
+		return requestimport.Redirects{Mode: requestimport.RedirectDisabled}
+	}
+	if *maximum < 0 {
+		return requestimport.Redirects{Mode: requestimport.RedirectUnlimited}
+	}
+	return requestimport.Redirects{Mode: requestimport.RedirectLimited, Max: *maximum}
+}
+
+func openAPISharedCredentialProjectionSafe(action dsl.Action) bool {
+	if review, ok := action.Metadata["import_review"].(map[string]any); ok {
+		for _, code := range stringSlice(review["reason_codes"]) {
+			switch code {
+			case "sensitive_non_string_example", "sensitive_non_string_schema",
+				"unsafe_xml_credential_projection", "unsafe_structured_credential_projection",
+				"malformed_authored_example":
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// openAPIPreGovernedHeaderOccurrences isolates the OpenAPI adapter's existing
+// composed-header handling from the rest of shared projection. OpenAPI builds
+// values such as a Cookie header from individually governed parameter and
+// security-scheme references. Preserving those exact occurrences must not
+// disable projection of independent URL, auth, or body credentials.
+func openAPIPreGovernedHeaderOccurrences(headers requestimport.HeaderList) map[int]struct{} {
+	var governed map[int]struct{}
+	wholeRuntimeValue := func(value string) bool {
+		kind, expression := credentialpolicy.ClassifyWholeTemplate(value, nil)
+		switch kind {
+		case credentialpolicy.TemplateSecret, credentialpolicy.TemplateEnv, credentialpolicy.TemplateDynamic:
+			return true
+		case credentialpolicy.TemplateOther:
+			namespace, _, found := strings.Cut(strings.TrimSpace(expression), ".")
+			if !found {
+				return false
+			}
+			switch strings.ToLower(strings.TrimSpace(namespace)) {
+			case "data", "param", "fn", "fake", "file":
+				return true
+			}
+		}
+		return false
+	}
+	for index, header := range headers {
+		if !credential.SensitiveHeader(header.Name) || !strings.Contains(header.Value, "{{") {
+			continue
+		}
+		kind, _ := credentialpolicy.ClassifyWholeTemplate(header.Value, nil)
+		if kind != credentialpolicy.TemplateNone {
+			continue
+		}
+		safeComposition := false
+		switch strings.ToLower(strings.TrimSpace(header.Name)) {
+		case "authorization", "proxy-authorization":
+			scheme, value, found := strings.Cut(strings.TrimSpace(header.Value), " ")
+			switch strings.ToLower(strings.TrimSpace(scheme)) {
+			case "basic", "bearer", "digest":
+				authKind, _ := credentialpolicy.ClassifyWholeTemplate(value, nil)
+				safeComposition = found &&
+					(authKind == credentialpolicy.TemplateSecret || authKind == credentialpolicy.TemplateEnv)
+			}
+		case "cookie":
+			safeComposition = true
+			for _, pair := range strings.Split(header.Value, ";") {
+				name, value, found := strings.Cut(strings.TrimSpace(pair), "=")
+				if !found || strings.TrimSpace(name) == "" || !wholeRuntimeValue(value) {
+					safeComposition = false
+					break
+				}
+			}
+		}
+		if !safeComposition {
+			continue
+		}
+		if governed == nil {
+			governed = make(map[int]struct{})
+		}
+		governed[index] = struct{}{}
+	}
+	return governed
+}
+
+func stringSlice(value any) []string {
+	switch typed := value.(type) {
+	case []string:
+		return typed
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text, ok := item.(string); ok {
+				out = append(out, text)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 // responseBodyAssertions derives body_contains assertions from the declared
@@ -876,42 +1575,180 @@ func responseBodyAssertions(resolved *schema) []dsl.Assertion {
 
 type rawJSONTemplate string
 
-func requestBodyExample(body *requestBody, res resolver, location string, columns columnRegistry) (string, string, []string) {
+func firstMediaTypeExample(examples orderedMediaExamples) (any, bool, []string) {
+	if len(examples) == 0 {
+		return nil, false, nil
+	}
+	reviewCodes := duplicateMediaExampleReviewCodes(examples)
+	value, present, objectReviewCodes := mediaExampleObjectValue(examples[0].Object)
+	reviewCodes = append(reviewCodes, objectReviewCodes...)
+	return value, present, uniqueSorted(reviewCodes)
+}
+
+func duplicateMediaExampleReviewCodes(examples orderedMediaExamples) []string {
+	seen := make(map[string]struct{}, len(examples))
+	for _, example := range examples {
+		if _, duplicate := seen[example.Name]; duplicate {
+			return []string{"duplicate_media_example_name"}
+		}
+		seen[example.Name] = struct{}{}
+	}
+	return nil
+}
+
+func mediaExampleObjectValue(raw any) (any, bool, []string) {
+	object, ok := mediaExampleObjectMap(raw)
+	if !ok {
+		return nil, false, []string{"invalid_media_example_object"}
+	}
+	value, hasValue := object["value"]
+	_, hasRef := object["$ref"]
+	_, hasExternalValue := object["externalValue"]
+	if hasValue {
+		if hasRef || hasExternalValue {
+			return value, true, []string{"conflicting_media_example_sources"}
+		}
+		return value, true, nil
+	}
+	switch {
+	case hasRef:
+		return nil, false, []string{"unsupported_media_example_reference"}
+	case hasExternalValue:
+		return nil, false, []string{"unsupported_media_example_external_value"}
+	default:
+		return nil, false, []string{"media_example_value_missing"}
+	}
+}
+
+func mediaExampleObjectMap(raw any) (map[string]any, bool) {
+	switch typed := raw.(type) {
+	case map[string]any:
+		return typed, true
+	case map[any]any:
+		object := make(map[string]any, len(typed))
+		for key, value := range typed {
+			name, ok := key.(string)
+			if !ok {
+				return nil, false
+			}
+			object[name] = value
+		}
+		return object, true
+	default:
+		return nil, false
+	}
+}
+
+func requestBodyExample(body *requestBody, res resolver, location string, columns columnRegistry) (string, string, []string, []string, map[string]string) {
 	if body == nil || len(body.Content) == 0 {
-		return "", "", nil
+		return "", "", nil, nil, nil
 	}
 	contentTypes := sortedMapKeys(body.Content)
 	preferred := preferredContentType(contentTypes)
 	media := body.Content[preferred]
+	sensitiveNames := openAPISchemaCredentialNames(media.Schema, res, location)
+	encodingReviewCodes := openAPIEncodingReviewCodes(preferred, media.Encoding)
 	if media.Example != nil {
-		return renderExample(media.Example, preferred), preferred, nil
+		if strings.Contains(strings.ToLower(preferred), "multipart/") {
+			rendered, contentType, reviewCodes := renderAuthoredMultipartExample(media.Example, preferred, media.Schema, res, location)
+			return rendered, contentType, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
+		}
+		rendered, reviewCodes := renderGovernedExample(media.Example, preferred)
+		return rendered, preferred, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
+	}
+	if len(media.Examples) > 0 {
+		example, present, exampleReviewCodes := firstMediaTypeExample(media.Examples)
+		if !present {
+			return "", preferred, nil, append(exampleReviewCodes, encodingReviewCodes...), sensitiveNames
+		}
+		if strings.Contains(strings.ToLower(preferred), "multipart/") {
+			rendered, contentType, reviewCodes := renderAuthoredMultipartExample(example, preferred, media.Schema, res, location)
+			reviewCodes = append(reviewCodes, exampleReviewCodes...)
+			return rendered, contentType, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
+		}
+		rendered, reviewCodes := renderGovernedExample(example, preferred)
+		reviewCodes = append(reviewCodes, exampleReviewCodes...)
+		return rendered, preferred, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
 	}
 	if media.Schema.Example != nil {
-		return renderExample(media.Schema.Example, preferred), preferred, nil
+		if strings.Contains(strings.ToLower(preferred), "multipart/") {
+			rendered, contentType, reviewCodes := renderAuthoredMultipartExample(media.Schema.Example, preferred, media.Schema, res, location)
+			return rendered, contentType, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
+		}
+		rendered, reviewCodes := renderGovernedExample(media.Schema.Example, preferred)
+		return rendered, preferred, nil, append(reviewCodes, encodingReviewCodes...), sensitiveNames
 	}
 	if strings.Contains(preferred, "application/x-www-form-urlencoded") {
-		return formURLEncodedExample(media.Schema, res, location, columns), preferred, formColumns(media.Schema, res, location, columns)
+		reviewCodes := append(sensitiveNonStringSchemaCodes(media.Schema, res, location), encodingReviewCodes...)
+		return formURLEncodedExample(media.Schema, res, location, columns), preferred, formColumns(media.Schema, res, location, columns), reviewCodes, sensitiveNames
 	}
 	if strings.Contains(preferred, "multipart/form-data") {
-		body, cols := multipartFormExample(media.Schema, res, location, columns)
+		body, cols, multipartReviewCodes := multipartFormExample(media.Schema, res, location, columns)
 		contentType := preferred
 		if !strings.Contains(strings.ToLower(contentType), "boundary=") {
 			contentType += "; boundary=----apexload-openapi-boundary"
 		}
-		return body, contentType, cols
+		reviewCodes := append(sensitiveNonStringSchemaCodes(media.Schema, res, location), multipartReviewCodes...)
+		reviewCodes = append(reviewCodes, encodingReviewCodes...)
+		return body, contentType, cols, reviewCodes, sensitiveNames
 	}
 	payload, cols := sampleForSchema(media.Schema, res, location, map[string]bool{}, columns)
 	if payload == nil {
-		return "", preferred, nil
+		return "", preferred, nil, encodingReviewCodes, sensitiveNames
 	}
 	if strings.Contains(preferred, "xml") {
-		return xmlForSchema(media.Schema, res, location, columns), preferred, cols
+		body := xmlForSchema(media.Schema, res, location, columns)
+		projected := scrub.Value(body, scrub.Policy{})
+		if projected != body {
+			return projected, preferred, cols, append([]string{"unsafe_xml_credential_projection"}, encodingReviewCodes...), sensitiveNames
+		}
+		reviewCodes := append(sensitiveNonStringSchemaCodes(media.Schema, res, location), encodingReviewCodes...)
+		return body, preferred, cols, reviewCodes, sensitiveNames
 	}
 	encoded, err := json.MarshalIndent(payload, "", "  ")
 	if err != nil {
-		return "", preferred, cols
+		return "", preferred, cols, encodingReviewCodes, sensitiveNames
 	}
-	return expandRawJSONTemplates(string(encoded)), preferred, cols
+	reviewCodes := append(sensitiveNonStringSchemaCodes(media.Schema, res, location), encodingReviewCodes...)
+	return expandRawJSONTemplates(string(encoded)), preferred, cols, reviewCodes, sensitiveNames
+}
+
+func openAPIEncodingReviewCodes(contentType string, encoding map[string]any) []string {
+	if len(encoding) == 0 {
+		return nil
+	}
+	if strings.Contains(strings.ToLower(contentType), "multipart/") {
+		return []string{"unsupported_multipart_encoding"}
+	}
+	return []string{"unsupported_request_body_encoding"}
+}
+
+func openAPISchemaCredentialNames(root schema, res resolver, location string) map[string]string {
+	root = res.resolveSchema(root, location, map[string]bool{})
+	names := map[string]string{}
+	var walk func(schema)
+	walk = func(current schema) {
+		for _, name := range sortedSchemaPropertyKeys(current.Properties) {
+			child := current.Properties[name]
+			if schemaCredentialField(name, child) && !credential.SensitiveName(name) {
+				names[strings.ToLower(strings.TrimSpace(name))] = name
+			}
+			walk(child)
+		}
+		if current.Items != nil {
+			walk(*current.Items)
+		}
+	}
+	walk(root)
+	if len(names) == 0 {
+		return nil
+	}
+	return names
+}
+
+func schemaCredentialField(name string, current schema) bool {
+	return credential.SensitiveName(name) ||
+		strings.EqualFold(strings.TrimSpace(current.Format), "password")
 }
 
 func sampleForSchema(s schema, res resolver, location string, seen map[string]bool, columns columnRegistry) (any, []string) {
@@ -924,14 +1761,22 @@ func sampleForSchema(s schema, res resolver, location string, seen map[string]bo
 			value, nested := sampleForSchema(prop, res, location+"."+name, copySeen(seen), columns)
 			column := sanitizeColumnName(name)
 			if scalarSchema(prop) {
-				columns.add(column, prop)
-				placeholder := "{{data.openapi." + column + "}}"
-				if schemaNeedsRawJSONPlaceholder(prop) {
-					value = rawJSONTemplate(rawJSONTemplateMarker(column))
+				if schemaCredentialField(name, prop) {
+					if schemaNeedsRawJSONPlaceholder(prop) {
+						value = zeroValueForSensitiveSchema(prop)
+					} else {
+						value = openAPICredentialReference(name)
+					}
 				} else {
-					value = placeholder
+					columns.add(column, prop)
+					placeholder := "{{data.openapi." + column + "}}"
+					if schemaNeedsRawJSONPlaceholder(prop) {
+						value = rawJSONTemplate(rawJSONTemplateMarker(column))
+					} else {
+						value = placeholder
+					}
+					out = append(out, column)
 				}
-				out = append(out, column)
 			}
 			result[name] = value
 			out = append(out, nested...)
@@ -999,6 +1844,10 @@ func formURLEncodedExample(s schema, res resolver, location string, columns colu
 	parts := make([]string, 0, len(fields))
 	for _, field := range fields {
 		column := sanitizeColumnName(field)
+		if schemaCredentialField(field, resolved.Properties[field]) {
+			parts = append(parts, escapeQueryKey(field)+"="+openAPICredentialReference(field))
+			continue
+		}
 		columns.add(column, resolved.Properties[field])
 		parts = append(parts, escapeQueryKey(field)+"={{data.openapi."+column+"}}")
 	}
@@ -1010,6 +1859,9 @@ func formColumns(s schema, res resolver, location string, columns columnRegistry
 	out := make([]string, 0, len(fields))
 	resolved := res.resolveSchema(s, location, map[string]bool{})
 	for _, field := range fields {
+		if schemaCredentialField(field, resolved.Properties[field]) {
+			continue
+		}
 		column := sanitizeColumnName(field)
 		columns.add(column, resolved.Properties[field])
 		out = append(out, column)
@@ -1017,32 +1869,66 @@ func formColumns(s schema, res resolver, location string, columns columnRegistry
 	return uniqueSorted(out)
 }
 
-func multipartFormExample(s schema, res resolver, location string, columns columnRegistry) (string, []string) {
+func multipartFormExample(s schema, res resolver, location string, columns columnRegistry) (string, []string, []string) {
 	const boundary = "----apexload-openapi-boundary"
 	fields := res.resolveSchema(s, location, map[string]bool{})
 	var b strings.Builder
 	out := []string{}
-	for _, name := range sortedSchemaPropertyKeys(fields.Properties) {
+	var reviewCodes []string
+	for index, name := range sortedSchemaPropertyKeys(fields.Properties) {
 		prop := res.resolveSchema(fields.Properties[name], location+"."+name, map[string]bool{})
 		column := sanitizeColumnName(name)
-		columns.add(column, prop)
-		out = append(out, column)
+		sensitive := schemaCredentialField(name, prop)
+		wireName := name
+		if validMultipartExampleFieldName(name) {
+			wireName = escapeMultipartExampleFieldName(name)
+		} else {
+			wireName = fmt.Sprintf("blocked_field_%d", index+1)
+			reviewCodes = append(reviewCodes, "invalid_multipart_schema_field_name")
+			res.add(diag.Warning, "OpenAPI multipart field", location, "invalid multipart schema field metadata was replaced in a blocked draft")
+		}
+		if !sensitive {
+			columns.add(column, prop)
+			out = append(out, column)
+		}
 		b.WriteString("--" + boundary + "\r\n")
 		if strings.EqualFold(prop.Format, "binary") {
-			b.WriteString(`Content-Disposition: form-data; name="` + name + `"; filename="{{data.openapi.` + column + `}}"` + "\r\n")
+			b.WriteString(`Content-Disposition: form-data; name="` + wireName + `"; filename="{{data.openapi.` + column + `}}"` + "\r\n")
 			b.WriteString("Content-Type: application/octet-stream\r\n\r\n")
 			b.WriteString("{{file." + column + "}}\r\n")
+			reviewCodes = append(reviewCodes, "multipart_binary_binding_required")
 			res.add(diag.Warning, "OpenAPI multipart file", location, "property "+name+" is format: binary; file bytes cannot be generated from the spec and must be supplied before replay")
 			continue
 		}
-		b.WriteString(`Content-Disposition: form-data; name="` + name + `"` + "\r\n\r\n")
-		b.WriteString("{{data.openapi." + column + "}}\r\n")
+		if multipartComplexSchema(prop) {
+			// A data-column string is a disclosure-safe placeholder, but it
+			// cannot express OpenAPI's style/explode rules for object or array
+			// parts without an explicit, supported encoder.
+			reviewCodes = append(reviewCodes, "unsupported_multipart_complex_encoding")
+		}
+		b.WriteString(`Content-Disposition: form-data; name="` + wireName + `"` + "\r\n\r\n")
+		if sensitive {
+			b.WriteString(openAPICredentialReference(name) + "\r\n")
+		} else {
+			b.WriteString("{{data.openapi." + column + "}}\r\n")
+		}
 	}
-	if len(out) == 0 {
-		return "", nil
+	if len(fields.Properties) == 0 {
+		return "", nil, nil
 	}
 	b.WriteString("--" + boundary + "--\r\n")
-	return b.String(), uniqueSorted(out)
+	return b.String(), uniqueSorted(out), uniqueSorted(reviewCodes)
+}
+
+func multipartComplexSchema(s schema) bool {
+	typeName := strings.ToLower(strings.TrimSpace(s.Type))
+	if typeName == "object" || typeName == "array" || len(s.Properties) > 0 || s.Items != nil {
+		return true
+	}
+	if _, ok := additionalPropertiesSchema(s); ok {
+		return true
+	}
+	return len(s.OneOf) > 0 || len(s.AnyOf) > 0 || len(s.AllOf) > 0
 }
 
 func schemaFieldNames(s schema, res resolver, location string) []string {
@@ -1061,6 +1947,338 @@ func renderExample(value any, contentType string) string {
 		}
 	}
 	return fmt.Sprint(value)
+}
+
+func renderGovernedExample(value any, contentType string) (string, []string) {
+	lowerContentType := strings.ToLower(contentType)
+	if strings.Contains(lowerContentType, "application/x-www-form-urlencoded") {
+		fields, ok := value.(map[string]any)
+		if !ok {
+			return "", []string{"unsupported_form_example_shape"}
+		}
+		parts := make([]string, 0, len(fields))
+		for _, name := range sortedMapKeys(fields) {
+			switch fields[name].(type) {
+			case nil, bool, float32, float64, int, int8, int16, int32, int64,
+				uint, uint8, uint16, uint32, uint64, json.Number, string:
+				parts = append(parts, escapeQueryKey(name)+"="+url.QueryEscape(fmt.Sprint(fields[name])))
+			default:
+				return "", []string{"unsupported_form_example_shape"}
+			}
+		}
+		return strings.Join(parts, "&"), nil
+	}
+	if strings.Contains(lowerContentType, "json") {
+		projected, unsafe := projectJSONExampleCredentials(value, nil)
+		encoded, err := json.MarshalIndent(projected, "", "  ")
+		if err != nil {
+			return scrub.Value(renderExample(value, contentType), scrub.Policy{}), []string{"malformed_authored_example"}
+		}
+		if unsafe {
+			return string(encoded), []string{"sensitive_non_string_example"}
+		}
+		return string(encoded), nil
+	}
+	if strings.Contains(lowerContentType, "xml") {
+		// The shared XML projector performs byte-offset replacement after the
+		// effective request is assembled, preserving namespaces and all
+		// nonsensitive envelope bytes.
+		if rendered, ok := value.(string); ok {
+			return rendered, nil
+		}
+	}
+	rendered := renderExample(value, contentType)
+	projected := scrub.Value(rendered, scrub.Policy{})
+	if projected != rendered {
+		return projected, []string{"unsafe_structured_credential_projection"}
+	}
+	return rendered, nil
+}
+
+type authoredMultipartPart struct {
+	name        string
+	filename    string
+	body        string
+	contentType string
+}
+
+func renderAuthoredMultipartExample(value any, contentType string, root schema, res resolver, location string) (string, string, []string) {
+	fields, ok := value.(map[string]any)
+	if !ok {
+		return "", multipartContentTypeWithBoundary(contentType, "----apexload-openapi-boundary"), []string{"unsupported_multipart_example_shape"}
+	}
+	resolvedRoot := res.resolveSchema(root, location, map[string]bool{})
+	parts := make([]authoredMultipartPart, 0, len(fields))
+	var reviewCodes []string
+	for _, name := range sortedMapKeys(fields) {
+		if !validMultipartExampleFieldName(name) {
+			return "", multipartContentTypeWithBoundary(contentType, "----apexload-openapi-boundary"), []string{"unsupported_multipart_example_field_name"}
+		}
+		property, declared := resolvedRoot.Properties[name]
+		if declared {
+			property = res.resolveSchema(property, location+"."+name, map[string]bool{})
+		}
+		body, partContentType, filename, valueReviewCodes, supported := authoredMultipartValue(fields[name], property, declared, name)
+		reviewCodes = append(reviewCodes, valueReviewCodes...)
+		if !supported {
+			reviewCodes = append(reviewCodes, "unsupported_multipart_example_value")
+			return "", multipartContentTypeWithBoundary(contentType, "----apexload-openapi-boundary"), uniqueSorted(reviewCodes)
+		}
+		parts = append(parts, authoredMultipartPart{
+			name:        name,
+			filename:    filename,
+			body:        body,
+			contentType: partContentType,
+		})
+	}
+	boundary := "----apexload-openapi-boundary"
+	for attempt := 1; multipartExampleBoundaryOccurs(boundary, parts); attempt++ {
+		boundary = fmt.Sprintf("----apexload-openapi-boundary-%d", attempt)
+	}
+	var body strings.Builder
+	for _, part := range parts {
+		body.WriteString("--" + boundary + "\r\n")
+		body.WriteString(`Content-Disposition: form-data; name="` + escapeMultipartExampleFieldName(part.name) + `"`)
+		if part.filename != "" {
+			body.WriteString(`; filename="` + escapeMultipartExampleFieldName(part.filename) + `"`)
+		}
+		body.WriteString("\r\n")
+		if part.contentType != "" {
+			body.WriteString("Content-Type: " + part.contentType + "\r\n")
+		}
+		body.WriteString("\r\n")
+		body.WriteString(part.body)
+		body.WriteString("\r\n")
+	}
+	body.WriteString("--" + boundary + "--\r\n")
+	return body.String(), multipartContentTypeWithBoundary(contentType, boundary), uniqueSorted(reviewCodes)
+}
+
+func authoredMultipartValue(value any, property schema, declared bool, fieldName string) (string, string, string, []string, bool) {
+	if declared && strings.EqualFold(property.Format, "binary") {
+		assetName := sanitizeColumnName(fieldName)
+		return "{{file." + assetName + "}}", "application/octet-stream", assetName + ".bin",
+			[]string{"multipart_binary_binding_required"}, true
+	}
+	var reviewCodes []string
+	if (declared && multipartComplexSchema(property)) || multipartComplexValue(value) {
+		reviewCodes = append(reviewCodes, "unsupported_multipart_complex_encoding")
+	}
+	switch typed := value.(type) {
+	case nil:
+		return "", "", "", reviewCodes, true
+	case string:
+		return typed, "", "", reviewCodes, true
+	case bool:
+		return fmt.Sprint(typed), "", "", reviewCodes, true
+	case float32, float64, int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64, json.Number:
+		return fmt.Sprint(typed), "", "", reviewCodes, true
+	case map[string]any, []any:
+		encoded, err := json.Marshal(typed)
+		if err != nil {
+			return "", "", "", reviewCodes, false
+		}
+		return string(encoded), "application/json", "", reviewCodes, true
+	default:
+		return "", "", "", reviewCodes, false
+	}
+}
+
+func multipartComplexValue(value any) bool {
+	switch value.(type) {
+	case map[string]any, map[any]any, []any:
+		return true
+	default:
+		return false
+	}
+}
+
+func validMultipartExampleFieldName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, current := range name {
+		if current < 0x20 || current == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+func escapeMultipartExampleFieldName(name string) string {
+	return strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(name)
+}
+
+func multipartExampleBoundaryOccurs(boundary string, parts []authoredMultipartPart) bool {
+	for _, part := range parts {
+		if strings.Contains(part.body, "--"+boundary) {
+			return true
+		}
+	}
+	return false
+}
+
+func multipartContentTypeWithBoundary(contentType, boundary string) string {
+	mediaType := strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0])
+	if mediaType == "" {
+		mediaType = "multipart/form-data"
+	}
+	return mediaType + "; boundary=" + boundary
+}
+
+func projectJSONExampleCredentials(value any, path []string) (any, bool) {
+	switch typed := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(typed))
+		unsafe := false
+		for key, child := range typed {
+			childPath := append(append([]string(nil), path...), key)
+			if credential.SensitiveName(key) {
+				switch child.(type) {
+				case string:
+					// Keep the literal only inside the in-process effective
+					// request. The shared credential projector replaces it and
+					// moves the value into its non-serializable requirement
+					// before the action is exposed.
+					out[key] = child
+				default:
+					out[key] = zeroSensitiveJSONValue(child)
+					unsafe = true
+				}
+				continue
+			}
+			projected, childUnsafe := projectJSONExampleCredentials(child, childPath)
+			out[key] = projected
+			unsafe = unsafe || childUnsafe
+		}
+		return out, unsafe
+	case []any:
+		out := make([]any, len(typed))
+		unsafe := false
+		for index, child := range typed {
+			projected, childUnsafe := projectJSONExampleCredentials(child, path)
+			out[index] = projected
+			unsafe = unsafe || childUnsafe
+		}
+		return out, unsafe
+	default:
+		return value, false
+	}
+}
+
+func zeroSensitiveJSONValue(value any) any {
+	switch value.(type) {
+	case nil:
+		return nil
+	case bool:
+		return false
+	case float32, float64, int, int8, int16, int32, int64, json.Number:
+		return 0
+	case uint, uint8, uint16, uint32, uint64:
+		return 0
+	case []any:
+		return []any{}
+	case map[string]any:
+		return map[string]any{}
+	default:
+		return nil
+	}
+}
+
+func sensitiveNonStringSchemaCodes(root schema, res resolver, location string) []string {
+	var unsafe bool
+	var walk func(schema, string, map[string]bool)
+	walk = func(current schema, field string, seen map[string]bool) {
+		if unsafe {
+			return
+		}
+		current = res.resolveSchema(current, location, seen)
+		if schemaCredentialField(field, current) && schemaNeedsRawJSONPlaceholder(current) {
+			unsafe = true
+			return
+		}
+		for _, name := range sortedSchemaPropertyKeys(current.Properties) {
+			walk(current.Properties[name], name, copySeen(seen))
+		}
+		if current.Items != nil {
+			walk(*current.Items, field, copySeen(seen))
+		}
+	}
+	walk(root, "", map[string]bool{})
+	if unsafe {
+		return []string{"sensitive_non_string_schema"}
+	}
+	return nil
+}
+
+func zeroValueForSensitiveSchema(s schema) any {
+	switch strings.ToLower(strings.TrimSpace(s.Type)) {
+	case "boolean":
+		return false
+	case "integer":
+		return 0
+	case "number":
+		return 0.0
+	default:
+		return nil
+	}
+}
+
+func openAPICredentialReference(parts ...string) string {
+	var tokens []string
+	for _, part := range parts {
+		part = strings.ToUpper(sanitizeColumnName(part))
+		part = strings.Trim(part, "_")
+		if part != "" {
+			tokens = append(tokens, part)
+		}
+	}
+	if len(tokens) == 0 {
+		tokens = []string{"IMPORTED_SECRET"}
+	}
+	return "{{secret.OPENAPI_" + strings.Join(tokens, "_") + "}}"
+}
+
+func applyOpenAPIReviewGate(action *dsl.Action, reasonCodes []string, sourceRef string) {
+	if action == nil || len(reasonCodes) == 0 {
+		return
+	}
+	sourceRefs := []string{sourceRef}
+	if action.Metadata != nil {
+		if existing, ok := action.Metadata["import_review"].(map[string]any); ok {
+			reasonCodes = append(reasonCodes, stringSlice(existing["reason_codes"])...)
+			sourceRefs = append(sourceRefs, stringSlice(existing["source_refs"])...)
+		}
+	}
+	reasonCodes = uniqueSorted(reasonCodes)
+	sourceRefs = uniqueSorted(sourceRefs)
+	findings := make([]importreview.Finding, 0, len(reasonCodes))
+	for _, code := range reasonCodes {
+		findings = append(findings, importreview.Finding{
+			Code:       code,
+			Severity:   diag.Blocker,
+			Element:    action.Name,
+			Detail:     "OpenAPI source behavior requires translation before execution",
+			Location:   sourceRef,
+			Gate:       importreview.GateExecution,
+			ActionPath: "",
+		})
+	}
+	importreview.ApplyToAction(action, findings)
+	if action.Metadata == nil {
+		action.Metadata = map[string]any{}
+	}
+	action.Metadata["execution_blocker"] = "import_review_required"
+	blockers, _ := action.Metadata["execution_blockers"].([]string)
+	action.Metadata["execution_blockers"] = uniqueSorted(append(blockers, "import_review_required"))
+	action.Metadata["import_review"] = map[string]any{
+		"version":      1,
+		"source":       "openapi",
+		"reason_codes": reasonCodes,
+		"source_refs":  sourceRefs,
+		"resolution":   "replace_behavior_and_remove_gate",
+	}
 }
 
 func preferredContentType(contentTypes []string) string {
@@ -1104,11 +2322,15 @@ func templatePath(path string, params []parameter, res resolver, location string
 		if name == "" {
 			continue
 		}
-		template := "{{data.openapi." + sanitizeColumnName(name) + "}}"
+		template, governed := openAPIParameterTemplate(param)
 		if strings.EqualFold(param.In, "path") {
-			columns.add(name, parameterSchema(param))
+			if !governed {
+				columns.add(name, parameterSchema(param))
+			}
 			target = strings.ReplaceAll(target, "{"+name+"}", template)
-			out = append(out, sanitizeColumnName(name))
+			if !governed {
+				out = append(out, sanitizeColumnName(name))
+			}
 			continue
 		}
 		if strings.EqualFold(param.In, "query") {
@@ -1150,6 +2372,10 @@ func queryParamTemplates(param parameter, res resolver, location string, columns
 		case "deepObject":
 			for _, propName := range properties {
 				column := sanitizeColumnName(name + "_" + propName)
+				if schemaCredentialField(propName, s.Properties[propName]) || credential.SensitiveName(name+"."+propName) {
+					pairs = append(pairs, queryTemplatePair{key: name + "[" + propName + "]", value: openAPICredentialReference(name, propName)})
+					continue
+				}
 				columns.add(column, s.Properties[propName])
 				pairs = append(pairs, queryTemplatePair{key: name + "[" + propName + "]", value: "{{data.openapi." + column + "}}", columns: []string{column}})
 			}
@@ -1158,6 +2384,10 @@ func queryParamTemplates(param parameter, res resolver, location string, columns
 			if explode {
 				for _, propName := range properties {
 					column := sanitizeColumnName(name + "_" + propName)
+					if schemaCredentialField(propName, s.Properties[propName]) || credential.SensitiveName(name+"."+propName) {
+						pairs = append(pairs, queryTemplatePair{key: propName, value: openAPICredentialReference(name, propName)})
+						continue
+					}
 					columns.add(column, s.Properties[propName])
 					pairs = append(pairs, queryTemplatePair{key: propName, value: "{{data.openapi." + column + "}}", columns: []string{column}})
 				}
@@ -1166,6 +2396,10 @@ func queryParamTemplates(param parameter, res resolver, location string, columns
 			parts := make([]string, 0, len(properties)*2)
 			for _, propName := range properties {
 				column := sanitizeColumnName(name + "_" + propName)
+				if schemaCredentialField(propName, s.Properties[propName]) || credential.SensitiveName(name+"."+propName) {
+					parts = append(parts, propName, openAPICredentialReference(name, propName))
+					continue
+				}
 				columns.add(column, s.Properties[propName])
 				propertyColumns = append(propertyColumns, column)
 				parts = append(parts, propName, "{{data.openapi."+column+"}}")
@@ -1174,6 +2408,14 @@ func queryParamTemplates(param parameter, res resolver, location string, columns
 		}
 	}
 	column := sanitizeColumnName(name)
+	if schemaCredentialField(name, s) {
+		if value, ok := authoredParameterValue(param); ok {
+			if literal, stringValue := value.(string); stringValue {
+				return []queryTemplatePair{{key: name, value: url.QueryEscape(literal)}}
+			}
+		}
+		return []queryTemplatePair{{key: name, value: openAPICredentialReference(name)}}
+	}
 	columns.add(column, s)
 	return []queryTemplatePair{{key: name, value: "{{data.openapi." + column + "}}", columns: []string{column}}}
 }
@@ -1199,13 +2441,21 @@ func applyHeaderAndCookieParams(headers map[string]string, params []parameter, c
 		if name == "" {
 			continue
 		}
-		template := "{{data.openapi." + sanitizeColumnName(name) + "}}"
+		template, governed := openAPIParameterTemplate(param)
 		switch strings.ToLower(strings.TrimSpace(param.In)) {
 		case "header":
-			columns.add(name, parameterSchema(param))
+			if credential.SensitiveHeader(name) && !governed {
+				template = openAPICredentialReference(name)
+				governed = true
+			}
+			if !governed {
+				columns.add(name, parameterSchema(param))
+			}
 			headers[name] = template
 		case "cookie":
-			columns.add(name, parameterSchema(param))
+			if !governed {
+				columns.add(name, parameterSchema(param))
+			}
 			cookies = append(cookies, name+"="+template)
 		}
 	}
@@ -1266,9 +2516,70 @@ func swagger2RequestBody(params []parameter, op *operation, res resolver, locati
 
 func parameterSchema(param parameter) schema {
 	if param.Schema.Ref != "" || param.Schema.Type != "" || len(param.Schema.Properties) > 0 || param.Schema.Items != nil || param.Schema.Format != "" {
-		return param.Schema
+		s := param.Schema
+		if s.Example == nil {
+			s.Example = param.Example
+		}
+		if s.Default == nil {
+			s.Default = param.Default
+		}
+		return s
 	}
-	return schema{Type: param.Type, Format: param.Format}
+	return schema{Type: param.Type, Format: param.Format, Example: param.Example, Default: param.Default}
+}
+
+func openAPIParameterTemplate(param parameter) (string, bool) {
+	name := strings.TrimSpace(param.Name)
+	if schemaCredentialField(name, parameterSchema(param)) {
+		switch strings.ToLower(strings.TrimSpace(param.In)) {
+		case "header", "query":
+			if value, ok := authoredParameterValue(param); ok {
+				if literal, ok := value.(string); ok {
+					// This literal exists only in the effective request. The
+					// source-neutral projector externalizes it before the DSL
+					// action is returned.
+					return literal, true
+				}
+			}
+		}
+		return openAPICredentialReference(name), true
+	}
+	return "{{data.openapi." + sanitizeColumnName(name) + "}}", false
+}
+
+func authoredParameterValue(param parameter) (any, bool) {
+	switch {
+	case param.Example != nil:
+		return param.Example, true
+	case param.Schema.Example != nil:
+		return param.Schema.Example, true
+	case param.Default != nil:
+		return param.Default, true
+	case param.Schema.Default != nil:
+		return param.Schema.Default, true
+	default:
+		return nil, false
+	}
+}
+
+func sensitiveParameterReviewCodes(params []parameter) []string {
+	for _, param := range params {
+		name := strings.TrimSpace(param.Name)
+		if name == "" {
+			continue
+		}
+		sensitive := schemaCredentialField(name, parameterSchema(param)) ||
+			(strings.EqualFold(strings.TrimSpace(param.In), "header") && credential.SensitiveHeader(name))
+		if !sensitive {
+			continue
+		}
+		if value, ok := authoredParameterValue(param); ok {
+			if _, stringValue := value.(string); !stringValue {
+				return []string{"sensitive_non_string_parameter"}
+			}
+		}
+	}
+	return nil
 }
 
 func firstContentType(values []string) string {
@@ -1290,24 +2601,28 @@ func headerValue(headers map[string]string, key string) string {
 }
 
 type authContext struct {
-	script    *dsl.Script
-	schemes   map[string]securityScheme
-	baseURL   string
-	opts      ConvertOptions
-	warnings  *[]string
-	resolver  resolver
-	tokenVars map[string]string
+	script             *dsl.Script
+	schemes            map[string]securityScheme
+	baseURL            string
+	opts               ConvertOptions
+	warnings           *[]string
+	resolver           resolver
+	tokenVars          map[string]string
+	tokenScopes        map[string][]string
+	tokenActionIndexes map[string]int
 }
 
 func newAuthContext(script *dsl.Script, schemes map[string]securityScheme, baseURL string, opts ConvertOptions, warnings *[]string, res resolver) *authContext {
 	return &authContext{
-		script:    script,
-		schemes:   schemes,
-		baseURL:   baseURL,
-		opts:      opts,
-		warnings:  warnings,
-		resolver:  res,
-		tokenVars: map[string]string{},
+		script:             script,
+		schemes:            schemes,
+		baseURL:            baseURL,
+		opts:               opts,
+		warnings:           warnings,
+		resolver:           res,
+		tokenVars:          map[string]string{},
+		tokenScopes:        map[string][]string{},
+		tokenActionIndexes: map[string]int{},
 	}
 }
 
@@ -1339,69 +2654,141 @@ func applyOperationSecurity(action *dsl.Action, requirements []map[string][]stri
 		action.Auth = &dsl.AuthConfig{Type: "none"}
 		return
 	}
-	for _, requirement := range requirements {
-		for name, scopes := range requirement {
-			scheme, ok := auth.schemes[name]
+	selected, rejectionCodes := selectOpenAPISecurityAlternative(requirements, auth.schemes)
+	if selected == nil {
+		if len(rejectionCodes) == 0 {
+			rejectionCodes = []string{"unsupported_security_requirement"}
+		}
+		res.add(diag.Blocker, "OpenAPI security", location, "no fully supported OpenAPI security alternative could be projected; the generated request is blocked pending review")
+		applyOpenAPIReviewGate(action, rejectionCodes, location)
+		return
+	}
+	if len(selected.names) == 0 {
+		action.Auth = &dsl.AuthConfig{Type: "none"}
+		return
+	}
+	for _, name := range selected.names {
+		applyOpenAPISecurityScheme(action, name, requirements[selected.index][name], auth, res, location)
+	}
+}
+
+type selectedSecurityAlternative struct {
+	index int
+	names []string
+}
+
+func selectOpenAPISecurityAlternative(requirements []map[string][]string, schemes map[string]securityScheme) (*selectedSecurityAlternative, []string) {
+	var rejectionCodes []string
+	for index, requirement := range requirements {
+		names := sortedMapKeys(requirement)
+		if len(names) == 0 {
+			return &selectedSecurityAlternative{index: index}, nil
+		}
+		authSchemes := 0
+		destinations := map[string]string{}
+		supported := true
+		for _, name := range names {
+			scheme, ok := schemes[name]
 			if !ok {
-				res.add(diag.Warning, "OpenAPI security", location, "operation security scheme "+name+" could not be resolved")
+				rejectionCodes = append(rejectionCodes, "unresolved_security_scheme")
+				supported = false
 				continue
 			}
-			switch strings.ToLower(scheme.Type) {
+			switch strings.ToLower(strings.TrimSpace(scheme.Type)) {
 			case "http":
-				switch strings.ToLower(scheme.Scheme) {
-				case "bearer":
-					action.Auth = &dsl.AuthConfig{Type: "bearer", Token: "{{secret." + openAPISecretName(name, "BEARER_TOKEN") + "}}"}
-					return
-				case "basic":
-					action.Auth = &dsl.AuthConfig{Type: "basic", Username: "{{env." + openAPISecretName(name, "USERNAME") + "}}", Password: "{{secret." + openAPISecretName(name, "PASSWORD") + "}}"}
-					return
-				case "digest":
-					action.Auth = &dsl.AuthConfig{Type: "digest", Username: "{{env." + openAPISecretName(name, "USERNAME") + "}}", Password: "{{secret." + openAPISecretName(name, "PASSWORD") + "}}"}
-					return
-				}
-			case "apikey":
-				if strings.EqualFold(scheme.In, "header") && scheme.Name != "" {
-					if action.Headers == nil {
-						action.Headers = map[string]string{}
-					}
-					action.Headers[scheme.Name] = "{{secret." + openAPISecretName(name, "API_KEY") + "}}"
-					return
-				}
-				if strings.EqualFold(scheme.In, "query") && scheme.Name != "" {
-					separator := "?"
-					if strings.Contains(action.Target, "?") {
-						separator = "&"
-					}
-					action.Target += separator + escapeQueryKey(scheme.Name) + "={{secret." + openAPISecretName(name, "API_KEY") + "}}"
-					return
-				}
-				if strings.EqualFold(scheme.In, "cookie") && scheme.Name != "" {
-					if action.Headers == nil {
-						action.Headers = map[string]string{}
-					}
-					action.Headers["Cookie"] = scheme.Name + "={{secret." + openAPISecretName(name, "API_KEY") + "}}"
-					res.add(diag.Info, "OpenAPI security", location, "cookie API key "+scheme.Name+" was represented as a Cookie header placeholder")
-					return
+				switch strings.ToLower(strings.TrimSpace(scheme.Scheme)) {
+				case "basic", "bearer", "digest":
+					authSchemes++
+				default:
+					rejectionCodes = append(rejectionCodes, "unsupported_http_auth_scheme")
+					supported = false
 				}
 			case "oauth2", "openidconnect":
-				if tokenVar := auth.ensureOAuthToken(name, scheme, scopes, location); tokenVar != "" {
-					action.Auth = &dsl.AuthConfig{Type: "bearer", Token: "{{var." + tokenVar + "}}"}
-					return
+				authSchemes++
+			case "apikey":
+				in := strings.ToLower(strings.TrimSpace(scheme.In))
+				if scheme.Name == "" || (in != "header" && in != "query" && in != "cookie") {
+					rejectionCodes = append(rejectionCodes, "unsupported_api_key_location")
+					supported = false
+					continue
 				}
-				action.Auth = &dsl.AuthConfig{Type: "bearer", Token: "{{secret." + openAPISecretName(name, "BEARER_TOKEN") + "}}"}
-				res.add(diag.Warning, "OpenAPI security", location, "OAuth/OpenID Connect operation security was represented as a bearer token placeholder")
-				return
+				destination := in + "\x00" + strings.ToLower(scheme.Name)
+				if previous := destinations[destination]; previous != "" && previous != name {
+					rejectionCodes = append(rejectionCodes, "conflicting_security_schemes")
+					supported = false
+				}
+				destinations[destination] = name
+				if in == "header" && strings.EqualFold(scheme.Name, "Authorization") {
+					destinations["authorization"] = name
+				}
+			default:
+				rejectionCodes = append(rejectionCodes, "unsupported_security_scheme")
+				supported = false
 			}
 		}
+		if authSchemes > 1 || (authSchemes > 0 && destinations["authorization"] != "") {
+			rejectionCodes = append(rejectionCodes, "conflicting_security_schemes")
+			supported = false
+		}
+		if supported {
+			return &selectedSecurityAlternative{index: index, names: names}, nil
+		}
+	}
+	return nil, uniqueSorted(rejectionCodes)
+}
+
+func applyOpenAPISecurityScheme(action *dsl.Action, name string, scopes []string, auth *authContext, res resolver, location string) {
+	scheme := auth.schemes[name]
+	switch strings.ToLower(strings.TrimSpace(scheme.Type)) {
+	case "http":
+		switch strings.ToLower(strings.TrimSpace(scheme.Scheme)) {
+		case "bearer":
+			action.Auth = &dsl.AuthConfig{Type: "bearer", Token: "{{secret." + openAPISecretName(name, "BEARER_TOKEN") + "}}"}
+		case "basic", "digest":
+			action.Auth = &dsl.AuthConfig{
+				Type:     strings.ToLower(strings.TrimSpace(scheme.Scheme)),
+				Username: "{{env." + openAPISecretName(name, "USERNAME") + "}}",
+				Password: "{{secret." + openAPISecretName(name, "PASSWORD") + "}}",
+			}
+		}
+	case "apikey":
+		secret := "{{secret." + openAPISecretName(name, "API_KEY") + "}}"
+		switch strings.ToLower(strings.TrimSpace(scheme.In)) {
+		case "header":
+			if action.Headers == nil {
+				action.Headers = map[string]string{}
+			}
+			action.Headers[scheme.Name] = secret
+		case "query":
+			separator := "?"
+			if strings.Contains(action.Target, "?") {
+				separator = "&"
+			}
+			action.Target += separator + escapeQueryKey(scheme.Name) + "=" + secret
+		case "cookie":
+			if action.Headers == nil {
+				action.Headers = map[string]string{}
+			}
+			cookie := scheme.Name + "=" + secret
+			if existing := headerValue(action.Headers, "Cookie"); existing != "" {
+				cookie = existing + "; " + cookie
+			}
+			action.Headers["Cookie"] = cookie
+			res.add(diag.Info, "OpenAPI security", location, "cookie API key "+scheme.Name+" was represented as a Cookie header placeholder")
+		}
+	case "oauth2", "openidconnect":
+		if tokenVar := auth.ensureOAuthToken(name, scheme, scopes, location); tokenVar != "" {
+			action.Auth = &dsl.AuthConfig{Type: "bearer", Token: "{{var." + tokenVar + "}}"}
+			return
+		}
+		action.Auth = &dsl.AuthConfig{Type: "bearer", Token: "{{secret." + openAPISecretName(name, "BEARER_TOKEN") + "}}"}
+		res.add(diag.Warning, "OpenAPI security", location, "OAuth/OpenID Connect operation security was represented as a bearer token placeholder")
 	}
 }
 
 func (a *authContext) ensureOAuthToken(name string, scheme securityScheme, scopes []string, location string) string {
 	if a == nil || a.script == nil {
 		return ""
-	}
-	if existing := a.tokenVars[name]; existing != "" {
-		return existing
 	}
 	tokenURL, grantType, flowScopes := oauthTokenFlow(scheme, a.opts)
 	if tokenURL == "" {
@@ -1410,15 +2797,26 @@ func (a *authContext) ensureOAuthToken(name string, scheme securityScheme, scope
 	if !convertutil.BoolOption(a.opts.SynthesizeOAuthTokenInit, true) && grantType == "client_credentials" {
 		return ""
 	}
+	requestedScopes := normalizedOAuthScopes(scopes)
+	if len(requestedScopes) == 0 {
+		requestedScopes = sortedMapKeys(flowScopes)
+	}
+	if existing := a.tokenVars[name]; existing != "" {
+		merged := appendUniqueOAuthScopes(a.tokenScopes[name], requestedScopes)
+		a.tokenScopes[name] = merged
+		if actionIndex, ok := a.tokenActionIndexes[name]; ok &&
+			actionIndex >= 0 && actionIndex < len(a.script.Init) &&
+			a.script.Init[actionIndex].Params != nil {
+			a.script.Init[actionIndex].Params["scope"] = strings.Join(merged, " ")
+		}
+		return existing
+	}
 	tokenURL = resolveURLAgainstBase(a.baseURL, tokenURL)
 	saveAs := "access_token"
 	if len(a.tokenVars) > 0 || sanitizeColumnName(name) != "oauth2" {
 		saveAs = sanitizeColumnName("access_token_" + name)
 	}
-	scope := strings.Join(scopes, " ")
-	if scope == "" {
-		scope = strings.Join(sortedMapKeys(flowScopes), " ")
-	}
+	scope := strings.Join(requestedScopes, " ")
 	action := dsl.Action{
 		Name:   sanitizeName("OAuth2_Token_" + name),
 		Type:   "http_oauth2_token",
@@ -1442,10 +2840,37 @@ func (a *authContext) ensureOAuthToken(name string, scheme securityScheme, scope
 		action.Params["username"] = "{{env." + openAPISecretName(name, "USERNAME") + "}}"
 		action.Params["password"] = "{{secret." + openAPISecretName(name, "PASSWORD") + "}}"
 	}
+	actionIndex := len(a.script.Init)
 	a.script.Init = append(a.script.Init, action)
 	a.tokenVars[name] = saveAs
+	a.tokenScopes[name] = append([]string(nil), requestedScopes...)
+	a.tokenActionIndexes[name] = actionIndex
 	a.resolver.add(diag.Info, "OpenAPI OAuth2", location, "generated "+grantType+" token init action for scheme "+name)
 	return saveAs
+}
+
+func normalizedOAuthScopes(scopes []string) []string {
+	return appendUniqueOAuthScopes(nil, scopes)
+}
+
+func appendUniqueOAuthScopes(existing, additional []string) []string {
+	out := append([]string(nil), existing...)
+	seen := make(map[string]struct{}, len(out)+len(additional))
+	for _, scope := range out {
+		seen[scope] = struct{}{}
+	}
+	for _, scope := range additional {
+		scope = strings.TrimSpace(scope)
+		if scope == "" {
+			continue
+		}
+		if _, duplicate := seen[scope]; duplicate {
+			continue
+		}
+		seen[scope] = struct{}{}
+		out = append(out, scope)
+	}
+	return out
 }
 
 func oauthTokenFlow(scheme securityScheme, opts ConvertOptions) (string, string, map[string]string) {

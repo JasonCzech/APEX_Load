@@ -401,7 +401,7 @@ func inferredHeaderParameters(analysis *handlerContractAnalysis) []oasParameter 
 func inferredQueryParameters(route discoveredRoute, analysis *handlerContractAnalysis) []oasParameter {
 	parameters := make([]oasParameter, 0, len(analysis.queryNames))
 	for name := range analysis.queryNames {
-		schema := queryParameterSchema(name, analysis.repeatedQueries[name])
+		schema := queryParameterSchema(route, name, analysis.repeatedQueries[name])
 		description := "Handler-defined query parameter."
 		deprecated := false
 		if compatibilityDescription, isDeprecated := deprecatedCompatibilityInput(route, name); isDeprecated {
@@ -421,7 +421,7 @@ func inferredQueryParameters(route discoveredRoute, analysis *handlerContractAna
 	return parameters
 }
 
-func queryParameterSchema(name string, repeated bool) oasParamSchema {
+func queryParameterSchema(route discoveredRoute, name string, repeated bool) oasParamSchema {
 	integerNames := map[string]bool{
 		"limit": true, "offset": true, "page": true, "page_size": true, "sample_limit": true,
 		"top": true, "window_seconds": true, "bucket_seconds": true, "max_points": true,
@@ -440,7 +440,11 @@ func queryParameterSchema(name string, repeated bool) oasParamSchema {
 		"from": true, "to": true, "start": true, "end": true,
 	}
 	item := oasParamSchema{Type: "string"}
-	if integerNames[name] {
+	if route.Method == http.MethodPost && route.Path == "/api/v1/scripts/import/bruno/inspect" && name == "output_mode" {
+		item.Enum = []string{"canonical", "native_requests"}
+	} else if route.Method == http.MethodPost && route.Path == "/api/v1/scripts/import/bruno/inspect" && name == "sandbox" {
+		item.Type = "string"
+	} else if integerNames[name] {
 		item.Type = "integer"
 		item.Format = "int64"
 	} else if booleanNames[name] {
@@ -769,17 +773,57 @@ func openAPISchemaForASTType(expr ast.Expr, typeDefinitions map[string]ast.Expr,
 			return oasSchema{Type: "object", AdditionalProperties: &additional}
 		}
 		properties := map[string]oasSchema{}
+		var required []string
 		for _, field := range value.Fields.List {
 			name, include, _ := jsonFieldName(field)
+			if len(field.Names) == 0 && (!include || name == "") && anonymousJSONFieldPromotesMembers(field) {
+				embedded := openAPISchemaForASTType(field.Type, typeDefinitions, visiting, depth+1)
+				for embeddedName, embeddedProperty := range embedded.Properties {
+					// A directly declared field wins over a promoted field. This
+					// matches the only conflict rule that matters for request
+					// schema inference while keeping anonymous compatibility
+					// request structs visible to the generated contract.
+					if _, exists := properties[embeddedName]; !exists {
+						properties[embeddedName] = embeddedProperty
+					}
+				}
+				required = mergeOpenAPIRequiredFields(required, embedded.Required)
+				continue
+			}
 			if !include || name == "" {
 				continue
 			}
 			properties[name] = openAPISchemaForASTType(field.Type, typeDefinitions, visiting, depth+1)
 		}
-		return oasSchema{Type: "object", Properties: properties}
+		return oasSchema{Type: "object", Properties: properties, Required: required}
 	}
 	additional := true
 	return oasSchema{Type: "object", AdditionalProperties: &additional}
+}
+
+func anonymousJSONFieldPromotesMembers(field *ast.Field) bool {
+	if field == nil || len(field.Names) != 0 {
+		return false
+	}
+	if field.Tag == nil {
+		return true
+	}
+	tagValue, err := strconv.Unquote(field.Tag.Value)
+	if err != nil {
+		return true
+	}
+	for _, tag := range strings.Fields(tagValue) {
+		if !strings.HasPrefix(tag, "json:") {
+			continue
+		}
+		jsonTag, err := strconv.Unquote(strings.TrimPrefix(tag, "json:"))
+		if err != nil {
+			return true
+		}
+		name := strings.SplitN(jsonTag, ",", 2)[0]
+		return name == ""
+	}
+	return true
 }
 
 func protocolRuntimeCapacityOpenAPISchema() oasSchema {

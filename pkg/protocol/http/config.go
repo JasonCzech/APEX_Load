@@ -37,6 +37,9 @@ type transportConfig struct {
 const (
 	defaultHTTPMaxConnsPerHost = 100
 	defaultHTTPMaxIdleConns    = 4
+	// Match net/http.DefaultTransport so Expect: 100-continue requests remain
+	// bounded while still giving a cooperating HTTP/1.1 server time to reply.
+	defaultHTTPExpectContinueTimeout = time.Second
 	// MaxConfigured* are shared with DSL validation so authored scripts fail
 	// explicitly instead of being silently clamped by the runtime.
 	MaxConfiguredConnsPerHost = 256
@@ -274,16 +277,56 @@ func newTransport(settings transportConfig, tlsCfg *tls.Config) *http.Transport 
 	}
 	maxIdlePerHost := min(settings.maxConnsPerHost, settings.maxIdleConns)
 	return &http.Transport{
-		DialContext:            dialer.DialContext,
-		MaxIdleConns:           settings.maxIdleConns,
-		MaxIdleConnsPerHost:    maxIdlePerHost,
-		MaxConnsPerHost:        settings.maxConnsPerHost,
-		IdleConnTimeout:        settings.idleTimeout,
-		TLSHandshakeTimeout:    settings.tlsTimeout,
-		TLSClientConfig:        tlsCfg,
-		DisableKeepAlives:      settings.disableKeepAlive,
+		DialContext:           dialer.DialContext,
+		MaxIdleConns:          settings.maxIdleConns,
+		MaxIdleConnsPerHost:   maxIdlePerHost,
+		MaxConnsPerHost:       settings.maxConnsPerHost,
+		IdleConnTimeout:       settings.idleTimeout,
+		TLSHandshakeTimeout:   settings.tlsTimeout,
+		ExpectContinueTimeout: defaultHTTPExpectContinueTimeout,
+		TLSClientConfig:       tlsCfg,
+		DisableKeepAlives:     settings.disableKeepAlive,
+		// Imported requests must not acquire an implicit Accept-Encoding:
+		// gzip field or transport-owned transparent decoding. Authored
+		// encodings are sent exactly and decoded by the bounded response
+		// pipeline in http.go.
+		DisableCompression:     true,
 		MaxResponseHeaderBytes: maxHTTPResponseHeaderBytes,
 	}
+}
+
+type noImplicitUserAgentRoundTripper struct {
+	base http.RoundTripper
+}
+
+func (transport noImplicitUserAgentRoundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	if request == nil || requestHeaderKeyPresent(request.Header, "User-Agent") {
+		return transport.base.RoundTrip(request)
+	}
+	// net/http emits Go-http-client/{1.1,2.0} when User-Agent is absent.
+	// Clone only at the transport boundary and add the documented empty
+	// sentinel so raw wire behavior is deterministic without mutating the
+	// authored request used for snapshots, caching, or correlation evidence.
+	wireRequest := request.Clone(request.Context())
+	wireRequest.Header = request.Header.Clone()
+	wireRequest.Header["User-Agent"] = []string{""}
+	return transport.base.RoundTrip(wireRequest)
+}
+
+func withoutImplicitUserAgent(base http.RoundTripper) http.RoundTripper {
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return noImplicitUserAgentRoundTripper{base: base}
+}
+
+func requestHeaderKeyPresent(headers http.Header, name string) bool {
+	for key := range headers {
+		if strings.EqualFold(key, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func applyNetworkSimulation(transport *http.Transport, config map[string]any) {
@@ -338,21 +381,42 @@ func bandwidthBytesPerSecond(kbps int) int {
 	return int(math.Round(float64(kbps*1024) / 8))
 }
 
-func applyHTTPVersion(transport *http.Transport, config map[string]any) {
-	if value, ok := config["http_version"].(string); ok {
-		switch value {
-		case "2":
-			transport.ForceAttemptHTTP2 = true
-		case "1.1", "1.0":
-			transport.ForceAttemptHTTP2 = false
-			transport.TLSClientConfig.NextProtos = []string{"http/1.1"}
-		default:
-			transport.ForceAttemptHTTP2 = true
-		}
-		return
+func applyHTTPVersion(transport *http.Transport, config map[string]any) (string, error) {
+	raw, configured := config["http_version"]
+	if !configured || raw == nil {
+		transport.ForceAttemptHTTP2 = true
+		return "", nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("http_version must be a string")
+	}
+	version := NormalizeVersion(value)
+	if err := ValidateVersion(version); err != nil {
+		return "", err
 	}
 
-	transport.ForceAttemptHTTP2 = true
+	switch version {
+	case VersionHTTP2:
+		// Requiring HTTP/2 means exactly that for both URL schemes. TLS
+		// requests negotiate h2 without advertising HTTP/1.1; cleartext
+		// requests use prior-knowledge h2c. There is no HTTP/1 fallback.
+		protocols := new(http.Protocols)
+		protocols.SetHTTP2(true)
+		protocols.SetUnencryptedHTTP2(true)
+		transport.Protocols = protocols
+		transport.ForceAttemptHTTP2 = true
+	case VersionHTTP11:
+		protocols := new(http.Protocols)
+		protocols.SetHTTP1(true)
+		transport.Protocols = protocols
+		transport.ForceAttemptHTTP2 = false
+	default:
+		// Empty remains the compatibility default: HTTP/1.1 with
+		// opportunistic HTTP/2 for TLS targets.
+		transport.ForceAttemptHTTP2 = true
+	}
+	return version, nil
 }
 
 func applyProxy(transport *http.Transport, config map[string]any) error {
@@ -626,7 +690,7 @@ func applyRedirectPolicy(client *http.Client, maxRedirects int) {
 		return
 	}
 	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
-		if len(via) >= maxRedirects {
+		if len(via) > maxRedirects {
 			return fmt.Errorf("stopped after %d redirects", maxRedirects)
 		}
 		if len(via) > 0 {
@@ -693,6 +757,9 @@ func validateAuthType(authType string) error {
 func buildActionAuthHeader(auth *protocol.AuthConfig) (string, bool, error) {
 	if auth == nil {
 		return "", false, nil
+	}
+	if err := ValidateAuthWireValues(auth); err != nil {
+		return "", true, err
 	}
 	switch strings.ToLower(strings.TrimSpace(auth.Type)) {
 	case "", "none", "noauth", "inherit":

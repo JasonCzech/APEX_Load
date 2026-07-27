@@ -858,8 +858,17 @@ func TestHandleImportPostmanMultipartEnvironment(t *testing.T) {
 	if result.Stats.EnvironmentValues != 2 {
 		t.Fatalf("environment values = %d, want 2", result.Stats.EnvironmentValues)
 	}
-	if len(result.Script.DataSources) != 1 || !strings.Contains(result.Script.DataSources[0].InlineData, "env-token") {
-		t.Fatalf("data sources = %+v", result.Script.DataSources)
+	// The only generated parameter column is the credential-bearing token.
+	// It must leave the public script/data source and travel through the
+	// protected import session instead.
+	if len(result.Script.DataSources) != 0 {
+		t.Fatalf("data sources = %+v, want credential-only source omitted", result.Script.DataSources)
+	}
+	if strings.Contains(resp.Body.String(), "env-token") || strings.Contains(resp.Body.String(), "collection-token") {
+		t.Fatalf("response disclosed a source credential: %s", resp.Body.String())
+	}
+	if !strings.Contains(resp.Body.String(), "{{secret.POSTMAN_X_TOKEN}}") {
+		t.Fatalf("response did not contain the projected token reference: %s", resp.Body.String())
 	}
 }
 

@@ -12,13 +12,41 @@ APEX Load executes reviewed `java_vuser` scripts through an operator-enabled Jav
 
 A specified home is a trusted raw executor path for reviewed Java code; there is no script JDK allowlist. Use a signed custom runner image or a read-only operator mount when additional JDKs are required.
 
+### Legacy Java opt-in
+
+Some imported Vusers depend on middleware that only runs on Java 8. `APEXLOAD_JAVA_VUSER_ALLOW_LEGACY_JAVA=true` lowers the probe floor from Java 17 to Java 8 for both `internal` and `specified` resolution. It is read from the generator/controller process environment and can never be set from script DSL, so lowering the floor stays an operator decision about a specific deployment.
+
+The floor is lowered, not removed: anything older than Java 8 is still rejected, and the rejection message names whichever floor applied. Because the version probe is the only content check between a script-supplied `jdk_home` and a forked JVM, enable this only where the executor's JDK paths are already controlled.
+
+The opt-in alone is not sufficient. The shipped harness is compiled `javac --release 17` (class file major 61) and cannot load on a Java 8 JVM at all. Build the Java 8-targeted harness and point the runner at it:
+
+```
+make java-vuser-runner-legacy
+export APEXLOAD_JAVA_VUSER_HARNESS_JAR=bin/java_vuser/apexload-java-vuser-runner-java8.jar
+export APEXLOAD_JAVA_VUSER_ALLOW_LEGACY_JAVA=true
+```
+
+JDK resolution is cached for about 30 seconds, so a flag change takes effect on the next resolution rather than immediately.
+
 ## VM parameters and classpath
 
 `additional_vm_parameters` is an array of exact JVM argv tokens. The dashboard represents it as one token per line. A token containing a space remains one token; APEX Load never invokes a shell and never expands command substitution, variables, or argument files.
 
 Runtime validation limits count and size and rejects launcher takeover, classpath/module overrides, raw Xboot options, Java/native agents, custom system class loaders, terminal/dry-run options, command-triggering error handlers, reserved `-Dapexload.*` properties, template expressions, and properties whose names indicate credentials such as passwords, tokens, or secrets. JVM arguments are visible in operating-system process metadata, so secret references are deliberately left unresolved and rejected instead of being copied into the Java command line. Pass sensitive values through governed LR parameters/action data rather than `additional_vm_parameters`. Diagnostics identify only the token index and category, not its value.
 
-Script classpath entries identify precompiled classes or JARs already present on the selected executor. Script entries precede operator shared entries. APEX Load does not compile imported source and does not upload artifacts as part of this feature. Every assigned executor verifies the referenced paths before assignment commit.
+Script classpath entries identify precompiled classes or JARs already present on the selected executor. Script entries precede operator shared entries. APEX Load never compiles imported source. Every assigned executor verifies the referenced paths before assignment commit.
+
+### Attaching classpath JARs
+
+An entry whose dependency is not pre-provisioned can instead have its JAR attached during import. Attached JARs are uploaded to the controller, keyed by content hash, and materialized on the runner's work directory at launch. Attaching or swapping a JAR changes what code runs, so it requires re-approval before the next launch.
+
+The feature is fail-closed and needs both sides enabled:
+
+- The dashboard shows the resolver panel by default; it can be turned off per browser via the `apexload.featureFlags.javaClasspathUpload` local-storage flag, or at build time via `VITE_APEXLOAD_JAVA_CLASSPATH_UPLOAD=false`.
+- The controller must set `APEXLOAD_JAVA_VUSER_CLASSPATH_UPLOAD_ENABLED=true`. While it is unset the upload endpoint answers 404, attached assets are ignored at runtime, and behavior is identical to the operator-provisioned model above.
+- A local (same-host) sidecar additionally needs `APEXLOAD_JAVA_VUSER_CLASSPATH_ASSET_DIR` pointing at the controller's import asset root.
+
+Attached JARs are supported on a local runner only. A distributed run that carries them is blocked at launch (`java_vuser_classpath_asset_distributed_unsupported`); provision those dependencies on the executors instead.
 
 ## Xboot and dedicated loading
 
@@ -79,8 +107,11 @@ The relevant environment variables are:
 - `APEXLOAD_JAVA_VUSER_RUNNER_AUTH_TOKEN`
 - `APEXLOAD_JAVA_VUSER_RUNNER_COMMAND` (local/direct Java or legacy-wrapper compatibility)
 - `APEXLOAD_JAVA_VUSER_DEFAULT_JDK_HOME`
+- `APEXLOAD_JAVA_VUSER_ALLOW_LEGACY_JAVA` (lowers the Java floor from 17 to 8; requires the Java 8-targeted harness jar)
 - `APEXLOAD_JAVA_VUSER_HARNESS_JAR`
 - `APEXLOAD_JAVA_VUSER_CLASSPATH`
+- `APEXLOAD_JAVA_VUSER_CLASSPATH_UPLOAD_ENABLED` (honors user-uploaded classpath JARs; fail-closed when unset)
+- `APEXLOAD_JAVA_VUSER_CLASSPATH_ASSET_DIR` (same-host import asset root a local sidecar reads uploaded JAR bytes from)
 - `APEXLOAD_JAVA_VUSER_WORK_DIR`
 - `APEXLOAD_JAVA_VUSER_MAX_PROCESSES`
 

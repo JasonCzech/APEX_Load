@@ -53,6 +53,59 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     container.remove()
   })
 
+  it('clears distribution fields when recorded think time is selected', () => {
+    const onUpdateField = vi.fn()
+    const script: ScriptDefinition = {
+      name: 'Imported web script',
+      version: '1.0.0',
+      protocol: 'http',
+      config: {
+        base_url: '',
+        think_time: {
+          type: 'gaussian',
+          mean_ms: 1000,
+          std_ms: 200,
+          min_ms: 100,
+          max_ms: 2500,
+          multiplier: 1.5,
+          limit_ms: 5000,
+        },
+      },
+      actions: [],
+    }
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="think"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={onUpdateField}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={script}
+        />,
+      )
+    })
+    const distribution = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
+      .find(select => select.parentElement?.textContent?.includes('Distribution'))
+    act(() => {
+      if (!distribution) return
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
+      setter?.call(distribution, 'recorded')
+      distribution.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(onUpdateField).toHaveBeenCalledWith('config.think_time', {
+      type: 'recorded',
+      multiplier: 1.5,
+      limit_ms: 5000,
+    })
+  })
+
   it('renders the governed Java Env Settings subsections without a Base URL', () => {
     const onUpdateField = vi.fn()
     act(() => {
@@ -268,6 +321,120 @@ describe('ScriptRuntimeSettingsView Java Vuser settings', () => {
     expect(container.textContent).not.toContain('Java Env Settings')
     expect(container.querySelector('input[aria-label="JDK Home"]')).toBeNull()
     expect(container.textContent).toContain('Base URL')
+  })
+
+  it('stores auto-negotiated HTTP version as the DSL empty value', () => {
+    const onUpdateField = vi.fn()
+    const script: ScriptDefinition = {
+      name: 'HTTP version settings',
+      version: '1.0.0',
+      protocol: 'http',
+      config: {
+        base_url: 'https://api.example.com',
+        http: { version: '2' },
+      },
+      actions: [],
+    }
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="connection"
+          activeSection="http"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={onUpdateField}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={script}
+        />,
+      )
+    })
+
+    const version = Array.from(container.querySelectorAll<HTMLSelectElement>('select'))
+      .find(select => select.parentElement?.textContent?.includes('HTTP Version'))
+    expect(version?.value).toBe('2')
+    expect(Array.from(version?.options || []).map(option => option.textContent)).toEqual([
+      'Auto-negotiate (HTTP/2 or HTTP/1.1)',
+      'Require HTTP/1.1',
+      'Require HTTP/2 (no fallback)',
+    ])
+    expect(version?.querySelector('option[value="1.0"]')).toBeNull()
+    expect(container.textContent).toContain('required HTTP/2 never falls back to HTTP/1.1')
+    act(() => {
+      if (!version) return
+      const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')?.set
+      setter?.call(version, '')
+      version.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+
+    expect(onUpdateField).toHaveBeenCalledWith('config.http', { version: '' })
+  })
+
+  it('offers target TPS pacing in script runtime settings', () => {
+    const script: ScriptDefinition = {
+      name: 'TPS HTTP',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.com', pacing: { type: 'tps', tps: 12.5 } },
+      actions: [{ name: 'Get root', type: 'http_request', target: '/', params: { method: 'GET' } }],
+    }
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="pacing"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={vi.fn()}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={script}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Target transactions per second')
+    expect(container.textContent).toContain('Target TPS')
+    expect(container.querySelector<HTMLInputElement>('input[type="number"]')?.value).toBe('12.5')
+  })
+
+  it('shows imported fixed-interval pacing in seconds in the summary and editor', () => {
+    const script: ScriptDefinition = {
+      name: 'Imported HTTP',
+      version: '1.0.0',
+      protocol: 'http',
+      config: { base_url: 'https://api.example.com', pacing: { type: 'fixed_interval', interval_ms: 5000 } },
+      actions: [{ name: 'Get root', type: 'http_request', target: '/', params: { method: 'GET' } }],
+    }
+    act(() => {
+      root.render(
+        <ScriptRuntimeSettingsView
+          activeHTTPTransportTab="timeouts"
+          activeSection="pacing"
+          canEditProtocol={false}
+          onSave={vi.fn()}
+          onSelectHTTPTransportTab={vi.fn()}
+          onSelectSection={vi.fn()}
+          onUpdateField={vi.fn()}
+          onUpdateProtocol={vi.fn()}
+          saveDisabled={false}
+          saving={false}
+          script={script}
+        />,
+      )
+    })
+
+    expect(container.textContent).toContain('Fixed interval · 5 seconds')
+    const interval = Array.from(container.querySelectorAll('label'))
+      .find(label => label.textContent?.includes('Interval (s)'))
+      ?.querySelector('input')
+    expect(interval?.value).toBe('5')
   })
 
   it('labels legacy full_lifecycle scripts as one-shot instead of promising persistent Java state', () => {

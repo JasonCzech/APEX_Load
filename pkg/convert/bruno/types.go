@@ -12,6 +12,9 @@ import (
 const (
 	CompatibilityVersion = "3.5.2"
 	ImporterVersion      = "apexload.bruno-import.v1"
+
+	OutputModeCanonical      = "canonical"
+	OutputModeNativeRequests = "native_requests"
 )
 
 type Limits struct {
@@ -47,6 +50,7 @@ type Input struct {
 }
 
 type InspectOptions struct {
+	OutputMode               string   `json:"output_mode,omitempty"`
 	DefaultEnvironment       string   `json:"default_environment,omitempty"`
 	DefaultGlobalEnvironment string   `json:"default_global_environment,omitempty"`
 	Selection                string   `json:"selection,omitempty"`
@@ -64,6 +68,7 @@ type InspectOptions struct {
 
 type Result struct {
 	SchemaVersion      string              `json:"schema_version"`
+	OutputMode         string              `json:"output_mode"`
 	SourceFormat       string              `json:"source_format"`
 	RootPath           string              `json:"root_path"`
 	Manifest           Manifest            `json:"manifest"`
@@ -75,11 +80,16 @@ type Result struct {
 	Fidelity           FidelityReport      `json:"fidelity"`
 	NativeProjection   ProjectionReport    `json:"native_projection"`
 	MissingVariables   []string            `json:"missing_variables,omitempty"`
-	Script             *dsl.Script         `json:"script"`
-	RawArchive         []byte              `json:"-"`
-	SanitizedArchive   []byte              `json:"-"`
-	OriginalUpload     []byte              `json:"-"`
-	InspectedAt        time.Time           `json:"inspected_at"`
+	// Script is the canonical compatibility-runner script. It is retained for
+	// backward compatibility and is nil when output_mode is native_requests.
+	Script *dsl.Script `json:"script,omitempty"`
+	// Scripts contains the ordered, server-authored native candidates produced
+	// by output_mode=native_requests. Canonical inspection leaves it empty.
+	Scripts          []NativeScriptCandidate `json:"scripts,omitempty"`
+	RawArchive       []byte                  `json:"-"`
+	SanitizedArchive []byte                  `json:"-"`
+	OriginalUpload   []byte                  `json:"-"`
+	InspectedAt      time.Time               `json:"inspected_at"`
 }
 
 type Manifest struct {
@@ -157,13 +167,58 @@ type SecretRequirement struct {
 	// Value is retained only in the short-lived server-side import session so an
 	// authorized writable secret store can migrate it. It is never serialized.
 	Value string `json:"-"`
+	// scrubTargets records every authored variable definition that contributed
+	// to a projected credential. It is importer-internal state: the targets are
+	// removed from the sanitized bundle but are never exposed or persisted.
+	scrubTargets []nativeSecretScrubTarget
 }
 
 type SecurityFinding struct {
+	ID       string `json:"id,omitempty"`
 	Severity string `json:"severity"`
 	Code     string `json:"code"`
 	Path     string `json:"path,omitempty"`
 	Summary  string `json:"summary"`
+}
+
+// NativeScriptCandidate is one create-only APEX HTTP script projected from an
+// OpenCollection YAML request. CandidateID identifies the source item within
+// the inspection; PlannedScriptID is the server-owned durable script identity
+// reserved for commit.
+type NativeScriptCandidate struct {
+	CandidateID        string              `json:"candidate_id"`
+	PlannedScriptID    string              `json:"planned_script_id"`
+	SourcePath         string              `json:"source_path"`
+	SourceUID          string              `json:"source_uid"`
+	Sequence           int                 `json:"sequence,omitempty"`
+	Method             string              `json:"method"`
+	Target             string              `json:"target"`
+	Script             *dsl.Script         `json:"script"`
+	Fidelity           string              `json:"fidelity"`
+	Diagnostics        []NativeDiagnostic  `json:"diagnostics,omitempty"`
+	MissingVariables   []string            `json:"missing_variables,omitempty"`
+	SecretRequirements []SecretRequirement `json:"secret_requirements,omitempty"`
+	SourceMappings     []SourceMapping     `json:"source_mappings,omitempty"`
+}
+
+// NativeDiagnostic describes a bounded conversion decision without retaining
+// source JavaScript or secret-bearing source fragments.
+type NativeDiagnostic struct {
+	ID                      string `json:"id"`
+	FindingID               string `json:"finding_id,omitempty"`
+	Severity                string `json:"severity"`
+	Code                    string `json:"code"`
+	Path                    string `json:"path,omitempty"`
+	Message                 string `json:"message"`
+	AcknowledgementRequired bool   `json:"acknowledgement_required,omitempty"`
+}
+
+// SourceMapping links a native candidate to the compact source records that
+// affected it. Hashes refer to sanitized import artifacts.
+type SourceMapping struct {
+	Path   string `json:"path"`
+	Role   string `json:"role"`
+	SHA256 string `json:"sha256"`
 }
 
 type FidelityReport struct {

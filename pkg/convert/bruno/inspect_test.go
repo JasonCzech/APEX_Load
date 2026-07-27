@@ -216,6 +216,29 @@ func TestInspectRejectsPathsThatWouldBeSilentlyTrimmed(t *testing.T) {
 	}
 }
 
+func TestInspectRejectsDotComponentsAndDriveQualifiedPaths(t *testing.T) {
+	for _, unsafePath := range []string{
+		"a/../request.yml",
+		"./request.yml",
+		"C:/request.yml",
+		`C:\request.yml`,
+	} {
+		t.Run(unsafePath, func(t *testing.T) {
+			_, err := Inspect(Input{Files: map[string][]byte{
+				unsafePath: []byte("info: {name: Request, type: http}\nhttp: {url: https://example.test}\n"),
+			}})
+			if err == nil {
+				t.Fatalf("Inspect accepted unsafe path %q", unsafePath)
+			}
+			lower := strings.ToLower(err.Error())
+			if !strings.Contains(lower, "dot or traversal") &&
+				!strings.Contains(lower, "drive-qualified") {
+				t.Fatalf("unsafe path %q error = %v", unsafePath, err)
+			}
+		})
+	}
+}
+
 func TestInspectRejectsCompressedTARExpansionBomb(t *testing.T) {
 	var archive bytes.Buffer
 	gzipWriter := gzip.NewWriter(&archive)
@@ -873,6 +896,25 @@ http:
 	})
 	if err == nil || !strings.Contains(err.Error(), "does not resolve to a scalar") {
 		t.Fatalf("complex credential alias error = %v", err)
+	}
+}
+
+func TestCanonicalStructuredSanitizationRetainsCompositeJSONCompatibility(t *testing.T) {
+	result, err := Inspect(Input{
+		Filename: "request.json",
+		Content: []byte(`{
+  "info": {"name": "Composite JSON", "type": "http"},
+  "http": {
+    "url": "https://example.test",
+    "auth": {"password": {"value": "nested-secret"}}
+  }
+}`),
+	})
+	if err != nil {
+		t.Fatalf("canonical composite structured JSON: %v", err)
+	}
+	if result == nil || result.Script == nil {
+		t.Fatalf("canonical composite structured JSON result = %#v", result)
 	}
 }
 

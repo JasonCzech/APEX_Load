@@ -599,6 +599,136 @@ func TestReplayScriptStopsAfterFailureWhenContinueOnErrorDisabled(t *testing.T) 
 	}
 }
 
+func TestReplayScriptAppliesActionThinkTimeAfterContinuedFailure(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: false, StatusCode: 500, ErrorMessage: "boom"}, nil
+	})
+	start := time.Now()
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name: "Continued failure think time", Protocol: protocolName,
+		Config: dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true}},
+		Actions: []dsl.Action{{
+			Name: "failed", Type: "GET", Target: "/failed", ThinkTimeAfter: true,
+			ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 30},
+		}},
+	}, ReplayOptions{})
+	if err != nil {
+		t.Fatalf("ReplayScript: %v", err)
+	}
+	if report.Success || time.Since(start) < 25*time.Millisecond {
+		t.Fatalf("continued failure did not retain action-local wait: success=%v elapsed=%s", report.Success, time.Since(start))
+	}
+}
+
+func TestReplayControlTransfersDoNotApplyLeafThinkTime(t *testing.T) {
+	for _, transferType := range []string{"control_break", "control_continue"} {
+		t.Run(transferType, func(t *testing.T) {
+			protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+				return &protocol.Result{ActionName: action.Name, Success: true}, nil
+			})
+			start := time.Now()
+			report, err := ReplayScript(context.Background(), &dsl.Script{
+				Name: "Immediate control transfer", Protocol: protocolName,
+				Actions: []dsl.Action{{
+					Name: "loop", Type: "control_loop",
+					Control: &dsl.ControlFlow{Count: 1, Steps: []dsl.Action{{
+						Name: transferType, Type: transferType, ThinkTimeAfter: true,
+						ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 500},
+					}}},
+				}},
+			}, ReplayOptions{})
+			if err != nil {
+				t.Fatalf("ReplayScript: %v", err)
+			}
+			if !report.Success {
+				t.Fatalf("control transfer replay failed: %s", report.Error)
+			}
+			if elapsed := time.Since(start); elapsed >= 200*time.Millisecond {
+				t.Fatalf("%s applied an unreachable leaf wait: elapsed=%s", transferType, elapsed)
+			}
+		})
+	}
+}
+
+func TestReplayMalformedHTTPSequenceRetainsParentThinkTimeWhenContinuing(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true}, nil
+	})
+	start := time.Now()
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name: "Malformed sequence timing parity", Protocol: protocolName,
+		Config: dsl.ScriptConfig{ErrorHandling: dsl.ErrorHandlingConfig{ContinueOnError: true}},
+		Actions: []dsl.Action{
+			{
+				Name: "malformed", Type: "http_sequence",
+				Params:         map[string]any{"requests": "not-an-array"},
+				ThinkTimeAfter: true,
+				ThinkTime:      dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 45},
+			},
+			{Name: "after", Type: "GET", Method: "GET", Target: "/after"},
+		},
+	}, ReplayOptions{})
+	if err != nil {
+		t.Fatalf("ReplayScript: %v", err)
+	}
+	if report.Success {
+		t.Fatal("malformed sequence replay unexpectedly succeeded")
+	}
+	if len(report.Events) != 2 || report.Events[0].Success || !report.Events[1].Success {
+		t.Fatalf("events = %#v, want failed container followed by successful action", report.Events)
+	}
+	if elapsed := time.Since(start); elapsed < 35*time.Millisecond {
+		t.Fatalf("continued malformed sequence skipped parent think time: elapsed=%s", elapsed)
+	}
+}
+
+func TestReplayScriptThinkTimeIsContextCancellable(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := ReplayScript(ctx, &dsl.Script{
+		Name: "Cancellable think time", Protocol: protocolName,
+		Actions: []dsl.Action{{
+			Name: "success", Type: "GET", Target: "/success", ThinkTimeAfter: true,
+			ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 500},
+		}},
+	}, ReplayOptions{})
+	if err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("ReplayScript: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed >= 200*time.Millisecond {
+		t.Fatalf("replay wait ignored cancellation: elapsed=%s", elapsed)
+	}
+}
+
+func TestReplayScriptHonorsTeardownHTTPSequenceThinkTime(t *testing.T) {
+	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {
+		return &protocol.Result{ActionName: action.Name, Success: true, StatusCode: 200}, nil
+	})
+	start := time.Now()
+	report, err := ReplayScript(context.Background(), &dsl.Script{
+		Name: "Teardown sequence think time", Protocol: protocolName,
+		Teardown: []dsl.Action{httpSequenceTestAction("cleanup",
+			dsl.Action{
+				Name: "cleanup request", Type: "GET", Method: "GET", Target: "/cleanup",
+				ThinkTimeAfter: true, ThinkTime: dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 35},
+			},
+		)},
+	}, ReplayOptions{})
+	if err != nil {
+		t.Fatalf("ReplayScript: %v", err)
+	}
+	if !report.Success {
+		t.Fatalf("teardown replay failed: %s", report.Error)
+	}
+	if elapsed := time.Since(start); elapsed < 25*time.Millisecond {
+		t.Fatalf("teardown sequence skipped child think time: elapsed=%s", elapsed)
+	}
+}
+
 func TestReplayProjectionScrubsShortSecretInputsAndProtocolErrors(t *testing.T) {
 	t.Setenv("APEXLOAD_SECRET_REPLAY_SHORT", "x")
 	protocolName := registerReplayProtocol(t, func(action *protocol.Action) (*protocol.Result, error) {

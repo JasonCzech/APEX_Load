@@ -24,6 +24,67 @@ components:
       name: apexload_auth_session
       in: cookie
   schemas:
+    APEXScript:
+      type: object
+      description: APEX script DSL. Native inspection returns its disclosure-safe masked representation; commit returns the durable script.
+      properties:
+        actions:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        config:
+          type: object
+          description: APEX script configuration.
+          additionalProperties: true
+        created_at:
+          type: string
+          format: date-time
+        folder_id:
+          type: string
+          nullable: true
+        id:
+          type: string
+        init:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        metadata:
+          type: object
+          description: Script provenance and runtime metadata.
+          additionalProperties: true
+        name:
+          type: string
+        parameters:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        project_id:
+          type: string
+        protocol:
+          type: string
+        ref_key:
+          type: string
+        teardown:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        updated_at:
+          type: string
+          format: date-time
+        version:
+          type: string
+      additionalProperties: true
+      required:
+        - id
+        - name
+        - version
+        - protocol
+        - config
+        - actions
     AuthoringSessionCreateRequest:
       type: object
       properties:
@@ -31,6 +92,10 @@ components:
           type: object
           description: APEX Load script draft retained for review and approval.
           additionalProperties: true
+        folder_id:
+          type: string
+          description: Optional script folder for the approved script. Omitting it (or sending null) leaves draft.folder_id in force rather than clearing it; set draft.folder_id to null to file the script at the project root. Must belong to the same project, and is validated on create and again at approval.
+          nullable: true
         idempotency_key:
           type: string
           description: Optional project-scoped retry key (maximum 256 bytes). Reusing it with the same request returns the original session; reusing it with different content returns 409.
@@ -53,6 +118,944 @@ components:
             - ready
       required:
         - source
+    BrunoArtifactSummary:
+      type: object
+      properties:
+        artifact_kind:
+          type: string
+        id:
+          type: string
+        manifest_sha256:
+          type: string
+        sha256:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+      required:
+        - id
+        - artifact_kind
+        - sha256
+        - size_bytes
+    BrunoCanonicalCommitRequest:
+      type: object
+      properties:
+        conflict_resolutions:
+          type: object
+          description: Canonical synchronization conflict resolutions.
+          additionalProperties:
+            type: string
+        expected_active_revision_id:
+          type: string
+        expected_updated_at:
+          type: string
+          format: date-time
+        folder_id:
+          type: string
+          nullable: true
+        import_session_id:
+          type: string
+        migrate_secrets:
+          type: boolean
+        mode:
+          type: string
+          enum:
+            - create
+            - sync
+        name:
+          type: string
+        parameterization_selected_ids:
+          type: array
+          items:
+            type: string
+        project_id:
+          type: string
+        script_id:
+          type: string
+        secret_bindings:
+          type: object
+          description: Secret requirement ID to governed logical secret name.
+          additionalProperties:
+            type: string
+        sync_script_id:
+          type: string
+      additionalProperties: false
+      required:
+        - project_id
+        - import_session_id
+    BrunoCanonicalCommitResponse:
+      type: object
+      properties:
+        change_summary:
+          type: object
+          description: Canonical synchronization change summary.
+          additionalProperties: true
+        created:
+          type: boolean
+        parameterization_applied:
+          type: integer
+        revision:
+          $ref: '#/components/schemas/BrunoSourceRevision'
+        script:
+          $ref: '#/components/schemas/APEXScript'
+        secret_migrations:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required:
+        - script
+        - revision
+        - created
+        - change_summary
+        - secret_migrations
+        - parameterization_applied
+    BrunoCanonicalExecutionPreflight:
+      type: object
+      description: Canonical Bruno runner readiness.
+      properties:
+        blockers:
+          type: array
+          items:
+            type: string
+        ready:
+          type: boolean
+      required:
+        - ready
+        - blockers
+    BrunoCanonicalInspectResult:
+      type: object
+      properties:
+        capabilities:
+          $ref: '#/components/schemas/BrunoCapabilities'
+        collection:
+          $ref: '#/components/schemas/BrunoCollection'
+        environments:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoEnvironment'
+        fidelity:
+          $ref: '#/components/schemas/BrunoFidelityReport'
+        inspected_at:
+          type: string
+          format: date-time
+        manifest:
+          $ref: '#/components/schemas/BrunoManifest'
+        missing_variables:
+          type: array
+          items:
+            type: string
+        native_projection:
+          $ref: '#/components/schemas/BrunoNativeProjection'
+        output_mode:
+          type: string
+          enum:
+            - canonical
+        root_path:
+          type: string
+        schema_version:
+          type: string
+        script:
+          $ref: '#/components/schemas/APEXScript'
+        secret_requirements:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoSecretRequirement'
+        security_findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoSecurityFinding'
+        source_format:
+          type: string
+      required:
+        - schema_version
+        - output_mode
+        - source_format
+        - root_path
+        - manifest
+        - collection
+        - capabilities
+        - fidelity
+        - native_projection
+        - inspected_at
+        - script
+    BrunoCapabilities:
+      type: object
+      properties:
+        has_bruno_apps:
+          type: boolean
+        has_certificates:
+          type: boolean
+        has_file_bodies:
+          type: boolean
+        has_javascript:
+          type: boolean
+        has_local_modules:
+          type: boolean
+        has_npm_dependencies:
+          type: boolean
+        has_private_key_files:
+          type: boolean
+        request_types:
+          type: array
+          items:
+            type: string
+        required_sandbox:
+          type: string
+        runner_profile:
+          type: string
+      required:
+        - request_types
+        - has_javascript
+        - has_npm_dependencies
+        - has_local_modules
+        - has_file_bodies
+        - has_certificates
+        - has_private_key_files
+        - has_bruno_apps
+        - required_sandbox
+    BrunoCollection:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoCollectionItem'
+        name:
+          type: string
+        uid:
+          type: string
+      required:
+        - name
+        - items
+    BrunoCollectionItem:
+      type: object
+      properties:
+        children:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoCollectionItem'
+        executable:
+          type: boolean
+        has_scripts:
+          type: boolean
+        has_tests:
+          type: boolean
+        name:
+          type: string
+        path:
+          type: string
+        sequence:
+          type: integer
+        tags:
+          type: array
+          items:
+            type: string
+        type:
+          type: string
+        uid:
+          type: string
+      required:
+        - uid
+        - name
+        - path
+        - type
+        - executable
+    BrunoCommitErrorResponse:
+      type: object
+      description: Bruno commit failure, including retry and partial secret-migration recovery state when applicable.
+      properties:
+        candidate_id:
+          type: string
+        code:
+          type: string
+        commit_state:
+          type: string
+        committed_names:
+          type: array
+          items:
+            type: string
+        committed_secret_names:
+          type: array
+          items:
+            type: string
+        committed_secrets_retained:
+          type: boolean
+        conflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoImportConflict'
+        error:
+          type: string
+        failed_name:
+          type: string
+        findings:
+          type: array
+          items:
+            type: string
+        idempotency_session_id:
+          type: string
+        import_session_consumed:
+          type: boolean
+        issues:
+          type: array
+          items:
+            type: string
+        manual_configuration_required:
+          type: boolean
+        manual_retry_safe:
+          type: boolean
+        migrated:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        migrated_count:
+          type: integer
+        migrated_secret_names:
+          type: array
+          items:
+            type: string
+        partial:
+          type: boolean
+        project_id:
+          type: string
+        reason:
+          type: string
+        remaining_names:
+          type: array
+          items:
+            type: string
+        requirements:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoSecretRequirement'
+        resolution:
+          type: string
+        script_committed:
+          oneOf:
+            - type: boolean
+            - type: string
+        secret_migrations:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        session_retained:
+          type: boolean
+        source_values_cleared:
+          type: boolean
+        source_values_disclosed:
+          type: boolean
+        source_values_retained:
+          type: boolean
+      required:
+        - error
+    BrunoCommitRequest:
+      oneOf:
+        - $ref: '#/components/schemas/BrunoCanonicalCommitRequest'
+        - $ref: '#/components/schemas/BrunoNativeBatchCommitRequest'
+    BrunoCommitResponse:
+      oneOf:
+        - $ref: '#/components/schemas/BrunoCanonicalCommitResponse'
+        - $ref: '#/components/schemas/BrunoNativeBatchCommitResponse'
+    BrunoEnvironment:
+      type: object
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        type:
+          type: string
+      required:
+        - name
+        - path
+        - type
+    BrunoExecutionPreflight:
+      oneOf:
+        - $ref: '#/components/schemas/BrunoCanonicalExecutionPreflight'
+        - $ref: '#/components/schemas/BrunoNativeExecutionPreflight'
+    BrunoFidelityReport:
+      type: object
+      properties:
+        compatibility:
+          type: string
+        dropped_items:
+          type: integer
+        executable_items:
+          type: integer
+        intentional_extensions:
+          type: array
+          items:
+            type: string
+        preserved_apps:
+          type: integer
+        preserved_files:
+          type: integer
+        status:
+          type: string
+      required:
+        - status
+        - preserved_files
+        - executable_items
+        - preserved_apps
+        - dropped_items
+        - compatibility
+    BrunoImportConflict:
+      type: object
+      properties:
+        field:
+          type: string
+        id:
+          type: string
+        required_resolution:
+          type: string
+        summary:
+          type: string
+      required:
+        - id
+        - field
+        - summary
+        - required_resolution
+    BrunoInspectFile:
+      type: object
+      description: One file in a directory-style Bruno inspection upload.
+      properties:
+        content:
+          type: string
+        content_base64:
+          type: string
+          format: byte
+        path:
+          type: string
+      required:
+        - path
+    BrunoInspectOptions:
+      type: object
+      description: Bruno inspection controls. Omitting output_mode preserves the canonical compatibility-runner import.
+      properties:
+        bail:
+          type: boolean
+        default_environment:
+          type: string
+        default_global_environment:
+          type: string
+        delay_ms:
+          type: integer
+        exclude_tags:
+          type: array
+          items:
+            type: string
+        execution:
+          type: string
+        include_tags:
+          type: array
+          items:
+            type: string
+        output_mode:
+          type: string
+          description: canonical creates one compatibility-runner candidate; native_requests creates one server-owned HTTP candidate per supported request.
+          enum:
+            - canonical
+            - native_requests
+        paths:
+          type: array
+          items:
+            type: string
+        persist_session:
+          type: boolean
+        recursive:
+          type: boolean
+        selection:
+          type: string
+        stream_timeout_ms:
+          type: integer
+        tests_only:
+          type: boolean
+    BrunoInspectRequest:
+      type: object
+      properties:
+        content:
+          type: string
+        content_base64:
+          type: string
+          format: byte
+        filename:
+          type: string
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoInspectFile'
+        name:
+          type: string
+        options:
+          $ref: '#/components/schemas/BrunoInspectOptions'
+        project_id:
+          type: string
+        root_path:
+          type: string
+        sandbox:
+          type: string
+        sync_script_id:
+          type: string
+    BrunoInspectResponse:
+      type: object
+      properties:
+        artifacts:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoArtifactSummary'
+        execution_preflight:
+          $ref: '#/components/schemas/BrunoExecutionPreflight'
+        expires_at:
+          type: string
+          format: date-time
+        import_session_id:
+          type: string
+        parameterization:
+          type: object
+          description: Canonical parameterization suggestions; null for native request inspection.
+          additionalProperties: true
+          nullable: true
+        result:
+          $ref: '#/components/schemas/BrunoInspectResult'
+        sync_preview:
+          $ref: '#/components/schemas/BrunoSyncPreview'
+      required:
+        - import_session_id
+        - expires_at
+        - result
+        - artifacts
+        - execution_preflight
+        - parameterization
+    BrunoInspectResult:
+      oneOf:
+        - $ref: '#/components/schemas/BrunoCanonicalInspectResult'
+        - $ref: '#/components/schemas/BrunoNativeInspectResult'
+    BrunoManifest:
+      type: object
+      properties:
+        bundle_sha256:
+          type: string
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoManifestFile'
+        sha256:
+          type: string
+        total_bytes:
+          type: integer
+          format: int64
+        version:
+          type: string
+      required:
+        - version
+        - sha256
+        - bundle_sha256
+        - total_bytes
+        - files
+    BrunoManifestFile:
+      type: object
+      properties:
+        executable:
+          type: boolean
+        media_type:
+          type: string
+        mode:
+          type: integer
+          format: int64
+        path:
+          type: string
+        role:
+          type: string
+        sha256:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+      required:
+        - path
+        - role
+        - size_bytes
+        - sha256
+        - mode
+    BrunoNativeBatchCommitRequest:
+      type: object
+      properties:
+        acknowledged_finding_ids:
+          type: array
+          items:
+            type: string
+        candidate_ids:
+          type: array
+          description: Native candidate IDs to save. Omission selects every native candidate.
+          items:
+            type: string
+        folder_id:
+          type: string
+        import_session_id:
+          type: string
+        migrate_secrets:
+          type: boolean
+        mode:
+          type: string
+          enum:
+            - create_native_batch
+        name_overrides:
+          type: object
+          description: Native candidate ID to requested script name.
+          additionalProperties:
+            type: string
+        project_id:
+          type: string
+        secret_bindings:
+          type: object
+          description: Secret requirement ID to governed logical secret name.
+          additionalProperties:
+            type: string
+      additionalProperties: false
+      required:
+        - project_id
+        - import_session_id
+        - mode
+        - folder_id
+    BrunoNativeBatchCommitResponse:
+      type: object
+      description: Atomic receipt for a create-only native Bruno batch.
+      properties:
+        batch_id:
+          type: string
+        count:
+          type: integer
+        created:
+          type: boolean
+        idempotent_replay:
+          type: boolean
+        scripts:
+          type: array
+          items:
+            $ref: '#/components/schemas/APEXScript'
+        secret_migrations:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+      required:
+        - batch_id
+        - scripts
+        - count
+        - created
+        - idempotent_replay
+    BrunoNativeCandidateExecutionPreflight:
+      type: object
+      description: Replay readiness for one native Bruno candidate.
+      properties:
+        blockers:
+          type: array
+          items:
+            type: string
+        candidate_id:
+          type: string
+        ready:
+          type: boolean
+      required:
+        - candidate_id
+        - ready
+    BrunoNativeDiagnostic:
+      type: object
+      properties:
+        acknowledgement_required:
+          type: boolean
+        code:
+          type: string
+        finding_id:
+          type: string
+        id:
+          type: string
+        message:
+          type: string
+        path:
+          type: string
+        severity:
+          type: string
+      required:
+        - id
+        - severity
+        - code
+        - message
+    BrunoNativeExecutionPreflight:
+      type: object
+      description: Aggregate and per-candidate native Bruno replay readiness.
+      properties:
+        blockers:
+          type: integer
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoNativeCandidateExecutionPreflight'
+        ready:
+          type: boolean
+      required:
+        - ready
+        - blockers
+        - candidates
+    BrunoNativeInspectResult:
+      type: object
+      properties:
+        capabilities:
+          $ref: '#/components/schemas/BrunoCapabilities'
+        collection:
+          $ref: '#/components/schemas/BrunoCollection'
+        environments:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoEnvironment'
+        fidelity:
+          $ref: '#/components/schemas/BrunoFidelityReport'
+        inspected_at:
+          type: string
+          format: date-time
+        manifest:
+          $ref: '#/components/schemas/BrunoManifest'
+        missing_variables:
+          type: array
+          items:
+            type: string
+        native_projection:
+          $ref: '#/components/schemas/BrunoNativeProjection'
+        output_mode:
+          type: string
+          enum:
+            - native_requests
+        root_path:
+          type: string
+        schema_version:
+          type: string
+        scripts:
+          type: array
+          description: Native candidates in deterministic Bruno sequence/path order.
+          items:
+            $ref: '#/components/schemas/BrunoNativeScriptCandidate'
+        secret_requirements:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoSecretRequirement'
+        security_findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoSecurityFinding'
+        source_format:
+          type: string
+      required:
+        - schema_version
+        - output_mode
+        - source_format
+        - root_path
+        - manifest
+        - collection
+        - capabilities
+        - fidelity
+        - native_projection
+        - inspected_at
+        - scripts
+    BrunoNativeProjection:
+      type: object
+      properties:
+        eligible:
+          type: boolean
+        reasons:
+          type: array
+          items:
+            type: string
+      required:
+        - eligible
+    BrunoNativeScriptCandidate:
+      type: object
+      description: One ordered, server-owned native HTTP script candidate. Clients may select or rename it but never submit replacement DSL or choose its durable ID.
+      properties:
+        candidate_id:
+          type: string
+        diagnostics:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoNativeDiagnostic'
+        fidelity:
+          type: string
+        method:
+          type: string
+        missing_variables:
+          type: array
+          items:
+            type: string
+        planned_script_id:
+          type: string
+        script:
+          $ref: '#/components/schemas/APEXScript'
+          description: Server-authored, masked APEX DSL candidate.
+        secret_requirements:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoSecretRequirement'
+        sequence:
+          type: integer
+        source_mappings:
+          type: array
+          description: Scrubbed, sanitized-source mappings that influenced this candidate.
+          items:
+            $ref: '#/components/schemas/BrunoSourceMapping'
+        source_path:
+          type: string
+        source_uid:
+          type: string
+        target:
+          type: string
+      required:
+        - candidate_id
+        - planned_script_id
+        - source_path
+        - source_uid
+        - method
+        - target
+        - script
+        - fidelity
+    BrunoSecretRequirement:
+      type: object
+      properties:
+        context:
+          type: string
+        existing_reference:
+          type: boolean
+        id:
+          type: string
+        key:
+          type: string
+        path:
+          type: string
+        replacement:
+          type: string
+        source_value_available:
+          type: boolean
+        suggested_name:
+          type: string
+      required:
+        - id
+        - path
+        - key
+        - suggested_name
+        - replacement
+        - context
+    BrunoSecurityFinding:
+      type: object
+      properties:
+        code:
+          type: string
+        id:
+          type: string
+        path:
+          type: string
+        severity:
+          type: string
+        summary:
+          type: string
+      required:
+        - severity
+        - code
+        - summary
+    BrunoSourceMapping:
+      type: object
+      properties:
+        path:
+          type: string
+        role:
+          type: string
+        sha256:
+          type: string
+      required:
+        - path
+        - role
+        - sha256
+    BrunoSourceRevision:
+      type: object
+      properties:
+        active:
+          type: boolean
+        change_summary:
+          type: object
+          description: Canonical synchronization change summary.
+          additionalProperties: true
+        compatibility_version:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+        dependency_snapshot_ref:
+          type: string
+        id:
+          type: string
+        identity_map:
+          type: object
+          description: Stable source-to-script identities.
+          additionalProperties:
+            type: string
+        import_options:
+          type: object
+          description: Canonical Bruno import options.
+          additionalProperties: true
+        parent_revision_id:
+          type: string
+        project_id:
+          type: string
+        raw_artifact_id:
+          type: string
+        sanitized_artifact_id:
+          type: string
+        script_id:
+          type: string
+        secret_bindings:
+          type: object
+          description: Source requirement to governed logical secret.
+          additionalProperties:
+            type: string
+        security_profile:
+          type: object
+          description: Bruno execution security profile.
+          additionalProperties: true
+        source_format:
+          type: string
+      required:
+        - id
+        - script_id
+        - project_id
+        - sanitized_artifact_id
+        - source_format
+        - compatibility_version
+        - active
+        - created_at
+    BrunoSyncPreview:
+      type: object
+      properties:
+        active_revision:
+          type: string
+        changes:
+          type: object
+          description: Canonical synchronization change summary.
+          additionalProperties: true
+        conflicts:
+          type: array
+          items:
+            $ref: '#/components/schemas/BrunoImportConflict'
+        expected_updated_at:
+          type: string
+          format: date-time
+        target_script_id:
+          type: string
+      required:
+        - target_script_id
+        - expected_updated_at
+        - changes
     ErrorResponse:
       type: object
       properties:
@@ -21601,7 +22604,341 @@ paths:
             schema:
               type: object
               properties:
+                application_id:
+                  type: string
+                assignment:
+                  type: object
+                  properties:
+                    load_zone_weights:
+                      type: object
+                      additionalProperties: true
+                    mode:
+                      type: string
+                    pool_id:
+                      type: string
+                    region_weights:
+                      type: object
+                      additionalProperties: true
+                    required_labels:
+                      type: object
+                      additionalProperties: true
+                    selected_targets:
+                      type: array
+                      items:
+                        type: string
+                    shard_strategy:
+                      type: string
+                    tolerate_generator_loss:
+                      type: boolean
+                data_pools:
+                  type: array
+                  items:
+                    type: object
+                    description: 'Go type: storage.ScenarioDataPoolBinding'
+                    additionalProperties: true
+                duration:
+                  type: string
+                folder_id:
+                  type: string
+                goal_config:
+                  type: object
+                  properties:
+                    max_avg_server_processing_ms:
+                      type: number
+                      format: double
+                    max_avg_transfer_ms:
+                      type: number
+                      format: double
+                    max_cls:
+                      type: number
+                      format: double
+                    max_dead_letter_rate_pct:
+                      type: number
+                      format: double
+                    max_end_to_end_latency_ms:
+                      type: number
+                      format: double
+                    max_error_count:
+                      type: integer
+                      format: int64
+                    max_error_pct:
+                      type: number
+                      format: double
+                    max_inp_ms:
+                      type: number
+                      format: double
+                    max_lcp_ms:
+                      type: number
+                      format: double
+                    max_partition_skew_pct:
+                      type: number
+                      format: double
+                    max_redelivery_rate_pct:
+                      type: number
+                      format: double
+                    max_throttled_requests:
+                      type: integer
+                      format: int64
+                    max_vusers:
+                      type: integer
+                      format: int64
+                    min_vusers:
+                      type: integer
+                      format: int64
+                    p95_latency_ms:
+                      type: number
+                      format: double
+                    sla_breach_window:
+                      type: string
+                    stop_on_max_errors:
+                      type: boolean
+                    stop_on_sla_breach:
+                      type: boolean
+                    target_average_tps:
+                      type: number
+                      format: double
+                groups:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      assignment:
+                        type: object
+                        properties:
+                          load_zone_weights:
+                            type: object
+                            additionalProperties: true
+                          mode:
+                            type: string
+                          pool_id:
+                            type: string
+                          region_weights:
+                            type: object
+                            additionalProperties: true
+                          required_labels:
+                            type: object
+                            additionalProperties: true
+                          selected_targets:
+                            type: array
+                            items:
+                              type: string
+                          shard_strategy:
+                            type: string
+                          tolerate_generator_loss:
+                            type: boolean
+                      initialization:
+                        type: string
+                      iterations:
+                        type: integer
+                        format: int64
+                      name:
+                        type: string
+                      ramp_down:
+                        type: string
+                      ramp_up:
+                        type: string
+                      revision_new_group:
+                        type: boolean
+                      revision_source_group_index:
+                        type: integer
+                        format: int64
+                      role:
+                        type: string
+                      runtime_settings:
+                        type: object
+                        properties:
+                          auto_transactions:
+                            type: string
+                          base_url:
+                            type: string
+                          browser:
+                            type: object
+                            description: 'Go type: RuntimeBrowserOverride'
+                            additionalProperties: true
+                          browser_config:
+                            type: object
+                            description: 'Go type: dsl.BrowserConfig'
+                            additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
+                          env:
+                            type: object
+                            additionalProperties: true
+                          error_handling:
+                            type: object
+                            description: 'Go type: dsl.ErrorHandlingConfig'
+                            additionalProperties: true
+                          http:
+                            type: object
+                            description: 'Go type: dsl.HTTPConfig'
+                            additionalProperties: true
+                          iterations:
+                            type: integer
+                            format: int64
+                          java_vuser:
+                            type: object
+                            description: 'Go type: RuntimeJavaVuserOverride'
+                            additionalProperties: true
+                          log:
+                            type: object
+                            description: 'Go type: dsl.LogConfig'
+                            additionalProperties: true
+                          log_level:
+                            type: string
+                          pacing:
+                            type: object
+                            description: 'Go type: dsl.PacingConfig'
+                            additionalProperties: true
+                          redaction_rules:
+                            type: array
+                            items:
+                              type: object
+                              description: 'Go type: engine.RedactionRule'
+                              additionalProperties: true
+                          run_logic:
+                            type: object
+                            description: 'Go type: dsl.RunLogicConfig'
+                            additionalProperties: true
+                          think_time:
+                            type: object
+                            description: 'Go type: dsl.ThinkTimeConfig'
+                            additionalProperties: true
+                          web_runtime:
+                            type: object
+                            description: 'Go type: dsl.WebRuntimeConfig'
+                            additionalProperties: true
+                      script_id:
+                        type: string
+                      stages:
+                        type: array
+                        items:
+                          type: object
+                          description: 'Go type: storage.LoadStage'
+                          additionalProperties: true
+                      vusers:
+                        type: integer
+                        format: int64
+                name:
+                  type: string
+                project_id:
+                  type: string
+                ramp_up:
+                  type: string
+                release_id:
+                  type: string
                 remote_project_id:
+                  type: string
+                requested_test_id:
+                  type: string
+                reserve_launch_window:
+                  type: boolean
+                resource_baseline:
+                  type: boolean
+                revision_source_test_id:
+                  type: string
+                runtime_settings:
+                  type: object
+                  properties:
+                    auto_transactions:
+                      type: string
+                    base_url:
+                      type: string
+                    browser:
+                      type: object
+                      properties:
+                        device_profile:
+                          type: string
+                        headless:
+                          type: boolean
+                        orientation:
+                          type: string
+                        touch_mode:
+                          type: boolean
+                    browser_config:
+                      type: object
+                      description: 'Go type: dsl.BrowserConfig'
+                      additionalProperties: true
+                    browser_emulation:
+                      type: object
+                      description: 'Go type: dsl.BrowserEmulationConfig'
+                      additionalProperties: true
+                    env:
+                      type: object
+                      additionalProperties: true
+                    error_handling:
+                      type: object
+                      description: 'Go type: dsl.ErrorHandlingConfig'
+                      additionalProperties: true
+                    http:
+                      type: object
+                      description: 'Go type: dsl.HTTPConfig'
+                      additionalProperties: true
+                    iterations:
+                      type: integer
+                      format: int64
+                    java_vuser:
+                      type: object
+                      properties:
+                        additional_vm_parameters:
+                          type: array
+                          items:
+                            type: string
+                        classpath:
+                          type: array
+                          items:
+                            type: string
+                        dedicated_class_loader:
+                          type: boolean
+                        jdk_home:
+                          type: string
+                        jdk_selection:
+                          type: string
+                        skip_parameter_evaluation:
+                          type: boolean
+                        use_xbootclasspath:
+                          type: boolean
+                    log:
+                      type: object
+                      description: 'Go type: dsl.LogConfig'
+                      additionalProperties: true
+                    log_level:
+                      type: string
+                    pacing:
+                      type: object
+                      description: 'Go type: dsl.PacingConfig'
+                      additionalProperties: true
+                    redaction_rules:
+                      type: array
+                      items:
+                        type: object
+                        description: 'Go type: engine.RedactionRule'
+                        additionalProperties: true
+                    run_logic:
+                      type: object
+                      description: 'Go type: dsl.RunLogicConfig'
+                      additionalProperties: true
+                    think_time:
+                      type: object
+                      description: 'Go type: dsl.ThinkTimeConfig'
+                      additionalProperties: true
+                    web_runtime:
+                      type: object
+                      description: 'Go type: dsl.WebRuntimeConfig'
+                      additionalProperties: true
+                scenario_id:
+                  type: string
+                scenario_mode:
+                  type: string
+                scheduled_start_at:
+                  type: string
+                  format: date-time
+                script_id:
+                  type: string
+                script_shakeout:
+                  type: boolean
+                start_delay:
                   type: string
                 start_immediately:
                   type: boolean
@@ -21954,6 +23291,11 @@ paths:
                     vusers:
                       type: integer
                       format: int64
+                timeslot_id:
+                  type: string
+                vusers:
+                  type: integer
+                  format: int64
       responses:
         "201":
           description: Created
@@ -45487,8 +46829,64 @@ paths:
             schema:
               type: object
               properties:
+                actions:
+                  type: array
+                  items:
+                    type: object
+                    description: 'Go type: dsl.Action'
+                    additionalProperties: true
+                config:
+                  type: object
+                  additionalProperties: true
+                data_sources:
+                  type: array
+                  items:
+                    type: object
+                    description: 'Go type: dsl.DataSource'
+                    additionalProperties: true
+                id:
+                  type: string
+                init:
+                  type: array
+                  items:
+                    type: object
+                    description: 'Go type: dsl.Action'
+                    additionalProperties: true
+                kind:
+                  type: string
+                name:
+                  type: string
+                parameters:
+                  type: array
+                  items:
+                    type: object
+                    description: 'Go type: dsl.Parameter'
+                    additionalProperties: true
                 project_id:
                   type: string
+                protocols:
+                  type: array
+                  items:
+                    type: string
+                summary:
+                  type: string
+                tags:
+                  type: array
+                  items:
+                    type: string
+                teardown:
+                  type: array
+                  items:
+                    type: object
+                    description: 'Go type: dsl.Action'
+                    additionalProperties: true
+                usage_notes:
+                  type: array
+                  items:
+                    type: string
+                variables:
+                  type: object
+                  additionalProperties: true
       responses:
         "201":
           description: Created
@@ -47541,13 +48939,28 @@ paths:
               properties:
                 dry_run:
                   type: boolean
+                folder_id:
+                  type: string
+                import_session_id:
+                  type: string
                 mode:
+                  type: string
+                name:
+                  type: string
+                parameterization_selected_ids:
+                  type: array
+                  items:
+                    type: string
+                project_id:
                   type: string
                 replace_mode:
                   type: string
                 script:
                   type: object
                   description: 'Go type: dsl.Script'
+                  additionalProperties: true
+                secret_bindings:
+                  type: object
                   additionalProperties: true
                 target_script_id:
                   type: string
@@ -47557,15 +48970,13 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "201":
           description: Created
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -47592,6 +49003,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Too Many Requests
           content:
             application/json:
               schema:
@@ -47760,95 +49177,68 @@ paths:
         content:
           application/json:
             schema:
-              type: object
-              properties:
-                conflict_resolutions:
-                  type: object
-                  additionalProperties: true
-                expected_active_revision_id:
-                  type: string
-                expected_updated_at:
-                  type: string
-                  format: date-time
-                folder_id:
-                  type: string
-                import_session_id:
-                  type: string
-                migrate_secrets:
-                  type: boolean
-                mode:
-                  type: string
-                name:
-                  type: string
-                parameterization_selected_ids:
-                  type: array
-                  items:
-                    type: string
-                project_id:
-                  type: string
-                script_id:
-                  type: string
-                secret_bindings:
-                  type: object
-                  additionalProperties: true
-                sync_script_id:
-                  type: string
+              $ref: '#/components/schemas/BrunoCommitRequest'
       responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BrunoCommitResponse'
         "201":
           description: Created
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                $ref: '#/components/schemas/BrunoCommitResponse'
         "400":
           description: Bad Request
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/BrunoCommitErrorResponse'
         "401":
           description: Authentication required or invalid.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/BrunoCommitErrorResponse'
         "403":
           description: Authenticated principal lacks the required role or service-account scope.
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/BrunoCommitErrorResponse'
         "404":
           description: Not Found
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/BrunoCommitErrorResponse'
         "409":
           description: Conflict
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/BrunoCommitErrorResponse'
         "422":
           description: Unprocessable Entity
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/BrunoCommitErrorResponse'
         "500":
           description: Internal Server Error
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/BrunoCommitErrorResponse'
         "503":
           description: Service Unavailable
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: '#/components/schemas/BrunoCommitErrorResponse'
         default:
           description: Additional handler-defined response.
       x-roles: 'Requires authentication; global roles: Editor, ProjectAdmin, SystemAdmin; project roles: Editor, ProjectAdmin; service-account scope: scripts:write'
@@ -47865,31 +49255,32 @@ paths:
         content:
           application/json:
             schema:
+              $ref: '#/components/schemas/BrunoInspectRequest'
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+              description: Raw Bruno file or archive. Supply filename and inspection fields as query parameters.
+          multipart/form-data:
+            schema:
               type: object
+              description: Multipart Bruno source upload. A directory may use repeated file parts or dynamic file:<URL-encoded-relative-path> part names.
               properties:
-                content:
+                file:
                   type: string
-                content_base64:
-                  type: string
-                filename:
-                  type: string
+                  format: binary
+                  description: A single Bruno file or archive.
                 files:
                   type: array
+                  description: Repeated Bruno directory files; preserve each part filename or X-APEXLoad-Relative-Path.
                   items:
-                    type: object
-                    properties:
-                      content:
-                        type: string
-                      content_base64:
-                        type: string
-                      path:
-                        type: string
+                    type: string
+                    format: binary
                 name:
                   type: string
                 options:
-                  type: object
-                  description: 'Go type: brunoconvert.InspectOptions'
-                  additionalProperties: true
+                  type: string
+                  description: JSON-encoded Bruno inspection options, including output_mode.
                 project_id:
                   type: string
                 root_path:
@@ -47898,72 +49289,20 @@ paths:
                   type: string
                 sync_script_id:
                   type: string
+              additionalProperties: true
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  artifacts:
-                    type: array
-                    items:
-                      type: object
-                      properties:
-                        artifact_kind:
-                          type: string
-                        id:
-                          type: string
-                        manifest_sha256:
-                          type: string
-                        sha256:
-                          type: string
-                        size_bytes:
-                          type: integer
-                          format: int64
-                  execution_preflight:
-                    type: object
-                    additionalProperties: true
-                  expires_at:
-                    type: string
-                    format: date-time
-                  import_session_id:
-                    type: string
-                  parameterization:
-                    type: object
-                    description: 'Go type: paramize.Result'
-                    additionalProperties: true
-                  result:
-                    type: object
-                    description: 'Go type: brunoconvert.Result'
-                    additionalProperties: true
-                  sync_preview:
-                    type: object
-                    properties:
-                      active_revision:
-                        type: string
-                      changes:
-                        type: object
-                        additionalProperties: true
-                      conflicts:
-                        type: array
-                        items:
-                          type: object
-                          properties:
-                            field:
-                              type: string
-                            id:
-                              type: string
-                            required_resolution:
-                              type: string
-                            summary:
-                              type: string
-                      expected_updated_at:
-                        type: string
-                        format: date-time
-                      target_script_id:
-                        type: string
+                $ref: '#/components/schemas/BrunoInspectResponse'
+        "400":
+          description: Bad Request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         "401":
           description: Authentication required or invalid.
           content:
@@ -48022,6 +49361,21 @@ paths:
           required: false
           schema:
             type: string
+        - name: options
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+        - name: output_mode
+          in: query
+          description: Handler-defined query parameter.
+          required: false
+          schema:
+            type: string
+            enum:
+              - canonical
+              - native_requests
         - name: project_id
           in: query
           description: Handler-defined query parameter.
@@ -48039,7 +49393,7 @@ paths:
           description: Handler-defined query parameter.
           required: false
           schema:
-            type: boolean
+            type: string
         - name: sync_script_id
           in: query
           description: Handler-defined query parameter.
@@ -49111,13 +50465,28 @@ paths:
               properties:
                 dry_run:
                   type: boolean
+                folder_id:
+                  type: string
+                import_session_id:
+                  type: string
                 mode:
+                  type: string
+                name:
+                  type: string
+                parameterization_selected_ids:
+                  type: array
+                  items:
+                    type: string
+                project_id:
                   type: string
                 replace_mode:
                   type: string
                 script:
                   type: object
                   description: 'Go type: dsl.Script'
+                  additionalProperties: true
+                secret_bindings:
+                  type: object
                   additionalProperties: true
                 target_script_id:
                   type: string
@@ -49127,15 +50496,13 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "201":
           description: Created
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -49162,6 +50529,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Too Many Requests
           content:
             application/json:
               schema:
@@ -49861,13 +51234,28 @@ paths:
               properties:
                 dry_run:
                   type: boolean
+                folder_id:
+                  type: string
+                import_session_id:
+                  type: string
                 mode:
+                  type: string
+                name:
+                  type: string
+                parameterization_selected_ids:
+                  type: array
+                  items:
+                    type: string
+                project_id:
                   type: string
                 replace_mode:
                   type: string
                 script:
                   type: object
                   description: 'Go type: dsl.Script'
+                  additionalProperties: true
+                secret_bindings:
+                  type: object
                   additionalProperties: true
                 target_script_id:
                   type: string
@@ -49877,15 +51265,13 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "201":
           description: Created
           content:
             application/json:
               schema:
-                type: object
-                additionalProperties: true
+                description: Operation-specific JSON response.
         "400":
           description: Bad Request
           content:
@@ -49912,6 +51298,12 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
         "409":
           description: Conflict
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        "429":
+          description: Too Many Requests
           content:
             application/json:
               schema:
@@ -68365,11 +69757,347 @@ paths:
             schema:
               type: object
               properties:
+                application_id:
+                  type: string
+                assignment:
+                  type: object
+                  properties:
+                    load_zone_weights:
+                      type: object
+                      additionalProperties: true
+                    mode:
+                      type: string
+                    pool_id:
+                      type: string
+                    region_weights:
+                      type: object
+                      additionalProperties: true
+                    required_labels:
+                      type: object
+                      additionalProperties: true
+                    selected_targets:
+                      type: array
+                      items:
+                        type: string
+                    shard_strategy:
+                      type: string
+                    tolerate_generator_loss:
+                      type: boolean
+                data_pools:
+                  type: array
+                  items:
+                    type: object
+                    description: 'Go type: storage.ScenarioDataPoolBinding'
+                    additionalProperties: true
+                duration:
+                  type: string
+                folder_id:
+                  type: string
+                goal_config:
+                  type: object
+                  properties:
+                    max_avg_server_processing_ms:
+                      type: number
+                      format: double
+                    max_avg_transfer_ms:
+                      type: number
+                      format: double
+                    max_cls:
+                      type: number
+                      format: double
+                    max_dead_letter_rate_pct:
+                      type: number
+                      format: double
+                    max_end_to_end_latency_ms:
+                      type: number
+                      format: double
+                    max_error_count:
+                      type: integer
+                      format: int64
+                    max_error_pct:
+                      type: number
+                      format: double
+                    max_inp_ms:
+                      type: number
+                      format: double
+                    max_lcp_ms:
+                      type: number
+                      format: double
+                    max_partition_skew_pct:
+                      type: number
+                      format: double
+                    max_redelivery_rate_pct:
+                      type: number
+                      format: double
+                    max_throttled_requests:
+                      type: integer
+                      format: int64
+                    max_vusers:
+                      type: integer
+                      format: int64
+                    min_vusers:
+                      type: integer
+                      format: int64
+                    p95_latency_ms:
+                      type: number
+                      format: double
+                    sla_breach_window:
+                      type: string
+                    stop_on_max_errors:
+                      type: boolean
+                    stop_on_sla_breach:
+                      type: boolean
+                    target_average_tps:
+                      type: number
+                      format: double
+                groups:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      assignment:
+                        type: object
+                        properties:
+                          load_zone_weights:
+                            type: object
+                            additionalProperties: true
+                          mode:
+                            type: string
+                          pool_id:
+                            type: string
+                          region_weights:
+                            type: object
+                            additionalProperties: true
+                          required_labels:
+                            type: object
+                            additionalProperties: true
+                          selected_targets:
+                            type: array
+                            items:
+                              type: string
+                          shard_strategy:
+                            type: string
+                          tolerate_generator_loss:
+                            type: boolean
+                      initialization:
+                        type: string
+                      iterations:
+                        type: integer
+                        format: int64
+                      name:
+                        type: string
+                      ramp_down:
+                        type: string
+                      ramp_up:
+                        type: string
+                      revision_new_group:
+                        type: boolean
+                      revision_source_group_index:
+                        type: integer
+                        format: int64
+                      role:
+                        type: string
+                      runtime_settings:
+                        type: object
+                        properties:
+                          auto_transactions:
+                            type: string
+                          base_url:
+                            type: string
+                          browser:
+                            type: object
+                            description: 'Go type: RuntimeBrowserOverride'
+                            additionalProperties: true
+                          browser_config:
+                            type: object
+                            description: 'Go type: dsl.BrowserConfig'
+                            additionalProperties: true
+                          browser_emulation:
+                            type: object
+                            description: 'Go type: dsl.BrowserEmulationConfig'
+                            additionalProperties: true
+                          env:
+                            type: object
+                            additionalProperties: true
+                          error_handling:
+                            type: object
+                            description: 'Go type: dsl.ErrorHandlingConfig'
+                            additionalProperties: true
+                          http:
+                            type: object
+                            description: 'Go type: dsl.HTTPConfig'
+                            additionalProperties: true
+                          iterations:
+                            type: integer
+                            format: int64
+                          java_vuser:
+                            type: object
+                            description: 'Go type: RuntimeJavaVuserOverride'
+                            additionalProperties: true
+                          log:
+                            type: object
+                            description: 'Go type: dsl.LogConfig'
+                            additionalProperties: true
+                          log_level:
+                            type: string
+                          pacing:
+                            type: object
+                            description: 'Go type: dsl.PacingConfig'
+                            additionalProperties: true
+                          redaction_rules:
+                            type: array
+                            items:
+                              type: object
+                              description: 'Go type: engine.RedactionRule'
+                              additionalProperties: true
+                          run_logic:
+                            type: object
+                            description: 'Go type: dsl.RunLogicConfig'
+                            additionalProperties: true
+                          think_time:
+                            type: object
+                            description: 'Go type: dsl.ThinkTimeConfig'
+                            additionalProperties: true
+                          web_runtime:
+                            type: object
+                            description: 'Go type: dsl.WebRuntimeConfig'
+                            additionalProperties: true
+                      script_id:
+                        type: string
+                      stages:
+                        type: array
+                        items:
+                          type: object
+                          description: 'Go type: storage.LoadStage'
+                          additionalProperties: true
+                      vusers:
+                        type: integer
+                        format: int64
                 intent:
+                  type: string
+                name:
+                  type: string
+                project_id:
+                  type: string
+                ramp_up:
+                  type: string
+                release_id:
+                  type: string
+                requested_test_id:
+                  type: string
+                reserve_launch_window:
+                  type: boolean
+                resource_baseline:
+                  type: boolean
+                revision_source_test_id:
+                  type: string
+                runtime_settings:
+                  type: object
+                  properties:
+                    auto_transactions:
+                      type: string
+                    base_url:
+                      type: string
+                    browser:
+                      type: object
+                      properties:
+                        device_profile:
+                          type: string
+                        headless:
+                          type: boolean
+                        orientation:
+                          type: string
+                        touch_mode:
+                          type: boolean
+                    browser_config:
+                      type: object
+                      description: 'Go type: dsl.BrowserConfig'
+                      additionalProperties: true
+                    browser_emulation:
+                      type: object
+                      description: 'Go type: dsl.BrowserEmulationConfig'
+                      additionalProperties: true
+                    env:
+                      type: object
+                      additionalProperties: true
+                    error_handling:
+                      type: object
+                      description: 'Go type: dsl.ErrorHandlingConfig'
+                      additionalProperties: true
+                    http:
+                      type: object
+                      description: 'Go type: dsl.HTTPConfig'
+                      additionalProperties: true
+                    iterations:
+                      type: integer
+                      format: int64
+                    java_vuser:
+                      type: object
+                      properties:
+                        additional_vm_parameters:
+                          type: array
+                          items:
+                            type: string
+                        classpath:
+                          type: array
+                          items:
+                            type: string
+                        dedicated_class_loader:
+                          type: boolean
+                        jdk_home:
+                          type: string
+                        jdk_selection:
+                          type: string
+                        skip_parameter_evaluation:
+                          type: boolean
+                        use_xbootclasspath:
+                          type: boolean
+                    log:
+                      type: object
+                      description: 'Go type: dsl.LogConfig'
+                      additionalProperties: true
+                    log_level:
+                      type: string
+                    pacing:
+                      type: object
+                      description: 'Go type: dsl.PacingConfig'
+                      additionalProperties: true
+                    redaction_rules:
+                      type: array
+                      items:
+                        type: object
+                        description: 'Go type: engine.RedactionRule'
+                        additionalProperties: true
+                    run_logic:
+                      type: object
+                      description: 'Go type: dsl.RunLogicConfig'
+                      additionalProperties: true
+                    think_time:
+                      type: object
+                      description: 'Go type: dsl.ThinkTimeConfig'
+                      additionalProperties: true
+                    web_runtime:
+                      type: object
+                      description: 'Go type: dsl.WebRuntimeConfig'
+                      additionalProperties: true
+                scenario_id:
+                  type: string
+                scenario_mode:
                   type: string
                 scheduled_start_at:
                   type: string
                   format: date-time
+                script_id:
+                  type: string
+                script_shakeout:
+                  type: boolean
+                start_delay:
+                  type: string
+                timeslot_id:
+                  type: string
+                vusers:
+                  type: integer
+                  format: int64
       responses:
         "200":
           description: OK

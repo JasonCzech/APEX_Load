@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/uniquify"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -24,6 +25,9 @@ type ConvertResult struct {
 	SourceReview                 *SourceReview         `json:"source_review,omitempty"`
 	RecordedResourceURLs         []string              `json:"recorded_resource_urls,omitempty"`
 	RecordedResourceURLsCaptured bool                  `json:"recorded_resource_urls_captured,omitempty"`
+	// ProtectedRequirements is a one-shot, in-memory handoff for source runtime
+	// credential values. It is deliberately excluded from converter JSON.
+	ProtectedRequirements credentialpolicy.ProtectedRequirements `json:"-"`
 
 	// flowWarned deduplicates control-flow translation warnings per distinct
 	// condition/loop source text during one conversion.
@@ -70,6 +74,10 @@ type ConvertOptions struct {
 	DefaultThinkTimeMs   float64 // Default think time if none in script (0 = no default)
 	IncludeAssertions    bool    // Add default status_code assertions
 	PreserveTransactions bool    // Wrap actions in transaction markers (as comments in name)
+	// deferArchiveFinalization is set by ConvertZip so request credential
+	// projection runs only after parameter files have been attached and known
+	// source parameters have been rewritten to {{param.*}} references.
+	deferArchiveFinalization bool
 	// Render lr_unmask(...) request bodies as governed secret references. Archive
 	// imports enable this so payload bytes never leak while operators get a
 	// re-provisioning handle; lower-level conversions keep opaque bodies empty.
@@ -102,6 +110,17 @@ type boundaryExpressionConfig struct {
 
 var sourceReplayOrdinalSuffix = regexp.MustCompile(`_\d+$`)
 
+func disclosureSafeSourceProjectionFunctions(functions []ParsedFunction) []ParsedFunction {
+	safe := make([]ParsedFunction, 0, len(functions))
+	for _, fn := range functions {
+		if sourceFunctionHasUnsupportedTransactionDependency(fn) {
+			continue
+		}
+		safe = append(safe, fn)
+	}
+	return safe
+}
+
 // Convert transforms parsed enterprise C/VUser action files into an APEX Load DSL script.
 func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, error) {
 	result := &ConvertResult{
@@ -118,7 +137,12 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 	// Collect all functions across action files in order
 	var allFunctions []ParsedFunction
+	hasCSourceParseFailures := false
 	for _, a := range actions {
+		if a == nil {
+			continue
+		}
+		hasCSourceParseFailures = hasCSourceParseFailures || len(a.ParseFailures) > 0
 		for _, fn := range a.Functions {
 			if fn.Phase == "" {
 				fn.Phase = a.Phase
@@ -128,11 +152,12 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		result.Stats.TotalFunctions += len(a.Functions)
 	}
 
-	if len(allFunctions) == 0 {
+	if len(allFunctions) == 0 && !hasCSourceParseFailures {
 		return nil, fmt.Errorf("no source functions found in action files")
 	}
 
-	protocolName, soapConfig, protocolWarning := detectImportProtocol(allFunctions)
+	projectionFunctions := disclosureSafeSourceProjectionFunctions(allFunctions)
+	protocolName, soapConfig, protocolWarning := detectImportProtocol(projectionFunctions)
 	result.Script.Protocol = protocolName
 	if soapConfig != nil {
 		result.Script.Config.SOAP = *soapConfig
@@ -144,10 +169,10 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	// Auto-detect base URL from first web_ call
 	baseURL := opts.BaseURL
 	if baseURL == "" {
-		baseURL = detectBaseURL(allFunctions)
+		baseURL = detectBaseURL(projectionFunctions)
 	}
 	result.Script.Config.BaseURL = baseURL
-	result.RecordedResourceURLs = collectRecordedResourceURLs(allFunctions)
+	result.RecordedResourceURLs = collectRecordedResourceURLs(projectionFunctions)
 	result.RecordedResourceURLsCaptured = true
 
 	// Set script name
@@ -172,12 +197,52 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 	// that request rather than forward onto the next one.
 	var lastRequestPhase string
 	lastRequestIndex := -1
-	var thinkTimes []float64
+	// Literal lr_think_time calls belong after the immediately preceding
+	// executable action, which may be a protocol request or a source/engine
+	// action such as lr_end_transaction. Keeping this separate from
+	// lastRequest* preserves web_find's previous-response behavior.
+	var lastExecutablePhase string
+	lastExecutableIndex := -1
+	lastExecutableActionCount := -1
+	var lastExecutableConditionIDs []string
+	var lastExecutableLoopIDs []string
 	var sourceRuntimeControls []ParsedFunction
 
 	actionNameCounts := make(map[string]int)
+	trackLastExecutable := func(fn ParsedFunction) {
+		lastExecutablePhase = fn.Phase
+		lastExecutableIndex = actionCountForPhase(result.Script, fn.Phase) - 1
+		lastExecutableActionCount = len(result.Script.Init) + len(result.Script.Actions) + len(result.Script.Teardown)
+		lastExecutableConditionIDs = append(lastExecutableConditionIDs[:0], fn.ConditionIDs...)
+		lastExecutableLoopIDs = append(lastExecutableLoopIDs[:0], fn.LoopIDs...)
+	}
+	appendTrackedSourceAction := func(fn ParsedFunction, action dsl.Action, mode SourceFunctionSupportMode, notes string) {
+		appendSourceAction(result, fn, action, mode, notes)
+		if !sourceFunctionHasUnsupportedTransactionDependency(fn) &&
+			(mode == SourceFunctionSupportExecutable || mode == SourceFunctionSupportNativeNoop) {
+			trackLastExecutable(fn)
+		}
+	}
 
 	for _, fn := range allFunctions {
+		if sourceFunctionHasUnsupportedTransactionDependency(fn) &&
+			!nativeSourceTransactionReviewUnsupported(fn.Name) {
+			notes := "Execution depends on an unsupported native transaction return value; preserved as a disclosure-safe review action and not executed."
+			appendSourceAction(result, fn, dsl.Action{
+				Name: disclosureSafeSourceReviewActionName(fn),
+				Type: "source_review",
+				Params: map[string]any{
+					"function": fn.Name,
+				},
+			}, SourceFunctionSupportReviewOnly, notes)
+			result.Warnings = append(result.Warnings, fmt.Sprintf(
+				"%s:%d %s requires review because its transaction-dependent expression cannot execute natively",
+				fn.Filename,
+				fn.LineNumber,
+				fn.Name,
+			))
+			continue
+		}
 		switch fn.Name {
 		case "web_reg_save_param", "web_reg_save_param_regexp", "web_reg_save_param_json", "web_reg_save_param_xpath", "web_reg_save_param_ex", "web_reg_save_param_attrib":
 			ext, extractorWarnings := convertExtractor(fn)
@@ -191,23 +256,23 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			}
 
 		case "web_reg_find":
-			assertion, saveCountExtractor, warning := convertFindAssertion(fn)
+			assertion, saveCountExtractor, supportMode, warning := convertFindAssertion(fn)
 			mapped := false
 			if assertion != nil {
 				pendingAssertions = append(pendingAssertions, *assertion)
-				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", assertion.Type, "assertion", "contributor", "Applied to the next converted request action.", SourceFunctionSupportExecutable))
+				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", assertion.Type, "assertion", "contributor", "Applied to the next converted request action.", supportMode))
 				result.Stats.ContributorFunctions++
 				mapped = true
 			}
 			if saveCountExtractor != nil {
 				pendingExtractors = append(pendingExtractors, *saveCountExtractor)
-				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", saveCountExtractor.Name, "extractor", "contributor", "Counts matches for SaveCount and applies the value to the next converted request action.", SourceFunctionSupportExecutable))
+				pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", saveCountExtractor.Name, "extractor", "contributor", "Counts matches for SaveCount and applies the value to the next converted request action.", supportMode))
 				result.Stats.Extractors++
 				result.Stats.ContributorFunctions++
 				mapped = true
 			}
 			if mapped {
-				recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
+				recordSourceFunctionSupport(result, supportMode)
 			}
 			if warning != "" {
 				result.Warnings = append(result.Warnings, warning)
@@ -220,7 +285,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			if fn.Args != nil && fn.Args["Text"] == "" && fn.Args["What"] != "" {
 				fn.Args["Text"] = fn.Args["What"]
 			}
-			assertion, saveCountExtractor, warning := convertFindAssertion(fn)
+			assertion, saveCountExtractor, supportMode, warning := convertFindAssertion(fn)
 			// web_find validates the previous response, so attach to the LAST emitted
 			// request action. pendingAssertions/pendingExtractors would flush forward
 			// onto the NEXT request, validating the wrong response.
@@ -230,12 +295,12 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			if assertion != nil {
 				if prev != nil {
 					prev.Assertions = append(prev.Assertions, *assertion)
-					appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, prevPath, assertion.Type, "assertion", "contributor", "Mapped from web_find; applied to the preceding request's response (web_find checks the previous page).", SourceFunctionSupportExecutable))
+					appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, prevPath, assertion.Type, "assertion", "contributor", "Mapped from web_find; applied to the preceding request's response (web_find checks the previous page).", supportMode))
 				} else {
 					// No preceding request: preserve the check by attaching forward, and
 					// warn so the relocation is not silent.
 					pendingAssertions = append(pendingAssertions, *assertion)
-					pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", assertion.Type, "assertion", "contributor", "Mapped from web_find with no preceding request; applied to the next converted request action.", SourceFunctionSupportExecutable))
+					pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", assertion.Type, "assertion", "contributor", "Mapped from web_find with no preceding request; applied to the next converted request action.", supportMode))
 					result.Warnings = append(result.Warnings, fmt.Sprintf("line %d: web_find has no preceding request; its content check was attached to the following request", fn.LineNumber))
 				}
 				result.Stats.ContributorFunctions++
@@ -244,17 +309,17 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			if saveCountExtractor != nil {
 				if prev != nil {
 					prev.Extractors = append(prev.Extractors, *saveCountExtractor)
-					appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, prevPath, saveCountExtractor.Name, "extractor", "contributor", "Counts web_find matches against the preceding request's response.", SourceFunctionSupportExecutable))
+					appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, prevPath, saveCountExtractor.Name, "extractor", "contributor", "Counts web_find matches against the preceding request's response.", supportMode))
 				} else {
 					pendingExtractors = append(pendingExtractors, *saveCountExtractor)
-					pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", saveCountExtractor.Name, "extractor", "contributor", "Counts web_find matches and applies the value to the next converted request action.", SourceFunctionSupportExecutable))
+					pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", saveCountExtractor.Name, "extractor", "contributor", "Counts web_find matches and applies the value to the next converted request action.", supportMode))
 				}
 				result.Stats.Extractors++
 				result.Stats.ContributorFunctions++
 				mapped = true
 			}
 			if mapped {
-				recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
+				recordSourceFunctionSupport(result, supportMode)
 			}
 			if warning != "" {
 				result.Warnings = append(result.Warnings, warning)
@@ -335,45 +400,92 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
 		case "lr_start_transaction":
+			if action, mode, ok := convertSourceFunctionAction(fn); ok {
+				action = labelSourceTransactionMarker(action, fn, "Start")
+				appendTrackedSourceAction(fn, action, mode, "Started an executable source transaction at the original source position.")
+			}
 			currentTransaction = fn.StepName
 			currentSubTransaction = ""
-			pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", fn.StepName, "transaction", "contributor", "Applied to generated action names until the transaction ends.", SourceFunctionSupportExecutable))
 			result.Stats.Transactions++
 			result.Stats.TransactionMarkers++
-			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
 		case "lr_end_transaction":
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.source_transaction_groups", fn.StepName, "transaction", "contributor", "Closed a source transaction group.", SourceFunctionSupportExecutable))
+			if action, mode, ok := convertSourceFunctionAction(fn); ok {
+				action = labelSourceTransactionMarker(action, fn, "End")
+				appendTrackedSourceAction(fn, action, mode, "Ended the executable source transaction with the source PASS/FAIL status.")
+			}
 			result.Stats.TransactionMarkers++
-			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 			currentTransaction = ""
 			currentSubTransaction = ""
 
 		case "lr_start_sub_transaction":
+			if action, mode, ok := convertSourceFunctionAction(fn); ok {
+				action = labelSourceTransactionMarker(action, fn, "Start")
+				appendTrackedSourceAction(fn, action, mode, "Started an executable source subtransaction at the original source position.")
+			}
 			currentSubTransaction = fn.StepName
 			if currentTransaction == "" {
 				if parent := sourceControlArgAt(fn, 1); parent != "" {
 					currentTransaction = parent
 				}
 			}
-			pendingSourceMappings = append(pendingSourceMappings, sourceReviewMappingWithSupportMode(fn, "", convertutil.FirstNonEmpty(fn.StepName, currentTransaction), "transaction", "contributor", "Applied as a source subtransaction on generated child requests.", SourceFunctionSupportExecutable))
 			result.Stats.TransactionMarkers++
-			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 
-		case "lr_end_sub_transaction":
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.source_transaction_groups", fn.StepName, "transaction", "contributor", "Closed a source subtransaction group.", SourceFunctionSupportExecutable))
+		case "lr_end_sub_transaction", "lr_end_sub_trans":
+			if action, mode, ok := convertSourceFunctionAction(fn); ok {
+				action = labelSourceTransactionMarker(action, fn, "End")
+				appendTrackedSourceAction(fn, action, mode, "Ended the executable source subtransaction with the source PASS/FAIL status.")
+			}
 			result.Stats.TransactionMarkers++
-			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
 			currentSubTransaction = ""
+
+		case "lr_set_transaction_status", "lr_set_transaction_status_by_name",
+			"lr_fail_trans_with_error", "lr_stop_transaction", "lr_resume_transaction",
+			"lr_set_transaction":
+			if action, mode, ok := convertSourceFunctionAction(fn); ok {
+				appendTrackedSourceAction(fn, action, mode, "Preserved as an executable source transaction operation at the original source position.")
+			}
+			result.Stats.TransactionMarkers++
+			if fn.Name == "lr_set_transaction" {
+				result.Stats.Transactions++
+			}
 
 		case "lr_think_time":
 			sec, ok := ExtractThinkTimeSeconds(fn)
-			if ok {
-				thinkTimes = append(thinkTimes, sec)
-				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.think_time", "Think Time", "config", "converted", "Contributes to generated think-time distribution.", SourceFunctionSupportExecutable))
+			prev := actionAtPhaseIndex(result.Script, lastExecutablePhase, lastExecutableIndex)
+			adjacent := prev != nil &&
+				strings.EqualFold(strings.TrimSpace(fn.Phase), strings.TrimSpace(lastExecutablePhase)) &&
+				len(result.Script.Init)+len(result.Script.Actions)+len(result.Script.Teardown) == lastExecutableActionCount &&
+				stringSlicesEqual(fn.ConditionIDs, lastExecutableConditionIDs) &&
+				stringSlicesEqual(fn.LoopIDs, lastExecutableLoopIDs)
+			waitMs := sec * 1000
+			if ok && sec >= 0 && !math.IsNaN(waitMs) && !math.IsInf(waitMs, 0) &&
+				waitMs <= dsl.MaxConfiguredProtocolTimeoutMS && adjacent {
+				if prev.ThinkTimeAfter && strings.EqualFold(prev.ThinkTime.Type, "fixed") {
+					if opts.RuntimeSettings != nil && opts.RuntimeSettings.ThinkTime.LimitMs > 0 {
+						result.Warnings = append(result.Warnings, fmt.Sprintf("%s:%d consecutive lr_think_time calls cannot be combined exactly when the source think-time cap is enabled; preserving the preceding wait and requiring review", fn.Filename, fn.LineNumber))
+						appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.unplaced_think_times", "Think Time", "config", "review_only", "Consecutive literal wait cannot be combined without changing per-call cap semantics; the preceding wait is preserved and this wait uses the zero-delay fallback.", SourceFunctionSupportReviewOnly))
+						recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
+						break
+					}
+					waitMs += prev.ThinkTime.MeanMs
+				}
+				if waitMs > dsl.MaxConfiguredProtocolTimeoutMS {
+					result.Warnings = append(result.Warnings, fmt.Sprintf("%s:%d consecutive lr_think_time calls exceed the destination wait limit; preserving the preceding wait and requiring review", fn.Filename, fn.LineNumber))
+					appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.unplaced_think_times", "Think Time", "config", "review_only", "Combined literal think time exceeds the destination limit; the preceding wait is preserved and this wait uses the zero-delay fallback.", SourceFunctionSupportReviewOnly))
+					recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
+					break
+				}
+				prev.ThinkTime = dsl.ThinkTimeConfig{Type: "fixed", MeanMs: waitMs}
+				prev.ThinkTimeAfter = true
+				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, sourceReviewActionPath(lastExecutablePhase, lastExecutableIndex)+".think_time", "Think Time", "config", "converted", "Preserved as the preceding executable action's exact recorded wait.", SourceFunctionSupportExecutable))
 				result.Stats.ThinkTimes++
 				result.Stats.ContributorFunctions++
 				recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
+			} else {
+				result.Warnings = append(result.Warnings, fmt.Sprintf("%s:%d lr_think_time could not be placed as an exact wait; using zero delay and requiring review", fn.Filename, fn.LineNumber))
+				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.unplaced_think_times", "Think Time", "config", "review_only", "Dynamic, malformed, or unplaceable think time; zero-delay fallback requires review.", SourceFunctionSupportReviewOnly))
+				recordSourceFunctionSupport(result, SourceFunctionSupportReviewOnly)
 			}
 
 		case "lr_continue_on_error":
@@ -388,27 +500,23 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			if def, ok := lookupSourceFunction(fn.Name); ok {
 				annotateSourceAction(&action, fn, def)
 			}
-			appendSourceAction(result, fn, action, SourceFunctionSupportExecutable, "Converted to a native error-message action.")
+			appendTrackedSourceAction(fn, action, SourceFunctionSupportExecutable, "Converted to a native error-message action.")
 
 		case "lr_exit":
 			preserveSourceRuntimeControl(result.Script, "source_exit_controls", fn, nil)
 			if action, mode, ok := convertSourceFunctionAction(fn); ok {
-				appendSourceAction(result, fn, action, mode, "Converted to a native source runtime action.")
+				appendTrackedSourceAction(fn, action, mode, "Converted to a native source runtime action.")
 			}
 
 		case "web_cache_cleanup":
-			// APEX Load's HTTP runtime keeps no response cache, so a cache-cleanup
-			// control is a guaranteed native no-op (every fetch is already fresh).
-			// Preserved as a compatibility attribute for round-trip fidelity but
-			// classified native so it never counts as a runtime-parity gap.
 			sourceRuntimeControls = append(sourceRuntimeControls, fn)
 			setSourceWebRuntimeAttribute(result.Script, "web_cache_cleanup", "true")
 			preserveSourceRuntimeControl(result.Script, "source_runtime_controls", fn, map[string]any{
-				"mapped_to": "config.web_runtime.additional_attributes.web_cache_cleanup",
+				"mapped_to": "actions[].source_runtime",
 			})
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "config.web_runtime.additional_attributes.web_cache_cleanup", "Web Cache Cleanup", "config", "converted", "APEX Load keeps no HTTP response cache; cache cleanup is a native no-op.", SourceFunctionSupportNativeNoop))
-			result.Stats.ContributorFunctions++
-			recordSourceFunctionSupport(result, SourceFunctionSupportNativeNoop)
+			def, _ := lookupSourceFunction(fn.Name)
+			action := convertGenericSourceAction(fn, "source_runtime", def)
+			appendTrackedSourceAction(fn, action, SourceFunctionSupportExecutable, "Clears the active protocol's simulated HTTP response cache at the original source position.")
 
 		case "web_cleanup_cookies":
 			// Cookie cleanup is behavioral: emit a positional, executable
@@ -423,14 +531,23 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 			preserveSourceRuntimeControl(result.Script, "source_runtime_controls", fn, map[string]any{
 				"mapped_to": "actions[].cookie_clear",
 			})
-			appendSourceAction(result, fn, action, SourceFunctionSupportExecutable, "Converted to an executable cookie_clear action.")
+			appendTrackedSourceAction(fn, action, SourceFunctionSupportExecutable, "Converted to an executable cookie_clear action.")
 
 		case "web_set_sockets_option":
 			sourceRuntimeControls = append(sourceRuntimeControls, fn)
 			details := applySourceSocketOption(result, fn)
-			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, stringMapValue(details, "mapped_to", "config.web_runtime.additional_attributes.web_set_sockets_option"), convertutil.FirstNonEmpty(stringMapValue(details, "option", ""), "Socket Option"), "config", "converted", "Mapped from source runtime control.", SourceFunctionSupportExecutable))
+			supportMode := SourceFunctionSupportExecutable
+			mappingStatus := "converted"
+			mappingNotes := "Mapped from source runtime control."
+			if partial, _ := details["mapping_partial"].(bool); partial {
+				supportMode = SourceFunctionSupportReviewOnly
+				mappingStatus = "review_only"
+				mappingNotes = stringMapValue(details, "review_reason", "Unsupported source socket option; APEX defaults remain unchanged and review is required.")
+				result.Warnings = append(result.Warnings, mappingNotes)
+			}
+			appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, stringMapValue(details, "mapped_to", "config.web_runtime.additional_attributes.web_set_sockets_option"), convertutil.FirstNonEmpty(stringMapValue(details, "option", ""), "Socket Option"), "config", mappingStatus, mappingNotes, supportMode))
 			result.Stats.ContributorFunctions++
-			recordSourceFunctionSupport(result, SourceFunctionSupportExecutable)
+			recordSourceFunctionSupport(result, supportMode)
 
 		case "web_set_timeout":
 			sourceRuntimeControls = append(sourceRuntimeControls, fn)
@@ -489,7 +606,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 
 		case "web_convert_param":
 			action := convertWebConvertParamAction(fn)
-			appendSourceAction(result, fn, action, SourceFunctionSupportExecutable, "Converted to an executable source parameter transform.")
+			appendTrackedSourceAction(fn, action, SourceFunctionSupportExecutable, "Converted to an executable source parameter transform.")
 
 		case "web_set_max_html_param_len":
 			value := firstSourceControlArg(fn)
@@ -604,6 +721,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				appendActionForPhase(result.Script, fn.Phase, *action)
 				lastRequestPhase = fn.Phase
 				lastRequestIndex = actionCountForPhase(result.Script, fn.Phase) - 1
+				trackLastExecutable(fn)
 				result.Stats.ConvertedActions++
 				result.Stats.RawRequestActions++
 				recordSourceFunctionSupport(result, mappingMode)
@@ -626,13 +744,35 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 				continue
 			}
 			if def, ok := lookupSourceFunction(fn.Name); ok && def.Family == "transaction" {
-				appendSourceReviewMapping(result, sourceReviewMappingWithSupportMode(fn, "metadata.import.preserved.source_transaction_groups", convertutil.FirstNonEmpty(fn.StepName, fn.Name), "transaction", "contributor", "Preserved as a source transaction marker; it does not create a visible script action.", def.SupportMode))
+				if nativeSourceTransactionOwnershipUnsupported(fn.Name) {
+					notes := "Transaction instance/cross-VUser ownership cannot be reproduced by the native source runtime; preserved for review and not executed."
+					action, _, _ := convertSourceFunctionAction(fn)
+					gateUnsupportedSourceTransactionOwnership(&action, fn, notes)
+					appendTrackedSourceAction(fn, action, SourceFunctionSupportReviewOnly, notes)
+					result.Warnings = append(result.Warnings, fmt.Sprintf("%s:%d %s requires review: %s", fn.Filename, fn.LineNumber, fn.Name, notes))
+					result.Stats.TransactionMarkers++
+					continue
+				}
+
+				// Every transaction call with native behavior is handled explicitly
+				// above. A cataloged transaction that reaches this fallback must not
+				// silently disappear into provenance: preserve a visible, durably
+				// gated review action instead.
+				notes := "No native source-transaction runtime behavior is implemented for this call; preserved for review and not executed."
+				action, _, _ := convertSourceFunctionAction(fn)
+				if nativeSourceTransactionValueUnsupported(fn.Name) {
+					notes = "Native C transaction getters cannot return values to source code, and lr_wasted_time bookkeeping is not implemented; preserved for review and not executed."
+					gateUnsupportedNativeSourceTransactionValue(&action, fn, notes)
+				} else {
+					gateUnsupportedNativeSourceTransactionCall(&action, fn, notes)
+				}
+				appendTrackedSourceAction(fn, action, SourceFunctionSupportReviewOnly, notes)
+				result.Warnings = append(result.Warnings, fmt.Sprintf("%s:%d %s requires review: %s", fn.Filename, fn.LineNumber, fn.Name, notes))
 				result.Stats.TransactionMarkers++
-				recordSourceFunctionSupport(result, def.SupportMode)
 				continue
 			}
 			if action, mode, ok := convertSourceFunctionAction(fn); ok {
-				appendSourceAction(result, fn, action, mode, sourceSupportNotes(fn, mode))
+				appendTrackedSourceAction(fn, action, mode, sourceSupportNotes(fn, mode))
 				continue
 			}
 			result.Stats.Skipped++
@@ -641,6 +781,7 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		}
 	}
 
+	appendCSourceParseFailureGates(result, actions)
 	structureSourceControlFlow(result)
 	compactSourceHTTPActions(result)
 
@@ -655,28 +796,14 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		reconcileSourceReviewName(result, rename.OldName, rename.NewName)
 	}
 
-	// Configure think time from collected lr_think_time values
-	if len(thinkTimes) > 0 {
-		mean, std := computeThinkTimeStats(thinkTimes)
-		result.Script.Config.ThinkTime = dsl.ThinkTimeConfig{
-			Type:   "normal",
-			MeanMs: mean * 1000,
-			StdMs:  std * 1000,
-			MinMs:  math.Max(0, (mean-2*std)*1000),
-			MaxMs:  (mean + 2*std) * 1000,
-		}
-	} else if opts.DefaultThinkTimeMs > 0 {
+	if result.Script.Config.ThinkTime.Type == "" && opts.DefaultThinkTimeMs > 0 {
 		result.Script.Config.ThinkTime = dsl.ThinkTimeConfig{
 			Type:   "fixed",
 			MeanMs: opts.DefaultThinkTimeMs,
 		}
 	}
 
-	// Mark main actions with think_time_after (all except last)
 	for i := range result.Script.Actions {
-		if i < len(result.Script.Actions)-1 {
-			result.Script.Actions[i].ThinkTimeAfter = true
-		}
 		applyControlFlowThinkTime(&result.Script.Actions[i])
 	}
 
@@ -695,8 +822,37 @@ func Convert(actions []*ParsedAction, opts ConvertOptions) (*ConvertResult, erro
 		reapplySourceRuntimeControlConfig(result, fn)
 	}
 	result.Stats.Extractors -= len(pruneUnusedWholeBodyExtractors(result.Script))
+	if !opts.deferArchiveFinalization {
+		applyEnterpriseRuntimeBindings(
+			result,
+			[]*dsl.Script{result.Script},
+			archiveFinalizationContext{},
+		)
+		// Direct Convert callers can supply HTTPConfig/RuntimeSettings without the
+		// ZIP orchestration layer. Run the same shared safety pass here so an
+		// unsupported version or header shape never escapes as an invalid/runnable
+		// script. ConvertZip performs it during finalization with richer runtime
+		// and parameter-file provenance.
+		applyEnterpriseRuntimeFidelityReview(
+			result,
+			[]*dsl.Script{result.Script},
+			archiveFinalizationContext{},
+		)
+	}
 
 	return result, nil
+}
+
+func stringSlicesEqual(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 // enterpriseTemplatePattern mirrors pkg/engine's templatePattern. The engine

@@ -9,6 +9,7 @@ import {
 } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 import ParameterizationReview from './ParameterizationReview'
+import { protectedImportExpiryLabel } from './protectedImportSession'
 import SecretBindingReview, {
   type PreparedSecretBindings,
   type SecretBindingReviewHandle,
@@ -55,13 +56,20 @@ interface Props {
   unsupportedElements?: string[]
   reviewSections?: ImportReviewSection[]
   parameterization?: Parameterization
-  onParameterizationApplied?: (script: ScriptDefinition, diffs: ParameterizationDiff[]) => void
+  onParameterizationApplied?: (script: ScriptDefinition, diffs: ParameterizationDiff[], selectedIds: string[]) => void
   secretBindingRequirements?: SecretBindingRequirement[]
+  sourceMigrationRequirements?: SecretBindingRequirement[]
+  preserveSourceSessionAfterApply?: boolean
   onSecretBindingsApply?: (bindings: SecretBindingSelection[]) => void | Promise<void>
   projectId?: string
   sourceSecretSessionId?: string
   sourceSecretSessionExpiresAt?: string
   sourceSecretMigrationAllowed?: boolean
+  protectedImportSessionExpiresAt?: string
+  onSourceSecretSessionSettled?: (
+    sourceSecretSessionId: string,
+    migrationSelections: SecretBindingSelection[],
+  ) => void
   credentialReviewRef?: MutableRefObject<SecretBindingReviewHandle | null>
   onCredentialsPreparedChange?: (prepared: PreparedSecretBindings | null) => void
   saving?: boolean
@@ -90,11 +98,15 @@ export default function ScriptImportReview({
   parameterization,
   onParameterizationApplied,
   secretBindingRequirements = [],
+  sourceMigrationRequirements,
+  preserveSourceSessionAfterApply = false,
   onSecretBindingsApply,
   projectId,
   sourceSecretSessionId,
   sourceSecretSessionExpiresAt,
   sourceSecretMigrationAllowed = false,
+  protectedImportSessionExpiresAt,
+  onSourceSecretSessionSettled,
   credentialReviewRef,
   onCredentialsPreparedChange,
   saving = false,
@@ -283,6 +295,7 @@ export default function ScriptImportReview({
     if (left !== right) return left - right
     return a.title.localeCompare(b.title)
   })
+  const protectedSessionLabel = protectedImportExpiryLabel(protectedImportSessionExpiresAt)
 
   return (
     <div className="script-import-review">
@@ -314,15 +327,24 @@ export default function ScriptImportReview({
         </div>
       </div>
 
+      {protectedSessionLabel && (
+        <div className="script-import-review-session" role="status">
+          {protectedSessionLabel} Credential bindings and parameterization selections remain protected; other draft edits switch to the compatibility commit path.
+        </div>
+      )}
+
       {hasUnresolvedSecretBindings && onSecretBindingsApply && (
         <SecretBindingReview
           ref={bindingReviewRef}
           requirements={secretBindingRequirements}
+          sourceMigrationRequirements={sourceMigrationRequirements}
+          preserveSourceSessionAfterApply={preserveSourceSessionAfterApply}
           reviewGeneration={reviewGeneration}
           projectId={projectId}
           sourceSecretSessionId={sourceSecretSessionId}
           sourceSecretSessionExpiresAt={sourceSecretSessionExpiresAt}
           sourceMigrationAllowed={sourceSecretMigrationAllowed}
+          onSourceSessionSettled={onSourceSecretSessionSettled}
           onApply={applySecretBindings}
           onPreparedChange={setPreparedSecrets}
           disabled={parameterizationApplying || reviewBusy}
@@ -345,9 +367,9 @@ export default function ScriptImportReview({
           reviewGeneration={reviewGeneration}
           disabled={saving || reviewBusy || credentialAction !== null}
           onApplyingChange={handleParameterizationApplyingChange}
-          onApplied={(parameterizedScript, diffs) => {
+          onApplied={(parameterizedScript, diffs, selectedIds) => {
             bindingReviewRef.current?.preserveEditsForNextReviewGeneration()
-            onParameterizationApplied(parameterizedScript, diffs)
+            onParameterizationApplied(parameterizedScript, diffs, selectedIds)
           }}
         />
       )}

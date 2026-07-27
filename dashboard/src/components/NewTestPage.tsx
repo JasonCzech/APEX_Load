@@ -78,7 +78,20 @@ import { useNavigationGuard, useNavigationGuardRunner, type NavigationGuard } fr
 import { useModalDialog } from '../hooks/useModalDialog'
 import { dialogBackdropProps } from './dialogBackdropProps'
 import { effectiveGroupVUsers, maxVUsersForRole, validateAggregateVUserDemand, validateGroupExecutionEnvelope } from './observerGroupModel'
+import {
+  canonicalThinkTimeType,
+  thinkTimeConfigForType,
+  thinkTimeUsesBounds,
+  thinkTimeUsesMean,
+  thinkTimeUsesStdDeviation,
+} from './thinkTimeConfig'
+import ThinkTimeMultiplierInput from './ThinkTimeMultiplierInput'
 import { validateGeneratorAssignment } from './generatorAssignmentValidation'
+import {
+  SECONDS_INPUT_STEP,
+  parseSecondsInputAsMilliseconds,
+} from './runtimeTiming'
+import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
 
 interface Props {
   activeApplication: Application | null
@@ -353,31 +366,85 @@ function normalizeDraftText(value?: string) {
   return String(value || '').trim()
 }
 
-function pacingFromEdit(type: string, amount: string, baseline?: RuntimeSettingsOverride['pacing']): RuntimeSettingsOverride['pacing'] | undefined {
+const DEFAULT_RANDOM_PACING_BOUND_MS = 1000
+
+function finiteNonNegative(value: unknown, fallback: number): number {
+  const parsed = typeof value === 'number' ? value : Number(value)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback
+}
+
+function randomPacingFromEdit(
+  type: 'random_delay' | 'random_interval',
+  baseline?: RuntimeSettingsOverride['pacing'],
+  amount = '',
+): NonNullable<RuntimeSettingsOverride['pacing']> {
+  const fixedSeed = type === 'random_delay'
+    ? baseline?.delay_ms
+    : baseline?.interval_ms
+  const parsedTypedSeed = parseSecondsInputAsMilliseconds(amount)
+  const typedSeed = typeof parsedTypedSeed === 'number' ? parsedTypedSeed : undefined
+  const seed = finiteNonNegative(fixedSeed ?? typedSeed, DEFAULT_RANDOM_PACING_BOUND_MS)
+  const lowerRaw = type === 'random_delay' ? baseline?.min_delay_ms : baseline?.min_interval_ms
+  const upperRaw = type === 'random_delay' ? baseline?.max_delay_ms : baseline?.max_interval_ms
+  const lower = finiteNonNegative(lowerRaw, seed)
+  const upper = finiteNonNegative(upperRaw, seed)
+  const min = Math.min(lower, upper)
+  const max = Math.max(lower, upper)
+  return type === 'random_delay'
+    ? { type, min_delay_ms: min, max_delay_ms: max }
+    : { type, min_interval_ms: min, max_interval_ms: max }
+}
+
+function randomPacingDraft(
+  type: 'random_delay' | 'random_interval',
+  baseline?: RuntimeSettingsOverride['pacing'],
+  amount = '',
+): NonNullable<RuntimeSettingsOverride['pacing']> {
+  return baseline?.type === type
+    ? { ...baseline, type }
+    : randomPacingFromEdit(type, baseline, amount)
+}
+
+function pacingConfigForSelection(
+  type: string,
+  baseline?: RuntimeSettingsOverride['pacing'],
+  amount = '',
+): RuntimeSettingsOverride['pacing'] | undefined {
+  if (type === 'random_delay' || type === 'random_interval') {
+    return randomPacingDraft(type, baseline, amount)
+  }
+  return type === baseline?.type ? { ...baseline } : undefined
+}
+
+export function pacingFromEdit(type: string, amount: string, baseline?: RuntimeSettingsOverride['pacing']): RuntimeSettingsOverride['pacing'] | undefined {
   if (!type) return undefined
+  if (type === 'random_delay' || type === 'random_interval') {
+    return randomPacingFromEdit(type, baseline, amount)
+  }
   if (type === baseline?.type) {
     const next = { ...baseline }
-    if (type === 'fixed_delay') next.delay_ms = amount ? Number(amount) : 0
-    else if (type === 'fixed_interval') next.interval_ms = amount ? Number(amount) : 0
+    if (type === 'fixed_delay') next.delay_ms = parseSecondsInputAsMilliseconds(amount) ?? 0
+    else if (type === 'fixed_interval') next.interval_ms = parseSecondsInputAsMilliseconds(amount) ?? 0
     else if (type === 'tps') next.tps = amount ? Number(amount) : 0
     return next
   }
   if (type === 'none') return { type: 'none' }
-  if (type === 'fixed_interval') return { type, interval_ms: amount ? Number(amount) : 0 }
+  if (type === 'fixed_interval') return { type, interval_ms: parseSecondsInputAsMilliseconds(amount) ?? 0 }
   if (type === 'tps') return { type, tps: amount ? Number(amount) : 0 }
-  if (type === 'fixed_delay') return { type, delay_ms: amount ? Number(amount) : 0 }
-  // Random-delay/interval configurations have two bounds. Preserve a pre-existing
-  // full config above; a newly selected mode starts with engine-default bounds.
+  if (type === 'fixed_delay') return { type, delay_ms: parseSecondsInputAsMilliseconds(amount) ?? 0 }
   return { type }
 }
 
 function thinkTimeFromEdit(mean: string, ignore: boolean, baseline?: RuntimeSettingsOverride['think_time']): RuntimeSettingsOverride['think_time'] | undefined {
-  if (!mean.trim() && !ignore) return undefined
-  return {
+  if (!mean.trim() && !ignore && !baseline?.type) return undefined
+  const type = baseline?.type || 'fixed'
+  return thinkTimeConfigForType({
     ...(baseline || { type: 'fixed', mean_ms: 0 }),
-    mean_ms: mean.trim() ? Number(mean) : (baseline?.mean_ms ?? 0),
+    ...(thinkTimeUsesMean(type)
+      ? { mean_ms: mean.trim() ? Number(mean) : (baseline?.mean_ms ?? 0) }
+      : {}),
     ignore,
-  }
+  }, type)
 }
 
 function selectedTargetsChanged(left: string[], right: string[]) {
@@ -458,9 +525,11 @@ function buildGroupEditChanges(draft: GroupEditDraft, baseline: GroupEditDraft):
     log_level: normalizeDraftText(draft.log_level) !== normalizeDraftText(baseline.log_level),
     auto_transactions: normalizeDraftText(draft.auto_transactions) !== normalizeDraftText(baseline.auto_transactions),
     pacing: normalizeDraftText(draft.pacingType) !== normalizeDraftText(baseline.pacingType)
-      || normalizeDraftText(draft.pacingAmount) !== normalizeDraftText(baseline.pacingAmount),
+      || normalizeDraftText(draft.pacingAmount) !== normalizeDraftText(baseline.pacingAmount)
+      || JSON.stringify(draft.pacingConfig || null) !== JSON.stringify(baseline.pacingConfig || null),
     think_time: normalizeDraftText(draft.thinkTimeMs) !== normalizeDraftText(baseline.thinkTimeMs)
-      || draft.thinkIgnore !== baseline.thinkIgnore,
+      || draft.thinkIgnore !== baseline.thinkIgnore
+      || JSON.stringify(draft.thinkTimeConfig || null) !== JSON.stringify(baseline.thinkTimeConfig || null),
     continue_on_error: continueOnErrorChanged,
     snapshot_on_error: snapshotOnErrorChanged,
     error_handling: continueOnErrorChanged || snapshotOnErrorChanged,
@@ -1310,32 +1379,175 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
         <div className="new-test-default-editor-grid">
           <label>
             <span>Pacing</span>
-            <select className="settings-input" value={defaultEditDraft.pacingType} onChange={event => setDefaultEditDraft(prev => ({ ...prev, pacingType: event.target.value, pacingAmount: event.target.value === 'none' ? '' : prev.pacingAmount }))}>
+            <select className="settings-input" value={defaultEditDraft.pacingType} onChange={event => {
+              const type = event.target.value
+              setDefaultEditDraft(prev => ({
+                ...prev,
+                pacingType: type,
+                pacingAmount: type === 'none' || type.startsWith('random_') ? '' : prev.pacingAmount,
+                pacingConfig: pacingConfigForSelection(type, prev.pacingConfig, prev.pacingAmount),
+              }))
+            }}>
               <option value="">Script default</option>
               <option value="none">None</option>
               <option value="fixed_delay">Fixed delay</option>
-              <option value="random_delay">Random delay (preserve bounds)</option>
+              <option value="random_delay">Random delay</option>
               <option value="fixed_interval">Fixed interval</option>
-              <option value="random_interval">Random interval (preserve bounds)</option>
+              <option value="random_interval">Random interval</option>
               <option value="tps">Target TPS</option>
             </select>
           </label>
           {['fixed_delay', 'fixed_interval', 'tps'].includes(defaultEditDraft.pacingType) && (
             <label>
-              <span>{defaultEditDraft.pacingType === 'tps' ? 'Target TPS' : 'Milliseconds'}</span>
-              <input className="settings-input" type="number" min="0" value={defaultEditDraft.pacingAmount} onChange={event => setDefaultEditDraft(prev => ({ ...prev, pacingAmount: event.target.value }))} placeholder="0" />
+              <span>{defaultEditDraft.pacingType === 'tps' ? 'Target TPS' : 'Seconds'}</span>
+              <input className="settings-input" type="number" min="0" step={defaultEditDraft.pacingType === 'tps' ? undefined : SECONDS_INPUT_STEP} value={defaultEditDraft.pacingAmount} onChange={event => setDefaultEditDraft(prev => ({ ...prev, pacingAmount: event.target.value }))} placeholder="0" />
             </label>
+          )}
+          {defaultEditDraft.pacingType === 'random_delay' && (
+            <>
+              <label>
+                <span>Minimum delay (seconds)</span>
+                <SecondsFromMillisecondsInput className="settings-input"
+                  valueMs={defaultEditDraft.pacingConfig?.min_delay_ms}
+                  emptyWhenUndefined
+                  onChangeMs={minDelayMs => setDefaultEditDraft(prev => ({
+                    ...prev,
+                    pacingConfig: {
+                      ...randomPacingDraft('random_delay', prev.pacingConfig, prev.pacingAmount),
+                      min_delay_ms: minDelayMs,
+                    },
+                  }))} />
+              </label>
+              <label>
+                <span>Maximum delay (seconds)</span>
+                <SecondsFromMillisecondsInput className="settings-input"
+                  valueMs={defaultEditDraft.pacingConfig?.max_delay_ms}
+                  emptyWhenUndefined
+                  onChangeMs={maxDelayMs => setDefaultEditDraft(prev => ({
+                    ...prev,
+                    pacingConfig: {
+                      ...randomPacingDraft('random_delay', prev.pacingConfig, prev.pacingAmount),
+                      max_delay_ms: maxDelayMs,
+                    },
+                  }))} />
+              </label>
+            </>
+          )}
+          {defaultEditDraft.pacingType === 'random_interval' && (
+            <>
+              <label>
+                <span>Minimum interval (seconds)</span>
+                <SecondsFromMillisecondsInput className="settings-input"
+                  valueMs={defaultEditDraft.pacingConfig?.min_interval_ms}
+                  emptyWhenUndefined
+                  onChangeMs={minIntervalMs => setDefaultEditDraft(prev => ({
+                    ...prev,
+                    pacingConfig: {
+                      ...randomPacingDraft('random_interval', prev.pacingConfig, prev.pacingAmount),
+                      min_interval_ms: minIntervalMs,
+                    },
+                  }))} />
+              </label>
+              <label>
+                <span>Maximum interval (seconds)</span>
+                <SecondsFromMillisecondsInput className="settings-input"
+                  valueMs={defaultEditDraft.pacingConfig?.max_interval_ms}
+                  emptyWhenUndefined
+                  onChangeMs={maxIntervalMs => setDefaultEditDraft(prev => ({
+                    ...prev,
+                    pacingConfig: {
+                      ...randomPacingDraft('random_interval', prev.pacingConfig, prev.pacingAmount),
+                      max_interval_ms: maxIntervalMs,
+                    },
+                  }))} />
+              </label>
+            </>
           )}
         </div>
       )
     }
     if (editingDefaultKey === 'think_time') {
+      const thinkType = canonicalThinkTimeType(defaultEditDraft.thinkTimeConfig?.type)
+      const updateThinkConfig = (patch: Partial<NonNullable<RuntimeSettingsOverride['think_time']>>) => {
+        setDefaultEditDraft(prev => ({
+          ...prev,
+          thinkTimeConfig: thinkTimeConfigForType({
+            ...prev.thinkTimeConfig,
+            ...patch,
+          }, prev.thinkTimeConfig?.type || 'fixed'),
+        }))
+      }
       return (
         <div className="new-test-default-editor-grid">
           <label>
-            <span>Think time mean (ms)</span>
-            <input className="settings-input" type="number" min="0" value={defaultEditDraft.value} onChange={event => setDefaultEditDraft(prev => ({ ...prev, value: event.target.value }))} placeholder="Script default" disabled={defaultEditDraft.thinkIgnore} />
+            <span>Think time mode</span>
+            <select className="settings-input" value={thinkType} onChange={event => {
+              const type = event.target.value
+              setDefaultEditDraft(prev => ({
+                ...prev,
+                value: type === 'recorded' ? '' : prev.value,
+                thinkIgnore: type ? prev.thinkIgnore : false,
+                thinkTimeConfig: type
+                  ? thinkTimeConfigForType({
+                      ...prev.thinkTimeConfig,
+                      ...(prev.value.trim() !== '' ? { mean_ms: Number(prev.value) } : {}),
+                    }, type)
+                  : undefined,
+              }))
+            }}>
+              <option value="">Script default</option>
+              <option value="none">None</option>
+              <option value="recorded">Replay think time as recorded</option>
+              <option value="fixed">Fixed</option>
+              <option value="gaussian">Gaussian</option>
+              <option value="uniform">Uniform</option>
+            </select>
           </label>
+          {thinkTimeUsesMean(thinkType) && (
+            <label>
+              <span>Think time mean (ms)</span>
+              <input className="settings-input" type="number" min="0" value={defaultEditDraft.value} onChange={event => setDefaultEditDraft(prev => ({
+                ...prev,
+                value: event.target.value,
+                thinkTimeConfig: prev.thinkTimeConfig
+                  ? { ...prev.thinkTimeConfig, mean_ms: event.target.value === '' ? undefined : Number(event.target.value) }
+                  : prev.thinkTimeConfig,
+              }))} placeholder="Script default" disabled={defaultEditDraft.thinkIgnore} />
+            </label>
+          )}
+          {thinkTimeUsesStdDeviation(thinkType) && (
+            <label>
+              <span>Think time std dev (ms)</span>
+              <input className="settings-input" type="number" min="0" value={defaultEditDraft.thinkTimeConfig?.std_ms ?? ''} onChange={event => updateThinkConfig({ std_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="0" disabled={defaultEditDraft.thinkIgnore} />
+            </label>
+          )}
+          {thinkTimeUsesBounds(thinkType) && (
+            <>
+              <label>
+                <span>Minimum think time (ms)</span>
+                <input className="settings-input" type="number" min="0" value={defaultEditDraft.thinkTimeConfig?.min_ms ?? ''} onChange={event => updateThinkConfig({ min_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="0" disabled={defaultEditDraft.thinkIgnore} />
+              </label>
+              <label>
+                <span>Maximum think time (ms)</span>
+                <input className="settings-input" type="number" min="0" value={defaultEditDraft.thinkTimeConfig?.max_ms ?? ''} onChange={event => updateThinkConfig({ max_ms: event.target.value === '' ? undefined : Number(event.target.value) })} placeholder="0" disabled={defaultEditDraft.thinkIgnore} />
+              </label>
+            </>
+          )}
+          {thinkType && (
+            <>
+              <ThinkTimeMultiplierInput
+                draftScope={`${activeProjectID}:${scenarioId}:run-default`}
+                label="Multiplier"
+                className="settings-input"
+                value={defaultEditDraft.thinkTimeConfig?.multiplier}
+                onValueChange={multiplier => updateThinkConfig({ multiplier })}
+              />
+              <label>
+                <span>Cap (ms, 0 = none)</span>
+                <input className="settings-input" type="number" min="0" value={defaultEditDraft.thinkTimeConfig?.limit_ms ?? 0} onChange={event => updateThinkConfig({ limit_ms: Number(event.target.value) })} />
+              </label>
+            </>
+          )}
           <label className="checkbox-label new-test-default-checkbox">
             <input type="checkbox" checked={defaultEditDraft.thinkIgnore} onChange={event => setDefaultEditDraft(prev => ({ ...prev, thinkIgnore: event.target.checked }))} />
             <span>Ignore think time</span>
@@ -2750,26 +2962,166 @@ export default function NewTestPage({ activeApplication, applicationRepository, 
                     </label>
                     <label className={changedFieldClass(groupEditChanges.pacing)}>
                       <span>Pacing <ChangedBadge changed={groupEditChanges.pacing} /></span>
-                      <select className="settings-input" value={groupEditDraft.pacingType} onChange={event => setGroupEditDraft(prev => ({ ...prev, pacingType: event.target.value, pacingAmount: event.target.value === 'none' ? '' : prev.pacingAmount }))}>
+                      <select className="settings-input" value={groupEditDraft.pacingType} onChange={event => {
+                        const type = event.target.value
+                        setGroupEditDraft(prev => ({
+                          ...prev,
+                          pacingType: type,
+                          pacingAmount: type === 'none' || type.startsWith('random_') ? '' : prev.pacingAmount,
+                          pacingConfig: pacingConfigForSelection(type, prev.pacingConfig, prev.pacingAmount),
+                        }))
+                      }}>
                         <option value="">Script timing</option>
                         <option value="none">None</option>
                         <option value="fixed_delay">Fixed delay</option>
-                        <option value="random_delay">Random delay (preserve bounds)</option>
+                        <option value="random_delay">Random delay</option>
                         <option value="fixed_interval">Fixed interval</option>
-                        <option value="random_interval">Random interval (preserve bounds)</option>
+                        <option value="random_interval">Random interval</option>
                         <option value="tps">Target TPS</option>
                       </select>
                     </label>
                     {['fixed_delay', 'fixed_interval', 'tps'].includes(groupEditDraft.pacingType) && (
                       <label className={changedFieldClass(groupEditChanges.pacing)}>
-                        <span>{groupEditDraft.pacingType === 'tps' ? 'Target TPS' : 'Milliseconds'} <ChangedBadge changed={groupEditChanges.pacing} /></span>
-                        <input className="settings-input" type="number" min="0" value={groupEditDraft.pacingAmount} onChange={event => setGroupEditDraft(prev => ({ ...prev, pacingAmount: event.target.value }))} />
+                        <span>{groupEditDraft.pacingType === 'tps' ? 'Target TPS' : 'Seconds'} <ChangedBadge changed={groupEditChanges.pacing} /></span>
+                        <input className="settings-input" type="number" min="0" step={groupEditDraft.pacingType === 'tps' ? undefined : SECONDS_INPUT_STEP} value={groupEditDraft.pacingAmount} onChange={event => setGroupEditDraft(prev => ({ ...prev, pacingAmount: event.target.value }))} />
                       </label>
                     )}
+                    {groupEditDraft.pacingType === 'random_delay' && (
+                      <>
+                        <label className={changedFieldClass(groupEditChanges.pacing)}>
+                          <span>Minimum delay (seconds) <ChangedBadge changed={groupEditChanges.pacing} /></span>
+                          <SecondsFromMillisecondsInput className="settings-input"
+                            valueMs={groupEditDraft.pacingConfig?.min_delay_ms}
+                            emptyWhenUndefined
+                            onChangeMs={minDelayMs => setGroupEditDraft(prev => ({
+                              ...prev,
+                              pacingConfig: {
+                                ...randomPacingDraft('random_delay', prev.pacingConfig, prev.pacingAmount),
+                                min_delay_ms: minDelayMs,
+                              },
+                            }))} />
+                        </label>
+                        <label className={changedFieldClass(groupEditChanges.pacing)}>
+                          <span>Maximum delay (seconds) <ChangedBadge changed={groupEditChanges.pacing} /></span>
+                          <SecondsFromMillisecondsInput className="settings-input"
+                            valueMs={groupEditDraft.pacingConfig?.max_delay_ms}
+                            emptyWhenUndefined
+                            onChangeMs={maxDelayMs => setGroupEditDraft(prev => ({
+                              ...prev,
+                              pacingConfig: {
+                                ...randomPacingDraft('random_delay', prev.pacingConfig, prev.pacingAmount),
+                                max_delay_ms: maxDelayMs,
+                              },
+                            }))} />
+                        </label>
+                      </>
+                    )}
+                    {groupEditDraft.pacingType === 'random_interval' && (
+                      <>
+                        <label className={changedFieldClass(groupEditChanges.pacing)}>
+                          <span>Minimum interval (seconds) <ChangedBadge changed={groupEditChanges.pacing} /></span>
+                          <SecondsFromMillisecondsInput className="settings-input"
+                            valueMs={groupEditDraft.pacingConfig?.min_interval_ms}
+                            emptyWhenUndefined
+                            onChangeMs={minIntervalMs => setGroupEditDraft(prev => ({
+                              ...prev,
+                              pacingConfig: {
+                                ...randomPacingDraft('random_interval', prev.pacingConfig, prev.pacingAmount),
+                                min_interval_ms: minIntervalMs,
+                              },
+                            }))} />
+                        </label>
+                        <label className={changedFieldClass(groupEditChanges.pacing)}>
+                          <span>Maximum interval (seconds) <ChangedBadge changed={groupEditChanges.pacing} /></span>
+                          <SecondsFromMillisecondsInput className="settings-input"
+                            valueMs={groupEditDraft.pacingConfig?.max_interval_ms}
+                            emptyWhenUndefined
+                            onChangeMs={maxIntervalMs => setGroupEditDraft(prev => ({
+                              ...prev,
+                              pacingConfig: {
+                                ...randomPacingDraft('random_interval', prev.pacingConfig, prev.pacingAmount),
+                                max_interval_ms: maxIntervalMs,
+                              },
+                            }))} />
+                        </label>
+                      </>
+                    )}
                     <label className={changedFieldClass(groupEditChanges.think_time)}>
-                      <span>Think time mean (ms) <ChangedBadge changed={groupEditChanges.think_time} /></span>
-                      <input className="settings-input" type="number" min="0" value={groupEditDraft.thinkTimeMs} onChange={event => setGroupEditDraft(prev => ({ ...prev, thinkTimeMs: event.target.value }))} placeholder="Script think time" disabled={groupEditDraft.thinkIgnore} />
+                      <span>Think time mode <ChangedBadge changed={groupEditChanges.think_time} /></span>
+                      <select className="settings-input" value={canonicalThinkTimeType(groupEditDraft.thinkTimeConfig?.type)} onChange={event => {
+                        const type = event.target.value
+                        setGroupEditDraft(prev => ({
+                          ...prev,
+                          thinkTimeMs: type === 'recorded' ? '' : prev.thinkTimeMs,
+                          thinkIgnore: type ? prev.thinkIgnore : false,
+                          thinkTimeConfig: type
+                            ? thinkTimeConfigForType({
+                                ...prev.thinkTimeConfig,
+                                ...(prev.thinkTimeMs.trim() !== '' ? { mean_ms: Number(prev.thinkTimeMs) } : {}),
+                              }, type)
+                            : undefined,
+                        }))
+                      }}>
+                        <option value="">Script think time</option>
+                        <option value="none">None</option>
+                        <option value="recorded">Replay think time as recorded</option>
+                        <option value="fixed">Fixed</option>
+                        <option value="gaussian">Gaussian</option>
+                        <option value="uniform">Uniform</option>
+                      </select>
                     </label>
+                    {thinkTimeUsesMean(groupEditDraft.thinkTimeConfig?.type) && (
+                      <label className={changedFieldClass(groupEditChanges.think_time)}>
+                        <span>Think time mean (ms) <ChangedBadge changed={groupEditChanges.think_time} /></span>
+                        <input className="settings-input" type="number" min="0" value={groupEditDraft.thinkTimeMs} onChange={event => setGroupEditDraft(prev => ({
+                          ...prev,
+                          thinkTimeMs: event.target.value,
+                          thinkTimeConfig: prev.thinkTimeConfig
+                            ? { ...prev.thinkTimeConfig, mean_ms: event.target.value === '' ? undefined : Number(event.target.value) }
+                            : prev.thinkTimeConfig,
+                        }))} placeholder="Script think time" disabled={groupEditDraft.thinkIgnore} />
+                      </label>
+                    )}
+                    {thinkTimeUsesStdDeviation(groupEditDraft.thinkTimeConfig?.type) && (
+                      <label className={changedFieldClass(groupEditChanges.think_time)}>
+                        <span>Think time std dev (ms) <ChangedBadge changed={groupEditChanges.think_time} /></span>
+                        <input className="settings-input" type="number" min="0" value={groupEditDraft.thinkTimeConfig?.std_ms ?? ''} onChange={event => setGroupEditDraft(prev => ({ ...prev, thinkTimeConfig: { ...prev.thinkTimeConfig!, std_ms: event.target.value === '' ? undefined : Number(event.target.value) } }))} placeholder="0" disabled={groupEditDraft.thinkIgnore} />
+                      </label>
+                    )}
+                    {thinkTimeUsesBounds(groupEditDraft.thinkTimeConfig?.type) && (
+                      <>
+                        <label className={changedFieldClass(groupEditChanges.think_time)}>
+                          <span>Minimum think time (ms) <ChangedBadge changed={groupEditChanges.think_time} /></span>
+                          <input className="settings-input" type="number" min="0" value={groupEditDraft.thinkTimeConfig?.min_ms ?? ''} onChange={event => setGroupEditDraft(prev => ({ ...prev, thinkTimeConfig: { ...prev.thinkTimeConfig!, min_ms: event.target.value === '' ? undefined : Number(event.target.value) } }))} placeholder="0" disabled={groupEditDraft.thinkIgnore} />
+                        </label>
+                        <label className={changedFieldClass(groupEditChanges.think_time)}>
+                          <span>Maximum think time (ms) <ChangedBadge changed={groupEditChanges.think_time} /></span>
+                          <input className="settings-input" type="number" min="0" value={groupEditDraft.thinkTimeConfig?.max_ms ?? ''} onChange={event => setGroupEditDraft(prev => ({ ...prev, thinkTimeConfig: { ...prev.thinkTimeConfig!, max_ms: event.target.value === '' ? undefined : Number(event.target.value) } }))} placeholder="0" disabled={groupEditDraft.thinkIgnore} />
+                        </label>
+                      </>
+                    )}
+                    {groupEditDraft.thinkTimeConfig?.type && (
+                      <>
+                        <ThinkTimeMultiplierInput
+                          draftScope={`${activeProjectID}:${scenarioId}:${editingGroupKey || 'group'}`}
+                          label={<>Think time multiplier <ChangedBadge changed={groupEditChanges.think_time} /></>}
+                          wrapperClassName={changedFieldClass(groupEditChanges.think_time)}
+                          className="settings-input"
+                          value={groupEditDraft.thinkTimeConfig.multiplier}
+                          onValueChange={multiplier => setGroupEditDraft(prev => ({
+                            ...prev,
+                            thinkTimeConfig: thinkTimeConfigForType({
+                              ...prev.thinkTimeConfig!,
+                              multiplier,
+                            }, prev.thinkTimeConfig?.type || 'fixed'),
+                          }))}
+                        />
+                        <label className={changedFieldClass(groupEditChanges.think_time)}>
+                          <span>Think time cap (ms) <ChangedBadge changed={groupEditChanges.think_time} /></span>
+                          <input className="settings-input" type="number" min="0" value={groupEditDraft.thinkTimeConfig.limit_ms ?? 0} onChange={event => setGroupEditDraft(prev => ({ ...prev, thinkTimeConfig: { ...prev.thinkTimeConfig!, limit_ms: Number(event.target.value) } }))} />
+                        </label>
+                      </>
+                    )}
                     <label className={changedFieldClass(groupEditChanges.think_time, 'checkbox-label new-test-default-checkbox')}>
                       <input type="checkbox" checked={groupEditDraft.thinkIgnore} onChange={event => setGroupEditDraft(prev => ({ ...prev, thinkIgnore: event.target.checked }))} />
                       <span>Ignore think time <ChangedBadge changed={groupEditChanges.think_time} /></span>

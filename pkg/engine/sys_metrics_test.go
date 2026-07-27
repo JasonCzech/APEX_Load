@@ -96,6 +96,24 @@ func TestCPUShapePercent(t *testing.T) {
 	}
 }
 
+func TestCollectSystemResourcesSafelyContainsDependencyPanic(t *testing.T) {
+	resources := collectSystemResourcesSafely(func() *SystemResources {
+		panic("malformed host telemetry")
+	})
+	if resources == nil {
+		t.Fatal("panic recovery returned a nil resource snapshot")
+	}
+}
+
+func TestCollectSystemResourcesSafelyHandlesNilCollectorAndResult(t *testing.T) {
+	if resources := collectSystemResourcesSafely(nil); resources == nil {
+		t.Fatal("nil collector returned a nil resource snapshot")
+	}
+	if resources := collectSystemResourcesSafely(func() *SystemResources { return nil }); resources == nil {
+		t.Fatal("nil collector result was not replaced with an empty snapshot")
+	}
+}
+
 func floatClose(left float64, right float64) bool {
 	return math.Abs(left-right) < 0.000001
 }

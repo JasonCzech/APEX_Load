@@ -187,6 +187,77 @@ func TestResolveBodyRefsResolvesSequenceChildBodyFile(t *testing.T) {
 	}
 }
 
+func TestResolveBodyRefsResolvesNormalizedSequenceChildBodyFile(t *testing.T) {
+	dir := t.TempDir()
+	body := "{\"step\":\"checkout\"}\n"
+	if err := os.WriteFile(filepath.Join(dir, "child.json"), []byte(body), 0o644); err != nil {
+		t.Fatalf("write body file: %v", err)
+	}
+	script := &Script{Actions: []Action{{
+		Name: "seq",
+		Type: " HTTP_SEQUENCE ",
+		Params: map[string]any{"requests": []any{
+			map[string]any{
+				"name": "create", "type": "POST", "method": "POST", "target": "/orders",
+				"body_file": "child.json",
+			},
+		}},
+	}}}
+
+	if err := ResolveBodyRefs(script, dir); err != nil {
+		t.Fatalf("ResolveBodyRefs: %v", err)
+	}
+	child := script.Actions[0].Params["requests"].([]any)[0].(map[string]any)
+	if got, _ := child["body"].(string); got != body {
+		t.Fatalf("child body = %q, want %q", got, body)
+	}
+	if _, present := child["body_file"]; present {
+		t.Fatalf("child body_file = %v, want removed", child["body_file"])
+	}
+}
+
+func TestResolveBodyRefsResolvesTypedSequenceChildBodyFile(t *testing.T) {
+	dir := t.TempDir()
+	body := "{\"step\":\"typed\"}\n"
+	if err := os.WriteFile(filepath.Join(dir, "typed.json"), []byte(body), 0o644); err != nil {
+		t.Fatalf("write body file: %v", err)
+	}
+
+	t.Run("typed slice", func(t *testing.T) {
+		script := &Script{Actions: []Action{{
+			Name: "seq",
+			Type: "http_sequence",
+			Params: map[string]any{"requests": []Action{{
+				Name: "create", Type: "POST", Method: "POST", Target: "/orders", BodyFile: "typed.json",
+			}}},
+		}}}
+		if err := ResolveBodyRefs(script, dir); err != nil {
+			t.Fatalf("ResolveBodyRefs: %v", err)
+		}
+		child := script.Actions[0].Params["requests"].([]Action)[0]
+		if child.Body != body || child.BodyFile != "" {
+			t.Fatalf("child = %#v, want inlined typed body", child)
+		}
+	})
+
+	t.Run("typed value in interface slice", func(t *testing.T) {
+		script := &Script{Actions: []Action{{
+			Name: "seq",
+			Type: "http_sequence",
+			Params: map[string]any{"requests": []any{Action{
+				Name: "create", Type: "POST", Method: "POST", Target: "/orders", BodyFile: "typed.json",
+			}}},
+		}}}
+		if err := ResolveBodyRefs(script, dir); err != nil {
+			t.Fatalf("ResolveBodyRefs: %v", err)
+		}
+		child := script.Actions[0].Params["requests"].([]any)[0].(Action)
+		if child.Body != body || child.BodyFile != "" {
+			t.Fatalf("child = %#v, want inlined typed body", child)
+		}
+	})
+}
+
 func TestResolveBodyRefsSequenceChildLeavesUntouchedWithoutBodyFile(t *testing.T) {
 	dir := t.TempDir()
 	script := &Script{Actions: []Action{{

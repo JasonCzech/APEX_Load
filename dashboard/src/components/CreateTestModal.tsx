@@ -481,6 +481,7 @@ export default function CreateTestModal({ scripts, projectId, folderId, onClose,
           />
 
           <CreateTestRuntimeOverrides
+            draftScope={`${revisionContext?.projectId ?? projectId ?? ''}:${revisionContext?.scenarioId ?? 'new'}`}
             runtimeSettings={runtimeSettings}
             onRuntimeSettingChange={updateRuntimeSetting}
           />

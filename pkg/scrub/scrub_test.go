@@ -2,6 +2,9 @@ package scrub
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/url"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -54,6 +57,7 @@ func TestSensitiveNameNormalizedVocabulary(t *testing.T) {
 		"csrf_token", "XSRF-TOKEN", "credentials[connection_string]",
 		"AWS_ACCESS_KEY_ID", "SharedAccessKey", "shared_access_signature",
 		"jms_settlement_token", "lock-token", "receipt_handle", "sid",
+		"pwd", "pass", "passphrase", "credential", "credentials",
 	} {
 		if !SensitiveName(name) {
 			t.Errorf("SensitiveName(%q) = false, want true", name)
@@ -63,6 +67,569 @@ func TestSensitiveNameNormalizedVocabulary(t *testing.T) {
 		if SensitiveName(name) {
 			t.Errorf("SensitiveName(%q) = true, want false", name)
 		}
+	}
+}
+
+func TestValuePreservesXMLNamespaceURIsButRedactsNamespacedCredentials(t *testing.T) {
+	input := `<root xmlns:token="https://schemas.example.test/security/token" auth:password="short"><!-- https://docs.example.test/a/0123456789abcdef0123456789abcdef --></root>`
+	got := Value(input, Policy{})
+	if !strings.Contains(got, `xmlns:token="https://schemas.example.test/security/token"`) {
+		t.Fatalf("namespace declaration was corrupted: %s", got)
+	}
+	if !strings.Contains(got, `auth:password="`+Redacted+`"`) || strings.Contains(got, `password="short"`) {
+		t.Fatalf("namespaced credential was not redacted: %s", got)
+	}
+	if !strings.Contains(got, "https://docs.example.test/a/0123456789abcdef0123456789abcdef") {
+		t.Fatalf("safe comment URL was corrupted: %s", got)
+	}
+}
+
+func TestValuePreservesURNNamespacesAndRedactsSingleQuotedCredentials(t *testing.T) {
+	const namespace = `urn:example:AbCdEf0123456789GhIjKlMn0Z`
+	input := `<root xmlns:token='` + namespace + `' auth:password='short'/>`
+	got := Value(input, Policy{})
+	if !strings.Contains(got, `xmlns:token='`+namespace+`'`) {
+		t.Fatalf("URN namespace declaration was corrupted: %s", got)
+	}
+	if !strings.Contains(got, `auth:password='`+Redacted+`'`) || strings.Contains(got, `password='short'`) {
+		t.Fatalf("single-quoted credential was not redacted: %s", got)
+	}
+}
+
+func TestValueDoesNotTreatXMLNSNameSuffixAsNamespaceDeclaration(t *testing.T) {
+	input := `<root xmlns:foo_xmlns="urn:foo" foo_xmlns:password="short"/>`
+	got := Value(input, Policy{})
+	if !strings.Contains(got, `xmlns:foo_xmlns="urn:foo"`) {
+		t.Fatalf("real namespace declaration was corrupted: %s", got)
+	}
+	if !strings.Contains(got, `foo_xmlns:password="`+Redacted+`"`) || strings.Contains(got, `password="short"`) {
+		t.Fatalf("credential prefix ending in xmlns bypassed redaction: %s", got)
+	}
+}
+
+func TestValueFailsClosedForMalformedUnquotedXMLCredentialAttributes(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "spaces around equals",
+			input: `<root password = short-secret note=visible>safe text</root>`,
+			want:  `<root password = ` + Redacted + ` note=visible>safe text</root>`,
+		},
+		{
+			name:  "space before equals",
+			input: `<root password =short-secret note=visible/>`,
+			want:  `<root password =` + Redacted + ` note=visible/>`,
+		},
+		{
+			name:  "space after equals",
+			input: `<root password= short-secret note=visible/>`,
+			want:  `<root password= ` + Redacted + ` note=visible/>`,
+		},
+		{
+			name:  "no spaces and self close",
+			input: `<root password=short-secret/>`,
+			want:  `<root password=` + Redacted + `/>`,
+		},
+		{
+			name:  "truncated",
+			input: `<root password = short-secret`,
+			want:  `<root password = ` + Redacted,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := Value(test.input, Policy{}); got != test.want {
+				t.Fatalf("Value(%q) = %q, want %q", test.input, got, test.want)
+			}
+		})
+	}
+
+	for _, safe := range []string{
+		`<root note = short-safe text=visible/>`,
+		`<root note="password=short-safe value" text=visible/>`,
+		`<root note = short-safe`,
+	} {
+		if got := Value(safe, Policy{}); got != safe {
+			t.Fatalf("nonsensitive malformed XML changed:\n got: %q\nwant: %q", got, safe)
+		}
+	}
+}
+
+func TestValueSensitiveSelfClosingXMLElementRedactsAttributePayload(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{
+			input: `<password value="short-secret"/>`,
+			want:  `<password value="` + Redacted + `"/>`,
+		},
+		{
+			input: `<root><auth:password xmlns:auth="urn:example:auth" value='short-secret' hint=short-hint/></root>`,
+			want:  `<root><auth:password xmlns:auth="urn:example:auth" value='` + Redacted + `' hint=` + Redacted + `/></root>`,
+		},
+		{
+			input: `<password meta:value="short-secret"/>`,
+			want:  `<password meta:value="` + Redacted + `"/>`,
+		},
+	}
+	for _, test := range tests {
+		if got := Value(test.input, Policy{}); got != test.want {
+			t.Fatalf("Value(%q) = %q, want %q", test.input, got, test.want)
+		}
+	}
+
+	safe := `<root><note value="short-safe" hint=short-hint/></root>`
+	if got := Value(safe, Policy{}); got != safe {
+		t.Fatalf("safe self-closing element changed:\n got: %q\nwant: %q", got, safe)
+	}
+}
+
+func TestValueRedactsSharedXMLCredentialAliases(t *testing.T) {
+	for _, name := range []string{"pwd", "pass", "passcode", "passphrase", "credential", "credentials"} {
+		t.Run(name, func(t *testing.T) {
+			input := `<root><auth:` + name + `>element-value</auth:` + name + `>` +
+				`<entry auth:` + name + `="double-value"/>` +
+				`<entry auth:` + name + `='single-value'/></root>`
+			got := Value(input, Policy{})
+			for _, expected := range []string{
+				`<auth:` + name + `>` + Redacted + `</auth:` + name + `>`,
+				`auth:` + name + `="` + Redacted + `"`,
+				`auth:` + name + `='` + Redacted + `'`,
+			} {
+				if !strings.Contains(got, expected) {
+					t.Errorf("Value did not redact %q in %q: %s", expected, name, got)
+				}
+			}
+			for _, secret := range []string{"element-value", "double-value", "single-value"} {
+				if strings.Contains(got, secret) {
+					t.Errorf("Value leaked %q for XML alias %q: %s", secret, name, got)
+				}
+			}
+		})
+	}
+}
+
+func TestValueMalformedJSONFallbackUsesSharedSensitiveNames(t *testing.T) {
+	const safeURL = "https://safe.example/assets/AbCdEf0123456789GhIjKlMn0Z"
+	input := `{"pwd":"pwd-value","shared_access_key":"key-value","endpoint":"` + safeURL + `","status":"ok",`
+	got := Value(input, Policy{})
+
+	for _, secret := range []string{"pwd-value", "key-value"} {
+		if strings.Contains(got, secret) {
+			t.Errorf("malformed JSON fallback leaked %q: %s", secret, got)
+		}
+	}
+	for _, expected := range []string{
+		`"pwd":"` + Redacted + `"`,
+		`"shared_access_key":"` + Redacted + `"`,
+		`"status":"ok"`,
+		safeURL,
+	} {
+		if !strings.Contains(got, expected) {
+			t.Errorf("malformed JSON fallback lost %q: %s", expected, got)
+		}
+	}
+}
+
+func TestValueMalformedJSONBareSensitiveScalarsFailClosed(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "EOF",
+			input: `{"password":short-secret`,
+			want:  `{"password":` + Redacted,
+		},
+		{
+			name:  "whitespace and object delimiter",
+			input: `{"password" :  short-secret   }`,
+			want:  `{"password" :  ` + Redacted + `   }`,
+		},
+		{
+			name:  "comma delimiter",
+			input: `{"password":short-secret,"note":"safe"}`,
+			want:  `{"password":` + Redacted + `,"note":"safe"}`,
+		},
+		{
+			name:  "valid scalar prefix cannot leak suffix",
+			input: `{"password":123abc,"note":"safe"}`,
+			want:  `{"password":` + Redacted + `,"note":"safe"}`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := Value(test.input, Policy{}); got != test.want {
+				t.Fatalf("Value(%q) = %q, want %q", test.input, got, test.want)
+			}
+		})
+	}
+
+	safe := `{"note":short-safe,"status":"ok"}`
+	if got := Value(safe, Policy{}); got != safe {
+		t.Fatalf("nonsensitive malformed JSON changed:\n got: %q\nwant: %q", got, safe)
+	}
+}
+
+func TestValueXMLFallbackUsesSharedNamesWithoutCorruptingNamespaces(t *testing.T) {
+	const namespace = "https://schemas.example.test/security/shared_access_key"
+	const commentURL = "https://docs.example.test/assets/AbCdEf0123456789GhIjKlMn0Z"
+	input := `<root xmlns:shared_access_key="` + namespace + `">` +
+		`<!-- ` + commentURL + ` -->` +
+		`<auth:pwd>pwd-value</auth:pwd>` +
+		`<auth:shared_access_key>key-value</auth:shared_access_key>` +
+		`<entry auth:shared_access_key="attribute-value"/>`
+	got := Value(input, Policy{})
+
+	for _, secret := range []string{"pwd-value", "key-value", "attribute-value"} {
+		if strings.Contains(got, secret) {
+			t.Errorf("XML fallback leaked %q: %s", secret, got)
+		}
+	}
+	for _, expected := range []string{
+		`xmlns:shared_access_key="` + namespace + `"`,
+		commentURL,
+		`<auth:pwd>` + Redacted + `</auth:pwd>`,
+		`<auth:shared_access_key>` + Redacted + `</auth:shared_access_key>`,
+		`auth:shared_access_key="` + Redacted + `"`,
+	} {
+		if !strings.Contains(got, expected) {
+			t.Errorf("XML fallback lost %q: %s", expected, got)
+		}
+	}
+}
+
+func TestValueSensitiveXMLElementsRedactAllInnerRepresentations(t *testing.T) {
+	tests := []string{
+		`<password><![CDATA[short-cdata]]></password>`,
+		`<password><!-- short-comment --></password>`,
+		`<password><nested>short-nested</nested></password>`,
+	}
+	for _, input := range tests {
+		got := Value(input, Policy{})
+		if got != `<password>`+Redacted+`</password>` {
+			t.Fatalf("Value(%q) = %q, want complete sensitive-element redaction", input, got)
+		}
+	}
+}
+
+func TestValueFailsClosedForTruncatedCredentialStructures(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		secret    string
+		wantPiece string
+	}{
+		{
+			name:      "unterminated JSON string",
+			input:     `{"password":"short-json-secret`,
+			secret:    "short-json-secret",
+			wantPiece: `"password":"` + Redacted,
+		},
+		{
+			name:      "unterminated XML element",
+			input:     `<root><password>short-xml-secret`,
+			secret:    "short-xml-secret",
+			wantPiece: `<password>` + Redacted,
+		},
+		{
+			name:      "unterminated JSON credential object",
+			input:     `{"password":{"part":"short-json-object-secret`,
+			secret:    "short-json-object-secret",
+			wantPiece: `"password":` + Redacted,
+		},
+		{
+			name:      "unterminated double-quoted XML credential attribute",
+			input:     `<root password="short-xml-attribute-secret`,
+			secret:    "short-xml-attribute-secret",
+			wantPiece: `password="` + Redacted,
+		},
+		{
+			name:      "unterminated single-quoted XML credential attribute",
+			input:     `<root passphrase='short-xml-single-secret`,
+			secret:    "short-xml-single-secret",
+			wantPiece: `passphrase='` + Redacted,
+		},
+		{
+			name:      "XML ancestor recovery",
+			input:     `<root><password>short-xml-secret</root>`,
+			secret:    "short-xml-secret",
+			wantPiece: `<password>` + Redacted + `</root>`,
+		},
+		{
+			name:      "truncated sensitive opening element payload",
+			input:     `<password short-opening-secret`,
+			secret:    "short-opening-secret",
+			wantPiece: `<password ` + Redacted,
+		},
+		{
+			name:      "truncated namespaced sensitive opening element payload",
+			input:     `<auth:password short-opening-secret`,
+			secret:    "short-opening-secret",
+			wantPiece: `<auth:password ` + Redacted,
+		},
+		{
+			name: "multipart final part at EOF",
+			input: "--b\r\nContent-Disposition: form-data; name=password\r\n" +
+				"X-Part-Trace: retained\r\n\r\nshort-multipart-secret",
+			secret:    "short-multipart-secret",
+			wantPiece: "X-Part-Trace: retained\r\n\r\n" + Redacted,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := Value(test.input, Policy{})
+			if strings.Contains(got, test.secret) || !strings.Contains(got, test.wantPiece) {
+				t.Fatalf("truncated credential structure was not scrubbed:\n got: %q\nwant marker: %q", got, test.wantPiece)
+			}
+		})
+	}
+
+	for _, safe := range []string{
+		`{"note":"short-safe-text`,
+		`<root><note>short-safe-text`,
+		`<root note="short-safe-text`,
+		`<root note='short-safe-text`,
+		"--b\r\nContent-Disposition: form-data; name=note\r\n\r\nshort-safe-text",
+	} {
+		if got := Value(safe, Policy{}); got != safe {
+			t.Fatalf("safe truncated structure changed:\n got: %q\nwant: %q", got, safe)
+		}
+	}
+}
+
+func TestRedactXMLFieldsDeepUnmatchedClosesIsBounded(t *testing.T) {
+	const depth = 12_000
+	var input strings.Builder
+	for index := 0; index < depth; index++ {
+		fmt.Fprintf(&input, "<node%d>", index)
+	}
+	for index := 0; index < depth; index++ {
+		input.WriteString("</unmatched>")
+	}
+	value := input.String()
+	if got := redactXMLFields(value, func(string) bool { return false }); got != value {
+		t.Fatal("deep safe malformed XML changed")
+	}
+
+	dense := strings.Repeat("<n/>", 250_000)
+	if got := redactXMLFields(dense, func(string) bool { return false }); got != dense {
+		t.Fatal("dense safe XML changed")
+	}
+}
+
+func TestValueMultipartSupportsUnquotedNamesAndArbitraryPartHeaders(t *testing.T) {
+	input := "--b\r\n" +
+		"Content-Disposition: form-data; name=shared_access_key\r\n" +
+		"X-Part-Trace: keep-header\r\n" +
+		"Content-Transfer-Encoding: binary\r\n\r\n" +
+		"short-secret\r\n--b--"
+	got := Value(input, Policy{})
+	if strings.Contains(got, "short-secret") ||
+		!strings.Contains(got, "X-Part-Trace: keep-header") ||
+		!strings.Contains(got, Redacted) {
+		t.Fatalf("multipart fallback did not redact an unquoted field with arbitrary headers: %s", got)
+	}
+}
+
+func TestValueMultipartUsesExactBoundaryAndFailsClosedForMalformedName(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name: "boundary-like payload line",
+			input: "--b\r\nContent-Disposition: form-data; name=password\r\n\r\n" +
+				"prefix\r\n--notboundary\r\nshort-secret\r\n--b--\r\n",
+		},
+		{
+			name: "truncated quoted name",
+			input: "--b\r\nContent-Disposition: form-data; name=\"password\r\n" +
+				"X-Part-Trace: retained\r\n\r\nshort-secret\r\n--b--\r\n",
+		},
+		{
+			name:  "truncated quoted name at EOF",
+			input: "--b\r\nContent-Disposition: form-data; name=\"password\r\n\r\nshort-secret",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := Value(test.input, Policy{})
+			if strings.Contains(got, "short-secret") ||
+				strings.Contains(got, "--notboundary") ||
+				!strings.Contains(got, Redacted) {
+				t.Fatalf("multipart credential leaked: %q", got)
+			}
+			if strings.Contains(test.input, "--b--") && !strings.Contains(got, "\r\n--b--") {
+				t.Fatalf("declared multipart boundary was not preserved: %q", got)
+			}
+			if strings.Contains(test.input, "X-Part-Trace") &&
+				!strings.Contains(got, "X-Part-Trace: retained") {
+				t.Fatalf("multipart header evidence was not preserved: %q", got)
+			}
+		})
+	}
+
+	safe := "--b\r\nContent-Disposition: form-data; name=\"note\r\n\r\nshort-safe\r\n--b--\r\n"
+	if got := Value(safe, Policy{}); got != safe {
+		t.Fatalf("malformed nonsensitive multipart changed:\n got: %q\nwant: %q", got, safe)
+	}
+}
+
+func TestValueURLRedactsSemicolonSeparatedEncodedKeys(t *testing.T) {
+	input := "https://safe.example/path?safe=x;client%5Fsecret=short#view=full;pwd=code"
+	got := ValueURL(input, Policy{})
+	for _, leaked := range []string{"client%5Fsecret=short", "pwd=code"} {
+		if strings.Contains(got, leaked) {
+			t.Fatalf("ValueURL leaked %q: %s", leaked, got)
+		}
+	}
+	for _, expected := range []string{
+		"safe=x;client%5Fsecret=" + Redacted,
+		"view=full;pwd=" + Redacted,
+	} {
+		if !strings.Contains(got, expected) {
+			t.Fatalf("ValueURL lost semicolon-delimited structure %q: %s", expected, got)
+		}
+	}
+
+	embedded := Value("request failed for "+input+"; retrying", Policy{})
+	if strings.Contains(embedded, "client%5Fsecret=short") || strings.Contains(embedded, "pwd=code") {
+		t.Fatalf("embedded URL leaked semicolon-delimited credentials: %s", embedded)
+	}
+}
+
+func TestValueURLRecursivelySanitizesEncodedNestedHTTPURLs(t *testing.T) {
+	input := "https://outer.example.test/start?" +
+		"redirect=https%3A%2F%2Finner.example.test%2Flogin%3Fpassword%3Dshort%26safe%3Dok" +
+		"#next=https%3A%2F%2Finner.example.test%2Fcallback%3Fclient%255Fsecret%3Dcode"
+	got := ValueURL(input, Policy{})
+
+	for _, secret := range []string{"password%3Dshort", "client%255Fsecret%3Dcode"} {
+		if strings.Contains(got, secret) {
+			t.Fatalf("nested encoded URL leaked %q: %s", secret, got)
+		}
+	}
+	for _, exactShape := range []string{
+		"redirect=https%3A%2F%2Finner.example.test%2Flogin%3Fpassword%3D%5BREDACTED%5D%26safe%3Dok",
+		"next=https%3A%2F%2Finner.example.test%2Fcallback%3Fclient%255Fsecret%3D%5BREDACTED%5D",
+	} {
+		if !strings.Contains(got, exactShape) {
+			t.Fatalf("nested URL encoding/shape changed; missing %q in %s", exactShape, got)
+		}
+	}
+}
+
+func TestValueURLNestedSanitizationDepthLimitFailsClosed(t *testing.T) {
+	nested := "https://level4.example.test/?password=short"
+	for level := 3; level >= 0; level-- {
+		nested = "https://level" + strconv.Itoa(level) + ".example.test/?redirect=" + url.QueryEscape(nested)
+	}
+	got := ValueURL("https://outer.example.test/?redirect="+url.QueryEscape(nested), Policy{})
+	if strings.Contains(got, "password") || strings.Contains(got, "short") || !strings.Contains(got, "REDACTED") {
+		t.Fatalf("depth-limited nested URL did not fail closed: %s", got)
+	}
+}
+
+func TestValueURLMalformedNestedHTTPURLFailsClosed(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "literal nested URL",
+			input: "https://outer.example.test/?next=http://inner.example.test/?pwd=short-secret%ZZ",
+		},
+		{
+			name:  "encoded nested URL",
+			input: "https://outer.example.test/?next=https%3A%2F%2Finner.example.test%2F%3Fpwd%3Dshort-secret%ZZ",
+		},
+		{
+			name:  "mixed encoded nested URL",
+			input: "https://outer.example.test/?next=h%74tps:%2F%2Finner.example.test%2F%3Fpwd%3Dshort-secret%ZZ",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := ValueURL(test.input, Policy{})
+			if strings.Contains(got, "short-secret") || !strings.Contains(got, "next=%5BREDACTED%5D") {
+				t.Fatalf("ValueURL failed open for malformed nested URL:\n got: %s", got)
+			}
+
+			embedded := Value("request failed for "+test.input+" retrying", Policy{})
+			if strings.Contains(embedded, "short-secret") || !strings.Contains(embedded, "next=%5BREDACTED%5D") {
+				t.Fatalf("Value failed open for embedded malformed nested URL:\n got: %s", embedded)
+			}
+		})
+	}
+}
+
+func TestMalformedNestedURLSchemeStillRedactsNestedSensitiveQuery(t *testing.T) {
+	const input = `https://outer.test/?next=h%ZZttps://inner.test/?pwd=short-secret`
+	for name, scrubbed := range map[string]string{
+		"ValueURL": ValueURL(input, Policy{}),
+		"Value":    Value(input, Policy{}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if strings.Contains(scrubbed, "short-secret") ||
+				!strings.Contains(scrubbed, `pwd=`+Redacted) {
+				t.Fatalf("%s leaked the malformed nested query credential: %s", name, scrubbed)
+			}
+			if !strings.Contains(scrubbed, `h%ZZttps://inner.test/`) {
+				t.Fatalf("%s discarded safe malformed URL evidence: %s", name, scrubbed)
+			}
+		})
+	}
+
+	const safe = `https://outer.test/?next=h%ZZttps://inner.test/?page=short-safe`
+	if got := ValueURL(safe, Policy{}); got != safe {
+		t.Fatalf("ValueURL changed a malformed nonsensitive nested query:\n got: %s\nwant: %s", got, safe)
+	}
+	if got := Value(safe, Policy{}); got != safe {
+		t.Fatalf("Value changed a malformed nonsensitive nested query:\n got: %s\nwant: %s", got, safe)
+	}
+}
+
+func TestValueProtectsJSONEscapedSafeHTTPURL(t *testing.T) {
+	const safeURL = `https:\/\/cdn.example.test\/assets\/AbCdEf0123456789GhIjKlMn0Z`
+	if !embeddedEscapedHTTPURL.MatchString(safeURL) {
+		t.Fatalf("escaped URL detector did not match %q with %q", safeURL, embeddedEscapedHTTPURL)
+	}
+	input := `{"documentation":"` + safeURL + `","status":"ok"}`
+	if got := Value(input, Policy{}); got != input {
+		t.Fatalf("JSON-escaped safe URL changed:\n got: %s\nwant: %s", got, input)
+	}
+
+	credentialURL := `{"callback":"https:\/\/login.example.test\/?password=short&safe=ok"}`
+	got := Value(credentialURL, Policy{})
+	if strings.Contains(got, "password=short") ||
+		!strings.Contains(got, `password=`+Redacted) ||
+		!strings.Contains(got, `https:\/\/login.example.test\/`) ||
+		!strings.Contains(got, `&safe=ok`) {
+		t.Fatalf("JSON-escaped credential URL was not safely sanitized: %s", got)
+	}
+}
+
+func TestValueURLRedactsCommonPasswordAliases(t *testing.T) {
+	for _, name := range []string{"pwd", "pass", "passphrase", "credential", "credentials"} {
+		got := ValueURL("https://example.test/login?"+name+"=short", Policy{})
+		if strings.Contains(got, "=short") || !strings.Contains(got, name+"="+Redacted) {
+			t.Errorf("%s alias leaked from URL: %s", name, got)
+		}
+	}
+}
+
+func TestURLTokenSensitive(t *testing.T) {
+	if !URLTokenSensitive("AbCdEf0123456789GhIjKlMn0Z") {
+		t.Fatal("credential-shaped URL token was not detected")
+	}
+	if URLTokenSensitive("page-2") {
+		t.Fatal("ordinary URL value was classified as a credential")
 	}
 }
 
@@ -129,7 +696,7 @@ func TestValue(t *testing.T) {
 		{
 			name:  "xml token element and attribute",
 			input: `<soap><auth token="abc123" data-secret="tracking"><password>hunter2</password></auth></soap>`,
-			want:  `<soap><auth token="` + Redacted + `" data-secret="tracking"><password>` + Redacted + `</password></auth></soap>`,
+			want:  `<soap><auth token="` + Redacted + `" data-secret="` + Redacted + `">` + Redacted + `</auth></soap>`,
 		},
 		{
 			name:  "multipart password part",
@@ -191,6 +758,94 @@ func TestValueScrubsCredentialsInsideEmbeddedURLs(t *testing.T) {
 	}
 	if !strings.Contains(got, "request failed for") || !strings.Contains(got, "retrying") {
 		t.Fatalf("Value discarded surrounding diagnostic text: %q", got)
+	}
+}
+
+func TestValuePreservesEmbeddedXMLURLsAndBareSecretDetection(t *testing.T) {
+	input := `<!-- endpoint http://p100csg8c1.vci.att.com:18000/Services/ACME_ISBA_WEB.jws -->` +
+		`<Envelope xmlns="http://schemas.xmlsoap.org/soap/envelope/" ` +
+		`xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">` +
+		`<callback>https://safe.example/a/AbCdEf0123456789GhIjKlMn0Z</callback>` +
+		`<outside>AbCdEf0123456789GhIjKlMn0Z</outside></Envelope>`
+	got := Value(input, Policy{})
+	for _, safe := range []string{
+		"http://p100csg8c1.vci.att.com:18000/Services/ACME_ISBA_WEB.jws",
+		"http://schemas.xmlsoap.org/soap/envelope/",
+		"http://www.w3.org/2001/XMLSchema-instance",
+		"https://safe.example/a/AbCdEf0123456789GhIjKlMn0Z",
+	} {
+		if !strings.Contains(got, safe) {
+			t.Errorf("Value dropped safe embedded URL %q: %s", safe, got)
+		}
+	}
+	if !strings.Contains(got, "<outside>"+Redacted+"</outside>") {
+		t.Fatalf("Value did not redact genuine bare secret outside URL: %s", got)
+	}
+}
+
+func TestValueRedactsXMLNamedCredentialFields(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "named value attribute",
+			input: `<root><entry name="pass&#x77;ord" value="short-xml-secret"/></root>`,
+		},
+		{
+			name:  "named element text",
+			input: `<root><property key="client_secret">short-xml-secret</property></root>`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := Value(test.input, Policy{})
+			if strings.Contains(got, "short-xml-secret") || !strings.Contains(got, Redacted) {
+				t.Fatalf("named XML credential leaked: %s", got)
+			}
+		})
+	}
+
+	const safe = `<root><entry name="nickname" value="short-safe"/></root>`
+	if got := Value(safe, Policy{}); got != safe {
+		t.Fatalf("nonsensitive named XML field changed:\n got: %s\nwant: %s", got, safe)
+	}
+}
+
+func TestValueEmbeddedURLPlaceholdersCannotCollide(t *testing.T) {
+	input := `APEXURL0X0Z APEXURL0XX0Z ` +
+		`https://user:password@example.test/path?token=secret ` +
+		`https://safe.example/AbCdEf0123456789GhIjKlMn0Z`
+	got := Value(input, Policy{})
+	for _, literal := range []string{"APEXURL0X0Z", "APEXURL0XX0Z"} {
+		if !strings.Contains(got, literal) {
+			t.Errorf("Value consumed collision candidate %q: %s", literal, got)
+		}
+	}
+	if strings.Contains(got, "user:password") || strings.Contains(got, "token=secret") {
+		t.Fatalf("Value leaked embedded URL credentials: %s", got)
+	}
+	if !strings.Contains(got, "https://safe.example/AbCdEf0123456789GhIjKlMn0Z") {
+		t.Fatalf("Value corrupted safe URL path: %s", got)
+	}
+}
+
+func TestValueDoesNotExemptNonHTTPURLLikeTokens(t *testing.T) {
+	const token = "AbCdEf0123456789GhIjKlMn0Z"
+	got := Value("custom://example/"+token, Policy{})
+	if strings.Contains(got, token) || !strings.Contains(got, Redacted) {
+		t.Fatalf("non-HTTP URL-like token bypassed generic redaction: %q", got)
+	}
+}
+
+func TestValueAppliesCustomRulesAcrossEmbeddedHTTPURLs(t *testing.T) {
+	const input = "BEGIN https://safe.example/resource END"
+	got := Value(input, Policy{ExtraPatterns: []Rule{{
+		Pattern:     `BEGIN https://safe[.]example/resource END`,
+		Replacement: "custom-redaction",
+	}}})
+	if got != "custom-redaction" {
+		t.Fatalf("custom whole-context rule was bypassed by URL protection: %q", got)
 	}
 }
 
@@ -567,6 +1222,96 @@ func TestValueRedactsSessionAndCSRFTokens(t *testing.T) {
 		}
 		if !strings.Contains(got, Redacted) {
 			t.Fatalf("expected redaction marker for %q, got: %s", tc.in, got)
+		}
+	}
+}
+
+// TestValueRedactsJWTInsideEmbeddedURLQuery pins that embedded-URL protection
+// does not create a disclosure hole. protectEmbeddedURLs deliberately hides
+// http(s) spans from redactBareTokens/jwtPattern so safe hosts and content
+// hashes survive; the URL-aware query governance inside valueURL is what must
+// still catch a credential-shaped query value, whether or not the parameter
+// name is in the sensitive vocabulary.
+func TestValueRedactsJWTInsideEmbeddedURLQuery(t *testing.T) {
+	const jwt = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9." +
+		"eyJzdWIiOiIxMjM0NTY3ODkwIn0." +
+		"dBjftJeZ4CVPmB92K27uhbUJU1p1r_wW1gFWFOEjXk"
+	for _, parameter := range []string{"access_token", "trace"} {
+		input := "callback https://safe.example/cb?" + parameter + "=" + jwt
+		got := Value(input, Policy{})
+		if strings.Contains(got, jwt) {
+			t.Fatalf("JWT survived inside an embedded URL query (%s=): %q", parameter, got)
+		}
+		if !strings.Contains(got, "https://safe.example/cb?"+parameter+"=") {
+			t.Fatalf("Value corrupted the surrounding URL (%s=): %q", parameter, got)
+		}
+	}
+}
+
+// TestValueRedactsNonHTTPConnectionStringCredentials covers the schemes that
+// carry credentials in URL userinfo but are deliberately excluded from the
+// http(s)-only placeholder exemption, plus the opaque jdbc: DSN form that has
+// no "://" at all and therefore matches no URL pattern.
+func TestValueRedactsNonHTTPConnectionStringCredentials(t *testing.T) {
+	tests := []struct {
+		name    string
+		input   string
+		secret  string
+		keepers []string
+	}{
+		{
+			name:    "amqp userinfo",
+			input:   "broker amqp://svcuser:s3cr3t-broker-pass@broker.example/vhost",
+			secret:  "s3cr3t-broker-pass",
+			keepers: []string{"broker.example"},
+		},
+		{
+			name:    "mongodb userinfo",
+			input:   "mongo mongodb://svcuser:s3cr3t-mongo-pass@db.example:27017/app",
+			secret:  "s3cr3t-mongo-pass",
+			keepers: []string{"db.example"},
+		},
+		{
+			name:    "oracle thin opaque dsn",
+			input:   "dsn jdbc:oracle:thin:appuser/s3cr3t-db-pass@//db.example:1521/ORCL",
+			secret:  "s3cr3t-db-pass",
+			keepers: []string{"jdbc:oracle:thin:appuser/", "db.example:1521/ORCL"},
+		},
+		{
+			name:    "jdbc url form with password parameter",
+			input:   "dsn jdbc:mysql://db.example:3306/app?user=svc&password=s3cr3t-my-pass",
+			secret:  "s3cr3t-my-pass",
+			keepers: []string{"db.example:3306/app"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := Value(test.input, Policy{})
+			if strings.Contains(got, test.secret) {
+				t.Fatalf("credential survived: %q", got)
+			}
+			if !strings.Contains(got, Redacted) {
+				t.Fatalf("no redaction marker was emitted: %q", got)
+			}
+			for _, keeper := range test.keepers {
+				if !strings.Contains(got, keeper) {
+					t.Fatalf("Value dropped non-credential context %q: %q", keeper, got)
+				}
+			}
+		})
+	}
+}
+
+// TestValueLeavesOrdinaryPathLikeTextIntact guards the opaque-DSN rule against
+// over-matching: "a/b@c" shaped text is ordinary prose, not a connection string.
+func TestValueLeavesOrdinaryPathLikeTextIntact(t *testing.T) {
+	for _, input := range []string{
+		"path a/b@c.example",
+		"handler pkg/convert@v1.2.3",
+		"see docs/setup@latest for details",
+	} {
+		if got := Value(input, Policy{}); got != input {
+			t.Fatalf("Value rewrote ordinary text %q -> %q", input, got)
 		}
 	}
 }

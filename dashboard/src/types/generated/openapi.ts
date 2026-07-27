@@ -6,14 +6,349 @@
 
 export interface components {
   schemas: {
+    "APEXScript": {
+      "actions": Array<Record<string, unknown>>;
+      "config": Record<string, unknown>;
+      "created_at"?: string;
+      "folder_id"?: (string) | null;
+      "id": string;
+      "init"?: Array<Record<string, unknown>>;
+      "metadata"?: Record<string, unknown>;
+      "name": string;
+      "parameters"?: Array<Record<string, unknown>>;
+      "project_id"?: string;
+      "protocol": string;
+      "ref_key"?: string;
+      "teardown"?: Array<Record<string, unknown>>;
+      "updated_at"?: string;
+      "version": string;
+      [key: string]: unknown;
+    };
     "AuthoringSessionCreateRequest": {
       "draft"?: Record<string, unknown>;
+      "folder_id"?: (string) | null;
       "idempotency_key"?: string;
       "name"?: string;
       "project_id"?: string;
       "review_state"?: Record<string, unknown>;
       "source": string;
       "status"?: "reviewing" | "editing" | "blocked" | "ready";
+    };
+    "BrunoArtifactSummary": {
+      "artifact_kind": string;
+      "id": string;
+      "manifest_sha256"?: string;
+      "sha256": string;
+      "size_bytes": number;
+    };
+    "BrunoCanonicalCommitRequest": {
+      "conflict_resolutions"?: Record<string, string>;
+      "expected_active_revision_id"?: string;
+      "expected_updated_at"?: string;
+      "folder_id"?: (string) | null;
+      "import_session_id": string;
+      "migrate_secrets"?: boolean;
+      "mode"?: "create" | "sync";
+      "name"?: string;
+      "parameterization_selected_ids"?: Array<string>;
+      "project_id": string;
+      "script_id"?: string;
+      "secret_bindings"?: Record<string, string>;
+      "sync_script_id"?: string;
+    };
+    "BrunoCanonicalCommitResponse": {
+      "change_summary": Record<string, unknown>;
+      "created": boolean;
+      "parameterization_applied": number;
+      "revision": components["schemas"]["BrunoSourceRevision"];
+      "script": components["schemas"]["APEXScript"];
+      "secret_migrations": Array<Record<string, unknown>>;
+    };
+    "BrunoCanonicalExecutionPreflight": {
+      "blockers": Array<string>;
+      "ready": boolean;
+    };
+    "BrunoCanonicalInspectResult": {
+      "capabilities": components["schemas"]["BrunoCapabilities"];
+      "collection": components["schemas"]["BrunoCollection"];
+      "environments"?: Array<components["schemas"]["BrunoEnvironment"]>;
+      "fidelity": components["schemas"]["BrunoFidelityReport"];
+      "inspected_at": string;
+      "manifest": components["schemas"]["BrunoManifest"];
+      "missing_variables"?: Array<string>;
+      "native_projection": components["schemas"]["BrunoNativeProjection"];
+      "output_mode": "canonical";
+      "root_path": string;
+      "schema_version": string;
+      "script": components["schemas"]["APEXScript"];
+      "secret_requirements"?: Array<components["schemas"]["BrunoSecretRequirement"]>;
+      "security_findings"?: Array<components["schemas"]["BrunoSecurityFinding"]>;
+      "source_format": string;
+    };
+    "BrunoCapabilities": {
+      "has_bruno_apps": boolean;
+      "has_certificates": boolean;
+      "has_file_bodies": boolean;
+      "has_javascript": boolean;
+      "has_local_modules": boolean;
+      "has_npm_dependencies": boolean;
+      "has_private_key_files": boolean;
+      "request_types": Array<string>;
+      "required_sandbox": string;
+      "runner_profile"?: string;
+    };
+    "BrunoCollection": {
+      "items": Array<components["schemas"]["BrunoCollectionItem"]>;
+      "name": string;
+      "uid"?: string;
+    };
+    "BrunoCollectionItem": {
+      "children"?: Array<components["schemas"]["BrunoCollectionItem"]>;
+      "executable": boolean;
+      "has_scripts"?: boolean;
+      "has_tests"?: boolean;
+      "name": string;
+      "path": string;
+      "sequence"?: number;
+      "tags"?: Array<string>;
+      "type": string;
+      "uid": string;
+    };
+    "BrunoCommitErrorResponse": {
+      "candidate_id"?: string;
+      "code"?: string;
+      "commit_state"?: string;
+      "committed_names"?: Array<string>;
+      "committed_secret_names"?: Array<string>;
+      "committed_secrets_retained"?: boolean;
+      "conflicts"?: Array<components["schemas"]["BrunoImportConflict"]>;
+      "error": string;
+      "failed_name"?: string;
+      "findings"?: Array<string>;
+      "idempotency_session_id"?: string;
+      "import_session_consumed"?: boolean;
+      "issues"?: Array<string>;
+      "manual_configuration_required"?: boolean;
+      "manual_retry_safe"?: boolean;
+      "migrated"?: Array<Record<string, unknown>>;
+      "migrated_count"?: number;
+      "migrated_secret_names"?: Array<string>;
+      "partial"?: boolean;
+      "project_id"?: string;
+      "reason"?: string;
+      "remaining_names"?: Array<string>;
+      "requirements"?: Array<components["schemas"]["BrunoSecretRequirement"]>;
+      "resolution"?: string;
+      "script_committed"?: (boolean | string);
+      "secret_migrations"?: Array<Record<string, unknown>>;
+      "session_retained"?: boolean;
+      "source_values_cleared"?: boolean;
+      "source_values_disclosed"?: boolean;
+      "source_values_retained"?: boolean;
+    };
+    "BrunoCommitRequest": (components["schemas"]["BrunoCanonicalCommitRequest"] | components["schemas"]["BrunoNativeBatchCommitRequest"]);
+    "BrunoCommitResponse": (components["schemas"]["BrunoCanonicalCommitResponse"] | components["schemas"]["BrunoNativeBatchCommitResponse"]);
+    "BrunoEnvironment": {
+      "name": string;
+      "path": string;
+      "type": string;
+    };
+    "BrunoExecutionPreflight": (components["schemas"]["BrunoCanonicalExecutionPreflight"] | components["schemas"]["BrunoNativeExecutionPreflight"]);
+    "BrunoFidelityReport": {
+      "compatibility": string;
+      "dropped_items": number;
+      "executable_items": number;
+      "intentional_extensions"?: Array<string>;
+      "preserved_apps": number;
+      "preserved_files": number;
+      "status": string;
+    };
+    "BrunoImportConflict": {
+      "field": string;
+      "id": string;
+      "required_resolution": string;
+      "summary": string;
+    };
+    "BrunoInspectFile": {
+      "content"?: string;
+      "content_base64"?: string;
+      "path": string;
+    };
+    "BrunoInspectOptions": {
+      "bail"?: boolean;
+      "default_environment"?: string;
+      "default_global_environment"?: string;
+      "delay_ms"?: number;
+      "exclude_tags"?: Array<string>;
+      "execution"?: string;
+      "include_tags"?: Array<string>;
+      "output_mode"?: "canonical" | "native_requests";
+      "paths"?: Array<string>;
+      "persist_session"?: boolean;
+      "recursive"?: boolean;
+      "selection"?: string;
+      "stream_timeout_ms"?: number;
+      "tests_only"?: boolean;
+    };
+    "BrunoInspectRequest": {
+      "content"?: string;
+      "content_base64"?: string;
+      "filename"?: string;
+      "files"?: Array<components["schemas"]["BrunoInspectFile"]>;
+      "name"?: string;
+      "options"?: components["schemas"]["BrunoInspectOptions"];
+      "project_id"?: string;
+      "root_path"?: string;
+      "sandbox"?: string;
+      "sync_script_id"?: string;
+    };
+    "BrunoInspectResponse": {
+      "artifacts": Array<components["schemas"]["BrunoArtifactSummary"]>;
+      "execution_preflight": components["schemas"]["BrunoExecutionPreflight"];
+      "expires_at": string;
+      "import_session_id": string;
+      "parameterization": (Record<string, unknown>) | null;
+      "result": components["schemas"]["BrunoInspectResult"];
+      "sync_preview"?: components["schemas"]["BrunoSyncPreview"];
+    };
+    "BrunoInspectResult": (components["schemas"]["BrunoCanonicalInspectResult"] | components["schemas"]["BrunoNativeInspectResult"]);
+    "BrunoManifest": {
+      "bundle_sha256": string;
+      "files": Array<components["schemas"]["BrunoManifestFile"]>;
+      "sha256": string;
+      "total_bytes": number;
+      "version": string;
+    };
+    "BrunoManifestFile": {
+      "executable"?: boolean;
+      "media_type"?: string;
+      "mode": number;
+      "path": string;
+      "role": string;
+      "sha256": string;
+      "size_bytes": number;
+    };
+    "BrunoNativeBatchCommitRequest": {
+      "acknowledged_finding_ids"?: Array<string>;
+      "candidate_ids"?: Array<string>;
+      "folder_id": string;
+      "import_session_id": string;
+      "migrate_secrets"?: boolean;
+      "mode": "create_native_batch";
+      "name_overrides"?: Record<string, string>;
+      "project_id": string;
+      "secret_bindings"?: Record<string, string>;
+    };
+    "BrunoNativeBatchCommitResponse": {
+      "batch_id": string;
+      "count": number;
+      "created": boolean;
+      "idempotent_replay": boolean;
+      "scripts": Array<components["schemas"]["APEXScript"]>;
+      "secret_migrations"?: Array<Record<string, unknown>>;
+    };
+    "BrunoNativeCandidateExecutionPreflight": {
+      "blockers"?: Array<string>;
+      "candidate_id": string;
+      "ready": boolean;
+    };
+    "BrunoNativeDiagnostic": {
+      "acknowledgement_required"?: boolean;
+      "code": string;
+      "finding_id"?: string;
+      "id": string;
+      "message": string;
+      "path"?: string;
+      "severity": string;
+    };
+    "BrunoNativeExecutionPreflight": {
+      "blockers": number;
+      "candidates": Array<components["schemas"]["BrunoNativeCandidateExecutionPreflight"]>;
+      "ready": boolean;
+    };
+    "BrunoNativeInspectResult": {
+      "capabilities": components["schemas"]["BrunoCapabilities"];
+      "collection": components["schemas"]["BrunoCollection"];
+      "environments"?: Array<components["schemas"]["BrunoEnvironment"]>;
+      "fidelity": components["schemas"]["BrunoFidelityReport"];
+      "inspected_at": string;
+      "manifest": components["schemas"]["BrunoManifest"];
+      "missing_variables"?: Array<string>;
+      "native_projection": components["schemas"]["BrunoNativeProjection"];
+      "output_mode": "native_requests";
+      "root_path": string;
+      "schema_version": string;
+      "scripts": Array<components["schemas"]["BrunoNativeScriptCandidate"]>;
+      "secret_requirements"?: Array<components["schemas"]["BrunoSecretRequirement"]>;
+      "security_findings"?: Array<components["schemas"]["BrunoSecurityFinding"]>;
+      "source_format": string;
+    };
+    "BrunoNativeProjection": {
+      "eligible": boolean;
+      "reasons"?: Array<string>;
+    };
+    "BrunoNativeScriptCandidate": {
+      "candidate_id": string;
+      "diagnostics"?: Array<components["schemas"]["BrunoNativeDiagnostic"]>;
+      "fidelity": string;
+      "method": string;
+      "missing_variables"?: Array<string>;
+      "planned_script_id": string;
+      "script": components["schemas"]["APEXScript"];
+      "secret_requirements"?: Array<components["schemas"]["BrunoSecretRequirement"]>;
+      "sequence"?: number;
+      "source_mappings"?: Array<components["schemas"]["BrunoSourceMapping"]>;
+      "source_path": string;
+      "source_uid": string;
+      "target": string;
+    };
+    "BrunoSecretRequirement": {
+      "context": string;
+      "existing_reference"?: boolean;
+      "id": string;
+      "key": string;
+      "path": string;
+      "replacement": string;
+      "source_value_available"?: boolean;
+      "suggested_name": string;
+    };
+    "BrunoSecurityFinding": {
+      "code": string;
+      "id"?: string;
+      "path"?: string;
+      "severity": string;
+      "summary": string;
+    };
+    "BrunoSourceMapping": {
+      "path": string;
+      "role": string;
+      "sha256": string;
+    };
+    "BrunoSourceRevision": {
+      "active": boolean;
+      "change_summary"?: Record<string, unknown>;
+      "compatibility_version": string;
+      "created_at": string;
+      "created_by"?: string;
+      "dependency_snapshot_ref"?: string;
+      "id": string;
+      "identity_map"?: Record<string, string>;
+      "import_options"?: Record<string, unknown>;
+      "parent_revision_id"?: string;
+      "project_id": string;
+      "raw_artifact_id"?: string;
+      "sanitized_artifact_id": string;
+      "script_id": string;
+      "secret_bindings"?: Record<string, string>;
+      "security_profile"?: Record<string, unknown>;
+      "source_format": string;
+    };
+    "BrunoSyncPreview": {
+      "active_revision"?: string;
+      "changes": Record<string, unknown>;
+      "conflicts"?: Array<components["schemas"]["BrunoImportConflict"]>;
+      "expected_updated_at": string;
+      "target_script_id": string;
     };
     "ErrorResponse": {
       "code"?: string;
@@ -2585,9 +2920,15 @@ export interface operations {
       content: {
         "application/json": {
           "dry_run"?: boolean;
+          "folder_id"?: string;
+          "import_session_id"?: string;
           "mode"?: string;
+          "name"?: string;
+          "parameterization_selected_ids"?: Array<string>;
+          "project_id"?: string;
           "replace_mode"?: string;
           "script"?: Record<string, unknown>;
+          "secret_bindings"?: Record<string, unknown>;
           "target_script_id"?: string;
         };
       };
@@ -2595,12 +2936,12 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "201": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -2624,6 +2965,11 @@ export interface operations {
         };
       };
       "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -2642,67 +2988,58 @@ export interface operations {
     parameters?: never;
     requestBody: {
       content: {
-        "application/json": {
-          "conflict_resolutions"?: Record<string, unknown>;
-          "expected_active_revision_id"?: string;
-          "expected_updated_at"?: string;
-          "folder_id"?: string;
-          "import_session_id"?: string;
-          "migrate_secrets"?: boolean;
-          "mode"?: string;
-          "name"?: string;
-          "parameterization_selected_ids"?: Array<string>;
-          "project_id"?: string;
-          "script_id"?: string;
-          "secret_bindings"?: Record<string, unknown>;
-          "sync_script_id"?: string;
-        };
+        "application/json": components["schemas"]["BrunoCommitRequest"];
       };
     };
     responses: {
+      "200": {
+        content: {
+          "application/json": components["schemas"]["BrunoCommitResponse"];
+        };
+      };
       "201": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": components["schemas"]["BrunoCommitResponse"];
         };
       };
       "400": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": components["schemas"]["BrunoCommitErrorResponse"];
         };
       };
       "401": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": components["schemas"]["BrunoCommitErrorResponse"];
         };
       };
       "403": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": components["schemas"]["BrunoCommitErrorResponse"];
         };
       };
       "404": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": components["schemas"]["BrunoCommitErrorResponse"];
         };
       };
       "409": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": components["schemas"]["BrunoCommitErrorResponse"];
         };
       };
       "422": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": components["schemas"]["BrunoCommitErrorResponse"];
         };
       };
       "500": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": components["schemas"]["BrunoCommitErrorResponse"];
         };
       };
       "503": {
         content: {
-          "application/json": components["schemas"]["ErrorResponse"];
+          "application/json": components["schemas"]["BrunoCommitErrorResponse"];
         };
       };
       "default": {
@@ -2812,9 +3149,15 @@ export interface operations {
       content: {
         "application/json": {
           "dry_run"?: boolean;
+          "folder_id"?: string;
+          "import_session_id"?: string;
           "mode"?: string;
+          "name"?: string;
+          "parameterization_selected_ids"?: Array<string>;
+          "project_id"?: string;
           "replace_mode"?: string;
           "script"?: Record<string, unknown>;
+          "secret_bindings"?: Record<string, unknown>;
           "target_script_id"?: string;
         };
       };
@@ -2822,12 +3165,12 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "201": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -2851,6 +3194,11 @@ export interface operations {
         };
       };
       "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };
@@ -4134,7 +4482,130 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "application_id"?: string;
+          "assignment"?: {
+            "load_zone_weights"?: Record<string, unknown>;
+            "mode"?: string;
+            "pool_id"?: string;
+            "region_weights"?: Record<string, unknown>;
+            "required_labels"?: Record<string, unknown>;
+            "selected_targets"?: Array<string>;
+            "shard_strategy"?: string;
+            "tolerate_generator_loss"?: boolean;
+          };
+          "data_pools"?: Array<Record<string, unknown>>;
+          "duration"?: string;
+          "folder_id"?: string;
+          "goal_config"?: {
+            "max_avg_server_processing_ms"?: number;
+            "max_avg_transfer_ms"?: number;
+            "max_cls"?: number;
+            "max_dead_letter_rate_pct"?: number;
+            "max_end_to_end_latency_ms"?: number;
+            "max_error_count"?: number;
+            "max_error_pct"?: number;
+            "max_inp_ms"?: number;
+            "max_lcp_ms"?: number;
+            "max_partition_skew_pct"?: number;
+            "max_redelivery_rate_pct"?: number;
+            "max_throttled_requests"?: number;
+            "max_vusers"?: number;
+            "min_vusers"?: number;
+            "p95_latency_ms"?: number;
+            "sla_breach_window"?: string;
+            "stop_on_max_errors"?: boolean;
+            "stop_on_sla_breach"?: boolean;
+            "target_average_tps"?: number;
+          };
+          "groups"?: Array<{
+            "assignment"?: {
+              "load_zone_weights"?: Record<string, unknown>;
+              "mode"?: string;
+              "pool_id"?: string;
+              "region_weights"?: Record<string, unknown>;
+              "required_labels"?: Record<string, unknown>;
+              "selected_targets"?: Array<string>;
+              "shard_strategy"?: string;
+              "tolerate_generator_loss"?: boolean;
+            };
+            "initialization"?: string;
+            "iterations"?: number;
+            "name"?: string;
+            "ramp_down"?: string;
+            "ramp_up"?: string;
+            "revision_new_group"?: boolean;
+            "revision_source_group_index"?: number;
+            "role"?: string;
+            "runtime_settings"?: {
+              "auto_transactions"?: string;
+              "base_url"?: string;
+              "browser"?: Record<string, unknown>;
+              "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
+              "env"?: Record<string, unknown>;
+              "error_handling"?: Record<string, unknown>;
+              "http"?: Record<string, unknown>;
+              "iterations"?: number;
+              "java_vuser"?: Record<string, unknown>;
+              "log"?: Record<string, unknown>;
+              "log_level"?: string;
+              "pacing"?: Record<string, unknown>;
+              "redaction_rules"?: Array<Record<string, unknown>>;
+              "run_logic"?: Record<string, unknown>;
+              "think_time"?: Record<string, unknown>;
+              "web_runtime"?: Record<string, unknown>;
+            };
+            "script_id"?: string;
+            "stages"?: Array<Record<string, unknown>>;
+            "vusers"?: number;
+          }>;
+          "name"?: string;
+          "project_id"?: string;
+          "ramp_up"?: string;
+          "release_id"?: string;
           "remote_project_id"?: string;
+          "requested_test_id"?: string;
+          "reserve_launch_window"?: boolean;
+          "resource_baseline"?: boolean;
+          "revision_source_test_id"?: string;
+          "runtime_settings"?: {
+            "auto_transactions"?: string;
+            "base_url"?: string;
+            "browser"?: {
+              "device_profile"?: string;
+              "headless"?: boolean;
+              "orientation"?: string;
+              "touch_mode"?: boolean;
+            };
+            "browser_config"?: Record<string, unknown>;
+            "browser_emulation"?: Record<string, unknown>;
+            "env"?: Record<string, unknown>;
+            "error_handling"?: Record<string, unknown>;
+            "http"?: Record<string, unknown>;
+            "iterations"?: number;
+            "java_vuser"?: {
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: boolean;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "skip_parameter_evaluation"?: boolean;
+              "use_xbootclasspath"?: boolean;
+            };
+            "log"?: Record<string, unknown>;
+            "log_level"?: string;
+            "pacing"?: Record<string, unknown>;
+            "redaction_rules"?: Array<Record<string, unknown>>;
+            "run_logic"?: Record<string, unknown>;
+            "think_time"?: Record<string, unknown>;
+            "web_runtime"?: Record<string, unknown>;
+          };
+          "scenario_id"?: string;
+          "scenario_mode"?: string;
+          "scheduled_start_at"?: string;
+          "script_id"?: string;
+          "script_shakeout"?: boolean;
+          "start_delay"?: string;
           "start_immediately"?: boolean;
           "start_options"?: {
             "override_capacity_shortfall"?: boolean;
@@ -4267,6 +4738,8 @@ export interface operations {
             "timeslot_id"?: string;
             "vusers"?: number;
           };
+          "timeslot_id"?: string;
+          "vusers"?: number;
         };
       };
     };
@@ -4991,7 +5464,21 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "actions"?: Array<Record<string, unknown>>;
+          "config"?: Record<string, unknown>;
+          "data_sources"?: Array<Record<string, unknown>>;
+          "id"?: string;
+          "init"?: Array<Record<string, unknown>>;
+          "kind"?: string;
+          "name"?: string;
+          "parameters"?: Array<Record<string, unknown>>;
           "project_id"?: string;
+          "protocols"?: Array<string>;
+          "summary"?: string;
+          "tags"?: Array<string>;
+          "teardown"?: Array<Record<string, unknown>>;
+          "usage_notes"?: Array<string>;
+          "variables"?: Record<string, unknown>;
         };
       };
     };
@@ -18206,9 +18693,11 @@ export interface operations {
       "query"?: {
         "filename"?: string;
         "name"?: string;
+        "options"?: string;
+        "output_mode"?: "canonical" | "native_requests";
         "project_id"?: string;
         "root_path"?: string;
-        "sandbox"?: boolean;
+        "sandbox"?: string;
         "sync_script_id"?: string;
       };
       "header"?: {
@@ -18217,53 +18706,30 @@ export interface operations {
     };
     requestBody: {
       content: {
-        "application/json": {
-          "content"?: string;
-          "content_base64"?: string;
-          "filename"?: string;
-          "files"?: Array<{
-            "content"?: string;
-            "content_base64"?: string;
-            "path"?: string;
-          }>;
+        "application/json": components["schemas"]["BrunoInspectRequest"];
+        "application/octet-stream": string;
+        "multipart/form-data": {
+          "file"?: string;
+          "files"?: Array<string>;
           "name"?: string;
-          "options"?: Record<string, unknown>;
+          "options"?: string;
           "project_id"?: string;
           "root_path"?: string;
           "sandbox"?: string;
           "sync_script_id"?: string;
+          [key: string]: unknown;
         };
       };
     };
     responses: {
       "200": {
         content: {
-          "application/json": {
-            "artifacts"?: Array<{
-              "artifact_kind"?: string;
-              "id"?: string;
-              "manifest_sha256"?: string;
-              "sha256"?: string;
-              "size_bytes"?: number;
-            }>;
-            "execution_preflight"?: Record<string, unknown>;
-            "expires_at"?: string;
-            "import_session_id"?: string;
-            "parameterization"?: Record<string, unknown>;
-            "result"?: Record<string, unknown>;
-            "sync_preview"?: {
-              "active_revision"?: string;
-              "changes"?: Record<string, unknown>;
-              "conflicts"?: Array<{
-                "field"?: string;
-                "id"?: string;
-                "required_resolution"?: string;
-                "summary"?: string;
-              }>;
-              "expected_updated_at"?: string;
-              "target_script_id"?: string;
-            };
-          };
+          "application/json": components["schemas"]["BrunoInspectResponse"];
+        };
+      };
+      "400": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       "401": {
@@ -23218,8 +23684,132 @@ export interface operations {
     requestBody: {
       content: {
         "application/json": {
+          "application_id"?: string;
+          "assignment"?: {
+            "load_zone_weights"?: Record<string, unknown>;
+            "mode"?: string;
+            "pool_id"?: string;
+            "region_weights"?: Record<string, unknown>;
+            "required_labels"?: Record<string, unknown>;
+            "selected_targets"?: Array<string>;
+            "shard_strategy"?: string;
+            "tolerate_generator_loss"?: boolean;
+          };
+          "data_pools"?: Array<Record<string, unknown>>;
+          "duration"?: string;
+          "folder_id"?: string;
+          "goal_config"?: {
+            "max_avg_server_processing_ms"?: number;
+            "max_avg_transfer_ms"?: number;
+            "max_cls"?: number;
+            "max_dead_letter_rate_pct"?: number;
+            "max_end_to_end_latency_ms"?: number;
+            "max_error_count"?: number;
+            "max_error_pct"?: number;
+            "max_inp_ms"?: number;
+            "max_lcp_ms"?: number;
+            "max_partition_skew_pct"?: number;
+            "max_redelivery_rate_pct"?: number;
+            "max_throttled_requests"?: number;
+            "max_vusers"?: number;
+            "min_vusers"?: number;
+            "p95_latency_ms"?: number;
+            "sla_breach_window"?: string;
+            "stop_on_max_errors"?: boolean;
+            "stop_on_sla_breach"?: boolean;
+            "target_average_tps"?: number;
+          };
+          "groups"?: Array<{
+            "assignment"?: {
+              "load_zone_weights"?: Record<string, unknown>;
+              "mode"?: string;
+              "pool_id"?: string;
+              "region_weights"?: Record<string, unknown>;
+              "required_labels"?: Record<string, unknown>;
+              "selected_targets"?: Array<string>;
+              "shard_strategy"?: string;
+              "tolerate_generator_loss"?: boolean;
+            };
+            "initialization"?: string;
+            "iterations"?: number;
+            "name"?: string;
+            "ramp_down"?: string;
+            "ramp_up"?: string;
+            "revision_new_group"?: boolean;
+            "revision_source_group_index"?: number;
+            "role"?: string;
+            "runtime_settings"?: {
+              "auto_transactions"?: string;
+              "base_url"?: string;
+              "browser"?: Record<string, unknown>;
+              "browser_config"?: Record<string, unknown>;
+              "browser_emulation"?: Record<string, unknown>;
+              "env"?: Record<string, unknown>;
+              "error_handling"?: Record<string, unknown>;
+              "http"?: Record<string, unknown>;
+              "iterations"?: number;
+              "java_vuser"?: Record<string, unknown>;
+              "log"?: Record<string, unknown>;
+              "log_level"?: string;
+              "pacing"?: Record<string, unknown>;
+              "redaction_rules"?: Array<Record<string, unknown>>;
+              "run_logic"?: Record<string, unknown>;
+              "think_time"?: Record<string, unknown>;
+              "web_runtime"?: Record<string, unknown>;
+            };
+            "script_id"?: string;
+            "stages"?: Array<Record<string, unknown>>;
+            "vusers"?: number;
+          }>;
           "intent"?: string;
+          "name"?: string;
+          "project_id"?: string;
+          "ramp_up"?: string;
+          "release_id"?: string;
+          "requested_test_id"?: string;
+          "reserve_launch_window"?: boolean;
+          "resource_baseline"?: boolean;
+          "revision_source_test_id"?: string;
+          "runtime_settings"?: {
+            "auto_transactions"?: string;
+            "base_url"?: string;
+            "browser"?: {
+              "device_profile"?: string;
+              "headless"?: boolean;
+              "orientation"?: string;
+              "touch_mode"?: boolean;
+            };
+            "browser_config"?: Record<string, unknown>;
+            "browser_emulation"?: Record<string, unknown>;
+            "env"?: Record<string, unknown>;
+            "error_handling"?: Record<string, unknown>;
+            "http"?: Record<string, unknown>;
+            "iterations"?: number;
+            "java_vuser"?: {
+              "additional_vm_parameters"?: Array<string>;
+              "classpath"?: Array<string>;
+              "dedicated_class_loader"?: boolean;
+              "jdk_home"?: string;
+              "jdk_selection"?: string;
+              "skip_parameter_evaluation"?: boolean;
+              "use_xbootclasspath"?: boolean;
+            };
+            "log"?: Record<string, unknown>;
+            "log_level"?: string;
+            "pacing"?: Record<string, unknown>;
+            "redaction_rules"?: Array<Record<string, unknown>>;
+            "run_logic"?: Record<string, unknown>;
+            "think_time"?: Record<string, unknown>;
+            "web_runtime"?: Record<string, unknown>;
+          };
+          "scenario_id"?: string;
+          "scenario_mode"?: string;
           "scheduled_start_at"?: string;
+          "script_id"?: string;
+          "script_shakeout"?: boolean;
+          "start_delay"?: string;
+          "timeslot_id"?: string;
+          "vusers"?: number;
         };
       };
     };
@@ -29141,9 +29731,15 @@ export interface operations {
       content: {
         "application/json": {
           "dry_run"?: boolean;
+          "folder_id"?: string;
+          "import_session_id"?: string;
           "mode"?: string;
+          "name"?: string;
+          "parameterization_selected_ids"?: Array<string>;
+          "project_id"?: string;
           "replace_mode"?: string;
           "script"?: Record<string, unknown>;
+          "secret_bindings"?: Record<string, unknown>;
           "target_script_id"?: string;
         };
       };
@@ -29151,12 +29747,12 @@ export interface operations {
     responses: {
       "200": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "201": {
         content: {
-          "application/json": Record<string, unknown>;
+          "application/json": unknown;
         };
       };
       "400": {
@@ -29180,6 +29776,11 @@ export interface operations {
         };
       };
       "409": {
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      "429": {
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
         };

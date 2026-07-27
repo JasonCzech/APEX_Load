@@ -44,7 +44,21 @@ type authoringSessionAccessPersistence interface {
 }
 
 type authoringSessionRequest struct {
-	ProjectID      string         `json:"project_id,omitempty"`
+	ProjectID string `json:"project_id,omitempty"`
+	// FolderID mirrors the POST /scripts field so a draft that must go through
+	// authoring review keeps the folder the author was working in. Without it,
+	// every reviewed script lands at the project root regardless of origin.
+	//
+	// Omission and an explicit null are indistinguishable (both nil), so neither
+	// clears a folder the draft already carries — matching POST /scripts. Set
+	// draft.folder_id to null to file at the project root.
+	//
+	// Note the folder check below runs before the idempotency replay, so a retry
+	// whose folder was deleted in the meantime reports the bad folder instead of
+	// replaying the original session. The session still exists and is listable,
+	// and approval re-checks the folder, so this is not worth reordering the
+	// insert-only path that keeps concurrent replicas converging.
+	FolderID       *string        `json:"folder_id,omitempty"`
 	Source         string         `json:"source"`
 	Name           string         `json:"name"`
 	Status         string         `json:"status,omitempty"`
@@ -64,6 +78,10 @@ type authoringSessionApprovalResponse struct {
 // requirements, while non-executable import evidence is scrubbed before the
 // draft is stored or promoted.
 func prepareAuthoringSessionDraft(w http.ResponseWriter, draft, prior *dsl.Script) (*dsl.Script, bool) {
+	if err := validateJavaVMParameterDisclosureSafety(draft); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return nil, false
+	}
 	projected := maskScriptSecrets(draft)
 	if projected == nil {
 		writeError(w, http.StatusBadRequest, "failed to project authoring draft for secret binding")
@@ -95,6 +113,15 @@ func (s *Server) handleCreateAuthoringSession(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if err := bindDraftScriptProject(&req.Draft, req.ProjectID); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if req.FolderID != nil {
+		req.Draft.FolderID = req.FolderID
+	}
+	// Validated here rather than only at approval so a bad folder is reported
+	// while the author is still looking at the editor.
+	if err := validateScriptFolderProject(s.store, &req.Draft); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
@@ -334,6 +361,13 @@ func (s *Server) handleApproveAuthoringSession(w http.ResponseWriter, r *http.Re
 		return
 	}
 	session.Draft = safeDraft
+	// Re-checked at approval: a folder that was valid when the session was
+	// created can be deleted or moved to another project during review, and
+	// nothing downstream of here validates the placement.
+	if err := validateScriptFolderProject(s.store, session.Draft); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	validation := buildScriptValidationResponse("", session.Draft)
 	if !validation.Valid || validation.AuthoringHealth.Status == "blocked" {

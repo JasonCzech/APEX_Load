@@ -1,0 +1,2 @@
+# This exact exception must not exempt applyPostmanAuth in the same file.
+policy:pkg/convert/postman/local_policy.go:sanitizeBody

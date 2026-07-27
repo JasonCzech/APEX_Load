@@ -429,9 +429,11 @@ func (h *HTTP) fetchResource(ctx context.Context, ref resourceRef, pageURL strin
 	}
 	// Send only the browser-identity headers on resource fetches — NOT the
 	// script's arbitrary default_headers, which routinely carry Authorization /
-	// API keys that must never leak to third-party asset hosts. Accept-Encoding
-	// is deliberately omitted so Go negotiates and transparently decompresses
-	// (keeping CSS parseable regardless of the script's accept_encoding setting).
+	// API keys that must never leak to third-party asset hosts. Resource fetches
+	// intentionally model browser gzip support, so declare that compatibility
+	// behavior explicitly and decode it through the bounded response pipeline.
+	// Ordinary imported requests never acquire this default.
+	req.Header.Set("Accept-Encoding", "gzip")
 	if ua := h.defaultHeaders["User-Agent"]; ua != "" {
 		setRequestHeader(req, "User-Agent", ua)
 	}
@@ -514,6 +516,35 @@ func (h *HTTP) fetchResource(ctx context.Context, ref resourceRef, pageURL strin
 	if bytes > int64(httpCacheMaxBodyBytes) {
 		drained, _ := io.Copy(io.Discard, io.LimitReader(resp.Body, maxResourceCountedBytes-bytes))
 		bytes += drained
+	}
+	if !failed && bytes <= int64(httpCacheMaxBodyBytes) {
+		hadEncodedBody := false
+		for _, encoding := range responseContentEncodings(resp.Header) {
+			if encoding != "identity" {
+				hadEncodedBody = true
+				break
+			}
+		}
+		decoded, _, decodeErr := decodeHTTPResponseContent(
+			buffered,
+			resp.Header,
+			cloneHTTPHeaders(resp.Header),
+			int64(httpCacheMaxBodyBytes),
+		)
+		if decodeErr != nil {
+			failed = true
+		} else {
+			buffered = decoded
+			bytes = int64(len(decoded))
+			if hadEncodedBody {
+				// Match net/http's former transparent-decompression view so
+				// cache entries and CSS parsing never retain stale wire
+				// metadata for an already-decoded body.
+				resp.Header.Del("Content-Encoding")
+				resp.Header.Del("Content-Length")
+				resp.ContentLength = -1
+			}
+		}
 	}
 	if resp.StatusCode >= 400 {
 		failed = true

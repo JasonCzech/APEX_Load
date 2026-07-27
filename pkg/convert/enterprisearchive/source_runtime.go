@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -236,9 +237,18 @@ func applySourceSocketOptionConfig(result *ConvertResult, fn ParsedFunction) map
 	switch normalizeEnum(option) {
 	case "ssl_version", "tls_version":
 		mapped := mapSSLVersion(value)
-		result.Script.Config.HTTP.TLS.MinVersion = mapped
-		details["mapped_to"] = "config.http.tls.min_version"
-		details["mapped_value"] = mapped
+		if mapped != "" {
+			result.Script.Config.HTTP.TLS.MinVersion = mapped
+			result.Script.Config.HTTP.TLS.MaxVersion = mapped
+			details["mapped_to"] = "config.http.tls"
+			details["mapped_value"] = mapped
+		} else {
+			details["mapping_partial"] = true
+			details["review_reason"] = fmt.Sprintf(
+				"web_set_sockets_option %s=%q is unsupported; APEX TLS defaults remain unchanged and review is required",
+				option, value,
+			)
+		}
 	case "close_keepalive_connections", "close_keep_alive_connections":
 		if closeConnections, ok := parseSourceBool(value); ok && closeConnections {
 			keepAlive := false
@@ -484,7 +494,7 @@ func preserveSourceRuntimeControl(script *dsl.Script, key string, fn ParsedFunct
 		"function": fn.Name,
 		"line":     fn.LineNumber,
 	}
-	if args := sourceControlArgs(fn); len(args) > 0 {
+	if args := disclosureSafeSourceRuntimeControlArgs(fn); len(args) > 0 {
 		entry["args"] = args
 	}
 	for detailKey, detailValue := range details {
@@ -508,6 +518,25 @@ func preserveSourceRuntimeControl(script *dsl.Script, key string, fn ParsedFunct
 	default:
 		preserved[key] = []map[string]any{entry}
 	}
+}
+
+func disclosureSafeSourceRuntimeControlArgs(fn ParsedFunction) []string {
+	args := append([]string(nil), sourceControlArgs(fn)...)
+	switch strings.ToLower(strings.TrimSpace(fn.Name)) {
+	case "web_set_user":
+		if len(args) > 1 {
+			args[1] = credential.Redacted
+		}
+	case "web_set_proxy", "web_set_secure_proxy":
+		if len(args) > 0 {
+			args[0] = disclosureSafeProxyEndpoint(args[0])
+		}
+	case "web_set_option":
+		if len(args) > 1 && credential.SensitiveName(cleanConfigValue(args[0])) {
+			args[1] = credential.Redacted
+		}
+	}
+	return args
 }
 
 func ensureEnterpriseArchiveImportPreserved(script *dsl.Script) map[string]any {

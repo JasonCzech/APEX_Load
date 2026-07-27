@@ -32,6 +32,25 @@ type blockingShakeoutTeardownActionProtocol struct{}
 
 type teardownRegressionProtocol struct{}
 
+type teardownActionProtocol struct {
+	cancel  context.CancelFunc
+	actions []string
+}
+
+func (*teardownActionProtocol) Name() string { return "teardown-action-protocol" }
+func (*teardownActionProtocol) Init(context.Context, map[string]any) error {
+	return nil
+}
+func (p *teardownActionProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	p.actions = append(p.actions, action.Name)
+	if action.Name == "trigger stop" && p.cancel != nil {
+		p.cancel()
+	}
+	return &protocol.Result{ActionName: action.Name, Success: true, Duration: time.Millisecond}, nil
+}
+func (*teardownActionProtocol) Teardown(context.Context) error    { return nil }
+func (*teardownActionProtocol) HealthCheck(context.Context) error { return nil }
+
 var teardownRegressionState = struct {
 	sync.Mutex
 	initCalls  int
@@ -128,6 +147,89 @@ func TestShakeoutTeardownActionsAreBounded(t *testing.T) {
 	}
 }
 
+func TestVUserPausedRunTeardownThinkTimeUsesBoundedWallClock(t *testing.T) {
+	t.Setenv("APEXLOAD_TEARDOWN_TIMEOUT", "40ms")
+	protoStub := &teardownActionProtocol{}
+	activeSleepCalled := make(chan struct{})
+	vu := &VUser{
+		Proto:        protoStub,
+		Metrics:      NewMetricsCollector(16),
+		PauseControl: &blockingPacingController{started: activeSleepCalled},
+		Script: &dsl.Script{
+			Name:     "paused-run-teardown-think-time",
+			Protocol: "http",
+			Config:   dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+			Actions:  []dsl.Action{{Name: "main", Type: "GET", Method: "GET", Target: "/main"}},
+			Teardown: []dsl.Action{
+				{
+					Name:           "cleanup one",
+					Type:           "GET",
+					Method:         "GET",
+					Target:         "/cleanup-one",
+					ThinkTimeAfter: true,
+					ThinkTime:      dsl.ThinkTimeConfig{Type: "fixed", MeanMs: 5},
+				},
+				{Name: "cleanup two", Type: "GET", Method: "GET", Target: "/cleanup-two"},
+			},
+		},
+	}
+
+	startedAt := time.Now()
+	vu.Run(context.Background())
+	if elapsed := time.Since(startedAt); elapsed >= 250*time.Millisecond {
+		t.Fatalf("paused teardown took %s, want ordinary wall-clock think time", elapsed)
+	}
+	if got := strings.Join(protoStub.actions, ","); got != "main,cleanup one,cleanup two" {
+		t.Fatalf("actions = %q, teardown stalled before later cleanup", got)
+	}
+	select {
+	case <-activeSleepCalled:
+		t.Fatal("teardown delegated think time to the paused active-time controller")
+	default:
+	}
+}
+
+func TestVUserGracefulStopTeardownSourceScopeUsesFreshBoundary(t *testing.T) {
+	softCtx, softCancel := context.WithCancel(context.Background())
+	defer softCancel()
+	runLogic := dsl.RunLogicConfig{
+		Iterations:       1,
+		AutoTransactions: "none",
+		MaxTransactions:  1,
+	}
+	limiter := NewExecutionGoalLimiter(runLogic, softCancel)
+	protoStub := &teardownActionProtocol{cancel: softCancel}
+	sink := &sequenceCaptureSink{}
+	vu := &VUser{
+		Proto:             protoStub,
+		Metrics:           NewMetricsCollector(16),
+		ResultSink:        sink,
+		ExecutionGoals:    limiter,
+		HardStopCtx:       context.Background(),
+		ActionBoundaryCtx: softCtx,
+		Script: &dsl.Script{
+			Name:     "graceful-stop-teardown-source-scope",
+			Protocol: "http",
+			Config:   dsl.ScriptConfig{RunLogic: runLogic},
+			Actions:  []dsl.Action{{Name: "trigger stop", Type: "GET", Method: "GET", Target: "/stop"}},
+			Teardown: []dsl.Action{
+				sourceTransactionAction("lr_start_transaction", ""),
+				{Name: "scoped cleanup", Type: "GET", Method: "GET", Target: "/cleanup"},
+				sourceTransactionAction("lr_end_transaction", "LR_PASS"),
+			},
+		},
+	}
+
+	vu.Run(softCtx)
+
+	if got := strings.Join(protoStub.actions, ","); got != "trigger stop,scoped cleanup" {
+		t.Fatalf("actions = %q, canceled run boundary aborted teardown source scope", got)
+	}
+	if len(sink.transactions) != 1 || !sink.transactions[0].Success {
+		t.Fatalf("transactions = %#v, want completed teardown source transaction", sink.transactions)
+	}
+}
+
 func TestVUserAndShakeoutRunDSLTeardownAfterInitFailure(t *testing.T) {
 	newScript := func() *dsl.Script {
 		return &dsl.Script{
@@ -165,6 +267,37 @@ func TestVUserAndShakeoutRunDSLTeardownAfterInitFailure(t *testing.T) {
 	}
 	if got := teardownRegressionActions("cleanup"); got != 1 {
 		t.Fatalf("shakeout cleanup actions = %d, want exactly one", got)
+	}
+}
+
+func TestVUserTeardownOnlyLifecycleStartsAfterIterationBoundary(t *testing.T) {
+	newVUser := func() *VUser {
+		return &VUser{
+			ID:    1,
+			Proto: &teardownRegressionProtocol{},
+			Script: &dsl.Script{
+				Name:     "teardown-only lifecycle",
+				Protocol: "teardown-regression-stub",
+				Config:   dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+				Teardown: []dsl.Action{{Name: "cleanup", Type: "request", Target: "/cleanup"}},
+			},
+			Metrics:   NewMetricsCollector(16),
+			Variables: make(map[string]string),
+		}
+	}
+
+	resetTeardownRegression("", 0)
+	newVUser().Run(context.Background())
+	if got := teardownRegressionActions("cleanup"); got != 1 {
+		t.Fatalf("cleanup actions after iteration boundary = %d, want 1", got)
+	}
+
+	resetTeardownRegression("", 0)
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	newVUser().Run(canceled)
+	if got := teardownRegressionActions("cleanup"); got != 0 {
+		t.Fatalf("cleanup actions before user work started = %d, want 0", got)
 	}
 }
 
@@ -213,6 +346,36 @@ func TestAtOnceLifecycleRunsTeardownAfterPartialInitFailure(t *testing.T) {
 	}
 	if got := teardownRegressionActions("cleanup"); got != 1 {
 		t.Fatalf("partial at-once cleanup actions = %d, want exactly one", got)
+	}
+}
+
+func TestAtOnceTeardownContinuesAfterOrdinaryActionFailure(t *testing.T) {
+	resetTeardownRegression("teardown-failure", 0)
+	script := &dsl.Script{
+		Name:     "best effort at-once teardown",
+		Protocol: "teardown-regression-stub",
+		Config:   dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{Iterations: 1}},
+		Actions:  []dsl.Action{{Name: "main", Type: "request", Target: "/main"}},
+		Teardown: []dsl.Action{
+			{Name: "teardown-failure", Type: "request", Target: "/fail"},
+			{Name: "cleanup", Type: "request", Target: "/cleanup"},
+		},
+	}
+	engine, err := NewMultiGroup(MultiGroupConfig{
+		Duration: time.Second,
+		Groups:   []GroupConfig{{Name: "at-once", Script: script, VUsers: 1, InitStrategy: "at_once"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := engine.Run(context.Background()); err != nil {
+		t.Fatalf("best-effort at-once teardown failed the run: %v", err)
+	}
+	if got := teardownRegressionActions("teardown-failure"); got != 1 {
+		t.Fatalf("failing teardown executions = %d, want 1", got)
+	}
+	if got := teardownRegressionActions("cleanup"); got != 1 {
+		t.Fatalf("cleanup executions = %d, want 1 after prior failure", got)
 	}
 }
 

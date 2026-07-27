@@ -8,6 +8,8 @@ import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
 import { chartTooltipContentStyle, chartTooltipLabelStyle } from './chartTooltipTheme'
 import { QueuedScenarioPreview, QueuedScenarioRow, ScenarioScriptDetail } from './testExecutionScenarioModel'
 import { formatTimeCompact } from '../utils/timeUtils'
+import { formatHTTPVersion } from './httpVersionModel'
+import { formatPacingTiming } from './runtimeTiming'
 
 interface Props {
   test: TestSummary
@@ -74,47 +76,36 @@ function formatThinkTimeLabel(scriptDetail?: ScenarioScriptDetail): string {
   const thinkTime = scriptDetail?.script?.config?.think_time
   if (!thinkTime) return 'Script default'
   if (thinkTime.ignore) return 'Disabled'
+  if (thinkTime.type === 'recorded') return 'Replay recorded think time'
   return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
 }
 
 function formatPacingLabel(scriptDetail?: ScenarioScriptDetail): string {
   const pacing = scriptDetail?.script?.config?.pacing
-  if (!pacing?.type || pacing.type === 'none') return 'None'
-  if (pacing.type === 'fixed_delay') return `Fixed delay · ${pacing.delay_ms || 0}ms`
-  if (pacing.type === 'fixed_interval') return `Fixed interval · ${pacing.interval_ms || 0}ms`
-  if (pacing.type === 'tps') return `Target TPS · ${pacing.tps || 0}`
-  return pacing.type.replace(/_/g, ' ')
+  return formatPacingTiming(pacing) || 'None'
 }
 
 function formatOverridePacing(test: TestSummary): string {
   const pacing = test.runtime_settings?.pacing
-  if (!pacing?.type) return 'Script default'
-  if (pacing.type === 'none') return 'None'
-  if (pacing.type === 'fixed_delay') return `Fixed delay · ${pacing.delay_ms || 0}ms`
-  if (pacing.type === 'fixed_interval') return `Fixed interval · ${pacing.interval_ms || 0}ms`
-  if (pacing.type === 'tps') return `Target TPS · ${pacing.tps || 0}`
-  return pacing.type.replace(/_/g, ' ')
+  return formatPacingTiming(pacing) || 'Script default'
 }
 
 function formatOverrideThinkTime(test: TestSummary): string {
   const thinkTime = test.runtime_settings?.think_time
   if (!thinkTime) return 'Script default'
   if (thinkTime.ignore) return 'Disabled'
+  if (thinkTime.type === 'recorded') return 'Replay recorded think time'
   return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
 }
 
 function formatRuntimePacingOverride(pacing?: RuntimeSettingsOverride['pacing']): string | null {
-  if (!pacing?.type) return null
-  if (pacing.type === 'none') return 'None'
-  if (pacing.type === 'fixed_delay') return `Fixed delay · ${pacing.delay_ms || 0}ms`
-  if (pacing.type === 'fixed_interval') return `Fixed interval · ${pacing.interval_ms || 0}ms`
-  if (pacing.type === 'tps') return `Target TPS · ${pacing.tps || 0}`
-  return pacing.type.replace(/_/g, ' ')
+  return formatPacingTiming(pacing)
 }
 
 function formatRuntimeThinkTimeOverride(thinkTime?: RuntimeSettingsOverride['think_time']): string | null {
   if (!thinkTime) return null
   if (thinkTime.ignore) return 'Disabled'
+  if (thinkTime.type === 'recorded') return 'Replay recorded think time'
   return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
 }
 
@@ -651,7 +642,7 @@ export default function TestExecutionScenarioPreview({
                           </div>
                           <div className="scenario-script-detail-card">
                             <span className="scenario-script-detail-label">HTTP Runtime</span>
-                            <span className="scenario-script-detail-value">{detail?.script?.config?.http?.version || 'auto'} · {detail?.script?.config?.http?.max_conns_per_host || 100} conns/host</span>
+                            <span className="scenario-script-detail-value">{formatHTTPVersion(detail?.script?.config?.http?.version)} · {detail?.script?.config?.http?.max_conns_per_host || 100} conns/host</span>
                           </div>
                         </div>
 

@@ -114,6 +114,34 @@ func TestReapFailedStartOwnsDirectRootWait(t *testing.T) {
 	}
 }
 
+func TestReapFailedStartSerializesWithCommandContextCancellation(t *testing.T) {
+	if os.Getenv("APEXLOAD_TEST_FAILED_START_REAP") == "1" {
+		for {
+			time.Sleep(time.Hour)
+		}
+	}
+	for iteration := 0; iteration < 10; iteration++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestReapFailedStartOwnsDirectRootWait$")
+		cmd.Env = append(os.Environ(), "APEXLOAD_TEST_FAILED_START_REAP=1")
+		ConfigureProcessTree(cmd)
+		if err := cmd.Start(); err != nil {
+			cancel()
+			t.Fatal(err)
+		}
+		done := ReapFailedStart(cmd)
+		cancel()
+		select {
+		case <-done:
+			if cmd.ProcessState == nil {
+				t.Fatal("failed-start reaper completed without publishing process state")
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("failed-start reaper did not complete after context cancellation")
+		}
+	}
+}
+
 func TestTerminalContainmentStateRejectsStartsAndTracksPendingReap(t *testing.T) {
 	resetProcessContainmentStateForTest()
 	t.Cleanup(resetProcessContainmentStateForTest)

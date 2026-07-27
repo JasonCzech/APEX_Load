@@ -12,6 +12,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/tmpl"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 func applyJMeterCacheManager(node *xmlNode, script *dsl.Script) {
@@ -35,21 +36,39 @@ func applyJMeterCacheManager(node *xmlNode, script *dsl.Script) {
 	setJMeterRuntimeParity(script, "cacheManager", "partial")
 }
 
-func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions, diagnostics *diag.Collector) (*dsl.Action, []string) {
+func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions, diagnostics *diag.Collector) (*dsl.Action, []string, error) {
 	element := node.Element
 	name := sanitizeName(attrOr(element, "testname", "HTTP Request"))
 	location := jmeterElementLocation(element)
 	method := convertutil.FirstNonEmpty(prop(element, "HTTPSampler.method"), "GET")
 	rawPath := convertVariablesWithDiagnostics(convertutil.FirstNonEmpty(prop(element, "HTTPSampler.path"), ctx.defaultPath, "/"), diagnostics, location)
-	protocol := convertutil.FirstNonEmpty(prop(element, "HTTPSampler.protocol"), ctx.defaultProtocol)
+	protocol := convertVariablesWithDiagnostics(convertutil.FirstNonEmpty(prop(element, "HTTPSampler.protocol"), ctx.defaultProtocol), diagnostics, location)
 	domain := convertVariablesWithDiagnostics(convertutil.FirstNonEmpty(prop(element, "HTTPSampler.domain"), ctx.defaultDomain), diagnostics, location)
-	port := convertutil.FirstNonEmpty(prop(element, "HTTPSampler.port"), ctx.defaultPort)
+	port := convertVariablesWithDiagnostics(convertutil.FirstNonEmpty(prop(element, "HTTPSampler.port"), ctx.defaultPort), diagnostics, location)
+	resolution := ctx.variableScope.resolve(diagnostics)
+	provenVariables := jmeterProvenVariables(ctx)
+	rawPath, targetSourceVariables := resolution.expandRuntimeValue(rawPath, provenVariables)
+	var applied []string
+	protocol, applied = resolution.expandRuntimeValue(protocol, provenVariables)
+	targetSourceVariables = append(targetSourceVariables, applied...)
+	domain, applied = resolution.expandRuntimeValue(domain, provenVariables)
+	targetSourceVariables = append(targetSourceVariables, applied...)
+	port, applied = resolution.expandRuntimeValue(port, provenVariables)
+	targetSourceVariables = uniqueSortedJMeterNames(append(targetSourceVariables, applied...))
 	target := rawPath
 	absoluteURL := rawPath
 	if domain != "" {
 		absolute := buildURL(protocol, domain, port, rawPath)
 		absoluteURL = absolute
-		target = makeRelative(absolute, convertutil.FirstNonEmpty(opts.BaseURL, buildBaseURL(protocol, domain, port)))
+		samplerBaseURL := buildBaseURL(protocol, domain, port)
+		projectionBaseURL := strings.TrimSpace(opts.BaseURL)
+		if projectionBaseURL == "" {
+			if ctx.effectiveBaseURL == "" && !strings.Contains(samplerBaseURL, "{{") {
+				ctx.effectiveBaseURL = samplerBaseURL
+			}
+			projectionBaseURL = ctx.effectiveBaseURL
+		}
+		target = makeRelative(absolute, projectionBaseURL)
 	}
 	action := &dsl.Action{
 		Name:       name,
@@ -60,8 +79,10 @@ func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions
 		Assertions: append([]dsl.Assertion(nil), ctx.assertions...),
 	}
 	var warnings []string
-	for k, v := range ctx.headers {
-		action.Headers[k] = convertVariablesWithDiagnostics(v, diagnostics, location)
+	for _, header := range ctx.headers {
+		value := convertVariablesWithDiagnostics(header.Value, diagnostics, location)
+		action.HeaderList = append(action.HeaderList, dsl.HeaderEntry{Name: header.Name, Value: value})
+		setJMeterHeaderSummary(action.Headers, header.Name, value)
 	}
 	body, params := parseSamplerArguments(element, diagnostics, location)
 	if body != "" {
@@ -73,6 +94,12 @@ func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions
 	applySamplerFiles(action, element, diagnostics, location)
 	if auth, ok := authForSampler(ctx.auths, absoluteURL, rawPath); ok {
 		action.Auth = &auth
+	}
+	if reviewAuth, ok := reviewAuthForSampler(ctx.auths, absoluteURL, rawPath); ok {
+		// Explicit no-auth prevents a review-gated, unsupported source scheme
+		// from accidentally inheriting an executable script-level credential.
+		action.Auth = &dsl.AuthConfig{Type: httpprotocol.AuthTypeNone}
+		applyJMeterAuthReviewGate(action, reviewAuth, location)
 	}
 	if timeout := samplerTimeoutMs(element); timeout > 0 {
 		action.TimeoutMs = timeout
@@ -107,7 +134,61 @@ func convertHTTPSampler(node *treeNode, ctx *convertContext, opts ConvertOptions
 		warnings = append(warnings, fmt.Sprintf("%s: no domain/default host was found; target kept as %q", name, rawPath))
 	}
 	applySOAPSamplerHints(action)
-	return action, warnings
+	finalized, report, err := finalizeJMeterHTTPRequest(
+		action,
+		location,
+		convertutil.FirstNonEmpty(opts.FileName, "import.jmx"),
+		ctx,
+		jmeterVariableApplication{target: targetSourceVariables},
+	)
+	if err != nil {
+		return nil, warnings, fmt.Errorf("finalize JMeter HTTP sampler %q: %w", name, err)
+	}
+	if ctx.requestReports != nil {
+		*ctx.requestReports = append(*ctx.requestReports, report)
+	}
+	if ctx.provenVariables == nil {
+		ctx.provenVariables = make(map[string]struct{})
+	}
+	for _, extractor := range finalized.Extractors {
+		if extractor.Name != "" {
+			ctx.provenVariables[extractor.Name] = struct{}{}
+		}
+	}
+	return &finalized, warnings, nil
+}
+
+func setJMeterHeaderSummary(headers map[string]string, name string, value string) {
+	for existing := range headers {
+		if strings.EqualFold(strings.TrimSpace(existing), strings.TrimSpace(name)) {
+			delete(headers, existing)
+		}
+	}
+	headers[name] = value
+}
+
+func applyJMeterAuthReviewGate(action *dsl.Action, auth jmeterAuth, fallbackSourceRef string) {
+	if action.Metadata == nil {
+		action.Metadata = map[string]any{}
+	}
+	if _, exists := action.Metadata["execution_blocker"]; !exists {
+		action.Metadata["execution_blocker"] = "import_review_required"
+	}
+	reasonCode := auth.ReviewCode
+	if reasonCode == "" {
+		reasonCode = "unsupported_auth_scheme"
+	}
+	sourceRef := strings.TrimSpace(auth.SourceRef)
+	if sourceRef == "" {
+		sourceRef = fallbackSourceRef
+	}
+	action.Metadata["import_review"] = map[string]any{
+		"version":      1,
+		"source":       "jmeter",
+		"reason_codes": []string{reasonCode},
+		"source_refs":  []string{sourceRef},
+		"resolution":   "replace_behavior_and_remove_gate",
+	}
 }
 
 func parseSamplerArguments(node *xmlNode, diagnostics *diag.Collector, location string) (string, map[string]any) {
@@ -187,7 +268,7 @@ func samplerRedirects(node *xmlNode) (int, bool) {
 		return 0, false
 	}
 	if follow || auto {
-		return 10, true
+		return httpprotocol.Capabilities().MaxRedirects, true
 	}
 	return 0, true
 }

@@ -5,10 +5,13 @@ import (
 	"crypto/md5"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
+	"sync/atomic"
 
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -27,6 +30,18 @@ func retryWithDigestAuth(client *http.Client, req *http.Request, resp *http.Resp
 	if client == nil || req == nil || resp == nil || !isDigestAuth(auth) || resp.StatusCode != http.StatusUnauthorized {
 		return req, resp, false, nil
 	}
+	// client.Do may have followed redirects before the challenge. Authenticate
+	// the request that actually received the 401; retrying the original URL
+	// hashes the wrong method/request-target and may resend a body after a
+	// 301/302/303 changed the challenged request to GET.
+	challengedReq := req
+	if resp.Request != nil {
+		challengedReq = resp.Request
+	}
+	if !sameDigestRequestOrigin(req.URL, challengedReq.URL) {
+		_ = resp.Body.Close()
+		return req, resp, false, fmt.Errorf("digest authentication refused a cross-origin redirect challenge")
+	}
 	challenge, ok, err := digestChallengeFromHeaders(resp.Header.Values("WWW-Authenticate"))
 	if err != nil || !ok {
 		if err != nil {
@@ -34,7 +49,7 @@ func retryWithDigestAuth(client *http.Client, req *http.Request, resp *http.Resp
 		}
 		return req, resp, false, err
 	}
-	header, err := buildDigestAuthorizationHeader(auth, req.Method, req.URL.RequestURI(), challenge)
+	header, err := buildDigestAuthorizationHeader(auth, challengedReq.Method, challengedReq.URL.RequestURI(), challenge)
 	if err != nil {
 		_ = resp.Body.Close()
 		return req, resp, false, err
@@ -42,18 +57,144 @@ func retryWithDigestAuth(client *http.Client, req *http.Request, resp *http.Resp
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	_ = resp.Body.Close()
 
-	retryReq, err := http.NewRequestWithContext(req.Context(), req.Method, req.URL.String(), bytes.NewReader(body))
+	retryBody := body
+	if challengedReq.Body == nil || challengedReq.Body == http.NoBody {
+		retryBody = nil
+	}
+	retryReq, err := http.NewRequestWithContext(
+		// net/http's timeout wrapper cancels resp.Request.Context when the
+		// challenged response body is closed. The original request retains the
+		// caller-owned context and is the correct lifetime for this retry.
+		req.Context(),
+		challengedReq.Method,
+		challengedReq.URL.String(),
+		bytes.NewReader(retryBody),
+	)
 	if err != nil {
 		return req, nil, true, err
 	}
-	retryReq.Header = req.Header.Clone()
-	retryReq.Host = req.Host
+	retryReq.Header = challengedReq.Header.Clone()
+	retryReq.Host = challengedReq.Host
 	retryReq.Header.Set("Authorization", header)
-	retryResp, err := client.Do(retryReq)
+	// A Digest Authorization value is bound to the challenged request-target.
+	// net/http otherwise copies Authorization across redirects to the same host
+	// (and even to subdomains), which both replays an invalid digest and exposes
+	// the username/nonce/response material to a target that never challenged
+	// this request. Follow the configured redirect policy, but strip the
+	// one-request Digest proof before any redirected request reaches transport.
+	retryClient := *client
+	if retryClient.Jar != nil {
+		// resp.Request contains the exact Cookie header that reached the
+		// challenged endpoint, including cookies the client's Jar added during
+		// the first attempt. Calling Client.Do with that header and the same Jar
+		// would append those Jar cookies a second time. Filter exact duplicates
+		// from only the Jar's first read; challenge cookies, subsequent redirect
+		// hops, and every Set-Cookie update still use the original Jar.
+		retryClient.Jar = newDigestRetryCookieJar(retryClient.Jar, retryReq.Cookies())
+	}
+	baseCheckRedirect := retryClient.CheckRedirect
+	retryClient.CheckRedirect = func(redirected *http.Request, via []*http.Request) error {
+		redirected.Header.Del("Authorization")
+		if baseCheckRedirect != nil {
+			err := baseCheckRedirect(redirected, via)
+			// A custom policy may mutate headers. The per-target Digest proof
+			// must remain stripped regardless of those incidental mutations.
+			redirected.Header.Del("Authorization")
+			return err
+		}
+		// Installing a wrapper disables net/http's implicit redirect policy.
+		// Reproduce the standard bound so a Digest retry cannot follow an
+		// attacker-controlled redirect loop indefinitely.
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	retryResp, err := retryClient.Do(retryReq)
 	if err != nil {
 		return retryReq, nil, true, err
 	}
 	return retryReq, retryResp, true, nil
+}
+
+type digestRetryCookieJar struct {
+	base             http.CookieJar
+	firstRead        atomic.Bool
+	representedCount map[digestCookieIdentity]int
+}
+
+type digestCookieIdentity struct {
+	name  string
+	value string
+}
+
+func newDigestRetryCookieJar(base http.CookieJar, represented []*http.Cookie) *digestRetryCookieJar {
+	jar := &digestRetryCookieJar{
+		base:             base,
+		representedCount: make(map[digestCookieIdentity]int, len(represented)),
+	}
+	for _, cookie := range represented {
+		if cookie == nil {
+			continue
+		}
+		jar.representedCount[digestCookieIdentity{name: cookie.Name, value: cookie.Value}]++
+	}
+	jar.firstRead.Store(true)
+	return jar
+}
+
+func (j *digestRetryCookieJar) Cookies(target *url.URL) []*http.Cookie {
+	if j == nil || j.base == nil {
+		return nil
+	}
+	cookies := j.base.Cookies(target)
+	if !j.firstRead.CompareAndSwap(true, false) {
+		return cookies
+	}
+	// The challenged request already contains the Jar cookies used on the first
+	// attempt. Subtract those exact occurrences, but retain cookies the 401
+	// response just added to the Jar (Digest deployments commonly bind their
+	// nonce to such a session cookie).
+	filtered := make([]*http.Cookie, 0, len(cookies))
+	for _, cookie := range cookies {
+		if cookie == nil {
+			continue
+		}
+		identity := digestCookieIdentity{name: cookie.Name, value: cookie.Value}
+		if remaining := j.representedCount[identity]; remaining > 0 {
+			j.representedCount[identity] = remaining - 1
+			continue
+		}
+		filtered = append(filtered, cookie)
+	}
+	return filtered
+}
+
+func (j *digestRetryCookieJar) SetCookies(target *url.URL, cookies []*http.Cookie) {
+	if j == nil || j.base == nil {
+		return
+	}
+	j.base.SetCookies(target, cookies)
+}
+
+func sameDigestRequestOrigin(left, right *url.URL) bool {
+	if left == nil || right == nil {
+		return false
+	}
+	origin := func(candidate *url.URL) string {
+		scheme := strings.ToLower(candidate.Scheme)
+		port := candidate.Port()
+		if port == "" {
+			switch scheme {
+			case "http":
+				port = "80"
+			case "https":
+				port = "443"
+			}
+		}
+		return scheme + "\x00" + strings.ToLower(candidate.Hostname()) + "\x00" + port
+	}
+	return origin(left) == origin(right)
 }
 
 func isDigestAuth(auth *protocol.AuthConfig) bool {
@@ -68,36 +209,156 @@ func digestAuthConfig(auth *protocol.AuthConfig) *protocol.AuthConfig {
 }
 
 func digestChallengeFromHeaders(headers []string) (digestChallenge, bool, error) {
+	var firstFailure error
 	for _, header := range headers {
-		if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(header)), "digest") {
+		for _, advertised := range splitAuthenticateHeader(header) {
+			if !strings.EqualFold(advertised.scheme, "Digest") {
+				continue
+			}
+			values := parseDigestKeyValues(advertised.payload)
+			challenge := digestChallenge{
+				Realm:     values["realm"],
+				Nonce:     values["nonce"],
+				Opaque:    values["opaque"],
+				Algorithm: strings.ToUpper(strings.TrimSpace(values["algorithm"])),
+				QOP:       values["qop"],
+			}
+			if challenge.Algorithm == "" {
+				challenge.Algorithm = "MD5"
+			}
+			var failure error
+			switch {
+			case challenge.Realm == "" || challenge.Nonce == "":
+				failure = fmt.Errorf("digest challenge requires realm and nonce")
+			case challenge.Algorithm != "MD5":
+				failure = fmt.Errorf("unsupported digest algorithm %q", challenge.Algorithm)
+			case strings.TrimSpace(challenge.QOP) != "" && selectDigestQOP(challenge.QOP) == "":
+				failure = fmt.Errorf("unsupported digest qop")
+			}
+			if failure != nil {
+				if firstFailure == nil {
+					firstFailure = failure
+				}
+				continue
+			}
+			return challenge, true, nil
+		}
+	}
+	return digestChallenge{}, false, firstFailure
+}
+
+type authenticateChallenge struct {
+	scheme  string
+	payload string
+}
+
+// splitAuthenticateHeader separates challenges without splitting their
+// comma-delimited auth parameters. A comma starts another challenge only when
+// it is followed by a token, required whitespace, and something other than the
+// optional whitespace plus '=' accepted by auth-param. Quoted values and
+// escapes are skipped.
+func splitAuthenticateHeader(header string) []authenticateChallenge {
+	var challenges []authenticateChallenge
+	start := 0
+	for start < len(header) {
+		for start < len(header) && (header[start] == ',' || header[start] == ' ' || header[start] == '\t') {
+			start++
+		}
+		schemeStart := start
+		for start < len(header) && isHTTPAuthTokenByte(header[start]) {
+			start++
+		}
+		if start == schemeStart {
+			break
+		}
+		scheme := header[schemeStart:start]
+		if start >= len(header) || (header[start] != ' ' && header[start] != '\t') {
+			// A top-level field must start with an auth scheme followed by
+			// whitespace. Skip malformed material disclosure-safely.
+			break
+		}
+		for start < len(header) && (header[start] == ' ' || header[start] == '\t') {
+			start++
+		}
+		payloadStart := start
+		end := nextAuthenticateChallengeBoundary(header, payloadStart)
+		challenges = append(challenges, authenticateChallenge{
+			scheme:  scheme,
+			payload: strings.TrimSpace(header[payloadStart:end]),
+		})
+		if end >= len(header) {
+			break
+		}
+		start = end + 1
+	}
+	return challenges
+}
+
+func nextAuthenticateChallengeBoundary(header string, start int) int {
+	inQuote := false
+	escaped := false
+	for index := start; index < len(header); index++ {
+		switch {
+		case escaped:
+			escaped = false
+			continue
+		case header[index] == '\\' && inQuote:
+			escaped = true
+			continue
+		case header[index] == '"':
+			inQuote = !inQuote
+			continue
+		case inQuote:
 			continue
 		}
-		values := parseDigestKeyValues(strings.TrimSpace(header)[len("Digest"):])
-		challenge := digestChallenge{
-			Realm:     values["realm"],
-			Nonce:     values["nonce"],
-			Opaque:    values["opaque"],
-			Algorithm: strings.ToUpper(strings.TrimSpace(values["algorithm"])),
-			QOP:       values["qop"],
+		if header[index] != ',' {
+			continue
 		}
-		if challenge.Algorithm == "" {
-			challenge.Algorithm = "MD5"
+		candidate := index + 1
+		for candidate < len(header) && (header[candidate] == ' ' || header[candidate] == '\t') {
+			candidate++
 		}
-		if challenge.Realm == "" || challenge.Nonce == "" {
-			return digestChallenge{}, false, fmt.Errorf("digest challenge requires realm and nonce")
+		tokenEnd := candidate
+		for tokenEnd < len(header) && isHTTPAuthTokenByte(header[tokenEnd]) {
+			tokenEnd++
 		}
-		if challenge.Algorithm != "MD5" {
-			return digestChallenge{}, false, fmt.Errorf("unsupported digest algorithm %q", challenge.Algorithm)
+		if tokenEnd == candidate || tokenEnd >= len(header) ||
+			(header[tokenEnd] != ' ' && header[tokenEnd] != '\t') {
+			continue
 		}
-		return challenge, true, nil
+		afterWhitespace := tokenEnd
+		for afterWhitespace < len(header) && (header[afterWhitespace] == ' ' || header[afterWhitespace] == '\t') {
+			afterWhitespace++
+		}
+		if afterWhitespace < len(header) && header[afterWhitespace] == '=' {
+			// auth-param permits bad whitespace around '=', so this is still
+			// part of the current challenge rather than a new auth scheme.
+			continue
+		}
+		return index
 	}
-	return digestChallenge{}, false, nil
+	return len(header)
+}
+
+func isHTTPAuthTokenByte(value byte) bool {
+	switch {
+	case value >= 'a' && value <= 'z',
+		value >= 'A' && value <= 'Z',
+		value >= '0' && value <= '9':
+		return true
+	}
+	switch value {
+	case '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~':
+		return true
+	default:
+		return false
+	}
 }
 
 func buildDigestAuthorizationHeader(auth *protocol.AuthConfig, method, uri string, challenge digestChallenge) (string, error) {
-	username := strings.TrimSpace(auth.Username)
+	username := auth.Username
 	password := auth.Password
-	if username == "" {
+	if strings.TrimSpace(username) == "" {
 		return "", fmt.Errorf("digest auth requires username")
 	}
 	if password == "" {
@@ -108,6 +369,9 @@ func buildDigestAuthorizationHeader(auth *protocol.AuthConfig, method, uri strin
 		return "", err
 	}
 	qop := selectDigestQOP(challenge.QOP)
+	if strings.TrimSpace(challenge.QOP) != "" && qop == "" {
+		return "", fmt.Errorf("unsupported digest qop")
+	}
 	ha1 := digestMD5(username + ":" + challenge.Realm + ":" + password)
 	ha2 := digestMD5(strings.ToUpper(strings.TrimSpace(method)) + ":" + uri)
 	response := ""

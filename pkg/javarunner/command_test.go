@@ -24,6 +24,7 @@ func TestBuildCommandOrdersVMParametersAndClasspaths(t *testing.T) {
 		filepath.Join("/operator", "shared.jar")
 	want := []string{
 		"-Xmx512m", "-Dlabel=hello world",
+		enforcedDisableAttachMechanism, enforcedDisableOpenJ9Attach, enforcedDisableHeapDumpOnOOM,
 		"-cp", classpath, "Harness",
 		"--class", "Actions", "--method", "action",
 	}
@@ -51,7 +52,13 @@ func TestBuildCommandDedicatedClassLoaderSeparatesUserClasspath(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantArgs := []string{"-Xms64m", "-cp", "/runner/harness.jar", "Harness", "--class", "Actions"}
+	wantArgs := []string{
+		"-Xms64m",
+		enforcedDisableAttachMechanism,
+		enforcedDisableOpenJ9Attach,
+		enforcedDisableHeapDumpOnOOM,
+		"-cp", "/runner/harness.jar", "Harness", "--class", "Actions",
+	}
 	if !reflect.DeepEqual(plan.Args, wantArgs) {
 		t.Fatalf("Args = %#v, want %#v", plan.Args, wantArgs)
 	}
@@ -69,7 +76,12 @@ func TestBuildCommandPreservesHarnessJarLaunchCompatibility(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"-jar", "/runner/harness.jar"}
+	want := []string{
+		enforcedDisableAttachMechanism,
+		enforcedDisableOpenJ9Attach,
+		enforcedDisableHeapDumpOnOOM,
+		"-jar", "/runner/harness.jar",
+	}
 	if !reflect.DeepEqual(plan.Args, want) {
 		t.Fatalf("Args = %#v, want %#v", plan.Args, want)
 	}
@@ -102,5 +114,70 @@ func TestBuildCommandRejectsUnsafeVMParameterWithoutExposingValue(t *testing.T) 
 	}
 	if got := err.Error(); got == "" || strings.Contains(got, secret) {
 		t.Fatalf("BuildCommand error %q exposed token value", got)
+	}
+}
+
+func TestBuildCommandRejectsCallerControlledHeapDumpTriggers(t *testing.T) {
+	for _, parameter := range []string{
+		"-XX:+HeapDumpOnOutOfMemoryError",
+		"-XX:-HeapDumpOnOutOfMemoryError",
+		"-XX:+HeapDumpBeforeFullGC",
+		"-XX:-HeapDumpBeforeFullGC",
+		"-XX:+HeapDumpAfterFullGC",
+		"-XX:-HeapDumpAfterFullGC",
+		"-XX:+CrashOnOutOfMemoryError",
+		"-XX:-CrashOnOutOfMemoryError",
+	} {
+		t.Run(parameter, func(t *testing.T) {
+			if _, err := BuildCommand(CommandSpec{VMParameters: []string{parameter}}); err == nil {
+				t.Fatalf("BuildCommand accepted heap-dump trigger override %q", parameter)
+			}
+		})
+	}
+}
+
+func TestBuildCommandRejectsCallerControlledAOTInputsAndOutputs(t *testing.T) {
+	for _, parameter := range []string{
+		"-XX:AOTLibrary=/tmp/native.so",
+		"-XXaltjvm=/tmp/alternate",
+		"-J-XXaltjvm=/tmp/alternate",
+		"-XX:AOTCache=/tmp/cache.aot",
+		"-XX:AOTConfiguration=/tmp/config.aotconf",
+		"-XX:AOTCacheOutput=/tmp/cache.aot",
+		"-XX:AOTMode=create",
+		"-XX:+UseJITServer",
+		"-XX:JITServerAddress=compiler.example.test",
+		"-Xshareclasses:cacheDir=/tmp/cache,restoreFromSnapshot",
+		"-XX:SharedClassListFile=/tmp/classes.lst",
+		"-Xshare:dump",
+		"-Xlog:help",
+		"-XX:+PrInTfLaGsInItIaL",
+		"-XX:+PrInTfLaGsWiThCoMmEnTs",
+		"-XpRiNtFlAgS",
+		"-Xtrace:output=/tmp/trace",
+		"-XX:+DumpSharedSpaces",
+		"-XX:+PrintSharedArchiveAndExit",
+		"-XX:PerfDataSaveFile=/tmp/perf.data",
+		"-XX:+PerfDataSaveToFile",
+		"-XX:PauseAtStartupFile=/tmp/pause",
+		"-XX:+PauseAtStartup",
+		"-XX:+PauseAtExit",
+		"-Xverbosegclog",
+		"-Xlog:gc:/tmp/gc.log",
+		"-Xjit:vlog=/tmp/jit.log",
+		"-Xaot:limitFile=/tmp/limits",
+		"-XX:+PerfTool",
+		"-XvErIfY:NoNe",
+		"-DcOm.SuN.MaNaGeMeNt",
+		"-XX:-IgnoreUnrecognizedXXColonOptions",
+		"-VeRsIoN:1.8+",
+		"-prof:/tmp/java.prof",
+		"-FuLlVeRsIoN",
+	} {
+		t.Run(parameter, func(t *testing.T) {
+			if _, err := BuildCommand(CommandSpec{VMParameters: []string{parameter}}); err == nil {
+				t.Fatalf("BuildCommand accepted caller-controlled AOT option %q", parameter)
+			}
+		})
 	}
 }

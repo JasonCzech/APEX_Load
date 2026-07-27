@@ -53,6 +53,7 @@ func (s *Server) handleImportDevWeb(w http.ResponseWriter, r *http.Request) {
 	}
 	protocolCompat := buildDevWebProtocolCompatReport(result)
 	persistProtocolCompatReport(result.Script, "devweb", protocolCompat)
+	preflight := buildAndAttachImportPreflight(result.Script, "devweb", issues, result.Warnings)
 
 	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
@@ -65,6 +66,7 @@ func (s *Server) handleImportDevWeb(w http.ResponseWriter, r *http.Request) {
 		SourceReview:        result.SourceReview,
 		ProtocolCompat:      protocolCompat,
 		Parameterization:    buildImportParameterization(result.Script, nil),
+		Preflight:           preflight,
 	}))
 }
 
@@ -87,9 +89,11 @@ func (s *Server) handleImportK6(w http.ResponseWriter, r *http.Request) {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 	attachSourceReviewToScript(result.Script, "k6", importReq.Name, result.SourceReview)
-	if issues := validateScript(result.Script); len(issues) > 0 {
+	issues := validateScript(result.Script)
+	if len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
+	preflight := buildAndAttachImportPreflight(result.Script, "k6", issues, result.Warnings)
 	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
@@ -100,6 +104,7 @@ func (s *Server) handleImportK6(w http.ResponseWriter, r *http.Request) {
 		ReviewSections:      importDiagnosticReviewSections(result.Unsupported),
 		SourceReview:        result.SourceReview,
 		Parameterization:    buildImportParameterization(result.Script, nil),
+		Preflight:           preflight,
 		Summary: map[string]any{
 			"import_mode":    "constrained_http_subset",
 			"execution_mode": "apexload_http",

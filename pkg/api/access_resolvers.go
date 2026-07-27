@@ -801,9 +801,11 @@ func resolveJMeterSaveProjectID(r *http.Request, _ storage.Store) (string, int, 
 
 func resolvePostmanSaveProjectID(r *http.Request, store storage.Store) (string, int, string) {
 	var req struct {
-		Mode           string `json:"mode,omitempty"`
-		TargetScriptID string `json:"target_script_id,omitempty"`
-		Script         *struct {
+		ImportSessionID string `json:"import_session_id,omitempty"`
+		ProjectID       string `json:"project_id,omitempty"`
+		Mode            string `json:"mode,omitempty"`
+		TargetScriptID  string `json:"target_script_id,omitempty"`
+		Script          *struct {
 			ID        string `json:"id,omitempty"`
 			ProjectID string `json:"project_id,omitempty"`
 		} `json:"script,omitempty"`
@@ -811,18 +813,31 @@ func resolvePostmanSaveProjectID(r *http.Request, store storage.Store) (string, 
 	if err := decodeRequestBody(r, &req); err != nil {
 		return "", http.StatusBadRequest, "invalid request body: " + err.Error()
 	}
-	if req.Script == nil {
+	protectedCommit := strings.TrimSpace(req.ImportSessionID) != ""
+	if req.Script == nil && !protectedCommit {
 		return "", http.StatusBadRequest, "script is required"
 	}
+	if protectedCommit {
+		// Authorize protected commits from the candidate project supplied by
+		// the inspection workflow. The handler claims that project-scoped
+		// server candidate before it looks up a replace target. Resolving the
+		// target here would make a missing/stale session usable as a script-ID
+		// existence oracle because middleware runs before the claim.
+		projectID := strings.TrimSpace(req.ProjectID)
+		if projectID == "" && req.Script != nil {
+			projectID = strings.TrimSpace(req.Script.ProjectID)
+		}
+		if projectID == "" {
+			return "", http.StatusBadRequest, "project_id is required when committing a protected import session"
+		}
+		return normalizeProjectID(projectID), 0, ""
+	}
 	targetID := strings.TrimSpace(req.TargetScriptID)
-	if targetID == "" && strings.EqualFold(strings.TrimSpace(req.Mode), "replace") {
+	if targetID == "" && req.Script != nil && strings.EqualFold(strings.TrimSpace(req.Mode), "replace") {
 		targetID = strings.TrimSpace(req.Script.ID)
 	}
 	if targetID != "" {
 		if store == nil {
-			if projectID := strings.TrimSpace(req.Script.ProjectID); projectID != "" {
-				return normalizeProjectID(projectID), 0, ""
-			}
 			return "", http.StatusServiceUnavailable, "script storage is not configured"
 		}
 		script, err := store.GetScript(targetID)

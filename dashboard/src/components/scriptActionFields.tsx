@@ -8,6 +8,7 @@ import type {
   ScriptActionDefinition,
   ScriptAssertionDefinition,
 } from '../types/scripts'
+import { headerListToCompatibilityMap } from './scriptActionHelpers'
 
 type Action = ScriptActionDefinition
 type Assertion = ScriptAssertionDefinition
@@ -311,7 +312,7 @@ export function WebSocketActionFields({
       </div>
 
       {action.type === 'ws_connect' && (
-        <ProtocolHeadersSection action={action} index={index} onAddHeader={onAddHeader} onRemoveHeader={onRemoveHeader} onUpdateHeader={onUpdateHeader} />
+        <ProtocolHeadersSection action={action} index={index} onAddHeader={onAddHeader} onRemoveHeader={onRemoveHeader} onUpdate={onUpdate} onUpdateHeader={onUpdateHeader} />
       )}
 
       <ProtocolExtractorsSection action={action} index={index} protocol="websocket" onAddExtractor={onAddExtractor} onRemoveExtractor={onRemoveExtractor} onUpdateExtractor={onUpdateExtractor} />
@@ -395,7 +396,7 @@ export function GrpcActionFields({
         </div>
       </div>
 
-      <ProtocolHeadersSection action={action} index={index} onAddHeader={onAddHeader} onRemoveHeader={onRemoveHeader} onUpdateHeader={onUpdateHeader} />
+      <ProtocolHeadersSection action={action} index={index} onAddHeader={onAddHeader} onRemoveHeader={onRemoveHeader} onUpdate={onUpdate} onUpdateHeader={onUpdateHeader} />
       <ProtocolExtractorsSection action={action} index={index} protocol="grpc" onAddExtractor={onAddExtractor} onRemoveExtractor={onRemoveExtractor} onUpdateExtractor={onUpdateExtractor} />
       <ProtocolAssertionsSection action={action} index={index} protocol="grpc" onAddAssertion={onAddAssertion} onRemoveAssertion={onRemoveAssertion} onUpdateAssertion={onUpdateAssertion} />
     </>
@@ -749,6 +750,15 @@ export function HttpActionFields({
   onUpdateExtractor,
   onUpdateHeader,
 }: HttpActionFieldsProps) {
+  const method = (action.method || action.type || '').trim().toUpperCase()
+  const bodyVisible = action.body !== undefined
+    || action.body_encoding !== undefined
+    || ['POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'].includes(method)
+  const bodyEncoding = action.body_encoding || ''
+  const normalizedBodyEncoding = bodyEncoding.trim().toLowerCase()
+  const bodyEncodingKnown = normalizedBodyEncoding === '' || normalizedBodyEncoding === 'base64'
+  const bodyEncodingSelection = normalizedBodyEncoding === 'base64' ? 'base64' : bodyEncoding
+
   return (
     <>
       {isSoapScript && (
@@ -761,13 +771,37 @@ export function HttpActionFields({
           index={index}
           onAddHeader={onAddHeader}
           onRemoveHeader={onRemoveHeader}
+          onUpdate={onUpdate}
           onUpdateHeader={onUpdateHeader}
         />
       )}
 
-      {!isBrowserScript && ['POST', 'PUT', 'PATCH'].includes(action.type) && (
+      {!isBrowserScript && bodyVisible && (
         <div className="sub-section">
           <h4>Body</h4>
+          <div className="form-grid">
+            <label>
+              <span>Body Representation</span>
+              <select
+                value={bodyEncodingSelection}
+                onChange={event => onUpdate(index, 'body_encoding', event.target.value || undefined)}
+              >
+                <option value="">Plain text</option>
+                <option value="base64">Base64-encoded wire bytes</option>
+                {!bodyEncodingKnown && <option value={bodyEncoding}>Legacy/unknown: {bodyEncoding}</option>}
+              </select>
+            </label>
+          </div>
+          {normalizedBodyEncoding === 'base64' && (
+            <p className="sequence-summary-note">
+              This text is standard Base64. The HTTP runtime decodes it before sending the request body.
+            </p>
+          )}
+          {!bodyEncodingKnown && (
+            <p className="sequence-summary-note">
+              The runtime does not decode this representation and sends the body text as authored. Select an explicit representation to remove ambiguity.
+            </p>
+          )}
           <ActionBodyTextarea
             onChange={value => onUpdate(index, 'body', value)}
             onContextMenu={onSelectionMenu}
@@ -839,20 +873,94 @@ export interface ProtocolHeadersSectionProps {
   index: number
   onAddHeader: (i: number) => void
   onRemoveHeader: (ai: number, k: string) => void
+  onUpdate: (i: number, f: keyof Action, v: unknown) => void
   onUpdateHeader: (ai: number, ok: string, nk: string, v: string) => void
 }
 
-export function ProtocolHeadersSection({ action, index, onAddHeader, onRemoveHeader, onUpdateHeader }: ProtocolHeadersSectionProps) {
+export function ProtocolHeadersSection({ action, index, onAddHeader, onRemoveHeader, onUpdate, onUpdateHeader }: ProtocolHeadersSectionProps) {
+  const orderedHeaders = action.header_list
+  const usesOrderedHeaders = Array.isArray(orderedHeaders)
+    && (orderedHeaders.length > 0 || Object.keys(action.headers || {}).length === 0)
+  const orderedHeaderNames = new Set(
+    (orderedHeaders || []).map(header => header.name.trim().toLowerCase()).filter(Boolean),
+  )
+  const compatibilityOnlyHeaders = Object.fromEntries(
+    Object.entries(action.headers || {})
+      .filter(([name]) => !orderedHeaderNames.has(name.trim().toLowerCase())),
+  )
+  const updateOrderedHeaders = (next: NonNullable<Action['header_list']>) => {
+    onUpdate(index, 'header_list', next)
+    onUpdate(index, 'headers', headerListToCompatibilityMap(next, compatibilityOnlyHeaders))
+  }
+  const addHeader = () => {
+    if (usesOrderedHeaders && orderedHeaders) {
+      updateOrderedHeaders([...orderedHeaders, { name: '', value: '' }])
+      return
+    }
+    onAddHeader(index)
+  }
+  const renameCompatibilityOnlyHeader = (oldName: string, nextName: string, value: string) => {
+    if (orderedHeaders && orderedHeaderNames.has(nextName.trim().toLowerCase())) {
+      const remainingCompatibilityHeaders = { ...compatibilityOnlyHeaders }
+      delete remainingCompatibilityHeaders[oldName]
+      const next = [...orderedHeaders, { name: nextName, value }]
+      onUpdate(index, 'header_list', next)
+      onUpdate(index, 'headers', headerListToCompatibilityMap(next, remainingCompatibilityHeaders))
+      return
+    }
+    onUpdateHeader(index, oldName, nextName, value)
+  }
+
   return (
     <div className="sub-section">
-      <div className="sub-header"><h4>Headers</h4><button className="btn btn-sm btn-ghost" onClick={() => onAddHeader(index)}>+ Add</button></div>
-      {Object.entries(action.headers || {}).map(([key, value]) => (
-        <div key={key} className="kv-row">
-          <input className="kv-key" value={key} onChange={e => onUpdateHeader(index, key, e.target.value, value)} placeholder="Key" />
-          <input className="kv-val" value={value} onChange={e => onUpdateHeader(index, key, key, e.target.value)} placeholder="Value" />
-          <button className="btn-icon danger" onClick={() => onRemoveHeader(index, key)}>✕</button>
-        </div>
-      ))}
+      <div className="sub-header"><h4>Headers</h4><button type="button" className="btn btn-sm btn-ghost" onClick={addHeader}>+ Add</button></div>
+      {usesOrderedHeaders && orderedHeaders
+        ? <>
+          {orderedHeaders.map((header, headerIndex) => (
+            <div key={headerIndex} className="kv-row">
+              <input
+                aria-label={`Header ${headerIndex + 1} name`}
+                className="kv-key"
+                value={header.name}
+                onChange={event => updateOrderedHeaders(orderedHeaders.map((entry, entryIndex) => (
+                  entryIndex === headerIndex ? { ...entry, name: event.target.value } : entry
+                )))}
+                placeholder="Key"
+              />
+              <input
+                aria-label={`Header ${headerIndex + 1} value`}
+                className="kv-val"
+                value={header.value}
+                onChange={event => updateOrderedHeaders(orderedHeaders.map((entry, entryIndex) => (
+                  entryIndex === headerIndex ? { ...entry, value: event.target.value } : entry
+                )))}
+                placeholder="Value"
+              />
+              <button
+                type="button"
+                aria-label={`Remove header ${headerIndex + 1}`}
+                className="btn-icon danger"
+                onClick={() => updateOrderedHeaders(orderedHeaders.filter((_, entryIndex) => entryIndex !== headerIndex))}
+              >
+                ✕
+              </button>
+            </div>
+          ))}
+          {Object.entries(compatibilityOnlyHeaders).map(([key, value]) => (
+            <div key={`compatibility-${key}`} className="kv-row">
+              <input aria-label={`Header ${key} name`} className="kv-key" value={key} onChange={e => renameCompatibilityOnlyHeader(key, e.target.value, value)} placeholder="Key" />
+              <input aria-label={`Header ${key} value`} className="kv-val" value={value} onChange={e => onUpdateHeader(index, key, key, e.target.value)} placeholder="Value" />
+              <button type="button" aria-label={`Remove header ${key}`} className="btn-icon danger" onClick={() => onRemoveHeader(index, key)}>✕</button>
+            </div>
+          ))}
+        </>
+        : Object.entries(action.headers || {}).map(([key, value]) => (
+            <div key={key} className="kv-row">
+              <input aria-label={`Header ${key} name`} className="kv-key" value={key} onChange={e => onUpdateHeader(index, key, e.target.value, value)} placeholder="Key" />
+              <input aria-label={`Header ${key} value`} className="kv-val" value={value} onChange={e => onUpdateHeader(index, key, key, e.target.value)} placeholder="Value" />
+              <button type="button" aria-label={`Remove header ${key}`} className="btn-icon danger" onClick={() => onRemoveHeader(index, key)}>✕</button>
+            </div>
+          ))}
     </div>
   )
 }
@@ -953,7 +1061,7 @@ function assertionOptions(protocol: string): Array<[string, string]> {
     case 'network':
       return [['record_count', 'Record Count'], ['entry_count', 'Entry Count'], ['messages_received', 'Messages Received'], ['body_contains', 'Transcript Contains'], ['body_not_contains', 'Transcript Excludes'], ['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)']]
     default:
-      return [['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)'], ['body_contains', 'Body Contains'], ['header_contains', 'Header Contains']]
+      return [['status_code', 'Status Code'], ['response_time_ms', 'Response Time (ms)'], ['body_contains', 'Body Contains'], ['header_contains', 'Header Contains'], ['body_regex_capture_equals', 'Body Regex Capture Equals']]
   }
 }
 
@@ -962,11 +1070,17 @@ function assertionUsesNumericExpected(type: string) {
 }
 
 function assertionUsesTextValue(type: string) {
-  return ['body_contains', 'body_not_contains', 'header_contains', 'metadata_contains', 'correlation_match'].includes(type)
+  return ['body_contains', 'body_not_contains', 'metadata_contains', 'correlation_match'].includes(type)
 }
 
 function assertionUsesNamedExpected(type: string) {
-  return ['property_equals', 'header_equals', 'scalar_equals'].includes(type)
+  return ['property_equals', 'header_equals', 'scalar_equals', 'header_contains', 'body_regex_capture_equals'].includes(type)
+}
+
+function assertionValuePlaceholder(type: string) {
+  if (type === 'header_contains') return 'Header name'
+  if (type === 'body_regex_capture_equals') return 'RE2 pattern'
+  return 'Name'
 }
 
 export function ProtocolAssertionsSection({ action, index, protocol, onAddAssertion, onRemoveAssertion, onUpdateAssertion }: ProtocolAssertionsSectionProps) {
@@ -982,7 +1096,7 @@ export function ProtocolAssertionsSection({ action, index, protocol, onAddAssert
           {assertionUsesNumericExpected(assertion.type) && <input type="number" value={typeof assertion.expected === 'number' ? assertion.expected : 0} onChange={e => onUpdateAssertion(index, assertionIndex, 'expected', Number(e.target.value))} />}
           {assertion.type === 'response_time_ms' && <input type="number" value={assertion.max ?? 5000} onChange={e => onUpdateAssertion(index, assertionIndex, 'max', Number(e.target.value))} placeholder="Max ms" />}
           {assertionUsesTextValue(assertion.type) && <input value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder="Expected text" />}
-          {assertionUsesNamedExpected(assertion.type) && assertion.type !== 'scalar_equals' && <input value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder="Name" />}
+          {assertionUsesNamedExpected(assertion.type) && assertion.type !== 'scalar_equals' && <input value={assertion.value ?? ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'value', e.target.value)} placeholder={assertionValuePlaceholder(assertion.type)} />}
           {assertionUsesNamedExpected(assertion.type) && <input value={typeof assertion.expected === 'string' || typeof assertion.expected === 'number' ? String(assertion.expected) : ''} onChange={e => onUpdateAssertion(index, assertionIndex, 'expected', e.target.value)} placeholder="Expected value" />}
           <button className="btn-icon danger" onClick={() => onRemoveAssertion(index, assertionIndex)}>✕</button>
         </div>

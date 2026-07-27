@@ -29,6 +29,117 @@ import (
 
 const brunoImportTestProject = "project-bruno-api"
 
+func TestBrunoImportIgnoresUnusedMigrationOptIn(t *testing.T) {
+	server, _, _ := newBrunoImportAPITestServer(t)
+	inspection := inspectBrunoJSON(t, server, []byte(`info: {name: No Secrets, type: http}
+http: {method: GET, url: https://example.test}
+`), "")
+	migrate := true
+	response := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
+		ProjectID:       brunoImportTestProject,
+		ImportSessionID: inspection.ImportSessionID,
+		Mode:            "create",
+		MigrateSecrets:  &migrate,
+	})
+	if response.Code != http.StatusCreated {
+		t.Fatalf("unused migration opt-in status = %d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestBrunoImportMigrationOptInIgnoresRequirementWithoutSourceValue(t *testing.T) {
+	server, _, _ := newBrunoImportAPITestServer(t)
+	inspection := inspectBrunoJSON(t, server, []byte(`info: {name: Existing Secret, type: http}
+http:
+  method: GET
+  url: https://example.test
+  headers:
+    - name: Authorization
+      value: 'Bearer {{secret.api-token}}'
+`), "")
+	if len(inspection.Result.SecretRequirements) != 1 {
+		t.Fatalf("secret requirements = %#v", inspection.Result.SecretRequirements)
+	}
+	requirement := inspection.Result.SecretRequirements[0]
+	if requirement.Value != "" || requirement.SourceValueAvailable || !requirement.ExistingReference {
+		t.Fatalf("non-migratable secret requirement = %#v", requirement)
+	}
+
+	migrate := true
+	response := commitBrunoImportWithStatus(t, server, brunoCommitRequest{
+		ProjectID:       brunoImportTestProject,
+		ImportSessionID: inspection.ImportSessionID,
+		Mode:            "create",
+		MigrateSecrets:  &migrate,
+	})
+	if response.Code != http.StatusCreated {
+		t.Fatalf("non-migratable requirement status = %d body=%s", response.Code, response.Body.String())
+	}
+	if _, _, err := server.projectSecretStore.Get(
+		context.Background(), brunoImportTestProject, requirement.SuggestedName,
+	); !errors.Is(err, secretstore.ErrNotFound) {
+		t.Fatalf("non-migratable requirement unexpectedly created a secret: %v", err)
+	}
+}
+
+func TestBrunoSecretMatchesRetainedMigration(t *testing.T) {
+	started := time.Now().UTC()
+	window := brunoSecretMigrationWindow{StartedAt: started, ExpiresAt: started.Add(30 * time.Minute)}
+	for _, test := range []struct {
+		name     string
+		value    string
+		metadata secretstore.Metadata
+		actor    string
+		want     bool
+	}{
+		{
+			name:  "same session",
+			value: "source-value",
+			metadata: secretstore.Metadata{
+				CreatedBy: "actor-a",
+				CreatedAt: started.Add(time.Second),
+			},
+			actor: "actor-a",
+			want:  true,
+		},
+		{
+			name:  "different value",
+			value: "other-value",
+			metadata: secretstore.Metadata{
+				CreatedBy: "actor-a",
+				CreatedAt: started.Add(time.Second),
+			},
+			actor: "actor-a",
+		},
+		{
+			name:  "different actor",
+			value: "source-value",
+			metadata: secretstore.Metadata{
+				CreatedBy: "actor-b",
+				CreatedAt: started.Add(time.Second),
+			},
+			actor: "actor-a",
+		},
+		{
+			name:  "outside session window",
+			value: "source-value",
+			metadata: secretstore.Metadata{
+				CreatedBy: "actor-a",
+				CreatedAt: started.Add(-2 * time.Minute),
+			},
+			actor: "actor-a",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := brunoSecretMatchesRetainedMigration(
+				test.value, "source-value", test.metadata, test.actor, window,
+			)
+			if got != test.want {
+				t.Fatalf("match = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
+
 func rewriteBrunoImportSessionForTest(t *testing.T, server *Server, id string, mutate func(*brunoImportSession)) *brunoImportSession {
 	t.Helper()
 	request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/bruno/commit", nil)
@@ -701,7 +812,7 @@ http:
 	}
 }
 
-func TestBrunoImportDefaultOffPolicyDeniesExplicitMigrationWithoutDisclosure(t *testing.T) {
+func TestBrunoImportDefaultOffPolicyDefersExplicitMigrationWithoutDisclosure(t *testing.T) {
 	server, _, _ := newBrunoImportAPITestServer(t)
 	source := []byte(`info: {name: Secret, type: http}
 http:
@@ -731,11 +842,17 @@ http:
 		Mode:            "create",
 		MigrateSecrets:  &migrateSecrets,
 	})
-	if response.Code != http.StatusForbidden {
+	if response.Code != http.StatusCreated {
 		t.Fatalf("commit status = %d body=%s", response.Code, response.Body.String())
 	}
 	if strings.Contains(response.Body.String(), "default-off-literal-token") {
-		t.Fatal("migration denial response disclosed the source credential")
+		t.Fatal("deferred migration response disclosed the source credential")
+	}
+	requirement := inspect.Result.SecretRequirements[0]
+	if _, _, err := server.projectSecretStore.Get(
+		context.Background(), brunoImportTestProject, requirement.SuggestedName,
+	); !errors.Is(err, secretstore.ErrNotFound) {
+		t.Fatalf("deferred migration unexpectedly created a secret: %v", err)
 	}
 }
 
@@ -1336,6 +1453,124 @@ http:
 	assertDirectoryHasNoRegularFiles(t, artifactDir)
 }
 
+func TestExpiredBrunoSessionJanitorDefersSourceCollectionDuringPublicationGrace(t *testing.T) {
+	server, _, artifactDir := newBrunoImportAPITestServer(t)
+	inspected := inspectBrunoJSON(t, server, []byte(`info: {name: Grace, type: http}
+http: {method: GET, url: https://example.test/grace}
+`), "")
+
+	server.brunoImportMu.Lock()
+	session := server.brunoImportSessions[inspected.ImportSessionID]
+	if session == nil {
+		server.brunoImportMu.Unlock()
+		t.Fatal("inspect session was not retained")
+	}
+	if session.Timer != nil {
+		session.Timer.Stop()
+		session.Timer = nil
+	}
+	rawArtifact := session.RawArtifact
+	server.brunoImportMu.Unlock()
+
+	expiredAt := time.Now().UTC().Add(-time.Minute)
+	expireBrunoSessionDescriptor(t, artifactDir, inspected.ImportSessionID, expiredAt)
+	if err := server.pruneExpiredBrunoImportSessions(time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	objects, err := server.brunoArtifactStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := brunoartifact.OpenRequest{
+		BackendKey: rawArtifact.BackendKey,
+		ProjectID:  rawArtifact.ProjectID,
+		Kind:       rawArtifact.ArtifactKind,
+		SHA256:     rawArtifact.SHA256,
+		SizeBytes:  rawArtifact.SizeBytes,
+	}
+	if _, err := objects.ReadAll(context.Background(), request, rawArtifact.SizeBytes); err != nil {
+		t.Fatalf("source was collected during publication grace: %v", err)
+	}
+	descriptorPath := filepath.Join(artifactDir, ".sessions", inspected.ImportSessionID+".json")
+	if _, err := os.Stat(descriptorPath); err != nil {
+		t.Fatalf("reservation descriptor was removed during publication grace: %v", err)
+	}
+
+	afterGrace := expiredAt.Add(brunoArtifactCollectionGrace + time.Second)
+	if err := server.pruneExpiredBrunoImportSessions(afterGrace); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := objects.ReadAll(context.Background(), request, rawArtifact.SizeBytes); err == nil {
+		t.Fatal("unreferenced source remained after collection grace")
+	}
+}
+
+func TestExpiredBrunoSessionJanitorFailsClosedWithoutDatabaseReferenceChecker(t *testing.T) {
+	server, store, artifactDir := newBrunoImportAPITestServer(t)
+	inspected := inspectBrunoJSON(t, server, []byte(`info: {name: Unknown references, type: http}
+http: {method: GET, url: https://example.test/unknown}
+`), "")
+
+	server.brunoImportMu.Lock()
+	session := server.brunoImportSessions[inspected.ImportSessionID]
+	if session == nil {
+		server.brunoImportMu.Unlock()
+		t.Fatal("inspect session was not retained")
+	}
+	if session.Timer != nil {
+		session.Timer.Stop()
+		session.Timer = nil
+	}
+	rawArtifact := session.RawArtifact
+	server.brunoImportMu.Unlock()
+
+	expiredAt := time.Now().UTC().Add(-brunoArtifactCollectionGrace - time.Minute)
+	expireBrunoSessionDescriptor(t, artifactDir, inspected.ImportSessionID, expiredAt)
+	server.store = &brunoStoreWithoutArtifactReferenceChecker{Store: store}
+	if err := server.pruneExpiredBrunoImportSessions(time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	objects, err := server.brunoArtifactStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := objects.ReadAll(context.Background(), brunoartifact.OpenRequest{
+		BackendKey: rawArtifact.BackendKey,
+		ProjectID:  rawArtifact.ProjectID,
+		Kind:       rawArtifact.ArtifactKind,
+		SHA256:     rawArtifact.SHA256,
+		SizeBytes:  rawArtifact.SizeBytes,
+	}, rawArtifact.SizeBytes); err != nil {
+		t.Fatalf("unknown database reference state deleted source evidence: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(artifactDir, ".sessions", inspected.ImportSessionID+".json")); err != nil {
+		t.Fatalf("cleanup locator descriptor was removed: %v", err)
+	}
+}
+
+func expireBrunoSessionDescriptor(t *testing.T, artifactDir, sessionID string, expiresAt time.Time) {
+	t.Helper()
+	descriptorPath := filepath.Join(artifactDir, ".sessions", sessionID+".json")
+	descriptorData, err := os.ReadFile(descriptorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var descriptor brunoartifact.SessionDescriptor
+	if err := json.Unmarshal(descriptorData, &descriptor); err != nil {
+		t.Fatal(err)
+	}
+	descriptor.ExpiresAt = expiresAt.UTC()
+	descriptorData, err = json.Marshal(descriptor)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(descriptorPath, descriptorData, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestBrunoImportMultipartDirectoryAndUnsafePath(t *testing.T) {
 	server, _, _ := newBrunoImportAPITestServer(t)
 	var body bytes.Buffer
@@ -1348,7 +1583,7 @@ func TestBrunoImportMultipartDirectoryAndUnsafePath(t *testing.T) {
 	if err := writer.Close(); err != nil {
 		t.Fatal(err)
 	}
-	request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/bruno/inspect", &body)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/bruno/inspect?output_mode=native_requests", &body)
 	request.Header.Set("Content-Type", writer.FormDataContentType())
 	response := httptest.NewRecorder()
 	server.mux.ServeHTTP(response, request)
@@ -1359,7 +1594,8 @@ func TestBrunoImportMultipartDirectoryAndUnsafePath(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &inspected); err != nil {
 		t.Fatal(err)
 	}
-	if inspected.Result.RootPath != "demo" || inspected.Result.Collection.Name != "Demo" {
+	if inspected.Result.RootPath != "demo" || inspected.Result.Collection.Name != "Demo" ||
+		inspected.Result.OutputMode != brunoconvert.OutputModeNativeRequests {
 		t.Fatalf("directory result = %#v", inspected.Result)
 	}
 
@@ -1378,6 +1614,214 @@ func TestBrunoImportMultipartDirectoryAndUnsafePath(t *testing.T) {
 	server.mux.ServeHTTP(response, request)
 	if response.Code != http.StatusUnprocessableEntity || !strings.Contains(strings.ToLower(response.Body.String()), "escape") {
 		t.Fatalf("unsafe-path status = %d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestApplyBrunoNativeSecretBindingsDoesNotCascade(t *testing.T) {
+	script := &dsl.Script{
+		Name:     "binding cascade",
+		Protocol: "http",
+		Actions: []dsl.Action{{
+			Name: "request",
+			Type: "request",
+			HeaderList: dsl.HeaderList{
+				{Name: "X-Password", Value: "{{secret.PASSWORD}}"},
+				{Name: "X-Token", Value: "{{secret.TOKEN}}"},
+			},
+		}},
+	}
+	bound, err := applyBrunoNativeSecretBindings(script, map[string]string{
+		"PASSWORD": "{{secret.TOKEN}}",
+		"TOKEN":    "{{secret.FINAL_TOKEN}}",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := bound.Actions[0].HeaderList[0].Value; got != "{{secret.TOKEN}}" {
+		t.Fatalf("PASSWORD binding cascaded to %q", got)
+	}
+	if got := bound.Actions[0].HeaderList[1].Value; got != "{{secret.FINAL_TOKEN}}" {
+		t.Fatalf("TOKEN binding = %q", got)
+	}
+}
+
+func TestBrunoRawUploadCanSelectNativeOutput(t *testing.T) {
+	server, _, _ := newBrunoImportAPITestServer(t)
+	source := []byte(`info: {name: Raw native, uid: raw-native, type: http}
+http:
+  method: GET
+  url: https://example.test
+`)
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/import/bruno/inspect?project_id="+url.QueryEscape(brunoImportTestProject)+
+			"&filename=request.yml&output_mode=native_requests",
+		bytes.NewReader(source),
+	)
+	request.Header.Set("Content-Type", "application/octet-stream")
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("native raw inspect status = %d body=%s", response.Code, response.Body.String())
+	}
+	var inspected brunoInspectResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &inspected); err != nil {
+		t.Fatal(err)
+	}
+	if inspected.Result.OutputMode != brunoconvert.OutputModeNativeRequests ||
+		len(inspected.Result.Scripts) != 1 {
+		t.Fatalf("native raw result = %#v", inspected.Result)
+	}
+}
+
+func TestBrunoJSONQueryCanSelectNativeOutputAndRejectsConflict(t *testing.T) {
+	server, _, _ := newBrunoImportAPITestServer(t)
+	source := "info: {name: JSON native, uid: json-native, type: http}\nhttp: {method: GET, url: https://example.test}\n"
+	payload, err := json.Marshal(brunoInspectJSONRequest{
+		ProjectID: brunoImportTestProject,
+		Filename:  "request.yml",
+		Content:   source,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/import/bruno/inspect?output_mode=native_requests",
+		bytes.NewReader(payload),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	server.mux.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("JSON query native inspect status = %d body=%s", response.Code, response.Body.String())
+	}
+	var inspected brunoInspectResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &inspected); err != nil {
+		t.Fatal(err)
+	}
+	if inspected.Result == nil || inspected.Result.OutputMode != brunoconvert.OutputModeNativeRequests {
+		t.Fatalf("JSON query native result = %#v", inspected.Result)
+	}
+
+	conflictingPayload, err := json.Marshal(brunoInspectJSONRequest{
+		ProjectID: brunoImportTestProject,
+		Filename:  "request.yml",
+		Content:   source,
+		Options: brunoconvert.InspectOptions{
+			OutputMode: brunoconvert.OutputModeCanonical,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request = httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/scripts/import/bruno/inspect?output_mode=native_requests",
+		bytes.NewReader(conflictingPayload),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	server.mux.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "conflicts") {
+		t.Fatalf("JSON output mode conflict status = %d body=%s", response.Code, response.Body.String())
+	}
+}
+
+func TestCleanupUnreferencedBrunoArtifactsDeletesFailedPublication(t *testing.T) {
+	server, _, _ := newBrunoImportAPITestServer(t)
+	objects, err := server.brunoArtifactStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte("failed-publication-source")
+	object, err := objects.PutBytes(context.Background(), brunoImportTestProject, "raw", payload, int64(len(payload)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	artifact := storage.BrunoSourceArtifact{
+		ProjectID: brunoImportTestProject, ArtifactKind: "raw",
+		BackendKey: object.BackendKey, SHA256: object.SHA256, SizeBytes: object.SizeBytes,
+	}
+	server.cleanupUnreferencedBrunoArtifacts([]storage.BrunoSourceArtifact{artifact})
+	if _, err := objects.ReadAll(
+		context.Background(),
+		brunoArtifactOpenRequest(artifact),
+		int64(len(payload)),
+	); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed-publication artifact survived cleanup: %v", err)
+	}
+}
+
+func TestExpiredBrunoPublicationJournalRecoversInterruptedSourceWrite(t *testing.T) {
+	server, _, _ := newBrunoImportAPITestServer(t)
+	objects, err := server.brunoArtifactStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte("interrupted-source-write")
+	planned, err := objects.PlanBytes(brunoImportTestProject, "raw", payload, int64(len(payload)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := objects.SavePublication(brunoartifact.PublicationDescriptor{
+		ID:        "interrupted-source",
+		ProjectID: brunoImportTestProject,
+		ExpiresAt: time.Now().UTC().Add(-time.Minute),
+		Objects:   []brunoartifact.OpenRequest{planned},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := objects.PutBytes(
+		context.Background(), brunoImportTestProject, "raw", payload, int64(len(payload)),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := server.pruneExpiredBrunoImportSessions(time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := objects.ReadAll(context.Background(), planned, int64(len(payload))); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("interrupted source object survived publication recovery: %v", err)
+	}
+	if publications, err := objects.ListExpiredPublications(time.Now().UTC()); err != nil || len(publications) != 0 {
+		t.Fatalf("recovered publication journal = %#v, %v", publications, err)
+	}
+}
+
+func TestExpiredBrunoPublicationJournalFailsClosedWithoutReferenceChecker(t *testing.T) {
+	server, store, _ := newBrunoImportAPITestServer(t)
+	objects, err := server.brunoArtifactStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload := []byte("unknown-reference-source")
+	planned, err := objects.PlanBytes(brunoImportTestProject, "raw", payload, int64(len(payload)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := objects.SavePublication(brunoartifact.PublicationDescriptor{
+		ID:        "unknown-reference-publication",
+		ProjectID: brunoImportTestProject,
+		ExpiresAt: time.Now().UTC().Add(-time.Minute),
+		Objects:   []brunoartifact.OpenRequest{planned},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := objects.PutBytes(
+		context.Background(), brunoImportTestProject, "raw", payload, int64(len(payload)),
+	); err != nil {
+		t.Fatal(err)
+	}
+	server.store = &brunoStoreWithoutArtifactReferenceChecker{Store: store}
+	if err := server.pruneExpiredBrunoImportSessions(time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := objects.ReadAll(context.Background(), planned, int64(len(payload))); err != nil {
+		t.Fatalf("unknown reference state deleted source: %v", err)
+	}
+	publications, err := objects.ListExpiredPublications(time.Now().UTC())
+	if err != nil || len(publications) != 1 || publications[0].ID != "unknown-reference-publication" {
+		t.Fatalf("fail-closed publication journal = %#v, %v", publications, err)
 	}
 }
 
@@ -1511,6 +1955,10 @@ func (s *failingBrunoCommitStore) ActivateBrunoSourceRevision(scriptID string, p
 type flakyBrunoArtifactReferenceStore struct {
 	storage.Store
 	fail bool
+}
+
+type brunoStoreWithoutArtifactReferenceChecker struct {
+	storage.Store
 }
 
 func (s *flakyBrunoArtifactReferenceStore) IsBrunoArtifactBackendKeyReferenced(backendKey string) (bool, error) {

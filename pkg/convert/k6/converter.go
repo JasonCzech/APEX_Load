@@ -11,7 +11,10 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -38,12 +41,15 @@ type ConvertStats struct {
 }
 
 type ConvertResult struct {
-	Script       *dsl.Script        `json:"script"`
-	Warnings     []string           `json:"warnings,omitempty"`
-	Unsupported  diag.Diagnostics   `json:"unsupported,omitempty"`
-	Assumptions  []string           `json:"assumptions,omitempty"`
-	Stats        ConvertStats       `json:"stats"`
-	SourceReview *sourceview.Review `json:"source_review,omitempty"`
+	Script             *dsl.Script                    `json:"script"`
+	Warnings           []string                       `json:"warnings,omitempty"`
+	Unsupported        diag.Diagnostics               `json:"unsupported,omitempty"`
+	Assumptions        []string                       `json:"assumptions,omitempty"`
+	Findings           []importreview.Finding         `json:"findings,omitempty"`
+	SecretRequirements []credentialpolicy.Requirement `json:"secret_requirements,omitempty"`
+	Readiness          importreview.Readiness         `json:"readiness"`
+	Stats              ConvertStats                   `json:"stats"`
+	SourceReview       *sourceview.Review             `json:"source_review,omitempty"`
 }
 
 type ExportRequest struct {
@@ -64,22 +70,26 @@ type ExportResult struct {
 }
 
 type parsedHTTPRequest struct {
-	Method    string
-	URL       string
-	Body      string
-	Headers   map[string]string
-	StartLine int
-	EndLine   int
+	Method        string
+	URL           string
+	Body          string
+	Headers       map[string]string
+	ReviewReasons []string
+	StartOffset   int
+	EndOffset     int
+	StartLine     int
+	EndLine       int
 }
 
 type sortedAction struct {
 	Action  dsl.Action
 	Mapping sourceview.Mapping
+	Report  *requestimport.Report
 }
 
 var (
 	optionsBlockPattern  = regexp.MustCompile(`(?s)export\s+(?:const|let|var)\s+options\s*=\s*\{(.*?)\}\s*;`)
-	httpCallStartPattern = regexp.MustCompile(`\bhttp\.(get|post|put|delete)\s*\(`)
+	httpCallStartPattern = regexp.MustCompile(`\bhttp\.(get|post|put|patch|delete|del|head|options)\s*\(`)
 	sleepPattern         = regexp.MustCompile(`\bsleep\s*\(\s*([0-9]+(?:\.[0-9]+)?)\s*\)`)
 	checkPattern         = regexp.MustCompile(`\bcheck\s*\(`)
 	thresholdPattern     = regexp.MustCompile(`(?s)thresholds\s*:\s*\{(.*?)\}`)
@@ -132,6 +142,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		},
 	}
 	var diagnostics diag.Collector
+	credentialRegistry := credentialpolicy.NewNameRegistry()
 	optionsSummary := parseOptions(content, result)
 	if result.Script.Metadata != nil && result.Script.Metadata.Import != nil && len(optionsSummary) > 0 {
 		result.Script.Metadata.Import.Preserved["k6_options"] = optionsSummary
@@ -141,22 +152,47 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 
 	requests := parseHTTPRequests(content)
 	if len(requests) == 0 {
-		return nil, fmt.Errorf("no supported k6 http.get/post/put/delete calls found")
+		return nil, fmt.Errorf("no supported k6 HTTP calls found")
 	}
+	missingBaseURL := strings.TrimSpace(result.Script.Config.BaseURL) == ""
+	if missingBaseURL {
+		// Keep dynamic/relative-only conversions as valid, disclosure-safe
+		// drafts. The per-request gate below prevents this non-routable
+		// placeholder from reaching transport.
+		result.Script.Config.BaseURL = "https://missing-base-url.apexload.invalid"
+	}
+	residualLines := detectK6ResidualSource(content, requests)
 	for idx, req := range requests {
-		action := dsl.Action{
-			Name:    fmt.Sprintf("%s_%02d", titleMethod(req.Method), idx+1),
-			Type:    "request",
-			Method:  req.Method,
-			Target:  relativeTarget(req.URL, result.Script.Config.BaseURL),
-			Headers: req.Headers,
-			Body:    req.Body,
-			Metadata: map[string]any{
-				"k6_source": "http." + strings.ToLower(req.Method),
-			},
+		if missingBaseURL {
+			req.ReviewReasons = uniqueSortedK6Strings(append(req.ReviewReasons, "missing_base_url"))
+		}
+		target := relativeTarget(req.URL, result.Script.Config.BaseURL)
+		if containsK6Reason(req.ReviewReasons, "dynamic_url_expression") {
+			target = "/__k6_dynamic_target__"
+		}
+		body := req.Body
+		if containsK6Reason(req.ReviewReasons, "dynamic_body_expression") {
+			body = ""
+		}
+		action, report, finalizeErr := finalizeK6HTTPRequest(req, idx, target, body, convertutil.FirstNonEmpty(reqFileName(result), "script.js"), credentialRegistry)
+		if finalizeErr != nil {
+			return nil, finalizeErr
+		}
+		if sharedReasons := k6ExecutionFindingCodes(report.Findings); len(sharedReasons) > 0 {
+			setK6ReviewGate(&action, sharedReasons, []string{fmt.Sprintf("%s lines %d-%d", convertutil.FirstNonEmpty(reqFileName(result), "script.js"), req.StartLine, req.EndLine)})
+		}
+		supportMode := "executable"
+		status := "converted"
+		notes := "Converted from the constrained k6 HTTP subset."
+		if len(req.ReviewReasons) != 0 {
+			setK6ReviewGate(&action, req.ReviewReasons, []string{fmt.Sprintf("%s lines %d-%d", convertutil.FirstNonEmpty(reqFileName(result), "script.js"), req.StartLine, req.EndLine)})
+			supportMode = "review_required"
+			status = "review_only"
+			notes = "Request shape was preserved as a disclosure-safe draft; dynamic JavaScript must be replaced before execution."
 		}
 		unsorted = append(unsorted, sortedAction{
 			Action: action,
+			Report: &report,
 			Mapping: sourceview.Mapping{
 				SourceFile:  convertutil.FirstNonEmpty(reqFileName(result), "script.js"),
 				StartLine:   req.StartLine,
@@ -164,9 +200,9 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 				Function:    "http." + strings.ToLower(req.Method),
 				TargetName:  action.Name,
 				TargetKind:  "action",
-				Status:      "converted",
-				SupportMode: "executable",
-				Notes:       "Converted from the constrained k6 HTTP subset.",
+				Status:      status,
+				SupportMode: supportMode,
+				Notes:       notes,
 			},
 		})
 		result.Stats.HTTPRequests++
@@ -174,6 +210,8 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	diagnoseUnsupported(content, &diagnostics, &result.Stats, &unsorted, convertutil.FirstNonEmpty(reqFileName(result), "script.js"))
+	diagnoseK6ResidualSource(residualLines, &diagnostics, &result.Stats, convertutil.FirstNonEmpty(reqFileName(result), "script.js"))
+	applyK6FlowReviewGates(content, &unsorted, convertutil.FirstNonEmpty(reqFileName(result), "script.js"), residualLines)
 
 	for i := 0; i < len(unsorted); i++ {
 		for j := i + 1; j < len(unsorted); j++ {
@@ -184,10 +222,19 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	sourceMappings := make([]sourceview.Mapping, 0, len(unsorted))
+	reports := make([]requestimport.Report, 0, len(requests))
 	for idx, s := range unsorted {
 		s.Mapping.TargetPath = fmt.Sprintf("actions[%d]", idx)
 		result.Script.Actions = append(result.Script.Actions, s.Action)
 		sourceMappings = append(sourceMappings, s.Mapping)
+		if s.Report != nil {
+			report := *s.Report
+			report.ActionPath = fmt.Sprintf("actions[%d]", idx)
+			for findingIndex := range report.Findings {
+				report.Findings[findingIndex].ActionPath = report.ActionPath
+			}
+			reports = append(reports, report)
+		}
 	}
 	result.Stats.Checks = len(checkPattern.FindAllStringIndex(content, -1))
 	result.Stats.Sleeps = len(sleepPattern.FindAllStringIndex(content, -1))
@@ -197,8 +244,25 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if result.Stats.Sleeps > 0 {
 		result.Warnings = append(result.Warnings, "k6 sleep() calls are summarized in import stats; review APEX think-time/pacing before promotion")
 	}
+	unresolvedBindings := unresolvedK6CredentialBindings(reports)
+	finalized, err := requestimport.FinalizeScript(result.Script, reports, requestimport.FinalizeOptions{UnresolvedBindings: unresolvedBindings})
+	if err != nil {
+		return nil, fmt.Errorf("finalize k6 HTTP import: %w", err)
+	}
+	result.Script = finalized.Script
+	result.Findings = finalized.Findings
+	result.Readiness = finalized.Readiness
+	for _, item := range finalized.Diagnostics {
+		diagnostics.Add(item.Severity, item.Element, item.Location, item.Detail)
+	}
+	reviewContent := redactK6CredentialValues(req.Content, finalized.Requirements)
+	reviewContent, residualReviewRedacted := disclosureSafeK6SourceReview(reviewContent, len(residualLines) != 0)
+	result.SecretRequirements = publicK6CredentialRequirements(finalized.Requirements)
 	result.Unsupported = diagnostics.Items()
-	result.SourceReview = sourceview.Build(map[string]string{reqFileName(result): req.Content}, sourceMappings)
+	result.SourceReview = sourceview.Build(map[string]string{reqFileName(result): reviewContent}, sourceMappings)
+	if residualReviewRedacted {
+		markK6SourceReviewRedacted(result.SourceReview, reqFileName(result))
+	}
 	return result, nil
 }
 
@@ -240,18 +304,23 @@ func Export(req ExportRequest) (*ExportResult, error) {
 			continue
 		}
 		method := strings.ToLower(convertutil.FirstNonEmpty(action.Method, "GET"))
-		if method != "get" && method != "post" && method != "put" && method != "delete" {
+		if method != "get" && method != "post" && method != "put" && method != "patch" &&
+			method != "delete" && method != "head" && method != "options" {
 			result.Unsupported = append(result.Unsupported, fmt.Sprintf("%s uses unsupported HTTP method %q", action.Name, action.Method))
 			continue
 		}
 		urlExpr := jsURLExpression(action.Target)
+		callMethod := method
+		if callMethod == "delete" {
+			callMethod = "del"
+		}
 		headers := mergedHeaders(script.Config.HTTP.DefaultHeaders, action.Headers)
-		if method == "get" || method == "delete" {
+		if method == "get" || method == "head" {
 			b.WriteString("  ")
 			b.WriteString("const res")
 			b.WriteString(strconv.Itoa(result.Stats.ConvertedActions + 1))
 			b.WriteString(" = http.")
-			b.WriteString(method)
+			b.WriteString(callMethod)
 			b.WriteString("(")
 			b.WriteString(urlExpr)
 			if len(headers) > 0 {
@@ -264,7 +333,7 @@ func Export(req ExportRequest) (*ExportResult, error) {
 			b.WriteString("  const res")
 			b.WriteString(strconv.Itoa(result.Stats.ConvertedActions + 1))
 			b.WriteString(" = http.")
-			b.WriteString(method)
+			b.WriteString(callMethod)
 			b.WriteString("(")
 			b.WriteString(urlExpr)
 			b.WriteString(", ")
@@ -314,10 +383,17 @@ func Export(req ExportRequest) (*ExportResult, error) {
 
 func parseHTTPRequests(content string) []parsedHTTPRequest {
 	lineIndex := sourceview.NewLineIndex(content)
-	matches := httpCallStartPattern.FindAllStringSubmatchIndex(content, -1)
+	// Locate call expressions only in executable source. Running the regular
+	// expression over the raw JavaScript would promote examples in comments or
+	// string/template literals into live HTTP actions.
+	callSearchSource := maskK6NonCodeForCallSearch(content)
+	matches := httpCallStartPattern.FindAllStringSubmatchIndex(callSearchSource, -1)
 	out := make([]parsedHTTPRequest, 0, len(matches))
 	for _, match := range matches {
 		method := strings.ToUpper(content[match[2]:match[3]])
+		if method == "DEL" {
+			method = "DELETE"
+		}
 		openOffset := match[1] - 1
 		closeOffset := matchingParenOffset(content, openOffset)
 		if closeOffset < 0 {
@@ -327,12 +403,20 @@ func parseHTTPRequests(content string) []parsedHTTPRequest {
 		if len(args) == 0 {
 			continue
 		}
-		rawURL := literalArg(args[0])
+		rawURL, staticURL := parseK6StringLiteral(args[0])
+		reviewReasons := make([]string, 0, 3)
+		if !staticURL {
+			reviewReasons = append(reviewReasons, "dynamic_url_expression")
+		}
 		body := ""
 		options := ""
-		if method == "POST" || method == "PUT" {
+		if k6MethodHasBody(method) {
 			if len(args) > 1 {
-				body = literalArg(args[1])
+				var staticBody bool
+				body, staticBody = parseK6StringLiteral(args[1])
+				if !staticBody {
+					reviewReasons = append(reviewReasons, "dynamic_body_expression")
+				}
 			}
 			if len(args) > 2 {
 				options = args[2]
@@ -340,16 +424,277 @@ func parseHTTPRequests(content string) []parsedHTTPRequest {
 		} else if len(args) > 1 {
 			options = args[1]
 		}
+		headers, optionReasons := parseK6RequestOptions(options)
+		reviewReasons = append(reviewReasons, optionReasons...)
 		out = append(out, parsedHTTPRequest{
-			Method:    method,
-			URL:       rawURL,
-			Body:      body,
-			Headers:   parseHeaders(options),
-			StartLine: lineIndex.LineForOffset(match[0]),
-			EndLine:   lineIndex.LineForOffset(closeOffset),
+			Method:        method,
+			URL:           rawURL,
+			Body:          body,
+			Headers:       headers,
+			ReviewReasons: uniqueSortedK6Strings(reviewReasons),
+			StartOffset:   match[0],
+			EndOffset:     closeOffset + 1,
+			StartLine:     lineIndex.LineForOffset(match[0]),
+			EndLine:       lineIndex.LineForOffset(closeOffset),
 		})
 	}
 	return out
+}
+
+func maskK6NonCodeForCallSearch(content string) string {
+	masked := []byte(content)
+	for offset := 0; offset < len(content); {
+		switch content[offset] {
+		case '\'', '"', '`':
+			quote := content[offset]
+			start := offset
+			offset++
+			for offset < len(content) {
+				current := content[offset]
+				if current == '\\' {
+					offset += 2
+					if offset > len(content) {
+						offset = len(content)
+					}
+					continue
+				}
+				offset++
+				if current == quote {
+					break
+				}
+				if quote != '`' && (current == '\n' || current == '\r') {
+					break
+				}
+			}
+			maskK6Span(masked, start, offset)
+		case '/':
+			if offset+1 >= len(content) {
+				offset++
+				continue
+			}
+			switch content[offset+1] {
+			case '/':
+				start := offset
+				offset += 2
+				for offset < len(content) && content[offset] != '\n' && content[offset] != '\r' {
+					offset++
+				}
+				maskK6Span(masked, start, offset)
+			case '*':
+				start := offset
+				offset += 2
+				for offset+1 < len(content) && !(content[offset] == '*' && content[offset+1] == '/') {
+					offset++
+				}
+				if offset+1 < len(content) {
+					offset += 2
+				} else {
+					offset = len(content)
+				}
+				maskK6Span(masked, start, offset)
+			default:
+				offset++
+			}
+		default:
+			offset++
+		}
+	}
+	return string(masked)
+}
+
+func k6MethodHasBody(method string) bool {
+	switch strings.ToUpper(strings.TrimSpace(method)) {
+	case "POST", "PUT", "PATCH", "DELETE", "OPTIONS":
+		return true
+	default:
+		return false
+	}
+}
+
+func parseK6StringLiteral(expression string) (string, bool) {
+	expression = strings.TrimSpace(expression)
+	if len(expression) < 2 {
+		return "", false
+	}
+	quote := expression[0]
+	if (quote != '\'' && quote != '"') || expression[len(expression)-1] != quote {
+		return "", false
+	}
+	if quote == '"' {
+		var decoded string
+		if err := json.Unmarshal([]byte(expression), &decoded); err != nil {
+			return "", false
+		}
+		return decoded, true
+	}
+
+	// JSON and JavaScript share the escape sequences accepted below. Convert a
+	// single-quoted JavaScript literal into a JSON string without evaluating
+	// expressions, line continuations, hexadecimal escapes, or arbitrary code.
+	var encoded strings.Builder
+	encoded.WriteByte('"')
+	inner := expression[1 : len(expression)-1]
+	for i := 0; i < len(inner); i++ {
+		ch := inner[i]
+		if ch < 0x20 {
+			return "", false
+		}
+		if ch == '"' {
+			encoded.WriteString(`\"`)
+			continue
+		}
+		if ch != '\\' {
+			encoded.WriteByte(ch)
+			continue
+		}
+		if i+1 >= len(inner) {
+			return "", false
+		}
+		i++
+		next := inner[i]
+		switch next {
+		case '\'':
+			encoded.WriteByte('\'')
+		case '"':
+			encoded.WriteString(`\"`)
+		case '\\', '/', 'b', 'f', 'n', 'r', 't':
+			encoded.WriteByte('\\')
+			encoded.WriteByte(next)
+		case 'u':
+			if i+4 >= len(inner) {
+				return "", false
+			}
+			encoded.WriteString(`\u`)
+			encoded.WriteString(inner[i+1 : i+5])
+			i += 4
+		default:
+			return "", false
+		}
+	}
+	encoded.WriteByte('"')
+	var decoded string
+	if err := json.Unmarshal([]byte(encoded.String()), &decoded); err != nil {
+		return "", false
+	}
+	return decoded, true
+}
+
+var k6IdentifierPattern = regexp.MustCompile(`^[A-Za-z_$][A-Za-z0-9_$]*$`)
+
+func parseK6RequestOptions(options string) (map[string]string, []string) {
+	options = strings.TrimSpace(options)
+	if options == "" {
+		return nil, nil
+	}
+	if len(options) < 2 || options[0] != '{' || options[len(options)-1] != '}' {
+		return nil, []string{"dynamic_request_options"}
+	}
+	properties := splitTopLevelArgs(options[1 : len(options)-1])
+	headers := map[string]string{}
+	var reasons []string
+	for _, property := range properties {
+		keyExpression, valueExpression, ok := splitK6Property(property)
+		if !ok {
+			reasons = append(reasons, "dynamic_request_options")
+			continue
+		}
+		key, ok := parseK6PropertyKey(keyExpression)
+		if !ok {
+			reasons = append(reasons, "dynamic_request_options")
+			continue
+		}
+		if key != "headers" {
+			reasons = append(reasons, "unsupported_request_options")
+			continue
+		}
+		parsedHeaders, ok := parseK6StringMap(valueExpression)
+		if !ok {
+			reasons = append(reasons, "dynamic_headers_expression")
+			continue
+		}
+		for name, value := range parsedHeaders {
+			headers[name] = value
+		}
+	}
+	if len(headers) == 0 {
+		headers = nil
+	}
+	return headers, uniqueSortedK6Strings(reasons)
+}
+
+func parseK6StringMap(expression string) (map[string]string, bool) {
+	expression = strings.TrimSpace(expression)
+	if len(expression) < 2 || expression[0] != '{' || expression[len(expression)-1] != '}' {
+		return nil, false
+	}
+	out := map[string]string{}
+	for _, property := range splitTopLevelArgs(expression[1 : len(expression)-1]) {
+		keyExpression, valueExpression, ok := splitK6Property(property)
+		if !ok {
+			return nil, false
+		}
+		key, ok := parseK6PropertyKey(keyExpression)
+		if !ok {
+			return nil, false
+		}
+		value, ok := parseK6StringLiteral(valueExpression)
+		if !ok {
+			return nil, false
+		}
+		out[key] = value
+	}
+	return out, true
+}
+
+func splitK6Property(property string) (string, string, bool) {
+	depth := 0
+	var quote byte
+	escaped := false
+	for i := 0; i < len(property); i++ {
+		ch := property[i]
+		if quote != 0 {
+			if escaped {
+				escaped = false
+				continue
+			}
+			if ch == '\\' {
+				escaped = true
+				continue
+			}
+			if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch ch {
+		case '\'', '"', '`':
+			quote = ch
+		case '{', '[', '(':
+			depth++
+		case '}', ']', ')':
+			if depth > 0 {
+				depth--
+			}
+		case ':':
+			if depth == 0 {
+				key := strings.TrimSpace(property[:i])
+				value := strings.TrimSpace(property[i+1:])
+				return key, value, key != "" && value != ""
+			}
+		}
+	}
+	return "", "", false
+}
+
+func parseK6PropertyKey(expression string) (string, bool) {
+	if value, ok := parseK6StringLiteral(expression); ok {
+		return value, true
+	}
+	expression = strings.TrimSpace(expression)
+	if k6IdentifierPattern.MatchString(expression) {
+		return expression, true
+	}
+	return "", false
 }
 
 func matchingParenOffset(content string, openOffset int) int {
@@ -478,14 +823,21 @@ func diagnoseUnsupported(content string, diagnostics *diag.Collector, stats *Con
 			} else {
 				diagnostics.Add(diag.Warning, element, fmt.Sprintf("%s line %d", sourceFile, startLine), detail)
 			}
-			lineContent := extractLine(content, match[0])
 			*unsorted = append(*unsorted, sortedAction{
 				Action: dsl.Action{
 					Name:  "Review_Required",
 					Type:  "review_required",
-					Value: strings.TrimSpace(lineContent),
+					Value: fmt.Sprintf("Review %s at %s line %d", construct, sourceFile, startLine),
 					Metadata: map[string]any{
-						"source": construct,
+						"source":            construct,
+						"execution_blocker": "import_review_required",
+						"import_review": map[string]any{
+							"version":      1,
+							"source":       "k6",
+							"reason_codes": []string{"unsupported_source_logic"},
+							"source_refs":  []string{fmt.Sprintf("%s line %d", sourceFile, startLine)},
+							"resolution":   "replace_behavior_and_remove_gate",
+						},
 					},
 				},
 				Mapping: sourceview.Mapping{
@@ -510,12 +862,156 @@ func diagnoseUnsupported(content string, diagnostics *diag.Collector, stats *Con
 		addUnsupported(requirePattern.FindAllStringIndex(content, -1), "require", "k6 module", "CommonJS require() is not evaluated by the static importer", "warning")
 	}
 	imports := importPattern.FindAllStringIndex(content, -1)
-	if len(imports) > 2 {
-		addUnsupported(imports, "custom import", "k6 module", "non-core imports require review; APEX Load does not execute JavaScript modules", "warning")
+	for _, match := range imports {
+		line := extractLine(content, match[0])
+		if k6CoreImport(line) || browserPattern.MatchString(line) {
+			continue
+		}
+		addUnsupported([][]int{match}, "custom import", "k6 module", "non-core imports require review; APEX Load does not execute JavaScript modules", "warning")
 	}
 	if controlFlowPattern.MatchString(content) {
 		addUnsupported(controlFlowPattern.FindAllStringIndex(content, -1), "dynamic control flow", "k6 JavaScript control flow", "loops, branches, and dynamic control flow are not preserved by the constrained HTTP importer", "warning")
 	}
+}
+
+func applyK6FlowReviewGates(content string, actions *[]sortedAction, sourceFile string, residualLines []int) {
+	if actions == nil {
+		return
+	}
+	lineIndex := sourceview.NewLineIndex(content)
+	reasons := map[string]struct{}{}
+	sourceRefs := map[string]struct{}{}
+	addMatches := func(code string, matches [][]int) {
+		if len(matches) == 0 {
+			return
+		}
+		reasons[code] = struct{}{}
+		for _, match := range matches {
+			sourceRefs[fmt.Sprintf("%s line %d", sourceFile, lineIndex.LineForOffset(match[0]))] = struct{}{}
+		}
+	}
+	addMatches("untranslated_check", checkPattern.FindAllStringIndex(content, -1))
+	addMatches("untranslated_threshold", thresholdPattern.FindAllStringIndex(content, -1))
+	addMatches("untranslated_sleep", sleepPattern.FindAllStringIndex(content, -1))
+	addMatches("unsupported_browser_behavior", browserPattern.FindAllStringIndex(content, -1))
+	addMatches("unsupported_module", requirePattern.FindAllStringIndex(content, -1))
+	addMatches("residual_control_flow", controlFlowPattern.FindAllStringIndex(content, -1))
+	for _, match := range importPattern.FindAllStringIndex(content, -1) {
+		line := extractLine(content, match[0])
+		if k6CoreImport(line) {
+			continue
+		}
+		addMatches("unsupported_module", [][]int{match})
+	}
+	if len(residualLines) != 0 {
+		reasons["unsupported_source_logic"] = struct{}{}
+		for _, line := range residualLines {
+			sourceRefs[fmt.Sprintf("%s line %d", sourceFile, line)] = struct{}{}
+		}
+	}
+	if len(reasons) == 0 {
+		return
+	}
+	reasonList := sortedK6Set(reasons)
+	refList := sortedK6Set(sourceRefs)
+	for i := range *actions {
+		if strings.EqualFold(strings.TrimSpace((*actions)[i].Action.Type), "request") {
+			setK6ReviewGate(&(*actions)[i].Action, reasonList, refList)
+			(*actions)[i].Mapping.Status = "review_only"
+			(*actions)[i].Mapping.SupportMode = "review_required"
+			(*actions)[i].Mapping.Notes = "Residual k6 behavior affects this flow and must be replaced before execution."
+		}
+	}
+}
+
+func setK6ReviewGate(action *dsl.Action, reasons []string, sourceRefs []string) {
+	if action == nil {
+		return
+	}
+	if action.Metadata == nil {
+		action.Metadata = map[string]any{}
+	}
+	reasonSet := map[string]struct{}{}
+	refSet := map[string]struct{}{}
+	if existing, ok := action.Metadata["import_review"].(map[string]any); ok {
+		for _, reason := range k6MetadataStrings(existing["reason_codes"]) {
+			reasonSet[reason] = struct{}{}
+		}
+		for _, ref := range k6MetadataStrings(existing["source_refs"]) {
+			refSet[ref] = struct{}{}
+		}
+	}
+	for _, reason := range reasons {
+		if reason = strings.TrimSpace(reason); reason != "" {
+			reasonSet[reason] = struct{}{}
+		}
+	}
+	for _, ref := range sourceRefs {
+		if ref = strings.TrimSpace(ref); ref != "" {
+			refSet[ref] = struct{}{}
+		}
+	}
+	action.Metadata["execution_blocker"] = "import_review_required"
+	action.Metadata["import_review"] = map[string]any{
+		"version":      1,
+		"source":       "k6",
+		"reason_codes": sortedK6Set(reasonSet),
+		"source_refs":  sortedK6Set(refSet),
+		"resolution":   "replace_behavior_and_remove_gate",
+	}
+}
+
+func k6MetadataStrings(value any) []string {
+	switch values := value.(type) {
+	case []string:
+		return values
+	case []any:
+		out := make([]string, 0, len(values))
+		for _, value := range values {
+			if text, ok := value.(string); ok {
+				out = append(out, text)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func containsK6Reason(reasons []string, target string) bool {
+	for _, reason := range reasons {
+		if reason == target {
+			return true
+		}
+	}
+	return false
+}
+
+func uniqueSortedK6Strings(values []string) []string {
+	set := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			set[value] = struct{}{}
+		}
+	}
+	return sortedK6Set(set)
+}
+
+func sortedK6Set(values map[string]struct{}) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func k6CoreImport(line string) bool {
+	line = strings.TrimSpace(line)
+	return strings.Contains(line, "'k6/http'") ||
+		strings.Contains(line, `"k6/http"`) ||
+		strings.Contains(line, " from 'k6'") ||
+		strings.Contains(line, ` from "k6"`)
 }
 
 func extractLine(content string, offset int) string {
@@ -570,6 +1066,13 @@ func relativeTarget(raw, base string) string {
 	}
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return raw
+	}
+	// Userinfo is part of the effective request credential surface. Keeping
+	// the absolute URL lets the shared projector externalize and review-gate
+	// it; relativizing here would silently discard both semantics and source
+	// migration evidence.
+	if parsed.User != nil {
 		return raw
 	}
 	if base != "" {

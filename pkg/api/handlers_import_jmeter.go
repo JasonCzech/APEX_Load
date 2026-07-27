@@ -3,12 +3,11 @@ package api
 // handlers_import_jmeter — split from handlers_scripts.go (same package, behavior-preserving).
 
 import (
-	"archive/zip"
-	"bytes"
 	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jasonczech/apexload/pkg/convert/jmeter"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 )
 
 func (s *Server) handleImportJMeter(w http.ResponseWriter, r *http.Request) {
@@ -153,43 +153,29 @@ func readJMeterZipImport(data []byte) ([]byte, string, map[string][]byte, error)
 		maxJMeterZipEntryBytes = 32 << 20
 		maxJMeterZipTotalBytes = 128 << 20
 	)
-	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	// archiveingest owns the shared entry-path policy (traversal, absolute and
+	// drive-qualified names, control characters, depth, case-fold duplicates)
+	// plus the directory-count and compression-ratio guards. Only the JMeter
+	// size budget is local.
+	files, err := archiveingest.ReadZIP(data, archiveingest.Options{
+		Limits: archiveingest.Limits{
+			MaxEntries:    maxJMeterZipEntries,
+			MaxEntryBytes: maxJMeterZipEntryBytes,
+			MaxTotalBytes: maxJMeterZipTotalBytes,
+		},
+	})
 	if err != nil {
-		return nil, "", nil, err
-	}
-	if len(reader.File) > maxJMeterZipEntries {
-		return nil, "", nil, fmt.Errorf("JMeter archive contains %d entries, limit is %d", len(reader.File), maxJMeterZipEntries)
+		return nil, "", nil, fmt.Errorf("reading JMeter archive: %w", err)
 	}
 	jmxFiles := map[string][]byte{}
 	sidecars := map[string][]byte{}
-	var totalBytes int64
-	for _, entry := range reader.File {
-		if entry.FileInfo().IsDir() {
-			continue
-		}
-		file, err := entry.Open()
-		if err != nil {
-			continue
-		}
-		content, err := io.ReadAll(io.LimitReader(file, maxJMeterZipEntryBytes+1))
-		_ = file.Close()
-		if err != nil {
-			return nil, "", nil, fmt.Errorf("reading JMeter archive entry %q: %w", entry.Name, err)
-		}
-		if len(content) > maxJMeterZipEntryBytes {
-			return nil, "", nil, fmt.Errorf("JMeter archive entry %q exceeds %d bytes", entry.Name, maxJMeterZipEntryBytes)
-		}
-		totalBytes += int64(len(content))
-		if totalBytes > maxJMeterZipTotalBytes {
-			return nil, "", nil, fmt.Errorf("JMeter archive expands beyond %d bytes", maxJMeterZipTotalBytes)
-		}
-		name := filepath.ToSlash(entry.Name)
-		switch strings.ToLower(filepath.Ext(name)) {
+	for _, file := range files {
+		switch strings.ToLower(path.Ext(file.Name)) {
 		case ".jmx":
-			jmxFiles[name] = content
+			jmxFiles[file.Name] = file.Data
 		case ".csv":
-			sidecars[name] = content
-			sidecars[filepath.Base(name)] = content
+			sidecars[file.Name] = file.Data
+			sidecars[path.Base(file.Name)] = file.Data
 		}
 	}
 	if len(jmxFiles) == 0 {
@@ -338,6 +324,9 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 	for _, script := range result.Scripts {
 		persistProtocolCompatReport(script, "jmeter", protocolCompat)
 	}
+	preflight := buildAndAttachMultiScriptImportPreflight(
+		result.Script, result.Scripts, "jmeter", nil, result.Warnings,
+	)
 	writeJSON(w, status, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Scripts:             result.Scripts,
@@ -352,6 +341,7 @@ func (s *Server) writeJMeterImportResponse(w http.ResponseWriter, r *http.Reques
 		SourceReview:        result.SourceReview,
 		ProtocolCompat:      protocolCompat,
 		Parameterization:    buildMultiScriptParameterization(result.Scripts),
+		Preflight:           preflight,
 	}))
 }
 

@@ -28,6 +28,10 @@ export interface ScriptsAuthoringSurfaceProps {
   editingId: string | null
   editingScript: ScriptDefinition | null
   projectId?: string
+  // folderId is the destination folder for scripts saved from the authoring
+  // surface. The server binds it on create and re-validates it when a review
+  // session is approved; omitting it saves to project root.
+  folderId?: string | null
   activeProject?: Project | null
   onSaved: (script: StoredScript) => void
   onOpenLibrary: () => void
@@ -90,6 +94,7 @@ function ScriptsAuthoringContent({
   editingScript,
   draftInitiallyDirty,
   projectId,
+  folderId,
   activeProject,
   onSaved,
   onOpenLibrary,
@@ -108,7 +113,7 @@ function ScriptsAuthoringContent({
     onEditDraft(script, focus, enterpriseArchiveEditReturnTarget)
   }
   const renderEnterpriseArchiveImportSurface = (hidden = false) => renderCreateOptionsSurface(
-    <EnterpriseArchiveImport initialFiles={importFiles || undefined} projectId={projectId} onImported={onImported} onEdit={openEnterpriseArchiveDraftInEditor} onClose={onOpenCreateOptions} />,
+    <EnterpriseArchiveImport initialFiles={importFiles || undefined} projectId={projectId} folderId={folderId} onImported={onImported} onEdit={openEnterpriseArchiveDraftInEditor} onClose={onOpenCreateOptions} />,
     hidden,
   )
   const closeCreateEditor = draftReturnTarget ? onReturnToDraftSource : onOpenLibrary
@@ -125,14 +130,14 @@ function ScriptsAuthoringContent({
                 {draftReturnTarget.description && <span>{draftReturnTarget.description}</span>}
               </div>
               {authoringNotice && <div className="settings-notice">{authoringNotice}</div>}
-              <ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} onSave={onSaved} onClose={closeCreateEditor} />
+              <ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={folderId} onSave={onSaved} onClose={closeCreateEditor} />
             </div>
           </div>
         )
       }
-      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} onSave={onSaved} onClose={closeCreateEditor} /></div>
+      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor initialScript={draftScript} initiallyDirty={draftInitiallyDirty} initialFocusedActionName={draftEditorFocus?.targetAction || null} initialFocusedSection={draftEditorFocus?.targetSection || null} initialFocusedDataSourceName={draftEditorFocus?.targetDataSource || null} initialFocusedRuntimeArea={draftEditorFocus?.targetRuntimeArea || null} projectId={projectId} folderId={folderId} onSave={onSaved} onClose={closeCreateEditor} /></div>
     case 'edit':
-      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} projectId={projectId} onSave={onSaved} onClose={onOpenLibrary} /></div>
+      return <div className="page">{authoringNotice && <div className="settings-notice">{authoringNotice}</div>}<ScriptEditor scriptId={editingId} initialScript={editingScript} projectId={projectId} folderId={folderId} onSave={onSaved} onClose={onOpenLibrary} /></div>
     case 'import':
       return (
         <div className="scripts-authoring-stack">
@@ -145,7 +150,7 @@ function ScriptsAuthoringContent({
       )
     case 'bruno-import':
       return renderCreateOptionsSurface(
-        <BrunoImport initialFiles={importFiles || undefined} projectId={projectId} onImported={onImported} onConfigureSecrets={onConfigureSecrets} onClose={onOpenCreateOptions} />,
+        <BrunoImport initialFiles={importFiles || undefined} initialOutputMode={importMode === 'native_requests' ? 'native_requests' : null} projectId={projectId} onImported={onImported} onConfigureSecrets={onConfigureSecrets} onClose={onOpenCreateOptions} />,
       )
     case 'recorder':
       return renderCreateOptionsSurface(

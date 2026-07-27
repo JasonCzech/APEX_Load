@@ -1,7 +1,16 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { ScenarioDraft } from '../types'
 import { JavaEnvSettingsFields, type JavaEnvSettingsValue } from './JavaEnvSettingsFields'
 import { useBrowserEmulationCatalog } from '../hooks/useBrowserEmulationCatalog'
+import {
+  canonicalThinkTimeType,
+  thinkTimeConfigForType,
+  thinkTimeUsesBounds,
+  thinkTimeUsesMean,
+  thinkTimeUsesStdDeviation,
+} from './thinkTimeConfig'
+import ThinkTimeMultiplierInput from './ThinkTimeMultiplierInput'
+import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
 
 type RuntimeSettingsState = ScenarioDraft['runtimeSettings']
 type BrowserRuntimeSettings = NonNullable<RuntimeSettingsState['browser']>
@@ -54,12 +63,24 @@ function fromBooleanSelectValue(value: string): boolean | undefined {
 }
 
 interface Props {
+  draftScope?: string
   runtimeSettings: RuntimeSettingsState
   onRuntimeSettingChange: <K extends keyof RuntimeSettingsState>(field: K, value: RuntimeSettingsState[K]) => void
 }
 
-export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeSettingChange }: Props) {
+export default function CreateTestRuntimeOverrides({ draftScope, runtimeSettings, onRuntimeSettingChange }: Props) {
   const pacingType = runtimeSettings.pacing?.type || ''
+  const thinkTimeType = canonicalThinkTimeType(runtimeSettings.think_time?.type)
+  const ignoreOnlyThinkTimeOverride = useRef(false)
+
+  const updateThinkTime = (patch: Partial<NonNullable<RuntimeSettingsState['think_time']>>) => {
+    ignoreOnlyThinkTimeOverride.current = false
+    const type = runtimeSettings.think_time?.type || 'fixed'
+    onRuntimeSettingChange('think_time', {
+      ...thinkTimeConfigForType(runtimeSettings.think_time, type),
+      ...patch,
+    })
+  }
 
   const initialSourceIps = runtimeSettings.web_runtime?.source_ips ?? []
   const [spoofEnabled, setSpoofEnabled] = useState(initialSourceIps.length > 0)
@@ -179,6 +200,14 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
                 onRuntimeSettingChange('pacing', { type, interval_ms: runtimeSettings.pacing?.interval_ms ?? 0 })
                 return
               }
+              if (type === 'random_interval') {
+                onRuntimeSettingChange('pacing', { type, min_interval_ms: runtimeSettings.pacing?.min_interval_ms ?? 0, max_interval_ms: runtimeSettings.pacing?.max_interval_ms ?? 0 })
+                return
+              }
+              if (type === 'random_delay') {
+                onRuntimeSettingChange('pacing', { type, min_delay_ms: runtimeSettings.pacing?.min_delay_ms ?? 0, max_delay_ms: runtimeSettings.pacing?.max_delay_ms ?? 0 })
+                return
+              }
               if (type === 'tps') {
                 onRuntimeSettingChange('pacing', { type, tps: runtimeSettings.pacing?.tps ?? 0 })
                 return
@@ -189,19 +218,21 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
             <option value="">Script default</option>
             <option value="none">None</option>
             <option value="fixed_delay">Fixed delay</option>
+            <option value="random_delay">Random delay</option>
             <option value="fixed_interval">Fixed interval</option>
+            <option value="random_interval">Random interval</option>
             <option value="tps">Target TPS</option>
           </select>
         </label>
         {pacingType === 'fixed_delay' && (
           <label>
-            <span>Pacing delay (ms)</span>
-            <input
-              type="number"
-              value={runtimeSettings.pacing?.delay_ms ?? ''}
-              onChange={(event) => onRuntimeSettingChange('pacing', {
+            <span>Pacing delay (seconds)</span>
+            <SecondsFromMillisecondsInput
+              valueMs={runtimeSettings.pacing?.delay_ms}
+              emptyWhenUndefined
+              onChangeMs={delayMs => onRuntimeSettingChange('pacing', {
                 type: 'fixed_delay',
-                delay_ms: event.target.value ? Number(event.target.value) : undefined,
+                delay_ms: delayMs,
               })}
               placeholder="0"
             />
@@ -209,17 +240,33 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
         )}
         {pacingType === 'fixed_interval' && (
           <label>
-            <span>Pacing interval (ms)</span>
-            <input
-              type="number"
-              value={runtimeSettings.pacing?.interval_ms ?? ''}
-              onChange={(event) => onRuntimeSettingChange('pacing', {
+            <span>Pacing interval (seconds)</span>
+            <SecondsFromMillisecondsInput
+              valueMs={runtimeSettings.pacing?.interval_ms}
+              emptyWhenUndefined
+              onChangeMs={intervalMs => onRuntimeSettingChange('pacing', {
                 type: 'fixed_interval',
-                interval_ms: event.target.value ? Number(event.target.value) : undefined,
+                interval_ms: intervalMs,
               })}
               placeholder="0"
             />
           </label>
+        )}
+        {pacingType === 'random_delay' && (
+          <>
+            <label><span>Minimum delay (seconds)</span><SecondsFromMillisecondsInput valueMs={runtimeSettings.pacing?.min_delay_ms} emptyWhenUndefined
+              onChangeMs={minDelayMs => onRuntimeSettingChange('pacing', { ...runtimeSettings.pacing, type: 'random_delay', min_delay_ms: minDelayMs })} /></label>
+            <label><span>Maximum delay (seconds)</span><SecondsFromMillisecondsInput valueMs={runtimeSettings.pacing?.max_delay_ms} emptyWhenUndefined
+              onChangeMs={maxDelayMs => onRuntimeSettingChange('pacing', { ...runtimeSettings.pacing, type: 'random_delay', max_delay_ms: maxDelayMs })} /></label>
+          </>
+        )}
+        {pacingType === 'random_interval' && (
+          <>
+            <label><span>Minimum interval (seconds)</span><SecondsFromMillisecondsInput valueMs={runtimeSettings.pacing?.min_interval_ms} emptyWhenUndefined
+              onChangeMs={minIntervalMs => onRuntimeSettingChange('pacing', { ...runtimeSettings.pacing, type: 'random_interval', min_interval_ms: minIntervalMs })} /></label>
+            <label><span>Maximum interval (seconds)</span><SecondsFromMillisecondsInput valueMs={runtimeSettings.pacing?.max_interval_ms} emptyWhenUndefined
+              onChangeMs={maxIntervalMs => onRuntimeSettingChange('pacing', { ...runtimeSettings.pacing, type: 'random_interval', max_interval_ms: maxIntervalMs })} /></label>
+          </>
         )}
         {pacingType === 'tps' && (
           <label>
@@ -236,27 +283,148 @@ export default function CreateTestRuntimeOverrides({ runtimeSettings, onRuntimeS
           </label>
         )}
         <label>
-          <span>Think Time Override (ms)</span>
+          <span>Think Time</span>
+          <select
+            value={thinkTimeType}
+            onChange={(event) => {
+              ignoreOnlyThinkTimeOverride.current = false
+              onRuntimeSettingChange('think_time', event.target.value
+                ? thinkTimeConfigForType(runtimeSettings.think_time, event.target.value)
+                : undefined)
+            }}
+          >
+            <option value="">Script default</option>
+            <option value="none">None</option>
+            <option value="fixed">Fixed</option>
+            <option value="recorded">Replay think time as recorded</option>
+            <option value="gaussian">Gaussian</option>
+            <option value="uniform">Uniform</option>
+          </select>
+        </label>
+        {thinkTimeUsesMean(thinkTimeType) && (
+        <label>
+          <span>{thinkTimeUsesStdDeviation(thinkTimeType) ? 'Mean Think Time Override (ms)' : 'Think Time Override (ms)'}</span>
           <input
             type="number"
             value={runtimeSettings.think_time?.ignore ? '' : (runtimeSettings.think_time?.mean_ms ?? '')}
-            onChange={(event) => onRuntimeSettingChange('think_time', event.target.value
-              ? { type: 'fixed', mean_ms: Number(event.target.value), ignore: false }
-              : undefined)}
+            onChange={(event) => updateThinkTime({
+              mean_ms: event.target.value ? Number(event.target.value) : undefined,
+              ignore: false,
+            })}
             placeholder="Script default"
             disabled={runtimeSettings.think_time?.ignore || false}
           />
         </label>
+        )}
+        {thinkTimeUsesStdDeviation(thinkTimeType) && (
+          <label>
+            <span>Think Time Std Dev (ms)</span>
+            <input
+              type="number"
+              min="0"
+              value={runtimeSettings.think_time?.std_ms ?? ''}
+              onChange={(event) => updateThinkTime({ std_ms: event.target.value ? Number(event.target.value) : undefined })}
+              placeholder="0"
+              disabled={runtimeSettings.think_time?.ignore || false}
+            />
+          </label>
+        )}
+        {thinkTimeUsesBounds(thinkTimeType) && (
+          <>
+            <label>
+              <span>Minimum Think Time (ms)</span>
+              <input
+                type="number"
+                min="0"
+                value={runtimeSettings.think_time?.min_ms ?? ''}
+                onChange={(event) => updateThinkTime({ min_ms: event.target.value ? Number(event.target.value) : undefined })}
+                placeholder="0"
+                disabled={runtimeSettings.think_time?.ignore || false}
+              />
+            </label>
+            <label>
+              <span>Maximum Think Time (ms)</span>
+              <input
+                type="number"
+                min="0"
+                value={runtimeSettings.think_time?.max_ms ?? ''}
+                onChange={(event) => updateThinkTime({ max_ms: event.target.value ? Number(event.target.value) : undefined })}
+                placeholder="0"
+                disabled={runtimeSettings.think_time?.ignore || false}
+              />
+            </label>
+          </>
+        )}
         <label className="checkbox-label">
           <input
             type="checkbox"
             checked={runtimeSettings.think_time?.ignore || false}
-            onChange={(event) => onRuntimeSettingChange('think_time', event.target.checked
-              ? { type: 'fixed', mean_ms: runtimeSettings.think_time?.mean_ms ?? 0, ignore: true }
-              : undefined)}
+            onChange={(event) => {
+              if (event.target.checked) {
+                ignoreOnlyThinkTimeOverride.current = runtimeSettings.think_time === undefined
+                onRuntimeSettingChange('think_time', {
+                  ...thinkTimeConfigForType(
+                    runtimeSettings.think_time,
+                    runtimeSettings.think_time?.type || 'fixed',
+                  ),
+                  ignore: true,
+                })
+                return
+              }
+              if (ignoreOnlyThinkTimeOverride.current) {
+                ignoreOnlyThinkTimeOverride.current = false
+                onRuntimeSettingChange('think_time', undefined)
+                return
+              }
+              onRuntimeSettingChange('think_time', {
+                ...thinkTimeConfigForType(
+                  runtimeSettings.think_time,
+                  runtimeSettings.think_time?.type || 'fixed',
+                ),
+                ignore: false,
+              })
+            }}
           />
           <span>Ignore think time</span>
         </label>
+        {runtimeSettings.think_time && (
+          <>
+            <ThinkTimeMultiplierInput
+              draftScope={draftScope}
+              label="Think time multiplier"
+              value={runtimeSettings.think_time.multiplier}
+              onValueChange={(multiplier) => {
+                ignoreOnlyThinkTimeOverride.current = false
+                onRuntimeSettingChange('think_time', {
+                  ...thinkTimeConfigForType(
+                    runtimeSettings.think_time,
+                    runtimeSettings.think_time?.type || 'fixed',
+                  ),
+                  multiplier,
+                })
+              }}
+            />
+            <label>
+              <span>Think time cap (ms)</span>
+              <input
+                type="number"
+                min="0"
+                value={runtimeSettings.think_time.limit_ms ?? ''}
+                onChange={(event) => {
+                  ignoreOnlyThinkTimeOverride.current = false
+                  onRuntimeSettingChange('think_time', {
+                    ...thinkTimeConfigForType(
+                      runtimeSettings.think_time,
+                      runtimeSettings.think_time?.type || 'fixed',
+                    ),
+                    limit_ms: event.target.value ? Number(event.target.value) : undefined,
+                  })
+                }}
+                placeholder="No cap"
+              />
+            </label>
+          </>
+        )}
         <label>
           <span>Browser Device Profile</span>
           <select
