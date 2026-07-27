@@ -164,7 +164,7 @@ func (s *SQLiteStore) CommitImportBatch(commit *ImportBatchCommit) (*ImportBatch
 	batch.RawArtifactID = rawArtifact.ID
 	batch.SanitizedArtifactID = sanitizedArtifact.ID
 
-	receiptResult, err := tx.Exec(`INSERT INTO bruno_native_import_batches (
+	receiptResult, err := tx.Exec(`INSERT INTO import_batches (
 		id, project_id, source_profile, receipt_version, idempotency_key,
 		request_digest_profile, request_sha256, raw_artifact_id, sanitized_artifact_id,
 		candidate_ids_json, script_ids_json, scripts_json, created_by, created_at
@@ -238,7 +238,7 @@ func (s *SQLiteStore) CommitImportBatch(commit *ImportBatchCommit) (*ImportBatch
 	if err != nil {
 		return nil, fmt.Errorf("marshal import batch receipt scripts: %w", err)
 	}
-	result, err := tx.Exec(`UPDATE bruno_native_import_batches SET scripts_json = ? WHERE id = ? AND project_id = ?`,
+	result, err := tx.Exec(`UPDATE import_batches SET scripts_json = ? WHERE id = ? AND project_id = ?`,
 		string(receiptScriptsJSON), batch.ID, batch.ProjectID)
 	if err != nil {
 		return nil, err
@@ -376,7 +376,7 @@ func (s *SQLiteStore) getImportBatchByIdempotencyKey(
 		request_digest_profile, request_sha256,
 		raw_artifact_id, sanitized_artifact_id, candidate_ids_json, script_ids_json, scripts_json,
 		COALESCE(created_by, ''), created_at
-		FROM bruno_native_import_batches WHERE project_id = ? AND idempotency_key = ?`
+		FROM import_batches WHERE project_id = ? AND idempotency_key = ?`
 	args := []any{projectID, idempotencyKey}
 	if filterProfile {
 		query += ` AND source_profile = ?`
