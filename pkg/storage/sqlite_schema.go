@@ -355,6 +355,14 @@ func schemaCreateTableStatements() []string {
 			active_flag INTEGER NOT NULL DEFAULT 0,
 			raw_artifact_id TEXT NOT NULL REFERENCES import_source_artifacts(id),
 			sanitized_artifact_id TEXT NOT NULL REFERENCES import_source_artifacts(id),
+			-- Whether sanitized_artifact_id points at a genuinely sanitized
+			-- document. Formats that retain source raw-only satisfy the NOT NULL
+			-- constraint by pointing both columns at the raw artifact, so this
+			-- flag -- not the column being populated -- is what authorizes serving
+			-- the editor-visible sanitized download. Defaults to 0 so a row
+			-- written by code that does not know about this column cannot
+			-- accidentally publish raw source to a wider audience.
+			sanitized_available INTEGER NOT NULL DEFAULT 0,
 			source_format TEXT NOT NULL,
 			compatibility_version TEXT NOT NULL,
 			identity_map_json TEXT NOT NULL,
@@ -1047,6 +1055,12 @@ func schemaCreateTableStatements() []string {
 // columns added here (e.g. boolean flags added to existing tables).
 func schemaColumnMigrations() []optionalSchemaMigration {
 	return []optionalSchemaMigration{
+		// Defaults to 0 (no sanitized document). Existing rows are all Bruno
+		// imports that do have one, and are backfilled to 1 immediately after
+		// this runs -- see backfillSanitizedSourceAvailability. Doing it in that
+		// order means a database interrupted between the two steps withholds a
+		// download it could have served, rather than serving one it should not.
+		{name: "import_source_revisions.sanitized_available", query: `ALTER TABLE import_source_revisions ADD COLUMN sanitized_available INTEGER NOT NULL DEFAULT 0`},
 		{name: "scheduler_leases.generation", query: `ALTER TABLE scheduler_leases ADD COLUMN generation INTEGER NOT NULL DEFAULT 1`},
 		{name: "scenario_schedule_occurrences.revision", query: `ALTER TABLE scenario_schedule_occurrences ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
 		{name: "scenario_schedule_occurrences.transition_token", query: `ALTER TABLE scenario_schedule_occurrences ADD COLUMN transition_token TEXT`},
@@ -1295,6 +1309,9 @@ func (s *SQLiteStore) init() error {
 	}
 
 	if err := s.applyOptionalSchemaMigrations(schemaColumnMigrations()); err != nil {
+		return err
+	}
+	if err := s.backfillSanitizedSourceAvailability(); err != nil {
 		return err
 	}
 	if err := s.RepairLegacyScriptRecordings(); err != nil {

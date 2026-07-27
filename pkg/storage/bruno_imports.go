@@ -21,13 +21,18 @@ type BrunoSourceArtifact = ImportSourceArtifact
 // sanitized source artifacts. CanonicalScript is retained so rollback can
 // atomically restore the source binding without reparsing an untrusted upload.
 type BrunoSourceRevision struct {
-	ID                    string            `json:"id"`
-	ScriptID              string            `json:"script_id"`
-	ProjectID             string            `json:"project_id"`
-	ParentRevisionID      string            `json:"parent_revision_id,omitempty"`
-	Active                bool              `json:"active"`
-	RawArtifactID         string            `json:"raw_artifact_id,omitempty"`
-	SanitizedArtifactID   string            `json:"sanitized_artifact_id"`
+	ID                  string `json:"id"`
+	ScriptID            string `json:"script_id"`
+	ProjectID           string `json:"project_id"`
+	ParentRevisionID    string `json:"parent_revision_id,omitempty"`
+	Active              bool   `json:"active"`
+	RawArtifactID       string `json:"raw_artifact_id,omitempty"`
+	SanitizedArtifactID string `json:"sanitized_artifact_id"`
+	// SanitizedAvailable reports whether SanitizedArtifactID names a genuinely
+	// sanitized document rather than a second reference to the raw one. Formats
+	// that retain source raw-only leave this false, and the source download
+	// refuses to serve them under the editor-visible sanitized gate.
+	SanitizedAvailable    bool              `json:"sanitized_available"`
 	SourceFormat          string            `json:"source_format"`
 	CompatibilityVersion  string            `json:"compatibility_version"`
 	IdentityMap           map[string]string `json:"identity_map,omitempty"`
