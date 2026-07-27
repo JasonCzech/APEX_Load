@@ -325,6 +325,11 @@ func TestValidateDesktopBrowserDownloadPath(t *testing.T) {
 		{name: "artifact", raw: "/api/v1/tests/run-1/archive/files/transactions.jsonl", want: "/api/v1/tests/run-1/archive/files/transactions.jsonl"},
 		{name: "archive report query", raw: "/api/v1/tests/run-1/archive/report?format=pdf&profile_id=full", want: "/api/v1/tests/run-1/archive/report?format=pdf&profile_id=full"},
 		{name: "html report", raw: "/api/v1/tests/run-1/report", want: "/api/v1/tests/run-1/report"},
+		// Both spellings must be intercepted. Dropping either would not fail
+		// loudly: the desktop client would fall back to an in-webview navigation
+		// and the bundle would silently never reach disk.
+		{name: "import raw source", raw: "/api/v1/scripts/script-1/imports/source?raw=true", want: "/api/v1/scripts/script-1/imports/source?raw=true"},
+		{name: "import sanitized source", raw: "/api/v1/scripts/script-1/imports/source", want: "/api/v1/scripts/script-1/imports/source"},
 		{name: "bruno raw source", raw: "/api/v1/scripts/script-1/bruno-imports/source?raw=true", want: "/api/v1/scripts/script-1/bruno-imports/source?raw=true"},
 		{name: "recording agent", raw: "/api/v1/downloads/recording-agent/latest?platform=linux-amd64", want: "/api/v1/downloads/recording-agent/latest?platform=linux-amd64"},
 		{name: "desktop app", raw: "/api/v1/downloads/desktop/latest?platform=windows-amd64", want: "/api/v1/downloads/desktop/latest?platform=windows-amd64"},

@@ -1256,8 +1256,8 @@ export default function BrunoImport({ initialFiles, initialOutputMode, projectId
             </div>
           </div>
           <div className="bruno-source-links">
-            <DesktopApiResourceLink className="btn btn-secondary" href={`/api/v1/scripts/${committed.script.id}/bruno-imports/source`} filename={`${committed.script.name || committed.script.id}-sanitized-source.zip`} onError={setError}>Download sanitized source</DesktopApiResourceLink>
-            <DesktopApiResourceLink className="btn btn-secondary" href={`/api/v1/scripts/${committed.script.id}/bruno-imports/source?raw=true`} filename={`${committed.script.name || committed.script.id}-raw-source.zip`} onError={setError}>Download restricted raw source</DesktopApiResourceLink>
+            <DesktopApiResourceLink className="btn btn-secondary" href={`/api/v1/scripts/${committed.script.id}/imports/source`} filename={`${committed.script.name || committed.script.id}-sanitized-source.zip`} onError={setError}>Download sanitized source</DesktopApiResourceLink>
+            <DesktopApiResourceLink className="btn btn-secondary" href={`/api/v1/scripts/${committed.script.id}/imports/source?raw=true`} filename={`${committed.script.name || committed.script.id}-raw-source.zip`} onError={setError}>Download restricted raw source</DesktopApiResourceLink>
           </div>
           {revisions.length > 0 && (
             <div className="bruno-revisions">

@@ -819,6 +819,15 @@ func (s *Server) routes(allowedOrigins []string) {
 	s.mux.Handle("PUT /api/v1/scripts/{id}", cors(log(auth(http.HandlerFunc(s.handleUpdateScript)))))
 	s.mux.Handle("DELETE /api/v1/scripts/{id}", cors(log(auth(http.HandlerFunc(s.handleDeleteScript)))))
 	s.mux.Handle("PATCH /api/v1/scripts/{id}/move", cors(log(auth(http.HandlerFunc(s.handleMoveScript)))))
+	// Protected import source, revision history, and rollback. These serve every
+	// format that retains durable source, not just Bruno, so the canonical paths
+	// are format-neutral. The /bruno-imports/ paths are retained as permanent
+	// aliases: they are a published API surface, and released dashboards and the
+	// desktop client still request them. Both spellings must resolve to the same
+	// handler with the same authorization -- see TestImportRouteAliasesMatch.
+	s.mux.Handle("GET /api/v1/scripts/{id}/imports/source", cors(log(auth(http.HandlerFunc(s.handleGetBrunoImportSource)))))
+	s.mux.Handle("GET /api/v1/scripts/{id}/imports/revisions", cors(log(auth(http.HandlerFunc(s.handleListBrunoImportRevisions)))))
+	s.mux.Handle("POST /api/v1/scripts/{id}/imports/rollback", cors(log(auth(http.HandlerFunc(s.handleRollbackBrunoImport)))))
 	s.mux.Handle("GET /api/v1/scripts/{id}/bruno-imports/source", cors(log(auth(http.HandlerFunc(s.handleGetBrunoImportSource)))))
 	s.mux.Handle("GET /api/v1/scripts/{id}/bruno-imports/revisions", cors(log(auth(http.HandlerFunc(s.handleListBrunoImportRevisions)))))
 	s.mux.Handle("POST /api/v1/scripts/{id}/bruno-imports/rollback", cors(log(auth(http.HandlerFunc(s.handleRollbackBrunoImport)))))
