@@ -2350,10 +2350,12 @@ func (s *Server) handleGetBrunoImportSource(w http.ResponseWriter, r *http.Reque
 		writeError(w, http.StatusNotFound, "script not found")
 		return
 	}
-	if script.Protocol != "bruno" {
-		writeError(w, http.StatusConflict, "script is not a canonical Bruno import")
-		return
-	}
+	// No protocol gate. Retained source is no longer Bruno-only: any import
+	// routed through a protected session can keep its raw upload, and refusing
+	// by protocol here would make those revisions unreachable even though they
+	// exist and are permission-checked below. The active-revision lookup is the
+	// real gate -- a script with nothing retained still 404s a few lines down,
+	// which is the same answer the protocol check used to give.
 	projectID := normalizeProjectID(script.ProjectID)
 	raw := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("raw")), "true")
 	if raw && !s.canReadRawBrunoSource(r, projectID) {

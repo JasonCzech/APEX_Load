@@ -131,6 +131,7 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		"openapi",
 		result.Script,
 		protectedRequirements,
+		importCandidateSource{Bytes: importReq.Data, Format: "openapi"},
 	)
 	addImportCandidateSession(response, sessionID, expiresAt, sessionErr)
 	if sessionErr == nil && strings.TrimSpace(sessionID) != "" {
@@ -542,6 +543,7 @@ func (s *Server) writePostmanImportResponse(w http.ResponseWriter, r *http.Reque
 		"postman",
 		result.Script,
 		protectedRequirements,
+		importCandidateSource{Bytes: importReq.Data, Format: "postman"},
 	)
 	addImportCandidateSession(response, sessionID, expiresAt, sessionErr)
 	if sessionErr == nil && strings.TrimSpace(sessionID) != "" {
