@@ -1,4 +1,4 @@
-.PHONY: all build test test-jms-solace-real performance-smoke performance-evidence clean generator controller apexctl recording-agent collector-agent package-recording-agent desktop desktop-release desktop-api-binaries clients desktop-preflight clients-release java-vuser-runner proto generate lint docker-generator docker-controller docker-local-up docker-local-down docker-local-logs docker-local-prometheus-check docker-push docker-push-acr k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-aks-render k8s-aks-apply k8s-aks-status k8s-aks-delete k8s-onprem-apply k8s-onprem-autoscaling-apply k8s-onprem-status k8s-onprem-delete k8s-smoke-test
+.PHONY: all build test test-jms-solace-real import-policy-locality performance-smoke performance-evidence clean generator controller apexctl recording-agent collector-agent package-recording-agent desktop desktop-release desktop-api-binaries clients desktop-preflight clients-release java-vuser-runner java-vuser-runner-legacy proto generate lint docker-generator docker-controller docker-local-up docker-local-down docker-local-logs docker-local-prometheus-check docker-push docker-push-acr k8s-local-preflight k8s-local-apply k8s-local-status k8s-local-delete k8s-kind-registry-setup k8s-kind-push-images k8s-kind-apply k8s-kind-status k8s-kind-delete k8s-aks-render k8s-aks-apply k8s-aks-status k8s-aks-delete k8s-onprem-apply k8s-onprem-autoscaling-apply k8s-onprem-status k8s-onprem-delete k8s-smoke-test
 
 VERSION    ?= $(shell ./scripts/resolve-version.sh 2>/dev/null || echo 0.1.0)
 COMMIT     ?= $(shell git rev-parse HEAD 2>/dev/null)
@@ -82,11 +82,28 @@ java-vuser-runner:
 	jar --create --file bin/java_vuser/apexload-java-vuser-runner.jar --main-class Harness -C bin/java_vuser/classes .
 	go build $(GOFLAGS) $(LDFLAGS) -o bin/apexload-java-vuser-runner ./cmd/apexload-java-vuser-runner
 
+# java-vuser-runner-legacy builds the same harness targeted at Java 8 bytecode
+# (class file major 52). The standard jar is compiled --release 17, so a Java 8
+# JVM cannot load it at all — an operator running APEXLOAD_JAVA_VUSER_ALLOW_LEGACY_JAVA
+# against legacy middleware needs this jar, not the default one. It is built
+# separately and never replaces the supported artifact.
+java-vuser-runner-legacy:
+	mkdir -p bin/java_vuser
+	rm -rf bin/java_vuser/classes-java8 bin/java_vuser/apexload-java-vuser-runner-java8.jar
+	javac --release 8 -nowarn -d bin/java_vuser/classes-java8 runners/java_vuser/lrapi/lr.java runners/java_vuser/Harness.java
+	jar --create --file bin/java_vuser/apexload-java-vuser-runner-java8.jar --main-class Harness -C bin/java_vuser/classes-java8 .
+	@echo "Built bin/java_vuser/apexload-java-vuser-runner-java8.jar (Java 8 bytecode)."
+	@echo "Point APEXLOAD_JAVA_VUSER_HARNESS_JAR at it and set APEXLOAD_JAVA_VUSER_ALLOW_LEGACY_JAVA=true."
+
 test:
 	go test -race -count=1 ./...
 
 test-jms-solace-real:
 	go test -tags jms_solace_real ./pkg/protocol/jms
+
+import-policy-locality:
+	bash scripts/check-import-policy-locality.sh
+	bash scripts/check-import-policy-locality-selftest.sh
 
 # Safe local diagnostic: writes JSON to stdout and never creates an artifact.
 performance-smoke:

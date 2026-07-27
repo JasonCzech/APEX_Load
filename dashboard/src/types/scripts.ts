@@ -161,7 +161,7 @@ export interface ScriptControlFlow {
 
 export interface ThinkTimeConfig {
   type: string
-  mean_ms: number
+  mean_ms?: number
   std_ms?: number
   min_ms?: number
   max_ms?: number

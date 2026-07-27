@@ -2,8 +2,10 @@ package bruno
 
 import (
 	"archive/tar"
+	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"encoding/binary"
 	"math"
 	"strings"
 	"testing"
@@ -61,5 +63,40 @@ func TestInspectRejectsArchiveBeforeMaterializationCopiesExceedBudget(t *testing
 	})
 	if err == nil || !strings.Contains(err.Error(), "expanded size exceeds 32768 bytes") {
 		t.Fatalf("materialization admission error = %v", err)
+	}
+}
+
+func TestLoadZIPPreflightsActualDirectoryCountBeforeArchiveZipAllocation(t *testing.T) {
+	var archive bytes.Buffer
+	writer := zip.NewWriter(&archive)
+	for _, name := range []string{"one.yml", "two.yml"} {
+		entry, err := writer.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := entry.Write([]byte("info: {name: Request, type: http}\n")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	// Forge the inexpensive EOCD count downward. The allocation-safe
+	// preflight must still count the two actual central-directory records
+	// instead of trusting this declaration and reaching archive/zip first.
+	data := append([]byte(nil), archive.Bytes()...)
+	endOffset := bytes.LastIndex(data, []byte{'P', 'K', 5, 6})
+	if endOffset < 0 {
+		t.Fatal("generated ZIP has no end-of-central-directory record")
+	}
+	binary.LittleEndian.PutUint16(data[endOffset+8:endOffset+10], 1)
+	binary.LittleEndian.PutUint16(data[endOffset+10:endOffset+12], 1)
+
+	_, err := loadZIP(data, Limits{MaxFiles: 1})
+	if err == nil ||
+		!strings.Contains(err.Error(), "validate Bruno ZIP directory") ||
+		!strings.Contains(err.Error(), "too many entries") {
+		t.Fatalf("loadZIP preflight error = %v", err)
 	}
 }

@@ -218,9 +218,9 @@ func sapGUIFallbackAction(fn ParsedFunction) (dsl.Action, SourceFunctionSupportM
 		return action, def.SupportMode
 	}
 	action := dsl.Action{
-		Name:   sanitizeName(convertutil.FirstNonEmpty(fn.StepName, fn.Name, "sapgui_call")),
+		Name:   disclosureSafeSourceReviewActionName(fn),
 		Type:   "custom_call",
-		Params: map[string]any{"function": fn.Name, "args": rawArgsAsAny(fn.RawArgs), "support_mode": string(SourceFunctionSupportCustomReview)},
+		Params: map[string]any{"function": fn.Name, "support_mode": string(SourceFunctionSupportCustomReview)},
 		Metadata: map[string]any{
 			"source_function":     fn.Name,
 			"source_file":         fn.Filename,
@@ -231,6 +231,11 @@ func sapGUIFallbackAction(fn ParsedFunction) (dsl.Action, SourceFunctionSupportM
 			"source_support_mode": string(SourceFunctionSupportCustomReview),
 		},
 	}
+	makeSourceReviewActionDisclosureSafe(&action, fn, SourceFunctionSupportCustomReview)
+	action.Metadata["source_protocol"] = "sap_gui"
+	action.Metadata["review_required"] = true
+	action.Metadata["runner_requirement"] = "windows_sap_gui_runner"
+	action.Metadata["source_support_mode"] = string(SourceFunctionSupportCustomReview)
 	return action, SourceFunctionSupportCustomReview
 }
 

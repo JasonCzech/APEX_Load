@@ -31,6 +31,14 @@ var (
 	errStoredTestMissing           = errors.New("durable test row no longer exists")
 	errStoredTestTransitionFenced  = errors.New("durable test lifecycle transition was fenced")
 	errLegacyRuntimeSecretSnapshot = errors.New("stored runtime snapshot contains plaintext runtime credentials")
+	// errStaleRuntimeSnapshotValidation marks a compiled snapshot that no longer
+	// satisfies the current DSL validator. Validation coverage widens over time —
+	// pacing, run-logic, and think-time resource limits recently began applying to
+	// every protocol rather than only the messaging families — so a snapshot that
+	// was valid when it was written can become invalid without the test changing.
+	// Treat it like the legacy-secret case: recompile from the durable source
+	// scripts instead of refusing to restore the test.
+	errStaleRuntimeSnapshotValidation = errors.New("stored runtime snapshot no longer satisfies script validation")
 )
 
 type testRuntimeSnapshotRepairPersistence interface {
@@ -801,7 +809,9 @@ func (tr *TestRunner) restoreManagedTestRuntime(test *ManagedTest) error {
 	}
 	if compiledSnapshots {
 		specs, err := restoreStoredEngineGroupSpecs(test)
-		if err != nil && !errors.Is(err, errLegacyRuntimeSecretSnapshot) {
+		if err != nil &&
+			!errors.Is(err, errLegacyRuntimeSecretSnapshot) &&
+			!errors.Is(err, errStaleRuntimeSnapshotValidation) {
 			return err
 		}
 		if err == nil {
@@ -930,7 +940,8 @@ func restoreStoredEngineGroupSpecs(test *ManagedTest) ([]engine.GroupConfig, err
 			return nil, fmt.Errorf("group[%d] runtime script id %q does not match %q", index, group.script.ID, group.ScriptID)
 		}
 		if issues := dsl.ValidateScriptIssues(group.script); len(issues) > 0 {
-			return nil, fmt.Errorf("group[%d] compiled runtime script is invalid: %s", index, strings.Join(issues, "; "))
+			return nil, fmt.Errorf("group[%d] compiled runtime script is invalid: %s: %w",
+				index, strings.Join(issues, "; "), errStaleRuntimeSnapshotValidation)
 		}
 		rampUp, err := parseOptionalGroupDuration(group.RampUp, index, "ramp_up")
 		if err != nil {

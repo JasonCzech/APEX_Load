@@ -1,0 +1,9 @@
+package postman
+
+func sanitizeBody(value string) string {
+	return value
+}
+
+func applyPostmanAuth(value string) string {
+	return value
+}

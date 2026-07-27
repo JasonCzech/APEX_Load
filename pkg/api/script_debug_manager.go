@@ -281,6 +281,12 @@ func (m *ScriptDebugManager) Start(scriptID string, script *dsl.Script, req Scri
 // StartChecked starts a session without ever replacing an existing global
 // session capability and reports a collision to transport callers.
 func (m *ScriptDebugManager) StartChecked(scriptID string, script *dsl.Script, req ScriptDebugStartRequest) (*ScriptDebugSession, error) {
+	if err := replayReviewGateError(script); err != nil {
+		if req.releaseExecutionContext != nil {
+			req.releaseExecutionContext()
+		}
+		return nil, err
+	}
 	executionCtx := req.executionContext
 	if executionCtx == nil {
 		executionCtx = context.Background()

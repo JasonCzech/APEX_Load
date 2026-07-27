@@ -180,12 +180,10 @@ func killProcessTree(cmd *exec.Cmd) error {
 		// an unrelated process after PID reuse.
 		return job.close()
 	}
-	if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
-		return nil
-	}
 	// Non-managed probes retain a best-effort direct kill. Actual harness
 	// execution always starts through StartProcessTree and therefore has a Job
-	// Object ownership proof.
+	// Object ownership proof. os.Process.Kill is synchronized with Wait and
+	// returns ErrProcessDone for an already reaped exact process handle.
 	err := cmd.Process.Kill()
 	if err == nil || errors.Is(err, os.ErrProcessDone) {
 		return nil

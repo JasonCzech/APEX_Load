@@ -25,13 +25,11 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 	name := sanitizeName(fn.StepName)
 	if transaction != "" {
 		action.Metadata["source_transaction"] = transaction
-		action.Metadata["source_transaction"] = transaction
 		if opts.PreserveTransactions {
 			name = sanitizeName(transaction) + "_" + name
 		}
 	}
 	if subTransaction != "" {
-		action.Metadata["source_subtransaction"] = subTransaction
 		action.Metadata["source_subtransaction"] = subTransaction
 		if _, exists := action.Metadata["source_action_name"]; !exists {
 			action.Metadata["source_action_name"] = subTransaction
@@ -80,7 +78,9 @@ func convertAction(fn ParsedFunction, baseURL, transaction string, subTransactio
 		}
 		value := convertParamReferences(header.Value)
 		action.HeaderList = append(action.HeaderList, dsl.HeaderEntry{Name: name, Value: value})
-		action.Headers[name] = value
+	}
+	if len(action.HeaderList) > 0 {
+		action.Headers = action.HeaderList.ToMap()
 	}
 	for k, v := range fn.Headers {
 		if _, exists := headerValueCaseInsensitive(action.Headers, k); exists {

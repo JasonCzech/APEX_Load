@@ -1125,6 +1125,7 @@ func TestHandleStartReplaySessionDraftScriptReturnsUnifiedPreflight(t *testing.T
 		"replay_session_id": unifiedAPITestSessionID,
 		"start_paused":      true,
 		"log_level":         "debug",
+		"variables":         map[string]string{"account_id": "123"},
 		"script": map[string]any{
 			"name":     "Unified Replay",
 			"version":  "1.0.0",
@@ -1160,8 +1161,8 @@ func TestHandleStartReplaySessionDraftScriptReturnsUnifiedPreflight(t *testing.T
 	if payload.ReplaySessionID != unifiedAPITestSessionID || payload.Session.Mode != "replay" || payload.Session.Preflight == nil {
 		t.Fatalf("payload id/mode/preflight_nil = %q/%q/%t, want %s/replay/false", payload.ReplaySessionID, payload.Session.Mode, payload.Session.Preflight == nil, unifiedAPITestSessionID)
 	}
-	if !slices.Contains(payload.Preflight.MissingVariables, "account_id") || payload.Preflight.ActionCount != 1 {
-		t.Fatalf("preflight = %#v, want missing account_id and one action", payload.Preflight)
+	if len(payload.Preflight.MissingVariables) != 0 || payload.Preflight.ActionCount != 1 {
+		t.Fatalf("preflight = %#v, want seeded variables and one action", payload.Preflight)
 	}
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/v1/replay/sessions/"+unifiedAPITestSessionID, nil)

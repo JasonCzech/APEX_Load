@@ -6,6 +6,7 @@ import {
   refreshedSecretBindingRequirements,
   replaceSecretBindingRequirementsForScript,
   secretBindingRequirementsForScript,
+  updateSecretBindingRequirementNames,
 } from './secretBindingUtils'
 
 const first = { name: 'First' } as ScriptDefinition
@@ -36,6 +37,32 @@ describe('secret binding requirement scoping', () => {
     expect(remaining.map(item => item.id)).toEqual(['second'])
   })
 
+  it('retains archive-wide suffixes when a per-script API refresh returns standalone names', () => {
+    const firstRequirement = requirement('first', 0)
+    const secondRequirement = {
+      ...requirement('second', 1),
+      suggested_name: 'API_TOKEN_2',
+    }
+    const refreshedSecond = requirement('second', 1)
+    const newlyDetected = {
+      ...requirement('new', 1),
+      suggested_name: 'SESSION_TOKEN',
+    }
+
+    const remaining = replaceSecretBindingRequirementsForScript(
+      [firstRequirement, secondRequirement],
+      1,
+      second,
+      [refreshedSecond, newlyDetected],
+    )
+
+    expect(remaining.map(item => [item.id, item.suggested_name])).toEqual([
+      ['first', 'API_TOKEN'],
+      ['second', 'API_TOKEN_2'],
+      ['new', 'SESSION_TOKEN'],
+    ])
+  })
+
   it('treats an unscoped requirement as belonging to a single primary script', () => {
     const unscoped = requirement('single')
 
@@ -52,5 +79,21 @@ describe('secret binding requirement scoping', () => {
 
     expect(refreshedSecretBindingRequirements(error)).toEqual([refreshed])
     expect(refreshedSecretBindingRequirements(new Error('other'))).toBeNull()
+  })
+
+  it('persists each archive migration name without changing unrelated requirements', () => {
+    const requirements = [requirement('first', 0), requirement('second', 1), requirement('third', 1)]
+
+    const updated = updateSecretBindingRequirementNames(requirements, [
+      { requirement_id: 'first', secret_name: 'API_TOKEN' },
+      { requirement_id: 'second', secret_name: 'API_TOKEN_2' },
+    ])
+
+    expect(updated.map(item => item.suggested_name)).toEqual([
+      'API_TOKEN',
+      'API_TOKEN_2',
+      'API_TOKEN',
+    ])
+    expect(updated[2]).toBe(requirements[2])
   })
 })

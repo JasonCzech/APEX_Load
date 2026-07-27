@@ -1,5 +1,7 @@
 package dsl
 
+import httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
+
 // httpActionSpecs declares the request-shaped action types used by the http,
 // soap, and java_http protocols. The action type itself is the HTTP method;
 // validation stays in validate.go's generic path (target required), so these
@@ -9,31 +11,21 @@ func httpActionSpecs() []ActionSpec {
 	requestFields := []FieldSpec{
 		{Name: "target", Required: true, Kind: FieldKindString, Doc: "Request path or absolute URL; relative paths resolve against config.base_url."},
 		{Name: "method", Kind: FieldKindString, Doc: "Explicit HTTP method override; defaults to the action type."},
-		{Name: "headers", Kind: FieldKindObject, Doc: "Request headers merged over config.http.default_headers."},
+		{Name: "headers", Kind: FieldKindObject, Doc: "Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative."},
+		{Name: "header_list", Kind: FieldKindArray, Doc: "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate."},
 		{Name: "body", Kind: FieldKindString, Doc: "Request body; template variables are expanded."},
 		{Name: "body_file", Kind: FieldKindString, Doc: "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there."},
 		{Name: "body_encoding", Kind: FieldKindString, Doc: "Body encoding hint, e.g. base64 for binary payloads."},
 		{Name: "params", Kind: FieldKindObject, Doc: "Protocol-specific request options."},
 		{Name: "soap", Kind: FieldKindObject, Doc: "SOAP-only: {action, operation, body_mode (raw_xml|generated)}."},
 	}
-	methods := []struct {
-		method  string
-		summary string
-	}{
-		{"GET", "HTTP GET request."},
-		{"POST", "HTTP POST request."},
-		{"PUT", "HTTP PUT request."},
-		{"PATCH", "HTTP PATCH request."},
-		{"DELETE", "HTTP DELETE request."},
-		{"HEAD", "HTTP HEAD request."},
-		{"OPTIONS", "HTTP OPTIONS request."},
-	}
+	methods := httpprotocol.SupportedMethods()
 	specs := make([]ActionSpec, 0, len(methods)+2)
-	for _, m := range methods {
+	for _, method := range methods {
 		specs = append(specs, ActionSpec{
-			Type:      m.method,
+			Type:      method,
 			Protocols: []string{"http", "soap", "java_http"},
-			Summary:   m.summary,
+			Summary:   "HTTP " + method + " request.",
 			Fields:    requestFields,
 		})
 	}
@@ -62,7 +54,7 @@ func httpActionSpecs() []ActionSpec {
 		Protocols: []string{"http"},
 		Summary:   "Composite step that issues an ordered list of child HTTP requests as one reported unit.",
 		Fields: []FieldSpec{
-			{Name: "params.requests", Required: true, Kind: FieldKindArray, Doc: "Child requests: {name, method (or type), target, headers, body}. At least one required."},
+			{Name: "params.requests", Required: true, Kind: FieldKindArray, Doc: "Child requests: {name, method (or type), target, headers, header_list, body}. Header occurrence and transport-normalization rules match top-level requests. At least one required."},
 		},
 		Validate: validateHTTPSequenceActionIssues,
 	})

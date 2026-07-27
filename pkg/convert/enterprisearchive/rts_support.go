@@ -1,7 +1,6 @@
 package enterprisearchive
 
 import (
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
@@ -62,6 +61,10 @@ type runtimeSettingMatcher struct {
 	sectionAliases []string
 	keyAliases     []string
 	values         []string
+	// keyPredicate matches keys that no fixed alias can express, such as the
+	// numbered Java_VM_Params_extra_arg_N rows LoadRunner emits when one
+	// setting spills across several lines. It is consulted after keyAliases.
+	keyPredicate func(string) bool
 }
 
 type runtimeSettingSupportDefinition struct {
@@ -75,12 +78,12 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			ID:      "http_transport",
 			Area:    "HTTP",
 			Concept: "Timeouts, redirects, and connection reuse",
-			Fields:  []string{"config.http.connect_timeout_ms", "config.http.request_timeout_ms", "config.http.max_redirects", "config.http.keep_alive", "config.http.max_conns_per_host"},
+			Fields:  []string{"config.http.version", "config.http.connect_timeout_ms", "config.http.request_timeout_ms", "config.http.max_redirects", "config.http.keep_alive", "config.http.max_conns_per_host"},
 			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "APEX Load maps core Web HTTP/HTML transport runtime settings into the HTTP runtime.",
+			Notes:   "APEX Load maps core Web HTTP/HTML transport settings. HTTP/1.1 and explicit HTTP/2 are exact; EnableHTTP2 uses automatic H2-preferred negotiation with HTTP/1.1 fallback. HTTP/1.0 is retained only as a blocked review draft.",
 		},
 		matchers: []runtimeSettingMatcher{
-			matcher([]string{"HTTP", "Internet Protocol", "Preferences", "Internet Protocol Preferences"}, []string{"ConnectTimeout", "ReceiveTimeout", "StepDownloadTimeout", "HTTPVersion", "KeepAlive", "MaxConnectionsPerHost", "MaxConnections", "MaxConnectionsPerHostHTTP", "MaxRedirections"}),
+			matcher([]string{"HTTP", "Internet Protocol", "Preferences", "Internet Protocol Preferences", "WEB", "Web"}, []string{"ConnectTimeout", "ReceiveTimeout", "StepDownloadTimeout", "HTTPVersion", "HTTPVer", "HttpVer", "EnableHTTP2", "EnableHttp2", "HTTP2Enabled", "KeepAlive", "MaxConnectionsPerHost", "MaxConnections", "MaxConnectionsPerHostHTTP", "MaxRedirections", "MaxRedirectionDepth"}),
 		},
 	},
 	{
@@ -93,7 +96,7 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Notes:   "Supports none, system, and custom proxy execution paths.",
 		},
 		matchers: []runtimeSettingMatcher{
-			matcher([]string{"Proxy"}, []string{"Mode", "ProxyMode", "Type", "ProxyServer", "ProxyURL", "Server", "ProxyUserName", "UserName", "ProxyPassword", "Password"}),
+			matcher([]string{"Proxy", "WEB", "Web"}, []string{"Mode", "ProxyMode", "Type", "ProxyServer", "ProxyURL", "Server", "ProxyHTTPHost", "ProxyHTTPPort", "ProxyHTTPSHost", "ProxyHTTPSPort", "ProxyUseProxy", "ProxyUseProxyServer", "ProxyUseSame", "ProxyBypass", "ProxyNoLocal", "ProxyUserName", "UserName", "ProxyUser", "ProxyPassword", "Password"}),
 		},
 	},
 	{
@@ -106,7 +109,7 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Notes:   "Imported user agent and accept headers execute on HTTP replay via config.browser_emulation and the HTTP default headers.",
 		},
 		matchers: []runtimeSettingMatcher{
-			matcher([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"UserAgent", "CustomUserAgent", "BrowserUserAgent", "UseCustomAgent", "UseCustomUserAgent", "AcceptLanguage", "BrowserAcceptLanguage", "BrowserLanguageCode", "NavigatorBrowserLanguage", "NavigatorUserLanguage", "AcceptEncoding", "BrowserAcceptEncoding"}),
+			matcher([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"UserAgent", "CustomUserAgent", "BrowserUserAgent", "UseCustomAgent", "UseCustomUserAgent", "AcceptLanguage", "BrowserAcceptLanguage", "BrowserLanguageCode", "BrowserLanguage", "LanguageCode", "NavigatorBrowserLanguage", "NavigatorUserLanguage", "AcceptEncoding", "BrowserAcceptEncoding"}),
 		},
 	},
 	{
@@ -119,7 +122,7 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Notes:   "The selected browser resolves to a catalog User-Agent that HTTP replay presents on every request.",
 		},
 		matchers: []runtimeSettingMatcher{
-			matcher([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"BrowserType", "Browser_Type", "UserBrowserType", "BrowserVer", "BrowserVersion", "UserBrowserVersion", "BrowserPlatform"}),
+			matcher([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"BrowserType", "Browser_Type", "UserBrowserType", "BrowserVer", "BrowserVersion", "UserBrowserVersion", "BrowserPlatform", "Platform"}),
 		},
 	},
 	{
@@ -153,9 +156,9 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			ID:      "tls",
 			Area:    "Security",
 			Concept: "TLS or SSL version",
-			Fields:  []string{"config.http.tls.min_version"},
+			Fields:  []string{"config.http.tls.min_version", "config.http.tls.max_version"},
 			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "APEX Load maps the configured SSL or TLS floor onto the HTTP client TLS settings.",
+			Notes:   "APEX Load maps a recognized source SSL or TLS version onto an exact HTTP client TLS version range; unsupported values retain APEX defaults and require review.",
 		},
 		matchers: []runtimeSettingMatcher{
 			matcher([]string{"SSL", "Security"}, []string{"SSLVersion", "TLSVersion"}),
@@ -183,7 +186,10 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "Applied by the engine iteration loop.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Run Logic", "RunLogic"}, []string{"Iterations", "NumberOfIterations"})},
+		matchers: []runtimeSettingMatcher{
+			matcher([]string{"Run Logic", "RunLogic", "Iterations"}, []string{"Iterations", "NumberOfIterations", "NumOfIterations"}),
+			matcher([]string{"RunLogicRunRoot"}, []string{"RunLogicNumOfIterations"}),
+		},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -194,7 +200,10 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "Supports per-action and per-iteration wrapping.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Run Logic", "RunLogic"}, []string{"AutoTransactions"})},
+		matchers: []runtimeSettingMatcher{
+			matcher([]string{"Run Logic", "RunLogic"}, []string{"AutoTransactions"}),
+			matcher([]string{"General"}, []string{"AutoTransactions", "AutomaticTransactions"}),
+		},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -227,7 +236,11 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "Fixed, random delay, and interval pacing settings execute in the engine.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Pacing"}, []string{"Mode", "PacingMode", "DelayMs", "Delay", "MinDelayMs", "MinDelay", "MaxDelayMs", "MaxDelay", "IntervalMs", "Interval", "MinIntervalMs", "MinInterval", "MaxIntervalMs", "MaxInterval"})},
+		matchers: []runtimeSettingMatcher{
+			matcher([]string{"Pacing"}, []string{"Mode", "PacingMode", "DelayMs", "Delay", "MinDelayMs", "MinDelay", "MaxDelayMs", "MaxDelay", "IntervalMs", "Interval", "MinIntervalMs", "MinInterval", "MaxIntervalMs", "MaxInterval"}),
+			matcher([]string{"Iterations"}, []string{"IterationPace", "StartEvery", "RandomMin", "RandomMax"}),
+			matcher([]string{"RunLogicRunRoot"}, []string{"RunLogicPaceType", "RunLogicPaceConstTime", "RunLogicRandomPaceMin", "RunLogicRandomPaceMax", "RunLogicPaceConstAfterTime", "RunLogicAfterPaceMin", "RunLogicAfterPaceMax"}),
+		},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -238,7 +251,7 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "Applied by the engine after action execution.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Think Time", "ThinkTime"}, []string{"Ignore", "IgnoreThinkTime", "Multiplier", "MultiplyRecordedThinkTimeBy", "LimitMs", "LimitThinkTimeMs"})},
+		matchers: []runtimeSettingMatcher{matcher([]string{"Think Time", "ThinkTime"}, []string{"Options", "Factor", "Limit", "LimitFlag", "ThinkTimeRandomLow", "ThinkTimeRandomHigh", "Ignore", "IgnoreThinkTime", "Multiplier", "MultiplyRecordedThinkTimeBy", "LimitMs", "LimitThinkTimeMs"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -249,7 +262,7 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "APEX Load executes imported log level, error-only, parameter-substitution, data-returned, and advanced-trace controls for its supported trace envelope.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Log", "Logging"}, []string{"Level", "LogLevel", "OnErrorOnly", "LogOnErrorOnly", "ExtendedOptions", "ExtendedLogOptions", "ParameterSubstitution", "DataReturned", "AdvancedTrace"})},
+		matchers: []runtimeSettingMatcher{matcher([]string{"Log", "Logging"}, []string{"Level", "LogLevel", "LogOptions", "OnErrorOnly", "LogOnErrorOnly", "ExtendedOptions", "ExtendedLogOptions", "ParameterSubstitution", "DataReturned", "AdvancedTrace", "MsgClassParameters", "MsgClassData", "MsgClassFull"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -260,7 +273,10 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "Supported through runtime error handling paths.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Misc", "Miscellaneous"}, []string{"ContinueOnError", "ErrorContinue"})},
+		matchers: []runtimeSettingMatcher{
+			matcher([]string{"Misc", "Miscellaneous"}, []string{"ContinueOnError", "ErrorContinue"}),
+			matcher([]string{"General"}, []string{"ContinueOnError"}),
+		},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -271,7 +287,10 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "HTTP, browser, SOAP, Java-over-HTTP, WebSocket, and gRPC failure paths populate snapshots where request/response artifacts exist.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Misc", "Miscellaneous"}, []string{"SnapshotOnError", "GenerateSnapshotOnError"})},
+		matchers: []runtimeSettingMatcher{
+			matcher([]string{"Misc", "Miscellaneous"}, []string{"SnapshotOnError", "GenerateSnapshotOnError"}),
+			matcher([]string{"WEB", "Web"}, []string{"SnapshotOnErrorActive"}),
+		},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -282,7 +301,7 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "Scenario authoring and browser replay execute imported mobile-web emulation settings.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"Browser Emulation", "Browser"}, []string{"Engine", "BrowserEngine", "DeviceProfile", "MobileProfile", "EmulatedDevice", "TouchMode", "TouchEnabled", "Orientation", "ClientMetrics", "CollectClientMetrics", "SlowMoMs", "SlowMotionMs", "ViewportWidth", "ScreenWidth", "ViewportHeight", "ScreenHeight"})},
+		matchers: []runtimeSettingMatcher{matcher([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"Engine", "BrowserEngine", "DeviceProfile", "MobileProfile", "EmulatedDevice", "TouchMode", "TouchEnabled", "Orientation", "ClientMetrics", "CollectClientMetrics", "SlowMoMs", "SlowMotionMs", "ViewportWidth", "ScreenWidth", "ViewportHeight", "ScreenHeight"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -329,7 +348,7 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 		// ClearCacheForSimulateNewUser is deliberately NOT a matcher: stock VuGen
 		// cfgs carry it unconditionally, and the importer never applies it on its
 		// own (raw-preserved only), so matching it would overclaim "executed".
-		matchers: []runtimeSettingMatcher{matcher([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"NewUserPerIteration", "SimulateNewUser"})},
+		matchers: []runtimeSettingMatcher{matcher([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"NewUserPerIteration", "NewUserEachIteration", "SimulateNewUser"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -340,7 +359,7 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "Default browser behavior loads all resources.",
 		},
-		matchers: []runtimeSettingMatcher{matcherWithValues([]string{"Browser Emulation", "Browser"}, []string{"DownloadResources", "DownloadNonHtmlResources"}, []string{"all"})},
+		matchers: []runtimeSettingMatcher{matcherWithValues([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"DownloadResources", "DownloadNonHtmlResources"}, []string{"all"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -351,7 +370,7 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "Static asset URLs are blocked during browser replay.",
 		},
-		matchers: []runtimeSettingMatcher{matcherWithValues([]string{"Browser Emulation", "Browser"}, []string{"DownloadResources", "DownloadNonHtmlResources"}, []string{"none"})},
+		matchers: []runtimeSettingMatcher{matcherWithValues([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"DownloadResources", "DownloadNonHtmlResources"}, []string{"none"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -362,7 +381,7 @@ var sourceRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "Recorded-only assets execute for imported or recorded browser flows that carry the required recorded-resource URL metadata.",
 		},
-		matchers: []runtimeSettingMatcher{matcherWithValues([]string{"Browser Emulation", "Browser"}, []string{"DownloadResources", "DownloadNonHtmlResources"}, []string{"recorded"})},
+		matchers: []runtimeSettingMatcher{matcherWithValues([]string{"Browser Emulation", "Browser", "WEB", "Web"}, []string{"DownloadResources", "DownloadNonHtmlResources"}, []string{"recorded"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -475,7 +494,7 @@ var javaVuserRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "The governed Java Vuser runner resolves an internal JDK or validates the specified JDK home on each assigned runner; specified homes do not silently fall back.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings"}, []string{"use_jdk", "jdk_selection", "UseSpecifiedJdk", "jdk_home", "JdkPath", "JavaVmJdkPath", "UserJdkPath", "JdkHome"})},
+		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings", "Java:Options"}, []string{"use_jdk", "UseJdk", "jdk_selection", "UseSpecifiedJdk", "jdk_home", "JdkPath", "JavaVmJdkPath", "UserJdkPath", "JdkHome"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -484,9 +503,16 @@ var javaVuserRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Concept: "Additional JVM parameters",
 			Fields:  []string{"config.java_vuser.additional_vm_parameters"},
 			Status:  RuntimeSettingStatusExecuted,
-			Notes:   "Parameters are imported with quote-aware tokenization and execute as exact argv tokens after structural safety validation; no shell is involved.",
+			Notes:   "Parameters are imported with quote-aware tokenization, including the numbered Java_VM_Params_extra_arg_N rows LoadRunner writes when the line is long, and execute as exact argv tokens after structural safety validation; no shell is involved.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings"}, []string{"Java_VM_Params", "java_vm_parameters", "AdditionalVmParams", "ExtraVmParams", "VmParams"})},
+		matchers: []runtimeSettingMatcher{matcherWithKeyPredicate(
+			[]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings", "Java:Options"},
+			javaVMParameterKeyAliases,
+			func(key string) bool {
+				_, ok := javaVMParameterExtraArgIndex(key)
+				return ok
+			},
+		)},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -497,7 +523,7 @@ var javaVuserRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "Imported entries preserve source order and reference precompiled classes or JARs that must already exist on every governed runner.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings"}, []string{"Java_Env_ClassPath", "java_env_class_paths"})},
+		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings", "Java:Options"}, []string{"Java_Env_ClassPath", "java_env_class_paths"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -508,7 +534,7 @@ var javaVuserRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusExecuted,
 			Notes:   "Local and sidecar execution create one child URLClassLoader and Actions object per VUser session, retain them across init, action iterations, and end, then close them at teardown.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings"}, []string{"enable_CL_per_vuser", "enable_classloader_per_vuser", "DedicatedClassLoader", "ClassLoaderPerVuser"})},
+		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings", "Java:Options"}, []string{"enable_CL_per_vuser", "enable_classloader_per_vuser", "DedicatedClassLoader", "ClassLoaderPerVuser"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -519,7 +545,7 @@ var javaVuserRTSSupportDefinitions = []runtimeSettingSupportDefinition{
 			Status:  RuntimeSettingStatusCompatibilityOnly,
 			Notes:   "The setting is preserved for migration evidence; supported modern JDKs execute the same entries through the ordinary classpath and emit an explicit fallback warning rather than an Xboot flag.",
 		},
-		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings"}, []string{"Use_Xboot", "use_xboot", "UseXbootClasspath"})},
+		matchers: []runtimeSettingMatcher{matcher([]string{"JavaVM:Options", "JavaVM", "Java VM", "Java Environment Settings", "Java:Options"}, []string{"Use_Xboot", "use_xboot", "UseXbootClasspath"})},
 	},
 	{
 		entry: RuntimeSettingSupportEntry{
@@ -782,7 +808,9 @@ func runtimeSettingFilesForDefinition(definition runtimeSettingSupportDefinition
 	files := make([]string, 0)
 	for fileName, sections := range runtimeSections {
 		if runtimeSectionsMatchDefinition(sections, definition) {
-			files = append(files, filepath.Base(fileName))
+			if normalized := normalizeRuntimeArchivePath(fileName); normalized != "" {
+				files = append(files, normalized)
+			}
 		}
 	}
 	if len(files) == 0 {
@@ -832,7 +860,7 @@ func (matcher runtimeSettingMatcher) matchesSection(sectionName string) bool {
 }
 
 func (matcher runtimeSettingMatcher) matchesKey(key string) bool {
-	if len(matcher.keyAliases) == 0 {
+	if len(matcher.keyAliases) == 0 && matcher.keyPredicate == nil {
 		return true
 	}
 	for _, alias := range matcher.keyAliases {
@@ -840,7 +868,7 @@ func (matcher runtimeSettingMatcher) matchesKey(key string) bool {
 			return true
 		}
 	}
-	return false
+	return matcher.keyPredicate != nil && matcher.keyPredicate(strings.TrimSpace(key))
 }
 
 func (matcher runtimeSettingMatcher) matchesValue(value string) bool {
@@ -854,6 +882,10 @@ func (matcher runtimeSettingMatcher) matchesValue(value string) bool {
 		}
 	}
 	return false
+}
+
+func matcherWithKeyPredicate(sectionAliases []string, keyAliases []string, keyPredicate func(string) bool) runtimeSettingMatcher {
+	return runtimeSettingMatcher{sectionAliases: sectionAliases, keyAliases: keyAliases, keyPredicate: keyPredicate}
 }
 
 func matcher(sectionAliases []string, keyAliases []string) runtimeSettingMatcher {
@@ -984,7 +1016,9 @@ func hasCompatibilityOnlyAdditionalAttributes(config dsl.ScriptConfig) bool {
 func runtimeAdditionalAttributeIsNativelyMapped(config dsl.ScriptConfig, key, value string) bool {
 	switch normalizeRuntimeAttributeKey(key) {
 	case "web_set_sockets_option.ssl_version", "web_set_sockets_option.tls_version":
-		return tlsVersionsEquivalent(config.HTTP.TLS.MinVersion, mapSSLVersion(value))
+		mapped := mapSSLVersion(value)
+		return tlsVersionsEquivalent(config.HTTP.TLS.MinVersion, mapped) &&
+			tlsVersionsEquivalent(config.HTTP.TLS.MaxVersion, mapped)
 	case "web_set_sockets_option.close_keepalive_connections", "web_set_sockets_option.close_keep_alive_connections":
 		closeConnections, ok := parseSourceBool(value)
 		return ok && closeConnections && config.HTTP.KeepAlive != nil && !*config.HTTP.KeepAlive
@@ -1001,9 +1035,9 @@ func runtimeAdditionalAttributeIsNativelyMapped(config dsl.ScriptConfig, key, va
 		timeoutMs, ok := parseSourceTimeoutMs(value)
 		return ok && config.HTTP.TLSTimeoutMs == timeoutMs
 	case "web_cache_cleanup":
-		// APEX Load's HTTP runtime keeps no response cache, so an imported
-		// cache-cleanup control is a guaranteed native no-op (every fetch is
-		// already fresh). Preserved for round-trip fidelity, never a parity gap.
+		// The importer emits a positional source_runtime action which dispatches
+		// through protocol.CacheController. The compatibility attribute is kept
+		// only as source provenance.
 		return true
 	case "web_set_max_html_param_len":
 		// APEX Load imposes no captured-parameter length cap (full-value capture,

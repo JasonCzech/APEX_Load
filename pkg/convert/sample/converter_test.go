@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"mime"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/jasonczech/apexload/pkg/convert/correlate"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -48,7 +51,7 @@ func TestApplyCorrelationVarsToHeaderListPreservesHeaderNames(t *testing.T) {
 	}
 }
 
-func TestSanitizeSensitiveHeadersRequiresFullyGovernedCredentials(t *testing.T) {
+func TestConvertSensitiveHeadersUsesSharedWholeValueProjection(t *testing.T) {
 	tests := []struct {
 		name   string
 		header string
@@ -59,68 +62,75 @@ func TestSanitizeSensitiveHeadersRequiresFullyGovernedCredentials(t *testing.T) 
 			name:   "authorization template plus residual literal",
 			header: "Authorization",
 			value:  "Bearer {{var.corr_token}} residual-secret",
-			want:   "{{secret.authorization}}",
+			want:   "{{secret.SAMPLE_AUTHORIZATION}}",
 		},
 		{
 			name:   "cookie template plus residual literal",
 			header: "Cookie",
 			value:  "session={{var.corr_session}}; admin=literal-credential",
-			want:   "{{secret.cookie}}",
+			want:   "{{secret.SAMPLE_COOKIE}}",
 		},
 		{
-			name:   "authorization scheme plus governed token",
+			name:   "authorization scheme plus unproven token",
 			header: "Authorization",
 			value:  "Bearer {{var.corr_token}}",
-			want:   "Bearer {{var.corr_token}}",
+			want:   "{{secret.SAMPLE_AUTHORIZATION}}",
 		},
 		{
-			name:   "all cookie values governed",
+			name:   "composed cookie values are governed as one value",
 			header: "Cookie",
 			value:  "session={{var.corr_session}}; csrf={{secret.csrf}}",
-			want:   "session={{var.corr_session}}; csrf={{secret.csrf}}",
+			want:   "{{secret.SAMPLE_COOKIE}}",
 		},
 		{
 			name:   "whole value governed",
 			header: "X-API-Key",
 			value:  "{{secret.api_key}}",
-			want:   "{{secret.api_key}}",
+			want:   "{{secret.API_KEY}}",
 		},
 		{
 			name:   "authorization malformed builtin arguments",
 			header: "Authorization",
 			value:  "Bearer {{fn.random(1,literal-secret)}}",
-			want:   "{{secret.authorization}}",
+			want:   "{{secret.SAMPLE_AUTHORIZATION}}",
 		},
 		{
 			name:   "cookie unsupported builtin call",
 			header: "Cookie",
 			value:  "session={{fake.email(literal-secret)}}",
-			want:   "{{secret.cookie}}",
+			want:   "{{secret.SAMPLE_COOKIE}}",
 		},
 		{
-			name:   "authorization supported random string builtin",
+			name:   "authorization composed builtin",
 			header: "Authorization",
 			value:  "Bearer {{fn.random_string(32)}}",
-			want:   "Bearer {{fn.random_string(32)}}",
+			want:   "{{secret.SAMPLE_AUTHORIZATION}}",
 		},
 		{
-			name:   "cookie supported builtins",
+			name:   "cookie composed builtins",
 			header: "Cookie",
 			value:  "nonce={{fn.uuid()}}; shard={{fn.random(1,4)}}",
-			want:   "nonce={{fn.uuid()}}; shard={{fn.random(1,4)}}",
+			want:   "{{secret.SAMPLE_COOKIE}}",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			headers := sanitizeHeaders(map[string]string{test.header: test.value})
-			if got := headers[test.header]; got != test.want {
-				t.Fatalf("map header = %q, want %q", got, test.want)
+			inferExtractors := false
+			result, err := Convert(ImportRequest{
+				Format: "rest_json",
+				Content: fmt.Sprintf(
+					`{"request":{"method":"GET","url":"https://api.example.com","headers":{%q:%q}}}`,
+					test.header,
+					test.value,
+				),
+				Options: ConvertOptions{InferExtractors: &inferExtractors},
+			})
+			if err != nil {
+				t.Fatalf("Convert returned error: %v", err)
 			}
-
-			list := sanitizeHeaderList(dsl.HeaderList{{Name: test.header, Value: test.value}})
-			if len(list) != 1 || list[0].Value != test.want {
-				t.Fatalf("header list = %#v, want value %q", list, test.want)
+			if got := result.Script.Actions[0].Headers[test.header]; got != test.want {
+				t.Fatalf("header = %q, want %q", got, test.want)
 			}
 		})
 	}
@@ -174,10 +184,10 @@ func TestConvertRESTJSON(t *testing.T) {
 	if len(result.Script.Actions) != 2 {
 		t.Fatalf("action count = %d, want 2", len(result.Script.Actions))
 	}
-	if got := result.Script.Actions[0].Headers["Authorization"]; !strings.Contains(got, "{{secret.authorization}}") {
+	if got := result.Script.Actions[0].Headers["Authorization"]; !strings.Contains(got, "{{secret.SAMPLE_AUTHORIZATION}}") {
 		t.Fatalf("expected authorization header to be sanitized, got %q", got)
 	}
-	if got := result.Script.Actions[0].Body; !strings.Contains(got, "{{secret.redacted}}") {
+	if got := result.Script.Actions[0].Body; !strings.Contains(got, "{{secret.SAMPLE_PASSWORD}}") {
 		t.Fatalf("expected password to be sanitized in body, got %q", got)
 	}
 	if len(result.Script.Actions[0].Assertions) != 1 {
@@ -205,26 +215,21 @@ func TestConvertRESTJSON(t *testing.T) {
 	}
 }
 
-func TestConvertRESTJSONRedactsEscapedAndNumericSecretsFromSourceReview(t *testing.T) {
-	result, err := Convert(ImportRequest{
+func TestConvertRESTJSONRejectsSensitiveNumericValueWithoutStringCoercion(t *testing.T) {
+	_, err := Convert(ImportRequest{
 		Format: "rest_json",
 		Content: `{"request":{"method":"POST","url":"https://api.example.com/login",
 			"body":{"password":"abc\"residual-secret","passcode":123456}},
 			"response":{"status":200}}`,
 	})
-	if err != nil {
-		t.Fatalf("Convert REST secrets: %v", err)
+	if err == nil {
+		t.Fatal("Convert returned nil error for a sensitive non-string JSON value")
 	}
-	body := result.Script.Actions[0].Body
-	if strings.Contains(body, "residual-secret") || strings.Contains(body, "123456") {
-		t.Fatalf("generated body leaked secret values: %s", body)
+	if strings.Contains(err.Error(), "residual-secret") || strings.Contains(err.Error(), "123456") {
+		t.Fatalf("conversion error leaked a source credential: %v", err)
 	}
-	if result.SourceReview == nil || len(result.SourceReview.SourceFiles) != 1 {
-		t.Fatalf("source review = %#v", result.SourceReview)
-	}
-	source := result.SourceReview.SourceFiles[0].Content
-	if strings.Contains(source, "residual-secret") || strings.Contains(source, "123456") {
-		t.Fatalf("source review leaked secret values: %s", source)
+	if !strings.Contains(err.Error(), "credential_json_sensitive_non_string_unsupported") {
+		t.Fatalf("conversion error = %v, want stable sensitive-type rejection code", err)
 	}
 }
 
@@ -301,6 +306,69 @@ func TestConvertCurlBasicAuthEncodesCredential(t *testing.T) {
 	want := "Basic " + base64.StdEncoding.EncodeToString([]byte("alice:secret"))
 	if got := result.Script.Actions[0].Headers["Authorization"]; got != want {
 		t.Fatalf("Authorization = %q, want %q", got, want)
+	}
+}
+
+func TestConvertCurlUnsupportedOptionIsDurablyGatedAndDisclosureSafe(t *testing.T) {
+	const canary = "curl-option-canary-5f84e20c"
+	result, err := Convert(ImportRequest{
+		Format:  "curl",
+		Content: `curl --proxy-user=` + canary + ` https://api.example.com/orders`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	if action.Metadata["execution_blocker"] != "unsupported_curl_option" {
+		t.Fatalf("execution blocker = %#v", action.Metadata["execution_blocker"])
+	}
+	review, ok := action.Metadata["import_review"].(map[string]any)
+	if !ok {
+		t.Fatalf("import review = %#v", action.Metadata["import_review"])
+	}
+	reasons, ok := review["reason_codes"].([]string)
+	if !ok || !slices.Contains(reasons, "unsupported_curl_option") {
+		t.Fatalf("reason codes = %#v", review["reason_codes"])
+	}
+	publicJSON, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(publicJSON), canary) {
+		t.Fatalf("unsupported option value leaked in converter JSON: %s", publicJSON)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("blocked cURL draft validation issues = %v", issues)
+	}
+}
+
+func TestConvertCurlSanitizesAndGatesInvalidMultipartMetadata(t *testing.T) {
+	result, err := Convert(ImportRequest{
+		Format: "curl",
+		Content: "curl -F 'label\r\nX-Injected: yes=value;type=text/plain\r\nX-Other: yes' " +
+			"https://api.example.com/upload",
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	if strings.Contains(action.Body, "\r\nX-Injected: yes") ||
+		strings.Contains(action.Body, "\r\nX-Other: yes") {
+		t.Fatalf("cURL multipart metadata injected part headers: %q", action.Body)
+	}
+	if !strings.Contains(action.Body, `name="label%0D%0AX-Injected: yes"`) {
+		t.Fatalf("sanitized multipart body = %q", action.Body)
+	}
+	review, ok := action.Metadata["import_review"].(map[string]any)
+	if !ok {
+		t.Fatalf("import review = %#v", action.Metadata["import_review"])
+	}
+	reasons, ok := review["reason_codes"].([]string)
+	if !ok || !slices.Contains(reasons, "invalid_curl_multipart_metadata") {
+		t.Fatalf("reason codes = %#v", review["reason_codes"])
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("blocked cURL multipart draft validation issues = %v", issues)
 	}
 }
 
@@ -731,9 +799,56 @@ func TestConvertRawHTTPUnfoldsHeadersAndDecodesChunkedBody(t *testing.T) {
 	if action.Metadata["http_version"] != "HTTP/1.0" {
 		t.Fatalf("metadata = %#v, want HTTP/1.0", action.Metadata)
 	}
+	if !sampleHasFindingCode(t, result.Script, "raw_http_version_review_required") {
+		t.Fatalf("HTTP/1.0 request was not durably review-gated: %#v", action.Metadata)
+	}
 	if got := action.Assertions[0].Expected; got != 200 {
 		t.Fatalf("assertion expected = %#v, want 200 from decoded response", got)
 	}
+}
+
+func TestConvertRawHTTPAsteriskTargetIsDurablyBlocked(t *testing.T) {
+	inferExtractors := false
+	result, err := Convert(ImportRequest{
+		Format: "raw_http",
+		Content: strings.Join([]string{
+			"OPTIONS * HTTP/1.1",
+			"Host: api.example.test",
+			"",
+			"",
+		}, "\r\n"),
+		Options: ConvertOptions{InferExtractors: &inferExtractors},
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("blocked draft validation issues = %#v", issues)
+	}
+	if len(result.Script.Actions) != 1 {
+		t.Fatalf("actions = %d, want 1", len(result.Script.Actions))
+	}
+	action := result.Script.Actions[0]
+	if action.Method != "OPTIONS" || action.Metadata["raw_request_target"] != "*" {
+		t.Fatalf("action = %#v, want preserved OPTIONS asterisk evidence", action)
+	}
+	if !sampleHasFindingCode(t, result.Script, "raw_http_request_target_review_required") {
+		t.Fatalf("asterisk-form request was not durably review-gated: %#v", action.Metadata)
+	}
+}
+
+func sampleHasFindingCode(t *testing.T, script *dsl.Script, want string) bool {
+	t.Helper()
+	findings, err := importreview.FindingsFromScript(script)
+	if err != nil {
+		t.Fatalf("FindingsFromScript: %v", err)
+	}
+	for _, finding := range findings {
+		if finding.Code == want || finding.ReasonCode == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestConvertRawHTTPParsingIsBoundedAndFailClosed(t *testing.T) {
@@ -805,17 +920,22 @@ func TestConvertRawHTTPTransferEncodingTokenAndHeaderCaseHandling(t *testing.T) 
 	if action.Body != "not-a-chunked-body" {
 		t.Fatalf("non-token xchunked body = %q, want unchanged", action.Body)
 	}
-	if action.Headers["Transfer-Encoding"] != "xchunked" {
-		t.Fatalf("Transfer-Encoding summary = %#v, want xchunked preserved", action.Headers)
+	if action.Headers["Transfer-Encoding"] != "" {
+		t.Fatalf("transport-owned Transfer-Encoding was not omitted: %#v", action.Headers)
+	}
+	fidelity, _ := action.Metadata["import_header_fidelity"].(map[string]any)
+	reasons, _ := fidelity["reason_codes"].([]string)
+	if !slices.Contains(reasons, "http_header_transport_owned_header") {
+		t.Fatalf("runtime fidelity metadata = %#v", fidelity)
 	}
 	if result.Script.Config.BaseURL != "https://api.example.test" {
 		t.Fatalf("case-variant Host summary selected nondeterministically: base URL = %q", result.Script.Config.BaseURL)
 	}
-	if _, exists := action.Headers["Host"]; exists {
-		t.Fatalf("case-variant compatibility summary retained stale Host entry: %#v", action.Headers)
+	if action.Headers["Host"] != "ignored.example.test" {
+		t.Fatalf("case-variant compatibility summary = %#v, want the retained first singleton occurrence", action.Headers)
 	}
-	if action.Headers["host"] != "api.example.test" {
-		t.Fatalf("case-variant compatibility summary = %#v, want last wire value", action.Headers)
+	if _, exists := action.Headers["host"]; exists {
+		t.Fatalf("case-variant compatibility summary retained omitted duplicate: %#v", action.Headers)
 	}
 }
 
@@ -1713,7 +1833,7 @@ func TestConvertHARLocationQuerySourceValidatesAuthoritativeDuplicateOccurrence(
 	}
 }
 
-func TestConvertHAREncodedSourceRequiresExactConsumerSpelling(t *testing.T) {
+func TestConvertHAREncodedCredentialConsumerUsesSharedProjection(t *testing.T) {
 	result, err := Convert(ImportRequest{
 		Format: "har",
 		Content: `{
@@ -1732,8 +1852,8 @@ func TestConvertHAREncodedSourceRequiresExactConsumerSpelling(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Convert returned error: %v", err)
 	}
-	if got := result.Script.Actions[1].Body; got != "aura.token=tok+branch%2F123456" {
-		t.Fatalf("body = %q, want consumer spelling preserved for manual replacement", got)
+	if got := result.Script.Actions[1].Body; got != "aura.token={{secret.SAMPLE_AURA_TOKEN}}" {
+		t.Fatalf("body = %q, want sensitive form field governed as one value", got)
 	}
 	if got := result.Script.Actions[0].Extractors; len(got) != 0 {
 		t.Fatalf("source extractors = %#v, want none because %%20 source cannot supply '+' consumer", got)
@@ -2244,7 +2364,7 @@ func TestPrepareCorrelationApplicationCapsSourceExtractorsIncludingEncodedSiblin
 	}
 }
 
-func TestConvertHARLeavesUnsupportedEncodedCorrelationSpellingsUnchanged(t *testing.T) {
+func TestConvertHARGovernsUnsupportedEncodedCredentialSpellings(t *testing.T) {
 	const rawValue = "tok +/== recorded"
 	exact := url.QueryEscape(rawValue)
 	tests := []struct {
@@ -2278,9 +2398,9 @@ func TestConvertHARLeavesUnsupportedEncodedCorrelationSpellingsUnchanged(t *test
 			if err != nil {
 				t.Fatalf("Convert returned error: %v", err)
 			}
-			wantTarget := "/callback?access_token=" + tt.spelling
+			wantTarget := "/callback?access_token={{secret.SAMPLE_ACCESS_TOKEN}}"
 			if got := result.Script.Actions[1].Target; got != wantTarget {
-				t.Fatalf("target = %q, want unsupported spelling preserved as %q", got, wantTarget)
+				t.Fatalf("target = %q, want encoded credential governed as %q", got, wantTarget)
 			}
 			for _, extractor := range result.Script.Actions[0].Extractors {
 				if extractor.Convert == "url_encode" {
@@ -2412,6 +2532,49 @@ func TestConvertHARPreservesFormParamsStripsCookiesAndDuplicateHeaders(t *testin
 	}
 	if !containsSampleDiagnostic(result, "HAR cookies[]") {
 		t.Fatalf("diagnostics = %#v, want cookies[] info", result.Unsupported)
+	}
+}
+
+func TestConvertHARMetadataDoesNotDuplicateQueryOrCookieCredentials(t *testing.T) {
+	const queryCanary = "har-query-canary-814ac7"
+	const cookieCanary = "har-cookie-canary-36d510"
+	result, err := Convert(ImportRequest{
+		Format: "har",
+		Content: `{"log":{"entries":[{
+		  "request":{
+		    "method":"GET",
+		    "url":"https://api.example.com/orders?password=` + queryCanary + `",
+		    "queryString":[{"name":"password","value":"` + queryCanary + `"}],
+		    "headers":[]
+		  },
+		  "response":{
+		    "status":200,
+		    "headers":[],
+		    "cookies":[{"name":"session","value":"` + cookieCanary + `","httpOnly":true}],
+		    "content":{"text":"{}"}
+		  }
+		}]}}`,
+	})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := result.Script.Actions[0]
+	query, ok := action.Metadata["har.request.query_string"].([]map[string]any)
+	if !ok || len(query) != 1 || query[0]["value"] != "[REDACTED]" {
+		t.Fatalf("query metadata = %#v", action.Metadata["har.request.query_string"])
+	}
+	cookies, ok := action.Metadata["har.response.cookies"].([]map[string]any)
+	if !ok || len(cookies) != 1 || cookies[0]["value"] != "[REDACTED]" ||
+		cookies[0]["httpOnly"] != true {
+		t.Fatalf("cookie metadata = %#v", action.Metadata["har.response.cookies"])
+	}
+	publicJSON, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(publicJSON), queryCanary) ||
+		strings.Contains(string(publicJSON), cookieCanary) {
+		t.Fatalf("HAR metadata credential leaked in converter JSON: %s", publicJSON)
 	}
 }
 
@@ -2593,8 +2756,8 @@ func TestConvertHARPreservesDuplicateRequestHeaders(t *testing.T) {
 		t.Fatalf("Convert returned error: %v", err)
 	}
 	action := result.Script.Actions[0]
-	if action.Headers["X-Duplicate"] != "one, two" {
-		t.Fatalf("summary X-Duplicate = %q, want folded value", action.Headers["X-Duplicate"])
+	if action.Headers["X-Duplicate"] != "two" {
+		t.Fatalf("summary X-Duplicate = %q, want last effective occurrence", action.Headers["X-Duplicate"])
 	}
 	got := headerListValues(action.HeaderList, "X-Duplicate")
 	if strings.Join(got, ",") != "one,two" {

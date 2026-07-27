@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/convert/sample"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
@@ -53,6 +54,10 @@ type ConvertResult struct {
 	ArtifactMode string               `json:"artifact_mode,omitempty"`
 	Governance   *ArtifactGovernance  `json:"governance,omitempty"`
 	Diff         *DiffReport          `json:"diff,omitempty"`
+
+	// ProtectedRequirements transfers the sample adapter's source values to
+	// HAR API workflows without placing them in the public conversion payload.
+	ProtectedRequirements credentialpolicy.ProtectedRequirements `json:"-"`
 }
 
 func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
@@ -99,10 +104,9 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	if redactionEnabled {
 		// The script and source review are already parameterized/scrubbed by the
 		// converter; the detected correlation sample values are the last raw
-		// secrets riding in the response. Redact secret-shaped samples so the
-		// payload matches its Sensitivity="scrubbed" governance marker. This runs
-		// after script generation, so the internal (json:"-") raw Value used to
-		// parameterize the script is unaffected.
+		// secrets riding in the response. Re-run value scrubbing for HAR-specific
+		// artifact governance after script generation. The internal (json:"-")
+		// raw Value used for diff classification is unaffected.
 		for i := range result.Correlations {
 			result.Correlations[i].SampleValue = scrub.Value(result.Correlations[i].SampleValue, scrub.Policy{})
 		}
@@ -117,7 +121,7 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			result.Script.Config.ThinkTime.MeanMs = float64(opts.DefaultThinkTimeMs)
 		}
 	}
-	return &ConvertResult{
+	converted := &ConvertResult{
 		Script:       result.Script,
 		Warnings:     warnings,
 		Unsupported:  result.Unsupported,
@@ -134,7 +138,13 @@ func Convert(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			Scope:               "http_family_only",
 			Warnings:            governanceWarnings,
 		},
-	}, nil
+	}
+	protectedRequirements := result.ProtectedRequirements.Take()
+	converted.ProtectedRequirements.Store(protectedRequirements)
+	for index := range protectedRequirements {
+		protectedRequirements[index].Value = ""
+	}
+	return converted, nil
 }
 
 func normalizeArtifactMode(value string) string {

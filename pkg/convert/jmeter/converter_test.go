@@ -1,11 +1,17 @@
 package jmeter
 
 import (
+	"crypto/sha256"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
+	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 const sampleJMX = `<?xml version="1.0" encoding="UTF-8"?>
@@ -214,7 +220,10 @@ func TestConvertJMXHTTPPlan(t *testing.T) {
 	if script.Config.BaseURL != "https://api.example.com" {
 		t.Fatalf("base_url = %q", script.Config.BaseURL)
 	}
-	if len(script.DataSources) != 1 || script.DataSources[0].Path != "customers.csv" {
+	if len(script.DataSources) != 1 ||
+		script.DataSources[0].Path != "" ||
+		script.DataSources[0].FileName != "customers.csv" ||
+		script.DataSources[0].InlineData != requestimport.MissingFilePlaceholder {
 		t.Fatalf("unexpected data sources: %#v", script.DataSources)
 	}
 	if len(script.Actions) != 1 {
@@ -224,7 +233,7 @@ func TestConvertJMXHTTPPlan(t *testing.T) {
 	if action.Target != "/v1/customer/{{var.customer_id}}" {
 		t.Fatalf("target = %q", action.Target)
 	}
-	if action.Headers["X-Tenant"] != "{{var.tenant}}" {
+	if action.Headers["X-Tenant"] != "blue" {
 		t.Fatalf("X-Tenant header = %q", action.Headers["X-Tenant"])
 	}
 	if len(action.Assertions) != 2 {
@@ -469,13 +478,12 @@ func TestConvertJMXAdvancedSamplerFidelity(t *testing.T) {
 	if action.Metadata["transaction"] != "Checkout" {
 		t.Fatalf("metadata = %#v, want transaction", action.Metadata)
 	}
-	// Digest auth fails closed at HTTP replay, so it is dropped with a warning
-	// rather than emitted; the sampler falls back to the global basic auth.
-	if action.Auth != nil {
-		t.Fatalf("action auth = %#v, want nil (digest dropped, fails closed at replay)", action.Auth)
+	if action.Auth == nil || action.Auth.Type != "digest" ||
+		action.Auth.Username != "digest-user" || action.Auth.Password != "{{secret.JMETER_PASSWORD}}" {
+		t.Fatalf("action auth = %#v, want native digest credentials", action.Auth)
 	}
-	if !containsJMeterDiagnostic(result, "Digest auth cannot be executed") {
-		t.Fatalf("diagnostics = %#v, want digest fail-closed warning", result.Unsupported)
+	if containsJMeterDiagnostic(result, "Digest auth cannot be executed") {
+		t.Fatalf("diagnostics = %#v, digest is now executable", result.Unsupported)
 	}
 	if action.TimeoutMs != 15000 {
 		t.Fatalf("timeout = %d, want 15000", action.TimeoutMs)
@@ -828,8 +836,8 @@ func TestConvertJMXMapsSimpleIfControllerAndReportsScriptSamplers(t *testing.T) 
 	if len(args) != 2 || args[0] != "abc" || args[1] != "sig" {
 		t.Fatalf("source_parameter args = %#v, want [abc sig]", param.Params["args"])
 	}
-	if param.Metadata["jsr223_source"] != `vars.put("sig", "abc")` {
-		t.Fatalf("jsr223_source metadata = %v, want preserved statement", param.Metadata["jsr223_source"])
+	if _, copied := param.Metadata["jsr223_source"]; copied {
+		t.Fatalf("translated action retained raw JSR223 source: %#v", param.Metadata)
 	}
 	// Both samplers produced executable actions, so neither is counted as skipped
 	// (the JSR223 sampler's safe-subset translation is a successful conversion).
@@ -1060,9 +1068,14 @@ func TestConvertJMXFlattensDynamicWhileCondition(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ConvertJMX returned error: %v", err)
 	}
-	// Untranslatable condition: children flattened in source order with a warning.
-	if len(result.Scripts[0].Actions) != 1 || result.Scripts[0].Actions[0].Type == "control_loop" {
-		t.Fatalf("actions = %#v, want one flattened request (no control_loop)", result.Scripts[0].Actions)
+	// Untranslatable condition: a durable placeholder precedes children flattened
+	// in source order.
+	actions := result.Scripts[0].Actions
+	if len(actions) != 2 || actions[0].Type != "review_required" || actions[1].Type == "control_loop" {
+		t.Fatalf("actions = %#v, want review placeholder + flattened request", actions)
+	}
+	if actions[0].Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("dynamic while placeholder metadata = %#v", actions[0].Metadata)
 	}
 	if !containsJMeterDiagnostic(result, "JMeter WhileController") {
 		t.Fatalf("diagnostics = %#v, want WhileController flattening warning", result.Unsupported)
@@ -1105,5 +1118,346 @@ func TestConvertJMXMakesMultiThreadGroupNameOverrideUnique(t *testing.T) {
 	}
 	if result.ScenarioDraft != nil {
 		t.Fatalf("scenario draft = %#v, want none without scenario option", result.ScenarioDraft)
+	}
+}
+
+func TestConvertJMXPreservesHeaderManagerOccurrenceOrderAndCase(t *testing.T) {
+	const jmx = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Users" enabled="true"/>
+      <hashTree>
+        <HeaderManager testname="Headers" enabled="true">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">X-Trace</stringProp>
+              <stringProp name="Header.value">one</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">x-trace</stringProp>
+              <stringProp name="Header.value">two</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">X-Trace</stringProp>
+              <stringProp name="Header.value">three</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Cookie</stringProp>
+              <stringProp name="Header.value">session=abc</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <HTTPSamplerProxy testname="Request" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/orders</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+
+	result, err := ConvertJMX([]byte(jmx), ConvertOptions{FileName: "headers.jmx", BaseURL: "https://api.example.com"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	action := result.Scripts[0].Actions[0]
+	wantNames := []string{"X-Trace", "x-trace", "X-Trace", "Cookie"}
+	wantValues := []string{"one", "two", "three", "{{secret.JMETER_COOKIE}}"}
+	if len(action.HeaderList) != len(wantNames) {
+		t.Fatalf("header list = %#v, want %d occurrences", action.HeaderList, len(wantNames))
+	}
+	for index := range wantNames {
+		if action.HeaderList[index].Name != wantNames[index] || action.HeaderList[index].Value != wantValues[index] {
+			t.Fatalf("header_list[%d] = %#v, want %s: %s", index, action.HeaderList[index], wantNames[index], wantValues[index])
+		}
+	}
+	if len(action.Headers) != 2 || action.Headers["X-Trace"] != "three" || action.Headers["Cookie"] != "{{secret.JMETER_COOKIE}}" {
+		t.Fatalf("compatibility header map = %#v, want case-insensitive last occurrences", action.Headers)
+	}
+	if got := result.Scripts[0].Config.HTTP.DefaultHeaders; len(got) != 2 || got["X-Trace"] != "three" {
+		t.Fatalf("default header map = %#v, want case-insensitive last occurrences", got)
+	}
+	if result.Stats.Headers != 4 {
+		t.Fatalf("header stats = %d, want occurrence count 4", result.Stats.Headers)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Scripts[0]); len(issues) != 0 {
+		t.Fatalf("header-list draft validation issues = %v", issues)
+	}
+}
+
+func TestConvertJMXReviewGatesUnsupportedAuthWithoutBasicApproximation(t *testing.T) {
+	for _, mechanism := range []string{"KERBEROS", "CUSTOM-SIGNATURE"} {
+		t.Run(mechanism, func(t *testing.T) {
+			jmx := fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Users" enabled="true"/>
+      <hashTree>
+        <AuthManager testname="Auth" enabled="true">
+          <collectionProp name="AuthManager.auth_list">
+            <elementProp name="" elementType="Authorization">
+              <stringProp name="Authorization.url"></stringProp>
+              <stringProp name="Authorization.username">source-user</stringProp>
+              <stringProp name="Authorization.password">source-password</stringProp>
+              <stringProp name="Authorization.mechanism">%s</stringProp>
+            </elementProp>
+          </collectionProp>
+        </AuthManager>
+        <hashTree/>
+        <HTTPSamplerProxy testname="Request" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/private</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`, mechanism)
+
+			result, err := ConvertJMX([]byte(jmx), ConvertOptions{FileName: "auth.jmx", BaseURL: "https://api.example.com"})
+			if err != nil {
+				t.Fatalf("ConvertJMX returned error: %v", err)
+			}
+			script := result.Scripts[0]
+			if script.Config.HTTP.Auth.Type != "" {
+				t.Fatalf("global auth = %#v, unsupported source auth must not be approximated", script.Config.HTTP.Auth)
+			}
+			action := script.Actions[0]
+			if action.Auth == nil || action.Auth.Type != httpprotocol.AuthTypeNone {
+				t.Fatalf("action auth = %#v, want explicit no-auth on blocked draft", action.Auth)
+			}
+			if action.Metadata["execution_blocker"] != "import_review_required" {
+				t.Fatalf("metadata = %#v, want durable import review blocker", action.Metadata)
+			}
+			review, ok := action.Metadata["import_review"].(map[string]any)
+			if !ok {
+				t.Fatalf("import_review = %#v, want structured review metadata", action.Metadata["import_review"])
+			}
+			reasons, ok := review["reason_codes"].([]string)
+			if !ok || len(reasons) != 1 || reasons[0] != "unsupported_auth_scheme" {
+				t.Fatalf("reason codes = %#v", review["reason_codes"])
+			}
+			if !containsJMeterDiagnostic(result, "requires review") {
+				t.Fatalf("diagnostics = %#v, want unsupported auth review warning", result.Unsupported)
+			}
+			if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
+				t.Fatalf("blocked draft validation issues = %v", issues)
+			}
+		})
+	}
+}
+
+func TestConvertJMXClampsHTTPTimeoutAndUsesRuntimeRedirectLimit(t *testing.T) {
+	const jmx = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Users" enabled="true"/>
+      <hashTree>
+        <HTTPSamplerProxy testname="Request" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/slow</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <stringProp name="HTTPSampler.response_timeout">7200001</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+
+	result, err := ConvertJMX([]byte(jmx), ConvertOptions{FileName: "bounds.jmx", BaseURL: "https://api.example.com"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	action := result.Scripts[0].Actions[0]
+	capabilities := httpprotocol.Capabilities()
+	if action.TimeoutMs != capabilities.MaxTimeoutMS {
+		t.Fatalf("timeout = %d, want runtime clamp %d", action.TimeoutMs, capabilities.MaxTimeoutMS)
+	}
+	if action.MaxRedirects == nil || *action.MaxRedirects != capabilities.MaxRedirects {
+		t.Fatalf("max redirects = %#v, want runtime limit %d", action.MaxRedirects, capabilities.MaxRedirects)
+	}
+	if !containsJMeterDiagnostic(result, "was clamped") {
+		t.Fatalf("diagnostics = %#v, want timeout clamp diagnostic", result.Unsupported)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Scripts[0]); len(issues) != 0 {
+		t.Fatalf("bounded draft validation issues = %v", issues)
+	}
+}
+
+func TestConvertJMXDerivesFirstSamplerBaseAndPreservesCrossHostTarget(t *testing.T) {
+	const jmx = `<?xml version="1.0"?>
+<jmeterTestPlan><hashTree><TestPlan testname="hosts"/><hashTree>
+  <ThreadGroup testname="users"/><hashTree>
+    <HTTPSamplerProxy testname="first">
+      <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+      <stringProp name="HTTPSampler.protocol">https</stringProp>
+      <stringProp name="HTTPSampler.path">/first</stringProp>
+      <stringProp name="HTTPSampler.method">GET</stringProp>
+    </HTTPSamplerProxy><hashTree/>
+    <HTTPSamplerProxy testname="second">
+      <stringProp name="HTTPSampler.domain">identity.example.com</stringProp>
+      <stringProp name="HTTPSampler.protocol">https</stringProp>
+      <stringProp name="HTTPSampler.path">/token</stringProp>
+      <stringProp name="HTTPSampler.method">POST</stringProp>
+    </HTTPSamplerProxy><hashTree/>
+  </hashTree>
+</hashTree></hashTree></jmeterTestPlan>`
+
+	result, err := ConvertJMX([]byte(jmx), ConvertOptions{FileName: "hosts.jmx"})
+	if err != nil {
+		t.Fatalf("ConvertJMX returned error: %v", err)
+	}
+	script := result.Scripts[0]
+	if script.Config.BaseURL != "https://api.example.com" {
+		t.Fatalf("base URL = %q, want first effective sampler host", script.Config.BaseURL)
+	}
+	if script.Actions[0].Target != "/first" {
+		t.Fatalf("first target = %q, want base-relative path", script.Actions[0].Target)
+	}
+	if script.Actions[1].Target != "https://identity.example.com/token" {
+		t.Fatalf("second target = %q, want cross-host absolute URL", script.Actions[1].Target)
+	}
+	for index, action := range script.Actions {
+		if action.Metadata["execution_blocker"] == "import_review_required" {
+			t.Fatalf("actions[%d] unexpectedly review-gated: %#v", index, action.Metadata)
+		}
+	}
+	if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
+		t.Fatalf("validation issues = %v", issues)
+	}
+}
+
+func TestConvertJMXProjectsCredentialsWithoutDisclosureAndIsDeterministic(t *testing.T) {
+	const (
+		urlCanary      = "jmeter-url-canary-22f1"
+		headerCanary   = "jmeter-header-canary-9d63"
+		passwordCanary = "jmeter-password-canary-b881"
+		bodyCanary     = "jmeter-body-canary-401e"
+	)
+	const jmx = `<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan testname="Credential Plan" enabled="true"/>
+    <hashTree>
+      <ThreadGroup testname="Users" enabled="true"/>
+      <hashTree>
+        <AuthManager testname="Auth" enabled="true">
+          <collectionProp name="AuthManager.auth_list">
+            <elementProp name="" elementType="Authorization">
+              <stringProp name="Authorization.url"></stringProp>
+              <stringProp name="Authorization.username">service-user</stringProp>
+              <stringProp name="Authorization.password">jmeter-password-canary-b881</stringProp>
+              <stringProp name="Authorization.mechanism">BASIC</stringProp>
+            </elementProp>
+          </collectionProp>
+        </AuthManager>
+        <hashTree/>
+        <HeaderManager testname="Headers" enabled="true">
+          <collectionProp name="HeaderManager.headers">
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">Content-Type</stringProp>
+              <stringProp name="Header.value">application/json</stringProp>
+            </elementProp>
+            <elementProp name="" elementType="Header">
+              <stringProp name="Header.name">X-Api-Key</stringProp>
+              <stringProp name="Header.value">jmeter-header-canary-9d63</stringProp>
+            </elementProp>
+          </collectionProp>
+        </HeaderManager>
+        <hashTree/>
+        <HTTPSamplerProxy testname="Login" enabled="true">
+          <stringProp name="HTTPSampler.domain">api.example.com</stringProp>
+          <stringProp name="HTTPSampler.protocol">https</stringProp>
+          <stringProp name="HTTPSampler.path">/login?access_token=jmeter-url-canary-22f1</stringProp>
+          <stringProp name="HTTPSampler.method">POST</stringProp>
+          <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments">
+            <collectionProp name="Arguments.arguments">
+              <elementProp name="" elementType="HTTPArgument">
+                <boolProp name="HTTPArgument.always_encode">false</boolProp>
+                <stringProp name="Argument.value">{"password":"jmeter-body-canary-401e","note":"byte-exact"}</stringProp>
+                <stringProp name="Argument.metadata">=</stringProp>
+              </elementProp>
+            </collectionProp>
+          </elementProp>
+        </HTTPSamplerProxy>
+        <hashTree/>
+      </hashTree>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>`
+
+	var baseline [sha256.Size]byte
+	for run := 0; run < 25; run++ {
+		result, err := ConvertJMX([]byte(jmx), ConvertOptions{
+			FileName: "credentials.jmx",
+			BaseURL:  "https://api.example.com",
+		})
+		if err != nil {
+			t.Fatalf("run %d: ConvertJMX returned error: %v", run, err)
+		}
+		if len(result.Scripts) != 1 || len(result.Scripts[0].Actions) != 1 {
+			t.Fatalf("run %d: scripts/actions = %#v", run, result.Scripts)
+		}
+		script := result.Scripts[0]
+		action := script.Actions[0]
+		if !strings.Contains(action.Target, "{{secret.") {
+			t.Fatalf("run %d: target = %q, want projected query credential", run, action.Target)
+		}
+		if !strings.Contains(action.Headers["X-Api-Key"], "{{secret.") {
+			t.Fatalf("run %d: header = %q, want projected credential", run, action.Headers["X-Api-Key"])
+		}
+		if !strings.Contains(action.Body, `"password":"{{secret.`) ||
+			!strings.Contains(action.Body, `"note":"byte-exact"`) {
+			t.Fatalf("run %d: body = %q, want projected password with nonsensitive bytes retained", run, action.Body)
+		}
+		if !strings.Contains(script.Config.HTTP.Auth.Password, "{{secret.") {
+			t.Fatalf("run %d: auth = %#v, want projected password", run, script.Config.HTTP.Auth)
+		}
+		if len(result.SecretRequirements) != 4 {
+			t.Fatalf("run %d: requirements = %#v, want URL/header/body/auth requirements", run, result.SecretRequirements)
+		}
+		for _, requirement := range result.SecretRequirements {
+			if requirement.Value != "" || requirement.SourceValueAvailable {
+				t.Fatalf("run %d: public requirement retained protected material: %#v", run, requirement)
+			}
+		}
+		if issues := dsl.ValidateScriptIssues(script); len(issues) != 0 {
+			t.Fatalf("run %d: validation issues = %v", run, issues)
+		}
+
+		if script.Metadata != nil && script.Metadata.Import != nil {
+			script.Metadata.Import.Preserved["imported_at"] = ""
+		}
+		payload, err := json.Marshal(result)
+		if err != nil {
+			t.Fatalf("run %d: marshal result: %v", run, err)
+		}
+		for _, canary := range []string{urlCanary, headerCanary, passwordCanary, bodyCanary} {
+			if strings.Contains(string(payload), canary) {
+				t.Fatalf("run %d: result disclosed canary %q: %s", run, canary, payload)
+			}
+		}
+		hash := sha256.Sum256(payload)
+		if run == 0 {
+			baseline = hash
+		} else if hash != baseline {
+			t.Fatalf("run %d: normalized result hash = %x, want %x", run, hash, baseline)
+		}
 	}
 }

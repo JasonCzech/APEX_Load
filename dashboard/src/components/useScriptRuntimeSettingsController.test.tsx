@@ -110,4 +110,17 @@ describe('useScriptRuntimeSettingsController', () => {
     expect(harness.controller().activeSection).toBe('http')
     expect(harness.controller().activeHTTPTransportTab).toBe('browser')
   })
+
+  it.each([
+    ['Proxy', 'proxy'],
+    ['Authentication', 'authentication'],
+    ['Security', 'tls'],
+  ] as const)('deep-links imported %s findings to the matching HTTP subtab', (area, expectedTab) => {
+    const harness = renderController('http')
+    act(() => harness.controller().openImportedRuntimeSettings(area))
+    expect(harness.onOpenRuntimeTab).toHaveBeenCalledTimes(1)
+    expect(harness.controller().activeSection).toBe('http')
+    expect(harness.controller().activeHTTPTransportTab).toBe(expectedTab)
+    expect(harness.openSections()).toMatchObject({ runtime: true, http: true })
+  })
 })

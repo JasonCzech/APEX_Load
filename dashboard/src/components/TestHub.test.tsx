@@ -6,8 +6,8 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { TopbarContributionProvider } from '../hooks/TopbarContributionRoot'
-import { type StoredScenario } from '../types'
-import TestHub from './TestHub'
+import { type LoadModelTemplate, type StoredScenario } from '../types'
+import TestHub, { scenarioSeedFromTemplate } from './TestHub'
 import {
   reseedScenarioGroups,
   runtimeSettingsFromForm,
@@ -259,6 +259,115 @@ describe('TestHub', () => {
     expect(edited.auto_transactions).toBe('')
     expect(edited.log_level).toBe('')
     expect(edited.browser).toBeUndefined()
+  })
+
+  it('round-trips recorded think-time policy and every random pacing bound', () => {
+    const stored: StoredScenario = {
+      id: 'source-runtime',
+      name: 'Imported source runtime',
+      duration: '5m',
+      scripts: [],
+      created_at: '',
+      updated_at: '',
+      script_count: 0,
+      runtime_settings: {
+        pacing: {
+          type: 'random_interval',
+          min_interval_ms: 2500,
+          max_interval_ms: 7500,
+        },
+        think_time: {
+          type: 'recorded',
+          multiplier: 1.5,
+          limit_ms: 4000,
+          ignore: false,
+        },
+      },
+    }
+
+    const form = scenarioFormStateFromStoredScenario(stored, '')
+    expect(form).toMatchObject({
+      runtime_pacing_type: 'random_interval',
+      runtime_pacing_min_interval_ms: 2500,
+      runtime_pacing_max_interval_ms: 7500,
+      runtime_think_time_type: 'recorded',
+      runtime_think_time_multiplier: 1.5,
+      runtime_think_time_limit_ms: 4000,
+      runtime_ignore_think_time: false,
+    })
+    expect(runtimeSettingsFromForm(form, true)).toMatchObject(stored.runtime_settings!)
+    expect(runtimeSettingsFromForm(form, true).think_time).not.toHaveProperty('mean_ms')
+  })
+
+  it('canonicalizes legacy normal think time and persists edited distribution fields', () => {
+    const stored: StoredScenario = {
+      id: 'legacy-normal-runtime',
+      name: 'Legacy normal runtime',
+      duration: '5m',
+      scripts: [],
+      created_at: '',
+      updated_at: '',
+      script_count: 0,
+      runtime_settings: {
+        think_time: {
+          type: 'normal',
+          mean_ms: 500,
+          std_ms: 75,
+          min_ms: 100,
+          max_ms: 900,
+          multiplier: 1.25,
+        },
+      },
+    }
+
+    const form = scenarioFormStateFromStoredScenario(stored, '')
+    expect(form.runtime_think_time_type).toBe('gaussian')
+    expect(runtimeSettingsFromForm({
+      ...form,
+      runtime_think_time_std_ms: 125,
+      runtime_think_time_min_ms: 50,
+      runtime_think_time_max_ms: 1200,
+    }, true).think_time).toEqual({
+      type: 'gaussian',
+      mean_ms: 500,
+      std_ms: 125,
+      min_ms: 50,
+      max_ms: 1200,
+      multiplier: 1.25,
+      limit_ms: undefined,
+      ignore: false,
+    })
+  })
+
+  it('seeds a template as one canonical runtime profile', () => {
+    const template: LoadModelTemplate = {
+      id: 'source-template',
+      name: 'Source template',
+      shape_id: 'closed-vuser',
+      description: 'Imported source settings',
+      scenario: {
+        duration: '5m',
+        groups: [{ name: 'Load', vusers: 1 }],
+        runtime_settings: {
+          pacing: { type: 'fixed_interval', interval_ms: 5000 },
+          think_time: { type: 'recorded', multiplier: 1, limit_ms: 3000, ignore: false },
+          run_logic: { iterations: 1, auto_transactions: 'none' },
+          log: { level: 'standard' },
+        },
+      },
+    }
+
+    const seed = scenarioSeedFromTemplate(template)
+    expect(seed.pacing).toEqual({ type: 'fixed_interval', interval_ms: 5000 })
+    expect(seed.think_time).toEqual({
+      type: 'recorded',
+      multiplier: 1,
+      limit_ms: 3000,
+      ignore: false,
+    })
+    expect(seed.iterations).toBe(1)
+    expect(seed.runtime_settings).toEqual(template.scenario.runtime_settings)
+    expect(seed.runtime_settings).not.toBe(template.scenario.runtime_settings)
   })
 
   it('retains advanced per-group configuration when a workload shape is re-seeded', () => {
@@ -1261,10 +1370,10 @@ describe('TestHub', () => {
     expect(pacingSelect).toBeDefined()
     if (!pacingSelect) return
     await act(async () => { setSelectValue(pacingSelect, 'fixed_delay') })
-    const pacingDelayInput = findControlByLabel<HTMLInputElement>(container, 'Pacing delay (ms)', 'input')
+    const pacingDelayInput = findControlByLabel<HTMLInputElement>(container, 'Pacing delay (seconds)', 'input')
     expect(pacingDelayInput).toBeDefined()
     if (!pacingDelayInput) return
-    await act(async () => { setInputValue(pacingDelayInput, '750') })
+    await act(async () => { setInputValue(pacingDelayInput, '0.75') })
 
     await clickRunSettingsTab('Think Time')
     const distributionSelect = findControlByLabel<HTMLSelectElement>(container, 'Distribution', 'select')
@@ -2016,7 +2125,7 @@ describe('TestHub', () => {
       }),
 		runtime_settings: expect.objectContaining({
 			pacing: { type: 'random_delay', min_delay_ms: 100, max_delay_ms: 900 },
-			think_time: { type: 'normal', mean_ms: 250, std_ms: 75, min_ms: 25, max_ms: 900, multiplier: 1.5, limit_ms: 1200, ignore: false },
+			think_time: { type: 'gaussian', mean_ms: 250, std_ms: 75, min_ms: 25, max_ms: 900, multiplier: 1.5, limit_ms: 1200, ignore: false },
 			error_handling: { max_retries: 3, retry_delay_ms: 150, retry_backoff: 'exponential' },
         run_logic: { iterations: 4, workload_model: 'closed' },
         http: { version: '2' },
@@ -2126,7 +2235,7 @@ describe('TestHub', () => {
       goal_config: expect.objectContaining({ max_throttled_requests: 3, max_dead_letter_rate_pct: 1 }),
 		runtime_settings: expect.objectContaining({
 			pacing: { type: 'random_delay', min_delay_ms: 100, max_delay_ms: 900 },
-			think_time: { type: 'normal', mean_ms: 250, std_ms: 75, min_ms: 25, max_ms: 900, multiplier: 1.5, limit_ms: 1200, ignore: false },
+			think_time: { type: 'gaussian', mean_ms: 250, std_ms: 75, min_ms: 25, max_ms: 900, multiplier: 1.5, limit_ms: 1200, ignore: false },
 			base_url: 'https://orders.example.test',
         env: { REGION: 'east' },
       }),

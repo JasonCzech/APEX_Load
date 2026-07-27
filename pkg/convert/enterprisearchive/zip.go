@@ -1,17 +1,21 @@
 package enterprisearchive
 
 import (
-	"archive/zip"
-	"bytes"
 	"fmt"
-	"io"
+	"path"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/devweb"
+	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
+	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 // Decompression-bomb guards: bound the uncompressed size of any single entry
@@ -43,65 +47,32 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		return nil, fmt.Errorf("invalid zip file: magic bytes mismatch (expected PK, got %02x%02x); file may be corrupted or truncated during upload", zipData[0], zipData[1])
 	}
 
-	reader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
+	extracted, err := archiveingest.ReadZIP(zipData, archiveingest.Options{
+		Limits: archiveingest.Limits{
+			MaxEntries:    maxEnterpriseArchiveEntries,
+			MaxEntryBytes: maxEnterpriseArchiveEntryBytes,
+			MaxTotalBytes: maxEnterpriseArchiveTotalBytes,
+			MaxDepth:      32,
+		},
+		StripFirstComponent: true,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to open zip archive (size=%d bytes): %w; the file may be corrupted, incomplete, or use an unsupported ZIP compression method", len(zipData), err)
 	}
-	if len(reader.File) > maxEnterpriseArchiveEntries {
-		return nil, fmt.Errorf("zip archive contains %d entries; maximum is %d", len(reader.File), maxEnterpriseArchiveEntries)
-	}
 
 	// Read all files from the zip
-	files := make(map[string]string)
-	normalizedFileNames := make(map[string]string)
-	var totalUncompressed int64
-	for _, f := range reader.File {
-		if f.FileInfo().IsDir() {
-			continue
-		}
-		rc, err := f.Open()
-		if err != nil {
-			return nil, fmt.Errorf("open zip entry %q: %w", f.Name, err)
-		}
-		// Read at most one byte beyond the per-entry cap so we can detect overflow.
-		data, err := io.ReadAll(io.LimitReader(rc, maxEnterpriseArchiveEntryBytes+1))
-		closeErr := rc.Close()
-		if err != nil {
-			return nil, fmt.Errorf("read zip entry %q: %w", f.Name, err)
-		}
-		if closeErr != nil {
-			return nil, fmt.Errorf("close zip entry %q: %w", f.Name, closeErr)
-		}
-		if int64(len(data)) > maxEnterpriseArchiveEntryBytes {
-			return nil, fmt.Errorf("zip entry %q exceeds the maximum allowed uncompressed size", filepath.Base(f.Name))
-		}
-		totalUncompressed += int64(len(data))
-		if totalUncompressed > maxEnterpriseArchiveTotalBytes {
-			return nil, fmt.Errorf("zip archive exceeds the maximum allowed total uncompressed size")
-		}
-		// Normalize path: strip leading directory prefix if all files share one
-		name := filepath.Base(f.Name)
-		dirName := filepath.Dir(f.Name)
-		if dirName != "." {
-			// Keep relative path from root dir
-			name = strings.TrimPrefix(f.Name, strings.SplitN(f.Name, "/", 2)[0]+"/")
-			if name == "" {
-				name = filepath.Base(f.Name)
-			}
-		}
-		if _, duplicate := files[name]; duplicate {
-			return nil, fmt.Errorf("zip archive contains duplicate normalized entry %q", name)
-		}
-		// Source projects are authored on case-insensitive Windows filesystems,
-		// and all downstream archive lookups intentionally use EqualFold. Reject
-		// case-only aliases here rather than letting map iteration choose which
-		// runtime, project, or source file wins.
-		caseFoldedName := strings.ToLower(name)
-		if existing, duplicate := normalizedFileNames[caseFoldedName]; duplicate {
-			return nil, fmt.Errorf("zip archive contains case-insensitive duplicate normalized entries %q and %q", existing, name)
-		}
-		normalizedFileNames[caseFoldedName] = name
-		files[name] = string(data)
+	files := make(map[string]string, len(extracted))
+	normalizedFileNames := make(map[string]string, len(extracted))
+	for _, file := range extracted {
+		files[file.Name] = string(file.Data)
+		normalizedFileNames[strings.ToLower(file.Name)] = file.Name
+	}
+
+	// Java sources that arrived as .txt are renamed before any pass reads the
+	// map, so protocol detection, parsing, source review, and the immutable
+	// source manifest all resolve one path per source file.
+	if err := normalizeJavaSourceArchiveNames(files, normalizedFileNames); err != nil {
+		return nil, err
 	}
 
 	// Find and parse .usr file for project config
@@ -180,15 +151,22 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 	}
 
-	runtimeFileName, runtimeContent := findRuntimeConfig(files, projectConfig)
-	var runtimeCfg *RuntimeConfig
-	if runtimeContent != "" {
-		runtimeCfg = ParseRuntimeCfg(runtimeContent)
+	runtimeFileName, runtimeCfg := resolveRuntimeConfig(files, projectConfig)
+	if runtimeCfg != nil {
+		callerHTTPConfig := opts.HTTPConfig != nil
 		if opts.HTTPConfig == nil {
 			opts.HTTPConfig = runtimeCfg.ToHTTPConfig()
 		}
 		if opts.RuntimeSettings == nil {
 			opts.RuntimeSettings = runtimeCfg.ToScriptConfig()
+			// HTTPConfig is the caller's explicit transport override. Keep the
+			// remaining source runtime settings, but do not let the broader
+			// source-generated ScriptConfig silently replace that override.
+			// The shared fidelity pass below will attach a durable gate when an
+			// explicitly authored source HTTP version conflicts with it.
+			if callerHTTPConfig && opts.RuntimeSettings != nil {
+				opts.RuntimeSettings.HTTP = dsl.HTTPConfig{}
+			}
 		}
 	}
 	parameterFileNames := findParameterFiles(files, projectConfig)
@@ -285,14 +263,25 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 		if ok {
 			parsed, err := ParseActionFile(actionFile, inlineSourceStringConstants(content, sourceConstants))
-			if err == nil {
-				parsed.Phase = sourceActionPhase(actionFile)
+			if parsed != nil {
+				parsed.Phase = sourceActionPhaseForProjectFile(projectConfig, actionFile)
 				for index := range parsed.Functions {
 					parsed.Functions[index].Phase = parsed.Phase
 				}
-				parsedActions = append(parsedActions, parsed)
-			} else {
-				parseErrors = append(parseErrors, fmt.Sprintf("%s: %v", actionFile, err))
+				for index := range parsed.ParseFailures {
+					if parsed.ParseFailures[index].Phase == "" {
+						parsed.ParseFailures[index].Phase = parsed.Phase
+					}
+				}
+				if err == nil || len(parsed.Functions) > 0 || len(parsed.ParseFailures) > 0 {
+					parsedActions = append(parsedActions, parsed)
+				}
+			}
+			if err != nil {
+				// Parser diagnostics can echo arbitrary source tokens. Persist
+				// only the affected filename; detailed durable gates use
+				// value-free failure kinds and line numbers.
+				parseErrors = appendUnique(parseErrors, actionFile)
 			}
 		}
 	}
@@ -333,6 +322,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 			RuntimeFileName:    runtimeFileName,
 			RuntimeConfig:      runtimeCfg,
 			ParameterFileNames: parameterFileNames,
+			ParsedActions:      parsedActions,
 		})
 		attachImportFidelityReport(result, files, projectConfig, parsedActions)
 		return result, nil
@@ -348,6 +338,7 @@ func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
 		result, convertErr = ConvertNetwork(parsedActions, opts, detected)
 	case detected.APEXLoadProtocol == "http" || detected.APEXLoadProtocol == "soap":
 		opts.UseMaskedBodySecretReferences = true
+		opts.deferArchiveFinalization = true
 		result, convertErr = Convert(parsedActions, opts)
 		if result != nil {
 			result.DetectedProtocol = &detected
@@ -508,6 +499,7 @@ func finalizeEnterpriseArchiveImportResult(result *ConvertResult, ctx archiveFin
 	if result == nil {
 		return
 	}
+	appendCSourceParseFailureGates(result, ctx.ParsedActions)
 	applyBrowserEmulationRuntimeSettingsReview(result, ctx.RuntimeConfig)
 	parameterSections := make(map[string]map[string]map[string]string)
 	scripts := result.effectiveScripts()
@@ -554,12 +546,239 @@ func finalizeEnterpriseArchiveImportResult(result *ConvertResult, ctx archiveFin
 		}
 		resolveTemplatedBaseURL(result)
 	}
+	applyEnterpriseRuntimeBindings(result, scripts, ctx)
+	applyJavaVMParameterRejectionReview(result, scripts, ctx.RuntimeConfig, ctx.RuntimeFileName)
+	applyEnterpriseRuntimeFidelityReview(result, scripts, ctx)
 	result.SourceReview = BuildSourceReview(ctx.Files, sourceReviewMappings(result))
+	finalizeEnterpriseSourceDisclosure(result, ctx.Files, ctx.ParameterFileNames)
 	for _, script := range scripts {
 		redactArchiveMaskedBodyMetadata(script)
 		attachSourceMetadata(script, result, ctx.ProjectFileName, ctx.ProjectSections, ctx.ProjectConfig, ctx.Files, ctx.RuntimeFileName, ctx.RuntimeConfig, parameterSections, ctx.ParameterFileNames, ctx.TrueClientInspection)
 	}
 	attachImportFidelityReport(result, ctx.Files, ctx.ProjectConfig, ctx.ParsedActions)
+}
+
+const javaVMParameterExecutionBlocker = "java_vm_parameters_require_safe_replacement"
+
+// applyJavaVMParameterRejectionReview turns an import-time JVM argv rejection
+// into the durable action gate enforced by engine, replay, and launch paths.
+// Supplying a project secret cannot clear this gate: the engine deliberately
+// never resolves secrets into process-observable Java command-line arguments.
+func applyJavaVMParameterRejectionReview(
+	result *ConvertResult,
+	scripts []*dsl.Script,
+	runtimeCfg *RuntimeConfig,
+	runtimeFileName string,
+) {
+	if result == nil {
+		return
+	}
+	runtimeFile := normalizeRuntimeArchivePath(runtimeFileName)
+	if runtimeFile == "" && runtimeCfg != nil && len(runtimeCfg.RuntimeFiles) > 0 {
+		runtimeFile = normalizeRuntimeArchivePath(runtimeCfg.RuntimeFiles[0])
+	}
+	rejections := make([]javaVMParameterRejection, 0)
+	if runtimeCfg != nil {
+		rejections = append(rejections, runtimeCfg.javaVMParameterRejections...)
+	}
+	rejectedAny := false
+	for _, script := range scripts {
+		if script == nil || !strings.EqualFold(strings.TrimSpace(script.Protocol), "java_vuser") {
+			continue
+		}
+		scriptRejections := append([]javaVMParameterRejection(nil), rejections...)
+		if validationIssues := validateImportedJavaVMParameters(
+			script.Config.JavaVuser.AdditionalVMParameters,
+		); len(validationIssues) > 0 {
+			script.Config.JavaVuser.AdditionalVMParameters = nil
+			for _, issue := range validationIssues {
+				scriptRejections = append(scriptRejections, javaVMParameterRejection{
+					sourceKey:  "config.java_vuser.additional_vm_parameters",
+					tokenIndex: issue.Index,
+					category:   issue.Category,
+				})
+			}
+		}
+		if len(scriptRejections) == 0 {
+			continue
+		}
+		rejectedAny = true
+		for _, rejection := range scriptRejections {
+			pointer := "JavaVM:Options/" + rejection.sourceKey
+			if rejection.sourceLine > 0 {
+				pointer += fmt.Sprintf(":line-%d", rejection.sourceLine)
+			}
+			sourceRef := pointer
+			if runtimeFile != "" {
+				sourceRef = runtimeFile + "#" + pointer
+			}
+			finding := importreview.Finding{
+				Code:       javaVMParameterExecutionBlocker,
+				Severity:   diag.Blocker,
+				Element:    "Java VM parameter",
+				Detail:     fmt.Sprintf("source JVM argument token %d was omitted (%s); process-observable JVM argv has no secure secret-injection equivalent and unsafe process options cannot be imported", rejection.tokenIndex, rejection.category),
+				Location:   pointer,
+				Source:     "enterprise_script_archive",
+				ReasonCode: "java_vm_parameter_omitted",
+				SourceRef:  sourceRef,
+				Resolution: "replace_behavior_and_remove_gate",
+				Gate:       importreview.GateExecution,
+			}
+			_ = dslwalk.WalkActions(script, func(ref dslwalk.ActionRef) error {
+				actionFinding := finding
+				actionFinding.ActionPath = ref.Path
+				importreview.ApplyToAction(ref.Action, []importreview.Finding{actionFinding})
+				return nil
+			})
+		}
+	}
+	if !rejectedAny {
+		return
+	}
+	result.Warnings = append(
+		result.Warnings,
+		"One or more Java VM parameters were omitted by import policy; Java Vuser execution remains blocked until the behavior is safely replaced and reviewed.",
+	)
+	result.Warnings = uniqueSortedStrings(result.Warnings)
+}
+
+func applyEnterpriseRuntimeFidelityReview(
+	result *ConvertResult,
+	scripts []*dsl.Script,
+	ctx archiveFinalizationContext,
+) {
+	if result == nil || len(scripts) == 0 {
+		return
+	}
+	runtimeFile := normalizeRuntimeArchivePath(ctx.RuntimeFileName)
+	runtimePointer := "HTTPVersion"
+	if runtimeFile != "" {
+		runtimePointer = runtimeFile + "#HTTPVersion"
+	}
+	source := requestimport.SourceRef{
+		Format:  "enterprise_script_archive",
+		Path:    runtimeFile,
+		Pointer: runtimePointer,
+	}
+	declaredVersion, declaredVersionSource := enterpriseDeclaredRuntimeHTTPVersion(ctx, source)
+	reasons := make(map[string]struct{})
+	warningsChanged := false
+	for _, script := range scripts {
+		if script == nil {
+			continue
+		}
+		switch dsl.ProtocolFamily(script.Protocol) {
+		case "http", "soap", "java_http":
+		default:
+			continue
+		}
+		// ToHTTPConfig deliberately projects an unsupported source version to
+		// automatic negotiation. Restore it only for the shared review pass so
+		// that pass can clear it again while attaching a durable gate to every
+		// potentially affected request.
+		if ctx.RuntimeConfig != nil &&
+			strings.TrimSpace(ctx.RuntimeConfig.HTTPVersion) != "" &&
+			!httpprotocol.VersionExecutable(ctx.RuntimeConfig.HTTPVersion) {
+			script.Config.HTTP.Version = ctx.RuntimeConfig.HTTPVersion
+		}
+		findings, mappings, err := requestimport.ApplyRuntimeFidelityReview(
+			script,
+			requestimport.RuntimeFidelityOptions{
+				SourceProfile:             "enterprise_script_archive",
+				Source:                    source,
+				DeclaredHTTPVersion:       conflictingEnterpriseHTTPVersion(script, declaredVersion),
+				DeclaredHTTPVersionSource: declaredVersionSource,
+			},
+		)
+		if err != nil {
+			result.Warnings = append(
+				result.Warnings,
+				"HTTP runtime fidelity review could not traverse the generated draft; execution remains unavailable until the script structure is repaired.",
+			)
+			warningsChanged = true
+			continue
+		}
+		for _, finding := range findings {
+			if finding.ReasonCode != "" {
+				reasons[finding.ReasonCode] = struct{}{}
+			}
+		}
+		for _, mapping := range mappings {
+			sourceFile := normalizeRuntimeArchivePath(mapping.Source.Path)
+			if sourceFile == "" {
+				sourceFile = runtimeFile
+			}
+			appendSourceReviewMapping(result, SourceReviewMapping{
+				SourceFile: sourceFile,
+				Function:   "HTTP runtime fidelity",
+				TargetPath: mapping.Target,
+				TargetKind: "review",
+				Status:     "review_only",
+				Notes:      "The imported HTTP behavior was sanitized into a valid draft and remains blocked until the affected behavior is replaced and its review gate is removed.",
+			})
+		}
+	}
+	if len(reasons) > 0 {
+		ordered := make([]string, 0, len(reasons))
+		for reason := range reasons {
+			ordered = append(ordered, reason)
+		}
+		sort.Strings(ordered)
+		result.Warnings = append(
+			result.Warnings,
+			"HTTP import draft requires review before execution ("+strings.Join(ordered, ", ")+").",
+		)
+		warningsChanged = true
+	}
+	if warningsChanged {
+		result.Warnings = uniqueSortedStrings(result.Warnings)
+	}
+}
+
+// enterpriseDeclaredRuntimeHTTPVersion returns only an explicitly authored
+// exact source version. ParseRuntimeCfg's compatibility default ("1.1") is not
+// source evidence, and EnableHTTP2=true describes negotiated fallback semantics
+// rather than an exact per-request version.
+func enterpriseDeclaredRuntimeHTTPVersion(
+	ctx archiveFinalizationContext,
+	fallback requestimport.SourceRef,
+) (string, requestimport.SourceRef) {
+	if ctx.RuntimeConfig == nil || ctx.RuntimeFileName == "" ||
+		(ctx.RuntimeConfig.EnableHTTP2 != nil && *ctx.RuntimeConfig.EnableHTTP2) {
+		return "", requestimport.SourceRef{}
+	}
+	content, ok := findFile(ctx.Files, ctx.RuntimeFileName)
+	if !ok {
+		return "", requestimport.SourceRef{}
+	}
+	sections := ParseConfigSections(content)
+	httpSection := findSection(
+		sections,
+		"HTTP",
+		"Internet Protocol",
+		"Preferences",
+		"Internet Protocol Preferences",
+		"WEB",
+		"Web",
+	)
+	raw, authored := sectionValueCaseInsensitive(httpSection, "HTTPVersion", "HTTPVer", "HttpVer")
+	raw = strings.TrimSpace(raw)
+	if !authored || raw == "" || !httpprotocol.VersionExecutable(raw) {
+		return "", requestimport.SourceRef{}
+	}
+	return raw, fallback
+}
+
+func conflictingEnterpriseHTTPVersion(script *dsl.Script, declared string) string {
+	if script == nil || strings.TrimSpace(declared) == "" {
+		return ""
+	}
+	sourceVersion := httpprotocol.NormalizeVersion(declared)
+	configuredVersion := httpprotocol.NormalizeVersion(script.Config.HTTP.Version)
+	if sourceVersion == configuredVersion {
+		return ""
+	}
+	return declared
 }
 
 func redactArchiveMaskedBodyMetadata(script *dsl.Script) {
@@ -646,6 +865,20 @@ func sourceActionPhase(fileName string) string {
 	}
 }
 
+func sourceActionPhaseForProjectFile(projectConfig *ProjectConfig, fileName string) string {
+	if projectConfig != nil {
+		for _, sourceFile := range projectConfig.SourceActionFiles {
+			if strings.EqualFold(strings.TrimSpace(sourceFile.Name), strings.TrimSpace(fileName)) ||
+				strings.EqualFold(filepath.Base(sourceFile.Name), filepath.Base(fileName)) {
+				if phase := strings.TrimSpace(sourceFile.Phase); phase != "" {
+					return normalizeSourcePhase(phase)
+				}
+			}
+		}
+	}
+	return sourceActionPhase(fileName)
+}
+
 func ptrDetectedProtocol(detected DetectedProtocol) *DetectedProtocol {
 	return &detected
 }
@@ -678,6 +911,11 @@ func newEnterpriseArchiveReviewResult(detected DetectedProtocol, files map[strin
 		result.Warnings = append(result.Warnings, "Import was classified as "+string(detected.ImportMode)+"; no executable APEX Load script was generated.")
 	}
 	result.Warnings = uniqueSortedStrings(result.Warnings)
+	finalizeEnterpriseSourceDisclosure(
+		result,
+		files,
+		findParameterFiles(files, nil),
+	)
 	attachImportFidelityReport(result, files, nil, actions)
 	return result
 }
@@ -704,32 +942,282 @@ func findFile(files map[string]string, name string) (string, bool) {
 	return "", false
 }
 
-func findRuntimeConfig(files map[string]string, projectConfig *ProjectConfig) (string, string) {
-	if projectConfig != nil && projectConfig.RuntimeFile != "" {
-		if content, ok := findFile(files, projectConfig.RuntimeFile); ok {
-			return projectConfig.RuntimeFile, content
+func normalizeRuntimeArchivePath(name string) string {
+	normalized := strings.ReplaceAll(cleanRuntimePathValue(name), `\`, "/")
+	normalized = strings.TrimSpace(normalized)
+	if normalized == "" {
+		return ""
+	}
+	return path.Clean(normalized)
+}
+
+func runtimeArchiveBase(name string) string {
+	normalized := normalizeRuntimeArchivePath(name)
+	if normalized == "" {
+		return ""
+	}
+	return path.Base(normalized)
+}
+
+func findRuntimeArchiveFile(files map[string]string, requested string) (string, string, []string) {
+	requested = normalizeRuntimeArchivePath(requested)
+	if requested == "" {
+		return "", "", nil
+	}
+	fileNames := make([]string, 0, len(files))
+	for name := range files {
+		fileNames = append(fileNames, name)
+	}
+	sort.Slice(fileNames, func(i, j int) bool {
+		return strings.ToLower(normalizeRuntimeArchivePath(fileNames[i])) <
+			strings.ToLower(normalizeRuntimeArchivePath(fileNames[j]))
+	})
+
+	exact := make([]string, 0, 1)
+	for _, name := range fileNames {
+		if strings.EqualFold(normalizeRuntimeArchivePath(name), requested) {
+			exact = append(exact, name)
 		}
 	}
+	if len(exact) == 1 {
+		return normalizeRuntimeArchivePath(exact[0]), files[exact[0]], nil
+	}
+	if len(exact) > 1 {
+		return "", "", normalizedRuntimeArchivePaths(exact)
+	}
 
-	for name, content := range files {
-		if strings.EqualFold(filepath.Base(name), "default.cfg") {
-			return name, content
+	// A directory-qualified runtime pointer identifies one archive-relative
+	// profile. Do not silently alias profiles/a/default.cfg to
+	// profiles/b/default.cfg merely because only the latter basename exists.
+	// Basename fallback is reserved for the common unqualified pointers emitted
+	// by .usr/.cfg files.
+	if strings.Contains(requested, "/") {
+		return "", "", nil
+	}
+
+	base := runtimeArchiveBase(requested)
+	matches := make([]string, 0, 1)
+	for _, name := range fileNames {
+		if strings.EqualFold(runtimeArchiveBase(name), base) {
+			matches = append(matches, name)
 		}
+	}
+	if len(matches) == 1 {
+		return normalizeRuntimeArchivePath(matches[0]), files[matches[0]], nil
+	}
+	if len(matches) > 1 {
+		return "", "", normalizedRuntimeArchivePaths(matches)
+	}
+	return "", "", nil
+}
+
+func normalizedRuntimeArchivePaths(names []string) []string {
+	normalized := make([]string, 0, len(names))
+	for _, name := range names {
+		if candidate := normalizeRuntimeArchivePath(name); candidate != "" {
+			normalized = append(normalized, candidate)
+		}
+	}
+	sort.Slice(normalized, func(i, j int) bool {
+		return strings.ToLower(normalized[i]) < strings.ToLower(normalized[j])
+	})
+	return normalized
+}
+
+func configuredRuntimeCfgPointer(projectConfig *ProjectConfig) string {
+	if projectConfig == nil {
+		return ""
+	}
+	pointer := strings.TrimSpace(projectConfig.DefaultCfg)
+	// RuntimeFile predates explicit profile parsing. Use it only when it is
+	// unambiguous; ParseUSRFile may otherwise have populated it from the first
+	// [CfgFiles] row rather than an active-profile declaration.
+	if pointer == "" && len(projectConfig.CfgProfiles) <= 1 {
+		pointer = strings.TrimSpace(projectConfig.RuntimeFile)
+	}
+	if pointer == "" {
+		return ""
+	}
+	for profile, candidate := range projectConfig.CfgProfiles {
+		if strings.EqualFold(strings.TrimSpace(profile), pointer) {
+			return normalizeRuntimeArchivePath(candidate)
+		}
+	}
+	return normalizeRuntimeArchivePath(pointer)
+}
+
+func configuredRuntimeCfgProfileFiles(projectConfig *ProjectConfig) []string {
+	if projectConfig == nil {
+		return nil
+	}
+	files := make([]string, 0, len(projectConfig.CfgProfiles))
+	for _, candidate := range projectConfig.CfgProfiles {
+		normalized := normalizeRuntimeArchivePath(candidate)
+		if normalized == "" {
+			continue
+		}
+		duplicate := false
+		for _, existing := range files {
+			if strings.EqualFold(existing, normalized) {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			files = append(files, normalized)
+		}
+	}
+	for _, conflict := range projectConfig.runtimePointerConflicts {
+		if !strings.EqualFold(strings.TrimSpace(conflict.section), "CfgFiles") &&
+			!(strings.EqualFold(strings.TrimSpace(conflict.section), "General") &&
+				(strings.EqualFold(strings.TrimSpace(conflict.key), "DefaultCfg") ||
+					strings.EqualFold(strings.TrimSpace(conflict.key), "RuntimeSettings") ||
+					strings.EqualFold(strings.TrimSpace(conflict.key), "RuntimeFile"))) {
+			continue
+		}
+		for _, occurrence := range conflict.occurrences {
+			normalized := normalizeRuntimeArchivePath(occurrence.value)
+			if normalized == "" {
+				continue
+			}
+			duplicate := false
+			for _, existing := range files {
+				if strings.EqualFold(existing, normalized) {
+					duplicate = true
+					break
+				}
+			}
+			if !duplicate {
+				files = append(files, normalized)
+			}
+		}
+	}
+	sort.Slice(files, func(i, j int) bool {
+		return strings.ToLower(files[i]) < strings.ToLower(files[j])
+	})
+	return files
+}
+
+func findRuntimeConfig(files map[string]string, projectConfig *ProjectConfig) (string, string, string) {
+	if conflict, ok := projectRuntimePointerConflict(projectConfig, "General", "DefaultCfg", "RuntimeSettings", "RuntimeFile"); ok {
+		return "", "", fmt.Sprintf(
+			"Conflicting case-insensitive .usr runtime cfg pointers (%s); using APEX defaults and requiring review.",
+			runtimeConfigConflictEvidence(conflict),
+		)
+	}
+	if conflict, ok := projectRuntimePointerConflict(projectConfig, "CfgFiles"); ok {
+		return "", "", fmt.Sprintf(
+			"Conflicting case-insensitive .usr cfg profile declarations (%s); using APEX defaults and requiring review.",
+			runtimeConfigConflictEvidence(conflict),
+		)
+	}
+	if pointer := configuredRuntimeCfgPointer(projectConfig); pointer != "" {
+		if name, content, ambiguous := findRuntimeArchiveFile(files, pointer); name != "" && strings.HasSuffix(strings.ToLower(name), ".cfg") {
+			return name, content, ""
+		} else if len(ambiguous) > 0 {
+			return "", "", fmt.Sprintf("Active runtime cfg %q matched multiple archive files (%s); using APEX defaults and requiring review.", pointer, strings.Join(ambiguous, ", "))
+		}
+		// An explicit active pointer is authoritative. Applying default.cfg or the
+		// sole unrelated cfg after it fails resolution can silently import a
+		// different profile's proxy, think-time, and iteration behavior.
+		return "", "", fmt.Sprintf("Active runtime cfg %q was not found; using APEX defaults and requiring review.", pointer)
+	}
+	if projectConfig != nil &&
+		strings.TrimSpace(projectConfig.DefaultCfg) == "" &&
+		len(projectConfig.CfgProfiles) > 1 {
+		candidates := configuredRuntimeCfgProfileFiles(projectConfig)
+		detail := ""
+		if len(candidates) > 0 {
+			detail = fmt.Sprintf(" (%s)", strings.Join(candidates, ", "))
+		}
+		return "", "", fmt.Sprintf("Multiple runtime cfg profiles%s are declared but [General] DefaultCfg is missing; using APEX defaults and requiring review.", detail)
 	}
 
 	cfgNames := make([]string, 0)
+	defaultNames := make([]string, 0)
 	for name := range files {
-		if strings.HasSuffix(strings.ToLower(name), ".cfg") {
-			cfgNames = append(cfgNames, name)
+		normalized := normalizeRuntimeArchivePath(name)
+		if !strings.HasSuffix(strings.ToLower(normalized), ".cfg") {
+			continue
+		}
+		cfgNames = append(cfgNames, normalized)
+		if strings.EqualFold(runtimeArchiveBase(normalized), "default.cfg") {
+			defaultNames = append(defaultNames, normalized)
 		}
 	}
-	sort.Strings(cfgNames)
-	if len(cfgNames) == 0 {
-		return "", ""
+	sort.Slice(cfgNames, func(i, j int) bool { return strings.ToLower(cfgNames[i]) < strings.ToLower(cfgNames[j]) })
+	sort.Slice(defaultNames, func(i, j int) bool { return strings.ToLower(defaultNames[i]) < strings.ToLower(defaultNames[j]) })
+	switch len(defaultNames) {
+	case 1:
+		name, content, _ := findRuntimeArchiveFile(files, defaultNames[0])
+		return name, content, ""
+	case 0:
+		// Fall through to the sole-cfg rule below.
+	default:
+		return "", "", fmt.Sprintf("Multiple default runtime cfg files (%s) are present without an unambiguous active profile; using APEX defaults and requiring review.", strings.Join(defaultNames, ", "))
 	}
 
-	name := cfgNames[0]
-	return name, files[name]
+	switch len(cfgNames) {
+	case 0:
+		return "", "", ""
+	case 1:
+		name, content, _ := findRuntimeArchiveFile(files, cfgNames[0])
+		return name, content, ""
+	default:
+		return "", "", fmt.Sprintf("Multiple runtime cfg files (%s) are present without an active profile; using APEX defaults and requiring review.", strings.Join(cfgNames, ", "))
+	}
+}
+
+func projectRuntimePointerConflict(projectConfig *ProjectConfig, section string, keys ...string) (runtimeConfigCaseFoldConflict, bool) {
+	if projectConfig == nil {
+		return runtimeConfigCaseFoldConflict{}, false
+	}
+	for _, conflict := range projectConfig.runtimePointerConflicts {
+		if !strings.EqualFold(strings.TrimSpace(conflict.section), strings.TrimSpace(section)) {
+			continue
+		}
+		if len(keys) == 0 {
+			return conflict, true
+		}
+		for _, key := range keys {
+			if strings.EqualFold(strings.TrimSpace(conflict.key), strings.TrimSpace(key)) {
+				return conflict, true
+			}
+		}
+	}
+	return runtimeConfigCaseFoldConflict{}, false
+}
+
+func configuredRunLogicConflictFiles(projectConfig *ProjectConfig) []string {
+	if projectConfig == nil {
+		return nil
+	}
+	var files []string
+	for _, conflict := range projectConfig.runtimePointerConflicts {
+		if !strings.EqualFold(strings.TrimSpace(conflict.section), "RunLogicFiles") {
+			continue
+		}
+		for _, occurrence := range conflict.occurrences {
+			normalized := normalizeRuntimeArchivePath(occurrence.value)
+			if normalized == "" {
+				continue
+			}
+			duplicate := false
+			for _, existing := range files {
+				if strings.EqualFold(existing, normalized) {
+					duplicate = true
+					break
+				}
+			}
+			if !duplicate {
+				files = append(files, normalized)
+			}
+		}
+	}
+	sort.Slice(files, func(i, j int) bool {
+		return strings.ToLower(files[i]) < strings.ToLower(files[j])
+	})
+	return files
 }
 
 func findParameterFiles(files map[string]string, projectConfig *ProjectConfig) []string {
@@ -839,6 +1327,11 @@ func convertDevWebZipViaEnterpriseArchiveImport(zipData []byte, opts ConvertOpti
 	if len(result.Stats.UnsupportedFuncs) > 0 {
 		result.Warnings = append(result.Warnings, "DevWeb archive imported through the enterprise script archive endpoint has review-gated JavaScript or helper constructs.")
 	}
+	finalizeEnterpriseSourceDisclosure(
+		result,
+		files,
+		findParameterFiles(files, projectConfig),
+	)
 	attachImportFidelityReport(result, files, projectConfig, nil)
 	return result, nil
 }
@@ -894,13 +1387,14 @@ func collectRuntimeSections(files map[string]string) map[string]map[string]map[s
 	sections := make(map[string]map[string]map[string]string)
 	fileNames := make([]string, 0)
 	for name := range files {
-		if strings.HasSuffix(strings.ToLower(name), ".cfg") {
+		lower := strings.ToLower(name)
+		if strings.HasSuffix(lower, ".cfg") || strings.HasSuffix(lower, ".usp") {
 			fileNames = append(fileNames, name)
 		}
 	}
 	sort.Strings(fileNames)
 	for _, name := range fileNames {
-		sections[filepath.Base(name)] = ParseConfigSections(files[name])
+		sections[normalizeRuntimeArchivePath(name)] = ParseConfigSections(files[name])
 	}
 	return sections
 }
@@ -931,10 +1425,23 @@ func preservedJavaVMSettings(runtimeCfg *RuntimeConfig) map[string]any {
 	}
 	settings := make(map[string]any)
 	if len(runtimeCfg.JavaVMAdditionalParameters) > 0 {
-		settings["additional_vm_parameters"] = append([]string(nil), runtimeCfg.JavaVMAdditionalParameters...)
+		parameters := executableJavaVMParameters(runtimeCfg.JavaVMAdditionalParameters)
+		if len(parameters) > 0 {
+			settings["additional_vm_parameters"] = parameters
+		}
 	}
 	if runtimeCfg.JavaVMParametersRaw != "" {
-		settings["additional_vm_parameters_raw"] = runtimeCfg.JavaVMParametersRaw
+		settings["additional_vm_parameters_raw"] = disclosureSafeJavaVMParameterRow(runtimeCfg.JavaVMParametersRaw)
+	}
+	// LoadRunner spills a long parameter line across numbered companion keys, so
+	// the single raw value above cannot round-trip the source. Preserve every
+	// row in command-line order alongside it.
+	if len(runtimeCfg.JavaVMParameterRows) > 1 {
+		rows := make([]string, len(runtimeCfg.JavaVMParameterRows))
+		for index, row := range runtimeCfg.JavaVMParameterRows {
+			rows[index] = disclosureSafeJavaVMParameterRow(row)
+		}
+		settings["additional_vm_parameter_rows"] = rows
 	}
 	if len(runtimeCfg.JavaVMClasspath) > 0 {
 		settings["classpath"] = append([]string(nil), runtimeCfg.JavaVMClasspath...)
@@ -1030,21 +1537,25 @@ func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFile
 		preserved["project_file"] = filepath.Base(projectFileName)
 	}
 	if len(projectSections) > 0 {
-		preserved["project_settings"] = projectSections
+		preserved["project_settings"] = disclosureSafeConfigSections(projectSections)
 	}
 	if projectConfig != nil && projectConfig.RuntimeFile != "" {
-		preserved["declared_runtime_file"] = filepath.Base(projectConfig.RuntimeFile)
+		preserved["declared_runtime_file"] = normalizeRuntimeArchivePath(projectConfig.RuntimeFile)
 	}
 	runtimeSections := collectRuntimeSections(files)
 	if len(runtimeSections) > 0 {
-		preserved["runtime_files"] = runtimeSections
-		if parity := buildRTSParityReportForProtocol(runtimeSections, script.Protocol); len(parity) > 0 {
-			preserved["runtime_settings_parity"] = parity
-			preserved["runtime_settings_status_counts"] = RuntimeSettingStatusCounts(parity)
-		}
+		preserved["runtime_files"] = disclosureSafeRuntimeSections(runtimeSections)
+	}
+	selectedSections := selectedRuntimeSections(runtimeSections, runtimeFileName, runtimeCfg)
+	if parity := applyRuntimeMigrationIssues(buildRTSParityReportForProtocol(selectedSections, script.Protocol), runtimeCfg); len(parity) > 0 {
+		preserved["runtime_settings_parity"] = parity
+		preserved["runtime_settings_status_counts"] = RuntimeSettingStatusCounts(parity)
 	}
 	if runtimeFileName != "" {
-		preserved["mapped_runtime_file"] = filepath.Base(runtimeFileName)
+		preserved["mapped_runtime_file"] = normalizeRuntimeArchivePath(runtimeFileName)
+	}
+	if runtimeCfg != nil && len(runtimeCfg.RuntimeFiles) > 0 {
+		preserved["mapped_runtime_files"] = append([]string(nil), runtimeCfg.RuntimeFiles...)
 	}
 	// Scope Java VM source metadata to Java Vuser scripts. A mixed/multi-lane
 	// archive can share one runtime cfg, so an http/jdbc lane must not carry a
@@ -1066,7 +1577,7 @@ func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFile
 		preserved["parameter_files"] = uniqueStrings(files)
 	}
 	if len(parameterSections) > 0 {
-		preserved["parameter_file_sections"] = parameterSections
+		preserved["parameter_file_sections"] = disclosureSafeParameterSections(parameterSections)
 	}
 	if result != nil && len(result.Stats.UnsupportedFuncs) > 0 {
 		preserved["unsupported_functions"] = uniqueStrings(result.Stats.UnsupportedFuncs)
@@ -1106,4 +1617,49 @@ func attachSourceMetadata(script *dsl.Script, result *ConvertResult, projectFile
 		SourceScriptName: script.Name,
 		Preserved:        preserved,
 	}
+}
+
+func selectedRuntimeSections(all map[string]map[string]map[string]string, runtimeFileName string, runtimeCfg *RuntimeConfig) map[string]map[string]map[string]string {
+	var wantedFiles []string
+	if runtimeCfg != nil {
+		wantedFiles = runtimeCfg.RuntimeFiles
+	} else if strings.TrimSpace(runtimeFileName) != "" {
+		wantedFiles = []string{runtimeFileName}
+	}
+	if len(wantedFiles) == 0 {
+		return nil
+	}
+	selected := make(map[string]map[string]map[string]string, len(wantedFiles))
+	for _, wanted := range wantedFiles {
+		normalizedWanted := normalizeRuntimeArchivePath(wanted)
+		if sections, ok := runtimeSectionsByExactPath(all, normalizedWanted); ok {
+			selected[normalizedWanted] = sections
+			continue
+		}
+		// Preserve the same pointer semantics used by runtime-profile selection:
+		// a directory-qualified pointer identifies one archive-relative file and
+		// must not pick up an unrelated same-basename profile for parity metadata.
+		if strings.Contains(normalizedWanted, "/") {
+			continue
+		}
+		var matchingNames []string
+		for name := range all {
+			if strings.EqualFold(runtimeArchiveBase(name), runtimeArchiveBase(normalizedWanted)) {
+				matchingNames = append(matchingNames, name)
+			}
+		}
+		if len(matchingNames) == 1 {
+			selected[matchingNames[0]] = all[matchingNames[0]]
+		}
+	}
+	return selected
+}
+
+func runtimeSectionsByExactPath(all map[string]map[string]map[string]string, wanted string) (map[string]map[string]string, bool) {
+	for name, sections := range all {
+		if strings.EqualFold(normalizeRuntimeArchivePath(name), wanted) {
+			return sections, true
+		}
+	}
+	return nil, false
 }

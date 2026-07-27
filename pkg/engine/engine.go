@@ -103,6 +103,9 @@ func New(cfg Config) (*Engine, error) {
 	if cfg.Script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
+	if err := importExecutionGateError(cfg.Script, "launch"); err != nil {
+		return nil, err
+	}
 	if javaVuserScriptUsesPhaseLifecycle(cfg.Script) && javaVuserScriptHasLegacyRunAction(cfg.Script) {
 		return nil, fmt.Errorf("java_vuser scripts must not mix persistent phase methods with legacy full_lifecycle actions")
 	}
@@ -148,6 +151,14 @@ func New(cfg Config) (*Engine, error) {
 }
 
 func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
+	// Re-check durable import gates at the actual execution boundary. Engine
+	// construction and execution are intentionally separate, and callers retain
+	// the Script pointer, so a draft can acquire a blocker after New returns.
+	// No protocol lookup or runtime preflight may happen before this check.
+	if err := importExecutionGateError(e.script, "launch"); err != nil {
+		return nil, err
+	}
+
 	ctx, cancel := context.WithTimeout(ctx, e.duration)
 	e.mu.Lock()
 	e.cancel = cancel
@@ -221,16 +232,22 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	}
 	if isOpenWorkload(e.script) {
 		loopCtx, loopCancel := context.WithCancel(ctx)
+		boundaryCtx, boundaryCancel := context.WithCancel(ctx)
+		explicitGracefulStop := func() {
+			boundaryCancel()
+			loopCancel()
+		}
 		e.mu.Lock()
-		e.softStop = loopCancel
+		e.softStop = explicitGracefulStop
 		e.mu.Unlock()
 		defer func() {
 			loopCancel()
+			boundaryCancel()
 			e.mu.Lock()
 			e.softStop = nil
 			e.mu.Unlock()
 		}()
-		result, err := e.runOpenWorkload(loopCtx, protoConfig)
+		result, err := e.runOpenWorkload(loopCtx, ctx, boundaryCtx, protoConfig)
 		e.metrics.Stop()
 		if result != nil {
 			if snap, ok := e.metrics.LatestSnapshot(); ok {
@@ -245,12 +262,18 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 	// (hard stop: duration timeout or Stop) and record their transactions.
 	loopCtx, loopCancel := context.WithCancel(ctx)
 	defer loopCancel()
+	boundaryCtx, boundaryCancel := context.WithCancel(ctx)
+	defer boundaryCancel()
+	explicitGracefulStop := func() {
+		boundaryCancel()
+		loopCancel()
+	}
 	var executionGoals *ExecutionGoalLimiter
 	if hasExecutionGoals(e.script.Config.RunLogic) {
 		executionGoals = NewExecutionGoalLimiter(e.script.Config.RunLogic, loopCancel)
 	}
 	e.mu.Lock()
-	e.softStop = loopCancel
+	e.softStop = explicitGracefulStop
 	e.mu.Unlock()
 	defer func() {
 		e.mu.Lock()
@@ -287,12 +310,24 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 			break
 		}
 		bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return e.redaction })
-		if err := callProtocolInit(ctx, vuProto, vuserProtoConfig(protoConfig, vuserID), e.redaction); err != nil {
+		if err := callProtocolInit(loopCtx, vuProto, vuserProtoConfig(protoConfig, vuserID), e.redaction); err != nil {
+			if loopCtx.Err() != nil {
+				runProtocolTeardown(vuProto, func() *RedactionConfig { return e.redaction })
+				wg.Done()
+				break
+			}
 			safeErr := err
 			slog.Error("failed to init protocol for vuser", "vuser", vuserID, "err", safeErr)
 			runProtocolTeardown(vuProto, func() *RedactionConfig { return e.redaction })
 			wg.Done()
 			startupErr = safeErr
+			break
+		}
+		// A context-ignoring adapter may return success after a peer has already
+		// satisfied the exact goal. Do not launch this still-unentitled VUser.
+		if loopCtx.Err() != nil {
+			runProtocolTeardown(vuProto, func() *RedactionConfig { return e.redaction })
+			wg.Done()
 			break
 		}
 
@@ -323,6 +358,7 @@ func (e *Engine) Run(ctx context.Context) (*RunResult, error) {
 				Rendezvous:           rendezvous,
 				ExecutionGoals:       executionGoals,
 				HardStopCtx:          ctx,
+				ActionBoundaryCtx:    boundaryCtx,
 				DataProvider:         e.data,
 			}
 			vu.Run(loopCtx)
@@ -453,15 +489,20 @@ func (e *Engine) rampDelay() time.Duration {
 	return e.rampUp / time.Duration(e.vusers)
 }
 
-func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any) (*RunResult, error) {
+func (e *Engine) runOpenWorkload(
+	schedulerCtx context.Context,
+	hardStopCtx context.Context,
+	actionBoundaryCtx context.Context,
+	protoConfig map[string]any,
+) (*RunResult, error) {
 	start := time.Now()
 	iterationScript := cloneSingleIterationScript(e.script)
 	arrivals, bounded := boundedArrivalLimit(e.script, e.vusers)
-	loopCtx := ctx
+	loopCtx := schedulerCtx
 	var executionGoals *ExecutionGoalLimiter
 	if hasExecutionGoals(e.script.Config.RunLogic) {
 		var goalCancel context.CancelFunc
-		loopCtx, goalCancel = context.WithCancel(ctx)
+		loopCtx, goalCancel = context.WithCancel(schedulerCtx)
 		defer goalCancel()
 		executionGoals = NewExecutionGoalLimiter(e.script.Config.RunLogic, goalCancel)
 	}
@@ -525,10 +566,18 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 				return
 			}
 			bindProtocolRuntimeRedaction(vuProto, func() *RedactionConfig { return e.redaction })
-			if err := callProtocolInit(ctx, vuProto, vuserProtoConfig(protoConfig, workerID), e.redaction); err != nil {
+			if err := callProtocolInit(loopCtx, vuProto, vuserProtoConfig(protoConfig, workerID), e.redaction); err != nil {
+				if loopCtx.Err() != nil {
+					runProtocolTeardown(vuProto, redaction)
+					return
+				}
 				safeErr := err
 				slog.Error("failed to init protocol for arrival worker", "arrival", workerID, "err", safeErr)
 				recordInitError(safeErr)
+				runProtocolTeardown(vuProto, redaction)
+				return
+			}
+			if loopCtx.Err() != nil {
 				runProtocolTeardown(vuProto, redaction)
 				return
 			}
@@ -536,15 +585,16 @@ func (e *Engine) runOpenWorkload(ctx context.Context, protoConfig map[string]any
 			initializedWorkers.Add(1)
 
 			vu = &VUser{
-				ID:              workerID,
-				Proto:           vuProto,
-				Script:          iterationScript,
-				Metrics:         e.metrics,
-				SecretResolver:  e.secrets,
-				RedactionConfig: e.redaction,
-				ExecutionGoals:  executionGoals,
-				HardStopCtx:     ctx,
-				DataProvider:    e.data,
+				ID:                workerID,
+				Proto:             vuProto,
+				Script:            iterationScript,
+				Metrics:           e.metrics,
+				SecretResolver:    e.secrets,
+				RedactionConfig:   e.redaction,
+				ExecutionGoals:    executionGoals,
+				HardStopCtx:       hardStopCtx,
+				ActionBoundaryCtx: actionBoundaryCtx,
+				DataProvider:      e.data,
 			}
 			vu.Run(loopCtx)
 		}(arrival)

@@ -1,6 +1,9 @@
 package jmeter
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestTranslateJSR223Script(t *testing.T) {
 	tests := []struct {
@@ -115,13 +118,17 @@ func TestConvertJMXTranslatesScriptAndPreservesArbitrary(t *testing.T) {
 		t.Fatalf("ConvertJMX returned error: %v", err)
 	}
 	script := result.Scripts[0]
-	// The arbitrary script produces no engine action; only the HTTP sampler does.
-	if len(script.Actions) != 1 || script.Actions[0].Type != "GET" {
-		t.Fatalf("actions = %#v, want only the HTTP GET", script.Actions)
+	// The arbitrary source becomes a durable review placeholder before the HTTP
+	// request; no JVM source is copied into either action.
+	if len(script.Actions) != 2 || script.Actions[0].Type != "review_required" || script.Actions[1].Type != "GET" {
+		t.Fatalf("actions = %#v, want review placeholder + HTTP GET", script.Actions)
+	}
+	if script.Actions[0].Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("review placeholder metadata = %#v", script.Actions[0].Metadata)
 	}
 	preserved, _ := script.Metadata.Import.Preserved["jsr223_sources"].([]string)
-	if len(preserved) == 0 {
-		t.Fatalf("expected preserved jsr223 source, got %#v", script.Metadata.Import.Preserved["jsr223_sources"])
+	if len(preserved) == 0 || strings.Contains(strings.Join(preserved, "\n"), "api.fetch") {
+		t.Fatalf("expected disclosure-safe jsr223 marker, got %#v", script.Metadata.Import.Preserved["jsr223_sources"])
 	}
 	if result.Stats.ReviewRequired < 1 {
 		t.Fatalf("review_required stat = %d, want >= 1", result.Stats.ReviewRequired)

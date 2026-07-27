@@ -257,6 +257,54 @@ describe('scriptAuthoringAssist', () => {
     expect(suggestionKeys).toContain('normalize_think_time')
     expect(pacingResult.script.config.pacing?.type).toBe('fixed_delay')
     expect(pacingResult.script.config.pacing?.delay_ms).toBe(1000)
+    expect(pacingResult.summary).toBe('Applied fixed-delay pacing at 1 second per iteration.')
+  })
+
+  it('does not normalize recorded think time or clear NOTHINK policy controls', () => {
+    const recorded: ScriptDefinition = {
+      ...importedScript,
+      config: {
+        ...importedScript.config,
+        think_time: {
+          type: 'recorded',
+          multiplier: 2,
+          limit_ms: 5000,
+          ignore: true,
+        },
+      },
+    }
+
+    const suggestionKeys = buildMigrationAssistantSuggestions(recorded).map((suggestion) => suggestion.key)
+    const defensiveResult = applyMigrationAssistantSuggestion(recorded, 'normalize_think_time')
+
+    expect(suggestionKeys).not.toContain('normalize_think_time')
+    expect(defensiveResult.script.config.think_time).toEqual(recorded.config.think_time)
+    expect(defensiveResult.script.config.think_time).not.toHaveProperty('mean_ms')
+  })
+
+  it('does not reinterpret explicitly disabled think time as a missing default', () => {
+    const disabled: ScriptDefinition = {
+      ...importedScript,
+      config: {
+        ...importedScript.config,
+        think_time: {
+          type: 'none',
+          mean_ms: 1000,
+          multiplier: 2,
+          limit_ms: 5000,
+        },
+      },
+    }
+
+    const suggestionKeys = buildMigrationAssistantSuggestions(disabled).map((suggestion) => suggestion.key)
+    const defensiveResult = applyMigrationAssistantSuggestion(disabled, 'normalize_think_time')
+
+    expect(suggestionKeys).not.toContain('normalize_think_time')
+    expect(defensiveResult.script.config.think_time).toEqual({
+      type: 'none',
+      multiplier: 2,
+      limit_ms: 5000,
+    })
   })
 
   it('summarizes imported draft deltas against the working draft', () => {
@@ -424,7 +472,7 @@ describe('scriptAuthoringAssist', () => {
           method: 'POST',
           target: '/orders/{{data.orders.order_id}}',
           headers: { Authorization: 'Bearer hard-coded-token' },
-          body: '{"session_id":"abc123"}',
+          body: '{"auth_token":"{{var.dynamic_token}}","session_id":"abc123","password":"top-secret"}',
           extractors: [],
           assertions: [],
         },
@@ -452,9 +500,14 @@ describe('scriptAuthoringAssist', () => {
     expect(withData.data_sources?.[0]?.inline_data).toContain('order_id')
 
     const withTokens = applyScriptRepairSuggestion(repairDraft, 'parameterize_hard_coded_tokens').script
-    expect(withTokens.actions[0].headers?.Authorization).toBe('Bearer {{param.access_token}}')
-    expect(withTokens.actions[0].body).toContain('{{param.session_id}}')
-    expect(withTokens.parameters?.map(parameter => parameter.name)).toEqual(expect.arrayContaining(['access_token', 'session_id']))
+    expect(withTokens.actions[0].headers?.Authorization).toBe('Bearer {{secret.access_token}}')
+    expect(withTokens.actions[0].body).toContain('{{secret.session_id}}')
+    expect(withTokens.actions[0].body).toContain('{{secret.password}}')
+    expect(withTokens.actions[0].body).toContain('{{var.dynamic_token}}')
+    expect(JSON.stringify(withTokens)).not.toContain('hard-coded-token')
+    expect(JSON.stringify(withTokens)).not.toContain('abc123')
+    expect(JSON.stringify(withTokens)).not.toContain('top-secret')
+    expect(withTokens.parameters).toEqual([])
 
     const withAssertions = applyScriptRepairSuggestion(repairDraft, 'add_default_assertions').script
     expect(withAssertions.actions[0].assertions?.[0]).toEqual({ type: 'status_code', expected: 201 })
@@ -466,6 +519,40 @@ describe('scriptAuthoringAssist', () => {
     expect(withBrowserRepairs.actions[1].wait_for?.timeout_ms).toBe(10000)
     expect(withBrowserRepairs.actions[1].selector).toBe('[data-testid="click_submit"]')
     expect(withBrowserRepairs.actions[1].metadata?.original_selector).toContain('nth-child')
+  })
+
+  it('externalizes every ordered credential header without collapsing duplicates or retaining literals', () => {
+    const draft: ScriptDefinition = {
+      ...importedScript,
+      actions: [{
+        name: 'Duplicate credentials',
+        type: 'POST',
+        method: 'POST',
+        target: '/submit',
+        headers: {
+          authorization: 'Bearer second-secret',
+          'X-Api-Key': 'map-only-secret',
+        },
+        header_list: [
+          { name: 'Authorization', value: 'Bearer first-secret' },
+          { name: 'authorization', value: 'Bearer second-secret' },
+        ],
+      }],
+      parameters: [],
+    }
+
+    const result = applyScriptRepairSuggestion(draft, 'parameterize_hard_coded_tokens').script
+    expect(result.actions[0].header_list).toEqual([
+      { name: 'Authorization', value: 'Bearer {{secret.access_token}}' },
+      { name: 'authorization', value: 'Bearer {{secret.access_token_2}}' },
+    ])
+    expect(result.actions[0].headers).toEqual({
+      authorization: 'Bearer {{secret.access_token_2}}',
+      'X-Api-Key': '{{secret.x_api_key}}',
+    })
+    expect(JSON.stringify(result)).not.toContain('first-secret')
+    expect(JSON.stringify(result)).not.toContain('second-secret')
+    expect(JSON.stringify(result)).not.toContain('map-only-secret')
   })
 
   describe('control-flow validation', () => {

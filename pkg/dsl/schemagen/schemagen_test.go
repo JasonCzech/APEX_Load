@@ -52,6 +52,67 @@ func TestGeneratedSchemaCompiles(t *testing.T) {
 	}
 }
 
+func TestGeneratedSchemaHTTPVersionMatchesRuntimeContract(t *testing.T) {
+	schema, err := compileGeneratedSchema(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name        string
+		version     *string
+		wantInvalid bool
+	}{
+		{name: "omitted auto negotiation"},
+		{name: "explicit empty auto negotiation", version: stringPointer("")},
+		{name: "exact HTTP 1.1", version: stringPointer("1.1")},
+		{name: "required HTTP 2", version: stringPointer("2")},
+		{name: "HTTP 1.0 is unsupported", version: stringPointer("1.0"), wantInvalid: true},
+		{name: "unknown version is unsupported", version: stringPointer("3"), wantInvalid: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			httpConfig := map[string]any{}
+			if test.version != nil {
+				httpConfig["version"] = *test.version
+			}
+			script := map[string]any{
+				"name":     "HTTP version schema contract",
+				"protocol": "http",
+				"config": map[string]any{
+					"http": httpConfig,
+				},
+				"actions": []any{
+					map[string]any{
+						"name":   "request",
+						"type":   "GET",
+						"target": "https://example.test",
+					},
+				},
+			}
+			raw, err := json.Marshal(script)
+			if err != nil {
+				t.Fatal(err)
+			}
+			instance, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = schema.Validate(instance)
+			if test.wantInvalid && err == nil {
+				t.Fatal("schema accepted an unsupported HTTP version")
+			}
+			if !test.wantInvalid && err != nil {
+				t.Fatalf("schema rejected a supported HTTP version: %v", err)
+			}
+		})
+	}
+}
+
+func stringPointer(value string) *string {
+	return &value
+}
+
 // TestExampleScriptsPassGoValidatorAndSchema is the dual-validation drift
 // guard: every example script must satisfy both the Go validator and the
 // generated JSON Schema. Because the schema is generated looser-or-equal to

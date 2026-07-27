@@ -12,28 +12,33 @@ import (
 
 // ParsedFunction represents a single C/VUser source function call extracted from a script.
 type ParsedFunction struct {
-	Name         string            // e.g. "web_url", "web_submit_data", "lr_think_time"
-	StepName     string            // The first string argument (step name)
-	Args         map[string]string // Named key-value arguments extracted from ITEMDATA/LAST pairs
-	RawArgs      []string          // Raw string arguments in order
-	CallArgs     []ParsedArgument  // Structured top-level C call arguments in order
-	Headers      map[string]string // Extracted header key-value pairs
-	HeaderList   dsl.HeaderList    // Ordered header occurrences when the source preserves them
-	Body         string            // Request body if present
-	Method       string            // HTTP method (for web_custom_request)
-	URL          string            // Target URL
-	Action       string            // Action/target URL for form submissions
-	Cookies      []ParsedCookie    // Cookies added through web_add_cookie
-	Phase        string            // init, action, or teardown
-	LineNumber   int               // Source line number for diagnostics
-	Filename     string            // Source file containing the function
-	EndLine      int               // Source line where the function call ends
-	RawBlock     string            // Original source block for source review
-	JavaOrigin   bool              // Body was decoded from Java source; skip C-string unescaping
-	Conditions   []string          // Enclosing if/else conditions (raw C, outermost first; else pre-negated as !(...))
-	ConditionIDs []string          // Stable per-construct identities (source positions) parallel to Conditions
-	Loops        []string          // Enclosing loop headers (raw C, outermost first)
-	LoopIDs      []string          // Stable per-construct identities (source positions) parallel to Loops
+	Name                                string            // e.g. "web_url", "web_submit_data", "lr_think_time"
+	StepName                            string            // The first string argument (step name)
+	Args                                map[string]string // Named key-value arguments extracted from ITEMDATA/LAST pairs
+	RawArgs                             []string          // Raw string arguments in order
+	CallArgs                            []ParsedArgument  // Structured top-level C call arguments in order
+	Headers                             map[string]string // Extracted header key-value pairs
+	HeaderList                          dsl.HeaderList    // Ordered header occurrences when the source preserves them
+	Body                                string            // Request body if present
+	Method                              string            // HTTP method (for web_custom_request)
+	URL                                 string            // Target URL
+	Action                              string            // Action/target URL for form submissions
+	Cookies                             []ParsedCookie    // Cookies added through web_add_cookie
+	Phase                               string            // init, action, or teardown
+	LineNumber                          int               // Source line number for diagnostics
+	Filename                            string            // Source file containing the function
+	EndLine                             int               // Source line where the function call ends
+	RawBlock                            string            // Original source block for source review
+	JavaOrigin                          bool              // Body was decoded from Java source; skip C-string unescaping
+	Conditions                          []string          // Enclosing if/else conditions (raw C, outermost first; else pre-negated as !(...))
+	ConditionIDs                        []string          // Stable per-construct identities (source positions) parallel to Conditions
+	Loops                               []string          // Enclosing loop headers (raw C, outermost first)
+	LoopIDs                             []string          // Stable per-construct identities (source positions) parallel to Loops
+	sourceColumn                        int               // 1-based source column used to deduplicate embedded/fallback call discovery
+	sourceOffset                        int               // parser-local byte offset used only for stable evaluation ordering
+	sourceEndOffset                     int               // exclusive parser-local byte offset
+	containsUnsupportedTransactionCall  bool
+	dependsOnUnsupportedTransactionFlow bool
 }
 
 type ParsedCookie struct {
@@ -55,9 +60,21 @@ type ParsedArgument struct {
 
 // ParsedAction represents a parsed .c action file.
 type ParsedAction struct {
-	Filename  string
-	Phase     string
-	Functions []ParsedFunction
+	Filename      string
+	Phase         string
+	Functions     []ParsedFunction
+	ParseFailures []CSourceParseFailure
+}
+
+// CSourceParseFailure is value-free evidence that a C lifecycle/action file
+// could not be analyzed completely. Raw parser diagnostics and source text are
+// intentionally excluded because this record is later persisted in action
+// metadata and import-review responses.
+type CSourceParseFailure struct {
+	Filename   string
+	Phase      string
+	LineNumber int
+	Kind       string
 }
 
 // SourceActionFile records a lifecycle/action source file declared by the .usr
@@ -77,11 +94,17 @@ type ProjectConfig struct {
 	ActionFiles       []string
 	SourceActionFiles []SourceActionFile
 	RuntimeFile       string
+	DefaultCfg        string
+	CfgProfiles       map[string]string
+	RunLogicProfiles  map[string]string
 	ParamFiles        []string
 	ExtraFiles        []string
 	BaseURL           string
 	ThinkTimeMin      float64
 	ThinkTimeMax      float64
+	// runtimePointerConflicts retains conflicting case-insensitive .usr
+	// cfg/run-logic pointer declarations for fail-closed profile resolution.
+	runtimePointerConflicts []runtimeConfigCaseFoldConflict
 }
 
 // VuGen project files are line-oriented and normally contain short settings.
@@ -137,12 +160,34 @@ var (
 // review-only. The legacy scanner extracts calls block-by-block regardless of
 // surrounding C validity, so it recovers the valid steps the AST parser drops.
 func ParseActionFile(filename string, content string) (*ParsedAction, error) {
-	astParsed, astErr := ParseActionFileAST(filename, content)
+	analysis := analyzeCTransactionSource(filename, content)
+	astParsed, astErr := parseActionFileASTWithAnalysis(filename, content, analysis)
 	if astErr == nil && len(astParsed.Functions) > 0 {
 		return astParsed, nil
 	}
 
 	legacyParsed, legacyErr := parseActionFileLegacy(filename, content)
+	if astParsed != nil {
+		legacyParsed.ParseFailures = appendUniqueCSourceParseFailures(
+			legacyParsed.ParseFailures,
+			astParsed.ParseFailures...,
+		)
+	}
+	if astErr != nil {
+		legacyParsed.ParseFailures = append(legacyParsed.ParseFailures, CSourceParseFailure{
+			Filename: filename,
+			Kind:     "syntax_error",
+		})
+		legacyParsed.ParseFailures = appendUniqueCSourceParseFailures(
+			legacyParsed.ParseFailures,
+			analysis.failures...,
+		)
+		mergeRecoveredSourceTransactionCalls(
+			legacyParsed,
+			scanUnsupportedSourceTransactionCallsWithAnalysis(filename, content, analysis),
+			analysis,
+		)
+	}
 	if legacyErr == nil && len(legacyParsed.Functions) > 0 {
 		return legacyParsed, nil
 	}
@@ -153,7 +198,29 @@ func ParseActionFile(filename string, content string) (*ParsedAction, error) {
 	if astErr == nil {
 		return astParsed, nil
 	}
-	return nil, astErr
+	return legacyParsed, astErr
+}
+
+func appendUniqueCSourceParseFailures(
+	failures []CSourceParseFailure,
+	values ...CSourceParseFailure,
+) []CSourceParseFailure {
+	for _, value := range values {
+		duplicate := false
+		for _, existing := range failures {
+			if existing.Filename == value.Filename &&
+				existing.Phase == value.Phase &&
+				existing.LineNumber == value.LineNumber &&
+				existing.Kind == value.Kind {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			failures = append(failures, value)
+		}
+	}
+	return failures
 }
 
 func parseActionFileLegacy(filename string, content string) (*ParsedAction, error) {
@@ -169,6 +236,7 @@ func parseActionFileLegacy(filename string, content string) (*ParsedAction, erro
 	inBlock := false
 	inComment := false
 	blockStartLine := 0
+	blockStartColumn := 0
 
 	for scanner.Scan() {
 		lineNum++
@@ -194,6 +262,13 @@ func parseActionFileLegacy(filename string, content string) (*ParsedAction, erro
 		if !inBlock && reFuncCall.MatchString(trimmed) && !isCControlCall(trimmed) {
 			inBlock = true
 			blockStartLine = lineNum
+			match := reFuncCall.FindStringSubmatch(trimmed)
+			blockStartColumn = 1
+			if len(match) >= 2 {
+				if column := strings.Index(parseLine, match[1]); column >= 0 {
+					blockStartColumn = column + 1
+				}
+			}
 			currentBlock.Reset()
 			rawBlock.Reset()
 		}
@@ -214,6 +289,7 @@ func parseActionFileLegacy(filename string, content string) (*ParsedAction, erro
 				blockStr := currentBlock.String()
 				fn, err := parseFunctionBlock(blockStr, filename, blockStartLine, lineNum, rawBlock.String())
 				if err == nil {
+					fn.sourceColumn = blockStartColumn
 					parsed.Functions = append(parsed.Functions, fn)
 				}
 				inBlock = false
@@ -665,9 +741,18 @@ func extractWebRESTHeaders(fn *ParsedFunction) {
 			currentName = arg.Value
 		case "value":
 			if currentName != "" {
-				fn.Headers[currentName] = arg.Value
+				fn.HeaderList = append(fn.HeaderList, dsl.HeaderEntry{
+					Name:  currentName,
+					Value: arg.Value,
+				})
 			}
 		}
+	}
+	// HeaderList is the authoritative replay surface. Derive the compatibility
+	// map only after every source occurrence has been collected so duplicate
+	// names, casing, and source order are not destroyed during parsing.
+	if len(fn.HeaderList) > 0 {
+		fn.Headers = fn.HeaderList.ToMap()
 	}
 }
 
@@ -844,6 +929,16 @@ func extractItemData(fn *ParsedFunction, inner string) {
 func ParseConfigSections(content string) map[string]map[string]string {
 	sections := make(map[string]map[string]string)
 	scanner := bufio.NewScanner(strings.NewReader(content))
+	maxTokenSize := len(content)
+	if maxTokenSize < 64*1024 {
+		maxTokenSize = 64 * 1024
+	} else if maxTokenSize < int(^uint(0)>>1) {
+		maxTokenSize++
+	}
+	// Runtime cfg entries are already bounded by archive-ingest limits. Let a
+	// single line consume that bounded input instead of silently stopping at
+	// bufio.Scanner's 64 KiB default and treating later settings as absent.
+	scanner.Buffer(make([]byte, 64*1024), maxTokenSize)
 	section := ""
 
 	for scanner.Scan() {
@@ -868,7 +963,8 @@ func ParseConfigSections(content string) map[string]map[string]string {
 		if _, ok := sections[section]; !ok {
 			sections[section] = make(map[string]string)
 		}
-		sections[section][strings.TrimSpace(parts[0])] = cleanConfigValue(parts[1])
+		key := strings.TrimSpace(parts[0])
+		sections[section][key] = cleanINIConfigValue(section, key, parts[1])
 	}
 
 	if len(sections[""]) == 0 {
@@ -885,6 +981,8 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 		SourceActionFiles: make([]SourceActionFile, 0),
 		ParamFiles:        make([]string, 0),
 		ExtraFiles:        make([]string, 0),
+		CfgProfiles:       make(map[string]string),
+		RunLogicProfiles:  make(map[string]string),
 	}
 
 	scanner := bufio.NewScanner(strings.NewReader(content))
@@ -907,27 +1005,35 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 			continue
 		}
 		key := strings.TrimSpace(parts[0])
-		value := cleanConfigValue(parts[1])
-		if cfg.RuntimeFile == "" && strings.HasSuffix(strings.ToLower(value), ".cfg") {
-			cfg.RuntimeFile = value
-		}
-		if strings.HasSuffix(strings.ToLower(value), ".prm") {
-			cfg.ParamFiles = append(cfg.ParamFiles, value)
+		rawValue := parts[1]
+		value := cleanConfigValue(rawValue)
+		pathValue := cleanRuntimePathValue(rawValue)
+		if strings.HasSuffix(strings.ToLower(pathValue), ".prm") {
+			cfg.ParamFiles = append(cfg.ParamFiles, pathValue)
 		}
 
-		switch section {
-		case "General":
-			switch key {
-			case "Type":
+		normalizedSection := strings.ToLower(strings.TrimSpace(section))
+		normalizedKey := strings.ToLower(strings.TrimSpace(key))
+		switch normalizedSection {
+		case "general":
+			switch normalizedKey {
+			case "type":
 				cfg.ScriptType = value
-			case "ActiveTypes", "AdditionalTypes", "GenerateTypes":
+			case "activetypes", "additionaltypes", "generatetypes":
 				cfg.ActiveTypes = appendUnique(cfg.ActiveTypes, splitConfigList(value)...)
-			case "ScriptLanguage":
+			case "scriptlanguage":
 				cfg.ScriptLanguage = value
-			case "RunType":
+			case "runtype":
 				cfg.RunType = value
+			case "defaultcfg":
+				cfg.DefaultCfg = pathValue
+				cfg.RuntimeFile = pathValue
+			case "runtimesettings", "runtimefile":
+				cfg.RuntimeFile = pathValue
 			}
-		case "Actions":
+		case "cfgfiles":
+			setCaseInsensitiveProfile(cfg.CfgProfiles, key, pathValue)
+		case "actions":
 			if isSupportedLifecycleSourceFile(value) {
 				cfg.SourceActionFiles = append(cfg.SourceActionFiles, SourceActionFile{
 					Name:     value,
@@ -938,8 +1044,11 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 			if strings.HasSuffix(strings.ToLower(value), ".c") || strings.HasSuffix(strings.ToLower(value), ".java") {
 				cfg.ActionFiles = append(cfg.ActionFiles, value)
 			}
-		case "RunLogicFiles":
-			if key == "RunAction" || key == "Actions" {
+		case "runlogicfiles":
+			if strings.HasSuffix(strings.ToLower(pathValue), ".usp") {
+				setCaseInsensitiveProfile(cfg.RunLogicProfiles, key, pathValue)
+			}
+			if normalizedKey == "runaction" || normalizedKey == "actions" {
 				for _, f := range strings.Split(value, ",") {
 					f = strings.TrimSpace(f)
 					if f != "" && isSupportedLifecycleSourceFile(f) {
@@ -955,7 +1064,7 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 					}
 				}
 			}
-		case "ManuallyExtraFiles", "ExtraFiles":
+		case "manuallyextrafiles", "extrafiles":
 			if strings.TrimSpace(value) != "" {
 				cfg.ExtraFiles = append(cfg.ExtraFiles, value)
 			}
@@ -963,6 +1072,16 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 	}
 	if err := scanner.Err(); err != nil {
 		return nil, fmt.Errorf("scan LoadRunner project config: %w", err)
+	}
+	for _, conflict := range runtimeConfigCaseFoldConflicts(content) {
+		if usrRuntimePointerConflict(conflict) {
+			cfg.runtimePointerConflicts = append(cfg.runtimePointerConflicts, conflict)
+		}
+	}
+	if strings.TrimSpace(cfg.RuntimeFile) == "" && len(cfg.CfgProfiles) == 1 {
+		for _, candidate := range cfg.CfgProfiles {
+			cfg.RuntimeFile = candidate
+		}
 	}
 
 	// Ensure standard action files if none found explicitly
@@ -974,6 +1093,38 @@ func ParseUSRFile(content string) (*ProjectConfig, error) {
 	}
 
 	return cfg, nil
+}
+
+func usrRuntimePointerConflict(conflict runtimeConfigCaseFoldConflict) bool {
+	switch strings.ToLower(strings.TrimSpace(conflict.section)) {
+	case "general":
+		switch strings.ToLower(strings.TrimSpace(conflict.key)) {
+		case "defaultcfg", "runtimesettings", "runtimefile":
+			return true
+		}
+	case "cfgfiles":
+		for _, occurrence := range conflict.occurrences {
+			if strings.HasSuffix(strings.ToLower(strings.TrimSpace(occurrence.value)), ".cfg") {
+				return true
+			}
+		}
+	case "runlogicfiles":
+		for _, occurrence := range conflict.occurrences {
+			if strings.HasSuffix(strings.ToLower(strings.TrimSpace(occurrence.value)), ".usp") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func setCaseInsensitiveProfile(profiles map[string]string, name, value string) {
+	for existing := range profiles {
+		if strings.EqualFold(strings.TrimSpace(existing), strings.TrimSpace(name)) {
+			delete(profiles, existing)
+		}
+	}
+	profiles[name] = value
 }
 
 func isSupportedLifecycleSourceFile(value string) bool {
@@ -1037,6 +1188,31 @@ func cleanConfigValue(value string) string {
 	if decoded, ok := decodeAdjacentCStringLiterals(trimmed); ok {
 		return strings.TrimSpace(decoded)
 	}
+	if len(trimmed) >= 2 {
+		first := trimmed[0]
+		last := trimmed[len(trimmed)-1]
+		if (first == '"' && last == '"') || (first == '\'' && last == '\'') {
+			trimmed = trimmed[1 : len(trimmed)-1]
+		}
+	}
+	return strings.TrimSpace(trimmed)
+}
+
+func cleanINIConfigValue(section, key, value string) string {
+	if strings.EqualFold(strings.TrimSpace(key), "DefaultCfg") ||
+		strings.EqualFold(strings.TrimSpace(key), "DefaultRunLogic") ||
+		strings.EqualFold(strings.TrimSpace(section), "CfgFiles") ||
+		strings.EqualFold(strings.TrimSpace(section), "RunLogicFiles") {
+		return cleanRuntimePathValue(value)
+	}
+	return cleanConfigValue(value)
+}
+
+// cleanRuntimePathValue removes INI quoting without interpreting backslashes
+// as C escapes. A quoted Windows path such as "profiles\active.cfg" must retain
+// its separators until normalizeRuntimeArchivePath converts them to slashes.
+func cleanRuntimePathValue(value string) string {
+	trimmed := strings.TrimSpace(value)
 	if len(trimmed) >= 2 {
 		first := trimmed[0]
 		last := trimmed[len(trimmed)-1]

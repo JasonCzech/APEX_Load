@@ -5865,8 +5865,20 @@
 .java-env-import-picker .row-add:disabled { opacity: 0.4; cursor: default; }
 .exact-string-list-rows .row-remove:hover:not(:disabled) { border-color: var(--danger, #ef4444); color: var(--danger, #ef4444); }
 .exact-string-list-rows .row-add { align-self: flex-start; margin-top: 2px; }
-.java-env-import-picker { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
-.java-env-import-picker > select { flex: 1 1 auto; min-width: 0; }
+.java-env-import-picker { margin-bottom: 8px; }
+.java-env-import-picker-header,
+.java-env-import-picker li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.java-env-import-picker-header { margin-bottom: 6px; color: var(--text-muted); font-size: 12px; }
+.java-env-import-picker ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.java-env-import-picker li { padding: 5px 6px; border: 1px solid var(--border); border-radius: 4px; }
+/* VM parameter tokens are long and arbitrary; wrap rather than clip so the user
+   can read what they are about to carry over from the imported script. */
+.java-env-import-picker code { min-width: 0; overflow-wrap: anywhere; font-size: 12px; }
 .http-transport-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -5899,17 +5911,33 @@
 .http-transport-tab-panel {
   padding-top: 12px;
 }
-.settings-sub-group > label {
+/* Checkbox labels are excluded: the stacked, uppercase treatment below is for
+   field labels sitting above their control, and applying it to a checkbox puts
+   the box on its own line above the text it labels. */
+.settings-sub-group > label:not(.checkbox-label) {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
-.settings-sub-group > label span {
+.settings-sub-group > label:not(.checkbox-label) span {
   font-size: 12px;
   color: var(--text-muted);
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+
+.java-env-settings-fields .checkbox-label {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+  text-align: left;
+}
+.java-env-settings-fields .checkbox-label span {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  text-align: left;
 }
 
 .browser-config-warning {

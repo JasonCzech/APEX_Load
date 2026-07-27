@@ -21,6 +21,9 @@ func RunScriptShakeoutWithSecretResolver(ctx context.Context, groupName string, 
 	if script == nil {
 		return fmt.Errorf("script is required")
 	}
+	if err := importExecutionGateError(script, "shakeout"); err != nil {
+		return err
+	}
 	secretResolver := resolver
 	if secretResolver == nil {
 		secretResolver = defaultSecretResolverForScript(script)

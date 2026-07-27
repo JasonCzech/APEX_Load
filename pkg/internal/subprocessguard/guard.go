@@ -24,6 +24,8 @@ var safeEnvironmentNames = map[string]struct{}{
 // cannot smuggle a launch option past the exact-argv VM-parameter denylist.
 var javaOptionEnvironmentNames = map[string]struct{}{
 	"JAVA_TOOL_OPTIONS": {}, "_JAVA_OPTIONS": {}, "JDK_JAVA_OPTIONS": {},
+	"OPENJ9_JAVA_OPTIONS": {}, "IBM_JAVA_OPTIONS": {},
+	"JDK_ALTERNATE_VM": {}, "JDK_AOT_VM_OPTIONS": {}, "_JDK_AOT_VM_OPTIONS": {},
 	"JAVA_OPTS": {}, "CLASSPATH": {},
 }
 

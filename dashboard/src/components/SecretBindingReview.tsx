@@ -25,6 +25,8 @@ import './ScriptImportReview.css'
 
 interface Props {
   requirements: SecretBindingRequirement[]
+  sourceMigrationRequirements?: SecretBindingRequirement[]
+  preserveSourceSessionAfterApply?: boolean
   reviewGeneration?: string | number
   projectId?: string
   sourceSecretSessionId?: string
@@ -33,6 +35,10 @@ interface Props {
   externalSourceMigrationSelected?: boolean
   onExternalSourceMigrationChange?: (selected: boolean) => void
   onApply: (bindings: SecretBindingSelection[]) => void | Promise<void>
+  onSourceSessionSettled?: (
+    sourceSecretSessionId: string,
+    migrationSelections: SecretBindingSelection[],
+  ) => void
   onPreparedChange?: (prepared: PreparedSecretBindings) => void
   disabled?: boolean
 }
@@ -52,6 +58,7 @@ interface SecretBindingCommitPlan extends PreparedSecretBindings {
   bindings: SecretBindingSelection[]
   secrets: ProjectSecretWrite[]
   migrateSourceValues: boolean
+  migrationSelections: SecretBindingSelection[]
 }
 
 type CredentialProbeState = 'idle' | 'loading' | 'ready' | 'unavailable'
@@ -154,6 +161,8 @@ function normalizeStatusMap(response: unknown): Map<string, ProjectSecretStatus>
 
 const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(function SecretBindingReview({
   requirements,
+  sourceMigrationRequirements = requirements,
+  preserveSourceSessionAfterApply = false,
   reviewGeneration,
   projectId,
   sourceSecretSessionId,
@@ -162,6 +171,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   externalSourceMigrationSelected = false,
   onExternalSourceMigrationChange,
   onApply,
+  onSourceSessionSettled,
   onPreparedChange,
   disabled = false,
 }, ref) {
@@ -177,6 +187,10 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     }
   }
   const groups = groupSnapshotRef.current.groups
+  const migrationGroups = useMemo(
+    () => groupRequirements(sourceMigrationRequirements.filter(requirement => requirement.source_value_available)),
+    [sourceMigrationRequirements],
+  )
   const reviewIdentity = JSON.stringify({
     reviewGeneration: reviewGeneration ?? '',
     projectId: projectId || '',
@@ -216,8 +230,10 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   const credentialScopeIdentityRef = useRef(credentialScopeIdentity)
   const preserveEditsForNextReviewGenerationRef = useRef(false)
   const settledSourceSessionRef = useRef('')
+  const notifiedSourceSessionRef = useRef('')
   const discardSourceSessionInFlightRef = useRef<{ id: string; promise: Promise<void> } | null>(null)
   const activeSourceSessionIdentityRef = useRef(`${projectId || ''}\u0000${sourceSecretSessionId || ''}`)
+  const sourceSessionPropIdentityRef = useRef(activeSourceSessionIdentityRef.current)
   activeSourceSessionIdentityRef.current = `${projectId || ''}\u0000${sourceSecretSessionId || ''}`
 
   useEffect(() => {
@@ -248,7 +264,17 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
   }, [credentialScopeIdentity, groups, reviewIdentity])
 
   useEffect(() => {
-    settledSourceSessionRef.current = ''
+    const nextIdentity = `${projectId || ''}\u0000${sourceSecretSessionId || ''}`
+    const previousIdentity = sourceSessionPropIdentityRef.current
+    sourceSessionPropIdentityRef.current = nextIdentity
+    const parentClearedSettledSession = (
+      !sourceSecretSessionId
+      && previousIdentity === `${projectId || ''}\u0000${settledSourceSessionRef.current}`
+    )
+    if (!parentClearedSettledSession) {
+      settledSourceSessionRef.current = ''
+      notifiedSourceSessionRef.current = ''
+    }
     discardSourceSessionInFlightRef.current = null
   }, [projectId, sourceSecretSessionId])
 
@@ -280,11 +306,20 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     return new Set(Array.from(valuesByName.entries()).filter(([, seen]) => seen.size > 1).map(([name]) => name))
   }, [groups, names, values])
 
-  const uniqueValidNames = useMemo(
+  const activeValidNames = useMemo(
     () => Array.from(new Set(groups
       .map(group => (names[group.key] || '').trim())
       .filter(isValidSecretBindingName))).sort(),
     [groups, names],
+  )
+
+  const uniqueValidNames = useMemo(
+    () => Array.from(new Set([
+      ...activeValidNames,
+      ...migrationGroups.map(group => group.suggestedName.trim()),
+    ]
+      .filter(isValidSecretBindingName))).sort(),
+    [activeValidNames, migrationGroups],
   )
 
   const sourceMigrationControlled = typeof onExternalSourceMigrationChange === 'function'
@@ -349,6 +384,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
     const bindings: SecretBindingSelection[] = []
     const writesByName = new Map<string, string>()
     const sourceAvailableNames = new Set<string>()
+    const activeNamesByRequirement = new Map<string, string>()
     let valid = groups.length > 0
 
     for (const group of groups) {
@@ -370,6 +406,7 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
           })
         }
         bindings.push(binding)
+        activeNamesByRequirement.set(requirement.id, name)
       }
       const value = values[group.key] || ''
       if (name && value) writesByName.set(name, value)
@@ -377,9 +414,13 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
         sourceAvailableNames.add(name)
       }
     }
+    const migrationSelections = migrationGroups.flatMap(group => group.requirements.map(requirement => ({
+      requirement_id: requirement.id,
+      secret_name: activeNamesByRequirement.get(requirement.id) || group.suggestedName.trim(),
+    }))).filter(selection => isValidSecretBindingName(selection.secret_name))
 
     const pendingNames = new Set<string>()
-    for (const name of uniqueValidNames) {
+    for (const name of activeValidNames) {
       const configured = statuses.get(name)?.configured === true
       const hasManualValue = writesByName.has(name)
       const willMigrate = effectiveSourceMigrationSelected && sourceAvailableNames.has(name)
@@ -395,8 +436,9 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
       // performed by that import's atomic server-side commit, not by the
       // generic source-session endpoint used by this component.
       migrateSourceValues: !sourceMigrationControlled && effectiveSourceMigrationSelected,
+      migrationSelections,
     }
-  }, [conflictingValueNames, effectiveSourceMigrationSelected, groups, names, sourceMigrationControlled, statuses, uniqueValidNames, validationErrors, values])
+  }, [activeValidNames, conflictingValueNames, effectiveSourceMigrationSelected, groups, migrationGroups, names, sourceMigrationControlled, statuses, validationErrors, values])
 
   const preparedSummary = useMemo<PreparedSecretBindings>(() => ({
     valid: prepared.valid,
@@ -493,13 +535,9 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
           throw new Error('The protected source-secret session is unavailable.')
         }
         const namesWithManualValues = new Set(prepared.secrets.map(secret => secret.name))
-        const migrationSelections = groups.flatMap(group => {
-          const name = (names[group.key] || '').trim()
-          const configured = currentStatuses.get(name)?.configured === true
-          if (namesWithManualValues.has(name) || configured) return []
-          return group.requirements
-            .filter(requirement => requirement.source_value_available)
-            .map(requirement => ({ requirement_id: requirement.id, secret_name: name }))
+        const migrationSelections = prepared.migrationSelections.filter(selection => {
+          const configured = currentStatuses.get(selection.secret_name)?.configured === true
+          return !namesWithManualValues.has(selection.secret_name) && !configured
         })
         if (migrationSelections.length > 0) {
           if (!requestIsCurrent()) return false
@@ -513,8 +551,18 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
             if (!requestIsCurrent()) return false
             const failureMessage = formatSourceSecretSessionFailure(cause)
             const failureMetadata = getSourceSecretSessionFailureMetadata(cause)
-            if (failureMetadata.consumed) {
+            if (failureMetadata.retained) {
+              // The provider confirmed that the protected source session is
+              // still fenced and retryable. Do not run the uncertainty-path
+              // discard or disable migration: a fresh status probe will omit
+              // any names already committed by a partial attempt.
+              setSourceSessionUnavailable(false)
+            } else if (failureMetadata.consumed) {
               settledSourceSessionRef.current = sourceSecretSessionId
+              if (notifiedSourceSessionRef.current !== sourceSecretSessionId) {
+                notifiedSourceSessionRef.current = sourceSecretSessionId
+                onSourceSessionSettled?.(sourceSecretSessionId, [])
+              }
             } else {
               try {
                 await discardSourceSession()
@@ -523,25 +571,42 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
                 // best-effort discard is still bounded by the server-side TTL.
               }
             }
-            setSourceSessionUnavailable(true)
-            setMigrateSourceValues(false)
+            if (!failureMetadata.retained) {
+              setSourceSessionUnavailable(true)
+              setMigrateSourceValues(false)
+            }
             setSourceSessionNotice(failureMessage)
             setProbeRetryGeneration(current => current + 1)
             return false
           }
-          if (!requestIsCurrent()) return false
+          const migrationStillBelongsToCurrentReview = requestIsCurrent()
           // A successful source migration also consumes the single-use
-          // session. Mark it unavailable before applying bindings so a later
-          // failure cannot accidentally retry it.
+          // session. Settle it before applying bindings, even when the user
+          // changed generated-script tabs while the request was in flight or
+          // the subsequent binding application fails. The archive owner also
+          // receives every resolved logical name here so inactive scripts keep
+          // collision-safe names chosen by the archive-wide migration.
           setSourceSessionUnavailable(true)
           settledSourceSessionRef.current = sourceSecretSessionId
+          if (notifiedSourceSessionRef.current !== sourceSecretSessionId) {
+            notifiedSourceSessionRef.current = sourceSecretSessionId
+            onSourceSessionSettled?.(sourceSecretSessionId, prepared.migrationSelections)
+          }
           setMigrateSourceValues(false)
           setProbeRetryGeneration(current => current + 1)
+          if (!migrationStillBelongsToCurrentReview) return false
         }
       }
-      if (!requestIsCurrent()) return false
+      // Clearing a consumed source session in the parent legitimately changes
+      // this component's review identity. The active import handler performs
+      // its own generation/script guard, so continue the binding application
+      // after an in-scope successful migration.
+      if (
+        settledSourceSessionRef.current !== sourceSecretSessionId
+        && !requestIsCurrent()
+      ) return false
       await onApply(prepared.bindings)
-      if (!sourceMigrationControlled && sourceSecretSessionId && settledSourceSessionRef.current !== sourceSecretSessionId) {
+      if (!sourceMigrationControlled && !preserveSourceSessionAfterApply && sourceSecretSessionId && settledSourceSessionRef.current !== sourceSecretSessionId) {
         try {
           await discardSourceSession()
         } catch (cause: unknown) {
@@ -549,6 +614,12 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
           // do not make the safe reviewed script unusable; the server TTL still
           // bounds retention if this best-effort finalizer cannot be reached.
           setSourceSessionNotice(getErrorMessage(cause, 'The protected source credential session could not be discarded and will expire automatically.'))
+        }
+      }
+      if (sourceSecretSessionId && settledSourceSessionRef.current === sourceSecretSessionId) {
+        if (notifiedSourceSessionRef.current !== sourceSecretSessionId) {
+          notifiedSourceSessionRef.current = sourceSecretSessionId
+          onSourceSessionSettled?.(sourceSecretSessionId, [])
         }
       }
       // A successful binding application normally removes these requirements
@@ -603,8 +674,8 @@ const SecretBindingReview = forwardRef<SecretBindingReviewHandle, Props>(functio
         <div>
           <h4 id={titleId}>Credentials ({groups.length})</h4>
           <p>
-            References are ready to save. Add values now if you want, or configure them later in Project Secrets.
-            The script stores only <code>{'{{secret.NAME}}'}</code> references.
+            Required by this script; stored in Project Secrets. Only scripts referencing this logical name are affected.
+            Add values now if you want, or configure them later in Project Secrets; the script stores only <code>{'{{secret.NAME}}'}</code> references.
           </p>
         </div>
         {!onPreparedChange && (

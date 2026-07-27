@@ -75,6 +75,69 @@ describe('useScriptApi import wrappers', () => {
     expect(url).toBe('/scripts/import/broker-config?format=mqsc&max_destinations=3')
   })
 
+  it('sends native Bruno output mode inside the additive inspect options JSON', async () => {
+    const file = new File(['version: 1'], 'opencollection.yml', { type: 'application/yaml' })
+    await api.inspectBrunoImport([file], {
+      project_id: 'p1',
+      output_mode: 'native_requests',
+    })
+
+    const [url, options] = (apiFetch as Mock).mock.calls[0]
+    expect(url).toBe('/scripts/import/bruno/inspect?project_id=p1')
+    const body = options.body as FormData
+    expect(JSON.parse(String(body.get('options')))).toEqual({ output_mode: 'native_requests' })
+    expect(body.get('file')).toBeInstanceOf(File)
+  })
+
+  it('merges canonical Bruno run settings and output mode into one inspect options object', async () => {
+    const file = new File(['meta { name: Demo }'], 'request.bru', { type: 'text/plain' })
+    await api.inspectBrunoImport([file], {
+      project_id: 'p1',
+      output_mode: 'canonical',
+      run_options: {
+        selection: 'collection',
+        recursive: true,
+      },
+    })
+
+    const [, options] = (apiFetch as Mock).mock.calls[0]
+    expect(JSON.parse(String((options.body as FormData).get('options')))).toEqual({
+      output_mode: 'canonical',
+      selection: 'collection',
+      recursive: true,
+    })
+  })
+
+  it('retains the Bruno commit HTTP status as private receipt metadata', async () => {
+    ;(apiFetch as Mock).mockResolvedValueOnce({
+      ok: true,
+      status: 201,
+      json: async () => ({
+        batch_id: 'batch-1',
+        created: true,
+        idempotent_replay: false,
+        count: 1,
+        scripts: [{ id: 'script-1' }],
+      }),
+    })
+
+    const result = await api.commitBrunoImport({
+      project_id: 'p1',
+      import_session_id: 'session-1',
+      mode: 'create_native_batch',
+      folder_id: 'folder-1',
+    })
+
+    expect(apiFetch).toHaveBeenCalledWith('/scripts/import/bruno/commit', expect.objectContaining({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    expect(result).toEqual(expect.objectContaining({
+      batch_id: 'batch-1',
+      _http_status: 201,
+    }))
+  })
+
   it('posts Oracle E-Business reviews as JSON to the review endpoint', async () => {
     const payload = { project_id: 'p1', package: 'oracle_web', source_text: 'GET /OA_HTML' }
     await api.reviewOracleEBusiness(payload)

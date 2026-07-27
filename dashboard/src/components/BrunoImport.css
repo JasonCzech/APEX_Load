@@ -102,6 +102,44 @@
   margin: 16px 0 10px;
 }
 
+.bruno-mode-selector {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.bruno-mode-selector > label {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  cursor: pointer;
+}
+
+.bruno-mode-selector > label.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.bruno-mode-selector input {
+  align-self: flex-start;
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+
+.bruno-mode-selector span,
+.bruno-mode-selector small {
+  display: block;
+}
+
+.bruno-mode-selector small {
+  margin-top: 4px;
+  color: var(--text-muted);
+}
+
 .bruno-options-grid label,
 .bruno-binding-list label {
   display: flex;
@@ -148,6 +186,161 @@
 
 .bruno-checks input {
   accent-color: var(--accent);
+}
+
+.bruno-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.bruno-native-table-wrap {
+  overflow-x: auto;
+  margin-top: 16px;
+}
+
+.bruno-native-table {
+  width: 100%;
+  min-width: 940px;
+  border-collapse: collapse;
+}
+
+.bruno-native-table th,
+.bruno-native-table td {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.bruno-native-table th {
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.bruno-native-table td > strong,
+.bruno-native-table td > small {
+  display: block;
+}
+
+.bruno-native-table td > small {
+  max-width: 270px;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bruno-native-table td:nth-child(3) input {
+  width: 100%;
+  min-width: 180px;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.bruno-native-table details {
+  min-width: 100px;
+}
+
+.bruno-native-table details[open] {
+  min-width: 340px;
+}
+
+.bruno-native-table details > div {
+  margin-top: 10px;
+}
+
+.bruno-native-table summary {
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.bruno-native-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.bruno-native-badges em,
+.bruno-native-status {
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: var(--bg-secondary);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.bruno-native-status.ready {
+  background: color-mix(in srgb, var(--success) 14%, transparent);
+  color: var(--success);
+}
+
+.bruno-native-status.warning,
+.bruno-native-status.configure,
+.bruno-native-status.review {
+  background: color-mix(in srgb, var(--warning) 14%, transparent);
+  color: var(--warning);
+}
+
+.bruno-native-status.blocked {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+.bruno-native-acknowledgements {
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
+}
+
+.bruno-native-acknowledgements > p {
+  color: var(--text-muted);
+}
+
+.bruno-native-acknowledgements label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+}
+
+.bruno-native-saved-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.bruno-native-saved-list > span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+}
+
+.bruno-native-saved-list small {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
 }
 
 .bruno-preflight {
@@ -428,6 +621,7 @@
     flex-direction: column;
   }
 
+  .bruno-mode-selector,
   .bruno-options-grid,
   .bruno-summary-grid {
     grid-template-columns: 1fr;

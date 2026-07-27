@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"github.com/jasonczech/apexload/pkg/protocol"
 )
@@ -134,12 +135,11 @@ type javaImportState struct {
 	// disposition (so a fully-classified non-JMS lr script can be reported as
 	// "classified, no executable protocol target" rather than "unmapped").
 	recognizedLRActions int
-	// Transaction / think-time state mirrors the C converter loop so Java
-	// transactions feed Stats and downstream actions are grouped, and
-	// lr.think_time feeds the generated think-time distribution.
+	// Transaction state mirrors the C converter loop so Java transactions feed
+	// Stats and downstream actions are grouped. Literal lr.think_time calls are
+	// retained directly on their source_runtime actions, preserving call order.
 	currentTransaction      string
 	currentSubTransaction   string
-	thinkTimes              []float64
 	emitsTransactions       bool
 	emitsActionTransactions bool
 	transactionMarkers      int
@@ -678,7 +678,6 @@ func convertJavaStatementLane(files map[string]string, opts ConvertOptions, dete
 	}
 	appendJavaUnparsedRegions(result, state, program)
 	attachJavaTruststoreArtifact(result, files)
-	applyJavaThinkTimeDistribution(result, state)
 
 	if opts.AllowJavaVuserRunner && (state.jmsActions == 0 || state.unrecognizedAction > 0 || state.configReview > 0) {
 		return convertJavaVuserRunnerDraft(files, opts, detected, program, result.Warnings, state, nil), nil
@@ -6288,8 +6287,8 @@ func routeJavaLRFunction(result *ConvertResult, state *javaImportState, phase st
 	state.recognizedLRActions++
 
 	// Stateful parity with the C converter loop (converter.go): feed the
-	// transaction counters and think-time distribution so Java transactions
-	// behave like C transactions rather than being inert markers.
+	// transaction counters so Java transactions behave like C transactions
+	// rather than being inert markers.
 	switch fn.Name {
 	case "lr_start_transaction":
 		state.currentTransaction = fn.StepName
@@ -6306,16 +6305,55 @@ func routeJavaLRFunction(result *ConvertResult, state *javaImportState, phase st
 	case "lr_end_sub_transaction", "lr_end_sub_trans":
 		result.Stats.TransactionMarkers++
 		state.currentSubTransaction = ""
-	case "lr_think_time":
-		if sec, ok := ExtractThinkTimeSeconds(fn); ok {
-			state.thinkTimes = append(state.thinkTimes, sec)
-			result.Stats.ThinkTimes++
-		}
 	}
 
 	action, mode, _ := convertSourceFunctionAction(fn)
+	notes := sourceSupportNotes(fn, mode)
+	if nativeSourceTransactionOwnershipUnsupported(fn.Name) {
+		mode = SourceFunctionSupportReviewOnly
+		notes = "Transaction instance/cross-VUser ownership cannot be reproduced by the native source runtime; preserved for review and not executed."
+		gateUnsupportedSourceTransactionOwnership(&action, fn, notes)
+		result.Warnings = append(result.Warnings, fmt.Sprintf(
+			"%s:%d %s requires review: %s",
+			statement.File,
+			statement.StartLine,
+			fn.Name,
+			notes,
+		))
+	}
+	if fn.Name == "lr_think_time" {
+		seconds, parsed := ExtractThinkTimeSeconds(fn)
+		waitMs := seconds * 1000
+		if parsed && seconds >= 0 && !math.IsNaN(waitMs) && !math.IsInf(waitMs, 0) &&
+			waitMs <= float64(dsl.MaxConfiguredProtocolTimeoutMS) {
+			// Keep the wait at the exact lr.think_time call position. Leaving
+			// multiplier/limit/ignore unset intentionally inherits the global
+			// LoadRunner runtime policy during load execution and replay.
+			action.ThinkTimeAfter = true
+			action.ThinkTime = dsl.ThinkTimeConfig{
+				Type:   "fixed",
+				MeanMs: waitMs,
+			}
+			result.Stats.ThinkTimes++
+			notes = "Preserved as an exact action-local fixed wait at the original Java source position."
+		} else {
+			// Dynamic, malformed, negative, non-finite, and oversized values
+			// cannot be represented safely in the static DSL. Keep the source
+			// marker at zero delay and make the loss of fidelity review-blocking.
+			mode = SourceFunctionSupportReviewOnly
+			action.Params["support_mode"] = string(mode)
+			action.Metadata["support_mode"] = string(mode)
+			state.configReview++
+			result.Warnings = append(result.Warnings, fmt.Sprintf(
+				"%s:%d lr.think_time could not be represented as a bounded literal wait; using zero delay and requiring review",
+				statement.File,
+				statement.StartLine,
+			))
+			notes = "Dynamic, malformed, negative, non-finite, or oversized Java think time; zero-delay fallback requires review."
+		}
+	}
 	applyJavaTransactionMetadata(&action, state)
-	appendJavaLRAction(result, statement, phase, fn, action, mode, sourceSupportNotes(fn, mode))
+	appendJavaLRAction(result, statement, phase, fn, action, mode, notes)
 }
 
 // applyJavaTransactionMetadata stamps the open source transaction onto an action
@@ -6338,14 +6376,22 @@ func applyJavaTransactionMetadata(action *dsl.Action, state *javaImportState) {
 // coverage is visible and the completeness test can assert each method's mode.
 func appendJavaLRAction(result *ConvertResult, statement javaStatement, phase string, fn ParsedFunction, action dsl.Action, mode SourceFunctionSupportMode, notes string) {
 	index := actionCountForPhase(result.Script, phase)
+	targetPath := sourceReviewActionPath(phase, index)
+	targetName := action.Name
+	targetKind := "action"
+	if fn.Name == "lr_think_time" && action.ThinkTimeAfter {
+		targetPath += ".think_time"
+		targetName = "Think Time"
+		targetKind = "config"
+	}
 	appendSourceReviewMapping(result, SourceReviewMapping{
 		SourceFile:  statement.File,
 		StartLine:   statement.StartLine,
 		EndLine:     statement.EndLine,
 		Function:    fn.Name,
-		TargetPath:  sourceReviewActionPath(phase, index),
-		TargetName:  action.Name,
-		TargetKind:  "action",
+		TargetPath:  targetPath,
+		TargetName:  targetName,
+		TargetKind:  targetKind,
 		Status:      statusForSupportMode(mode),
 		SupportMode: string(mode),
 		Notes:       notes,
@@ -6396,6 +6442,9 @@ func javaLRFunctionAllowedInExecutableLane(name string) bool {
 	if !ok {
 		return false
 	}
+	if nativeSourceTransactionOwnershipUnsupported(name) {
+		return false
+	}
 	switch def.Family {
 	case "web", "database":
 		return false
@@ -6432,22 +6481,6 @@ func unwrapJavaEvalString(raw string) (string, bool) {
 		return convertParamReferences(value), true
 	}
 	return "", false
-}
-
-// applyJavaThinkTimeDistribution turns the collected lr.think_time values into a
-// normal think-time distribution on the script config, mirroring the C converter.
-func applyJavaThinkTimeDistribution(result *ConvertResult, state *javaImportState) {
-	if result.Script == nil || len(state.thinkTimes) == 0 {
-		return
-	}
-	mean, std := computeThinkTimeStats(state.thinkTimes)
-	result.Script.Config.ThinkTime = dsl.ThinkTimeConfig{
-		Type:   "normal",
-		MeanMs: mean * 1000,
-		StdMs:  std * 1000,
-		MinMs:  math.Max(0, (mean-2*std)*1000),
-		MaxMs:  (mean + 2*std) * 1000,
-	}
 }
 
 // javaLRStepName returns the first string-literal argument (the transaction/step
@@ -6579,11 +6612,11 @@ func appendJavaReview(result *ConvertResult, state *javaImportState, statement j
 
 func javaSourceReviewAction(statement javaStatement, phase string, reason string) dsl.Action {
 	return dsl.Action{
-		Name: sanitizeName(convertutil.FirstNonEmpty(statementName(statement), "Java review")),
+		Name: sanitizeName(fmt.Sprintf("Java_review_%d", statement.StartLine)),
 		Type: "source_review",
 		Params: map[string]any{
 			"function": "java_statement",
-			"args":     []any{strings.TrimSpace(statement.Text)},
+			"args":     []any{credential.Redacted},
 		},
 		Metadata: map[string]any{
 			"source":        "java_vuser",

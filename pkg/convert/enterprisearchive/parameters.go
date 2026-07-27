@@ -10,6 +10,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/dslwalk"
 )
 
 type ParsedParameterFile struct {
@@ -41,14 +42,27 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 		}
 
 		selectNextRow := lower["selectnextrow"]
+		selection := mapParameterSelection(selectNextRow)
+		autoAllocateRaw := convertutil.FirstNonEmpty(lower["auto_allocate_block_size"], lower["autoallocateblocksize"])
+		if selection == "unique" && autoAllocateRaw != "" {
+			if automatic, valid := parseBoolExplicit(autoAllocateRaw); valid && automatic {
+				result.Warnings = append(result.Warnings,
+					"parameter file "+filepath.Base(filename)+": parameter "+name+
+						" requests automatic Vuser block allocation; APEX cannot calculate that script-level block without the scenario Vuser count, so block_size was left unset and requires review")
+			} else if !valid {
+				result.Warnings = append(result.Warnings,
+					"parameter file "+filepath.Base(filename)+": parameter "+name+
+						" has invalid auto_allocate_block_size="+strconv.Quote(autoAllocateRaw)+"; the value was treated as an allocation flag, not a literal block size, and requires review")
+			}
+		}
 		param := dsl.Parameter{
 			Name:              name,
 			Update:            mapParameterUpdate(convertutil.FirstNonEmpty(lower["updatevalueon"], lower["generatenewval"])),
-			Selection:         mapParameterSelection(selectNextRow),
+			Selection:         selection,
 			OnExhaustion:      mapParameterExhaustion(convertutil.FirstNonEmpty(lower["outofvalues"], lower["whenoutofvalues"], lower["outofrangepolicy"])),
 			SameLineAs:        parseParameterSameLineAs(selectNextRow),
 			StartRow:          atoiDefault(convertutil.FirstNonEmpty(lower["startrow"], lower["start_row"]), 0),
-			BlockSize:         atoiDefault(convertutil.FirstNonEmpty(lower["auto_allocate_block_size"], lower["autoallocateblocksize"], lower["blocksize"], lower["block_size"]), 0),
+			BlockSize:         parseExplicitParameterBlockSize(lower, selection),
 			ValueForEachVUser: parseBool(convertutil.FirstNonEmpty(lower["value_for_each_vuser"], lower["valueforeachvuser"])),
 		}
 		rawType := strings.ToLower(convertutil.FirstNonEmpty(lower["type"], lower["valuetype"], lower["datatype"], lower["paramtype"]))
@@ -151,6 +165,28 @@ func ParseParameterFile(filename, content string, archiveFiles map[string]string
 	return result
 }
 
+// parseExplicitParameterBlockSize keeps LoadRunner's allocation selector
+// separate from its numeric block size. auto_allocate_block_size is a boolean
+// flag (despite occasionally containing non-boolean legacy values), not the
+// number of rows assigned to each VUser. Block allocation is meaningful only
+// for Unique selection; Random, Sequential, and Same-line parameters must
+// never be partitioned into VUser blocks.
+func parseExplicitParameterBlockSize(values map[string]string, selection string) int {
+	if selection != "unique" {
+		return 0
+	}
+	if autoRaw := convertutil.FirstNonEmpty(values["auto_allocate_block_size"], values["autoallocateblocksize"]); autoRaw != "" {
+		if automatic, valid := parseBoolExplicit(autoRaw); valid && automatic {
+			return 0
+		}
+	}
+	size := atoiDefault(convertutil.FirstNonEmpty(values["blocksize"], values["block_size"]), 0)
+	if size <= 0 {
+		return 0
+	}
+	return size
+}
+
 func isSourceRandomNumberType(rawType string, values map[string]string) bool {
 	if strings.Contains(rawType, "random") && strings.Contains(rawType, "number") {
 		return true
@@ -235,43 +271,82 @@ func applyKnownParameterReferences(script *dsl.Script) {
 	if len(names) == 0 {
 		return
 	}
-	for index := range script.Actions {
-		action := &script.Actions[index]
-		action.Target = rewriteKnownParameterReferences(action.Target, names)
-		action.Selector = rewriteKnownParameterReferences(action.Selector, names)
-		action.Value = rewriteKnownParameterReferences(action.Value, names)
-		action.Body = rewriteKnownParameterReferences(action.Body, names)
-		for key, value := range action.Headers {
-			action.Headers[key] = rewriteKnownParameterReferences(value, names)
+	_ = dslwalk.Walk(script, func(ref dslwalk.SurfaceRef) error {
+		if ref.Action != nil {
+			rewriteKnownParameterReferencesAction(ref.Action, names)
+			return nil
 		}
-		for key, value := range action.Params {
-			action.Params[key] = rewriteKnownParameterReferencesAny(value, names)
+		for key, value := range ref.Request {
+			ref.Request[key] = rewriteKnownParameterReferencesAny(value, names)
 		}
-		for key, value := range action.Metadata {
-			action.Metadata[key] = rewriteKnownParameterReferencesAny(value, names)
-		}
-		for assertionIndex := range action.Assertions {
-			action.Assertions[assertionIndex].Value = rewriteKnownParameterReferences(action.Assertions[assertionIndex].Value, names)
-			action.Assertions[assertionIndex].Expected = rewriteKnownParameterReferencesAny(action.Assertions[assertionIndex].Expected, names)
-		}
-		for extractorIndex := range action.Extractors {
-			action.Extractors[extractorIndex].Expression = rewriteKnownParameterReferences(action.Extractors[extractorIndex].Expression, names)
-		}
-		if action.WaitFor != nil {
-			action.WaitFor.Value = rewriteKnownParameterReferences(action.WaitFor.Value, names)
-		}
-		if action.Auth != nil {
-			action.Auth.Username = rewriteKnownParameterReferences(action.Auth.Username, names)
-			action.Auth.Password = rewriteKnownParameterReferences(action.Auth.Password, names)
-			action.Auth.Token = rewriteKnownParameterReferences(action.Auth.Token, names)
-			action.Auth.Domain = rewriteKnownParameterReferences(action.Auth.Domain, names)
-		}
-		if action.SOAP != nil {
-			action.SOAP.Action = rewriteKnownParameterReferences(action.SOAP.Action, names)
-			action.SOAP.Operation = rewriteKnownParameterReferences(action.SOAP.Operation, names)
-			action.SOAP.BodyMode = rewriteKnownParameterReferences(action.SOAP.BodyMode, names)
+		return nil
+	})
+}
+
+func rewriteKnownParameterReferencesAction(action *dsl.Action, names map[string]struct{}) {
+	if action == nil {
+		return
+	}
+	action.Target = rewriteKnownParameterReferences(action.Target, names)
+	action.Selector = rewriteKnownParameterReferences(action.Selector, names)
+	action.ObjectRef = rewriteKnownParameterReferences(action.ObjectRef, names)
+	action.Value = rewriteKnownParameterReferences(action.Value, names)
+	action.Body = rewriteKnownParameterReferences(action.Body, names)
+	action.BodyFile = rewriteKnownParameterReferences(action.BodyFile, names)
+	for key, value := range action.Headers {
+		action.Headers[key] = rewriteKnownParameterReferences(value, names)
+	}
+	for index := range action.HeaderList {
+		action.HeaderList[index].Value = rewriteKnownParameterReferences(
+			action.HeaderList[index].Value,
+			names,
+		)
+	}
+	for key, value := range action.Params {
+		action.Params[key] = rewriteKnownParameterReferencesAny(value, names)
+	}
+	for key, value := range action.Metadata {
+		action.Metadata[key] = rewriteKnownParameterReferencesAny(value, names)
+	}
+	for assertionIndex := range action.Assertions {
+		action.Assertions[assertionIndex].Value = rewriteKnownParameterReferences(action.Assertions[assertionIndex].Value, names)
+		action.Assertions[assertionIndex].Expected = rewriteKnownParameterReferencesAny(action.Assertions[assertionIndex].Expected, names)
+	}
+	for extractorIndex := range action.Extractors {
+		action.Extractors[extractorIndex].Expression = rewriteKnownParameterReferences(action.Extractors[extractorIndex].Expression, names)
+	}
+	if action.WaitFor != nil {
+		action.WaitFor.Value = rewriteKnownParameterReferences(action.WaitFor.Value, names)
+	}
+	if action.Sync != nil {
+		action.Sync.Value = rewriteKnownParameterReferences(action.Sync.Value, names)
+	}
+	if action.Auth != nil {
+		action.Auth.Username = rewriteKnownParameterReferences(action.Auth.Username, names)
+		action.Auth.Password = rewriteKnownParameterReferences(action.Auth.Password, names)
+		action.Auth.Token = rewriteKnownParameterReferences(action.Auth.Token, names)
+		action.Auth.Domain = rewriteKnownParameterReferences(action.Auth.Domain, names)
+	}
+	if action.SOAP != nil {
+		action.SOAP.Action = rewriteKnownParameterReferences(action.SOAP.Action, names)
+		action.SOAP.Operation = rewriteKnownParameterReferences(action.SOAP.Operation, names)
+		action.SOAP.BodyMode = rewriteKnownParameterReferences(action.SOAP.BodyMode, names)
+	}
+	if action.Control != nil {
+		rewriteKnownParameterCondition(action.Control.Condition, names)
+		if action.Control.ForEach != nil {
+			rewriteKnownParameterCondition(action.Control.ForEach.Condition, names)
 		}
 	}
+}
+
+func rewriteKnownParameterCondition(condition *dsl.Condition, names map[string]struct{}) {
+	if condition == nil {
+		return
+	}
+	condition.Expr = rewriteKnownParameterReferences(condition.Expr, names)
+	condition.Left = rewriteKnownParameterReferences(condition.Left, names)
+	condition.Right = rewriteKnownParameterReferences(condition.Right, names)
 }
 
 func rewriteKnownParameterReferences(value string, names map[string]struct{}) string {
@@ -307,6 +382,21 @@ func rewriteKnownParameterReferencesAny(value any, names map[string]struct{}) an
 	case []string:
 		for index, item := range typed {
 			typed[index] = rewriteKnownParameterReferences(item, names)
+		}
+		return typed
+	case map[string]string:
+		for key, item := range typed {
+			typed[key] = rewriteKnownParameterReferences(item, names)
+		}
+		return typed
+	case dsl.HeaderList:
+		for index := range typed {
+			typed[index].Value = rewriteKnownParameterReferences(typed[index].Value, names)
+		}
+		return typed
+	case []dsl.HeaderEntry:
+		for index := range typed {
+			typed[index].Value = rewriteKnownParameterReferences(typed[index].Value, names)
 		}
 		return typed
 	case map[string]any:

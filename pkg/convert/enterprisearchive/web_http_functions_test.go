@@ -22,7 +22,7 @@ var publishedWebHTTPFunctionExpectations = map[string]struct {
 	"web_add_cookie_ex":              {"web", SourceFunctionSupportExecutable},
 	"web_add_filter":                 {"web", SourceFunctionSupportNativeNoop},
 	"web_add_header":                 {"web", SourceFunctionSupportExecutable},
-	"web_cache_cleanup":              {"web", SourceFunctionSupportNativeNoop},
+	"web_cache_cleanup":              {"web", SourceFunctionSupportExecutable},
 	"web_cleanup_auto_headers":       {"web", SourceFunctionSupportExecutable},
 	"web_cleanup_cookies":            {"web", SourceFunctionSupportExecutable},
 	"web_concurrent_end":             {"web", SourceFunctionSupportNativeNoop},

@@ -38,6 +38,12 @@ const setInputValue = (input: HTMLInputElement, value: string) => {
   input.dispatchEvent(new Event('input', { bubbles: true }))
 }
 
+const setSelectValue = (select: HTMLSelectElement, value: string) => {
+  const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!
+  setter.call(select, value)
+  select.dispatchEvent(new Event('change', { bubbles: true }))
+}
+
 describe('ControlBranchEditor', () => {
   it('renders one structured row per step', () => {
     act(() => { root.render(<ControlBranchEditor label="Then steps" steps={steps()} onChange={() => {}} />) })
@@ -118,12 +124,6 @@ describe('ControlFlowFields', () => {
     return <ControlFlowFields action={action} index={0} onUpdate={(_i, f, v) => setAction(a => ({ ...a, [f]: v }) as ScriptActionDefinition)} />
   }
 
-  const setSelectValue = (select: HTMLSelectElement, value: string) => {
-    const setter = Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value')!.set!
-    setter.call(select, value)
-    select.dispatchEvent(new Event('change', { bubbles: true }))
-  }
-
   it('renders a condition editor for control_if (works in an HTTP script)', () => {
     act(() => { root.render(<Controlled initial={{ name: 'Branch', type: 'control_if', target: '', control: { condition: { op: 'eq' }, steps: [] } } as unknown as ScriptActionDefinition} />) })
     expect(labelInputIn(container, 'Condition Left')).toBeTruthy()
@@ -201,6 +201,128 @@ describe('ActionEditor transaction field', () => {
     expect(labelInput('Transaction')!.value).toBe('Auth')
   })
 
+  it('offers exact HTTP header and regex-capture assertion types', () => {
+    renderEditor({
+      name: 'Imported request',
+      type: 'POST',
+      target: '/service',
+      assertions: [{ type: 'header_contains', value: 'Content-Type', expected: 'text/xml' }],
+    } as unknown as ScriptActionDefinition)
+
+    const assertionType = container.querySelector('.assertion-row select') as HTMLSelectElement
+    expect([...assertionType.options].map(option => option.value)).toContain('header_contains')
+    expect([...assertionType.options].map(option => option.value)).toContain('body_regex_capture_equals')
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="Header name"]')?.value).toBe('Content-Type')
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="Expected value"]')?.value).toBe('text/xml')
+  })
+
+  it('preserves and edits authoritative ordered header occurrences', () => {
+    const updates = renderEditor({
+      name: 'Imported request',
+      type: 'request',
+      method: 'POST',
+      target: '/service',
+      headers: { 'x-trace': 'second', 'X-Map-Only': 'preserved' },
+      header_list: [
+        { name: 'X-Trace', value: 'first' },
+        { name: 'x-trace', value: 'second' },
+      ],
+    } as unknown as ScriptActionDefinition)
+
+    const names = [...container.querySelectorAll<HTMLInputElement>('.kv-key')].map(input => input.value)
+    const values = [...container.querySelectorAll<HTMLInputElement>('.kv-val')].map(input => input.value)
+    expect(names).toEqual(['X-Trace', 'x-trace', 'X-Map-Only'])
+    expect(values).toEqual(['first', 'second', 'preserved'])
+
+    act(() => { setInputValue(container.querySelectorAll<HTMLInputElement>('.kv-val')[1], 'updated') })
+    expect(updates.slice(-2)).toEqual([
+      [0, 'header_list', [
+        { name: 'X-Trace', value: 'first' },
+        { name: 'x-trace', value: 'updated' },
+      ]],
+      [0, 'headers', { 'X-Map-Only': 'preserved', 'x-trace': 'updated' }],
+    ])
+    expect(container.querySelector<HTMLButtonElement>('button[aria-label="Remove header 1"]')).toBeTruthy()
+  })
+
+  it('promotes a compatibility-only header renamed to an ordered name instead of hiding it', () => {
+    const updates = renderEditor({
+      name: 'Imported request',
+      type: 'request',
+      method: 'GET',
+      target: '/service',
+      headers: { 'X-Trace': 'first', 'X-Map-Only': 'extra' },
+      header_list: [{ name: 'X-Trace', value: 'first' }],
+    } as unknown as ScriptActionDefinition)
+
+    const compatibilityName = container.querySelector<HTMLInputElement>('input[aria-label="Header X-Map-Only name"]')!
+    act(() => { setInputValue(compatibilityName, 'x-trace') })
+    expect(updates.slice(-2)).toEqual([
+      [0, 'header_list', [
+        { name: 'X-Trace', value: 'first' },
+        { name: 'x-trace', value: 'extra' },
+      ]],
+      [0, 'headers', { 'x-trace': 'extra' }],
+    ])
+  })
+
+  it('surfaces base64 request-body semantics and allows an explicit switch to plain text', () => {
+    const updates = renderEditor({
+      name: 'Binary request',
+      type: 'request',
+      method: 'POST',
+      target: '/upload',
+      body: 'SGVsbG8=',
+      body_encoding: ' Base64 ',
+    } as unknown as ScriptActionDefinition)
+
+    const representation = labelSelectIn(container, 'Body Representation')!
+    expect(representation.value).toBe('base64')
+    expect(container.querySelector<HTMLTextAreaElement>('.body-textarea')?.value).toBe('SGVsbG8=')
+    expect(container.textContent).toContain('runtime decodes it before sending')
+
+    act(() => { setSelectValue(representation, '') })
+    expect(updates[updates.length - 1]).toEqual([0, 'body_encoding', undefined])
+  })
+
+  it('does not hide an imported body on a method that normally has no body editor', () => {
+    renderEditor({
+      name: 'GET with authored body',
+      type: 'request',
+      method: 'GET',
+      target: '/search',
+      body: 'preserve-me',
+    } as unknown as ScriptActionDefinition)
+
+    expect(container.querySelector<HTMLTextAreaElement>('.body-textarea')?.value).toBe('preserve-me')
+  })
+
+  it('shows durable execution blockers independently of legacy review metadata', () => {
+    renderEditor({
+      name: 'Missing input',
+      type: 'request',
+      method: 'GET',
+      target: '/orders/{{var.order_id}}',
+      metadata: { execution_blocker: 'import_missing_variables' },
+    } as unknown as ScriptActionDefinition)
+
+    const pill = [...container.querySelectorAll<HTMLElement>('.action-signal-pill')]
+      .find(element => element.textContent === 'blocked')
+    expect(pill?.getAttribute('title')).toContain('import_missing_variables')
+  })
+
+  it('renders separate RE2 pattern and expected-value fields', () => {
+    renderEditor({
+      name: 'Imported request',
+      type: 'POST',
+      target: '/service',
+      assertions: [{ type: 'body_regex_capture_equals', value: '<code>([^<]+)</code>', expected: '500' }],
+    } as unknown as ScriptActionDefinition)
+
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="RE2 pattern"]')?.value).toBe('<code>([^<]+)</code>')
+    expect(container.querySelector<HTMLInputElement>('input[placeholder="Expected value"]')?.value).toBe('500')
+  })
+
   it('summarizes an http_sequence action without listing grouped child requests', () => {
     renderEditor({
       name: 'Login Flow',
@@ -208,7 +330,16 @@ describe('ActionEditor transaction field', () => {
       params: {
         requests: [
           { name: 'Login', method: 'POST', target: '/login', extractors: [{ name: 'session_id', source: 'body', type: 'json', expression: '$.token' }] },
-          { name: 'Profile', method: 'GET', target: '/me' },
+          {
+            name: 'Profile',
+            method: 'GET',
+            target: '/me',
+            headers: { 'x-trace': 'second' },
+            header_list: [
+              { name: 'X-Trace', value: 'first' },
+              { name: 'x-trace', value: 'second' },
+            ],
+          },
         ],
       },
     } as unknown as ScriptActionDefinition)
@@ -216,6 +347,7 @@ describe('ActionEditor transaction field', () => {
     expect(headings).toEqual(['Sequence Summary'])
     const text = container.textContent || ''
     expect(text).toContain('2 req')
+    expect(text).toContain('2 hdr')
     expect(text).toContain('1 ext')
     expect(text).not.toContain('Profile')
     expect(text).not.toContain('/login')

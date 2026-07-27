@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/protocol"
 	"github.com/klauspost/compress/zstd"
 	"go.opentelemetry.io/otel"
@@ -49,6 +50,7 @@ type HTTP struct {
 	defaultHeaders             map[string]string
 	authType                   string
 	authHeader                 string // pre-computed Authorization header value
+	httpVersion                string // empty = automatic; "1.1"/"2" = exact
 	maxRedirects               int    // <=0 = no follow, unset/default = 10
 	requestTimeout             time.Duration
 	networkProfile             string // assigned network-profile label (population mix)
@@ -136,7 +138,10 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	}
 
 	h.transport = newTransport(transportSettings, tlsCfg)
-	applyHTTPVersion(h.transport, config)
+	h.httpVersion, err = applyHTTPVersion(h.transport, config)
+	if err != nil {
+		return err
+	}
 	applyNetworkSimulation(h.transport, config)
 	if err := applyProxy(h.transport, config); err != nil {
 		return err
@@ -164,6 +169,10 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 			h.oauthClient.Transport = protocol.NewTargetPolicyRoundTripper(h.oauthClient.Transport, h.allowedTargetHosts)
 		}
 	}
+	h.client.Transport = withoutImplicitUserAgent(h.client.Transport)
+	if h.oauthClient != nil {
+		h.oauthClient.Transport = withoutImplicitUserAgent(h.oauthClient.Transport)
+	}
 
 	h.defaultHeaders = buildDefaultHeaders(config)
 	h.contentChecks = parseContentChecks(config)
@@ -183,6 +192,9 @@ func (h *HTTP) Init(ctx context.Context, config map[string]any) error {
 	}
 	h.authType, h.authHeader = buildAuthHeader(config)
 	h.authConfig = buildAuthConfig(config)
+	if err := ValidateAuthWireValues(h.authConfig); err != nil {
+		return err
+	}
 
 	// Protocol instances are per-VUser, so the bounded pool must be shared at
 	// process scope; a per-instance pool would still retain one backing array per
@@ -206,6 +218,16 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		return result, nil
 	}
 	if err := validateHTTPActionBounds(action); err != nil {
+		result.StatusCode = http.StatusBadRequest
+		result.ErrorMessage = err.Error()
+		result.Duration = time.Since(result.StartTime)
+		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
+		return result, nil
+	}
+	effectiveHeaders, headerMapIssues := effectiveAuthoredHeaderList(h.defaultHeaders, action.Headers, action.HeaderList)
+	headerIssues := append(headerMapIssues, HeaderListIssuesForVersion(effectiveHeaders, h.httpVersion)...)
+	if len(headerIssues) > 0 {
+		err := &HeaderListValidationError{Issues: headerIssues}
 		result.StatusCode = http.StatusBadRequest
 		result.ErrorMessage = err.Error()
 		result.Duration = time.Since(result.StartTime)
@@ -247,7 +269,10 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if err != nil {
 		result.Duration = time.Since(result.StartTime)
 		result.Success = false
-		result.ErrorMessage = err.Error()
+		// net/http parse errors quote the full target, including URL userinfo
+		// and query values. The snapshot already has the governed redacted
+		// target; keep the public diagnostic value-free.
+		result.ErrorMessage = "invalid HTTP request target"
 		result.Snapshot = buildHTTPSnapshot(method, targetURL, nil, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, 0, nil, nil)
 		return result, nil
 	}
@@ -263,9 +288,11 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	digestAuth := digestAuthConfig(h.authConfig)
 	actionAuthHeader, actionAuthOverride, actionAuthErr := buildActionAuthHeader(action.Auth)
 	if actionAuthErr != nil {
+		result.StatusCode = http.StatusBadRequest
 		result.Duration = time.Since(result.StartTime)
 		result.ErrorMessage = actionAuthErr.Error()
 		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, action.RedactedHeaders, redactedRequestBody, 0, nil, nil)
+		result.ProtocolEvidence = protocol.BuildProtocolEvidence(action, result)
 		return result, nil
 	}
 	if actionAuthOverride {
@@ -273,9 +300,10 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 		digestAuth = digestAuthConfig(action.Auth)
 	}
 	typedAuthApplied := false
+	appliedTypedAuthHeader := authHeader
 	if authHeader != "" {
 		req.Header.Set("Authorization", authHeader)
-		typedAuthApplied = actionAuthOverride
+		typedAuthApplied = true
 	}
 
 	headerListNames := headerListNameSet(action.HeaderList)
@@ -290,11 +318,22 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	for _, header := range action.HeaderList {
 		addRequestHeader(req, header.Name, header.Value)
 	}
-	typedAuthApplied = typedAuthApplied && req.Header.Get("Authorization") == actionAuthHeader
-	redactedAuthHeader := buildRedactedActionAuthHeader(action.RedactedAuth)
-	if redactedAuthHeader == "" {
-		redactedAuthHeader = buildRedactedActionAuthHeader(action.Auth)
+	mergeRequestCookieHeaders(req)
+	// Authored headers are authoritative over typed auth. Digest normally
+	// starts without Authorization and retries a 401 challenge, but doing so
+	// here would silently replace an authored value on the second request.
+	if digestAuth != nil && requestHeaderKeyPresent(req.Header, "Authorization") {
+		digestAuth = nil
 	}
+	typedAuthApplied = typedAuthApplied && req.Header.Get("Authorization") == appliedTypedAuthHeader
+	redactedAuthConfig := h.authConfig
+	if actionAuthOverride {
+		redactedAuthConfig = action.Auth
+		if action.RedactedAuth != nil {
+			redactedAuthConfig = action.RedactedAuth
+		}
+	}
+	redactedAuthHeader := buildRedactedActionAuthHeader(redactedAuthConfig)
 	redactedRequestHeaders := redactedRequestHeadersForSnapshot(req.Header, action.RedactedHeaders, typedAuthApplied, redactedAuthHeader)
 	// User-authored traceparent always wins. When traceparent propagation is
 	// enabled, continue the active OTel action/test context and fall back to a
@@ -400,6 +439,16 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 			result.Duration = time.Since(result.StartTime)
 			reused, rCount, rDur := applyTraceTelemetry()
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
+			result.ErrorMessage = h.transportErrorMessage(err)
+			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
+			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
+			return result, nil
+		}
+		if err := h.validateResponseVersion(resp); err != nil {
+			_ = resp.Body.Close()
+			result.Duration = time.Since(result.StartTime)
+			reused, rCount, rDur := applyTraceTelemetry()
+			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
 			result.ErrorMessage = err.Error()
 			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
 			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
@@ -410,22 +459,41 @@ func (h *HTTP) Execute(ctx context.Context, action *protocol.Action) (*protocol.
 	if !cacheHit && digestAuth != nil {
 		var retryErr error
 		req, resp, digestRetried, retryErr = retryWithDigestAuth(&client, req, resp, digestAuth, requestBody)
+		// retryWithDigestAuth returns the authenticated request even when its
+		// transport fails. Redact that request before every error/version path;
+		// waiting until the success-only accounting block below would copy the
+		// raw Digest Authorization value into a failure snapshot.
+		if digestRetried && req != nil && requestHeaderKeyPresent(req.Header, "Authorization") {
+			redactedRequestHeaders = redactedRequestHeadersForSnapshot(req.Header, action.RedactedHeaders, true, "Digest [REDACTED]")
+			redactedRequestHeaders = requestHeadersWithRedactedHeaderList(redactedRequestHeaders, action.RedactedHeaderList)
+			redactedRequestHeaders = requestHeadersWithHostForSnapshot(req.Header, redactedRequestHeaders, req.Host, action.RedactedHeaders)
+		}
 		if retryErr != nil {
 			result.Duration = time.Since(result.StartTime)
 			reused, rCount, rDur := applyTraceTelemetry()
 			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
-			result.ErrorMessage = retryErr.Error()
+			result.ErrorMessage = h.transportErrorMessage(retryErr)
+			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
+			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
+			return result, nil
+		}
+		if err := h.validateResponseVersion(resp); err != nil {
+			_ = resp.Body.Close()
+			result.Duration = time.Since(result.StartTime)
+			reused, rCount, rDur := applyTraceTelemetry()
+			result.ServerTelemetry = finalizeHTTPServerTelemetry(result, requestBytes, 0, reused, rCount, rDur)
+			result.ErrorMessage = err.Error()
 			result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, 0, nil, nil)
 			h.attachCorrelationEvidence(result, action, req, targetURL, requestBody, resp, nil, false)
 			return result, nil
 		}
 		if digestRetried {
-			if requestBytes > 0 {
-				result.BytesSent += requestBytes
+			// The challenged request may differ from the original after a
+			// redirect (for example POST -> GET). Count the body actually
+			// replayed for digest rather than charging the original body twice.
+			if req != nil && req.ContentLength > 0 {
+				result.BytesSent += req.ContentLength
 			}
-			redactedRequestHeaders = redactedRequestHeadersForSnapshot(req.Header, action.RedactedHeaders, true, "Digest [REDACTED]")
-			redactedRequestHeaders = requestHeadersWithRedactedHeaderList(redactedRequestHeaders, action.RedactedHeaderList)
-			redactedRequestHeaders = requestHeadersWithHostForSnapshot(req.Header, redactedRequestHeaders, req.Host, action.RedactedHeaders)
 		}
 	}
 	if !cacheHit && staleCacheEntry != nil && resp != nil && resp.StatusCode == http.StatusNotModified {
@@ -637,12 +705,18 @@ extractors:
 		}
 		return responseBodyText
 	}
-	for _, assertion := range action.Assertions {
+	assertionWork := newAssertionInputWorkBudget(resp.Header, respBody)
+	for index, assertion := range action.Assertions {
+		if err := assertionWork.charge(assertion); err != nil {
+			result.Success = false
+			result.ErrorMessage = fmt.Sprintf("assertion[%d] %q input rejected: %v", index, assertion.Type, err)
+			break
+		}
 		bodyText := ""
 		if assertionNeedsResponseBody(assertion) {
 			bodyText = loadResponseBodyText()
 		}
-		if err := evaluate(assertion, result, bodyText); err != nil {
+		if err := evaluateResponseAssertion(assertion, result, resp.Header, bodyText); err != nil {
 			result.Success = false
 			result.ErrorMessage = err.Error()
 			break
@@ -655,7 +729,7 @@ extractors:
 		}
 	}
 	if !result.Success {
-		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, action.Body, action.RedactedTarget, redactedRequestHeaders, action.RedactedBody, resp.StatusCode, responseHeaders, respBody)
+		result.Snapshot = buildHTTPSnapshot(method, targetURL, req.Header, requestBody, action.RedactedTarget, redactedRequestHeaders, redactedRequestBody, resp.StatusCode, responseHeaders, respBody)
 	}
 	if !result.Success || !action.DiscardResponseBodyOnSuccess {
 		result.ResponseBody = string(respBody)
@@ -683,12 +757,14 @@ func validateHTTPActionBounds(action *protocol.Action) error {
 	if action == nil {
 		return fmt.Errorf("http action is required")
 	}
-	maxTimeoutMS := int(MaxConfiguredTimeout / time.Millisecond)
-	if action.TimeoutMs < 0 || action.TimeoutMs > maxTimeoutMS {
-		return fmt.Errorf("http timeout_ms must be between 0 and %d", maxTimeoutMS)
+	if err := ValidateMethod(ResolveMethod(action.Method, action.Type)); err != nil {
+		return err
 	}
-	if action.MaxRedirects != nil && (*action.MaxRedirects < -1 || *action.MaxRedirects > MaxConfiguredRedirects) {
-		return fmt.Errorf("http max_redirects must be between -1 and %d", MaxConfiguredRedirects)
+	if err := ValidateTimeoutMS(action.TimeoutMs); err != nil {
+		return err
+	}
+	if err := ValidateMaxRedirects(action.MaxRedirects); err != nil {
+		return err
 	}
 	if len(action.Extractors) > maxHTTPActionExtractors {
 		return fmt.Errorf("http extractors must not exceed %d", maxHTTPActionExtractors)
@@ -697,6 +773,9 @@ func validateHTTPActionBounds(action *protocol.Action) error {
 		if err := validateExtractorExpressionSize(extractor.Expression); err != nil {
 			return fmt.Errorf("http extractors[%d] %q: %w", index, extractor.Name, err)
 		}
+	}
+	if err := ValidateAssertions(action.Assertions); err != nil {
+		return err
 	}
 	if action.Params != nil {
 		if raw, present := action.Params["stream_timeout_ms"]; present {
@@ -722,23 +801,7 @@ func actionHTTPMethod(action *protocol.Action) string {
 	if action == nil {
 		return http.MethodGet
 	}
-	if method := strings.ToUpper(strings.TrimSpace(action.Method)); method != "" {
-		return method
-	}
-	method := strings.ToUpper(strings.TrimSpace(action.Type))
-	if isKnownHTTPMethod(method) {
-		return method
-	}
-	return http.MethodGet
-}
-
-func isKnownHTTPMethod(method string) bool {
-	switch method {
-	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodConnect, http.MethodOptions, http.MethodTrace:
-		return true
-	default:
-		return false
-	}
+	return ResolveMethod(action.Method, action.Type)
 }
 
 // defaultHTTPMaxBodyBytes bounds the buffered+decoded response body when the
@@ -973,6 +1036,18 @@ func addRequestHeader(req *http.Request, key string, value string) {
 	req.Header.Add(key, value)
 }
 
+// mergeRequestCookieHeaders preserves every validated authored Cookie
+// occurrence while presenting the single RFC 6265 field expected by
+// Request.AddCookie. Without this boundary merge, a configured cookie jar
+// appends to Header.Get("Cookie") and silently discards later occurrences.
+func mergeRequestCookieHeaders(req *http.Request) {
+	values := req.Header.Values("Cookie")
+	if len(values) <= 1 {
+		return
+	}
+	req.Header.Set("Cookie", strings.Join(values, "; "))
+}
+
 func headerListNameSet(headers protocol.HeaderList) map[string]struct{} {
 	if len(headers) == 0 {
 		return nil
@@ -1025,10 +1100,43 @@ func (h *HTTP) HealthCheck(ctx context.Context) error {
 	}
 	resp, err := h.client.Do(req)
 	if err != nil {
+		if h.httpVersion == VersionHTTP2 {
+			return fmt.Errorf("%w: transport request failed", ErrHTTP2Required)
+		}
 		return err
 	}
 	resp.Body.Close()
-	return nil
+	return h.validateResponseVersion(resp)
+}
+
+func (h *HTTP) transportErrorMessage(err error) string {
+	if err == nil {
+		return ""
+	}
+	if h != nil && h.httpVersion == VersionHTTP2 {
+		return ErrHTTP2Required.Error() + ": transport request failed"
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		// Depending on scheduler timing, net/http may wrap a client timeout as
+		// either "Client.Timeout exceeded" or the bare context deadline error.
+		// Keep the public diagnostic stable (and URL-free) in both cases.
+		return "request timeout: context deadline exceeded"
+	}
+	var urlError *url.Error
+	if errors.As(err, &urlError) && urlError.Err != nil {
+		// url.Error.Error quotes the complete request URL. Retain its useful
+		// underlying cause (including target-policy host diagnostics) without
+		// disclosing userinfo, query values, or fragments.
+		return urlError.Err.Error()
+	}
+	return err.Error()
+}
+
+func (h *HTTP) validateResponseVersion(resp *http.Response) error {
+	if h == nil || h.httpVersion != VersionHTTP2 || resp == nil || resp.ProtoMajor == 2 {
+		return nil
+	}
+	return fmt.Errorf("%w: transport negotiated %s", ErrHTTP2Required, resp.Proto)
 }
 
 func (h *HTTP) resolveURL(target string) string {
@@ -1107,6 +1215,12 @@ func buildHTTPSnapshot(method string, targetURL string, requestHeaders http.Head
 	if len(redactedHeaders) > 0 {
 		headers = cloneStringMap(redactedHeaders)
 	}
+	// Redacted* fields are a fidelity aid, not the disclosure boundary. Direct
+	// protocol callers and early request-construction failures may not have
+	// supplied them, while default/authored credential headers are already
+	// present on the request. Protect every credential-classified header here so
+	// no failure path can publish the raw value in an ErrorSnapshot.
+	headers = redactSnapshotCredentialHeaders(headers)
 	body := string(requestBody)
 	if len(redactedBody) > 0 {
 		body = string(redactedBody)
@@ -1117,9 +1231,31 @@ func buildHTTPSnapshot(method string, targetURL string, requestHeaders http.Head
 		RequestHeaders:  headers,
 		RequestBody:     body,
 		ResponseStatus:  responseStatus,
-		ResponseHeaders: cloneStringMap(responseHeaders),
+		ResponseHeaders: redactSnapshotCredentialHeaders(responseHeaders),
 		ResponseBody:    string(responseBody),
 	}
+}
+
+func redactSnapshotCredentialHeaders(headers map[string]string) map[string]string {
+	if len(headers) == 0 {
+		return nil
+	}
+	out := cloneStringMap(headers)
+	for name, value := range out {
+		if !credential.SensitiveHeader(name) {
+			continue
+		}
+		// Preserve an already-safe projection such as "Basic [REDACTED]" so
+		// diagnostics retain the auth scheme without weakening the boundary.
+		if strings.Contains(value, credential.Redacted) {
+			continue
+		}
+		if _, safeReference := credential.ParseReference(value); safeReference {
+			continue
+		}
+		out[name] = credential.Redacted
+	}
+	return out
 }
 
 func snapshotRequestURL(targetURL, redactedTarget string) string {

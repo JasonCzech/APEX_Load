@@ -20,10 +20,26 @@ import (
 const (
 	// MinimumJavaMajor is the oldest Java runtime supported by the Java Vuser
 	// harness and runner contract.
-	MinimumJavaMajor    = 17
-	defaultProbeTimeout = 5 * time.Second
-	maxProbeOutputBytes = 32 << 10
+	MinimumJavaMajor = 17
+	// MinimumLegacyJavaMajor is the floor that still applies when an operator
+	// opts into the legacy lane. The opt-in exists for middleware that only runs
+	// on Java 8; it is not a way to disable version checking, and nothing older
+	// than 8 is accepted regardless of the flag.
+	MinimumLegacyJavaMajor = 8
+	defaultProbeTimeout    = 5 * time.Second
+	maxProbeOutputBytes    = 32 << 10
 )
+
+// EffectiveMinimumJavaMajor is the version floor for a given legacy opt-in.
+// Callers that gate on a probed major version — including the controller-side
+// sidecar capability check — must use this rather than MinimumJavaMajor, or the
+// opt-in silently fails somewhere other than where it was configured.
+func EffectiveMinimumJavaMajor(allowLegacyJava bool) int {
+	if allowLegacyJava {
+		return MinimumLegacyJavaMajor
+	}
+	return MinimumJavaMajor
+}
 
 type JDKSelection string
 
@@ -55,7 +71,10 @@ type ResolveOptions struct {
 	SpecifiedHome       string
 	ExplicitJavaCommand string
 	DefaultHome         string
-	ProbeTimeout        time.Duration
+	// AllowLegacyJava is the operator's legacy opt-in, never a script's. It
+	// lowers the accepted major version to MinimumLegacyJavaMajor.
+	AllowLegacyJava bool
+	ProbeTimeout    time.Duration
 }
 
 // ResolvedJDK is a canonical, probed Java installation. JavaBin has symlinks
@@ -84,10 +103,12 @@ func (jdk ResolvedJDK) EnvironmentOverrides(currentPath string) map[string]strin
 	}
 }
 
-// ResolveJDK resolves and probes a Java 17+ runtime. Specified mode has no
-// fallback. Internal mode tries, in order, an explicit direct Java override,
-// the operator default home, JAVA_HOME, JRE_HOME, and PATH, returning the first
-// valid Java 17+ installation.
+// ResolveJDK resolves and probes a Java runtime at or above
+// EffectiveMinimumJavaMajor(options.AllowLegacyJava) — Java 17 by default, or
+// Java 8 under the operator's legacy opt-in. Specified mode has no fallback.
+// Internal mode tries, in order, an explicit direct Java override, the operator
+// default home, JAVA_HOME, JRE_HOME, and PATH, returning the first installation
+// that satisfies the floor.
 func ResolveJDK(ctx context.Context, options ResolveOptions) (ResolvedJDK, error) {
 	selection := options.Selection
 	if selection == "" {
@@ -100,7 +121,7 @@ func ResolveJDK(ctx context.Context, options ResolveOptions) (ResolvedJDK, error
 
 	switch selection {
 	case JDKSelectionSpecified:
-		return resolveSpecifiedJDK(ctx, strings.TrimSpace(options.SpecifiedHome), timeout)
+		return resolveSpecifiedJDK(ctx, strings.TrimSpace(options.SpecifiedHome), timeout, options.AllowLegacyJava)
 	case JDKSelectionInternal:
 		return resolveInternalJDK(ctx, options, timeout)
 	default:
@@ -108,7 +129,7 @@ func ResolveJDK(ctx context.Context, options ResolveOptions) (ResolvedJDK, error
 	}
 }
 
-func resolveSpecifiedJDK(ctx context.Context, home string, timeout time.Duration) (ResolvedJDK, error) {
+func resolveSpecifiedJDK(ctx context.Context, home string, timeout time.Duration, allowLegacyJava bool) (ResolvedJDK, error) {
 	if home == "" {
 		return ResolvedJDK{}, fmt.Errorf("specified JDK home is required")
 	}
@@ -119,7 +140,7 @@ func resolveSpecifiedJDK(ctx context.Context, home string, timeout time.Duration
 	if err != nil {
 		return ResolvedJDK{}, fmt.Errorf("resolve specified JDK home: %w", err)
 	}
-	return probeResolvedJDK(ctx, javaBin, resolvedHome, JDKSourceSpecifiedHome, timeout)
+	return probeResolvedJDK(ctx, javaBin, resolvedHome, JDKSourceSpecifiedHome, timeout, allowLegacyJava)
 }
 
 func resolveInternalJDK(ctx context.Context, options ResolveOptions, timeout time.Duration) (ResolvedJDK, error) {
@@ -130,7 +151,7 @@ func resolveInternalJDKWithProbe(
 	ctx context.Context,
 	options ResolveOptions,
 	timeout time.Duration,
-	probe func(context.Context, string, string, JDKSource, time.Duration) (ResolvedJDK, error),
+	probe func(context.Context, string, string, JDKSource, time.Duration, bool) (ResolvedJDK, error),
 ) (ResolvedJDK, error) {
 	type candidate struct {
 		source  JDKSource
@@ -178,7 +199,7 @@ func resolveInternalJDKWithProbe(
 			continue
 		}
 		seen[javaBin] = struct{}{}
-		jdk, err := probe(ctx, javaBin, home, candidate.source, timeout)
+		jdk, err := probe(ctx, javaBin, home, candidate.source, timeout, options.AllowLegacyJava)
 		if err == nil {
 			return jdk, nil
 		}
@@ -193,10 +214,11 @@ func resolveInternalJDKWithProbe(
 		}
 		failures = append(failures, fmt.Errorf("%s: %w", candidate.source, err))
 	}
+	minimumMajor := EffectiveMinimumJavaMajor(options.AllowLegacyJava)
 	if len(failures) == 0 {
-		return ResolvedJDK{}, fmt.Errorf("no Java %d+ runtime candidates were configured", MinimumJavaMajor)
+		return ResolvedJDK{}, fmt.Errorf("no Java %d+ runtime candidates were configured", minimumMajor)
 	}
-	return ResolvedJDK{}, fmt.Errorf("no compatible Java %d+ runtime found: %w", MinimumJavaMajor, errors.Join(failures...))
+	return ResolvedJDK{}, fmt.Errorf("no compatible Java %d+ runtime found: %w", minimumMajor, errors.Join(failures...))
 }
 
 // IsDirectJavaCommand reports whether command names the Java launcher itself,
@@ -282,8 +304,8 @@ func javaExecutableNames() []string {
 	return []string{"java", "java.exe"}
 }
 
-func probeResolvedJDK(ctx context.Context, javaBin, home string, source JDKSource, timeout time.Duration) (ResolvedJDK, error) {
-	return probeResolvedJDKWithProbes(ctx, javaBin, home, source, timeout, ProbeJava, probeJavaHome)
+func probeResolvedJDK(ctx context.Context, javaBin, home string, source JDKSource, timeout time.Duration, allowLegacyJava bool) (ResolvedJDK, error) {
+	return probeResolvedJDKWithProbes(ctx, javaBin, home, source, timeout, allowLegacyJava, ProbeJava, probeJavaHome)
 }
 
 func probeResolvedJDKWithProbes(
@@ -292,6 +314,7 @@ func probeResolvedJDKWithProbes(
 	home string,
 	source JDKSource,
 	timeout time.Duration,
+	allowLegacyJava bool,
 	versionProbe func(context.Context, string, time.Duration) (string, int, error),
 	homeProbe func(context.Context, string, time.Duration) (string, error),
 ) (ResolvedJDK, error) {
@@ -299,8 +322,8 @@ func probeResolvedJDKWithProbes(
 	if err != nil {
 		return ResolvedJDK{}, err
 	}
-	if major < MinimumJavaMajor {
-		return ResolvedJDK{}, fmt.Errorf("Java major version %d is unsupported; version %d or newer is required", major, MinimumJavaMajor)
+	if minimumMajor := EffectiveMinimumJavaMajor(allowLegacyJava); major < minimumMajor {
+		return ResolvedJDK{}, fmt.Errorf("Java major version %d is unsupported; version %d or newer is required", major, minimumMajor)
 	}
 	// Some platforms expose a launcher shim rather than the real JDK binary
 	// (notably /usr/bin/java on macOS). Deriving JAVA_HOME by walking two parent

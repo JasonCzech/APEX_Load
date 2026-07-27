@@ -10,6 +10,9 @@ import {
   type ScriptParameterDefinition,
 } from '../types/scripts'
 import { dslActionNeedsExplicitTarget } from './dslActionCatalog'
+import { headerListToCompatibilityMap } from './scriptActionHelpers'
+import { canonicalThinkTimeType, thinkTimeConfigForType } from './thinkTimeConfig'
+import { formatMillisecondsAsSecondsDuration } from './runtimeTiming'
 
 export type AuthoringIssueSeverity = 'error' | 'warning'
 export type AuthoringIssuePhase = 'init' | 'action' | 'teardown'
@@ -72,7 +75,25 @@ export interface ScriptRepairResult {
 
 const PARAM_TOKEN = /{{\s*param\.([a-zA-Z0-9_]+)\s*}}/g
 const DATA_TOKEN = /{{\s*data\.([a-zA-Z0-9_]+)\.([a-zA-Z0-9_]+)\s*}}/g
-const TOKENISH_KEY = /(access[_-]?token|auth[_-]?token|bearer|session[_-]?id|csrf|xsrf|jwt)/i
+const TOKENISH_KEY = /(access[_-]?token|auth[_-]?token|api[_-]?key|client[_-]?secret|password|passwd|bearer|session[_-]?id|csrf|xsrf|jwt)/i
+const TOKENISH_JSON_KEY_SOURCE = String.raw`access[_-]?token|auth[_-]?token|api[_-]?key|client[_-]?secret|password|passwd|bearer|session[_-]?id|csrf|xsrf|jwt`
+
+function hardCodedSensitiveJSONFieldPattern(global = false): RegExp {
+  return new RegExp(
+    String.raw`"([^"]*(?:${TOKENISH_JSON_KEY_SOURCE})[^"]*)"\s*:\s*"([^"]+)"`,
+    global ? 'gi' : 'i',
+  )
+}
+
+function hasHardCodedSensitiveJSONField(value: string): boolean {
+  const pattern = hardCodedSensitiveJSONFieldPattern(true)
+  let match = pattern.exec(value)
+  while (match) {
+    if (!match[2].includes('{{')) return true
+    match = pattern.exec(value)
+  }
+  return false
+}
 
 function cloneScript<T>(value: T): T {
   if (value === undefined) return value
@@ -112,6 +133,7 @@ function collectActionStrings(action: ScriptActionDefinition): string[] {
     action.value || '',
     action.body || '',
     ...Object.values(action.headers || {}),
+    ...(action.header_list || []).map(header => header.value),
   ]
 }
 
@@ -258,32 +280,6 @@ function sanitizeRepairName(value: string, fallback: string): string {
     .replace(/^_+|_+$/g, '')
     .toLowerCase()
   return normalized || fallback
-}
-
-function ensureListParameter(parameters: ScriptParameterDefinition[], name: string, seed: string) {
-  const normalizedName = normalizeTokenName(name)
-  const existingIdx = parameters.findIndex(parameter => normalizeTokenName(parameter.name || '') === normalizedName)
-  if (existingIdx >= 0) {
-    const current = parameters[existingIdx]
-    const values = [...(current.values || [])]
-    if (seed && !values.includes(seed)) values.unshift(seed)
-    parameters[existingIdx] = {
-      ...current,
-      type: current.type || 'list',
-      update: current.update || 'each_iteration',
-      values,
-    }
-    return
-  }
-
-  parameters.push({
-    name,
-    type: 'list',
-    update: 'each_iteration',
-    selection: 'sequential',
-    on_exhaustion: 'wrap',
-    values: seed ? [seed] : [],
-  })
 }
 
 // collectControlFlowIssues mirrors the server control-flow rules (validate.go):
@@ -789,7 +785,13 @@ export function buildMigrationAssistantSuggestions(script: ScriptDefinition): Mi
     })
   }
 
-  if (script.config.think_time?.ignore || (script.config.think_time?.mean_ms || 0) <= 0) {
+  const thinkTime = script.config.think_time
+  const thinkTimeType = canonicalThinkTimeType(thinkTime?.type)
+  if (
+    thinkTimeType !== 'none' &&
+    thinkTimeType !== 'recorded' &&
+    (thinkTime?.ignore || (thinkTime?.mean_ms || 0) <= 0)
+  ) {
     suggestions.push({
       key: 'normalize_think_time',
       title: 'Normalize Think Time',
@@ -824,10 +826,13 @@ export function buildScriptRepairSuggestions(script: ScriptDefinition, issues: A
   const hasMissingData = collectMissingDataReferences(script).size > 0 || issues.some(issue => issue.id.includes(':data:'))
   const hasMissingAssertions = script.actions.some(action => isHttpLikeAction(action) && (!action.assertions || action.assertions.length === 0))
   const hasTokenLiterals = script.actions.some(action => {
-    const headerValues = Object.entries(action.headers || {})
+    const headerValues = [
+      ...Object.entries(action.headers || {}),
+      ...(action.header_list || []).map(header => [header.name, header.value] as const),
+    ]
     if (headerValues.some(([key, value]) => TOKENISH_KEY.test(key) && String(value || '').trim() && !String(value).includes('{{'))) return true
-    if (Object.values(action.headers || {}).some(value => /^Bearer\s+\S+/i.test(String(value || '')) && !String(value).includes('{{'))) return true
-    return TOKENISH_KEY.test(action.body || '') && !String(action.body || '').includes('{{')
+    if (headerValues.some(([, value]) => /^Bearer\s+\S+/i.test(String(value || '')) && !String(value).includes('{{'))) return true
+    return hasHardCodedSensitiveJSONField(action.body || '')
   })
   const hasMissingBrowserWaits = script.actions.some(action =>
     action.type.startsWith('browser_')
@@ -848,8 +853,8 @@ export function buildScriptRepairSuggestions(script: ScriptDefinition, issues: A
     suggestions.push({
       key: 'parameterize_hard_coded_tokens',
       title: 'Parameterize Hard-Coded Tokens',
-      description: 'Move bearer/session/token literals into list parameters and replace inline values with safe parameter references.',
-      applyLabel: 'Parameterize Tokens',
+      description: 'Remove bearer/session/token literals from the draft and replace them with project-secret references.',
+      applyLabel: 'Externalize Tokens',
     })
   }
   if (hasMissingAssertions) {
@@ -939,40 +944,75 @@ function createMissingDataSources(script: ScriptDefinition): ScriptRepairResult 
 
 function parameterizeHardCodedTokens(script: ScriptDefinition): ScriptRepairResult {
   const nextScript = cloneScript(script)
-  const parameters = [...(nextScript.parameters || [])]
+  const secretNames = new Map<string, string>()
+  const usedSecretNames = new Set<string>()
   let replacements = 0
 
-  nextScript.actions = nextScript.actions.map(action => {
-    const updated = { ...action, headers: { ...(action.headers || {}) } }
-    Object.entries(updated.headers || {}).forEach(([key, value]) => {
-      const rawValue = String(value || '').trim()
-      if (!rawValue || rawValue.includes('{{')) return
-      if (TOKENISH_KEY.test(key) || /^Bearer\s+\S+/i.test(rawValue)) {
-        const parameterName = sanitizeRepairName(key.replace(/^authorization$/i, 'access_token'), 'access_token')
-        const seed = rawValue.replace(/^Bearer\s+/i, '')
-        ensureListParameter(parameters, parameterName, seed)
-        updated.headers![key] = /^Bearer\s+/i.test(rawValue) ? `Bearer {{param.${parameterName}}}` : `{{param.${parameterName}}}`
-        replacements += 1
-      }
-    })
+  const secretNameFor = (base: string, rawValue: string) => {
+    const identity = `${base}\u0000${rawValue}`
+    const existing = secretNames.get(identity)
+    if (existing) return existing
+    let name = base
+    let suffix = 2
+    while (usedSecretNames.has(name)) {
+      name = `${base}_${suffix}`
+      suffix += 1
+    }
+    usedSecretNames.add(name)
+    secretNames.set(identity, name)
+    return name
+  }
 
-    if (updated.body && TOKENISH_KEY.test(updated.body) && !updated.body.includes('{{')) {
-      updated.body = updated.body.replace(/"([^"]*(?:token|session|csrf|xsrf)[^"]*)"\s*:\s*"([^"]+)"/gi, (match, keyName, tokenValue) => {
-        const parameterName = sanitizeRepairName(keyName, 'token_value')
-        ensureListParameter(parameters, parameterName, tokenValue)
+  const externalizeHeader = (name: string, value: string) => {
+    const rawValue = String(value || '').trim()
+    if (!rawValue || rawValue.includes('{{')) return value
+    if (!TOKENISH_KEY.test(name) && !/^Bearer\s+\S+/i.test(rawValue)) return value
+    const base = sanitizeRepairName(name.replace(/^authorization$/i, 'access_token'), 'access_token')
+    const literal = rawValue.replace(/^Bearer\s+/i, '')
+    const secretName = secretNameFor(base, literal)
+    replacements += 1
+    return /^Bearer\s+\S+/i.test(rawValue) ? `Bearer {{secret.${secretName}}}` : `{{secret.${secretName}}}`
+  }
+
+  nextScript.actions = nextScript.actions.map(action => {
+    const updated = {
+      ...action,
+      headers: { ...(action.headers || {}) },
+      header_list: action.header_list?.map(header => ({ ...header })),
+    }
+    const orderedHeaderNames = new Set(
+      (updated.header_list || []).map(header => header.name.trim().toLowerCase()).filter(Boolean),
+    )
+    Object.entries(updated.headers || {})
+      .filter(([key]) => !orderedHeaderNames.has(key.trim().toLowerCase()))
+      .forEach(([key, value]) => {
+        updated.headers![key] = externalizeHeader(key, value)
+      })
+    if (updated.header_list?.length) {
+      updated.header_list = updated.header_list.map(header => ({
+        ...header,
+        value: externalizeHeader(header.name, header.value),
+      }))
+      updated.headers = headerListToCompatibilityMap(updated.header_list, updated.headers)
+    }
+
+    if (updated.body && TOKENISH_KEY.test(updated.body)) {
+      updated.body = updated.body.replace(hardCodedSensitiveJSONFieldPattern(true), (match, keyName, tokenValue) => {
+        if (tokenValue.includes('{{')) return match
+        const base = sanitizeRepairName(keyName, 'token_value')
+        const secretName = secretNameFor(base, tokenValue)
         replacements += 1
-        return `"${keyName}":"{{param.${parameterName}}}"`
+        return `"${keyName}":"{{secret.${secretName}}}"`
       })
     }
 
     return updated
   })
 
-  nextScript.parameters = parameters
   return {
     script: nextScript,
     summary: replacements > 0
-      ? `Parameterized ${replacements} hard-coded token value${replacements === 1 ? '' : 's'}.`
+      ? `Externalized ${replacements} hard-coded token value${replacements === 1 ? '' : 's'} as project-secret references.`
       : 'No hard-coded token literals needed repair.',
   }
 }
@@ -1073,6 +1113,16 @@ export function normalizeImportedActionNames(script: ScriptDefinition): Migratio
 
 export function normalizeImportedThinkTime(script: ScriptDefinition): MigrationAssistantResult {
   const nextScript = cloneScript(script)
+  const thinkTimeType = canonicalThinkTimeType(nextScript.config.think_time?.type)
+  if (thinkTimeType === 'none' || thinkTimeType === 'recorded') {
+    nextScript.config.think_time = thinkTimeConfigForType(nextScript.config.think_time, thinkTimeType)
+    return {
+      script: nextScript,
+      summary: thinkTimeType === 'none'
+        ? 'Think time is explicitly disabled and its policy controls were preserved.'
+        : 'Recorded think time already preserves source timing and policy controls.',
+    }
+  }
   nextScript.config.think_time = {
     ...(nextScript.config.think_time || { type: 'fixed', mean_ms: 1000 }),
     type: nextScript.config.think_time?.type || 'fixed',
@@ -1098,7 +1148,7 @@ export function applyGentlePacing(script: ScriptDefinition): MigrationAssistantR
 
   return {
     script: nextScript,
-    summary: `Applied fixed-delay pacing at ${nextScript.config.pacing.delay_ms} ms per iteration.`,
+    summary: `Applied fixed-delay pacing at ${formatMillisecondsAsSecondsDuration(nextScript.config.pacing.delay_ms)} per iteration.`,
   }
 }
 

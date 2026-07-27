@@ -1366,8 +1366,8 @@ public class Actions {
 	if len(got) != 1 {
 		t.Fatalf("Authorization header_list values = %#v, want exactly one (branches are mutually exclusive)", got)
 	}
-	if got[0] != "Bearer prod-token" {
-		t.Fatalf("Authorization value = %q, want the first branch's value", got[0])
+	if !strings.HasPrefix(got[0], "{{secret.") {
+		t.Fatalf("Authorization value = %q, want whole-value governed credential", got[0])
 	}
 	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) > 0 {
 		t.Fatalf("ValidateScriptIssues returned %v", issues)

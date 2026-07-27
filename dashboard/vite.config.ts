@@ -45,6 +45,12 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
+          // The execution route only needs the tiny, dependency-free HTTP
+          // version formatter. Keep Rolldown from coalescing it with shared
+          // runtime-editor components (and their CodeMirror dependencies).
+          if (id.endsWith('/src/components/httpVersionModel.ts')) {
+            return 'http-version-model'
+          }
           if (!id.includes('node_modules')) {
             return undefined
           }

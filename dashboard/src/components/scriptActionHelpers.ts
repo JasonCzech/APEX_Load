@@ -25,6 +25,43 @@ export function asHeaders(value: unknown): Record<string, string> | undefined {
   return Object.keys(headers).length > 0 ? headers : undefined
 }
 
+export function asHeaderList(value: unknown): Action['header_list'] {
+  if (!Array.isArray(value)) return undefined
+  return value
+    .filter(isRecord)
+    .map(header => ({
+      name: asString(header.name),
+      value: asString(header.value),
+    }))
+}
+
+// Match dsl.HeaderList.ToMap for names represented in the ordered list while
+// retaining compatibility-map names that have no ordered occurrence. The
+// final ordered occurrence (including its spelling) is authoritative.
+export function headerListToCompatibilityMap(
+  headerList: NonNullable<Action['header_list']>,
+  existingHeaders?: Record<string, string>,
+): Record<string, string> {
+  const identities = new Set(
+    headerList.map(header => header.name.trim().toLowerCase()).filter(Boolean),
+  )
+  const headers: Record<string, string> = {}
+  for (const [name, value] of Object.entries(existingHeaders || {})) {
+    if (!identities.has(name.trim().toLowerCase())) headers[name] = value
+  }
+  const spelling = new Map<string, string>()
+  for (const header of headerList) {
+    const name = header.name.trim()
+    if (!name) continue
+    const identity = name.toLowerCase()
+    const previous = spelling.get(identity)
+    if (previous && previous !== name) delete headers[previous]
+    spelling.set(identity, name)
+    headers[name] = header.value
+  }
+  return headers
+}
+
 export function asExtractors(value: unknown): Action['extractors'] {
   if (!Array.isArray(value)) return undefined
   return value.filter(isRecord).map(item => ({
@@ -58,6 +95,7 @@ export function httpSequenceRequests(action: Action): Action[] {
       method,
       target: asString(request.target),
       headers: asHeaders(request.headers),
+      header_list: asHeaderList(request.header_list),
       body: asString(request.body),
       body_encoding: asString(request.body_encoding) || undefined,
       params: isRecord(request.params) ? request.params : undefined,
@@ -99,6 +137,19 @@ export function actionMetadataBool(action: Action, key: string) {
   return false
 }
 
+export function actionExecutionBlockers(action: Action): string[] {
+  const blockers = new Set<string>()
+  const add = (value: unknown) => {
+    if (typeof value !== 'string') return
+    const normalized = value.trim()
+    if (normalized) blockers.add(normalized)
+  }
+  add(action.metadata?.execution_blocker)
+  const values = action.metadata?.execution_blockers
+  if (Array.isArray(values)) values.forEach(add)
+  return [...blockers].sort()
+}
+
 export function isControlAction(action: Action) {
   return action.type === 'control_if' || action.type === 'control_loop'
 }
@@ -110,7 +161,10 @@ export function isReviewGatedJavaScriptAction(action: Action) {
 }
 
 export function actionRequiresReview(action: Action) {
-  return isReviewGatedJavaScriptAction(action) || actionMetadataBool(action, 'review_required') || actionMetadataBool(action, 'promotion_blocker')
+  return isReviewGatedJavaScriptAction(action)
+    || actionMetadataBool(action, 'review_required')
+    || actionMetadataBool(action, 'promotion_blocker')
+    || actionExecutionBlockers(action).includes('import_review_required')
 }
 
 export function actionSelectorFallbackCount(action: Action) {

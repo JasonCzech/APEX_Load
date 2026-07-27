@@ -80,6 +80,19 @@ func TestGetSupportMatrixDerivesFlatArrays(t *testing.T) {
 	}
 }
 
+func TestGetSupportMatrixDocumentsHTTPAuthDisposition(t *testing.T) {
+	for _, entry := range GetSupportMatrixEntries() {
+		if entry.ID != "jmeter-auth-manager" {
+			continue
+		}
+		if entry.Status != statusPartial || entry.ExecutionStatus != execReviewRequired || !entry.ReviewRequired {
+			t.Fatalf("auth manager support = %#v, want partial review-gated support", entry)
+		}
+		return
+	}
+	t.Fatal("missing jmeter-auth-manager support entry")
+}
+
 func TestCategoryForSourceMapping(t *testing.T) {
 	tests := []struct {
 		name       string

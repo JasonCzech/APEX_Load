@@ -1029,7 +1029,7 @@ func TestJMSConsumeClassifiesDeadLetterDestinations(t *testing.T) {
 // TestJMSPublishWithMetadataAndNoPropertiesConfig reproduces the nil-map panic:
 // when no jms_properties is configured, cloneStringMap returns nil, and writing
 // action metadata into it crashed the generator. The publish must succeed and
-// carry the metadata through as a message property.
+// carry metadata through as a message property.
 func TestJMSPublishWithMetadataAndNoPropertiesConfig(t *testing.T) {
 	ctx := context.Background()
 	p := &JMS{name: "jms-solace", provider: "solace"}
@@ -1043,10 +1043,13 @@ func TestJMSPublishWithMetadataAndNoPropertiesConfig(t *testing.T) {
 	}
 
 	published, err := p.Execute(ctx, &protocol.Action{
-		Name:     "publish-order",
-		Type:     "jms_publish",
-		Body:     []byte("hello"),
-		Metadata: map[string]any{"source_transaction": "checkout"},
+		Name: "publish-order",
+		Type: "jms_publish",
+		Body: []byte("hello"),
+		Metadata: map[string]any{
+			"customer_property":  "checkout",
+			"source_transaction": "checkout-transaction",
+		},
 	})
 	if err != nil {
 		t.Fatalf("publish returned error: %v", err)
@@ -1059,7 +1062,8 @@ func TestJMSPublishWithMetadataAndNoPropertiesConfig(t *testing.T) {
 		Name: "consume-order",
 		Type: "jms_consume",
 		Assertions: []protocol.Assertion{
-			{Type: "property_equals", Value: "source_transaction", Expected: "checkout"},
+			{Type: "property_equals", Value: "customer_property", Expected: "checkout"},
+			{Type: "property_equals", Value: "source_transaction", Expected: "checkout-transaction"},
 		},
 	})
 	if err != nil {
@@ -1067,5 +1071,25 @@ func TestJMSPublishWithMetadataAndNoPropertiesConfig(t *testing.T) {
 	}
 	if !consumed.Success {
 		t.Fatalf("consume success = false: %s", consumed.ErrorMessage)
+	}
+}
+
+func TestMetadataKeyIsProvenanceExcludesImporterFieldsFromWireProperties(t *testing.T) {
+	for _, key := range []string{
+		"original_url", "source_path", "source_step_id", "source_profile", "source_uid",
+		"asyncapi_operation",
+	} {
+		if !metadataKeyIsProvenance(key) {
+			t.Errorf("metadataKeyIsProvenance(%q) = false", key)
+		}
+	}
+	if metadataKeyIsProvenance("customer_property") {
+		t.Fatal("ordinary metadata property was classified as provenance")
+	}
+	// source_transaction predates the import provenance fields and is a
+	// documented, wire-visible JMS property. Filtering it would silently alter
+	// existing stored scripts.
+	if metadataKeyIsProvenance("source_transaction") {
+		t.Fatal("source_transaction compatibility property was classified as provenance")
 	}
 }

@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/sample"
+	"github.com/jasonczech/apexload/pkg/credential"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 const (
@@ -70,13 +72,17 @@ func Diff(baseline []byte, comparison []byte, opts ConvertOptions) (*DiffReport,
 		ComparisonCorrelations: len(comparisonResult.Correlations),
 	}
 	for _, corr := range baselineResult.Correlations {
+		baselineValue := correlationValue(corr)
 		classification := DiffClassification{
-			Name:           corr.Name,
-			Source:         corr.Source,
-			Expression:     corr.Expression,
-			ExtractType:    corr.ExtractType,
-			SampleValue:    corr.SampleValue,
-			BaselineValue:  correlationValue(corr),
+			Name:        corr.Name,
+			Source:      corr.Source,
+			Expression:  corr.Expression,
+			ExtractType: corr.ExtractType,
+			SampleValue: publicCorrelationValue(corr),
+			// Public values come from the disclosure-safe sample. The raw
+			// json:"-" value remains local to this function solely for deciding
+			// whether two recordings differ.
+			BaselineValue:  publicCorrelationValue(corr),
 			FoundInStep:    corr.FoundInStep,
 			UsedInSteps:    append([]int(nil), corr.UsedInSteps...),
 			Classification: DiffClassificationCandidate,
@@ -84,8 +90,9 @@ func Diff(baseline []byte, comparison []byte, opts ConvertOptions) (*DiffReport,
 			Reason:         "value was reused later in the baseline HAR but was not matched in the comparison HAR",
 		}
 		if comparisonCorr, ok := comparisonByKey[correlationDiffKey(corr)]; ok {
-			classification.ComparisonValue = correlationValue(comparisonCorr)
-			if classification.BaselineValue != "" && classification.ComparisonValue != "" && classification.BaselineValue != classification.ComparisonValue {
+			comparisonValue := correlationValue(comparisonCorr)
+			classification.ComparisonValue = publicCorrelationValue(comparisonCorr)
+			if baselineValue != "" && comparisonValue != "" && baselineValue != comparisonValue {
 				classification.Classification = DiffClassificationDynamic
 				classification.DiffConfidence = 0.95
 				classification.Reason = "value changed between recordings and was reused later in both HARs"
@@ -140,6 +147,16 @@ func correlationValue(corr sample.Correlation) string {
 		return corr.Value
 	}
 	return corr.SampleValue
+}
+
+func publicCorrelationValue(corr sample.Correlation) string {
+	if corr.SampleValue == "" {
+		return ""
+	}
+	if credential.SensitiveName(corr.Name) || credential.SensitiveName(corr.Expression) {
+		return scrub.Redacted
+	}
+	return scrub.Value(corr.SampleValue, scrub.Policy{})
 }
 
 func diffRank(classification string) int {

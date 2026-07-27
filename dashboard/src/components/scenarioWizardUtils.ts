@@ -1,4 +1,13 @@
-import { GoalConfig, LoadModelSupportEntry, LoadModelTemplate, LoadStageDraft, ScenarioMode, StageTimelineValidationResult } from '../types'
+import {
+  GoalConfig,
+  LoadModelSupportEntry,
+  LoadModelTemplate,
+  LoadStageDraft,
+  RuntimeSettingsOverride,
+  ScenarioMode,
+  StageTimelineValidationResult,
+} from '../types'
+import { type PacingConfig, type ThinkTimeConfig } from '../types/scripts'
 import { formatTimeCompact, parseDurationToNanoseconds, parseDurationToSeconds } from '../utils/timeUtils'
 
 export type ScenarioWizardStep = 'start' | 'source' | 'scripts' | 'run' | 'data' | 'review'
@@ -55,7 +64,13 @@ export function buildScenarioShapeCatalog(
   }))
 }
 
-export type ScenarioShapePacingType = 'none' | 'fixed_delay' | 'fixed_interval' | 'tps'
+export type ScenarioShapePacingType =
+  | 'none'
+  | 'fixed_delay'
+  | 'random_delay'
+  | 'fixed_interval'
+  | 'random_interval'
+  | 'tps'
 
 export interface ScenarioShapePresetGoal {
   target_average_tps?: number
@@ -68,7 +83,11 @@ export interface ScenarioShapePresetGoal {
 export interface ScenarioShapePresetPacing {
   type: ScenarioShapePacingType
   delay_ms?: number
+  min_delay_ms?: number
+  max_delay_ms?: number
   interval_ms?: number
+  min_interval_ms?: number
+  max_interval_ms?: number
   tps?: number
 }
 
@@ -88,8 +107,9 @@ export interface ScenarioSeed {
   resource_baseline?: boolean
   groups?: ScenarioSeedGroup[]
   goal?: GoalConfig
-  pacing?: Omit<Partial<ScenarioShapePresetPacing>, 'type'> & { type?: ScenarioShapePacingType | '' }
-  think_time?: { mean_ms?: number, ignore?: boolean }
+  pacing?: Omit<Partial<PacingConfig>, 'type'> & { type?: ScenarioShapePacingType | '' }
+  think_time?: Partial<ThinkTimeConfig>
+  runtime_settings?: RuntimeSettingsOverride
   iterations?: number
   log_level?: string
   auto_transactions?: string
@@ -335,6 +355,8 @@ export function adaptScenarioShapeDefaults(shapeId: string, seed: ScenarioSeed, 
     groups: baseGroups.map(group => ({ ...group })),
     goal: seed.goal ? { ...seed.goal } : undefined,
     pacing: seed.pacing ? { ...seed.pacing } : undefined,
+    think_time: seed.think_time ? { ...seed.think_time } : undefined,
+    runtime_settings: seed.runtime_settings ? structuredClone(seed.runtime_settings) : undefined,
   }
 
   if (shapeId === 'closed-vuser') {

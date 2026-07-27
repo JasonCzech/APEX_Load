@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/paramize"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
@@ -34,6 +35,10 @@ type scriptImportResponseOptions struct {
 	ProtocolCompat      any
 	Parameterization    *paramize.Result
 	Preflight           any
+	// ProtectedRequirements is an in-memory, one-shot adapter handoff. Values
+	// are attached to an encrypted source-secret migration session when one is
+	// available and are never serialized into the response.
+	ProtectedRequirements []credentialpolicy.Requirement
 }
 
 type scriptImportReviewSection struct {
@@ -203,8 +208,10 @@ func sanitizeImportReviewNode(value any, key string, inheritedSensitive bool, re
 			// Script-shaped review payloads (for example Salesforce native
 			// previews) have already reached the executable-script projection
 			// boundary. Applying semantic review redaction again would replace
-			// structured fields such as config.http.auth with a scalar.
-			return projectScriptNode(typed, scriptProjectionContext{})
+			// structured fields such as config.http.auth with a scalar. Retain
+			// the typed boundary here so encoded request bodies are decoded and
+			// projected as wire bytes rather than scrubbed as opaque base64 text.
+			return maskScriptJSONObject(typed)
 		}
 		semanticSensitive := reviewEvidence && (inheritedSensitive || reviewMapHasSensitiveSemanticName(typed))
 		out := make(map[string]any, len(typed))
@@ -408,17 +415,52 @@ func sanitizeImportCorrelationFields(value any, insideCorrelation bool) any {
 // source values never enter the returned response; the session is addressed
 // only by opaque requirement IDs.
 func (s *Server) newScriptImportResponseWithSourceSecrets(r *http.Request, opts scriptImportResponseOptions) map[string]any {
+	protectedRequirements := opts.ProtectedRequirements
+	defer clearCredentialRequirementValues(protectedRequirements)
+
+	var protectedCredentialReview []SecretBindingRequirement
+	if len(protectedRequirements) > 0 {
+		script, ok := opts.Script.(*dsl.Script)
+		if !ok || script == nil {
+			opts.Warnings = append(opts.Warnings, "Protected credential bindings could not be prepared; the generated secret references remain available for manual configuration.")
+		} else {
+			var err error
+			protectedCredentialReview, err = attachProtectedImportCredentialReview(script, protectedRequirements)
+			if err != nil {
+				opts.Warnings = append(opts.Warnings, "Protected credential bindings could not be prepared; the generated secret references remain available for manual configuration.")
+			}
+		}
+	}
+
 	response := newScriptImportResponse(opts)
 	projectID, projectMatches := sourceSecretProjectIDForRequest(r, opts)
 	if s != nil {
 		response["secret_store"] = s.projectSecretCapabilities(projectID)
 	}
+
 	requirements, _ := response["secret_binding_requirements"].([]SecretBindingRequirement)
+	mergeProtectedImportCredentialReview(response, protectedCredentialReview)
+	requirements, _ = response["secret_binding_requirements"].([]SecretBindingRequirement)
 	if len(requirements) == 0 || s == nil || r == nil || !projectMatches {
 		return response
 	}
 
 	values := sourceSecretValuesForImportResponse(opts, requirements)
+	protectedIDs := make(map[string]struct{}, len(protectedCredentialReview))
+	for _, requirement := range protectedCredentialReview {
+		protectedIDs[requirement.ID] = struct{}{}
+	}
+	protectedStoreAvailable := s.protectedSourceSessions != nil && s.protectedSourceSessions.Available()
+	if protectedStoreAvailable {
+		for _, requirement := range protectedRequirements {
+			if _, public := protectedIDs[requirement.ID]; public && requirement.Value != "" {
+				if values == nil {
+					values = make(map[string]string, len(protectedCredentialReview))
+				}
+				values[requirement.ID] = requirement.Value
+			}
+		}
+	}
 	if len(values) == 0 {
 		return response
 	}

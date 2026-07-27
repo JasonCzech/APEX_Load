@@ -15,12 +15,13 @@ const defaultDateTimeLayout = "2006-01-02 15:04:05"
 const defaultTimeLayout = "15:04:05"
 
 type ParameterRuntime struct {
-	params   map[string]dsl.Parameter
-	order    []string
-	states   map[string]*parameterState
-	provider *DataProvider
-	vuserID  int
-	now      func() time.Time
+	params         map[string]dsl.Parameter
+	canonicalNames map[string]string
+	order          []string
+	states         map[string]*parameterState
+	provider       *DataProvider
+	vuserID        int
+	now            func() time.Time
 }
 
 type parameterState struct {
@@ -42,16 +43,24 @@ func NewParameterRuntime(parameters []dsl.Parameter, provider *DataProvider, vus
 	}
 
 	runtime := &ParameterRuntime{
-		params:   make(map[string]dsl.Parameter, len(parameters)),
-		order:    make([]string, 0, len(parameters)),
-		states:   make(map[string]*parameterState, len(parameters)),
-		provider: provider,
-		vuserID:  vuserID,
-		now:      time.Now,
+		params:         make(map[string]dsl.Parameter, len(parameters)),
+		canonicalNames: make(map[string]string, len(parameters)),
+		order:          make([]string, 0, len(parameters)),
+		states:         make(map[string]*parameterState, len(parameters)),
+		provider:       provider,
+		vuserID:        vuserID,
+		now:            time.Now,
 	}
 	for i, param := range parameters {
 		runtime.params[param.Name] = param
 		runtime.order = append(runtime.order, param.Name)
+		normalizedName := strings.ToLower(strings.TrimSpace(param.Name))
+		if _, exists := runtime.canonicalNames[normalizedName]; normalizedName != "" && !exists {
+			// Valid scripts cannot declare case-insensitive duplicates. Retaining
+			// the first declaration here makes direct/legacy runtime construction
+			// deterministic instead of depending on Go map iteration order.
+			runtime.canonicalNames[normalizedName] = param.Name
+		}
 		seed := time.Now().UnixNano() + int64((vuserID+1)*(i+1))*7919
 		if param.Seed != nil {
 			seed = *param.Seed
@@ -108,17 +117,11 @@ func (pr *ParameterRuntime) ResolveNamed(name string) (string, bool) {
 	paramName := name
 	param, ok := pr.params[paramName]
 	if !ok {
-		for candidate, candidateParam := range pr.params {
-			if strings.EqualFold(candidate, name) {
-				paramName = candidate
-				param = candidateParam
-				ok = true
-				break
-			}
-		}
+		paramName, ok = pr.canonicalNames[strings.ToLower(strings.TrimSpace(name))]
 		if !ok {
 			return "", false
 		}
+		param = pr.params[paramName]
 	}
 	state := pr.states[paramName]
 	if effectiveParameterUpdate(param) == "each_occurrence" {
@@ -300,12 +303,12 @@ func (pr *ParameterRuntime) findParameter(name string) (string, dsl.Parameter, *
 	if param, ok := pr.params[name]; ok {
 		return name, param, pr.states[name], true
 	}
-	for candidate, param := range pr.params {
-		if strings.EqualFold(candidate, name) {
-			return candidate, param, pr.states[candidate], true
-		}
+	canonical, ok := pr.canonicalNames[strings.ToLower(name)]
+	if !ok {
+		return "", dsl.Parameter{}, nil, false
 	}
-	return "", dsl.Parameter{}, nil, false
+	param := pr.params[canonical]
+	return canonical, param, pr.states[canonical], true
 }
 
 func generateCounterValue(param dsl.Parameter, state *parameterState) (string, bool) {

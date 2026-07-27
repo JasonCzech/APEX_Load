@@ -1,10 +1,7 @@
 package api
 
 import (
-	"archive/zip"
-	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,6 +21,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/raml"
 	"github.com/jasonczech/apexload/pkg/convert/wsdl"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 )
 
 type openAPIImportRequest struct {
@@ -88,8 +86,17 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
+	protectedRequirements := result.ProtectedRequirements.Take()
+	defer clearCredentialRequirementValues(protectedRequirements)
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
+	protectedCredentialReview, protectedReviewErr := attachProtectedImportCredentialReview(
+		result.Script,
+		protectedRequirements,
+	)
+	if protectedReviewErr != nil {
+		result.Warnings = append(result.Warnings, "Protected credential bindings could not be prepared; the generated secret references remain available for manual configuration.")
 	}
 	attachSourceReviewToScript(result.Script, "openapi", importReq.Name, result.SourceReview)
 	issues := validateScript(result.Script)
@@ -106,7 +113,7 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
 	}
 	reviewSections = attachAgentforceReview(result.Script, "openapi", reviewSections, agentforceTransformRequested(r))
-	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
 		Warnings:            result.Warnings,
@@ -118,7 +125,25 @@ func (s *Server) handleImportOpenAPI(w http.ResponseWriter, r *http.Request) {
 		SourceReview:        result.SourceReview,
 		Parameterization:    buildImportParameterization(result.Script, openAPICorrelationsToPreApplied(result.Correlations)),
 		Preflight:           preflight,
-	}))
+	})
+	sessionID, expiresAt, sessionErr := s.registerImportCandidateSessionWithRequirements(
+		r,
+		"openapi",
+		result.Script,
+		protectedRequirements,
+	)
+	addImportCandidateSession(response, sessionID, expiresAt, sessionErr)
+	if sessionErr == nil && strings.TrimSpace(sessionID) != "" {
+		protectedCredentialReview = s.attachProtectedImportCredentialMigration(
+			r,
+			response,
+			result.Script.ProjectID,
+			protectedRequirements,
+			protectedCredentialReview,
+		)
+	}
+	mergeProtectedImportCredentialReview(response, protectedCredentialReview)
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleOpenAPISupportMatrix(w http.ResponseWriter, r *http.Request) {
@@ -129,11 +154,15 @@ func (s *Server) handleOpenAPISupportMatrix(w http.ResponseWriter, r *http.Reque
 }
 
 type openAPIImportCommitRequest struct {
-	Script         dsl.Script `json:"script"`
-	Mode           string     `json:"mode,omitempty"`
-	TargetScriptID string     `json:"target_script_id,omitempty"`
-	ReplaceMode    string     `json:"replace_mode,omitempty"`
-	DryRun         bool       `json:"dry_run,omitempty"`
+	Script          dsl.Script `json:"script"`
+	ImportSessionID string     `json:"import_session_id,omitempty"`
+	ProjectID       string     `json:"project_id,omitempty"`
+	Name            *string    `json:"name,omitempty"`
+	FolderID        *string    `json:"folder_id,omitempty"`
+	Mode            string     `json:"mode,omitempty"`
+	TargetScriptID  string     `json:"target_script_id,omitempty"`
+	ReplaceMode     string     `json:"replace_mode,omitempty"`
+	DryRun          bool       `json:"dry_run,omitempty"`
 }
 
 type openAPIImportDiff struct {
@@ -150,121 +179,15 @@ type openAPIImportDiff struct {
 }
 
 func (s *Server) handleCommitOpenAPIImport(w http.ResponseWriter, r *http.Request) {
-	var req openAPIImportCommitRequest
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	script := &req.Script
-	safeScript, _, err := applySuggestedSecretBindings(script, 0)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to prepare safe secret references: "+err.Error())
-		return
-	}
-	script = safeScript
-	if issues := validateScript(script); len(issues) > 0 {
-		writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
-		return
-	}
-	preflight := buildReplayPreflight(script, nil, nil, validationWarnings(script))
-	attachImportReplayPreflight(script, "openapi", preflight)
-
-	mode := strings.ToLower(strings.TrimSpace(req.Mode))
-	if mode == "" {
-		mode = "create"
-	}
-	replaceMode := strings.ToLower(strings.TrimSpace(req.ReplaceMode))
-	if replaceMode == "" {
-		replaceMode = "full"
-	}
-	if mode != "replace" && strings.TrimSpace(req.TargetScriptID) != "" {
-		mode = "replace"
-	}
-	if mode != "create" && mode != "replace" {
-		writeError(w, http.StatusBadRequest, "mode must be create or replace")
-		return
-	}
-	if replaceMode != "full" && replaceMode != "merge_by_operation_id" {
-		writeError(w, http.StatusBadRequest, "replace_mode must be full or merge_by_operation_id")
-		return
-	}
-
-	if mode == "create" {
-		diff := openAPIImportDiff{Mode: "create", Added: len(script.Actions)}
-		if req.DryRun {
-			writeJSON(w, http.StatusOK, map[string]any{"dry_run": true, "diff": diff, "preflight": preflight})
-			return
-		}
-		stored, err := s.runner.StoreScriptDurable(script)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to save imported script: "+err.Error())
-			return
-		}
-		s.recordAuditEvent(r, "script.import.openapi.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": stored.Name})
-		writeJSON(w, http.StatusCreated, map[string]any{
-			"scripts":       maskStoredScripts([]*StoredScript{stored}),
-			"script":        maskScriptSecrets(stored.Script),
-			"stored_script": maskStoredScript(stored),
-			"replaced":      false,
-			"dry_run":       false,
-			"diff":          diff,
-			"preflight":     preflight,
-		})
-		return
-	}
-
-	targetID := strings.TrimSpace(req.TargetScriptID)
-	if targetID == "" {
-		targetID = strings.TrimSpace(script.ID)
-	}
-	if targetID == "" {
-		writeError(w, http.StatusBadRequest, "target_script_id is required when replacing an existing OpenAPI import")
-		return
-	}
-	existing, ok := s.runner.GetScript(targetID)
-	if !ok || existing == nil || existing.Script == nil {
-		writeError(w, http.StatusNotFound, "target script not found")
-		return
-	}
-	if !requireAuthorizedProjectMatch(w, r, existing.ProjectID) {
-		return
-	}
-	next := script
-	diff := diffOpenAPIImport(existing.Script, script, replaceMode)
-	diff.Mode = "replace"
-	diff.ReplaceMode = replaceMode
-	if replaceMode == "merge_by_operation_id" {
-		merged := mergeOpenAPIImportScript(existing.Script, script)
-		next = merged
-	}
-	// Replacing content must not relocate the script to another project or blank
-	// its identity/creation metadata, regardless of what the posted body carries.
-	preserveReplacedScriptIdentity(next, existing.Script)
-	if req.DryRun {
-		writeJSON(w, http.StatusOK, map[string]any{"dry_run": true, "replaced": true, "diff": diff, "preflight": preflight})
-		return
-	}
-	updated, ok, err := s.runner.UpdateScriptDurableInProject(targetID, next, authorizedProjectOr(r, existing.ProjectID))
-	if err != nil {
-		if errors.Is(err, errScriptConcurrentChange) {
-			writeError(w, http.StatusConflict, err.Error())
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "failed to save imported script: "+err.Error())
-		return
-	}
-	if !ok {
-		writeError(w, http.StatusNotFound, "target script not found")
-		return
-	}
-	s.recordAuditEvent(r, "script.import.openapi.replace", "success", "script", updated.ID, updated.ProjectID, map[string]any{"name": updated.Name, "replace_mode": replaceMode})
-	writeJSON(w, http.StatusOK, map[string]any{
-		"scripts":       maskStoredScripts([]*StoredScript{updated}),
-		"script":        maskScriptSecrets(updated.Script),
-		"stored_script": maskStoredScript(updated),
-		"replaced":      true,
-		"dry_run":       false,
-		"diff":          diff,
-		"preflight":     preflight,
+	s.handleImportCommit(w, r, importCommitSpec{
+		sourceProfile:         "openapi",
+		auditProfile:          "openapi",
+		displayName:           "OpenAPI",
+		allowedReplaceModes:   []string{"full", "merge_by_operation_id"},
+		actionKey:             openAPIActionKey,
+		diff:                  diffImportByKey,
+		merge:                 mergeImportScriptByKey,
+		mapCompatibleResponse: identityImportCommitResponse,
 	})
 }
 
@@ -295,9 +218,11 @@ func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 	attachSourceReviewToScript(result.Script, "raml", importReq.Name, nil)
-	if issues := validateScript(result.Script); len(issues) > 0 {
+	issues := validateScript(result.Script)
+	if len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
+	preflight := buildAndAttachImportPreflight(result.Script, "raml", issues, result.Warnings)
 
 	reviewSections := []scriptImportReviewSection{{
 		Key:      "raml_import",
@@ -332,6 +257,7 @@ func (s *Server) handleImportRAML(w http.ResponseWriter, r *http.Request) {
 		UnsupportedElements: result.Unsupported.Strings(),
 		ReviewSections:      reviewSections,
 		Parameterization:    buildImportParameterization(result.Script, nil),
+		Preflight:           preflight,
 	}))
 }
 
@@ -528,9 +454,11 @@ func (s *Server) handleImportWSDL(w http.ResponseWriter, r *http.Request) {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
 	attachSourceReviewToScript(result.Script, "wsdl", importReq.Name, result.SourceReview)
-	if issues := validateScript(result.Script); len(issues) > 0 {
+	issues := validateScript(result.Script)
+	if len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
+	preflight := buildAndAttachImportPreflight(result.Script, "wsdl", issues, result.Warnings)
 	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
@@ -541,6 +469,7 @@ func (s *Server) handleImportWSDL(w http.ResponseWriter, r *http.Request) {
 		ReviewSections:      appendImportDiagnosticReviewSections(buildWSDLReviewSections(result), result.Unsupported),
 		SourceReview:        result.SourceReview,
 		Parameterization:    buildImportParameterization(result.Script, nil),
+		Preflight:           preflight,
 	}))
 }
 
@@ -568,8 +497,17 @@ func (s *Server) handleValidatePostmanImport(w http.ResponseWriter, r *http.Requ
 }
 
 func (s *Server) writePostmanImportResponse(w http.ResponseWriter, r *http.Request, result *postman.ConvertResult, importReq *postmanImportRequest, agentforceTransform bool) {
+	protectedRequirements := result.ProtectedRequirements.Take()
+	defer clearCredentialRequirementValues(protectedRequirements)
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
+	}
+	protectedCredentialReview, protectedReviewErr := attachProtectedImportCredentialReview(
+		result.Script,
+		protectedRequirements,
+	)
+	if protectedReviewErr != nil {
+		result.Warnings = append(result.Warnings, "Protected credential bindings could not be prepared; the generated secret references remain available for manual configuration.")
 	}
 	attachSourceReviewToScript(result.Script, "postman", importReq.Name, result.SourceReview)
 	issues := validateScript(result.Script)
@@ -586,7 +524,7 @@ func (s *Server) writePostmanImportResponse(w http.ResponseWriter, r *http.Reque
 		reviewSections = append(reviewSections, mulesoftReviewSection(muleReview))
 	}
 	reviewSections = attachAgentforceReview(result.Script, "postman", reviewSections, agentforceTransform)
-	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
+	response := s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:              result,
 		Script:              result.Script,
 		Warnings:            result.Warnings,
@@ -598,129 +536,37 @@ func (s *Server) writePostmanImportResponse(w http.ResponseWriter, r *http.Reque
 		Correlations:        result.Correlations,
 		Parameterization:    buildImportParameterization(result.Script, postmanCorrelationsToPreApplied(result.Correlations)),
 		Preflight:           preflight,
-	}))
+	})
+	sessionID, expiresAt, sessionErr := s.registerImportCandidateSessionWithRequirements(
+		r,
+		"postman",
+		result.Script,
+		protectedRequirements,
+	)
+	addImportCandidateSession(response, sessionID, expiresAt, sessionErr)
+	if sessionErr == nil && strings.TrimSpace(sessionID) != "" {
+		protectedCredentialReview = s.attachProtectedImportCredentialMigration(
+			r,
+			response,
+			result.Script.ProjectID,
+			protectedRequirements,
+			protectedCredentialReview,
+		)
+	}
+	mergeProtectedImportCredentialReview(response, protectedCredentialReview)
+	writeJSON(w, http.StatusOK, response)
 }
 
 func (s *Server) handleSavePostmanImport(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Script         dsl.Script `json:"script"`
-		Mode           string     `json:"mode,omitempty"`
-		TargetScriptID string     `json:"target_script_id,omitempty"`
-		ReplaceMode    string     `json:"replace_mode,omitempty"`
-		DryRun         bool       `json:"dry_run,omitempty"`
-	}
-	if !decodeJSONBody(w, r, &req) {
-		return
-	}
-	script := &req.Script
-	safeScript, _, err := applySuggestedSecretBindings(script, 0)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "failed to prepare safe secret references: "+err.Error())
-		return
-	}
-	script = safeScript
-	if issues := validateScript(script); len(issues) > 0 {
-		writeError(w, http.StatusBadRequest, strings.Join(issues, "; "))
-		return
-	}
-	preflight := buildReplayPreflight(script, nil, nil, validationWarnings(script))
-	attachImportReplayPreflight(script, "postman", preflight)
-
-	mode := strings.ToLower(strings.TrimSpace(req.Mode))
-	if mode == "" {
-		mode = "create"
-	}
-	replaceMode := strings.ToLower(strings.TrimSpace(req.ReplaceMode))
-	if replaceMode == "" {
-		replaceMode = "full"
-	}
-	if mode != "replace" && strings.TrimSpace(req.TargetScriptID) != "" {
-		mode = "replace"
-	}
-	if mode != "create" && mode != "replace" {
-		writeError(w, http.StatusBadRequest, "mode must be create or replace")
-		return
-	}
-	if replaceMode != "full" && replaceMode != "merge_by_item" {
-		writeError(w, http.StatusBadRequest, "replace_mode must be full or merge_by_item")
-		return
-	}
-
-	if mode == "create" {
-		diff := openAPIImportDiff{Mode: "create", Added: len(script.Actions)}
-		if req.DryRun {
-			writeJSON(w, http.StatusOK, map[string]any{"dry_run": true, "diff": diff, "preflight": preflight})
-			return
-		}
-		stored, err := s.runner.StoreScriptDurable(script)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "failed to save imported script: "+err.Error())
-			return
-		}
-		s.recordAuditEvent(r, "script.import.postman.create", "success", "script", stored.ID, stored.ProjectID, map[string]any{"name": stored.Name})
-		writeJSON(w, http.StatusCreated, map[string]any{
-			"scripts":       maskStoredScripts([]*StoredScript{stored}),
-			"script":        maskScriptSecrets(stored.Script),
-			"stored_script": maskStoredScript(stored),
-			"replaced":      false,
-			"dry_run":       false,
-			"diff":          diff,
-			"preflight":     preflight,
-		})
-		return
-	}
-
-	targetID := strings.TrimSpace(req.TargetScriptID)
-	if targetID == "" {
-		targetID = strings.TrimSpace(script.ID)
-	}
-	if targetID == "" {
-		writeError(w, http.StatusBadRequest, "target_script_id is required when replacing an existing Postman import")
-		return
-	}
-	existing, ok := s.runner.GetScript(targetID)
-	if !ok || existing == nil || existing.Script == nil {
-		writeError(w, http.StatusNotFound, "target script not found")
-		return
-	}
-	if !requireAuthorizedProjectMatch(w, r, existing.ProjectID) {
-		return
-	}
-	next := script
-	diff := diffPostmanImport(existing.Script, script, replaceMode)
-	diff.Mode = "replace"
-	diff.ReplaceMode = replaceMode
-	if replaceMode == "merge_by_item" {
-		next = mergePostmanImportScript(existing.Script, script)
-	}
-	// Replacing content must not relocate the script or blank its identity.
-	preserveReplacedScriptIdentity(next, existing.Script)
-	if req.DryRun {
-		writeJSON(w, http.StatusOK, map[string]any{"dry_run": true, "replaced": true, "diff": diff, "preflight": preflight})
-		return
-	}
-	updated, ok, err := s.runner.UpdateScriptDurableInProject(targetID, next, authorizedProjectOr(r, existing.ProjectID))
-	if err != nil {
-		if errors.Is(err, errScriptConcurrentChange) {
-			writeError(w, http.StatusConflict, err.Error())
-			return
-		}
-		writeError(w, http.StatusInternalServerError, "failed to save imported script: "+err.Error())
-		return
-	}
-	if !ok {
-		writeError(w, http.StatusNotFound, "target script not found")
-		return
-	}
-	s.recordAuditEvent(r, "script.import.postman.replace", "success", "script", updated.ID, updated.ProjectID, map[string]any{"name": updated.Name, "replace_mode": replaceMode})
-	writeJSON(w, http.StatusOK, map[string]any{
-		"scripts":       maskStoredScripts([]*StoredScript{updated}),
-		"script":        maskScriptSecrets(updated.Script),
-		"stored_script": maskStoredScript(updated),
-		"replaced":      true,
-		"dry_run":       false,
-		"diff":          diff,
-		"preflight":     preflight,
+	s.handleImportCommit(w, r, importCommitSpec{
+		sourceProfile:         "postman",
+		auditProfile:          "postman",
+		displayName:           "Postman",
+		allowedReplaceModes:   []string{"full", "merge_by_item"},
+		actionKey:             postmanActionKey,
+		diff:                  diffImportByKey,
+		merge:                 mergeImportScriptByKey,
+		mapCompatibleResponse: identityImportCommitResponse,
 	})
 }
 
@@ -860,9 +706,11 @@ func (s *Server) handleImportEventHubsCapture(w http.ResponseWriter, r *http.Req
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(projectID)
 	}
-	if issues := validateScript(result.Script); len(issues) > 0 {
+	issues := validateScript(result.Script)
+	if len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
+	preflight := buildAndAttachImportPreflight(result.Script, "eventhubs_capture", issues, result.Warnings)
 	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:           result,
 		Script:           result.Script,
@@ -871,6 +719,7 @@ func (s *Server) handleImportEventHubsCapture(w http.ResponseWriter, r *http.Req
 		Summary:          result.Summary,
 		ReviewSections:   buildEventHubsCaptureReviewSections(result),
 		Parameterization: buildImportParameterization(result.Script, nil),
+		Preflight:        preflight,
 	}))
 }
 
@@ -958,9 +807,11 @@ func (s *Server) handleImportBrokerConfig(w http.ResponseWriter, r *http.Request
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(projectID)
 	}
-	if issues := validateScript(result.Script); len(issues) > 0 {
+	issues := validateScript(result.Script)
+	if len(issues) > 0 {
 		result.Warnings = append(result.Warnings, issues...)
 	}
+	preflight := buildAndAttachImportPreflight(result.Script, "broker_config", issues, result.Warnings)
 	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
 		Result:           result,
 		Script:           result.Script,
@@ -969,6 +820,7 @@ func (s *Server) handleImportBrokerConfig(w http.ResponseWriter, r *http.Request
 		Summary:          result.Summary,
 		ReviewSections:   buildBrokerConfigReviewSections(result),
 		Parameterization: buildImportParameterization(result.Script, nil),
+		Preflight:        preflight,
 	}))
 }
 
@@ -1296,41 +1148,29 @@ func isZipArchive(data []byte) bool {
 // entry name.
 func extractRAMLZip(data []byte) ([]byte, map[string][]byte, string, error) {
 	const maxRAMLZipEntries = 2000
-	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	// archiveingest owns the shared entry-path policy and the zip-bomb guards
+	// (entry count, per-entry and total decompressed bytes, compression ratio).
+	// The map is keyed by the validated relative path, which is also what
+	// resolves !include, so a traversal segment can no longer reach a lookup key.
+	files, err := archiveingest.ReadZIP(data, archiveingest.Options{
+		Limits: archiveingest.Limits{
+			MaxEntries:    maxRAMLZipEntries,
+			MaxEntryBytes: webAPIImportMaxBodyBytes,
+			MaxTotalBytes: webAPIImportMaxBodyBytes,
+		},
+	})
 	if err != nil {
-		return nil, nil, "", err
+		return nil, nil, "", fmt.Errorf("reading RAML archive: %w", err)
 	}
-	files := make(map[string][]byte)
-	// Guard against zip-bomb amplification: cap total decompressed bytes with a
-	// shared remaining budget across all entries, plus an entry-count cap.
-	remaining := webAPIImportMaxBodyBytes
-	for _, f := range reader.File {
-		if f.FileInfo().IsDir() {
-			continue
-		}
-		if len(files) >= maxRAMLZipEntries {
-			return nil, nil, "", fmt.Errorf("archive has too many entries (>%d)", maxRAMLZipEntries)
-		}
-		rc, err := f.Open()
-		if err != nil {
-			return nil, nil, "", err
-		}
-		content, err := io.ReadAll(io.LimitReader(rc, remaining+1))
-		rc.Close()
-		if err != nil {
-			return nil, nil, "", err
-		}
-		if int64(len(content)) > remaining {
-			return nil, nil, "", fmt.Errorf("archive decompressed size exceeds the %d-byte limit", webAPIImportMaxBodyBytes)
-		}
-		remaining -= int64(len(content))
-		files[f.Name] = content
+	fileMap := make(map[string][]byte, len(files))
+	for _, file := range files {
+		fileMap[file.Name] = file.Data
 	}
-	mainName := pickMainRAML(files)
+	mainName := pickMainRAML(fileMap)
 	if mainName == "" {
 		return nil, nil, "", fmt.Errorf("no .raml entry found in archive")
 	}
-	return files[mainName], files, mainName, nil
+	return fileMap[mainName], fileMap, mainName, nil
 }
 
 // pickMainRAML selects the root RAML document from a zip: a file named

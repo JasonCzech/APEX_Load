@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { actionRowLabel, actionTypeSummary, humanizeActionType, httpSequenceRequests, rawHttpSequenceRequest } from './scriptActionHelpers'
+import {
+  actionExecutionBlockers,
+  actionRequiresReview,
+  actionRowLabel,
+  actionTypeSummary,
+  headerListToCompatibilityMap,
+  humanizeActionType,
+  httpSequenceRequests,
+  rawHttpSequenceRequest,
+} from './scriptActionHelpers'
 import { setCachedDslActionCatalog, type DslActionCatalog } from './dslActionCatalog'
 import type { ScriptActionDefinition } from '../types/scripts'
 
@@ -42,6 +51,63 @@ describe('rawHttpSequenceRequest', () => {
     // Out-of-range and non-sequence inputs return null.
     expect(rawHttpSequenceRequest(seq, 5)).toBeNull()
     expect(rawHttpSequenceRequest(action({ type: 'GET' }), 0)).toBeNull()
+  })
+})
+
+describe('HTTP request fidelity helpers', () => {
+  it('retains ordered duplicate headers on sequence child requests', () => {
+    const seq = action({
+      name: 'Seq',
+      type: 'http_sequence',
+      params: {
+        requests: [{
+          name: 'r0',
+          method: 'GET',
+          target: '/0',
+          header_list: [
+            { name: 'X-Trace', value: 'first' },
+            { name: 'x-trace', value: 'second' },
+          ],
+        }],
+      },
+    } as Partial<ScriptActionDefinition>)
+
+    expect(httpSequenceRequests(seq)[0].header_list).toEqual([
+      { name: 'X-Trace', value: 'first' },
+      { name: 'x-trace', value: 'second' },
+    ])
+  })
+
+  it('derives the compatibility map from the last case-insensitive occurrence', () => {
+    expect(headerListToCompatibilityMap([
+      { name: 'X-Trace', value: 'first' },
+      { name: 'x-trace', value: 'second' },
+      { name: 'X-Other', value: 'kept' },
+      { name: ' ', value: 'ignored' },
+    ], {
+      'X-Trace': 'stale',
+      'X-Map-Only': 'preserved',
+    })).toEqual({
+      'x-trace': 'second',
+      'X-Other': 'kept',
+      'X-Map-Only': 'preserved',
+    })
+  })
+})
+
+describe('durable execution blockers', () => {
+  it('normalizes singular and plural blocker metadata', () => {
+    const blocked = action({
+      metadata: {
+        execution_blocker: ' import_missing_variables ',
+        execution_blockers: ['import_review_required', 'import_missing_variables', 7],
+      },
+    })
+    expect(actionExecutionBlockers(blocked)).toEqual([
+      'import_missing_variables',
+      'import_review_required',
+    ])
+    expect(actionRequiresReview(blocked)).toBe(true)
   })
 })
 

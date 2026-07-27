@@ -1,8 +1,18 @@
 import { type ScriptConfig, type ScriptDefinition } from '../types/scripts'
 import { jmsConfigForProtocol, jmsProtocolForProvider } from './scriptEditorHelpers'
+import {
+  canonicalThinkTimeType,
+	thinkTimeConfigForType,
+	thinkTimeUsesBounds,
+  thinkTimeUsesMean,
+  thinkTimeUsesStdDeviation,
+} from './thinkTimeConfig'
+import ThinkTimeMultiplierInput from './ThinkTimeMultiplierInput'
+import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
 import './ImportRuntimeOptions.css'
 
 interface Props {
+  draftScope?: string
   script: ScriptDefinition
   onChange: (script: ScriptDefinition) => void
   disabled?: boolean
@@ -12,7 +22,7 @@ interface Props {
 // edits the generated script's config (think time, pacing, timeouts, retries,
 // auth) in the review phase, so every importer offers the same runtime knobs
 // the sample importer exposes — without each converter needing new options.
-export default function ImportRuntimeOptions({ script, onChange, disabled = false }: Props) {
+export default function ImportRuntimeOptions({ draftScope, script, onChange, disabled = false }: Props) {
   const config = script.config
   const isKafka = script.protocol === 'kafka'
   const isJMS = script.protocol?.startsWith('jms-')
@@ -22,8 +32,8 @@ export default function ImportRuntimeOptions({ script, onChange, disabled = fals
   }
 
   const thinkTimeMs = config.think_time?.mean_ms ?? 0
+  const thinkTimeType = canonicalThinkTimeType(config.think_time?.type || 'fixed')
   const pacingType = config.pacing?.type || 'none'
-  const pacingDelayMs = config.pacing?.delay_ms ?? 0
   const requestTimeoutMs = config.http?.request_timeout_ms ?? 0
   const maxRetries = config.error_handling?.max_retries ?? 0
   const continueOnError = config.error_handling?.continue_on_error ?? false
@@ -50,7 +60,25 @@ export default function ImportRuntimeOptions({ script, onChange, disabled = fals
       </summary>
       <div className="import-runtime-grid">
         <label>
-          <span>Think Time (ms)</span>
+          <span>Think Time Mode</span>
+          <select
+            value={thinkTimeType}
+            disabled={disabled}
+            onChange={event => updateConfig(next => ({
+              ...next,
+              think_time: thinkTimeConfigForType(next.think_time, event.target.value),
+            }))}
+          >
+            <option value="none">None</option>
+            <option value="fixed">Fixed</option>
+            <option value="recorded">Replay think time as recorded</option>
+            <option value="gaussian">Gaussian</option>
+            <option value="uniform">Uniform</option>
+          </select>
+        </label>
+        {thinkTimeUsesMean(thinkTimeType) && (
+        <label>
+          <span>{thinkTimeType === 'gaussian' ? 'Mean Think Time (ms)' : 'Think Time (ms)'}</span>
           <input
             type="number"
             min={0}
@@ -60,10 +88,88 @@ export default function ImportRuntimeOptions({ script, onChange, disabled = fals
               const meanMs = numberValue(event.target.value)
               updateConfig(next => ({
                 ...next,
-                think_time: { ...(next.think_time || { type: 'fixed' }), type: next.think_time?.type || 'fixed', mean_ms: meanMs },
+                think_time: thinkTimeConfigForType({
+                  ...(next.think_time || { type: 'fixed' }),
+                  mean_ms: meanMs,
+                }, thinkTimeType),
               }))
             }}
           />
+        </label>
+        )}
+        {thinkTimeUsesStdDeviation(thinkTimeType) && (
+          <label>
+            <span>Think Time Std Dev (ms)</span>
+            <input type="number" min={0} value={config.think_time?.std_ms ?? 0} disabled={disabled}
+              onChange={event => updateConfig(next => ({
+                ...next,
+                think_time: {
+                  ...thinkTimeConfigForType(next.think_time, next.think_time?.type || thinkTimeType),
+                  std_ms: numberValue(event.target.value),
+                },
+              }))} />
+          </label>
+        )}
+        {thinkTimeUsesBounds(thinkTimeType) && (
+          <>
+            <label>
+              <span>Minimum Think Time (ms)</span>
+              <input type="number" min={0} value={config.think_time?.min_ms ?? 0} disabled={disabled}
+                onChange={event => updateConfig(next => ({
+                  ...next,
+                  think_time: {
+                    ...thinkTimeConfigForType(next.think_time, next.think_time?.type || thinkTimeType),
+                    min_ms: numberValue(event.target.value),
+                  },
+                }))} />
+            </label>
+            <label>
+              <span>Maximum Think Time (ms)</span>
+              <input type="number" min={0} value={config.think_time?.max_ms ?? 0} disabled={disabled}
+                onChange={event => updateConfig(next => ({
+                  ...next,
+                  think_time: {
+                    ...thinkTimeConfigForType(next.think_time, next.think_time?.type || thinkTimeType),
+                    max_ms: numberValue(event.target.value),
+                  },
+                }))} />
+            </label>
+          </>
+        )}
+        <ThinkTimeMultiplierInput
+          draftScope={draftScope}
+          label="Think Time Multiplier"
+          value={config.think_time?.multiplier}
+          disabled={disabled}
+          onValueChange={multiplier => updateConfig(next => ({
+            ...next,
+            think_time: {
+              ...thinkTimeConfigForType(next.think_time, next.think_time?.type || thinkTimeType),
+              multiplier,
+            },
+          }))}
+        />
+        <label>
+          <span>Think Time Cap (ms)</span>
+          <input type="number" min={0} value={config.think_time?.limit_ms ?? 0} disabled={disabled}
+            onChange={event => updateConfig(next => ({
+              ...next,
+              think_time: {
+                ...thinkTimeConfigForType(next.think_time, next.think_time?.type || thinkTimeType),
+                limit_ms: numberValue(event.target.value),
+              },
+            }))} />
+        </label>
+        <label className="import-runtime-toggle">
+          <input type="checkbox" checked={config.think_time?.ignore ?? false} disabled={disabled}
+            onChange={event => updateConfig(next => ({
+              ...next,
+              think_time: {
+                ...thinkTimeConfigForType(next.think_time, next.think_time?.type || thinkTimeType),
+                ignore: event.target.checked,
+              },
+            }))} />
+          Ignore all think times
         </label>
         <label>
           <span>Pacing</span>
@@ -80,25 +186,53 @@ export default function ImportRuntimeOptions({ script, onChange, disabled = fals
           >
             <option value="none">None</option>
             <option value="fixed_delay">Fixed delay</option>
+            <option value="random_delay">Random delay</option>
+            <option value="fixed_interval">Fixed interval</option>
+            <option value="random_interval">Random interval</option>
+            <option value="tps">Target TPS</option>
           </select>
         </label>
         {pacingType === 'fixed_delay' && (
           <label>
-            <span>Pacing Delay (ms)</span>
-            <input
-              type="number"
-              min={0}
-              value={pacingDelayMs}
+            <span>Pacing Delay (seconds)</span>
+            <SecondsFromMillisecondsInput
+              valueMs={config.pacing?.delay_ms}
               disabled={disabled}
-              onChange={event => {
-                const delayMs = numberValue(event.target.value)
+              onChangeMs={delayMs => {
                 updateConfig(next => ({
                   ...next,
-                  pacing: { ...(next.pacing || { type: 'fixed_delay' }), type: 'fixed_delay', delay_ms: delayMs },
+                  pacing: { ...(next.pacing || { type: 'fixed_delay' }), type: 'fixed_delay', delay_ms: delayMs ?? 0 },
                 }))
               }}
             />
           </label>
+        )}
+        {pacingType === 'fixed_interval' && (
+          <label>
+            <span>Pacing Interval (seconds)</span>
+            <SecondsFromMillisecondsInput valueMs={config.pacing?.interval_ms} disabled={disabled}
+              onChangeMs={intervalMs => updateConfig(next => ({ ...next, pacing: { ...(next.pacing || {}), type: 'fixed_interval', interval_ms: intervalMs ?? 0 } }))} />
+          </label>
+        )}
+        {pacingType === 'random_delay' && (
+          <>
+            <label><span>Minimum Delay (seconds)</span><SecondsFromMillisecondsInput valueMs={config.pacing?.min_delay_ms} disabled={disabled}
+              onChangeMs={minDelayMs => updateConfig(next => ({ ...next, pacing: { ...(next.pacing || {}), type: 'random_delay', min_delay_ms: minDelayMs ?? 0 } }))} /></label>
+            <label><span>Maximum Delay (seconds)</span><SecondsFromMillisecondsInput valueMs={config.pacing?.max_delay_ms} disabled={disabled}
+              onChangeMs={maxDelayMs => updateConfig(next => ({ ...next, pacing: { ...(next.pacing || {}), type: 'random_delay', max_delay_ms: maxDelayMs ?? 0 } }))} /></label>
+          </>
+        )}
+        {pacingType === 'random_interval' && (
+          <>
+            <label><span>Minimum Interval (seconds)</span><SecondsFromMillisecondsInput valueMs={config.pacing?.min_interval_ms} disabled={disabled}
+              onChangeMs={minIntervalMs => updateConfig(next => ({ ...next, pacing: { ...(next.pacing || {}), type: 'random_interval', min_interval_ms: minIntervalMs ?? 0 } }))} /></label>
+            <label><span>Maximum Interval (seconds)</span><SecondsFromMillisecondsInput valueMs={config.pacing?.max_interval_ms} disabled={disabled}
+              onChangeMs={maxIntervalMs => updateConfig(next => ({ ...next, pacing: { ...(next.pacing || {}), type: 'random_interval', max_interval_ms: maxIntervalMs ?? 0 } }))} /></label>
+          </>
+        )}
+        {pacingType === 'tps' && (
+          <label><span>Target TPS</span><input type="number" min={0} step="0.1" value={config.pacing?.tps ?? 0} disabled={disabled}
+            onChange={event => updateConfig(next => ({ ...next, pacing: { ...(next.pacing || {}), type: 'tps', tps: numberValue(event.target.value) } }))} /></label>
         )}
         {isKafka ? (
           <>

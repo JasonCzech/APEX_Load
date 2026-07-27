@@ -1,0 +1,22 @@
+{
+  "info": {
+    "name": "Import Contract",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Create order",
+      "request": {
+        "method": "POST",
+        "header": [
+          {"key": "Content-Type", "value": "application/json"}
+        ],
+        "url": "https://api.contract.test/orders",
+        "body": {
+          "mode": "raw",
+          "raw": "{\"sku\":\"A-1\"}"
+        }
+      }
+    }
+  ]
+}

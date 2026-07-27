@@ -123,9 +123,10 @@ describe('CreateTestModal', () => {
     if (!delayInput) {
       return
     }
+    expect(delayInput.parentElement?.textContent).toContain('Pacing delay (seconds)')
 
     await act(async () => {
-      setInputValue(delayInput, '1200')
+      setInputValue(delayInput, '1.2')
       setInputValue(thinkTimeInput, '900')
       continueOnErrorCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))
       snapshotOnErrorCheckbox.dispatchEvent(new MouseEvent('click', { bubbles: true }))

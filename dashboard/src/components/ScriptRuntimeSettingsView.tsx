@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 
 import type { ScriptActionDefinition, ScriptDefinition } from '../types/scripts'
 import { useBrowserEmulationCatalog } from '../hooks/useBrowserEmulationCatalog'
@@ -11,6 +11,14 @@ import {
   lookupBrowserDeviceProfile,
 } from './scriptEditorWorkbench'
 import {
+  canonicalThinkTimeType,
+	thinkTimeConfigForType,
+	thinkTimeUsesBounds,
+	thinkTimeUsesMean,
+  thinkTimeUsesStdDeviation,
+} from './thinkTimeConfig'
+import ThinkTimeMultiplierInput from './ThinkTimeMultiplierInput'
+import {
   HTTP_TRANSPORT_TAB_OPTIONS,
   SCRIPT_PROTOCOL_OPTIONS,
   buildScriptRuntimeSummary,
@@ -20,7 +28,6 @@ import {
   formatKeyValueLines,
   formatLineList,
   formatMillisecondsAsSecondsLabel,
-  formatMillisecondsAsSecondsValue,
   formatRuntimeSettingStatusLabel,
   formatScriptProtocolLabel,
   getRuntimeProtocolCapabilities,
@@ -29,13 +36,14 @@ import {
   parseDFEChain,
   parseKeyValueLines,
   parseLineList,
-  parseSecondsInputAsMilliseconds,
   syncSOAPEnvelopeNamespace,
   type HTTPTransportTabId,
   type RuntimeSettingsSectionId,
 } from './scriptEditorRuntimeSettingsModel'
+import { formatHTTPVersion, HTTP_VERSION_OPTIONS } from './runtimeSettingsModel'
+import { formatPacingTiming } from './runtimeTiming'
+import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
 
-const SECONDS_INPUT_STEP = '0.001'
 const WEBKIT_INSTALL_ADVISORY = 'WebKit execution requires Playwright WebKit assets installed on the controller host. Run go run github.com/playwright-community/playwright-go/cmd/playwright@v0.5700.1 install webkit before running browser tests or replay sessions.'
 
 function flattenRuntimeActions(actions: ScriptActionDefinition[]): ScriptActionDefinition[] {
@@ -78,6 +86,7 @@ export function ScriptRuntimeSettingsSidebar({
   script,
 }: ScriptRuntimeSettingsSidebarProps) {
   const { httpProxySummary, logLevelLabel, runLogicLabel, thinkTimeLabel } = buildScriptRuntimeSummary(script)
+  const httpVersionSummary = formatHTTPVersion(script.config.http?.version)
   return (
     <>
       <div className="utility-card">
@@ -88,6 +97,7 @@ export function ScriptRuntimeSettingsSidebar({
         <ul className="utility-list">
           <li className="utility-list-item">Think time: {thinkTimeLabel}</li>
           <li className="utility-list-item">Log level: {logLevelLabel}</li>
+          <li className="utility-list-item">HTTP version: {httpVersionSummary}</li>
           <li className="utility-list-item">Proxy: {httpProxySummary}</li>
         </ul>
       </div>
@@ -108,59 +118,6 @@ export function ScriptRuntimeSettingsSidebar({
         </div>
       )}
     </>
-  )
-}
-
-interface SecondsFromMillisecondsInputProps {
-  valueMs?: number | null
-  fallbackMs?: number
-  emptyWhenUndefined?: boolean
-  min?: number
-  placeholder?: string
-  ariaLabel?: string
-  onChangeMs: (valueMs: number | undefined) => void
-}
-
-function SecondsFromMillisecondsInput({
-  valueMs,
-  fallbackMs = 0,
-  emptyWhenUndefined = false,
-  min = 0,
-  placeholder,
-  ariaLabel,
-  onChangeMs,
-}: SecondsFromMillisecondsInputProps) {
-  const formattedValue = formatMillisecondsAsSecondsValue(valueMs, fallbackMs, emptyWhenUndefined)
-  const [draftValue, setDraftValue] = useState(formattedValue)
-  const [focused, setFocused] = useState(false)
-
-  useEffect(() => {
-    if (!focused) setDraftValue(formattedValue)
-  }, [focused, formattedValue])
-
-  return (
-    <input
-      type="number"
-      min={min}
-      step={SECONDS_INPUT_STEP}
-      value={focused ? draftValue : formattedValue}
-      placeholder={placeholder}
-      aria-label={ariaLabel}
-      onFocus={() => {
-        setFocused(true)
-        setDraftValue(formattedValue)
-      }}
-      onBlur={() => {
-        setFocused(false)
-        setDraftValue(formatMillisecondsAsSecondsValue(valueMs, fallbackMs, emptyWhenUndefined))
-      }}
-      onChange={event => {
-        const nextValue = event.target.value
-        setDraftValue(nextValue)
-        const nextMilliseconds = parseSecondsInputAsMilliseconds(nextValue, min)
-        if (nextMilliseconds !== null) onChangeMs(nextMilliseconds)
-      }}
-    />
   )
 }
 
@@ -353,6 +310,7 @@ interface ScriptRuntimeSettingsViewProps {
   activeHTTPTransportTab: HTTPTransportTabId
   activeSection: RuntimeSettingsSectionId
   canEditProtocol: boolean
+  draftScope?: string
   onSave: () => void
   onSelectHTTPTransportTab: (tab: HTTPTransportTabId) => void
   onSelectSection: (section: RuntimeSettingsSectionId) => void
@@ -368,6 +326,7 @@ export function ScriptRuntimeSettingsView({
   activeHTTPTransportTab,
   activeSection,
   canEditProtocol,
+  draftScope,
   onSave,
   onSelectHTTPTransportTab,
   onSelectSection,
@@ -401,6 +360,7 @@ export function ScriptRuntimeSettingsView({
       ? WEBKIT_INSTALL_ADVISORY
       : ''
   const { httpProxyMode, httpProxySummary } = buildScriptRuntimeSummary(script)
+  const httpVersionSummary = formatHTTPVersion(script.config.http?.version)
   const runtimeSectionIsActive = (section: RuntimeSettingsSectionId) => activeSection === section
   const selectRuntimeSettingsSection = onSelectSection
   const setActiveHTTPTransportTab = onSelectHTTPTransportTab
@@ -412,6 +372,13 @@ export function ScriptRuntimeSettingsView({
   const persistentJavaVuserLifecycle = isJavaVuserScript && usesPersistentJavaVuserLifecycle(script)
   const importedJavaVMParameters = isJavaVuserScript ? readImportedJavaVMParameters(script.metadata?.import) : []
   const supportsBrowserEmulation = capabilities.browserEmulation
+  const thinkTimeType = canonicalThinkTimeType(script.config.think_time?.type || 'fixed')
+  const updateThinkTime = (patch: Partial<NonNullable<ScriptDefinition['config']['think_time']>>) => {
+    updateField('config.think_time', thinkTimeConfigForType({
+      ...script.config.think_time,
+      ...patch,
+    }, thinkTimeType))
+  }
 
   // The 'browser' sub-tab edits config.browser.* (Playwright runtime) and is
   // shown only for browser-protocol scripts; HTTP scripts use the top-level
@@ -518,12 +485,12 @@ export function ScriptRuntimeSettingsView({
     <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('think') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('think')}>
       <RuntimeSectionIcon section="think" />
       <span className="section-label">Think Time</span>
-      <span className="section-summary">{script.config.think_time?.ignore ? 'Disabled' : `${script.config.think_time?.type || 'fixed'} - ${formatMillisecondsAsSecondsLabel(script.config.think_time?.mean_ms)}`}</span>
+      <span className="section-summary">{script.config.think_time?.ignore ? 'Disabled' : script.config.think_time?.type === 'recorded' ? 'Replay recorded think time' : `${script.config.think_time?.type || 'fixed'} - ${formatMillisecondsAsSecondsLabel(script.config.think_time?.mean_ms)}`}</span>
     </button>
     <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('pacing') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('pacing')}>
       <RuntimeSectionIcon section="pacing" />
       <span className="section-label">Iteration Pacing</span>
-      <span className="section-summary">{script.config.pacing?.type || 'none'}</span>
+      <span className="section-summary">{formatPacingTiming(script.config.pacing) || 'None'}</span>
     </button>
     <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('runlogic') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('runlogic')}>
       <RuntimeSectionIcon section="runlogic" />
@@ -580,7 +547,9 @@ export function ScriptRuntimeSettingsView({
       <button type="button" className={`runtime-settings-nav-button ${runtimeSectionIsActive('http') ? 'active' : ''}`} onClick={() => selectRuntimeSettingsSection('http')}>
         <RuntimeSectionIcon section="http" />
         <span className="section-label">HTTP Transport</span>
-        <span className="section-summary">{httpProxySummary}</span>
+        <span className="section-summary">
+          {httpVersionSummary}{httpProxySummary !== 'Default' ? ` · ${httpProxySummary}` : ''}
+        </span>
       </button>
     )}
     {supportsBrowserEmulation && (
@@ -778,7 +747,7 @@ export function ScriptRuntimeSettingsView({
       <RuntimeSectionIcon section="think" />
       <span className="section-label">Think Time</span>
       <span className="section-summary">
-        {script.config.think_time?.ignore ? 'Disabled' : `${script.config.think_time?.type || 'fixed'} — ${formatMillisecondsAsSecondsLabel(script.config.think_time?.mean_ms)}`}
+        {script.config.think_time?.ignore ? 'Disabled' : script.config.think_time?.type === 'recorded' ? 'Replay recorded think time' : `${script.config.think_time?.type || 'fixed'} — ${formatMillisecondsAsSecondsLabel(script.config.think_time?.mean_ms)}`}
       </span>
       <span className="chevron">{runtimeSectionIsActive('think') ? '▾' : '▸'}</span>
     </button>
@@ -787,53 +756,61 @@ export function ScriptRuntimeSettingsView({
         <div className="form-grid">
           <label>
             <span>Distribution</span>
-            <select value={script.config.think_time?.type || 'fixed'}
-              onChange={e => updateField('config.think_time', { ...script.config.think_time, type: e.target.value })}>
+            <select value={thinkTimeType}
+              onChange={e => updateField(
+                'config.think_time',
+                thinkTimeConfigForType(script.config.think_time, e.target.value),
+              )}>
+              <option value="none">None</option>
               <option value="fixed">Fixed</option>
+              <option value="recorded">Replay think time as recorded</option>
               <option value="gaussian">Gaussian (Normal)</option>
               <option value="uniform">Uniform (Random)</option>
             </select>
           </label>
-          <label>
-            <span>Mean (s)</span>
-            <SecondsFromMillisecondsInput valueMs={script.config.think_time?.mean_ms}
-              onChangeMs={value => updateField('config.think_time', { ...script.config.think_time, mean_ms: value ?? 0 })} />
-          </label>
-          {script.config.think_time?.type === 'gaussian' && (
+          {thinkTimeUsesMean(thinkTimeType) && (
+            <label>
+              <span>Mean (s)</span>
+              <SecondsFromMillisecondsInput valueMs={script.config.think_time?.mean_ms}
+                onChangeMs={value => updateThinkTime({ mean_ms: value ?? 0 })} />
+            </label>
+          )}
+          {thinkTimeUsesStdDeviation(thinkTimeType) && (
             <label>
               <span>Std Dev (s)</span>
               <SecondsFromMillisecondsInput valueMs={script.config.think_time?.std_ms}
-                onChangeMs={value => updateField('config.think_time', { ...script.config.think_time, std_ms: value ?? 0 })} />
+                onChangeMs={value => updateThinkTime({ std_ms: value ?? 0 })} />
             </label>
           )}
-          {(script.config.think_time?.type === 'uniform' || script.config.think_time?.type === 'gaussian') && (
+          {thinkTimeUsesBounds(thinkTimeType) && (
             <>
               <label>
                 <span>Min (s)</span>
                 <SecondsFromMillisecondsInput valueMs={script.config.think_time?.min_ms}
-                  onChangeMs={value => updateField('config.think_time', { ...script.config.think_time, min_ms: value ?? 0 })} />
+                  onChangeMs={value => updateThinkTime({ min_ms: value ?? 0 })} />
               </label>
               <label>
                 <span>Max (s)</span>
                 <SecondsFromMillisecondsInput valueMs={script.config.think_time?.max_ms}
-                  onChangeMs={value => updateField('config.think_time', { ...script.config.think_time, max_ms: value ?? 0 })} />
+                  onChangeMs={value => updateThinkTime({ max_ms: value ?? 0 })} />
               </label>
             </>
           )}
-          <label>
-            <span>Multiplier</span>
-            <input type="number" step="0.1" value={script.config.think_time?.multiplier || 1.0}
-              onChange={e => updateField('config.think_time', { ...script.config.think_time, multiplier: Number(e.target.value) })} />
-          </label>
+          <ThinkTimeMultiplierInput
+            draftScope={draftScope}
+            label="Multiplier"
+            value={script.config.think_time?.multiplier}
+            onValueChange={multiplier => updateThinkTime({ multiplier })}
+          />
           <label>
             <span>Limit (s)</span>
             <SecondsFromMillisecondsInput valueMs={script.config.think_time?.limit_ms} placeholder="0 = no limit"
-              onChangeMs={value => updateField('config.think_time', { ...script.config.think_time, limit_ms: value ?? 0 })} />
+              onChangeMs={value => updateThinkTime({ limit_ms: value ?? 0 })} />
           </label>
           <div className="runtime-checkbox-list">
             <label className="checkbox-label">
               <input type="checkbox" checked={script.config.think_time?.ignore || false}
-                onChange={e => updateField('config.think_time', { ...script.config.think_time, ignore: e.target.checked })} />
+                onChange={e => updateThinkTime({ ignore: e.target.checked })} />
               <span>Ignore all think times</span>
             </label>
           </div>
@@ -847,7 +824,7 @@ export function ScriptRuntimeSettingsView({
     <button className="section-toggle" onClick={() => selectRuntimeSettingsSection('pacing')}>
       <RuntimeSectionIcon section="pacing" />
       <span className="section-label">Iteration Pacing</span>
-      <span className="section-summary">{script.config.pacing?.type || 'none'}</span>
+      <span className="section-summary">{formatPacingTiming(script.config.pacing) || 'None'}</span>
       <span className="chevron">{runtimeSectionIsActive('pacing') ? '▾' : '▸'}</span>
     </button>
     {runtimeSectionIsActive('pacing') && (
@@ -862,6 +839,7 @@ export function ScriptRuntimeSettingsView({
               <option value="random_delay">Random delay after iteration</option>
               <option value="fixed_interval">Fixed interval from iteration start</option>
               <option value="random_interval">Random interval from iteration start</option>
+              <option value="tps">Target transactions per second</option>
             </select>
           </label>
           {script.config.pacing?.type === 'fixed_delay' && (
@@ -899,6 +877,12 @@ export function ScriptRuntimeSettingsView({
                   onChangeMs={value => updateField('config.pacing', { ...script.config.pacing, max_interval_ms: value ?? 0 })} />
               </label>
             </>
+          )}
+          {script.config.pacing?.type === 'tps' && (
+            <label><span>Target TPS</span>
+              <input type="number" min="0" step="0.1" value={script.config.pacing?.tps ?? ''}
+                onChange={e => updateField('config.pacing', { ...script.config.pacing, tps: Number(e.target.value) })} />
+            </label>
           )}
         </div>
       </div>
@@ -1280,7 +1264,12 @@ export function ScriptRuntimeSettingsView({
       <RuntimeSectionIcon section="http" />
       <span className="section-label">HTTP Transport</span>
       <span className="section-summary">
-        {httpProxySummary !== 'Default' ? httpProxySummary : script.config.http?.auth?.type ? `Auth: ${script.config.http.auth.type}` : 'Default'}
+        {httpVersionSummary}
+        {httpProxySummary !== 'Default'
+          ? ` · ${httpProxySummary}`
+          : script.config.http?.auth?.type
+            ? ` · Auth: ${script.config.http.auth.type}`
+            : ''}
       </span>
       <span className="chevron">{runtimeSectionIsActive('http') ? '▾' : '▸'}</span>
     </button>
@@ -1333,12 +1322,15 @@ export function ScriptRuntimeSettingsView({
           <h5>Connection</h5>
           <div className="form-grid">
             <label><span>HTTP Version</span>
-              <select value={script.config.http?.version || 'auto'}
+              <select value={script.config.http?.version || ''}
                 onChange={e => updateField('config.http', { ...script.config.http, version: e.target.value })}>
-                <option value="auto">Auto-negotiate</option>
-                <option value="1.1">HTTP/1.1</option>
-                <option value="2">HTTP/2</option>
+                {HTTP_VERSION_OPTIONS.map(option => (
+                  <option key={option.value || 'auto'} value={option.value}>{option.label}</option>
+                ))}
               </select></label>
+            <div className="form-hint full-width">
+              Auto negotiates HTTP/2 or HTTP/1.1. Explicit versions are exact; required HTTP/2 never falls back to HTTP/1.1.
+            </div>
             <label><span>Max Conns/Host</span>
               <input type="number" value={script.config.http?.max_conns_per_host || 100}
                 onChange={e => updateField('config.http', { ...script.config.http, max_conns_per_host: Number(e.target.value) })} /></label>
@@ -1989,7 +1981,7 @@ export function ScriptRuntimeSettingsView({
                 valueMs={script.config.java_vuser?.startup_timeout_ms}
                 emptyWhenUndefined
                 placeholder="0"
-                ariaLabel="Java Vuser startup timeout"
+                aria-label="Java Vuser startup timeout"
                 onChangeMs={value => updateField('config.java_vuser.startup_timeout_ms', value)}
               />
             </label>
@@ -1999,7 +1991,7 @@ export function ScriptRuntimeSettingsView({
                 valueMs={script.config.java_vuser?.action_timeout_ms}
                 emptyWhenUndefined
                 placeholder="30"
-                ariaLabel="Java Vuser action timeout"
+                aria-label="Java Vuser action timeout"
                 onChangeMs={value => updateField('config.java_vuser.action_timeout_ms', value)}
               />
             </label>
@@ -2251,7 +2243,7 @@ export function ScriptRuntimeSettingsView({
               </label>
               <label>
                 <span>Latency (s)</span>
-                <SecondsFromMillisecondsInput ariaLabel="Profile latency" valueMs={profile.latency_ms}
+                <SecondsFromMillisecondsInput aria-label="Profile latency" valueMs={profile.latency_ms}
                   onChangeMs={value => updateField('config.web_runtime', {
                     ...script.config.web_runtime,
                     network_profiles: (script.config.web_runtime?.network_profiles || []).map((p, idx) => idx === i ? { ...p, latency_ms: value ?? 0 } : p),

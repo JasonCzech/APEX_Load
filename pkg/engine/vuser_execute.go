@@ -84,7 +84,7 @@ func logConfigRetainsSuccessfulResponseBody(logCfg dsl.LogConfig) bool {
 	return false
 }
 
-func (vu *VUser) recordTransaction(name string, duration time.Duration, success bool, source *protocol.Result) {
+func (vu *VUser) recordTransaction(name string, duration time.Duration, success bool, source *protocol.Result) *protocol.Result {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = "transaction"
@@ -143,6 +143,7 @@ func (vu *VUser) recordTransaction(name string, duration time.Duration, success 
 	if sink, ok := vu.ResultSink.(TransactionSink); ok {
 		_ = sink.RecordTransaction(tx)
 	}
+	return tx
 }
 
 func (vu *VUser) iterationTransactionName() string {
@@ -166,7 +167,9 @@ func scriptHasExplicitTransactions(script *dsl.Script) bool {
 	if script == nil {
 		return false
 	}
-	return actionsHaveExplicitTransactions(script.Actions)
+	return actionsHaveExplicitTransactions(script.Init) ||
+		actionsHaveExplicitTransactions(script.Actions) ||
+		actionsHaveExplicitTransactions(script.Teardown)
 }
 
 // actionsHaveExplicitTransactions recurses into control-flow bodies
@@ -187,11 +190,102 @@ func actionsHaveExplicitTransactions(actions []dsl.Action) bool {
 				return true
 			}
 		case "http_sequence":
-			if sourceTransactionName(action.Metadata) != "" {
-				return true
-			}
+			// Every sequence emits a logical aggregate transaction unless an
+			// actually-open source transaction owns it at runtime. Treating only
+			// metadata-bearing sequences as explicit lets the default automatic
+			// iteration transaction consume the same goal slot first and either
+			// double-count or suppress the sequence aggregate.
+			return true
 		}
 		if action.Control != nil && (actionsHaveExplicitTransactions(action.Control.Steps) || actionsHaveExplicitTransactions(action.Control.Else)) {
+			return true
+		}
+	}
+	return false
+}
+
+// actionsMayEmitBusinessTransactions reports whether an action can stream
+// adapter-owned business transactions. The first emitted transaction reserves
+// capacity before pacing, just like action/source/sequence transactions, so an
+// exact goal cannot leave a VUser sleeping before work it is already entitled
+// to finish.
+func actionsMayEmitBusinessTransactions(actions []dsl.Action) bool {
+	for _, action := range actions {
+		if actionEmitsBusinessTransactions(action) {
+			return true
+		}
+		if action.Control != nil &&
+			(actionsMayEmitBusinessTransactions(action.Control.Steps) ||
+				actionsMayEmitBusinessTransactions(action.Control.Else)) {
+			return true
+		}
+	}
+	return false
+}
+
+func actionEmitsBusinessTransactions(action dsl.Action) bool {
+	emits, _ := action.Metadata["emits_business_transactions"].(bool)
+	return emits
+}
+
+// actionsMayRecordActionTransaction reports whether an iteration can reach an
+// action that acquires a per-action transaction slot. It is used only to decide
+// whether the next iteration can safely carry one atomic reservation across
+// pacing; engine-only actions never consume such a reservation.
+func actionsMayRecordActionTransaction(actions []dsl.Action) bool {
+	for _, action := range actions {
+		actionType := strings.TrimSpace(action.Type)
+		switch strings.ToLower(actionType) {
+		case "control_if", "control_loop":
+			if action.Control != nil &&
+				(actionsMayRecordActionTransaction(action.Control.Steps) ||
+					actionsMayRecordActionTransaction(action.Control.Else)) {
+				return true
+			}
+			continue
+		case "http_sequence":
+			return true
+		}
+		if spec, ok := dsl.SpecForActionType(dsl.CanonicalActionType(actionType)); ok && spec.EngineAction() {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+// actionsMayRecordHTTPSequenceTransaction reports whether an iteration can
+// reach a logical HTTP sequence. A sequence records its own aggregate
+// transaction unless a matching source transaction is actually open at
+// runtime, so it must reserve goal capacity before TPS/final-iteration pacing
+// even when auto_transactions is "none".
+func actionsMayRecordHTTPSequenceTransaction(actions []dsl.Action) bool {
+	for _, action := range actions {
+		if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
+			return true
+		}
+		if action.Control != nil &&
+			(actionsMayRecordHTTPSequenceTransaction(action.Control.Steps) ||
+				actionsMayRecordHTTPSequenceTransaction(action.Control.Else)) {
+			return true
+		}
+	}
+	return false
+}
+
+// actionsMayRecordSourceTransaction reports whether an iteration can reach an
+// explicit LoadRunner transaction boundary or an immediate lr_set_transaction.
+// Starts normally claim the slot; ends also need a reservation when their
+// matching start ran in init.
+func actionsMayRecordSourceTransaction(actions []dsl.Action) bool {
+	for _, action := range actions {
+		if sourceTransactionStarts(action) || sourceTransactionEnds(action) ||
+			sourceTransactionRecordsImmediate(action) {
+			return true
+		}
+		if action.Control != nil &&
+			(actionsMayRecordSourceTransaction(action.Control.Steps) ||
+				actionsMayRecordSourceTransaction(action.Control.Else)) {
 			return true
 		}
 	}
@@ -277,7 +371,7 @@ func (vu *VUser) safeProtoExecute(ctx context.Context, action *protocol.Action) 
 }
 
 func (vu *VUser) safeProtoExecuteStream(ctx context.Context, action *protocol.Action, emit func(*protocol.Result) error) (result *protocol.Result, err error) {
-	if actionContainsUnresolvedParameter(action) {
+	if len(vu.unresolvedParameterRefs) > 0 || actionContainsUnresolvedParameter(action) {
 		// Name the offending reference when resolveAction recorded one, so the
 		// diagnostic points at the specific binding instead of only the action.
 		if refs := dedupeTemplateRefs(vu.unresolvedParameterRefs); len(refs) > 0 {
@@ -615,6 +709,13 @@ func (vu *VUser) executeWithRetryStream(
 			discardCorrelationEvidence(result)
 			return nil, err
 		}
+		if result == nil {
+			actionName := ""
+			if action != nil {
+				actionName = action.Name
+			}
+			return nil, fmt.Errorf("protocol returned no result for action %q", actionName)
+		}
 		if streaming && result != nil {
 			if result.SampleKind == "" {
 				result.SampleKind = "aggregate"
@@ -720,6 +821,7 @@ func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Actio
 		Group:               vu.Group,
 		Extractions:         make(map[string]string),
 	}
+	var measuredDuration time.Duration
 	if len(action.Metadata) > 0 {
 		applyProtocolResultSourceMetadata(aggregate, vu.interpolateAnyMap(action.Metadata))
 	}
@@ -733,28 +835,50 @@ func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Actio
 		if ctx.Err() != nil {
 			aggregate.Success = false
 			aggregate.ErrorMessage = ctx.Err().Error()
-			aggregate.Duration = time.Since(start)
+			aggregate.Duration = sequenceAggregateDuration(measuredDuration, start)
 			return aggregate, ctx.Err()
 		}
 		resolved := vu.resolveAction(child)
 		result, execErr := vu.executeWithRetry(ctx, resolved, errCfg)
 		if execErr != nil {
+			if ctx.Err() != nil {
+				aggregate.Success = false
+				aggregate.ErrorMessage = ctx.Err().Error()
+				aggregate.Duration = sequenceAggregateDuration(measuredDuration, start)
+				return aggregate, ctx.Err()
+			}
 			aggregate.Success = false
 			aggregate.ErrorMessage = execErr.Error()
-			aggregate.Duration = time.Since(start)
-			return aggregate, nil
+			if result != nil {
+				vu.recordResult(result, errCfg, dsl.LogConfig{})
+				measuredDuration += result.Duration
+				copySequenceSourceResult(aggregate, result)
+			}
+			aggregate.Duration = sequenceAggregateDuration(measuredDuration, start)
+			if !errCfg.ContinueOnError {
+				return aggregate, nil
+			}
+			if !vu.applyActionThinkTime(ctx, child) {
+				interruptErr := actionThinkTimeInterruptedError(ctx)
+				aggregate.Success = false
+				aggregate.ErrorMessage = interruptErr.Error()
+				aggregate.Duration = sequenceAggregateDuration(measuredDuration, start)
+				return aggregate, interruptErr
+			}
+			continue
 		}
 		if result == nil {
 			continue
 		}
 		vu.recordResult(result, errCfg, dsl.LogConfig{})
+		measuredDuration += result.Duration
 		copySequenceSourceResult(aggregate, result)
 		for key, value := range result.Extractions {
 			if err := protocol.StoreExtraction(aggregate, key, value); err != nil {
 				aggregate.Success = false
 				aggregate.Extractions = nil
 				aggregate.ErrorMessage = fmt.Sprintf("http_sequence extraction retention failed: %v", err)
-				aggregate.Duration = time.Since(start)
+				aggregate.Duration = sequenceAggregateDuration(measuredDuration, start)
 				return aggregate, nil
 			}
 		}
@@ -765,9 +889,32 @@ func (vu *VUser) executeHTTPSequenceAction(ctx context.Context, action dsl.Actio
 				break
 			}
 		}
+		if !vu.applyActionThinkTime(ctx, child) {
+			interruptErr := actionThinkTimeInterruptedError(ctx)
+			aggregate.Success = false
+			aggregate.ErrorMessage = interruptErr.Error()
+			aggregate.Duration = sequenceAggregateDuration(measuredDuration, start)
+			return aggregate, interruptErr
+		}
 	}
-	aggregate.Duration = time.Since(start)
+	aggregate.Duration = measuredDuration
 	return aggregate, nil
+}
+
+// sequenceAggregateDuration reports the duration of an http_sequence aggregate
+// that is being returned as a failure. The success path reports the sum of the
+// children's measured durations so think time is excluded from response time,
+// but a sequence that fails before any child produced a result has no
+// measurement to sum. Reporting zero there is not "instant": it pins
+// ActionMetrics.MinDuration to 0 and feeds a 0 sample into the latency digest,
+// silently skewing P50/P90 for the whole action. Fall back to elapsed wall time,
+// which is what the pre-measurement implementation reported and what the
+// parse-failure path above still reports.
+func sequenceAggregateDuration(measured time.Duration, start time.Time) time.Duration {
+	if measured > 0 {
+		return measured
+	}
+	return time.Since(start)
 }
 
 func httpSequenceChildActions(action dsl.Action) ([]dsl.Action, error) {
@@ -813,9 +960,11 @@ func httpSequenceChildActions(action dsl.Action) ([]dsl.Action, error) {
 		if child.Method == "" {
 			child.Method = child.Type
 		}
-		if child.Metadata == nil {
-			child.Metadata = map[string]any{}
+		childMetadata := make(map[string]any, len(child.Metadata)+2)
+		for key, metadataValue := range child.Metadata {
+			childMetadata[key] = metadataValue
 		}
+		child.Metadata = childMetadata
 		for _, key := range []string{"source_transaction", "loadrunner_transaction"} {
 			if child.Metadata[key] == nil && action.Metadata != nil && action.Metadata[key] != nil {
 				child.Metadata[key] = action.Metadata[key]
@@ -828,7 +977,7 @@ func httpSequenceChildActions(action dsl.Action) ([]dsl.Action, error) {
 
 func httpSequenceChildAction(value any) (dsl.Action, error) {
 	if action, ok := value.(dsl.Action); ok {
-		return action, nil
+		return validateHTTPSequenceChildAction(action)
 	}
 	payload, err := json.Marshal(value)
 	if err != nil {
@@ -838,6 +987,10 @@ func httpSequenceChildAction(value any) (dsl.Action, error) {
 	if err := json.Unmarshal(payload, &action); err != nil {
 		return dsl.Action{}, err
 	}
+	return validateHTTPSequenceChildAction(action)
+}
+
+func validateHTTPSequenceChildAction(action dsl.Action) (dsl.Action, error) {
 	if strings.TrimSpace(action.Target) == "" {
 		return dsl.Action{}, fmt.Errorf("missing target")
 	}

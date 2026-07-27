@@ -1,0 +1,7 @@
+package devweb
+
+import "archive/zip"
+
+func inspectSourceArchive(reader *zip.Reader) int {
+	return len(reader.File)
+}

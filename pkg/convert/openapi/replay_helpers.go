@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/diag"
@@ -456,6 +457,17 @@ func schemaNeedsRawJSONPlaceholder(s schema) bool {
 }
 
 func sampleValueForSchema(s schema, column string) string {
+	if value, ok := authoredScalarSeed(s.Example); ok {
+		return value
+	}
+	if value, ok := authoredScalarSeed(s.Default); ok {
+		return value
+	}
+	if len(s.Enum) > 0 {
+		if value, ok := authoredScalarSeed(s.Enum[0]); ok {
+			return value
+		}
+	}
 	switch strings.ToLower(s.Type) {
 	case "integer":
 		return "42"
@@ -465,6 +477,27 @@ func sampleValueForSchema(s schema, column string) string {
 		return "true"
 	default:
 		return sampleColumnValue(column)
+	}
+}
+
+func authoredScalarSeed(value any) (string, bool) {
+	switch typed := value.(type) {
+	case string:
+		return typed, true
+	case bool:
+		return strconv.FormatBool(typed), true
+	case float64:
+		return strconv.FormatFloat(typed, 'g', -1, 64), true
+	case float32:
+		return strconv.FormatFloat(float64(typed), 'g', -1, 32), true
+	case int:
+		return strconv.Itoa(typed), true
+	case int64:
+		return strconv.FormatInt(typed, 10), true
+	case json.Number:
+		return typed.String(), true
+	default:
+		return "", false
 	}
 }
 

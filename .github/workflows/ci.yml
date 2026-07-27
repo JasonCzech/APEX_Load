@@ -220,6 +220,11 @@ jobs:
             exit 1
           fi
 
+      - name: Enforce shared import policy locality
+        run: |
+          bash scripts/check-import-policy-locality.sh
+          bash scripts/check-import-policy-locality-selftest.sh
+
       - name: Vet
         run: go vet ./...
 

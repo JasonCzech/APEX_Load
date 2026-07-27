@@ -10,24 +10,12 @@ import (
 var (
 	ErrBrunoImportConcurrentChange = errors.New("Bruno import changed concurrently")
 	ErrBrunoRevisionNotFound       = errors.New("Bruno source revision not found")
+	ErrBrunoNativeBatchConflict    = errors.New("Bruno native import batch idempotency conflict")
 )
 
-// BrunoSourceArtifact is immutable, content-addressed metadata for one
-// encrypted source object. The bytes themselves live in the configured
-// artifact backend; BackendKey is opaque to storage callers.
-type BrunoSourceArtifact struct {
-	ID                 string         `json:"id"`
-	ProjectID          string         `json:"project_id"`
-	ArtifactKind       string         `json:"artifact_kind"`
-	BackendKey         string         `json:"backend_key"`
-	SHA256             string         `json:"sha256"`
-	SizeBytes          int64          `json:"size_bytes"`
-	ManifestSHA256     string         `json:"manifest_sha256,omitempty"`
-	SourceFormat       string         `json:"source_format,omitempty"`
-	EncryptionMetadata map[string]any `json:"encryption_metadata,omitempty"`
-	LifecycleState     string         `json:"lifecycle_state"`
-	CreatedAt          time.Time      `json:"created_at"`
-}
+// BrunoSourceArtifact is retained as the public compatibility name for the
+// importer-neutral content-addressed source artifact.
+type BrunoSourceArtifact = ImportSourceArtifact
 
 // BrunoSourceRevision binds a canonical APEX script to immutable raw and
 // sanitized source artifacts. CanonicalScript is retained so rollback can
@@ -68,6 +56,42 @@ type BrunoImportCommitResult struct {
 	Created  bool                 `json:"created"`
 }
 
+// BrunoNativeImportBatch is the durable receipt for a create-only native
+// per-request import. The receipt is keyed by the protected import session so
+// a caller can safely retry after losing the first successful HTTP response.
+// Source artifacts are shared by every script in the batch instead of being
+// copied into each script's metadata.
+type BrunoNativeImportBatch struct {
+	ID                  string    `json:"id"`
+	ProjectID           string    `json:"project_id"`
+	IdempotencyKey      string    `json:"idempotency_key"`
+	RequestSHA256       string    `json:"request_sha256"`
+	RawArtifactID       string    `json:"raw_artifact_id,omitempty"`
+	SanitizedArtifactID string    `json:"sanitized_artifact_id"`
+	CandidateIDs        []string  `json:"candidate_ids"`
+	ScriptIDs           []string  `json:"script_ids"`
+	CreatedBy           string    `json:"created_by,omitempty"`
+	CreatedAt           time.Time `json:"created_at"`
+}
+
+type BrunoNativeImportCommit struct {
+	Batch             BrunoNativeImportBatch
+	Scripts           []*dsl.Script
+	RawArtifact       BrunoSourceArtifact
+	SanitizedArtifact BrunoSourceArtifact
+	// RefKeyEnv is the environment segment used when the transaction assigns
+	// reference keys to scripts that do not already have one. Allocation lives
+	// in the same transaction as the scripts and receipt so a failed batch does
+	// not consume durable reference-key sequence values.
+	RefKeyEnv string
+}
+
+type BrunoNativeImportCommitResult struct {
+	Batch   *BrunoNativeImportBatch `json:"batch"`
+	Scripts []*dsl.Script           `json:"scripts"`
+	Created bool                    `json:"created"`
+}
+
 // BrunoImportStore is intentionally optional instead of widening Store. This
 // keeps lightweight test adapters source-compatible while production
 // SQLite/PostgreSQL provide the atomic import and rollback boundary.
@@ -78,6 +102,15 @@ type BrunoImportStore interface {
 	GetActiveBrunoSourceRevision(scriptID string, projectID string) (*BrunoSourceRevision, error)
 	ListBrunoSourceRevisions(scriptID string, projectID string) ([]*BrunoSourceRevision, error)
 	ActivateBrunoSourceRevision(scriptID string, projectID string, revisionID string, expectedActiveRevisionID string) (*BrunoSourceRevision, error)
+}
+
+// BrunoNativeImportStore is optional so lightweight stores remain source
+// compatible. Production SQLite/PostgreSQL implementations provide a single
+// transaction for all native scripts, shared source artifacts, and the
+// idempotency receipt.
+type BrunoNativeImportStore interface {
+	CommitBrunoNativeImport(commit *BrunoNativeImportCommit) (*BrunoNativeImportCommitResult, error)
+	GetBrunoNativeImportByIdempotencyKey(idempotencyKey string, projectID string) (*BrunoNativeImportCommitResult, error)
 }
 
 type BrunoArtifactReferenceChecker interface {

@@ -406,3 +406,12 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+.script-import-review-session {
+  margin: 0 0 1rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid var(--border-color, #d7dee8);
+  border-radius: 6px;
+  background: var(--surface-muted, #f6f8fb);
+  color: var(--text-secondary, #44546a);
+  font-size: 0.875rem;
+}

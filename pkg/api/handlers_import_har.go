@@ -25,6 +25,8 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
+	protectedRequirements := result.ProtectedRequirements.Take()
+	defer clearCredentialRequirementValues(protectedRequirements)
 	if len(importReq.SecondaryData) > 0 {
 		diff, err := har.Diff(importReq.Data, importReq.SecondaryData, importReq.Opts)
 		if err != nil {
@@ -51,17 +53,18 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 			preApplied = nil
 		}
 		writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
-			Result:              result,
-			Script:              salesforceAugmentation.Script,
-			Warnings:            result.Warnings,
-			Stats:               result.Stats,
-			Correlations:        salesforceAugmentation.Correlations,
-			UnsupportedElements: result.Unsupported.Strings(),
-			ReviewSections:      salesforceAugmentation.ReviewSections,
-			SourceReview:        result.SourceReview,
-			Summary:             salesforceAugmentation.Summary,
-			Parameterization:    buildImportParameterization(salesforceAugmentation.Script, preApplied),
-			Preflight:           preflight,
+			Result:                result,
+			Script:                salesforceAugmentation.Script,
+			Warnings:              result.Warnings,
+			Stats:                 result.Stats,
+			Correlations:          salesforceAugmentation.Correlations,
+			UnsupportedElements:   result.Unsupported.Strings(),
+			ReviewSections:        salesforceAugmentation.ReviewSections,
+			SourceReview:          result.SourceReview,
+			Summary:               salesforceAugmentation.Summary,
+			Parameterization:      buildImportParameterization(salesforceAugmentation.Script, preApplied),
+			Preflight:             preflight,
+			ProtectedRequirements: protectedRequirements,
 		}))
 		return
 	}
@@ -75,17 +78,18 @@ func (s *Server) handleImportHAR(w http.ResponseWriter, r *http.Request) {
 	attachImportReplayPreflight(result.Script, "har", preflight)
 
 	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
-		Result:              result,
-		Script:              result.Script,
-		Warnings:            result.Warnings,
-		Stats:               result.Stats,
-		Correlations:        result.Correlations,
-		UnsupportedElements: result.Unsupported.Strings(),
-		ReviewSections:      harImportReviewSections(result),
-		SourceReview:        result.SourceReview,
-		Summary:             harImportSummary(result),
-		Parameterization:    buildImportParameterization(result.Script, sampleCorrelationsToPreApplied(result.Correlations)),
-		Preflight:           preflight,
+		Result:                result,
+		Script:                result.Script,
+		Warnings:              result.Warnings,
+		Stats:                 result.Stats,
+		Correlations:          result.Correlations,
+		UnsupportedElements:   result.Unsupported.Strings(),
+		ReviewSections:        harImportReviewSections(result),
+		SourceReview:          result.SourceReview,
+		Summary:               harImportSummary(result),
+		Parameterization:      buildImportParameterization(result.Script, sampleCorrelationsToPreApplied(result.Correlations)),
+		Preflight:             preflight,
+		ProtectedRequirements: protectedRequirements,
 	}))
 }
 

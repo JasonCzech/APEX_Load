@@ -308,6 +308,7 @@ func TestProbeResolvedJDKPropagatesOptionalHomeContainmentFailure(t *testing.T) 
 		filepath.Join(string(filepath.Separator), "opt", "jdk"),
 		JDKSourceExplicitRunner,
 		time.Second,
+		false,
 		func(context.Context, string, time.Duration) (string, int, error) {
 			return "17.0.1", 17, nil
 		},
@@ -339,7 +340,7 @@ func TestResolveInternalJDKStopsAfterContainmentFailure(t *testing.T) {
 			DefaultHome:         secondHome,
 		},
 		time.Second,
-		func(context.Context, string, string, JDKSource, time.Duration) (ResolvedJDK, error) {
+		func(context.Context, string, string, JDKSource, time.Duration, bool) (ResolvedJDK, error) {
 			probeCalls++
 			return ResolvedJDK{}, ErrProcessContainmentFailed
 		},

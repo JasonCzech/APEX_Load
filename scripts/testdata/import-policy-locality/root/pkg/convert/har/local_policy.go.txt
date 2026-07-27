@@ -1,0 +1,9 @@
+package har
+
+func parseHARHeaders(value string) string {
+	return value
+}
+
+func redactHARHeaders(value string) string {
+	return value
+}

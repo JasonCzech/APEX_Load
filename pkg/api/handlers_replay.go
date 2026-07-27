@@ -83,6 +83,10 @@ func (s *Server) handleReplayScript(w http.ResponseWriter, r *http.Request) {
 	if !requireAuthorizedProjectMatch(w, r, stored.ProjectID) {
 		return
 	}
+	if err := storedScriptReplayGateError(stored.Script); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	var req ReplayScriptRequest
 	if r.Body != nil && r.ContentLength != 0 {
@@ -125,7 +129,7 @@ func (s *Server) handleReplayRequest(w http.ResponseWriter, id string, script *d
 	}
 	secretResolver := s.runner.secretResolverForProject(script.ProjectID)
 	preflight := buildReplayPreflight(script, req.Variables, issues, warnings, secretResolver)
-	if len(issues) > 0 || len(preflight.MissingSecrets) > 0 {
+	if !preflight.Valid {
 		writeJSON(w, http.StatusBadRequest, map[string]any{
 			"script_id": id,
 			"valid":     preflight.Valid,

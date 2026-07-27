@@ -38,6 +38,7 @@ func TestLoadJavaVuserOperatorConfig(t *testing.T) {
 		t.Setenv(EnvJavaVuserRunnerMode, "")
 		t.Setenv(EnvJavaVuserRunnerURL, "")
 		t.Setenv(EnvJavaVuserDefaultJDKHome, "")
+		t.Setenv(EnvJavaVuserAllowLegacyJava, "")
 		t.Setenv(EnvJavaVuserHarnessJar, "")
 		t.Setenv(EnvJavaVuserClasspath, "")
 		t.Setenv(EnvJavaVuserWorkDir, "")
@@ -53,6 +54,11 @@ func TestLoadJavaVuserOperatorConfig(t *testing.T) {
 		}
 		if cfg.RunnerCommandExplicit {
 			t.Error("RunnerCommandExplicit = true, want false when unset")
+		}
+		// The legacy-Java floor must stay at 17 unless an operator opts in; a
+		// silently-true default would accept a Java 8 JVM everywhere.
+		if cfg.AllowLegacyJava {
+			t.Error("AllowLegacyJava = true, want false when unset")
 		}
 		if cfg.RunnerMode != DefaultJavaVuserRunnerMode {
 			t.Errorf("RunnerMode = %q, want %q", cfg.RunnerMode, DefaultJavaVuserRunnerMode)
@@ -195,4 +201,26 @@ func clearK8sRestartEnv(t *testing.T) {
 	t.Setenv(EnvK8sGeneratorStatefulSet, "")
 	t.Setenv(EnvK8sGeneratorSelector, "")
 	t.Setenv(EnvK8sRestartAllowForce, "")
+}
+
+// The legacy opt-in is read from the operator process environment, never from
+// script DSL, so the env var itself has to be wired — not just the struct field
+// that javarunner and javasidecar tests set directly.
+func TestLoadJavaVuserOperatorConfigReadsAllowLegacyJavaFromEnv(t *testing.T) {
+	for _, tc := range []struct {
+		value string
+		want  bool
+	}{
+		{value: "true", want: true},
+		{value: "1", want: true},
+		{value: "false", want: false},
+		{value: "", want: false},
+	} {
+		t.Run("value="+tc.value, func(t *testing.T) {
+			t.Setenv(EnvJavaVuserAllowLegacyJava, tc.value)
+			if got := LoadJavaVuserOperatorConfig().AllowLegacyJava; got != tc.want {
+				t.Fatalf("AllowLegacyJava = %v, want %v for %q", got, tc.want, tc.value)
+			}
+		})
+	}
 }

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
-  getImportedRuntimeSectionId,
+  getImportedRuntimeSettingsDestination,
   HTTP_TRANSPORT_TAB_OPTIONS,
   RUNTIME_SETTINGS_SECTION_IDS,
   runtimeSettingsSectionIsAvailable,
@@ -46,9 +46,12 @@ export function useScriptRuntimeSettingsController({
 
   const openImportedRuntimeSettings = useCallback((area?: string | null) => {
     onOpenRuntimeTab()
-    const section = getImportedRuntimeSectionId(area)
-    if (section && sectionIsAvailable(section)) {
-      selectSection(section)
+    const destination = getImportedRuntimeSettingsDestination(area)
+    if (destination && sectionIsAvailable(destination.section)) {
+      if (destination.httpTransportTab) {
+        setActiveHTTPTransportTab(destination.httpTransportTab)
+      }
+      selectSection(destination.section)
       return
     }
     setOpenSections(previous => ({ ...previous, runtime: true }))

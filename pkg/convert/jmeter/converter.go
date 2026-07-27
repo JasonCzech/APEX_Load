@@ -9,7 +9,10 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
@@ -24,16 +27,18 @@ type ConvertOptions struct {
 }
 
 type ConvertResult struct {
-	Scripts             []*dsl.Script      `json:"scripts"`
-	Script              *dsl.Script        `json:"script,omitempty"`
-	ScenarioDraft       *ScenarioDraft     `json:"scenario_draft,omitempty"`
-	Warnings            []string           `json:"warnings,omitempty"`
-	UnsupportedElements []string           `json:"unsupported_elements,omitempty"`
-	Unsupported         diag.Diagnostics   `json:"unsupported,omitempty"`
-	Assumptions         []string           `json:"assumptions,omitempty"`
-	Stats               ConvertStats       `json:"stats"`
-	Summary             ImportSummary      `json:"summary"`
-	SourceReview        *sourceview.Review `json:"source_review,omitempty"`
+	Scripts             []*dsl.Script                  `json:"scripts"`
+	Script              *dsl.Script                    `json:"script,omitempty"`
+	ScenarioDraft       *ScenarioDraft                 `json:"scenario_draft,omitempty"`
+	Warnings            []string                       `json:"warnings,omitempty"`
+	UnsupportedElements []string                       `json:"unsupported_elements,omitempty"`
+	Unsupported         diag.Diagnostics               `json:"unsupported,omitempty"`
+	Assumptions         []string                       `json:"assumptions,omitempty"`
+	Findings            []importreview.Finding         `json:"findings,omitempty"`
+	SecretRequirements  []credentialpolicy.Requirement `json:"secret_requirements,omitempty"`
+	Stats               ConvertStats                   `json:"stats"`
+	Summary             ImportSummary                  `json:"summary"`
+	SourceReview        *sourceview.Review             `json:"source_review,omitempty"`
 }
 
 type ConvertStats struct {
@@ -103,17 +108,23 @@ type treeNode struct {
 }
 
 type convertContext struct {
-	defaultProtocol string
-	defaultDomain   string
-	defaultPort     string
-	defaultPath     string
-	headers         map[string]string
-	variables       map[string]string
-	csvSources      []dsl.DataSource
-	timerMs         int
-	assertions      []dsl.Assertion
-	auths           []jmeterAuth
-	transaction     string
+	defaultProtocol  string
+	defaultDomain    string
+	defaultPort      string
+	defaultPath      string
+	effectiveBaseURL string
+	headers          dsl.HeaderList
+	variableScope    *jmeterVariableScope
+	provenVariables  map[string]struct{}
+	csvSources       []dsl.DataSource
+	timerMs          int
+	assertions       []dsl.Assertion
+	auths            []jmeterAuth
+	defaultAuthSeen  bool
+	requestReports   *[]requestimport.Report
+	credentialNames  *credentialpolicy.NameRegistry
+	importErr        *error
+	transaction      string
 	// scriptProtocol is the protocol resolved for the owning thread group from
 	// its sampler mix. Native sampler converters only emit executable actions
 	// when the script protocol matches; otherwise the sampler is review-gated.
@@ -123,12 +134,14 @@ type convertContext struct {
 }
 
 type jmeterAuth struct {
-	URL       string
-	Username  string
-	Password  string
-	Domain    string
-	Mechanism string
-	Config    dsl.AuthConfig
+	URL        string
+	Username   string
+	Password   string
+	Domain     string
+	Mechanism  string
+	Config     dsl.AuthConfig
+	ReviewCode string
+	SourceRef  string
 }
 
 func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
@@ -158,6 +171,32 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	var diagnostics diag.Collector
 	sourceFileName := convertutil.FirstNonEmpty(opts.FileName, "import.jmx")
 	sourceMappings := make([]sourceview.Mapping, 0)
+	allRequirements := make([]credentialpolicy.Requirement, 0)
+	allFindings := make([]importreview.Finding, 0)
+	variableReview := newJMeterVariableReview()
+	type variableSet struct {
+		values map[string]string
+		source credentialpolicy.SourceRef
+	}
+	planVariableSets := make([]variableSet, 0)
+	for _, plan := range findTreeNodes(trees, "TestPlan") {
+		values := parseArguments(plan.Element)
+		if len(values) == 0 {
+			continue
+		}
+		planVariableSets = append(planVariableSets, variableSet{
+			values: values,
+			source: credentialpolicy.SourceRef{
+				Format:  "jmeter",
+				Path:    sourceFileName,
+				Pointer: jmeterElementLocation(plan.Element),
+			},
+		})
+		for name := range values {
+			variableNames[name] = struct{}{}
+			result.Stats.Variables++
+		}
+	}
 
 	threadGroups := findTreeNodes(trees, "ThreadGroup")
 	if len(threadGroups) == 0 {
@@ -170,7 +209,34 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 
 	for i, tg := range threadGroups {
 		groupProtocol, heterogeneous := classifyThreadGroupProtocol(tg)
-		ctx := convertContext{headers: map[string]string{}, variables: map[string]string{}, scriptProtocol: groupProtocol}
+		requestReports := make([]requestimport.Report, 0)
+		var importErr error
+		variableScope := newJMeterVariableScope(variableReview)
+		for _, set := range planVariableSets {
+			variableScope = variableScope.withDefinitions(set.values, set.source, &diagnostics)
+		}
+		if tg.Element.Name != "TestPlan" {
+			threadVariables := parseArguments(tg.Element)
+			if len(threadVariables) > 0 {
+				variableScope = variableScope.withDefinitions(threadVariables, credentialpolicy.SourceRef{
+					Format:  "jmeter",
+					Path:    sourceFileName,
+					Pointer: jmeterElementLocation(tg.Element),
+				}, &diagnostics)
+				for name := range threadVariables {
+					variableNames[name] = struct{}{}
+					result.Stats.Variables++
+				}
+			}
+		}
+		ctx := convertContext{
+			variableScope:   variableScope,
+			provenVariables: make(map[string]struct{}),
+			scriptProtocol:  groupProtocol,
+			requestReports:  &requestReports,
+			credentialNames: credentialpolicy.NewNameRegistry(),
+			importErr:       &importErr,
+		}
 		threadName := attrOr(tg.Element, "testname", fmt.Sprintf("Thread Group %d", i+1))
 		scriptName := opts.ScriptName
 		if scriptName != "" && len(threadGroups) > 1 {
@@ -209,9 +275,15 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 
 		walkThreadGroup(tg, &ctx, script, opts, result, unsupported, variableNames, csvNames, &diagnostics, sourceFileName, &sourceMappings)
+		if importErr != nil {
+			return nil, importErr
+		}
 		if script.Protocol == "http" {
 			if script.Config.BaseURL == "" {
 				script.Config.BaseURL = opts.BaseURL
+			}
+			if script.Config.BaseURL == "" {
+				script.Config.BaseURL = ctx.effectiveBaseURL
 			}
 			if script.Config.BaseURL == "" {
 				script.Config.BaseURL = detectBaseURL(script.Actions)
@@ -219,9 +291,12 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 			if script.Config.BaseURL == "" && ctx.defaultDomain != "" {
 				script.Config.BaseURL = buildBaseURL(ctx.defaultProtocol, ctx.defaultDomain, ctx.defaultPort)
 			}
+			if resolution := ctx.variableScope.resolve(nil); resolution != nil {
+				script.Config.BaseURL, _ = resolution.expandRuntimeValue(script.Config.BaseURL, nil)
+			}
 			if len(ctx.headers) > 0 {
-				for k, v := range ctx.headers {
-					script.Config.HTTP.DefaultHeaders[k] = convertVariables(v)
+				for _, header := range ctx.headers {
+					setJMeterHeaderSummary(script.Config.HTTP.DefaultHeaders, header.Name, convertVariables(header.Value))
 				}
 			}
 		}
@@ -238,6 +313,32 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 		}
 		if script.Protocol == "http" {
 			applySOAPProtocolHints(script, &result.Warnings, threadName)
+			draftReport, draftErr := prepareJMeterHTTPDraft(script, sourceFileName)
+			if draftErr != nil {
+				return nil, draftErr
+			}
+			if len(draftReport.Findings) > 0 {
+				requestReports = append(requestReports, draftReport)
+			}
+			configReport, configErr := projectJMeterHTTPConfigCredentials(script, &ctx, sourceFileName)
+			if configErr != nil {
+				return nil, configErr
+			}
+			if len(configReport.Requirements) > 0 || len(configReport.Findings) > 0 {
+				requestReports = append(requestReports, configReport)
+			}
+			finalized, finalizeErr := requestimport.FinalizeScript(script, requestReports, requestimport.FinalizeOptions{
+				UnresolvedBindings: unresolvedJMeterCredentialBindings(requestReports),
+			})
+			if finalizeErr != nil {
+				return nil, fmt.Errorf("finalize JMeter HTTP script %q: %w", script.Name, finalizeErr)
+			}
+			script = finalized.Script
+			allRequirements = append(allRequirements, finalized.Requirements...)
+			allFindings = append(allFindings, finalized.Findings...)
+			for _, item := range finalized.Diagnostics {
+				diagnostics.Add(item.Severity, item.Element, item.Location, item.Detail)
+			}
 		}
 		result.Scripts = append(result.Scripts, script)
 	}
@@ -274,19 +375,33 @@ func ConvertJMX(data []byte, opts ConvertOptions) (*ConvertResult, error) {
 	if opts.ScenarioDraft && len(result.Scripts) > 0 {
 		result.ScenarioDraft = buildScenarioDraft(threadGroups, result.Scripts)
 	}
-	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: string(data)}, sourceMappings)
+	result.Findings = importreview.NormalizeFindings(allFindings)
+	result.SecretRequirements = publicJMeterCredentialRequirements(allRequirements)
+	reviewContent, residualSourceRedacted := redactJMeterResidualSource(string(data))
+	reviewContent, variableSourceRedacted := redactJMeterCredentialValues(
+		reviewContent,
+		allRequirements,
+		variableReview,
+	)
+	result.SourceReview = sourceview.Build(map[string]string{sourceFileName: reviewContent}, sourceMappings)
+	if residualSourceRedacted || variableSourceRedacted {
+		markJMeterSourceReviewRedacted(result.SourceReview, sourceFileName)
+	}
 	return result, nil
 }
 
 func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, opts ConvertOptions, result *ConvertResult, unsupported map[string]struct{}, variableNames map[string]struct{}, csvNames map[string]struct{}, diagnostics *diag.Collector, sourceFileName string, sourceMappings *[]sourceview.Mapping) {
+	if ctx != nil && ctx.importErr != nil && *ctx.importErr != nil {
+		return
+	}
 	for _, child := range node.Children {
 		switch child.Element.Name {
 		case "ConfigTestElement":
 			applyHTTPDefaults(child.Element, ctx)
 		case "HeaderManager":
 			headers := parseHeaders(child.Element)
-			for k, v := range headers {
-				ctx.headers[k] = v
+			for _, header := range headers {
+				ctx.headers = append(ctx.headers, header)
 				result.Stats.Headers++
 			}
 		case "CookieManager":
@@ -305,16 +420,28 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			continue
 		case "AuthManager":
 			auths := parseAuthManager(child.Element, diagnostics)
+			resolution := ctx.variableScope.resolve(diagnostics)
+			provenVariables := jmeterProvenVariables(ctx)
+			for index := range auths {
+				auths[index].URL, _ = resolution.expandRuntimeValue(auths[index].URL, provenVariables)
+			}
 			ctx.auths = append(ctx.auths, auths...)
 			for _, auth := range auths {
-				if auth.URL == "" && script.Config.HTTP.Auth.Type == "" {
-					script.Config.HTTP.Auth = auth.Config
+				if auth.URL == "" && !ctx.defaultAuthSeen {
+					ctx.defaultAuthSeen = true
+					if auth.Config.Type != "" {
+						script.Config.HTTP.Auth = auth.Config
+					}
 				}
 			}
 		case "Arguments":
 			vars := parseArguments(child.Element)
-			for k, v := range vars {
-				ctx.variables[k] = v
+			ctx.variableScope = ctx.variableScope.withDefinitions(vars, credentialpolicy.SourceRef{
+				Format:  "jmeter",
+				Path:    sourceFileName,
+				Pointer: jmeterElementLocation(child.Element),
+			}, diagnostics)
+			for k := range vars {
 				variableNames[k] = struct{}{}
 				result.Stats.Variables++
 			}
@@ -336,7 +463,13 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 			ctx.assertions = append(ctx.assertions, assertions...)
 			result.Stats.Assertions += len(assertions)
 		case "HTTPSamplerProxy":
-			action, warnings := convertHTTPSampler(child, ctx, opts, diagnostics)
+			action, warnings, convertErr := convertHTTPSampler(child, ctx, opts, diagnostics)
+			if convertErr != nil {
+				if ctx.importErr != nil {
+					*ctx.importErr = convertErr
+				}
+				return
+			}
 			result.Warnings = append(result.Warnings, warnings...)
 			result.Stats.Samplers++
 			if action != nil {
@@ -396,13 +529,15 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, fmt.Sprintf("actions[%d]", actionIndex), jmeterElementLocation(child.Element), "controller", "converted", fmt.Sprintf("JMeter LoopController was mapped to control_loop with count %d.", val)))
 			} else if loopCountStr == "-1" || loopCountStr == "0" {
 				diagnostics.Add(diag.Warning, "JMeter LoopController", jmeterElementLocation(child.Element), "infinite loops (-1) remain review-gated; children were imported once for review")
-				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", "JMeter LoopController infinite loop (-1) was flattened as 1 iteration."))
+				actionIndex := appendJMeterSourceReviewPlaceholder(script, child.Element.Name, jmeterElementLocation(child.Element), sourceFileName, "flattened_infinite_loop")
+				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, fmt.Sprintf("actions[%d]", actionIndex), jmeterElementLocation(child.Element), "controller", "review_only", "JMeter LoopController infinite loop was flattened as one review iteration."))
 				if len(child.Children) > 0 {
 					walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
 				}
 			} else {
-				diagnostics.Add(diag.Warning, "JMeter LoopController", jmeterElementLocation(child.Element), "dynamic loop count '"+loopCountStr+"' cannot be statically unrolled; flattening as 1 iteration")
-				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", "JMeter LoopController dynamic loop count '"+loopCountStr+"' was flattened as 1 iteration."))
+				diagnostics.Add(diag.Warning, "JMeter LoopController", jmeterElementLocation(child.Element), "dynamic loop count cannot be statically unrolled; children were imported once into a blocked draft")
+				actionIndex := appendJMeterSourceReviewPlaceholder(script, child.Element.Name, jmeterElementLocation(child.Element), sourceFileName, "flattened_dynamic_loop")
+				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, fmt.Sprintf("actions[%d]", actionIndex), jmeterElementLocation(child.Element), "controller", "review_only", "JMeter LoopController dynamic count was omitted and its children were flattened as one review iteration."))
 				if len(child.Children) > 0 {
 					walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
 				}
@@ -426,8 +561,9 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 				})
 				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, fmt.Sprintf("actions[%d]", actionIndex), jmeterElementLocation(child.Element), "controller", "converted", "JMeter IfController was mapped to control_if."))
 			} else {
-				diagnostics.Add(diag.Warning, "JMeter IfController", jmeterElementLocation(child.Element), fmt.Sprintf("conditional execution is review-gated; children were flattened (condition was: %s)", condition))
-				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", fmt.Sprintf("JMeter IfController was flattened; original condition: %s", condition)))
+				diagnostics.Add(diag.Warning, "JMeter IfController", jmeterElementLocation(child.Element), "conditional execution could not be translated safely; the condition was omitted and children were flattened into a blocked draft")
+				actionIndex := appendJMeterSourceReviewPlaceholder(script, child.Element.Name, jmeterElementLocation(child.Element), sourceFileName, "flattened_dynamic_condition")
+				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, fmt.Sprintf("actions[%d]", actionIndex), jmeterElementLocation(child.Element), "controller", "review_only", "JMeter IfController condition was omitted and its children were flattened for review."))
 				if len(child.Children) > 0 {
 					walkThreadGroup(child, ctx, script, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, sourceMappings)
 				}
@@ -459,11 +595,13 @@ func walkThreadGroup(node *treeNode, ctx *convertContext, script *dsl.Script, op
 				*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, fmt.Sprintf("actions[%d]", actionIndex), jmeterElementLocation(child.Element), "controller", "converted", "JMeter WhileController was mapped to a condition-driven control_loop."))
 				continue
 			}
-			diagnostics.Add(diag.Warning, "JMeter WhileController", jmeterElementLocation(child.Element), fmt.Sprintf("while condition could not be translated statically; children were flattened (condition was: %s)", condition))
-			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", fmt.Sprintf("JMeter WhileController was flattened; original condition: %s", condition)))
+			diagnostics.Add(diag.Warning, "JMeter WhileController", jmeterElementLocation(child.Element), "while condition could not be translated safely; the condition was omitted and children were flattened into a blocked draft")
+			actionIndex := appendJMeterSourceReviewPlaceholder(script, child.Element.Name, jmeterElementLocation(child.Element), sourceFileName, "flattened_dynamic_condition")
+			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, fmt.Sprintf("actions[%d]", actionIndex), jmeterElementLocation(child.Element), "controller", "review_only", "JMeter WhileController condition was omitted and its children were flattened for review."))
 		case "ForeachController", "ForEachController", "InterleaveControl", "RandomController", "ThroughputController":
 			diagnostics.Add(diag.Warning, "JMeter "+child.Element.Name, jmeterElementLocation(child.Element), "controller logic was flattened; child requests are imported in source order without original conditions or transaction semantics")
-			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "controller", "review_only", "JMeter controller logic was flattened; child requests are imported in source order without original conditions."))
+			actionIndex := appendJMeterSourceReviewPlaceholder(script, child.Element.Name, jmeterElementLocation(child.Element), sourceFileName, "flattened_controller_behavior")
+			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, fmt.Sprintf("actions[%d]", actionIndex), jmeterElementLocation(child.Element), "controller", "review_only", "JMeter controller logic was omitted; child requests are imported in source order for review."))
 		case "DebugSampler":
 			diagnostics.Add(diag.Info, "JMeter DebugSampler", jmeterElementLocation(child.Element), "DebugSampler was preserved as diagnostic metadata and does not block executable HTTP import")
 			*sourceMappings = append(*sourceMappings, jmeterSourceMapping(sourceFileName, child.Element, child.Element.Name, "", jmeterElementLocation(child.Element), "diagnostic", "ignored", "JMeter DebugSampler does not generate an executable APEX Load action."))
@@ -511,6 +649,7 @@ func collectJMeterChildActions(node *treeNode, ctx *convertContext, parentScript
 		return nil
 	}
 	next := *ctx
+	next.provenVariables = jmeterProvenVariables(ctx)
 	tempScript := &dsl.Script{Protocol: "http", Config: dsl.ScriptConfig{HTTP: dsl.HTTPConfig{DefaultHeaders: map[string]string{}}}}
 	var tempMappings []sourceview.Mapping
 	walkThreadGroup(node, &next, tempScript, opts, result, unsupported, variableNames, csvNames, diagnostics, sourceFileName, &tempMappings)

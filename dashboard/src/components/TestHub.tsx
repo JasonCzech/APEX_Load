@@ -16,6 +16,7 @@ import RuntimeSettingsGroupEditor from './RuntimeSettingsGroupEditor'
 import { readImportedJavaVMParameters } from './scriptEditorImportModel'
 import GroupPlacementEditor from './GroupPlacementEditor'
 import { overrideFromRuntimeDraft } from './runtimeSettingsModel'
+import SecondsFromMillisecondsInput from './SecondsFromMillisecondsInput'
 import { applyEffectiveRuntimeSettingsToGroups } from './runtimeSettingsApply'
 import { adaptScenarioShapeDefaults, buildScenarioModelPreview, buildScenarioShapeCatalog, buildShapeStages, formatModelTimeLabel, getScenarioShapePreset, ScenarioModelPreview, ScenarioSeed, ScenarioShapePreset, ScenarioSourceMode, ScenarioWizardStep, shapeStageStrategyFor, validateStageTimeline } from './scenarioWizardUtils'
 import { BaselineGroupOption, baselineGroupOptions, formatGoalSizingSummary, goalSizedGoalFields, goalSizedGroups, littlesLawVUsers } from './goalSizingUtils'
@@ -44,6 +45,14 @@ import {
   runtimeSettingsFromForm,
   scenarioFormStateFromStoredScenario,
 } from './scenarioFormModel'
+import {
+  canonicalThinkTimeType,
+  thinkTimeConfigForType,
+  thinkTimeUsesBounds,
+  thinkTimeUsesMean,
+  thinkTimeUsesStdDeviation,
+} from './thinkTimeConfig'
+import ThinkTimeMultiplierInput from './ThinkTimeMultiplierInput'
 
 interface Props {
   applicationRepository?: ApplicationRepository | null
@@ -74,11 +83,21 @@ export interface ScenarioFormState {
   continue_on_error?: boolean
   snapshot_on_error?: boolean
   runtime_iterations?: number
-  runtime_pacing_type: '' | 'none' | 'fixed_delay' | 'fixed_interval' | 'tps'
+  runtime_pacing_type: '' | 'none' | 'fixed_delay' | 'random_delay' | 'fixed_interval' | 'random_interval' | 'tps'
   runtime_pacing_delay_ms?: number
+  runtime_pacing_min_delay_ms?: number
+  runtime_pacing_max_delay_ms?: number
   runtime_pacing_interval_ms?: number
+  runtime_pacing_min_interval_ms?: number
+  runtime_pacing_max_interval_ms?: number
   runtime_pacing_tps?: number
+  runtime_think_time_type?: '' | 'none' | 'fixed' | 'recorded' | 'gaussian' | 'uniform'
   runtime_think_time_ms?: number
+  runtime_think_time_std_ms?: number
+  runtime_think_time_min_ms?: number
+  runtime_think_time_max_ms?: number
+  runtime_think_time_multiplier?: number
+  runtime_think_time_limit_ms?: number
   runtime_ignore_think_time: boolean
   runtime_log_level: string
   runtime_auto_transactions: string
@@ -158,6 +177,7 @@ function emptyScenarioForm(scriptId = ''): ScenarioFormState {
     script_shakeout: false,
     resource_baseline: false,
     runtime_pacing_type: '',
+    runtime_think_time_type: '',
     runtime_ignore_think_time: false,
     runtime_log_level: '',
     runtime_auto_transactions: '',
@@ -223,7 +243,7 @@ function maxStageVUsers(stages: LoadStageDraft[]) {
   return stages.reduce((max, stage) => Math.max(max, Number(stage.target_vusers) || 0), 0)
 }
 
-function scenarioSeedFromTemplate(template: LoadModelTemplate): ScenarioSeed {
+export function scenarioSeedFromTemplate(template: LoadModelTemplate): ScenarioSeed {
   const runtime = template.scenario.runtime_settings
   const goal = template.scenario.goal_config
   return {
@@ -233,16 +253,12 @@ function scenarioSeedFromTemplate(template: LoadModelTemplate): ScenarioSeed {
     resource_baseline: template.scenario.resource_baseline,
     groups: template.scenario.groups,
     goal: goal ? { ...goal } : undefined,
-    pacing: runtime?.pacing ? {
-      type: runtime.pacing.type as ScenarioFormState['runtime_pacing_type'],
-      delay_ms: runtime.pacing.delay_ms,
-      interval_ms: runtime.pacing.interval_ms,
-      tps: runtime.pacing.tps,
-    } : undefined,
-    think_time: runtime?.think_time ? { mean_ms: runtime.think_time.mean_ms, ignore: runtime.think_time.ignore } : undefined,
-    iterations: runtime?.iterations,
-    log_level: runtime?.log_level,
-    auto_transactions: runtime?.auto_transactions,
+    pacing: runtime?.pacing ? { ...runtime.pacing } as ScenarioSeed['pacing'] : undefined,
+    think_time: runtime?.think_time ? { ...runtime.think_time } : undefined,
+    runtime_settings: runtime ? structuredClone(runtime) : undefined,
+    iterations: runtime?.run_logic?.iterations ?? runtime?.iterations,
+    log_level: runtime?.log?.level ?? runtime?.log_level,
+    auto_transactions: runtime?.run_logic?.auto_transactions ?? runtime?.auto_transactions,
     continue_on_error: runtime?.error_handling?.continue_on_error,
     snapshot_on_error: runtime?.error_handling?.snapshot_on_error,
   }
@@ -286,9 +302,24 @@ function scenarioSeedFromForm(form: ScenarioFormState): ScenarioSeed {
     pacing: {
       type: form.runtime_pacing_type,
       delay_ms: form.runtime_pacing_delay_ms,
+      min_delay_ms: form.runtime_pacing_min_delay_ms,
+      max_delay_ms: form.runtime_pacing_max_delay_ms,
       interval_ms: form.runtime_pacing_interval_ms,
+      min_interval_ms: form.runtime_pacing_min_interval_ms,
+      max_interval_ms: form.runtime_pacing_max_interval_ms,
       tps: form.runtime_pacing_tps,
     },
+    think_time: {
+      type: form.runtime_think_time_type,
+      mean_ms: form.runtime_think_time_ms,
+      std_ms: form.runtime_think_time_std_ms,
+      min_ms: form.runtime_think_time_min_ms,
+      max_ms: form.runtime_think_time_max_ms,
+      multiplier: form.runtime_think_time_multiplier,
+      limit_ms: form.runtime_think_time_limit_ms,
+      ignore: form.runtime_ignore_think_time,
+    },
+    runtime_settings: form.runtime_settings ? structuredClone(form.runtime_settings) : undefined,
     iterations: form.runtime_iterations,
     log_level: form.runtime_log_level,
     auto_transactions: form.runtime_auto_transactions,
@@ -1636,7 +1667,9 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
   // catalog. Shape-controlled fields are refreshed while authored per-group script,
   // role, initialization, iteration, runtime, and placement settings are retained.
   const seedFormFromScenario = (seed: ScenarioSeed) => {
-    setForm(prev => ({
+    setForm(prev => {
+      const replacesRuntime = seed.runtime_settings !== undefined
+      return {
       ...prev,
       duration: seed.duration || prev.duration,
       scenario_mode: seed.scenario_mode || 'vuser_driven',
@@ -1650,17 +1683,33 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       goal_max_error_pct: seed.goal?.max_error_pct,
       goal_config: seed.goal ? { ...seed.goal } : undefined,
       runtime_iterations: seed.iterations ?? prev.runtime_iterations,
-      runtime_pacing_type: (seed.pacing?.type || prev.runtime_pacing_type || '') as ScenarioFormState['runtime_pacing_type'],
-      runtime_pacing_delay_ms: seed.pacing?.delay_ms ?? prev.runtime_pacing_delay_ms,
-      runtime_pacing_interval_ms: seed.pacing?.interval_ms ?? prev.runtime_pacing_interval_ms,
-      runtime_pacing_tps: seed.pacing?.tps ?? prev.runtime_pacing_tps,
-      runtime_think_time_ms: seed.think_time?.mean_ms ?? prev.runtime_think_time_ms,
-      runtime_ignore_think_time: seed.think_time?.ignore ?? prev.runtime_ignore_think_time,
+      runtime_pacing_type: (seed.pacing?.type || (replacesRuntime ? '' : prev.runtime_pacing_type) || '') as ScenarioFormState['runtime_pacing_type'],
+      runtime_pacing_delay_ms: seed.pacing ? seed.pacing.delay_ms : (replacesRuntime ? undefined : prev.runtime_pacing_delay_ms),
+      runtime_pacing_min_delay_ms: seed.pacing ? seed.pacing.min_delay_ms : (replacesRuntime ? undefined : prev.runtime_pacing_min_delay_ms),
+      runtime_pacing_max_delay_ms: seed.pacing ? seed.pacing.max_delay_ms : (replacesRuntime ? undefined : prev.runtime_pacing_max_delay_ms),
+      runtime_pacing_interval_ms: seed.pacing ? seed.pacing.interval_ms : (replacesRuntime ? undefined : prev.runtime_pacing_interval_ms),
+      runtime_pacing_min_interval_ms: seed.pacing ? seed.pacing.min_interval_ms : (replacesRuntime ? undefined : prev.runtime_pacing_min_interval_ms),
+      runtime_pacing_max_interval_ms: seed.pacing ? seed.pacing.max_interval_ms : (replacesRuntime ? undefined : prev.runtime_pacing_max_interval_ms),
+      runtime_pacing_tps: seed.pacing ? seed.pacing.tps : (replacesRuntime ? undefined : prev.runtime_pacing_tps),
+      runtime_think_time_type: canonicalThinkTimeType(
+        seed.think_time?.type || (replacesRuntime ? '' : prev.runtime_think_time_type),
+      ) as ScenarioFormState['runtime_think_time_type'],
+      runtime_think_time_ms: seed.think_time ? seed.think_time.mean_ms : (replacesRuntime ? undefined : prev.runtime_think_time_ms),
+      runtime_think_time_std_ms: seed.think_time ? seed.think_time.std_ms : (replacesRuntime ? undefined : prev.runtime_think_time_std_ms),
+      runtime_think_time_min_ms: seed.think_time ? seed.think_time.min_ms : (replacesRuntime ? undefined : prev.runtime_think_time_min_ms),
+      runtime_think_time_max_ms: seed.think_time ? seed.think_time.max_ms : (replacesRuntime ? undefined : prev.runtime_think_time_max_ms),
+      runtime_think_time_multiplier: seed.think_time ? seed.think_time.multiplier : (replacesRuntime ? undefined : prev.runtime_think_time_multiplier),
+      runtime_think_time_limit_ms: seed.think_time ? seed.think_time.limit_ms : (replacesRuntime ? undefined : prev.runtime_think_time_limit_ms),
+      runtime_ignore_think_time: seed.think_time ? Boolean(seed.think_time.ignore) : (replacesRuntime ? false : prev.runtime_ignore_think_time),
+      runtime_settings: seed.runtime_settings
+        ? structuredClone(seed.runtime_settings)
+        : prev.runtime_settings,
       runtime_log_level: seed.log_level ?? prev.runtime_log_level,
       runtime_auto_transactions: seed.auto_transactions ?? prev.runtime_auto_transactions,
       continue_on_error: seed.continue_on_error ?? prev.continue_on_error,
       snapshot_on_error: seed.snapshot_on_error ?? prev.snapshot_on_error,
-    }))
+      }
+    })
   }
 
   const selectShapeOption = (shapeId: string) => {
@@ -2056,9 +2105,13 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
       goal_p95_latency_ms: adapted?.goal?.p95_latency_ms ?? prev.goal_p95_latency_ms,
       goal_max_error_pct: adapted?.goal?.max_error_pct ?? prev.goal_max_error_pct,
       runtime_pacing_type: (adapted?.pacing?.type || prev.runtime_pacing_type || '') as ScenarioFormState['runtime_pacing_type'],
-      runtime_pacing_delay_ms: adapted?.pacing?.delay_ms ?? prev.runtime_pacing_delay_ms,
-      runtime_pacing_interval_ms: adapted?.pacing?.interval_ms ?? prev.runtime_pacing_interval_ms,
-      runtime_pacing_tps: adapted?.pacing?.tps ?? prev.runtime_pacing_tps,
+      runtime_pacing_delay_ms: adapted?.pacing ? adapted.pacing.delay_ms : prev.runtime_pacing_delay_ms,
+      runtime_pacing_min_delay_ms: adapted?.pacing ? adapted.pacing.min_delay_ms : prev.runtime_pacing_min_delay_ms,
+      runtime_pacing_max_delay_ms: adapted?.pacing ? adapted.pacing.max_delay_ms : prev.runtime_pacing_max_delay_ms,
+      runtime_pacing_interval_ms: adapted?.pacing ? adapted.pacing.interval_ms : prev.runtime_pacing_interval_ms,
+      runtime_pacing_min_interval_ms: adapted?.pacing ? adapted.pacing.min_interval_ms : prev.runtime_pacing_min_interval_ms,
+      runtime_pacing_max_interval_ms: adapted?.pacing ? adapted.pacing.max_interval_ms : prev.runtime_pacing_max_interval_ms,
+      runtime_pacing_tps: adapted?.pacing ? adapted.pacing.tps : prev.runtime_pacing_tps,
       groups: ensureScenarioGroups(prev.groups.map((group, groupIndex) => groupIndex === stageGroupIndex ? {
         ...group,
         stages: nextStages,
@@ -3291,7 +3344,182 @@ function TestHub({ applicationRepository, onSelectTest, onOpenCommandCenter, onC
             )}
             {runSettingsTab === 'runtime' && (
               <>
+              <div className="scenario-subpanel">
+                <div className="scenario-assignment-header">
+                  <div>
+                    <h4>Scenario runtime defaults</h4>
+                    <p>These defaults apply to every script group unless that group overrides them below.</p>
+                  </div>
+                </div>
+                <div className="scenario-browser-grid">
+                  <label>
+                    <span>Iteration pacing</span>
+                    <select
+                      className="settings-input"
+                      value={form.runtime_pacing_type}
+                      onChange={event => {
+                        const type = event.target.value as ScenarioFormState['runtime_pacing_type']
+                        setForm(prev => {
+                          const runtimeSettings = prev.runtime_settings
+                            ? { ...prev.runtime_settings }
+                            : undefined
+                          if (!type && runtimeSettings) delete runtimeSettings.pacing
+                          return {
+                            ...prev,
+                            runtime_pacing_type: type,
+                            runtime_settings: runtimeSettings,
+                          }
+                        })
+                      }}
+                    >
+                      <option value="">Script default</option>
+                      <option value="none">None</option>
+                      <option value="fixed_delay">Fixed delay</option>
+                      <option value="random_delay">Random delay</option>
+                      <option value="fixed_interval">Fixed interval</option>
+                      <option value="random_interval">Random interval</option>
+                      <option value="tps">Target TPS</option>
+                    </select>
+                  </label>
+                  {form.runtime_pacing_type === 'fixed_delay' && (
+                    <label>
+                      <span>Delay (seconds)</span>
+                      <SecondsFromMillisecondsInput className="settings-input" valueMs={form.runtime_pacing_delay_ms} emptyWhenUndefined onChangeMs={delayMs => setForm(prev => ({ ...prev, runtime_pacing_delay_ms: delayMs }))} />
+                    </label>
+                  )}
+                  {form.runtime_pacing_type === 'random_delay' && (
+                    <>
+                      <label>
+                        <span>Minimum delay (seconds)</span>
+                        <SecondsFromMillisecondsInput className="settings-input" valueMs={form.runtime_pacing_min_delay_ms} emptyWhenUndefined onChangeMs={minDelayMs => setForm(prev => ({ ...prev, runtime_pacing_min_delay_ms: minDelayMs }))} />
+                      </label>
+                      <label>
+                        <span>Maximum delay (seconds)</span>
+                        <SecondsFromMillisecondsInput className="settings-input" valueMs={form.runtime_pacing_max_delay_ms} emptyWhenUndefined onChangeMs={maxDelayMs => setForm(prev => ({ ...prev, runtime_pacing_max_delay_ms: maxDelayMs }))} />
+                      </label>
+                    </>
+                  )}
+                  {form.runtime_pacing_type === 'fixed_interval' && (
+                    <label>
+                      <span>Interval (seconds)</span>
+                      <SecondsFromMillisecondsInput className="settings-input" valueMs={form.runtime_pacing_interval_ms} emptyWhenUndefined onChangeMs={intervalMs => setForm(prev => ({ ...prev, runtime_pacing_interval_ms: intervalMs }))} />
+                    </label>
+                  )}
+                  {form.runtime_pacing_type === 'random_interval' && (
+                    <>
+                      <label>
+                        <span>Minimum interval (seconds)</span>
+                        <SecondsFromMillisecondsInput className="settings-input" valueMs={form.runtime_pacing_min_interval_ms} emptyWhenUndefined onChangeMs={minIntervalMs => setForm(prev => ({ ...prev, runtime_pacing_min_interval_ms: minIntervalMs }))} />
+                      </label>
+                      <label>
+                        <span>Maximum interval (seconds)</span>
+                        <SecondsFromMillisecondsInput className="settings-input" valueMs={form.runtime_pacing_max_interval_ms} emptyWhenUndefined onChangeMs={maxIntervalMs => setForm(prev => ({ ...prev, runtime_pacing_max_interval_ms: maxIntervalMs }))} />
+                      </label>
+                    </>
+                  )}
+                  {form.runtime_pacing_type === 'tps' && (
+                    <label>
+                      <span>Target TPS</span>
+                      <input className="settings-input" type="number" min={0} value={form.runtime_pacing_tps ?? ''} onChange={event => setForm(prev => ({ ...prev, runtime_pacing_tps: event.target.value === '' ? undefined : Number(event.target.value) }))} />
+                    </label>
+                  )}
+                  <label>
+                    <span>Think time mode</span>
+                    <select
+                      className="settings-input"
+                      value={form.runtime_think_time_type}
+                      onChange={event => {
+                        const type = event.target.value as ScenarioFormState['runtime_think_time_type']
+                        setForm(prev => {
+                          const runtimeSettings = prev.runtime_settings
+                            ? { ...prev.runtime_settings }
+                            : undefined
+                          if (!type && runtimeSettings) delete runtimeSettings.think_time
+                          const nextThinkTime = type
+                            ? thinkTimeConfigForType({
+                                type: prev.runtime_think_time_type || 'fixed',
+                                mean_ms: prev.runtime_think_time_ms,
+                                std_ms: prev.runtime_think_time_std_ms,
+                                min_ms: prev.runtime_think_time_min_ms,
+                                max_ms: prev.runtime_think_time_max_ms,
+                                multiplier: prev.runtime_think_time_multiplier,
+                                limit_ms: prev.runtime_think_time_limit_ms,
+                                ignore: prev.runtime_ignore_think_time,
+                              }, type)
+                            : undefined
+                          return {
+                            ...prev,
+                            runtime_think_time_type: type,
+                            runtime_think_time_ms: nextThinkTime?.mean_ms,
+                            runtime_think_time_std_ms: nextThinkTime?.std_ms,
+                            runtime_think_time_min_ms: nextThinkTime?.min_ms,
+                            runtime_think_time_max_ms: nextThinkTime?.max_ms,
+                            runtime_ignore_think_time: type ? prev.runtime_ignore_think_time : false,
+                            runtime_settings: runtimeSettings,
+                          }
+                        })
+                      }}
+                    >
+                      <option value="">Script default</option>
+                      <option value="none">None</option>
+                      <option value="recorded">Replay think time as recorded</option>
+                      <option value="fixed">Fixed</option>
+                      <option value="gaussian">Gaussian</option>
+                      <option value="uniform">Uniform</option>
+                    </select>
+                  </label>
+                  {form.runtime_think_time_type && thinkTimeUsesMean(form.runtime_think_time_type) && (
+                    <label>
+                      <span>Mean (ms)</span>
+                      <input className="settings-input" type="number" min={0} value={form.runtime_think_time_ms ?? ''} onChange={event => setForm(prev => ({ ...prev, runtime_think_time_ms: event.target.value === '' ? undefined : Number(event.target.value) }))} />
+                    </label>
+                  )}
+                  {thinkTimeUsesStdDeviation(form.runtime_think_time_type) && (
+                    <label>
+                      <span>Std dev (ms)</span>
+                      <input className="settings-input" type="number" min={0} value={form.runtime_think_time_std_ms ?? ''} onChange={event => setForm(prev => ({ ...prev, runtime_think_time_std_ms: event.target.value === '' ? undefined : Number(event.target.value) }))} />
+                    </label>
+                  )}
+                  {thinkTimeUsesBounds(form.runtime_think_time_type) && (
+                    <>
+                      <label>
+                        <span>Minimum think time (ms)</span>
+                        <input className="settings-input" type="number" min={0} value={form.runtime_think_time_min_ms ?? ''} onChange={event => setForm(prev => ({ ...prev, runtime_think_time_min_ms: event.target.value === '' ? undefined : Number(event.target.value) }))} />
+                      </label>
+                      <label>
+                        <span>Maximum think time (ms)</span>
+                        <input className="settings-input" type="number" min={0} value={form.runtime_think_time_max_ms ?? ''} onChange={event => setForm(prev => ({ ...prev, runtime_think_time_max_ms: event.target.value === '' ? undefined : Number(event.target.value) }))} />
+                      </label>
+                    </>
+                  )}
+                  {form.runtime_think_time_type && (
+                    <>
+                      <ThinkTimeMultiplierInput
+                        draftScope={`${activeProjectId}:${editingId || 'new-scenario'}:scenario-default`}
+                        label="Think time multiplier"
+                        className="settings-input"
+                        value={form.runtime_think_time_multiplier}
+                        onValueChange={multiplier => setForm(prev => ({
+                          ...prev,
+                          runtime_think_time_multiplier: multiplier,
+                        }))}
+                      />
+                      <label>
+                        <span>Think time cap (ms)</span>
+                        <input className="settings-input" type="number" min={0} value={form.runtime_think_time_limit_ms ?? ''} onChange={event => setForm(prev => ({ ...prev, runtime_think_time_limit_ms: event.target.value === '' ? undefined : Number(event.target.value) }))} placeholder="No cap" />
+                      </label>
+                    </>
+                  )}
+                </div>
+                {form.runtime_think_time_type && (
+                  <label className="checkbox-label">
+                    <input type="checkbox" checked={form.runtime_ignore_think_time} onChange={event => setForm(prev => ({ ...prev, runtime_ignore_think_time: event.target.checked }))} />
+                    <span>Ignore think time</span>
+                  </label>
+                )}
+              </div>
               <RuntimeSettingsGroupEditor
+                draftScope={`${activeProjectId}:${editingId || 'new-scenario'}`}
                 groups={formGroups.map(group => {
                   const script = findScriptById(scripts, group.script_id)
                   return {

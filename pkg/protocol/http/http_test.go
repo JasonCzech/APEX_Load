@@ -6,6 +6,8 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -303,6 +305,56 @@ func TestHTTP_RedirectPolicyRejectsHTTPSDowngrade(t *testing.T) {
 	next := httptest.NewRequest(http.MethodGet, "http://example.test/cleartext", nil)
 	if err := client.CheckRedirect(next, []*http.Request{previous}); err == nil {
 		t.Fatal("expected HTTPS to HTTP redirect to be rejected")
+	}
+}
+
+// TestHTTP_RedirectPolicyAllowsConfiguredNumberOfRedirects pins the exact
+// redirect budget across the whole range. The guard was `len(via) >=
+// maxRedirects` and is now `>`, so `max_redirects: N` permits N redirects
+// rather than N-1 — every existing script's budget grew by one. The N=0 row
+// additionally proves the disabled path returns http.ErrUseLastResponse, which
+// makes net/http hand back the 3xx response instead of following it.
+func TestHTTP_RedirectPolicyAllowsConfiguredNumberOfRedirects(t *testing.T) {
+	newVia := func(count int) []*http.Request {
+		via := make([]*http.Request, 0, count)
+		for index := 0; index < count; index++ {
+			via = append(via, httptest.NewRequest(
+				http.MethodGet,
+				fmt.Sprintf("https://example.test/hop-%d", index),
+				nil,
+			))
+		}
+		return via
+	}
+	next := httptest.NewRequest(http.MethodGet, "https://example.test/next", nil)
+
+	for _, maxRedirects := range []int{0, 1, 2, 10} {
+		t.Run(fmt.Sprintf("max_redirects=%d", maxRedirects), func(t *testing.T) {
+			client := &http.Client{}
+			applyRedirectPolicy(client, maxRedirects)
+			if client.CheckRedirect == nil {
+				t.Fatal("CheckRedirect was not installed")
+			}
+
+			if maxRedirects <= 0 {
+				err := client.CheckRedirect(next, nil)
+				if !errors.Is(err, http.ErrUseLastResponse) {
+					t.Fatalf("CheckRedirect error = %v, want http.ErrUseLastResponse", err)
+				}
+				return
+			}
+
+			// Exactly maxRedirects hops must be followed.
+			for hop := 0; hop < maxRedirects; hop++ {
+				if err := client.CheckRedirect(next, newVia(hop)); err != nil {
+					t.Fatalf("redirect %d of %d was rejected: %v", hop+1, maxRedirects, err)
+				}
+			}
+			// The next one must not be.
+			if err := client.CheckRedirect(next, newVia(maxRedirects+1)); err == nil {
+				t.Fatalf("redirect beyond %d was accepted", maxRedirects)
+			}
+		})
 	}
 }
 
@@ -1452,8 +1504,8 @@ func TestHTTP_Execute_DecodesContentEncodingForAssertionsAndSnapshots(t *testing
 		Method: http.MethodGet,
 		Target: "/soap",
 		Assertions: []protocol.Assertion{{
-			Type:  "status_code",
-			Value: "201",
+			Type:     "status_code",
+			Expected: 201,
 		}},
 	})
 	if failing.Success {
@@ -1596,6 +1648,52 @@ func TestHTTP_Execute_WithAssertion(t *testing.T) {
 	}
 }
 
+func TestHTTP_Execute_ExactHeaderAndRegexAssertionsAcceptExpectedServerError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Add("Content-Type", "text/xml; charset=utf-8")
+		w.Header().Add("X-Result", "first")
+		w.Header().Add("X-Result", "prefix-Needle-suffix")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`<fault><code>500</code><description>expected failure</description></fault>`))
+	}))
+	defer ts.Close()
+
+	h := initHTTP(t, map[string]any{"base_url": ts.URL})
+	result, err := h.Execute(context.Background(), &protocol.Action{
+		Name:   "expected-fault",
+		Method: http.MethodPost,
+		Target: "/",
+		Assertions: []protocol.Assertion{
+			{Type: "status_code", Expected: http.StatusInternalServerError},
+			{Type: "header_contains", Value: "content-type", Expected: "text/xml"},
+			{Type: "header_contains", Value: "x-result", Expected: "Needle"},
+			{Type: "body_regex_capture_equals", Value: `<code>([^<]+)</code>`, Expected: "500"},
+			{Type: "body_regex_capture_equals", Value: `<description>([^<]+)</description>`, Expected: "expected failure"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Execute returned error: %v", err)
+	}
+	if !result.Success {
+		t.Fatalf("Success = false, error: %s", result.ErrorMessage)
+	}
+}
+
+func TestValidateHTTPActionBoundsLimitsAssertions(t *testing.T) {
+	assertions := make([]protocol.Assertion, MaxActionAssertions+1)
+	for index := range assertions {
+		assertions[index] = protocol.Assertion{Type: "status_code", Expected: http.StatusOK}
+	}
+	err := validateHTTPActionBounds(&protocol.Action{Assertions: assertions})
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("assertions must not exceed %d", MaxActionAssertions)) {
+		t.Fatalf("validateHTTPActionBounds error = %v, want assertion limit", err)
+	}
+
+	if err := validateHTTPActionBounds(&protocol.Action{Assertions: assertions[:MaxActionAssertions]}); err != nil {
+		t.Fatalf("maximum assertion count was rejected: %v", err)
+	}
+}
+
 func TestHTTP_Execute_StatusAssertionCanAcceptRecordedClientError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
@@ -1678,6 +1776,50 @@ func TestBuildHTTPSnapshot_RedactsSecretRequestValues(t *testing.T) {
 	}
 	if snapshot.RequestBody != "token=[REDACTED]" {
 		t.Fatalf("RequestBody = %q", snapshot.RequestBody)
+	}
+}
+
+func TestBuildHTTPSnapshot_RedactsCredentialHeadersWithoutProjection(t *testing.T) {
+	requestHeaders := http.Header{}
+	requestHeaders.Set("authorization", "Bearer authored-header-canary")
+	requestHeaders.Set("X-Api-Key", "request-api-key-canary")
+	requestHeaders.Set("X-Request-ID", "diagnostic-id")
+
+	snapshot := buildHTTPSnapshot(
+		http.MethodGet,
+		"https://api.example.test/failure",
+		requestHeaders,
+		nil,
+		"",
+		nil,
+		nil,
+		http.StatusInternalServerError,
+		map[string]string{
+			"Set-Cookie":   "session=response-cookie-canary",
+			"Content-Type": "text/plain",
+		},
+		nil,
+	)
+
+	for _, name := range []string{"Authorization", "X-Api-Key"} {
+		if got := redactedHeaderValue(snapshot.RequestHeaders, name); got != "[REDACTED]" {
+			t.Fatalf("request header %s = %q, want redacted", name, got)
+		}
+	}
+	if got := snapshot.RequestHeaders["X-Request-Id"]; got != "diagnostic-id" {
+		t.Fatalf("nonsensitive request header = %q, want retained", got)
+	}
+	if got := snapshot.ResponseHeaders["Set-Cookie"]; got != "[REDACTED]" {
+		t.Fatalf("response Set-Cookie = %q, want redacted", got)
+	}
+	if got := snapshot.ResponseHeaders["Content-Type"]; got != "text/plain" {
+		t.Fatalf("nonsensitive response header = %q, want retained", got)
+	}
+	payload := fmt.Sprintf("%#v", snapshot)
+	for _, canary := range []string{"authored-header-canary", "request-api-key-canary", "response-cookie-canary"} {
+		if strings.Contains(payload, canary) {
+			t.Fatalf("snapshot disclosed credential canary %q: %s", canary, payload)
+		}
 	}
 }
 
@@ -2454,6 +2596,9 @@ func TestHTTPCorrelationEvidenceIsReplayOnlyAndWireFaithful(t *testing.T) {
 		}
 		if result.Success && result.ResponseBody != "" {
 			t.Fatalf("Execute(%s) successful public body = %q, want discarded while raw evidence remains", test.target, result.ResponseBody)
+		}
+		if !result.Success && (result.Snapshot == nil || result.Snapshot.RequestBody != wireRequestBody) {
+			t.Fatalf("Execute(%s) failure snapshot = %#v, want decoded wire request body", test.target, result.Snapshot)
 		}
 	}
 

@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand"
 	"regexp"
@@ -70,6 +72,11 @@ type VUser struct {
 	// variable map for the lifetime of a long run.
 	extractedVariables     map[string]int
 	extractedVariableBytes int
+	// sourceTransactions tracks open LoadRunner transaction scopes separately
+	// from Variables so action-local waits can be excluded from response time.
+	sourceTransactions map[string]*sourceTransactionRuntimeState
+	iterationThinkTime time.Duration
+	userWorkStarted    bool
 }
 
 type PauseController interface {
@@ -83,6 +90,34 @@ type activePauseController interface {
 }
 
 var templatePattern = regexp.MustCompile(`\{\{([^{}]+)\}\}`)
+
+var errTransactionGoalReached = errors.New("transaction execution goal reached")
+
+func (vu *VUser) markUserWorkStarted() {
+	if vu != nil {
+		vu.userWorkStarted = true
+	}
+}
+
+func (vu *VUser) reserveGoalTransaction(ctx context.Context) bool {
+	if vu == nil || vu.ExecutionGoals == nil {
+		return true
+	}
+	if vu.hasOpenSourceTransactionGoalOwnership() {
+		return vu.ExecutionGoals.TryReserveTransaction()
+	}
+	return vu.ExecutionGoals.WaitReserveTransaction(ctx)
+}
+
+func (vu *VUser) startGoalTransaction(ctx context.Context) bool {
+	if vu == nil || vu.ExecutionGoals == nil {
+		return true
+	}
+	if vu.hasOpenSourceTransactionGoalOwnership() {
+		return vu.ExecutionGoals.TryStartTransaction()
+	}
+	return vu.ExecutionGoals.WaitStartTransaction(ctx)
+}
 
 // SnapshotStore collects error snapshots for post-test analysis.
 type SnapshotStore struct {
@@ -125,14 +160,28 @@ func (vu *VUser) Run(ctx context.Context) {
 	logger := vu.makeLogger(logCfg)
 
 	vu.prepareRuntimeState()
+	// The soft Run context controls whether another iteration may start. The
+	// hard context owns an action already in flight, while the boundary context
+	// stops pause gates, waits, and subsequent actions on graceful stop.
+	iterCtx := ctx
+	if vu.HardStopCtx != nil {
+		iterCtx = vu.HardStopCtx
+	}
+	entitledBoundaryCtx := iterCtx
+	if vu.ActionBoundaryCtx != nil {
+		entitledBoundaryCtx = vu.ActionBoundaryCtx
+	}
 	teardownComplete := false
 	runTeardown := func() {
-		if teardownComplete || vu.SkipTeardown {
+		if teardownComplete || vu.SkipTeardown || !vu.userWorkStarted {
 			return
 		}
 		teardownComplete = true
 		tctx, tcancel := teardownContext()
 		pauseControl := vu.PauseControl
+		// Cleanup runs on its own bounded wall-clock context. A load that is
+		// paused while stopping must neither hold teardown at the pause gate nor
+		// freeze teardown think time in the run's active-time clock.
 		vu.PauseControl = nil
 		vu.runLifecycleActions(tctx, vu.Script.Teardown, "teardown", true, logger, logCfg, cfg.ErrorHandling)
 		vu.PauseControl = pauseControl
@@ -141,11 +190,23 @@ func (vu *VUser) Run(ctx context.Context) {
 	// Init and action failures must still execute user-authored compensation
 	// actions. The explicit teardown label calls the same once-only closure on
 	// the normal path; the defer covers every early return and panic unwind.
-	defer runTeardown()
+	defer func() {
+		runTeardown()
+		vu.finalizeOpenSourceTransactions("source transaction ended without a matching end marker")
+	}()
 
 	// --- Init phase ---
 	if !vu.SkipInit {
-		if ok := vu.runLifecycleActions(ctx, vu.Script.Init, "init", false, logger, logCfg, cfg.ErrorHandling); !ok {
+		// Init has not reserved an iteration or transaction yet. Keep an action
+		// already in flight on the hard-stop context, but make every lifecycle
+		// boundary observe both the soft Run context (shared goals/scale-down)
+		// and the explicit graceful-stop boundary.
+		initBoundaryCtx, cancelInitBoundary := context.WithCancel(ctx)
+		stopInitBoundaryLink := context.AfterFunc(entitledBoundaryCtx, cancelInitBoundary)
+		ok := vu.runLifecycleActionsWithContexts(iterCtx, initBoundaryCtx, vu.Script.Init, "init", false, logger, logCfg, cfg.ErrorHandling)
+		stopInitBoundaryLink()
+		cancelInitBoundary()
+		if !ok {
 			return
 		}
 	}
@@ -167,23 +228,48 @@ func (vu *VUser) Run(ctx context.Context) {
 		pacingCfg.activeClock = activeControl.ActiveElapsed
 	}
 
-	// --- Build think time config ---
-	globalThinkCfg := protocol.ThinkTimeConfig{
-		Type:       cfg.ThinkTime.Type,
-		MeanMs:     cfg.ThinkTime.MeanMs,
-		StdMs:      cfg.ThinkTime.StdMs,
-		MinMs:      cfg.ThinkTime.MinMs,
-		MaxMs:      cfg.ThinkTime.MaxMs,
-		Multiplier: cfg.ThinkTime.Multiplier,
-		LimitMs:    cfg.ThinkTime.LimitMs,
-		Ignore:     cfg.ThinkTime.Ignore,
-	}
-
 	autoTx := normalizeAutoTransactionMode(cfg.RunLogic.AutoTransactions)
 	actionTxMode := autoTx == "per_action"
 	iterationTxMode := autoTx == "per_iteration" || (autoTx == "none" && !scriptHasExplicitTransactions(vu.Script))
 	maxIter := cfg.RunLogic.Iterations
 	continueOnError := cfg.ErrorHandling.ContinueOnError
+	preReserveActionTransaction := vu.ExecutionGoals != nil &&
+		vu.ExecutionGoals.hasTransactionLimit() &&
+		!iterationTxMode &&
+		((actionTxMode && actionsMayRecordActionTransaction(vu.Script.Actions)) ||
+			actionsMayRecordSourceTransaction(vu.Script.Actions) ||
+			actionsMayRecordHTTPSequenceTransaction(vu.Script.Actions) ||
+			actionsMayEmitBusinessTransactions(vu.Script.Actions))
+	reservedIteration := false
+	releaseReservedIteration := func() {
+		if !reservedIteration {
+			return
+		}
+		vu.ExecutionGoals.ReleaseIterationReservation()
+		reservedIteration = false
+	}
+	reservedIterationTransaction := false
+	releaseReservedIterationTransaction := func() {
+		if !reservedIterationTransaction {
+			return
+		}
+		vu.ExecutionGoals.ReleaseTransactionReservation()
+		reservedIterationTransaction = false
+	}
+	reservedActionTransaction := false
+	releaseReservedActionTransaction := func() {
+		if !reservedActionTransaction {
+			return
+		}
+		vu.ExecutionGoals.ReleaseTransactionReservation()
+		reservedActionTransaction = false
+	}
+	releasePreIterationReservations := func() {
+		releaseReservedActionTransaction()
+		releaseReservedIterationTransaction()
+		releaseReservedIteration()
+	}
+	defer releasePreIterationReservations()
 
 	// ctx (the value passed to Run) stops the loop from starting new iterations;
 	// it is cancelled when a shared execution goal exhausts (soft stop) and on
@@ -194,82 +280,129 @@ func (vu *VUser) Run(ctx context.Context) {
 	// MultiGroupEngine, HardStopCtx is a per-VUser "shed" context that is a child
 	// of the engine base context (so hard stops cancel it) and is cancelled
 	// explicitly on scale/ramp-down — but NOT by goal exhaustion.
-	iterCtx := ctx
-	if vu.HardStopCtx != nil {
-		iterCtx = vu.HardStopCtx
-	}
 	// Once an execution-goal reservation is claimed, action-boundary checks
 	// must use the hard-stop context too. Using the soft loop context here lets
 	// another VUser's failed reservation cancel a reserved iteration between
 	// actions, producing fewer completed transactions than the global goal.
-	boundaryCtx := iterCtx
-	if vu.ActionBoundaryCtx != nil {
-		boundaryCtx = vu.ActionBoundaryCtx
-	}
-
-	applyActionThinkTime := func(action dsl.Action) {
-		if !action.ThinkTimeAfter {
-			return
-		}
-		thinkCfg := globalThinkCfg
-		if action.ThinkTime.Type != "" {
-			thinkCfg = protocol.ThinkTimeConfig{
-				Type:       action.ThinkTime.Type,
-				MeanMs:     action.ThinkTime.MeanMs,
-				StdMs:      action.ThinkTime.StdMs,
-				MinMs:      action.ThinkTime.MinMs,
-				MaxMs:      action.ThinkTime.MaxMs,
-				Multiplier: action.ThinkTime.Multiplier,
-				LimitMs:    action.ThinkTime.LimitMs,
-				Ignore:     action.ThinkTime.Ignore,
-			}
-			// Inherit global multiplier/limit/ignore if not set per-action.
-			if thinkCfg.Multiplier == 0 {
-				thinkCfg.Multiplier = globalThinkCfg.Multiplier
-			}
-			if thinkCfg.LimitMs == 0 {
-				thinkCfg.LimitMs = globalThinkCfg.LimitMs
-			}
-			if globalThinkCfg.Ignore {
-				thinkCfg.Ignore = true
-			}
-		}
-		vu.sleepActive(boundaryCtx, computeThinkTime(thinkCfg))
+	iterationBoundaryCtx := ctx
+	applyActionThinkTime := func(action dsl.Action) bool {
+		return vu.applyActionThinkTime(iterationBoundaryCtx, action)
 	}
 
 	// --- Main iteration loop ---
 	iteration := 0
+	var previousIterStart time.Time
+	iterationGoalEntitled := false
 	for {
+		// Until this iteration owns a shared goal reservation, peer goal
+		// cancellation must stop pacing and prevent another action from starting.
+		// Once a reservation is held, switch to the goal-immune boundary so the
+		// entitled owner can drain its complete iteration.
+		iterationBoundaryCtx = ctx
+		iterationGoalEntitled = false
+		sourceTransactionEntitled := vu.hasOpenSourceTransactionGoalOwnership()
+		if sourceTransactionEntitled {
+			iterationBoundaryCtx = entitledBoundaryCtx
+		}
 		// Check iteration limit
 		if maxIter > 0 && iteration >= maxIter {
 			break
 		}
 		// Must precede the goal reservations below: once a reservation is
 		// claimed, this iteration is entitled to run and record.
-		if ctx.Err() != nil {
+		if ctx.Err() != nil && !(iteration == 0 && sourceTransactionEntitled) {
 			break
 		}
 		if vu.PauseControl != nil {
-			if err := vu.PauseControl.WaitIfPaused(ctx); err != nil {
+			if err := vu.PauseControl.WaitIfPaused(iterationBoundaryCtx); err != nil {
 				break
 			}
 		}
-		if vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartIteration() {
-			break
+		if vu.ExecutionGoals != nil && vu.ExecutionGoals.hasIterationLimit() {
+			reserved := false
+			if sourceTransactionEntitled {
+				// A lifecycle source transaction can already own a pending
+				// MaxTransactions slot. Waiting here for a pending iteration
+				// slot would invert the ordering used by a peer that owns the
+				// iteration and is waiting for this transaction slot. Fail this
+				// incomplete source transaction immediately so its reservation
+				// becomes definitive and the peer can release its iteration.
+				reserved = vu.ExecutionGoals.TryReserveIteration()
+				if !reserved {
+					vu.finalizeOpenSourceTransactions("source transaction could not acquire a global iteration slot")
+				}
+			} else {
+				reserved = vu.ExecutionGoals.WaitReserveIteration(iterationBoundaryCtx)
+			}
+			if !reserved {
+				break
+			}
+			reservedIteration = true
 		}
-		if iterationTxMode && vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartTransaction() {
-			break
+		if iterationTxMode && vu.ExecutionGoals != nil && vu.ExecutionGoals.hasTransactionLimit() {
+			reserved := false
+			if sourceTransactionEntitled {
+				// A lifecycle source scope may already own the only pending
+				// transaction slot. Waiting for the automatic per-iteration slot
+				// would make this VUser wait on itself forever. Resolve the
+				// incompatible overlap as an incomplete source transaction and
+				// relinquish any earlier iteration reservation.
+				reserved = vu.ExecutionGoals.TryReserveTransaction()
+				if !reserved {
+					vu.finalizeOpenSourceTransactions("source transaction could not acquire a per-iteration transaction slot")
+				}
+			} else {
+				reserved = vu.ExecutionGoals.WaitReserveTransaction(iterationBoundaryCtx)
+			}
+			if !reserved {
+				releasePreIterationReservations()
+				break
+			}
+			reservedIterationTransaction = true
 		}
-		if pacingCfg.Type == "tps" && !pacingCfg.RateLimiter.WaitContext(boundaryCtx) {
+		// TPS pacing also delays iteration zero. Reserve its first action/source
+		// transaction before waiting for a token so goal exhaustion can wake all
+		// other VUsers instead of leaving them blocked on future tokens.
+		if (iteration > 0 || pacingCfg.Type == "tps") &&
+			preReserveActionTransaction &&
+			!sourceTransactionEntitled &&
+			!reservedActionTransaction {
+			if !vu.ExecutionGoals.WaitReserveTransaction(iterationBoundaryCtx) {
+				releasePreIterationReservations()
+				break
+			}
+			reservedActionTransaction = true
+		}
+		if reservedIteration || reservedIterationTransaction || reservedActionTransaction {
+			iterationBoundaryCtx = entitledBoundaryCtx
+		}
+		// Pace only after the next finite iteration has successfully reserved its
+		// shared goal. This avoids both an unnecessary final sleep and the race in
+		// which several VUsers observed remaining capacity before one claimed it.
+		if iteration > 0 {
+			applyIterationPacingCtx(iterationBoundaryCtx, pacingCfg, previousIterStart)
+			if iterationBoundaryCtx.Err() != nil {
+				releasePreIterationReservations()
+				break
+			}
+		}
+		if pacingCfg.Type == "tps" && !pacingCfg.RateLimiter.WaitContext(iterationBoundaryCtx) {
+			releasePreIterationReservations()
 			break
 		}
 		if vu.PauseControl != nil {
-			if err := vu.PauseControl.WaitIfPaused(boundaryCtx); err != nil {
+			if err := vu.PauseControl.WaitIfPaused(iterationBoundaryCtx); err != nil {
+				releasePreIterationReservations()
 				break
 			}
+		}
+		if iterationBoundaryCtx.Err() != nil || iterCtx.Err() != nil {
+			releasePreIterationReservations()
+			break
 		}
 
 		iterStart := time.Now()
+		previousIterStart = iterStart
 		if pacingCfg.activeClock != nil {
 			pacingCfg.iterStartActive = pacingCfg.activeClock()
 		}
@@ -281,29 +414,51 @@ func (vu *VUser) Run(ctx context.Context) {
 				vu.Parameters.RefreshIteration()
 			}
 			if vu.Script.Protocol == "browser" && cfg.Browser.NewUserPerIter != nil && *cfg.Browser.NewUserPerIter {
-				if err := vu.resetProtocolForIteration(iterCtx); err != nil {
+				if err := vu.resetProtocolForIteration(iterationBoundaryCtx); err != nil {
 					logger.Error("iteration protocol reset failed", "iteration", iteration+1, "err", scrubSensitiveError(err, vu.RedactionConfig))
 					goto teardown
 				}
 			}
 			newUser := browserEmulationNewUserEachIteration(cfg)
 			if newUser || (vu.Script.Protocol == "http" && cfg.HTTP.ClearCookiesPerIter != nil && *cfg.HTTP.ClearCookiesPerIter) {
-				if err := vu.clearProtocolCookies(iterCtx); err != nil {
+				if err := vu.clearProtocolCookies(iterationBoundaryCtx); err != nil {
 					logger.Error("iteration cookie clear failed", "iteration", iteration+1, "err", scrubSensitiveError(err, vu.RedactionConfig))
 					goto teardown
 				}
 			}
 			if newUser {
-				if err := vu.clearProtocolCache(iterCtx); err != nil {
+				if err := vu.clearProtocolCache(iterationBoundaryCtx); err != nil {
 					logger.Error("iteration cache clear failed", "iteration", iteration+1, "err", scrubSensitiveError(err, vu.RedactionConfig))
 					goto teardown
 				}
 			}
 		}
+		// Protocol/session reset is iteration setup, not a started iteration or
+		// transaction. Keep reservations pending until every fallible setup step
+		// succeeds so another VUser can inherit their capacity after a failure.
+		if iterationBoundaryCtx.Err() != nil || iterCtx.Err() != nil {
+			releasePreIterationReservations()
+			break
+		}
+		if reservedIteration {
+			vu.ExecutionGoals.CommitIterationReservation()
+			reservedIteration = false
+			iterationGoalEntitled = true
+		}
+		if reservedIterationTransaction {
+			vu.ExecutionGoals.CommitTransactionReservation()
+			reservedIterationTransaction = false
+			iterationGoalEntitled = true
+		}
+		// Crossing the fallible setup boundary starts a user iteration even when
+		// its action list is empty. Teardown-only scripts depend on that lifecycle
+		// contract, while VUsers denied before this point still skip teardown.
+		vu.markUserWorkStarted()
 
 		// Track iteration-level transaction
 		iterTxStart := time.Now()
 		iterTxDuration := time.Duration(0)
+		vu.iterationThinkTime = 0
 		var iterTransactionSource *protocol.Result
 		iterTxRecorded := false
 		recordIterationTransaction := func(success bool) {
@@ -312,7 +467,10 @@ func (vu *VUser) Run(ctx context.Context) {
 			}
 			duration := iterTxDuration
 			if duration <= 0 {
-				duration = time.Since(iterTxStart)
+				duration = time.Since(iterTxStart) - vu.iterationThinkTime
+				if duration < 0 {
+					duration = 0
+				}
 			}
 			var source *protocol.Result
 			if !success {
@@ -323,20 +481,49 @@ func (vu *VUser) Run(ctx context.Context) {
 		}
 
 		iterSuccess := true
+		iterationExitRequested := false
 
 		// runOne executes a single action and reports whether the iteration should
 		// continue or abort to teardown. runActions drives a slice of actions and is
 		// reused recursively for control_if / control_loop block bodies.
+		claimActionTransaction := func() bool {
+			if vu.ExecutionGoals == nil {
+				return true
+			}
+			if reservedActionTransaction {
+				vu.ExecutionGoals.CommitTransactionReservation()
+				reservedActionTransaction = false
+				iterationBoundaryCtx = entitledBoundaryCtx
+				return true
+			}
+			if !vu.startGoalTransaction(iterationBoundaryCtx) {
+				return false
+			}
+			iterationBoundaryCtx = entitledBoundaryCtx
+			return true
+		}
+		restoreIterationBoundary := func() {
+			if iterationGoalEntitled ||
+				reservedIteration ||
+				reservedIterationTransaction ||
+				reservedActionTransaction ||
+				vu.hasOpenSourceTransactionGoalOwnership() {
+				iterationBoundaryCtx = entitledBoundaryCtx
+				return
+			}
+			iterationBoundaryCtx = ctx
+		}
 		var runActions func(actions []dsl.Action, depth int) actionFlow
 		runOne := func(action dsl.Action, depth int) actionFlow {
 			if vu.PauseControl != nil {
-				if err := vu.PauseControl.WaitIfPaused(boundaryCtx); err != nil {
+				if err := vu.PauseControl.WaitIfPaused(iterationBoundaryCtx); err != nil {
 					return flowTeardown
 				}
 			}
-			if boundaryCtx.Err() != nil || iterCtx.Err() != nil {
+			if iterationBoundaryCtx.Err() != nil || iterCtx.Err() != nil {
 				return flowTeardown
 			}
+			vu.markUserWorkStarted()
 
 			switch strings.ToLower(strings.TrimSpace(action.Type)) {
 			case "control_break":
@@ -362,7 +549,9 @@ func (vu *VUser) Run(ctx context.Context) {
 				case flowBreak, flowContinue:
 					return flow
 				}
-				applyActionThinkTime(action)
+				if !applyActionThinkTime(action) {
+					return flowTeardown
+				}
 				return flowNext
 			case "control_loop":
 				if action.Control == nil || depth >= maxControlDepth {
@@ -397,7 +586,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					restore := func() { restoreRows(); restoreLoopIndex() }
 					for pass := 0; pass < rows.Len() && pass < maxPasses; pass++ {
 						row := rows.Row(pass)
-						if boundaryCtx.Err() != nil || iterCtx.Err() != nil {
+						if iterationBoundaryCtx.Err() != nil || iterCtx.Err() != nil {
 							restore()
 							return flowTeardown
 						}
@@ -412,13 +601,17 @@ func (vu *VUser) Run(ctx context.Context) {
 							return flowTeardown
 						case flowBreak:
 							restore()
-							applyActionThinkTime(action)
+							if !applyActionThinkTime(action) {
+								return flowTeardown
+							}
 							return flowNext
 						}
 						// flowContinue / flowNext: proceed to the next row.
 					}
 					restore()
-					applyActionThinkTime(action)
+					if !applyActionThinkTime(action) {
+						return flowTeardown
+					}
 					return flowNext
 				}
 
@@ -427,7 +620,7 @@ func (vu *VUser) Run(ctx context.Context) {
 					warnLoopTruncation(logger, action.Name, loop.Count, maxPasses)
 				}
 				for pass := 0; ; pass++ {
-					if boundaryCtx.Err() != nil || iterCtx.Err() != nil {
+					if iterationBoundaryCtx.Err() != nil || iterCtx.Err() != nil {
 						restoreLoopIndex()
 						return flowTeardown
 					}
@@ -454,18 +647,61 @@ func (vu *VUser) Run(ctx context.Context) {
 						return flowTeardown
 					case flowBreak:
 						restoreLoopIndex()
-						applyActionThinkTime(action)
+						if !applyActionThinkTime(action) {
+							return flowTeardown
+						}
 						return flowNext
 					}
 					// flowContinue / flowNext: proceed to the next pass.
 				}
 				restoreLoopIndex()
-				applyActionThinkTime(action)
+				if !applyActionThinkTime(action) {
+					return flowTeardown
+				}
 				return flowNext
 			}
 
-			if handled, err := vu.handleEngineAction(iterCtx, action); handled {
+			sourceGoalClaimed := false
+			if vu.ExecutionGoals != nil &&
+				vu.ExecutionGoals.hasTransactionLimit() &&
+				(vu.sourceTransactionStartWillOpen(action) ||
+					vu.sourceTransactionEndNeedsGoalClaim(action) ||
+					sourceTransactionRecordsImmediate(action)) {
+				if !claimActionTransaction() {
+					return flowTeardown
+				}
+				sourceGoalClaimed = true
+			}
+			if exitsIteration, failed := sourceMainIterationExit(action); exitsIteration {
+				vu.markUserWorkStarted()
+				handled, err := vu.handleEngineAction(iterCtx, action)
+				if !handled {
+					err = fmt.Errorf("lr_exit was not handled as an engine action")
+				}
 				if err != nil {
+					logger.Error("action error", "action", action.Name, "err", scrubSensitiveError(err, vu.RedactionConfig))
+					iterSuccess = false
+				}
+				if failed {
+					iterSuccess = false
+				}
+				iterationExitRequested = true
+				return flowTeardown
+			}
+
+			vu.markUserWorkStarted()
+			sourceCompletionWillExecute := vu.sourceTransactionCompletionWillExecute(action)
+			if handled, err := vu.handleEngineAction(iterCtx, action); handled {
+				if sourceGoalClaimed && sourceTransactionStarts(action) {
+					vu.markSourceTransactionGoalClaimed(action)
+				}
+				if sourceCompletionWillExecute {
+					restoreIterationBoundary()
+				}
+				if err != nil {
+					if dsl.CanonicalActionType(action.Type) != "source_transaction" {
+						vu.noteSourceTransactionResult(action, false)
+					}
 					logger.Error("action error", "action", action.Name, "err", scrubSensitiveError(err, vu.RedactionConfig))
 					iterSuccess = false
 					if !continueOnError {
@@ -473,15 +709,39 @@ func (vu *VUser) Run(ctx context.Context) {
 						return flowTeardown
 					}
 				}
+				if iterCtx.Err() == nil && iterationBoundaryCtx.Err() == nil {
+					if !applyActionThinkTime(action) {
+						return flowTeardown
+					}
+				}
 				return flowNext
 			}
 
 			if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
-				if vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartTransaction() {
+				markerOwned := vu.activeSourceTransactionOwnsHTTPSequence(action)
+				if !markerOwned && !claimActionTransaction() {
 					return flowTeardown
 				}
+				vu.markUserWorkStarted()
 				result, err := vu.executeHTTPSequenceAction(iterCtx, action, cfg.ErrorHandling)
 				if err != nil {
+					vu.noteSourceTransactionResult(action, false)
+					if !markerOwned {
+						if result == nil {
+							result = &protocol.Result{
+								ActionName:   action.Name,
+								Success:      false,
+								ErrorMessage: scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig),
+							}
+						} else {
+							result.Success = false
+							if result.ErrorMessage == "" {
+								result.ErrorMessage = scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig)
+							}
+						}
+						vu.recordTransaction(action.Name, result.Duration, false, result)
+						restoreIterationBoundary()
+					}
 					logger.Error("action error", "action", action.Name, "err", scrubSensitiveError(err, vu.RedactionConfig))
 					iterSuccess = false
 					if !continueOnError {
@@ -491,7 +751,11 @@ func (vu *VUser) Run(ctx context.Context) {
 					return flowNext
 				}
 				iterTxDuration += result.Duration
-				vu.recordTransaction(action.Name, result.Duration, result.Success, result)
+				vu.noteSourceTransactionResult(action, result.Success)
+				if !markerOwned {
+					vu.recordTransaction(action.Name, result.Duration, result.Success, result)
+					restoreIterationBoundary()
+				}
 				if !result.Success {
 					iterSuccess = false
 					iterTransactionSource = result
@@ -505,44 +769,114 @@ func (vu *VUser) Run(ctx context.Context) {
 				} else if logCfg.Level == "extended" {
 					logger.Info("action ok", actionLogAttrs(action.Name, nil, result, logCfg, false, vu.RedactionConfig)...)
 				}
-				applyActionThinkTime(action)
-				return flowNext
-			}
-
-			resolved := vu.resolveAction(action)
-			if actionTxMode && vu.ExecutionGoals != nil && !vu.ExecutionGoals.TryStartTransaction() {
-				return flowTeardown
-			}
-
-			// Track action-level transaction
-			var actionTxStart time.Time
-			if actionTxMode {
-				actionTxStart = time.Now()
-			}
-
-			result, err := vu.executeWithRetryStream(iterCtx, resolved, cfg.ErrorHandling, func(child *protocol.Result) error {
-				vu.recordResult(child, cfg.ErrorHandling, logCfg)
-				return nil
-			})
-			if err != nil {
-				logger.Error("action error", "action", action.Name, "err", scrubSensitiveError(err, vu.RedactionConfig))
-				iterSuccess = false
-				if actionTxMode {
-					vu.recordTransaction(action.Name, time.Since(actionTxStart), false, nil)
-				}
-				if !continueOnError {
-					recordIterationTransaction(false)
+				if !applyActionThinkTime(action) {
 					return flowTeardown
 				}
 				return flowNext
 			}
 
+			resolved := vu.resolveAction(action)
+			var actionTxStart time.Time
+			if actionTxMode && !claimActionTransaction() {
+				return flowTeardown
+			}
+			if actionTxMode {
+				actionTxStart = time.Now()
+			}
+			knownBusinessTransactionEmitter := actionEmitsBusinessTransactions(action)
+			if knownBusinessTransactionEmitter &&
+				vu.ExecutionGoals != nil &&
+				vu.ExecutionGoals.hasTransactionLimit() &&
+				!reservedActionTransaction {
+				if !vu.reserveGoalTransaction(iterationBoundaryCtx) {
+					if actionTxMode {
+						vu.recordTransaction(action.Name, time.Since(actionTxStart), false, nil)
+						restoreIterationBoundary()
+					}
+					return flowTeardown
+				}
+				reservedActionTransaction = true
+				iterationBoundaryCtx = entitledBoundaryCtx
+			}
+
+			vu.markUserWorkStarted()
+			result, err := vu.executeWithRetryStream(iterCtx, resolved, cfg.ErrorHandling, func(child *protocol.Result) error {
+				if child != nil && child.BusinessTransaction && !claimActionTransaction() {
+					return errTransactionGoalReached
+				}
+				vu.recordResult(child, cfg.ErrorHandling, logCfg)
+				if child != nil {
+					vu.noteSourceTransactionResult(action, child.Success)
+				}
+				if child != nil && child.BusinessTransaction {
+					restoreIterationBoundary()
+				}
+				return nil
+			})
+			if err != nil {
+				if knownBusinessTransactionEmitter {
+					releaseReservedActionTransaction()
+					restoreIterationBoundary()
+				}
+				if errors.Is(err, errTransactionGoalReached) {
+					if actionTxMode {
+						// The automatic action slot was claimed before protocol
+						// execution. Preserve one metric for that consumed slot even
+						// when an additional streamed child is refused by the goal.
+						vu.recordTransaction(action.Name, time.Since(actionTxStart), false, nil)
+						restoreIterationBoundary()
+					}
+					return flowTeardown
+				}
+				vu.noteSourceTransactionResult(action, false)
+				logger.Error("action error", "action", action.Name, "err", scrubSensitiveError(err, vu.RedactionConfig))
+				iterSuccess = false
+				if actionTxMode {
+					vu.recordTransaction(action.Name, time.Since(actionTxStart), false, nil)
+					restoreIterationBoundary()
+				}
+				if !continueOnError {
+					recordIterationTransaction(false)
+					return flowTeardown
+				}
+				if iterCtx.Err() == nil && iterationBoundaryCtx.Err() == nil {
+					if !applyActionThinkTime(action) {
+						return flowTeardown
+					}
+				}
+				return flowNext
+			}
+
+			if result != nil && result.BusinessTransaction && !claimActionTransaction() {
+				if knownBusinessTransactionEmitter {
+					releaseReservedActionTransaction()
+					restoreIterationBoundary()
+				}
+				if actionTxMode {
+					vu.recordTransaction(action.Name, time.Since(actionTxStart), false, result)
+					restoreIterationBoundary()
+				}
+				return flowTeardown
+			}
+			if knownBusinessTransactionEmitter {
+				// A metadata-known emitter that returned no business transaction
+				// must relinquish its pending slot for another VUser/action.
+				releaseReservedActionTransaction()
+				restoreIterationBoundary()
+			}
 			vu.recordResult(result, cfg.ErrorHandling, logCfg)
+			if result != nil && result.BusinessTransaction {
+				restoreIterationBoundary()
+			}
+			if result != nil {
+				vu.noteSourceTransactionResult(action, result.Success)
+			}
 			iterTxDuration += result.Duration
 
 			// Record auto-transaction for this action
 			if actionTxMode {
 				vu.recordTransaction(action.Name, time.Since(actionTxStart), result.Success, result)
+				restoreIterationBoundary()
 			}
 
 			if !result.Success {
@@ -559,7 +893,9 @@ func (vu *VUser) Run(ctx context.Context) {
 				logger.Info("action ok", actionLogAttrs(action.Name, resolved, result, logCfg, false, vu.RedactionConfig)...)
 			}
 
-			applyActionThinkTime(action)
+			if !applyActionThinkTime(action) {
+				return flowTeardown
+			}
 			return flowNext
 		}
 		runActions = func(actions []dsl.Action, depth int) actionFlow {
@@ -577,9 +913,18 @@ func (vu *VUser) Run(ctx context.Context) {
 		// Drive the top-level action list directly (rather than via runActions) so a
 		// stray break/continue with no enclosing control_loop is a no-op that
 		// proceeds to the next action — matching the replay path's runReplayPhase.
+	actions:
 		for _, action := range vu.Script.Actions {
 			switch runOne(action, 0) {
 			case flowTeardown:
+				if iterationExitRequested {
+					break actions
+				}
+				// Once the automatic per-iteration reservation is committed,
+				// every post-setup boundary abort must emit the corresponding
+				// failed transaction instead of silently consuming the goal.
+				recordIterationTransaction(false)
+				releaseReservedActionTransaction()
 				goto teardown
 			case flowBreak, flowContinue:
 				warnStrayControlFlow(logger, action.Name, "actions")
@@ -588,37 +933,53 @@ func (vu *VUser) Run(ctx context.Context) {
 
 		// Record iteration-level transaction
 		recordIterationTransaction(iterSuccess)
+		releaseReservedActionTransaction()
 
 		iteration++
 
-		// Apply pacing between iterations (interruptible: a scale/ramp-down or
-		// hard stop cuts the pacing sleep short instead of holding load).
-		applyIterationPacingCtx(boundaryCtx, pacingCfg, iterStart)
 	}
 
 teardown:
+	releasePreIterationReservations()
 	runTeardown()
 }
 
-func (vu *VUser) sleepActive(ctx context.Context, delay time.Duration) {
+func (vu *VUser) sleepActive(ctx context.Context, delay time.Duration) (time.Duration, bool) {
 	if delay <= 0 {
-		return
+		return 0, true
 	}
 	if activeControl, ok := vu.PauseControl.(activePauseController); ok {
-		activeControl.SleepActive(ctx, delay)
-		return
+		started := activeControl.ActiveElapsed()
+		completed := activeControl.SleepActive(ctx, delay)
+		elapsed := activeControl.ActiveElapsed() - started
+		if elapsed < 0 {
+			elapsed = 0
+		}
+		if elapsed > delay {
+			elapsed = delay
+		}
+		return elapsed, completed
 	}
-	sleepCtx(ctx, delay)
+	return sleepCtxElapsed(ctx, delay)
 }
 
 func (vu *VUser) RunLifecycleBlock(ctx context.Context, actions []dsl.Action, phase string) bool {
+	return vu.RunLifecycleBlockWithContexts(ctx, ctx, actions, phase)
+}
+
+// RunLifecycleBlockWithContexts executes a lifecycle block with a hard
+// in-flight action context and a separately cancellable action-boundary
+// context. Init-at-once uses this split so graceful/shared-goal soft stops let
+// the current protocol call finish but prevent later init actions.
+func (vu *VUser) RunLifecycleBlockWithContexts(actionCtx, boundaryCtx context.Context, actions []dsl.Action, phase string) bool {
 	if vu == nil || vu.Script == nil {
 		return true
 	}
 	cfg := vu.Script.Config
 	logCfg := cfg.Log
 	vu.prepareRuntimeState()
-	return vu.runLifecycleActions(ctx, actions, phase, false, vu.makeLogger(logCfg), logCfg, cfg.ErrorHandling)
+	ignoreErrors := strings.EqualFold(strings.TrimSpace(phase), "teardown")
+	return vu.runLifecycleActionsWithContexts(actionCtx, boundaryCtx, actions, phase, ignoreErrors, vu.makeLogger(logCfg), logCfg, cfg.ErrorHandling)
 }
 
 func (vu *VUser) prepareRuntimeState() {
@@ -634,17 +995,47 @@ func (vu *VUser) prepareRuntimeState() {
 }
 
 func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, phase string, ignoreErrors bool, logger *slog.Logger, logCfg dsl.LogConfig, errCfg dsl.ErrorHandlingConfig) bool {
+	return vu.runLifecycleActionsWithContexts(ctx, ctx, actions, phase, ignoreErrors, logger, logCfg, errCfg)
+}
+
+func (vu *VUser) runLifecycleActionsWithContexts(actionCtx, boundaryCtx context.Context, actions []dsl.Action, phase string, ignoreErrors bool, logger *slog.Logger, logCfg dsl.LogConfig, errCfg dsl.ErrorHandlingConfig) bool {
+	if ignoreErrors {
+		errCfg.ContinueOnError = true
+	}
+	softBoundaryCtx := boundaryCtx
+	entitledBoundaryCtx := actionCtx
+	// Teardown has a fresh bounded context specifically so cleanup can proceed
+	// after graceful/scale/hard-stop boundaries have been canceled. Once a
+	// teardown source transaction owns a goal reservation, keep its enclosed
+	// actions on that teardown context just like at-once lifecycle teardown.
+	if vu.ActionBoundaryCtx != nil && !strings.EqualFold(strings.TrimSpace(phase), "teardown") {
+		entitledBoundaryCtx = vu.ActionBoundaryCtx
+	}
+	restoreLifecycleBoundary := func() {
+		if vu.hasOpenSourceTransactionGoalOwnership() {
+			boundaryCtx = entitledBoundaryCtx
+			return
+		}
+		boundaryCtx = softBoundaryCtx
+	}
+	claimLifecycleTransaction := func() bool {
+		return vu.startGoalTransaction(boundaryCtx)
+	}
+	deniedSourceScopes := make([]string, 0)
+	sourceScopeKey := func(action dsl.Action) string {
+		return strings.ToLower(strings.TrimSpace(sourceTransactionActionName(action)))
+	}
 	// Lifecycle (init/teardown) actions use the same actionFlow model as the main
 	// path so control_break / control_continue inside a control_loop are honored
 	// here too (and not silently dropped); flowTeardown means "abort the phase".
 	var runActions func(actions []dsl.Action, depth int) actionFlow
 	runOne := func(action dsl.Action, depth int) actionFlow {
 		if vu.PauseControl != nil {
-			if err := vu.PauseControl.WaitIfPaused(ctx); err != nil {
+			if err := vu.PauseControl.WaitIfPaused(boundaryCtx); err != nil {
 				return flowTeardown
 			}
 		}
-		if ctx.Err() != nil {
+		if boundaryCtx.Err() != nil || actionCtx.Err() != nil {
 			return flowTeardown
 		}
 		switch strings.ToLower(strings.TrimSpace(action.Type)) {
@@ -653,6 +1044,7 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 		case "control_continue":
 			return flowContinue
 		case "control_if":
+			vu.markUserWorkStarted()
 			if action.Control == nil {
 				return flowNext
 			}
@@ -664,8 +1056,18 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 			if vu.evalCondition(action.Control.Condition) {
 				body = action.Control.Steps
 			}
-			return runActions(body, depth+1)
+			switch flow := runActions(body, depth+1); flow {
+			case flowTeardown:
+				return flowTeardown
+			case flowBreak, flowContinue:
+				return flow
+			}
+			if !vu.applyActionThinkTime(boundaryCtx, action) {
+				return flowTeardown
+			}
+			return flowNext
 		case "control_loop":
+			vu.markUserWorkStarted()
 			if action.Control == nil {
 				return flowNext
 			}
@@ -697,7 +1099,7 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 				restore := func() { restoreRows(); restoreLoopIndex() }
 				for pass := 0; pass < rows.Len() && pass < maxPasses; pass++ {
 					row := rows.Row(pass)
-					if ctx.Err() != nil {
+					if boundaryCtx.Err() != nil || actionCtx.Err() != nil {
 						restore()
 						return flowTeardown
 					}
@@ -712,11 +1114,17 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 						return flowTeardown
 					case flowBreak:
 						restore()
+						if !vu.applyActionThinkTime(boundaryCtx, action) {
+							return flowTeardown
+						}
 						return flowNext
 					}
 					// flowContinue / flowNext: proceed to the next row.
 				}
 				restore()
+				if !vu.applyActionThinkTime(boundaryCtx, action) {
+					return flowTeardown
+				}
 				return flowNext
 			}
 
@@ -725,7 +1133,7 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 				warnLoopTruncation(logger, action.Name, loop.Count, maxPasses)
 			}
 			for pass := 0; ; pass++ {
-				if ctx.Err() != nil {
+				if boundaryCtx.Err() != nil || actionCtx.Err() != nil {
 					restoreLoopIndex()
 					return flowTeardown
 				}
@@ -748,35 +1156,206 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 					return flowTeardown
 				case flowBreak:
 					restoreLoopIndex()
+					if !vu.applyActionThinkTime(boundaryCtx, action) {
+						return flowTeardown
+					}
 					return flowNext
 				}
 				// flowContinue / flowNext: proceed to the next pass.
 			}
 			restoreLoopIndex()
+			if !vu.applyActionThinkTime(boundaryCtx, action) {
+				return flowTeardown
+			}
 			return flowNext
 		}
-		if handled, err := vu.handleEngineAction(ctx, action); handled {
+		// Best-effort teardown must not execute a denied source scope's enclosed
+		// SUT calls without a transaction slot. This check follows control
+		// containers so a matching end in the selected branch/loop is still
+		// observed; once it closes the scope, subsequent cleanup can resume.
+		if len(deniedSourceScopes) > 0 {
+			switch {
+			case sourceTransactionStarts(action):
+				deniedSourceScopes = append(deniedSourceScopes, sourceScopeKey(action))
+			case sourceTransactionEnds(action):
+				key := sourceScopeKey(action)
+				for index := len(deniedSourceScopes) - 1; index >= 0; index-- {
+					if deniedSourceScopes[index] == key {
+						deniedSourceScopes = append(deniedSourceScopes[:index], deniedSourceScopes[index+1:]...)
+						break
+					}
+				}
+			}
+			return flowNext
+		}
+		sourceStartReserved := false
+		if vu.sourceTransactionStartWillOpen(action) {
+			if vu.ExecutionGoals != nil && vu.ExecutionGoals.hasTransactionLimit() {
+				if !vu.reserveGoalTransaction(boundaryCtx) {
+					if ignoreErrors {
+						deniedSourceScopes = append(deniedSourceScopes, sourceScopeKey(action))
+						return flowNext
+					}
+					return flowTeardown
+				}
+				sourceStartReserved = true
+				boundaryCtx = entitledBoundaryCtx
+			}
+		}
+		if (vu.sourceTransactionEndNeedsGoalClaim(action) || sourceTransactionRecordsImmediate(action)) &&
+			!claimLifecycleTransaction() {
+			if ignoreErrors {
+				return flowNext
+			}
+			return flowTeardown
+		}
+		sourceCompletionWillExecute := vu.sourceTransactionCompletionWillExecute(action)
+		if handled, err := vu.handleEngineAction(actionCtx, action); handled {
+			vu.markUserWorkStarted()
+			if sourceStartReserved {
+				vu.markSourceTransactionGoalReserved(action)
+			}
+			if sourceCompletionWillExecute {
+				restoreLifecycleBoundary()
+			}
 			if err != nil {
+				if dsl.CanonicalActionType(action.Type) != "source_transaction" {
+					vu.noteSourceTransactionResult(action, false)
+				}
 				logger.Error(phase+" action failed", "action", action.Name, "err", scrubSensitiveError(err, vu.RedactionConfig))
 				if !ignoreErrors {
 					return flowTeardown
 				}
 			}
+			if actionCtx.Err() == nil && boundaryCtx.Err() == nil {
+				if !vu.applyActionThinkTime(boundaryCtx, action) {
+					return flowTeardown
+				}
+			}
 			return flowNext
 		}
-		resolved := vu.resolveAction(action)
-		result, err := vu.executeWithRetryStream(ctx, resolved, errCfg, func(child *protocol.Result) error {
-			vu.recordResult(child, errCfg, logCfg)
-			return nil
-		})
-		if err != nil {
-			logger.Error(phase+" action failed", "action", action.Name, "err", scrubSensitiveError(err, vu.RedactionConfig))
-			if !ignoreErrors {
+		if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
+			markerOwned := vu.activeSourceTransactionOwnsHTTPSequence(action)
+			if !markerOwned && !claimLifecycleTransaction() {
+				if ignoreErrors {
+					return flowNext
+				}
+				return flowTeardown
+			}
+			vu.markUserWorkStarted()
+			result, err := vu.executeHTTPSequenceAction(actionCtx, action, errCfg)
+			if err != nil {
+				vu.noteSourceTransactionResult(action, false)
+				if !markerOwned {
+					if result == nil {
+						result = &protocol.Result{
+							ActionName:   action.Name,
+							Success:      false,
+							ErrorMessage: scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig),
+						}
+					} else {
+						result.Success = false
+						if result.ErrorMessage == "" {
+							result.ErrorMessage = scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig)
+						}
+					}
+					vu.recordTransaction(action.Name, result.Duration, false, result)
+				}
+				logger.Error(phase+" action failed", "action", action.Name, "err", scrubSensitiveError(err, vu.RedactionConfig))
+				if !ignoreErrors {
+					return flowTeardown
+				}
+				return flowNext
+			}
+			if result != nil {
+				vu.noteSourceTransactionResult(action, result.Success)
+				if !markerOwned {
+					vu.recordTransaction(action.Name, result.Duration, result.Success, result)
+				}
+				if !result.Success && !ignoreErrors {
+					return flowTeardown
+				}
+			}
+			if !vu.applyActionThinkTime(boundaryCtx, action) {
 				return flowTeardown
 			}
 			return flowNext
 		}
+		resolved := vu.resolveAction(action)
+		knownBusinessTransactionEmitter := actionEmitsBusinessTransactions(action)
+		emitterTransactionReserved := false
+		if knownBusinessTransactionEmitter &&
+			vu.ExecutionGoals != nil &&
+			vu.ExecutionGoals.hasTransactionLimit() {
+			if !vu.reserveGoalTransaction(boundaryCtx) {
+				if ignoreErrors {
+					return flowNext
+				}
+				return flowTeardown
+			}
+			emitterTransactionReserved = true
+			boundaryCtx = entitledBoundaryCtx
+		}
+		claimEmittedTransaction := func() bool {
+			if emitterTransactionReserved {
+				vu.ExecutionGoals.CommitTransactionReservation()
+				emitterTransactionReserved = false
+				return true
+			}
+			return claimLifecycleTransaction()
+		}
+		releaseEmitterReservation := func() {
+			if emitterTransactionReserved {
+				vu.ExecutionGoals.ReleaseTransactionReservation()
+				emitterTransactionReserved = false
+			}
+			if !vu.hasOpenSourceTransactionGoalOwnership() {
+				boundaryCtx = softBoundaryCtx
+			}
+		}
+		vu.markUserWorkStarted()
+		result, err := vu.executeWithRetryStream(actionCtx, resolved, errCfg, func(child *protocol.Result) error {
+			if child != nil && child.BusinessTransaction && !claimEmittedTransaction() {
+				return errTransactionGoalReached
+			}
+			vu.recordResult(child, errCfg, logCfg)
+			if child != nil {
+				vu.noteSourceTransactionResult(action, child.Success)
+			}
+			return nil
+		})
+		if err != nil {
+			releaseEmitterReservation()
+			if errors.Is(err, errTransactionGoalReached) {
+				if ignoreErrors {
+					return flowNext
+				}
+				return flowTeardown
+			}
+			vu.noteSourceTransactionResult(action, false)
+			logger.Error(phase+" action failed", "action", action.Name, "err", scrubSensitiveError(err, vu.RedactionConfig))
+			if !ignoreErrors {
+				return flowTeardown
+			}
+			if actionCtx.Err() == nil && boundaryCtx.Err() == nil {
+				if !vu.applyActionThinkTime(boundaryCtx, action) {
+					return flowTeardown
+				}
+			}
+			return flowNext
+		}
+		if result != nil && result.BusinessTransaction && !claimEmittedTransaction() {
+			releaseEmitterReservation()
+			if ignoreErrors {
+				return flowNext
+			}
+			return flowTeardown
+		}
+		releaseEmitterReservation()
 		vu.recordResult(result, errCfg, logCfg)
+		if result != nil {
+			vu.noteSourceTransactionResult(action, result.Success)
+		}
 		if result != nil && !result.Success {
 			if logCfg.OnErrorOnly || logCfg.Level == "extended" {
 				logger.Error(phase+" action unsuccessful", "action", action.Name, "status", result.StatusCode, "error", result.ErrorMessage)
@@ -786,6 +1365,9 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 			if !ignoreErrors {
 				return flowTeardown
 			}
+		}
+		if !vu.applyActionThinkTime(boundaryCtx, action) {
+			return flowTeardown
 		}
 		return flowNext
 	}
@@ -809,6 +1391,46 @@ func (vu *VUser) runLifecycleActions(ctx context.Context, actions []dsl.Action, 
 	return runActions(actions, 0) != flowTeardown
 }
 
+func (vu *VUser) applyActionThinkTime(ctx context.Context, action dsl.Action) bool {
+	if vu == nil || vu.Script == nil || !action.ThinkTimeAfter {
+		return true
+	}
+	global := vu.Script.Config.ThinkTime
+	thinkCfg := protocol.ThinkTimeConfig{
+		Type: global.Type, MeanMs: global.MeanMs, StdMs: global.StdMs,
+		MinMs: global.MinMs, MaxMs: global.MaxMs, Multiplier: global.Multiplier,
+		LimitMs: global.LimitMs, Ignore: global.Ignore,
+	}
+	if action.ThinkTime.Type != "" {
+		thinkCfg = protocol.ThinkTimeConfig{
+			Type: action.ThinkTime.Type, MeanMs: action.ThinkTime.MeanMs,
+			StdMs: action.ThinkTime.StdMs, MinMs: action.ThinkTime.MinMs, MaxMs: action.ThinkTime.MaxMs,
+			Multiplier: action.ThinkTime.Multiplier, LimitMs: action.ThinkTime.LimitMs, Ignore: action.ThinkTime.Ignore,
+		}
+		if thinkCfg.Multiplier == 0 {
+			thinkCfg.Multiplier = global.Multiplier
+		}
+		if thinkCfg.LimitMs == 0 {
+			thinkCfg.LimitMs = global.LimitMs
+		}
+		if global.Ignore {
+			thinkCfg.Ignore = true
+		}
+	}
+	delay := computeThinkTime(thinkCfg)
+	elapsed, completed := vu.sleepActive(ctx, delay)
+	vu.noteSourceTransactionThinkTime(elapsed)
+	vu.iterationThinkTime += elapsed
+	return completed
+}
+
+func actionThinkTimeInterruptedError(ctx context.Context) error {
+	if ctx != nil && ctx.Err() != nil {
+		return ctx.Err()
+	}
+	return fmt.Errorf("action think time was interrupted")
+}
+
 func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 	if vu == nil || vu.Proto == nil || vu.Script == nil {
 		return nil
@@ -819,5 +1441,8 @@ func (vu *VUser) resetProtocolForIteration(ctx context.Context) error {
 		return err
 	}
 	vu.bindRuntimeTextRedactor()
-	return callProtocolInit(ctx, vu.Proto, buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", vu.secretResolver()), vu.RedactionConfig)
+	if err := callProtocolInit(ctx, vu.Proto, buildProtoConfigForRunModeWithSecretResolver(vu.Script, "load", vu.secretResolver()), vu.RedactionConfig); err != nil {
+		return err
+	}
+	return ctx.Err()
 }

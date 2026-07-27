@@ -523,8 +523,9 @@ func TestHandleImportSample(t *testing.T) {
 	if len(result.Assumptions) != 0 {
 		t.Fatalf("assumptions = %v, want none", result.Assumptions)
 	}
-	if len(result.Unsupported) != 0 {
-		t.Fatalf("unsupported_elements = %v, want none", result.Unsupported)
+	if len(result.Unsupported) != 1 ||
+		!strings.Contains(result.Unsupported[0], "source exposed headers as a map") {
+		t.Fatalf("unsupported_elements = %v, want only source_order_unavailable information", result.Unsupported)
 	}
 	if len(result.Summary) != 0 {
 		t.Fatalf("summary = %#v, want empty", result.Summary)
@@ -576,10 +577,10 @@ func TestHandleImportSampleReturnsReplayPreflightForMissingFileAsset(t *testing.
 				} `json:"import"`
 			} `json:"metadata"`
 		} `json:"script"`
-		Warnings  []string `json:"warnings"`
 		Preflight struct {
-			Valid           bool `json:"valid"`
-			DataSourceCount int  `json:"data_source_count"`
+			Valid           bool     `json:"valid"`
+			DataSourceCount int      `json:"data_source_count"`
+			Warnings        []string `json:"warnings"`
 			Checks          []struct {
 				ID     string `json:"id"`
 				Status string `json:"status"`
@@ -601,8 +602,8 @@ func TestHandleImportSampleReturnsReplayPreflightForMissingFileAsset(t *testing.
 	if result.Preflight.DataSourceCount != 1 {
 		t.Fatalf("preflight data_source_count = %d, want 1", result.Preflight.DataSourceCount)
 	}
-	if !containsStringContaining(result.Warnings, "file data source requires inline_data, path, or storage_ref") {
-		t.Fatalf("warnings = %#v, want missing file data source warning", result.Warnings)
+	if !containsStringContaining(result.Preflight.Warnings, "requires an import file binding before replay") {
+		t.Fatalf("preflight warnings = %#v, want missing file binding warning", result.Preflight.Warnings)
 	}
 	dataSourceStatus := ""
 	for _, check := range result.Preflight.Checks {
@@ -1765,6 +1766,89 @@ vuser_end=vuser_end.java
 	for _, blocker := range result.FidelityReport.Blockers {
 		if strings.Contains(strings.ToLower(blocker), "unresolved superclass") {
 			t.Fatalf("blockers still contain unresolved superclass after supplemental file merge: %#v", result.FidelityReport.Blockers)
+		}
+	}
+}
+
+func TestHandleValidateEnterpriseArchiveImportAcceptsTextRenamedJavaSupplementalFiles(t *testing.T) {
+	// Corporate mail gateways strip .java attachments, so operators send the
+	// superclass as .txt. The upload path applies no extension filter, so the
+	// archive must recognize it as Java rather than storing a file that every
+	// Java pass ignores.
+	server := NewServer(ServerConfig{})
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+
+	part, err := writer.CreateFormFile("file", "demo.zip")
+	if err != nil {
+		t.Fatalf("CreateFormFile returned error: %v", err)
+	}
+	zipWriter := zip.NewWriter(part)
+	addZipEntry := func(name string, content string) {
+		entry, createErr := zipWriter.Create(name)
+		if createErr != nil {
+			t.Fatalf("Create(%q) returned error: %v", name, createErr)
+		}
+		if _, writeErr := entry.Write([]byte(content)); writeErr != nil {
+			t.Fatalf("Write(%q) returned error: %v", name, writeErr)
+		}
+	}
+	addZipEntry("Demo.usr", `[General]
+Type=Java
+
+[Actions]
+vuser_init=vuser_init.java
+Action=Action.java
+vuser_end=vuser_end.java
+`)
+	addZipEntry("Action.java", `public class Action extends BasicClient {
+  public int action() { return 0; }
+}`)
+	addZipEntry("vuser_init.java", `public class vuser_init {
+  public int init() { return 0; }
+}`)
+	addZipEntry("vuser_end.java", `public class vuser_end {
+  public int end() { return 0; }
+}`)
+	if err := zipWriter.Close(); err != nil {
+		t.Fatalf("zip.Close returned error: %v", err)
+	}
+
+	supplementalPart, err := writer.CreateFormFile("supplemental_file", "BasicClient.java.txt")
+	if err != nil {
+		t.Fatalf("CreateFormFile supplemental returned error: %v", err)
+	}
+	if _, err := supplementalPart.Write([]byte(`public class BasicClient {
+  public BasicClient() {}
+}`)); err != nil {
+		t.Fatalf("Write supplemental returned error: %v", err)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart close returned error: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/scripts/import/enterprise-script-archive/validate", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	resp := httptest.NewRecorder()
+
+	server.mux.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusOK, resp.Body.String())
+	}
+
+	var result struct {
+		FidelityReport struct {
+			Blockers []string `json:"blockers"`
+		} `json:"fidelity_report"`
+	}
+	if err := json.Unmarshal(resp.Body.Bytes(), &result); err != nil {
+		t.Fatalf("json.Unmarshal returned error: %v", err)
+	}
+	for _, blocker := range result.FidelityReport.Blockers {
+		if strings.Contains(strings.ToLower(blocker), "unresolved superclass") {
+			t.Fatalf("blockers still contain unresolved superclass after .txt supplemental merge: %#v", result.FidelityReport.Blockers)
 		}
 	}
 }
@@ -3364,6 +3448,8 @@ func TestHandleImportJMeterZipUsesJMXAndCSVSidecars(t *testing.T) {
 			} `json:"actions"`
 			DataSources []struct {
 				Path           string   `json:"path"`
+				FileName       string   `json:"file_name"`
+				InlineData     string   `json:"inline_data"`
 				Columns        []string `json:"columns"`
 				FirstRowHeader bool     `json:"first_row_header"`
 			} `json:"data_sources"`
@@ -3385,8 +3471,9 @@ func TestHandleImportJMeterZipUsesJMXAndCSVSidecars(t *testing.T) {
 		t.Fatalf("scripts = %#v, want converted JMX request", result.Scripts)
 	}
 	source := result.Scripts[0].DataSources[0]
-	if source.Path != "customers.csv" || !source.FirstRowHeader || strings.Join(source.Columns, ",") != "customer_id,zip" {
-		t.Fatalf("data source = %#v, want CSV sidecar header inference", source)
+	if source.Path != "" || source.FileName != "customers.csv" || source.InlineData != "customer_id,zip\n42,02139\n" ||
+		!source.FirstRowHeader || strings.Join(source.Columns, ",") != "customer_id,zip" {
+		t.Fatalf("data source = %#v, want portable inline CSV sidecar with inferred headers", source)
 	}
 	if result.ProtocolCompat.DataSources != 1 {
 		t.Fatalf("protocol_compat_report.data_sources = %d, want 1", result.ProtocolCompat.DataSources)

@@ -18,6 +18,19 @@ import (
 	_ "github.com/jasonczech/apexload/pkg/protocol/builtin"
 )
 
+var apexctlCommandHandlers = map[string]func(){
+	"run":          runTest,
+	"ci":           ciCmd,
+	"script":       scriptCmd,
+	"status":       statusCmd,
+	"wait":         waitCmd,
+	"archive":      archiveCmd,
+	"record":       recordCmd,
+	"record-agent": recordAgentCmd,
+	"github":       githubCmd,
+	"import":       importCmd,
+}
+
 func main() {
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	loadLocalDotEnv()
@@ -27,25 +40,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if handler, ok := apexctlCommandHandlers[os.Args[1]]; ok {
+		handler()
+		return
+	}
 	switch os.Args[1] {
-	case "run":
-		runTest()
-	case "ci":
-		ciCmd()
-	case "script":
-		scriptCmd()
-	case "status":
-		statusCmd()
-	case "wait":
-		waitCmd()
-	case "archive":
-		archiveCmd()
-	case "record":
-		recordCmd()
-	case "record-agent":
-		recordAgentCmd()
-	case "github":
-		githubCmd()
 	case "version":
 		info := buildinfo.Get()
 		fmt.Printf("apexctl %s (%s, %s)\n", info.DisplayVersion, firstNonEmptyCLI(info.Commit, "unknown"), firstNonEmptyCLI(info.BuildTime, "unknown"))
@@ -376,6 +375,7 @@ Commands:
   record    Record a browser script with the embedded recorder (ranked selectors + side-car HAR)
   record-agent  Start the localhost browser recording bridge for a remote dashboard
   github    Inspect and run GitHub Enterprise sync/check workflows
+  import    Import Bruno collections or Grafana dashboards
   version   Print version information
   help      Show this help
 
@@ -407,7 +407,8 @@ Examples:
   apexctl run --script order-flow.json --p95-latency-ms 800 --junit results.xml
   apexctl wait --api http://localhost:8080 --test <id> --junit results.xml
   apexctl github diagnostics --api http://localhost:8080
-  apexctl github sync --api http://localhost:8080 --project <id> --kind import`)
+  apexctl github sync --api http://localhost:8080 --project <id> --kind import
+  apexctl import bruno --api http://localhost:8080 --path ./collection --project <id> --output native --folder <id>`)
 	fmt.Println()
 	fmt.Println(ctlUsage())
 	fmt.Println()

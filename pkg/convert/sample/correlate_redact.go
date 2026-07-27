@@ -592,34 +592,6 @@ func cloneMetadata(input map[string]any) map[string]any {
 	return cloned
 }
 
-func sanitizeHeaders(input map[string]string) map[string]string {
-	if len(input) == 0 {
-		return input
-	}
-	for key := range input {
-		if paramize.SensitiveHeaderKey(key) && !isGovernedSensitiveHeaderValue(key, input[key]) {
-			input[key] = "{{secret." + sanitizeIdentifier(strings.ToLower(key)) + "}}"
-		}
-	}
-	return input
-}
-
-func sanitizeHeaderList(input dsl.HeaderList) dsl.HeaderList {
-	if len(input) == 0 {
-		return input
-	}
-	for index := range input {
-		if paramize.SensitiveHeaderKey(input[index].Name) && !isGovernedSensitiveHeaderValue(input[index].Name, input[index].Value) {
-			input[index].Value = "{{secret." + sanitizeIdentifier(strings.ToLower(input[index].Name)) + "}}"
-		}
-	}
-	return input
-}
-
-func sanitizeBody(body string) string {
-	return paramize.SanitizeBodySecrets(body)
-}
-
 // redactSourceReviewSecrets scrubs credentials from the preserved source text
 // shown in the Source Comparison panel. This runs regardless of the
 // sanitize_sensitive option: that option controls whether the generated
@@ -693,6 +665,17 @@ func collectExchangeSecretRedactions(exchanges []exchange) exchangeSecretRedacti
 		if ex.BodyEncoding == "" {
 			redactions.addBody(ex.Body)
 		}
+		for _, value := range ex.SourceSecrets {
+			if value == "" {
+				continue
+			}
+			if _, exists := redactions.seenHeaderValues[value]; exists {
+				continue
+			}
+			redactions.seenHeaderValues[value] = struct{}{}
+			redactions.headerValues = append(redactions.headerValues, value)
+		}
+		redactions.addURL(ex.URL)
 		if ex.Response != nil {
 			redactions.addSensitiveHeaderValues(ex.Response.Headers)
 			redactions.addSensitiveHeaderListValues(ex.Response.HeaderList)
@@ -700,6 +683,17 @@ func collectExchangeSecretRedactions(exchanges []exchange) exchangeSecretRedacti
 		}
 	}
 	return redactions
+}
+
+func (redactions *exchangeSecretRedactions) addURL(raw string) {
+	if raw == "" {
+		return
+	}
+	sanitized := scrub.ValueURL(raw, scrub.Policy{})
+	if sanitized == raw {
+		return
+	}
+	redactions.addBodyReplacement(raw, sanitized)
 }
 
 func (redactions *exchangeSecretRedactions) addSensitiveHeaderListValues(headers dsl.HeaderList) {
@@ -734,6 +728,16 @@ func (redactions *exchangeSecretRedactions) addBody(body string) {
 	}
 	sanitized := paramize.SanitizeBodySecrets(body)
 	if sanitized == body {
+		return
+	}
+	redactions.addBodyReplacement(body, sanitized)
+}
+
+func (redactions *exchangeSecretRedactions) addBodyReplacement(body, sanitized string) {
+	if body == "" || body == sanitized {
+		return
+	}
+	if _, exists := redactions.seenBodies[body]; exists {
 		return
 	}
 	redactions.seenBodies[body] = struct{}{}
@@ -848,44 +852,4 @@ func sanitizeIdentifier(value string) string {
 		return "value"
 	}
 	return value
-}
-
-// isGovernedSensitiveHeaderValue only exempts header values whose entire
-// credential-bearing surface is supplied by templates. Merely containing a
-// template is insufficient: correlation runs before sanitization, so a value
-// such as "Bearer {{var.token}} residual-secret" must not retain the residual
-// literal. Authorization schemes and cookie names are non-secret syntax and
-// may remain literal when every associated credential is a whole template.
-func isGovernedSensitiveHeaderValue(name, value string) bool {
-	trimmed := strings.TrimSpace(value)
-	if isWholeValueTemplate(trimmed) {
-		return true
-	}
-	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "authorization", "proxy-authorization":
-		fields := strings.Fields(trimmed)
-		return len(fields) == 2 && authorizationSchemePattern.MatchString(fields[0]) && isWholeValueTemplate(fields[1])
-	case "cookie":
-		parts := strings.Split(trimmed, ";")
-		if len(parts) == 0 {
-			return false
-		}
-		for _, part := range parts {
-			pair := strings.SplitN(strings.TrimSpace(part), "=", 2)
-			if len(pair) != 2 || strings.TrimSpace(pair[0]) == "" || !isWholeValueTemplate(pair[1]) {
-				return false
-			}
-		}
-		return true
-	default:
-		return false
-	}
-}
-
-var (
-	authorizationSchemePattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9._~+-]*$`)
-)
-
-func isWholeValueTemplate(value string) bool {
-	return paramize.IsGovernedTemplate(value)
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/salesforce"
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 )
 
 var enterpriseImportGate = make(chan struct{}, 2)
@@ -373,6 +374,27 @@ func mergeEnterpriseArchiveZipWithSupplementalFiles(baseZip []byte, names []stri
 	if len(reader.File) > enterprisearchive.MaxArchiveEntries {
 		return nil, fmt.Errorf("archive contains %d entries, limit is %d", len(reader.File), enterprisearchive.MaxArchiveEntries)
 	}
+	// This function deliberately writes entries back under their ORIGINAL names
+	// (see the comment on the copy loop below), so it cannot adopt the
+	// normalizing archiveingest reader. Apply the shared path policy up front
+	// instead: mergedArchiveEntryKey uses path.Clean, which preserves "..", so
+	// without this a traversal entry would round-trip through the merge and
+	// reach ConvertZip. Fail loudly rather than silently dropping the entry.
+	for _, file := range reader.File {
+		if file == nil || file.FileInfo().IsDir() {
+			continue
+		}
+		// Validate the matching key, not the raw name: a leading "./" is a
+		// benign and common zip spelling that mergedArchiveEntryKey already
+		// strips, while ".." survives path.Clean and must be rejected.
+		key := mergedArchiveEntryKey(file.Name)
+		if key == "" {
+			continue
+		}
+		if _, err := archiveingest.ValidateFilePath(key, 0); err != nil {
+			return nil, fmt.Errorf("archive entry %q is not a safe relative path: %w", file.Name, err)
+		}
+	}
 
 	overrides := make(map[string][]byte, len(names))
 	for idx, name := range names {
@@ -524,6 +546,7 @@ func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *
 		writeJSON(w, status, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{}))
 		return
 	}
+	protectedRequirements := result.ProtectedRequirements.Take()
 	normalizeCombinedJavaVuserImport(result)
 	unsupportedElements := uniqueSortedStrings(result.Stats.UnsupportedFuncs)
 	warnings := enterpriseArchiveImportWarnings(result)
@@ -553,24 +576,29 @@ func (s *Server) writeEnterpriseArchiveImportResponse(w http.ResponseWriter, r *
 		attachSourceReviewToScripts(scripts, "enterprise_script_archive", "", summary.SourceReview)
 		parameterization = buildMultiScriptParameterization(scripts)
 	}
+	preflight := buildAndAttachMultiScriptImportPreflight(
+		result.Script, scripts, "enterprise_script_archive", nil, warnings,
+	)
 
 	writeJSON(w, status, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
-		Result:              result,
-		Scripts:             scripts,
-		Script:              result.Script,
-		Warnings:            warnings,
-		Stats:               result.Stats,
-		UnsupportedElements: unsupportedElements,
-		ReviewSections:      reviewSections,
-		RepairSuggestions:   repairSuggestions,
-		Summary:             summary,
-		DetectedProtocol:    result.DetectedProtocol,
-		FidelityReport:      summary.FidelityReport,
-		ReviewArtifact:      result.ReviewArtifact,
-		SourceReview:        summary.SourceReview,
-		TrueClient2Compat:   summary.TrueClient2CompatReport,
-		ProtocolCompat:      protocolCompat,
-		Parameterization:    parameterization,
+		Result:                result,
+		Scripts:               scripts,
+		Script:                result.Script,
+		Warnings:              warnings,
+		Stats:                 result.Stats,
+		UnsupportedElements:   unsupportedElements,
+		ReviewSections:        reviewSections,
+		RepairSuggestions:     repairSuggestions,
+		Summary:               summary,
+		DetectedProtocol:      result.DetectedProtocol,
+		FidelityReport:        summary.FidelityReport,
+		ReviewArtifact:        result.ReviewArtifact,
+		SourceReview:          summary.SourceReview,
+		TrueClient2Compat:     summary.TrueClient2CompatReport,
+		ProtocolCompat:        protocolCompat,
+		Parameterization:      parameterization,
+		ProtectedRequirements: protectedRequirements,
+		Preflight:             preflight,
 	}))
 }
 
@@ -1155,7 +1183,9 @@ func buildEnterpriseArchiveProtocolCompatReport(result *enterprisearchive.Conver
 		importMode = string(result.DetectedProtocol.ImportMode)
 		canonical = result.DetectedProtocol.CanonicalSourceProtocol
 	}
-	status := protocolPromotionStatus(importMode, len(unsupported), len(result.Warnings))
+	reviewGatedSteps := len(unsupported) + result.Stats.ReviewOnlyFunctions +
+		result.Stats.CustomCallFunctions + result.Stats.ExternalRequiredFunctions
+	status := protocolPromotionStatus(importMode, reviewGatedSteps, len(result.Warnings))
 	nextActions := protocolNextActions(status, enterpriseArchiveProtocolValidationAction(canonical))
 	if result.ReviewArtifact != nil && len(result.ReviewArtifact.NextActions) > 0 {
 		nextActions = result.ReviewArtifact.NextActions
@@ -1170,7 +1200,7 @@ func buildEnterpriseArchiveProtocolCompatReport(result *enterprisearchive.Conver
 		CanonicalProtocol:    canonical,
 		ImportMode:           importMode,
 		MappedSteps:          result.Stats.ConvertedActions,
-		ReviewGatedSteps:     len(unsupported) + result.Stats.ReviewOnlyFunctions + result.Stats.CustomCallFunctions + result.Stats.ExternalRequiredFunctions,
+		ReviewGatedSteps:     reviewGatedSteps,
 		UnsupportedFragments: unsupportedFragments,
 		RuntimeParity:        runtimeParity,
 		DataSources:          protocolDataSourceCount(result.Script),

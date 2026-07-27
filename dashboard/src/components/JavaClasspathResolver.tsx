@@ -19,8 +19,20 @@ export interface JavaClasspathResolverProps {
  * Attached JARs are uploaded to the controller and materialized on the runner
  * at launch; unattached entries are assumed to already exist on every runner.
  */
+// The upload endpoint is fail-closed server-side, so an operator who has not
+// opted in gets a bare "not enabled" body with no remediation. Name the env var
+// instead — otherwise the panel looks broken rather than switched off.
+function classpathUploadErrorMessage(uploadError: unknown): string {
+  const message = uploadError instanceof Error ? uploadError.message : ''
+  if (message.toLowerCase().includes('classpath upload is not enabled')) {
+    return 'JAR uploads are disabled on this controller. An operator must set APEXLOAD_JAVA_VUSER_CLASSPATH_UPLOAD_ENABLED=true, or provision this dependency on the runners instead.'
+  }
+  return message || 'Failed to upload JAR'
+}
+
 export function JavaClasspathResolver({ classpath, assets, onChange, onUpload, disabled }: JavaClasspathResolverProps) {
   const [busyEntry, setBusyEntry] = useState<string | null>(null)
+  const [dragEntry, setDragEntry] = useState<string | null>(null)
   const [error, setError] = useState('')
   const inputs = useRef<Record<string, HTMLInputElement | null>>({})
 
@@ -42,7 +54,7 @@ export function JavaClasspathResolver({ classpath, assets, onChange, onUpload, d
       const asset = await onUpload(file, entry)
       onChange([...assets.filter(existing => existing.entry !== entry), asset])
     } catch (uploadError: unknown) {
-      setError(uploadError instanceof Error ? uploadError.message : 'Failed to upload JAR')
+      setError(classpathUploadErrorMessage(uploadError))
     } finally {
       setBusyEntry(null)
     }
@@ -60,12 +72,43 @@ export function JavaClasspathResolver({ classpath, assets, onChange, onUpload, d
         Attach the JAR for any classpath entry your runners do not already provide. Attached JARs are uploaded to the
         controller and materialized on the runner at launch; entries you leave unattached are assumed to already exist on
         every runner. Attaching or swapping a JAR changes what code runs, so it requires re-approval before launch.
+        Attached JARs run on a local runner only — a distributed run that carries them is blocked at launch, so provision
+        those dependencies on the executors instead.
       </p>
       <ul className="java-classpath-resolver-list">
         {classpath.map((entry, index) => {
           const asset = assetForEntry(entry)
+          // Dropping is refused under the same conditions as the Attach button
+          // so the serialized-upload invariant above holds for both paths.
+          const dropRefused = Boolean(disabled) || busyEntry !== null || Boolean(asset)
           return (
-            <li key={`${entry}:${index}`} className="java-classpath-resolver-row">
+            <li
+              key={`${entry}:${index}`}
+              className={dragEntry === entry ? 'java-classpath-resolver-row drag-over' : 'java-classpath-resolver-row'}
+              // preventDefault runs even when the drop is refused. Returning
+              // early instead would leave the row a non-target, so the browser
+              // would handle the dropped file itself and navigate away from the
+              // import — losing the in-progress review. Refusing means claiming
+              // the drop and ignoring it, signalled by dropEffect 'none'.
+              onDragEnter={event => {
+                event.preventDefault()
+                if (dropRefused) return
+                setDragEntry(entry)
+              }}
+              onDragOver={event => {
+                event.preventDefault()
+                event.dataTransfer.dropEffect = dropRefused ? 'none' : 'copy'
+              }}
+              onDragLeave={event => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragEntry(null)
+              }}
+              onDrop={event => {
+                event.preventDefault()
+                setDragEntry(null)
+                if (dropRefused) return
+                void handleFile(entry, event.dataTransfer.files?.[0])
+              }}
+            >
               <code className="entry-path" title={entry}>{entry}</code>
               {asset ? (
                 <span className="entry-asset attached">
@@ -89,7 +132,8 @@ export function JavaClasspathResolver({ classpath, assets, onChange, onUpload, d
                     }}
                     type="file"
                     accept=".jar,application/java-archive"
-                    style={{ display: 'none' }}
+                    className="java-classpath-file-input"
+                    aria-label={`Attach JAR for ${entry}`}
                     onChange={event => {
                       void handleFile(entry, event.target.files?.[0])
                       event.target.value = ''
@@ -101,7 +145,7 @@ export function JavaClasspathResolver({ classpath, assets, onChange, onUpload, d
                     disabled={disabled || busyEntry !== null}
                     onClick={() => inputs.current[entry]?.click()}
                   >
-                    {busyEntry === entry ? 'Uploading…' : 'Attach JAR'}
+                    {busyEntry === entry ? 'Uploading…' : 'Drop or attach JAR'}
                   </button>
                 </span>
               )}

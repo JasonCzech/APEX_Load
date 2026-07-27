@@ -12,6 +12,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/jasonczech/apexload/pkg/convert/trueclient"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -277,8 +278,8 @@ func TestConvert(t *testing.T) {
 	}
 
 	// Verify stats
-	if result.Stats.ConvertedActions != 3 || result.Stats.LogicalActions != 3 {
-		t.Errorf("converted/logical actions = %d/%d, want 3/3", result.Stats.ConvertedActions, result.Stats.LogicalActions)
+	if result.Stats.ConvertedActions != 5 || result.Stats.LogicalActions != 5 {
+		t.Errorf("converted/logical actions = %d/%d, want 5/5", result.Stats.ConvertedActions, result.Stats.LogicalActions)
 	}
 	if result.Stats.RawRequestActions != 4 || result.Stats.CollapsedRequests != 1 {
 		t.Errorf("raw/collapsed request actions = %d/%d, want 4/1", result.Stats.RawRequestActions, result.Stats.CollapsedRequests)
@@ -310,24 +311,35 @@ func TestConvert(t *testing.T) {
 	if result.SourceReview == nil || len(result.SourceReview.Mappings) == 0 {
 		t.Fatal("expected source review mappings")
 	}
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "actions[0].params.requests[0]", "converted")
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_reg_save_param", "actions[0].params.requests[0].extractors[0]", "contributor")
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "lr_think_time", "config.think_time", "converted")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "actions[1].params.requests[0]", "converted")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_reg_save_param", "actions[1].params.requests[0].extractors[0]", "contributor")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "lr_think_time", "actions[1].params.requests[0].think_time", "converted")
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_set_max_html_param_len", "config.web_runtime.additional_attributes.web_set_max_html_param_len", "converted")
 	if result.Script.Config.WebRuntime.AdditionalAttributes["web_set_max_html_param_len"] != "4096" {
 		t.Fatalf("web_set_max_html_param_len = %#v, want 4096", result.Script.Config.WebRuntime.AdditionalAttributes)
 	}
 
-	// Check think time config was computed
-	if result.Script.Config.ThinkTime.MeanMs == 0 {
-		t.Error("expected think time to be configured")
+	// The first wait follows Homepage inside the transaction. The second follows
+	// lr_end_transaction, so it remains on that executable end marker and outside
+	// the measured source transaction.
+	firstChild := sequenceChildByName(t, result.Script.Actions[1], "Homepage")
+	secondChild := sequenceChildByName(t, result.Script.Actions[1], "Login_Submit")
+	if firstChild.ThinkTime.MeanMs != 3000 || !firstChild.ThinkTimeAfter || secondChild.ThinkTimeAfter {
+		t.Fatalf("sequence child think times = %#v, %#v", firstChild.ThinkTime, secondChild.ThinkTime)
+	}
+	endMarker := result.Script.Actions[2]
+	if endMarker.Type != "source_transaction" || endMarker.ThinkTime.MeanMs != 5000 || !endMarker.ThinkTimeAfter {
+		t.Fatalf("transaction end marker = %#v, want post-end 5s wait", endMarker)
+	}
+	if result.Script.Actions[0].Name != "Start_Login_transaction" || endMarker.Name != "End_Login_transaction" {
+		t.Fatalf("transaction marker names = %q / %q, want non-colliding display labels", result.Script.Actions[0].Name, endMarker.Name)
 	}
 
-	// First action (Homepage) should have the extractor attached
-	if result.Script.Actions[0].Type != "http_sequence" || result.Script.Actions[0].Name != "Login" {
-		t.Fatalf("first action = %#v, want logical Login http_sequence", result.Script.Actions[0])
+	// First protocol action (Homepage) should have the extractor attached.
+	if result.Script.Actions[1].Type != "http_sequence" || result.Script.Actions[1].Name != "Login" {
+		t.Fatalf("protocol action = %#v, want logical Login http_sequence", result.Script.Actions[1])
 	}
-	firstAction := sequenceChildByName(t, result.Script.Actions[0], "Homepage")
+	firstAction := sequenceChildByName(t, result.Script.Actions[1], "Homepage")
 	if len(firstAction.Extractors) != 1 {
 		t.Errorf("expected 1 extractor on first action, got %d", len(firstAction.Extractors))
 	} else if firstAction.Extractors[0].Name != "sessionid" {
@@ -336,6 +348,89 @@ func TestConvert(t *testing.T) {
 
 	t.Logf("Converted %d LR functions → %d DSL actions, %d extractors, %d think times",
 		result.Stats.TotalFunctions, result.Stats.ConvertedActions, result.Stats.Extractors, result.Stats.ThinkTimes)
+}
+
+func TestConvertLiteralThinkTimePlacementAndAccumulation(t *testing.T) {
+	initAction, err := ParseActionFile("vuser_init.c", `vuser_init() {
+		web_url("init request", "URL=https://example.com/init", LAST);
+	}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initAction.Phase = "init"
+	action, err := ParseActionFile("Action.c", `Action() {
+		lr_think_time(2);
+		web_url("first", "URL=https://example.com/first", LAST);
+		lr_think_time(1);
+		lr_think_time(3);
+		web_url("second", "URL=https://example.com/second", LAST);
+	}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := Convert([]*ParsedAction{initAction, action}, ConvertOptions{ScriptName: "Think placement"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Script.Init[0].ThinkTimeAfter {
+		t.Fatalf("cross-phase wait attached to init request: %#v", result.Script.Init[0].ThinkTime)
+	}
+	if !result.Script.Actions[0].ThinkTimeAfter || result.Script.Actions[0].ThinkTime.MeanMs != 4000 {
+		t.Fatalf("consecutive waits were not accumulated on the preceding action: %#v", result.Script.Actions[0].ThinkTime)
+	}
+	foundPartial := false
+	for _, mapping := range result.SourceReview.Mappings {
+		if mapping.Function == "lr_think_time" && mapping.Status == "review_only" {
+			foundPartial = true
+		}
+	}
+	if !foundPartial {
+		t.Fatalf("unplaceable cross-phase wait was not marked review-only: %#v", result.SourceReview.Mappings)
+	}
+}
+
+func TestConvertThinkTimeDoesNotCrossSourceControlBoundary(t *testing.T) {
+	result, err := Convert([]*ParsedAction{{
+		Filename: "Action.c",
+		Phase:    "action",
+		Functions: []ParsedFunction{
+			{Name: "web_url", StepName: "inside", URL: "https://example.test/inside", Phase: "action", ConditionIDs: []string{"if:1"}},
+			{Name: "lr_think_time", RawArgs: []string{"1"}, Phase: "action", ConditionIDs: []string{"if:2"}, Filename: "Action.c", LineNumber: 2},
+		},
+	}}, ConvertOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Script.Actions[0].ThinkTimeAfter {
+		t.Fatal("think time crossed a distinct source condition boundary")
+	}
+	if result.Stats.ReviewOnlyFunctions == 0 {
+		t.Fatal("unplaceable control-boundary think time was not flagged for review")
+	}
+}
+
+func TestConvertConsecutiveThinkTimesWithCapPreservesFirstWait(t *testing.T) {
+	action, err := ParseActionFile("Action.c", `Action() {
+		web_url("first", "URL=https://example.test/first", LAST);
+		lr_think_time(1);
+		lr_think_time(3);
+	}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := Convert([]*ParsedAction{action}, ConvertOptions{
+		RuntimeSettings: &dsl.ScriptConfig{ThinkTime: dsl.ThinkTimeConfig{Type: "recorded", Multiplier: 1, LimitMs: 2000}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := result.Script.Actions[0]
+	if !got.ThinkTimeAfter || got.ThinkTime.MeanMs != 1000 {
+		t.Fatalf("first exact wait was discarded: %#v", got.ThinkTime)
+	}
+	if result.Stats.ReviewOnlyFunctions == 0 {
+		t.Fatal("non-combinable capped wait was not flagged for review")
+	}
 }
 
 func assertSourceReviewMapping(t *testing.T, mappings []SourceReviewMapping, functionName string, targetPath string, status string) {
@@ -603,8 +698,8 @@ func TestConvertPreservesSaveCountAndRegexpCorrelations(t *testing.T) {
 		t.Fatalf("extractor stats = %d, want SaveCount and regexp extractors", result.Stats.Extractors)
 	}
 	action := result.Script.Actions[0]
-	if len(action.Assertions) != 1 || action.Assertions[0].Type != "body_contains" {
-		t.Fatalf("assertions = %#v, want body_contains", action.Assertions)
+	if len(action.Assertions) != 0 {
+		t.Fatalf("assertions = %#v, SaveCount without Fail must remain non-failing", action.Assertions)
 	}
 	if len(action.Extractors) != 2 {
 		t.Fatalf("extractors = %#v, want SaveCount and regexp extractors", action.Extractors)
@@ -665,12 +760,15 @@ Action()
 	if result.Script.Config.HTTP.TLS.MinVersion != "1.2" {
 		t.Fatalf("tls min version = %q, want 1.2", result.Script.Config.HTTP.TLS.MinVersion)
 	}
+	if result.Script.Config.HTTP.TLS.MaxVersion != "1.2" {
+		t.Fatalf("tls max version = %q, want exact 1.2", result.Script.Config.HTTP.TLS.MaxVersion)
+	}
 	if result.Script.Config.HTTP.KeepAlive == nil || *result.Script.Config.HTTP.KeepAlive {
 		t.Fatalf("keep_alive = %#v, want false", result.Script.Config.HTTP.KeepAlive)
 	}
 	attrs := result.Script.Config.WebRuntime.AdditionalAttributes
 	if attrs["web_cache_cleanup"] != "true" {
-		t.Fatalf("web runtime attrs = %#v, want web_cache_cleanup preserved as a native no-op", attrs)
+		t.Fatalf("web runtime attrs = %#v, want web_cache_cleanup source provenance", attrs)
 	}
 	if _, ok := attrs["web_cleanup_cookies"]; ok {
 		t.Fatalf("web runtime attrs = %#v, want web_cleanup_cookies emitted as a cookie_clear action, not an attribute", attrs)
@@ -684,17 +782,21 @@ Action()
 	if result.Script.Metadata == nil || result.Script.Metadata.Import == nil {
 		t.Fatal("expected import metadata for preserved runtime controls")
 	}
-	if len(result.Script.Actions) != 4 {
-		t.Fatalf("actions = %#v, want cookie_clear, error_message, lr_exit, and Homepage request", result.Script.Actions)
+	if len(result.Script.Actions) != 5 {
+		t.Fatalf("actions = %#v, want cache clear, cookie clear, error_message, lr_exit, and Homepage request", result.Script.Actions)
 	}
-	cookieAction := result.Script.Actions[0]
+	cacheAction := result.Script.Actions[0]
+	if cacheAction.Type != "source_runtime" || cacheAction.Params["function"] != "web_cache_cleanup" {
+		t.Fatalf("cache action = %#v, want executable cache cleanup", cacheAction)
+	}
+	cookieAction := result.Script.Actions[1]
 	if cookieAction.Type != "cookie_clear" || cookieAction.Params["function"] != "web_cleanup_cookies" {
 		t.Fatalf("cookie action = %#v, want executable cookie_clear from web_cleanup_cookies", cookieAction)
 	}
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_cleanup_cookies", "actions[0]", "converted")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_cleanup_cookies", "actions[1]", "converted")
 	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "web_cleanup_cookies", SourceFunctionSupportExecutable)
-	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "web_cache_cleanup", SourceFunctionSupportNativeNoop)
-	errorAction := result.Script.Actions[1]
+	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "web_cache_cleanup", SourceFunctionSupportExecutable)
+	errorAction := result.Script.Actions[2]
 	if errorAction.Type != "error_message" || errorAction.Value != "Imported error message" {
 		t.Fatalf("error action = %#v, want native error_message action", errorAction)
 	}
@@ -704,8 +806,8 @@ Action()
 	if errorAction.Metadata["source_function"] != "lr_error_message" {
 		t.Fatalf("error action metadata = %#v, want source_function lr_error_message", errorAction.Metadata)
 	}
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "lr_error_message", "actions[1]", "converted")
-	if exitAction := result.Script.Actions[2]; exitAction.Type != "source_runtime" || exitAction.Params["function"] != "lr_exit" {
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "lr_error_message", "actions[2]", "converted")
+	if exitAction := result.Script.Actions[3]; exitAction.Type != "source_runtime" || exitAction.Params["function"] != "lr_exit" {
 		t.Fatalf("exit action = %#v, want native lr_exit runtime action", exitAction)
 	}
 	preserved := result.Script.Metadata.Import.Preserved
@@ -754,8 +856,15 @@ Action()
 		t.Fatalf("unsupported funcs = %#v skipped=%d, want none", result.Stats.UnsupportedFuncs, result.Stats.Skipped)
 	}
 	auth := result.Script.Config.HTTP.Auth
-	if auth.Type != "basic" || auth.Username != "perfuser" || auth.Password != "perfpass" {
+	if auth.Type != "basic" || auth.Username != "perfuser" ||
+		auth.Password != "{{secret.ENTERPRISE_HTTP_AUTH_PASSWORD}}" {
 		t.Fatalf("http auth = %#v, want web_set_user basic auth", auth)
+	}
+	requirements := result.ProtectedRequirements.Take()
+	if len(requirements) != 1 ||
+		requirements[0].Value != "perfpass" ||
+		requirements[0].Replacement != auth.Password {
+		t.Fatalf("protected auth requirements = %#v, want one password handoff", requirements)
 	}
 	if result.Script.Config.WebRuntime.AdditionalAttributes["web_set_user.host"] != "secure.example.com:443" {
 		t.Fatalf("web runtime attrs = %#v, want web_set_user host", result.Script.Config.WebRuntime.AdditionalAttributes)
@@ -831,7 +940,11 @@ func TestSourceFunctionRegistryCoversDocumentedFunctions(t *testing.T) {
 			if len(result.Stats.UnsupportedFuncs) != 0 || result.Stats.Skipped != 0 {
 				t.Fatalf("unsupported funcs = %#v skipped=%d, want none", result.Stats.UnsupportedFuncs, result.Stats.Skipped)
 			}
-			assertSourceReviewSupportMode(t, result.SourceReview.Mappings, def.Name, def.SupportMode)
+			wantMode := def.SupportMode
+			if def.Name == "lr_think_time" {
+				wantMode = SourceFunctionSupportReviewOnly
+			}
+			assertSourceReviewSupportMode(t, result.SourceReview.Mappings, def.Name, wantMode)
 		})
 	}
 }
@@ -859,8 +972,14 @@ func TestConvertUnknownCFunctionAsCustomCallReviewAction(t *testing.T) {
 		t.Fatalf("custom action = %#v, want custom_call review action", action)
 	}
 	args, ok := action.Params["args"].([]any)
-	if !ok || len(args) != 3 || args[0] != "42" || args[1] != "LR_AUTO" || args[2] != "value" {
-		t.Fatalf("custom args = %#v, want numeric, identifier, and string args preserved", action.Params["args"])
+	if !ok || len(args) != 3 ||
+		args[0] != credential.Redacted ||
+		args[1] != credential.Redacted ||
+		args[2] != credential.Redacted {
+		t.Fatalf("custom args = %#v, want disclosure-safe argument shape", action.Params["args"])
+	}
+	if _, retained := action.Metadata["source_call"]; retained {
+		t.Fatalf("custom action retained raw source call: %#v", action.Metadata)
 	}
 	assertSourceReviewSupportMode(t, result.SourceReview.Mappings, "my_custom_helper", SourceFunctionSupportCustomReview)
 }
@@ -912,11 +1031,11 @@ func TestConvertWebRegFindToAssertions(t *testing.T) {
 	}
 
 	firstAssertions := result.Script.Actions[0].Assertions
-	if len(firstAssertions) != 2 {
-		t.Fatalf("first action assertions = %#v, want body_contains + status_code", firstAssertions)
+	if len(firstAssertions) != 1 {
+		t.Fatalf("first action assertions = %#v, want only the generated status_code assertion", firstAssertions)
 	}
-	if firstAssertions[0].Type != "body_contains" || firstAssertions[0].Value != "Welcome back" {
-		t.Fatalf("first mapped assertion = %#v, want body_contains on Welcome back", firstAssertions[0])
+	if firstAssertions[0].Type != "status_code" {
+		t.Fatalf("first mapped assertion = %#v, want status_code", firstAssertions[0])
 	}
 	firstExtractors := result.Script.Actions[0].Extractors
 	if len(firstExtractors) != 1 {
@@ -1819,8 +1938,8 @@ Options=NOTHINK
 	if got := lightning.Headers["X-B3-TraceId"]; got != "{{var.traceid}}" {
 		t.Fatalf("auto header on lightning = %q, want parameterized trace id", got)
 	}
-	if got := lightning.Headers["Cookie"]; got != "sid={{var.c_lightning_sid}}" {
-		t.Fatalf("cookie header = %q, want parameterized lightning sid", got)
+	if got := lightning.Headers["Cookie"]; !strings.HasPrefix(got, "{{secret.") {
+		t.Fatalf("cookie header = %q, want whole-value governed credential", got)
 	}
 	if _, ok := result.Script.Actions[1].Headers["X-B3-TraceId"]; ok {
 		t.Fatalf("auto header should be removed after web_revert_auto_header: %#v", result.Script.Actions[1].Headers)
@@ -2141,22 +2260,28 @@ vuser_end()
 	if launch.Target != "https://acme.my.salesforce.com/one/one.app" {
 		t.Fatalf("launch target = %q, want absolute Salesforce URL because base host is mobileauth", launch.Target)
 	}
-	if len(result.Script.Actions) != 1 || result.Script.Actions[0].Type != "http_sequence" {
-		t.Fatalf("main actions = %#v, want one logical http_sequence transaction", result.Script.Actions)
+	if len(result.Script.Actions) != 6 ||
+		importedSourceFunction(result.Script.Actions[0]) != "lr_start_transaction" ||
+		importedSourceFunction(result.Script.Actions[1]) != "lr_start_sub_transaction" ||
+		result.Script.Actions[2].Name != "Address_Search_Aura" ||
+		importedSourceFunction(result.Script.Actions[3]) != "lr_end_sub_transaction" ||
+		result.Script.Actions[4].Type != "http_sequence" ||
+		importedSourceFunction(result.Script.Actions[5]) != "lr_end_transaction" {
+		t.Fatalf("main actions = %#v, want executable parent/subtransaction boundaries around their original request scopes", result.Script.Actions)
 	}
-	sequence := result.Script.Actions[0]
+	sequence := result.Script.Actions[4]
 	if sequence.Name != "S01_iPad_BuyFlow_AIA_T06_AddressSearchAndContinue" {
 		t.Fatalf("sequence name = %q, want source transaction name", sequence.Name)
 	}
-	if sequence.Metadata["source_request_count"] != 3 {
-		t.Fatalf("sequence request count metadata = %#v, want 3", sequence.Metadata["source_request_count"])
+	if sequence.Metadata["source_request_count"] != 2 {
+		t.Fatalf("sequence request count metadata = %#v, want 2 requests after the independently bounded subtransaction", sequence.Metadata["source_request_count"])
 	}
-	address := sequenceChildByName(t, sequence, "Address_Search_Aura")
+	address := result.Script.Actions[2]
 	if address.Target != "https://acme.lightning.force.com/aura" {
 		t.Fatalf("address target = %q, want absolute lightning URL", address.Target)
 	}
-	if got := address.Headers["Cookie"]; got != "sid={{var.sessionid}}" {
-		t.Fatalf("address cookie = %q, want persistent sanitized cookie substitution", got)
+	if got := address.Headers["Cookie"]; !strings.HasPrefix(got, "{{secret.") {
+		t.Fatalf("address cookie = %q, want whole-value governed credential", got)
 	}
 	if got := address.Headers["X-SFDC-Page-Scope-Id"]; got != "{{var.pagescopeid}}" {
 		t.Fatalf("auto header = %q, want persistent parameterized page scope", got)
@@ -2208,8 +2333,8 @@ vuser_end()
 	if convertParam.Params["source_string"] != "{{var.pkceverifier}}" || convertParam.Params["target_encoding"] != "URL" {
 		t.Fatalf("web_convert_param params = %#v, want source string and URL target encoding", convertParam.Params)
 	}
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_custom_request", "init[1]", "converted")
-	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_submit_data", "actions[0].params.requests[0]", "converted")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_custom_request", "init[2]", "converted")
+	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_submit_data", "actions[2]", "converted")
 	assertSourceReviewMapping(t, result.SourceReview.Mappings, "web_url", "teardown[0]", "converted")
 }
 
@@ -2381,25 +2506,27 @@ Format=%Y-%m-%d
 	if err != nil {
 		t.Fatalf("ConvertZip returned error: %v", err)
 	}
-	if len(result.Script.Actions) != 1 {
-		t.Fatalf("actions = %#v, want one REST action", result.Script.Actions)
+	if len(result.Script.Actions) != 3 ||
+		result.Script.Actions[0].Type != "source_transaction" ||
+		result.Script.Actions[2].Type != "source_transaction" {
+		t.Fatalf("actions = %#v, want transaction markers surrounding one REST action", result.Script.Actions)
 	}
-	action := result.Script.Actions[0]
+	action := firstProtocolAction(t, result.Script.Actions)
 	if !strings.HasPrefix(action.Body, "{{secret.lr_unmask_") {
 		t.Fatalf("body = %q, want governed lr_unmask secret reference", action.Body)
 	}
 	if got := action.Headers["Content-Type"]; got != "application/xml" {
 		t.Fatalf("content type = %q, want application/xml", got)
 	}
-	if result.Script.Config.HTTP.TLS.MinVersion != "1.2" {
-		t.Fatalf("TLS min version = %q, want 1.2", result.Script.Config.HTTP.TLS.MinVersion)
+	if result.Script.Config.HTTP.TLS.MinVersion != "1.2" || result.Script.Config.HTTP.TLS.MaxVersion != "1.2" {
+		t.Fatalf("TLS bounds = %#v, want exact TLS 1.2", result.Script.Config.HTTP.TLS)
 	}
 	params := map[string]dsl.Parameter{}
 	for _, parameter := range result.Script.Parameters {
 		params[parameter.Name] = parameter
 	}
-	if params["sub"].Selection != "unique" || params["sub"].StartRow != 2 || params["sub"].BlockSize != 3 || !params["sub"].ValueForEachVUser {
-		t.Fatalf("Sub parameter = %#v, want unique StartRow/block/value_for_each_vuser", params["sub"])
+	if params["sub"].Selection != "unique" || params["sub"].StartRow != 2 || params["sub"].BlockSize != 0 || !params["sub"].ValueForEachVUser {
+		t.Fatalf("Sub parameter = %#v, want unique StartRow/automatic allocation/value_for_each_vuser without a fabricated block size", params["sub"])
 	}
 	payload, err := json.Marshal(result)
 	if err != nil {
@@ -2625,8 +2752,8 @@ Type="Table"
 	if got := result.Script.Actions[0].Target; got != "{{param.url}}/Services/com/cingular/csi/edp/InquireSubscriberBillingAgreement.jws" {
 		t.Fatalf("target = %q, want URL parameter reference canonicalized to param.url", got)
 	}
-	if got := result.Script.Actions[0].Body; got != "url={{param.url}}&session={{var.sessionid}}" {
-		t.Fatalf("body = %q, want known .prm parameters as param and dynamic values as var", got)
+	if got := result.Script.Actions[0].Body; got != "url={{param.url}}&session={{secret.ENTERPRISE_REQUEST_SESSION}}" {
+		t.Fatalf("body = %q, want known .prm parameter plus governed unproven session credential", got)
 	}
 	if got := result.Script.Config.BaseURL; got != "https://csi-gw-ext.att.com:443" {
 		t.Fatalf("base_url = %q, want first URL.dat value to replace source fallback", got)
@@ -3148,8 +3275,8 @@ func TestGoldenWebHTTPHTMLFixtureRuntimeParity(t *testing.T) {
 	if result.Script.Config.BaseURL != "https://shop.example.test" {
 		t.Fatalf("base_url = %q, want https://shop.example.test", result.Script.Config.BaseURL)
 	}
-	if result.Stats.ConvertedActions != 2 || result.Stats.LogicalActions != 2 {
-		t.Fatalf("converted/logical actions = %d/%d, want two logical actions", result.Stats.ConvertedActions, result.Stats.LogicalActions)
+	if result.Stats.ConvertedActions != 4 || result.Stats.LogicalActions != 4 {
+		t.Fatalf("converted/logical actions = %d/%d, want two transaction markers and two logical actions", result.Stats.ConvertedActions, result.Stats.LogicalActions)
 	}
 	if result.Stats.Transactions != 1 {
 		t.Fatalf("transactions = %d, want 1", result.Stats.Transactions)
@@ -3165,8 +3292,8 @@ func TestGoldenWebHTTPHTMLFixtureRuntimeParity(t *testing.T) {
 	if config.HTTP.ProxyMode != "custom" || config.HTTP.Proxy.URL != "http://proxy.example.test:8080" {
 		t.Fatalf("proxy config = %#v, want custom proxy", config.HTTP)
 	}
-	if config.HTTP.TLS.MinVersion != "1.2" {
-		t.Fatalf("tls min version = %q, want 1.2", config.HTTP.TLS.MinVersion)
+	if config.HTTP.TLS.MinVersion != "1.2" || config.HTTP.TLS.MaxVersion != "1.2" {
+		t.Fatalf("tls bounds = %#v, want exact TLS 1.2", config.HTTP.TLS)
 	}
 	if config.HTTP.Auth.Type != "basic" || config.HTTP.Auth.Username != "perfuser" {
 		t.Fatalf("auth config = %#v, want basic perfuser", config.HTTP.Auth)
@@ -3334,7 +3461,7 @@ func TestBuildRTSParityReportFromScriptSkipsNativeMappedAdditionalAttributes(t *
 				TLSTimeoutMs:     10000,
 				MaxConnsPerHost:  12,
 				KeepAlive:        &keepAlive,
-				TLS:              dsl.TLSConfig{MinVersion: "1.2"},
+				TLS:              dsl.TLSConfig{MinVersion: "1.2", MaxVersion: "1.2"},
 			},
 			WebRuntime: dsl.WebRuntimeConfig{
 				AdditionalAttributes: map[string]string{

@@ -400,6 +400,8 @@ func (s *SQLiteStore) DeleteScriptIfUnchanged(id string, expectedUpdatedAt time.
 	if _, err := tx.Exec(`DELETE FROM bruno_source_artifacts WHERE id NOT IN (
 		SELECT raw_artifact_id FROM bruno_source_revisions
 		UNION SELECT sanitized_artifact_id FROM bruno_source_revisions
+		UNION SELECT raw_artifact_id FROM bruno_native_import_batches
+		UNION SELECT sanitized_artifact_id FROM bruno_native_import_batches
 	)`); err != nil {
 		return false, err
 	}
@@ -553,6 +555,10 @@ func (s *SQLiteStore) DeleteScript(id string) error {
 			SELECT raw_artifact_id FROM bruno_source_revisions
 			UNION
 			SELECT sanitized_artifact_id FROM bruno_source_revisions
+			UNION
+			SELECT raw_artifact_id FROM bruno_native_import_batches
+			UNION
+			SELECT sanitized_artifact_id FROM bruno_native_import_batches
 		)`},
 		{query: `DELETE FROM scripts WHERE id = ?`, args: []any{id}},
 	} {

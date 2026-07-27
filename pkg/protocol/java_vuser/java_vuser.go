@@ -270,10 +270,14 @@ type configuration struct {
 	JDKHome                string
 	DefaultJDKHome         string
 	AuthToken              string
-	RunnerCommandExplicit  bool
-	DirectJavaRunner       bool
-	RequireBoundSummary    bool
-	ResolvedJDK            *javarunner.ResolvedJDK
+	// AllowLegacyJava is the operator's legacy-JVM opt-in. It lowers the
+	// accepted Java major version and must reach both the local resolver and the
+	// sidecar capability gate, or the opt-in fails in only one of them.
+	AllowLegacyJava       bool
+	RunnerCommandExplicit bool
+	DirectJavaRunner      bool
+	RequireBoundSummary   bool
+	ResolvedJDK           *javarunner.ResolvedJDK
 }
 
 type javaVuserSidecarClient interface {
@@ -419,6 +423,7 @@ func (j *JavaVuser) Init(ctx context.Context, cfg map[string]any) error {
 		JDKHome:                jdkHome,
 		DefaultJDKHome:         operator.DefaultJDKHome,
 		AuthToken:              operator.AuthToken,
+		AllowLegacyJava:        operator.AllowLegacyJava,
 		RunnerCommandExplicit:  operator.RunnerCommandExplicit,
 		Environment: map[string]string{
 			"APEXLOAD_VUSER_ID":            executionContextValue(cfg, "vuser_id"),
@@ -1211,7 +1216,11 @@ func (j *JavaVuser) RuntimeCapabilities() protocol.RuntimeCapabilities {
 		ctx, cancel := context.WithTimeout(context.Background(), defaultHealthTimeout)
 		defer cancel()
 		capabilities, err := cachedSidecarCapabilities(ctx, cfg.RunnerURL, cfg.AuthToken, client)
-		if err != nil || !capabilities.Healthy || capabilities.JavaMajor < javarunner.MinimumJavaMajor {
+		// The floor is evaluated against this process's legacy opt-in, not the
+		// bare constant: the sidecar reports its own major version, and gating
+		// on MinimumJavaMajor here would zero out capacity for a legacy lane the
+		// operator deliberately enabled, with no error naming this check.
+		if err != nil || !capabilities.Healthy || capabilities.JavaMajor < javarunner.EffectiveMinimumJavaMajor(cfg.AllowLegacyJava) {
 			return protocol.RuntimeCapabilities{MaxVUsers: 0}
 		}
 		// Owner fencing is part of every current sidecar execution, including
@@ -1387,7 +1396,8 @@ func (j *JavaVuser) RuntimeHealthy(ctx context.Context) bool {
 	key := strings.Join([]string{
 		strconv.FormatBool(cfg.Enabled), cfg.RunnerMode, sidecarCredentialCacheKey(cfg.RunnerURL, cfg.AuthToken), cfg.RunnerCommand, cfg.HarnessJar,
 		strings.Join(cfg.Classpath, string(filepath.ListSeparator)), cfg.WorkDir, cfg.JDKSelection, cfg.JDKHome,
-		cfg.DefaultJDKHome, strconv.FormatBool(cfg.RunnerCommandExplicit), os.Getenv("JAVA_HOME"),
+		cfg.DefaultJDKHome, strconv.FormatBool(cfg.AllowLegacyJava),
+		strconv.FormatBool(cfg.RunnerCommandExplicit), os.Getenv("JAVA_HOME"),
 		os.Getenv("JRE_HOME"), os.Getenv("PATH"), localHarnessCapabilitiesKey(cfg),
 	}, "\x00")
 	healthCache.Lock()
@@ -1748,6 +1758,7 @@ func (j *JavaVuser) effectiveConfiguration() configuration {
 			JDKSelection:          string(javarunner.JDKSelectionInternal),
 			DefaultJDKHome:        operator.DefaultJDKHome,
 			AuthToken:             operator.AuthToken,
+			AllowLegacyJava:       operator.AllowLegacyJava,
 			RunnerCommandExplicit: operator.RunnerCommandExplicit,
 		}
 	}
@@ -1817,6 +1828,7 @@ func prepareLocalConfigurationWithResolver(
 				SpecifiedHome:       cfg.JDKHome,
 				ExplicitJavaCommand: explicitCommand,
 				DefaultHome:         cfg.DefaultJDKHome,
+				AllowLegacyJava:     cfg.AllowLegacyJava,
 			})
 			if err != nil {
 				if errors.Is(err, javarunner.ErrProcessContainmentFailed) {

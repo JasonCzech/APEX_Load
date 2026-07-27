@@ -17,8 +17,10 @@ describe('featureFlags', () => {
     expect(isRunReportEnabled()).toBe(false)
   })
 
-  it('defaults the java classpath upload flag to off', () => {
-    expect(isJavaClasspathUploadEnabled()).toBe(false)
+  it('defaults the java classpath upload flag to on', () => {
+    // The server gate stays fail-closed, so showing the panel by default is
+    // safe; disabling it is an explicit per-browser or build-time choice.
+    expect(isJavaClasspathUploadEnabled()).toBe(true)
   })
 
   it('reads the java classpath upload flag from browser storage', () => {

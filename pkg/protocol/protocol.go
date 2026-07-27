@@ -560,7 +560,7 @@ type ThinkTimeConfig struct {
 	StdMs      float64 `json:"std_ms,omitempty"`     // Standard deviation for gaussian
 	MinMs      float64 `json:"min_ms,omitempty"`     // Min for random/gaussian
 	MaxMs      float64 `json:"max_ms,omitempty"`     // Max for random/gaussian
-	Multiplier float64 `json:"multiplier,omitempty"` // Scalar multiplier
+	Multiplier float64 `json:"multiplier,omitempty"` // Scalar multiplier; zero means omitted/inherit 1
 	LimitMs    float64 `json:"limit_ms,omitempty"`   // Upper limit cap
 	Ignore     bool    `json:"ignore,omitempty"`     // Skip think time for this action
 }

@@ -8,8 +8,8 @@ Evaluation of the complete published OpenText/Micro Focus VuGen 26.1 **Web (HTTP
 
 | Disposition | Count | Meaning |
 |---|---|---|
-| `executable` | 41 | Translated to an executable DSL action or config mapping. |
-| `native_noop` | 9 | Preserved as a runtime-compatibility attribute; a guaranteed no-op in APEX Load (no client cache / no auto-resource fetch / no concurrent-request primitive). |
+| `executable` | 42 | Translated to an executable DSL action or config mapping. |
+| `native_noop` | 8 | Preserved as a runtime-compatibility attribute; a guaranteed no-op in APEX Load (no client cache / no auto-resource fetch / no concurrent-request primitive). |
 | `review_only` | 31 | Preserved in the import-review artifact; no APEX runtime equivalent, so it is not executed (never fabricated). |
 
 Every published function resolves to one of the dispositions above — none falls through to a `custom_call` review stub. This is enforced by `TestWebHTTPFunctionRegistryResolvesEveryPublishedFunction`.
@@ -22,7 +22,7 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_add_cookie_ex` | web | `executable` | Cookie headers | Attached to matching downstream requests. |
 | `web_add_filter` | web | `native_noop` | config.web_runtime attribute | No auto-resource fetch; native no-op. |
 | `web_add_header` | web | `executable` | Request headers | Applied to the next request. |
-| `web_cache_cleanup` | web | `native_noop` | config.web_runtime attribute | No client cache; native no-op. |
+| `web_cache_cleanup` | web | `executable` | source_runtime action | Executable positional clear of the simulated HTTP response cache. |
 | `web_cleanup_auto_headers` | web | `executable` | Request headers | Clears all persistent auto headers. |
 | `web_cleanup_cookies` | web | `executable` | cookie_clear action | Executable positional cookie clear. |
 | `web_concurrent_end` | web | `native_noop` | Block marker (preserved) | Closes the concurrent group. |
@@ -48,7 +48,7 @@ Every published function resolves to one of the dispositions above — none fall
 | `web_load_cache` | web | `native_noop` | config.web_runtime attribute | No client cache; native no-op. |
 | `web_reg_add_cookie` | web | `executable` | Cookie headers | Registered cookie attached downstream. |
 | `web_reg_async_attributes` | web | `review_only` | Import review | Async polling/push has no APEX runtime equivalent. |
-| `web_reg_find` | web | `executable` | Assertion (body_contains) | Text= + optional SaveCount extractor. |
+| `web_reg_find` | web | `executable` | Assertion / count extractor | Text= + optional SaveCount extractor; SaveCount without Fail is non-failing. |
 | `web_reg_save_param` | web | `executable` | Extractor (boundary/regex) | LB=/RB= + ORD= on the next request. |
 | `web_reg_save_param_attrib` | web | `executable` | Extractor (xpath) | Tag=+Attribute= → //tag/@attr; element predicates warned. |
 | `web_reg_save_param_ex` | web | `executable` | Extractor (boundary) | Extended boundary form. |

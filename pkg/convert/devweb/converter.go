@@ -1,19 +1,19 @@
 package devweb
 
 import (
-	"archive/zip"
-	"bytes"
 	"fmt"
 	"net/url"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
 )
 
 type ImportRequest struct {
@@ -50,6 +50,14 @@ type ConvertResult struct {
 	Unsupported  diag.Diagnostics   `json:"unsupported,omitempty"`
 	Stats        ConvertStats       `json:"stats"`
 	SourceReview *sourceview.Review `json:"source_review,omitempty"`
+
+	// SecretRequirements describes credentials the shared projector governed out
+	// of the source. Values are stripped; they travel in ProtectedRequirements.
+	SecretRequirements []credentialpolicy.Requirement `json:"secret_requirements,omitempty"`
+	// ProtectedRequirements transfers source credential values to API workflows
+	// without placing them in the public conversion payload.
+	ProtectedRequirements credentialpolicy.ProtectedRequirements `json:"-"`
+	Findings              []importreview.Finding                 `json:"findings,omitempty"`
 }
 
 // standingAssumptions are the import-mode caveats every DevWeb conversion
@@ -141,25 +149,18 @@ const (
 )
 
 func ConvertZip(zipData []byte, opts ConvertOptions) (*ConvertResult, error) {
-	reader, err := zip.NewReader(bytes.NewReader(zipData), int64(len(zipData)))
+	extracted, err := archiveingest.ReadZIP(zipData, archiveingest.Options{Limits: archiveingest.Limits{
+		MaxEntries:    maxDevWebZipEntries,
+		MaxEntryBytes: maxDevWebEntryBytes,
+		MaxTotalBytes: maxDevWebTotalBytes,
+		MaxDepth:      32,
+	}})
 	if err != nil {
 		return nil, err
 	}
-	if len(reader.File) > maxDevWebZipEntries {
-		return nil, fmt.Errorf("archive has too many entries (%d > %d)", len(reader.File), maxDevWebZipEntries)
-	}
-	files := make(map[string]string)
-	var total int64
-	for _, file := range reader.File {
-		if file.FileInfo().IsDir() {
-			continue
-		}
-		body, err := readZipFile(file, maxDevWebTotalBytes-total)
-		if err != nil {
-			return nil, err
-		}
-		total += int64(len(body))
-		files[filepath.ToSlash(file.Name)] = string(body)
+	files := make(map[string]string, len(extracted))
+	for _, file := range extracted {
+		files[file.Name] = string(file.Data)
 	}
 	name, sourceFile, content := selectDevWebMainSource(files)
 	if strings.TrimSpace(content) == "" {
@@ -255,8 +256,50 @@ func convertSourceWithContext(name string, sourceFileName string, content string
 	if gap := result.Stats.TotalSteps - result.Stats.HTTPRequests - result.Stats.WebSocketActions - result.Stats.GRPCCalls - result.Stats.ThinkTimes - result.Stats.Skipped; gap > 0 {
 		diagnostics.Add(diag.Warning, "DevWeb completeness guard", result.Script.Name, fmt.Sprintf("%d SDK construct(s) were detected but not converted or explicitly skipped", gap))
 	}
+	// Route every HTTP request through the shared credential/request pipeline so
+	// authored credentials are governed at conversion time rather than redacted
+	// at the response boundary. Non-HTTP steps (WebSocket, gRPC, review-only
+	// markers) keep their converter shape: the projector only understands the
+	// HTTP request surface.
+	//
+	// This deliberately stops at FinalizeAction and does not call FinalizeScript.
+	// DevWeb legitimately emits WebSocket- and gRPC-only scripts with no base
+	// URL, and its zip-metadata path has pre-existing parameter/data-source
+	// defects that the whole-script invariant would turn into hard conversion
+	// failures. Credential governance is per request and does not need it.
+	credentialRegistry := credentialpolicy.NewNameRegistry()
+	provenVars := devWebExtractorVariables(result.Script.Actions)
+	trustedValues := devWebRuntimeDataReferences(result.Script.Actions)
+	requirements := make([]credentialpolicy.Requirement, 0)
+	for index := range result.Script.Actions {
+		if !devWebHTTPRequestAction(result.Script.Actions[index]) {
+			continue
+		}
+		finalizedAction, report, finalizeErr := finalizeDevWebHTTPRequest(
+			result.Script.Actions[index], index, sourceFileName, credentialRegistry, provenVars, trustedValues,
+		)
+		if finalizeErr != nil {
+			return nil, finalizeErr
+		}
+		result.Script.Actions[index] = finalizedAction
+		requirements = append(requirements, report.Requirements...)
+		result.Findings = append(result.Findings, report.Findings...)
+	}
+	result.SecretRequirements = publicDevWebCredentialRequirements(requirements)
+	result.ProtectedRequirements.Store(requirements)
+	for _, finding := range result.Findings {
+		diagnostics.Add(finding.Severity, finding.Element, finding.Location, finding.Detail)
+	}
+
 	result.Unsupported = diagnostics.Items()
-	result.SourceReview = sourceview.Build(ctx.files, sourceMappings)
+	// Redact the discovered credential values from the source text before it
+	// becomes public review evidence. The projector governed them in the
+	// executable script; the source review is a separate disclosure surface.
+	reviewFiles := make(map[string]string, len(ctx.files))
+	for name, fileContent := range ctx.files {
+		reviewFiles[name] = redactDevWebCredentialValues(fileContent, requirements)
+	}
+	result.SourceReview = sourceview.Build(reviewFiles, sourceMappings)
 	return result, nil
 }
 

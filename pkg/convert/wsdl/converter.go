@@ -1,12 +1,9 @@
 package wsdl
 
 import (
-	"archive/zip"
-	"bytes"
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"io"
 	"path"
 	"regexp"
 	"sort"
@@ -14,9 +11,14 @@ import (
 	"time"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/convert/sourceview"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/internal/archiveingest"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 type ImportRequest struct {
@@ -65,12 +67,15 @@ type ReviewSummary struct {
 }
 
 type ConvertResult struct {
-	Script       *dsl.Script        `json:"script"`
-	Warnings     []string           `json:"warnings,omitempty"`
-	Unsupported  diag.Diagnostics   `json:"unsupported,omitempty"`
-	Stats        ConvertStats       `json:"stats"`
-	Summary      ReviewSummary      `json:"summary"`
-	SourceReview *sourceview.Review `json:"source_review,omitempty"`
+	Script             *dsl.Script                    `json:"script"`
+	Warnings           []string                       `json:"warnings,omitempty"`
+	Unsupported        diag.Diagnostics               `json:"unsupported,omitempty"`
+	Findings           []importreview.Finding         `json:"findings,omitempty"`
+	SecretRequirements []credentialpolicy.Requirement `json:"secret_requirements,omitempty"`
+	Readiness          importreview.Readiness         `json:"readiness"`
+	Stats              ConvertStats                   `json:"stats"`
+	Summary            ReviewSummary                  `json:"summary"`
+	SourceReview       *sourceview.Review             `json:"source_review,omitempty"`
 }
 
 type BindingChoiceSummary struct {
@@ -279,36 +284,25 @@ type soapOperation struct {
 	Style      string   `xml:"style,attr"`
 }
 
-const maxWSDLZipEntries = 2000
+const (
+	maxWSDLZipEntries  = 2000
+	maxWSDLBundleBytes = 20 << 20
+	maxWSDLBundleDepth = 32
+)
 
 func FilesFromZip(data []byte) (string, map[string]string, error) {
-	reader, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	extracted, err := archiveingest.ReadZIP(data, archiveingest.Options{Limits: archiveingest.Limits{
+		MaxEntries:    maxWSDLZipEntries,
+		MaxEntryBytes: maxWSDLBundleBytes,
+		MaxTotalBytes: maxWSDLBundleBytes,
+		MaxDepth:      maxWSDLBundleDepth,
+	}})
 	if err != nil {
 		return "", nil, err
 	}
-	files := make(map[string]string)
-	remaining := int64(20 << 20)
-	for _, file := range reader.File {
-		if file.FileInfo().IsDir() {
-			continue
-		}
-		if len(files) >= maxWSDLZipEntries {
-			return "", nil, fmt.Errorf("archive has too many entries (>%d)", maxWSDLZipEntries)
-		}
-		rc, err := file.Open()
-		if err != nil {
-			return "", nil, err
-		}
-		content, err := io.ReadAll(io.LimitReader(rc, remaining+1))
-		rc.Close()
-		if err != nil {
-			return "", nil, err
-		}
-		if int64(len(content)) > remaining {
-			return "", nil, fmt.Errorf("archive decompressed size exceeds the 20 MiB import limit")
-		}
-		remaining -= int64(len(content))
-		files[cleanBundlePath(file.Name)] = string(content)
+	files := make(map[string]string, len(extracted))
+	for _, file := range extracted {
+		files[file.Name] = string(file.Data)
 	}
 	root := pickMainWSDL(files)
 	if root == "" {
@@ -318,12 +312,29 @@ func FilesFromZip(data []byte) (string, map[string]string, error) {
 }
 
 func prepareWSDLDocument(req ImportRequest, diagnostics *diag.Collector) (definitions, string, string, map[string]string, error) {
+	if len(req.Content) > maxWSDLBundleBytes {
+		return definitions{}, "", "", nil, fmt.Errorf(
+			"WSDL content exceeds the maximum size of %d bytes",
+			maxWSDLBundleBytes,
+		)
+	}
 	content := strings.TrimSpace(req.Content)
-	sourceFileName := cleanBundlePath(convertutil.FirstNonEmpty(req.RootFile, "service.wsdl"))
-	sourceFiles := normalizeSourceFiles(req.Files)
+	sourceFileName, err := archiveingest.ValidateFilePath(
+		convertutil.FirstNonEmpty(req.RootFile, "service.wsdl"),
+		maxWSDLBundleDepth,
+	)
+	if err != nil {
+		return definitions{}, "", "", nil, fmt.Errorf("invalid WSDL root_file: %w", err)
+	}
+	sourceFiles, err := normalizeSourceFiles(req.Files)
+	if err != nil {
+		return definitions{}, "", "", nil, err
+	}
 	if len(sourceFiles) > 0 {
-		root := cleanBundlePath(req.RootFile)
-		if root == "" {
+		root := ""
+		if strings.TrimSpace(req.RootFile) != "" {
+			root = sourceFileName
+		} else {
 			root = pickMainWSDL(sourceFiles)
 		}
 		if root == "" {
@@ -333,6 +344,18 @@ func prepareWSDLDocument(req ImportRequest, diagnostics *diag.Collector) (defini
 		if content == "" {
 			content = strings.TrimSpace(sourceFiles[root])
 		} else {
+			totalBytes := len(content)
+			for name, sourceContent := range sourceFiles {
+				if name != root {
+					if len(sourceContent) > maxWSDLBundleBytes-totalBytes {
+						return definitions{}, "", "", nil, fmt.Errorf(
+							"WSDL import files exceed the maximum total size of %d bytes",
+							maxWSDLBundleBytes,
+						)
+					}
+					totalBytes += len(sourceContent)
+				}
+			}
 			sourceFiles[root] = content
 		}
 	}
@@ -350,22 +373,39 @@ func prepareWSDLDocument(req ImportRequest, diagnostics *diag.Collector) (defini
 	return doc, content, sourceFileName, sourceFiles, nil
 }
 
-func normalizeSourceFiles(files map[string]string) map[string]string {
+func normalizeSourceFiles(files map[string]string) (map[string]string, error) {
 	if len(files) == 0 {
-		return nil
+		return nil, nil
+	}
+	if len(files) > maxWSDLZipEntries {
+		return nil, fmt.Errorf(
+			"WSDL import has too many files (%d > maximum %d)",
+			len(files),
+			maxWSDLZipEntries,
+		)
+	}
+	names := make([]string, 0, len(files))
+	totalBytes := 0
+	for name, content := range files {
+		names = append(names, name)
+		if len(content) > maxWSDLBundleBytes-totalBytes {
+			return nil, fmt.Errorf("WSDL import files exceed the maximum total size of %d bytes", maxWSDLBundleBytes)
+		}
+		totalBytes += len(content)
+	}
+	sort.Strings(names)
+	normalized, err := archiveingest.ValidateFilePaths(names, maxWSDLBundleDepth)
+	if err != nil {
+		return nil, fmt.Errorf("invalid WSDL import files: %w", err)
 	}
 	out := make(map[string]string, len(files))
-	for name, content := range files {
-		clean := cleanBundlePath(name)
-		if clean == "" {
-			continue
-		}
-		out[clean] = content
+	for index, name := range names {
+		out[normalized[index]] = files[name]
 	}
 	if len(out) == 0 {
-		return nil
+		return nil, nil
 	}
-	return out
+	return out, nil
 }
 
 func pickMainWSDL(files map[string]string) string {
@@ -485,12 +525,15 @@ func mergeDefinitions(dst *definitions, src definitions) {
 	dst.Bindings = append(dst.Bindings, src.Bindings...)
 	dst.Messages = append(dst.Messages, src.Messages...)
 	dst.Types = append(dst.Types, src.Types...)
+	dst.Imports = append(dst.Imports, src.Imports...)
 }
 
 func mergeSchemas(dst *xsdSchema, src xsdSchema) {
 	dst.Elements = append(dst.Elements, src.Elements...)
 	dst.SimpleTypes = append(dst.SimpleTypes, src.SimpleTypes...)
 	dst.ComplexTypes = append(dst.ComplexTypes, src.ComplexTypes...)
+	dst.Imports = append(dst.Imports, src.Imports...)
+	dst.Includes = append(dst.Includes, src.Includes...)
 }
 
 func resolveBundleFile(sourceFile string, location string, files map[string]string) (string, bool) {
@@ -556,6 +599,10 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 		return nil, err
 	}
 	baseURL := convertutil.FirstNonEmpty(req.Options.BaseURL, selected.Endpoint)
+	scriptBaseURL := baseURL
+	if strings.TrimSpace(scriptBaseURL) == "" {
+		scriptBaseURL = soapActionTarget("")
+	}
 	soapVersion := convertutil.FirstNonEmpty(req.Options.SOAPVersion, selected.SOAPVersion, detectSOAPVersion(content), "1.1")
 	serviceName := convertutil.FirstNonEmpty(firstServiceName(doc), doc.Name, "Imported_WSDL_Service")
 	if selected.ServiceName != "" {
@@ -576,7 +623,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 			GeneratedFrom: "wsdl",
 			CreatedAt:     time.Now(),
 			Config: dsl.ScriptConfig{
-				BaseURL: baseURL,
+				BaseURL: scriptBaseURL,
 				ThinkTime: dsl.ThinkTimeConfig{
 					Type:   "fixed",
 					MeanMs: float64(firstPositive(req.Options.DefaultThinkTimeMs, 1000)),
@@ -616,36 +663,136 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	}
 
 	sourceLineIndex := sourceview.NewLineIndex(content)
+	requests := make([]requestimport.RequestInput, 0, len(actions))
+	projectedSecrets := make([]wsdlProjectedSecret, 0)
+	nameRegistry := credentialpolicy.NewNameRegistry()
 	for _, op := range actions {
 		target := soapActionTarget(baseURL)
-		action := dsl.Action{
-			Name:   sanitizeName(op.Name),
-			Type:   "request",
-			Method: "POST",
-			Target: target,
-			Body:   soapEnvelope(doc, op, soapVersion, &diagnostics),
-			SOAP: &dsl.SOAPActionConfig{
-				Action:    op.SOAPAction,
-				Operation: op.Name,
-				BodyMode:  "generated",
-			},
-			Metadata: map[string]any{
-				"wsdl_operation": op.Name,
-				"soap_action":    op.SOAPAction,
-				"wsdl_service":   selected.ServiceName,
-				"wsdl_port":      selected.PortName,
-				"wsdl_binding":   selected.BindingName,
-				"soap_version":   soapVersion,
-			},
+		actionName := sanitizeName(op.Name)
+		actionPath := fmt.Sprintf("actions[%d]", len(requests))
+		sourcePointer := "operation/" + op.Name
+		var operationDiagnostics diag.Collector
+		body := []byte(soapEnvelope(doc, op, soapVersion, &operationDiagnostics))
+		for _, item := range operationDiagnostics.Items() {
+			diagnostics.Add(item.Severity, item.Element, item.Location, item.Detail)
 		}
+		body, secrets, credentialFindings, err := finalizeWSDLXMLBody(body, wsdlCredentialProjectionOptions{
+			RequestKey: actionName,
+			SourcePath: sourceFileName,
+			Pointer:    sourcePointer + "/body",
+			Registry:   nameRegistry,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("project WSDL operation %q credentials: %w", op.Name, err)
+		}
+		projectedSecrets = append(projectedSecrets, secrets...)
+
+		metadata := map[string]any{
+			"wsdl_operation": op.Name,
+			"soap_action":    op.SOAPAction,
+			"wsdl_service":   selected.ServiceName,
+			"wsdl_port":      selected.PortName,
+			"wsdl_binding":   selected.BindingName,
+			"soap_version":   soapVersion,
+		}
+		reviewFindings := wsdlOperationReviewFindings(op, sourceFileName, sourcePointer)
+		reviewFindings = append(reviewFindings, wsdlBindingReviewFindings(selected, doc, sourceFileName, sourcePointer)...)
+		reviewFindings = append(reviewFindings, wsdlSkeletonReviewFindings(operationDiagnostics.Items(), sourceFileName, sourcePointer)...)
+		if strings.TrimSpace(baseURL) == "" {
+			reviewFindings = append(reviewFindings, wsdlMissingEndpointReviewFinding(sourceFileName, sourcePointer))
+		}
+		reviewFindings = append(reviewFindings, credentialFindings...)
+		reviewFindings = importreview.NormalizeFindings(reviewFindings)
+		if len(reviewFindings) > 0 {
+			metadata["execution_blocker"] = "import_review_required"
+			metadata["import_review"] = wsdlImportReviewMetadata(reviewFindings, sourceFileName, sourcePointer)
+		}
+		requirements := make([]credentialpolicy.Requirement, 0, len(secrets))
+		for _, secret := range secrets {
+			requirements = append(requirements, secret.Requirement)
+		}
+		requests = append(requests, requestimport.RequestInput{
+			Phase: requestimport.PhaseActions,
+			Request: requestimport.Request{
+				Key:    actionName,
+				Name:   actionName,
+				Method: "POST",
+				Target: target,
+				Body: requestimport.Body{
+					Kind:     requestimport.BodyXML,
+					Payload:  body,
+					Encoding: requestimport.BodyEncodingText,
+					Source: credentialpolicy.SourceRef{
+						Format:  "wsdl",
+						Path:    sourceFileName,
+						Pointer: sourcePointer + "/body",
+					},
+				},
+				Metadata: metadata,
+				Source: credentialpolicy.SourceRef{
+					Format:  "wsdl",
+					Path:    sourceFileName,
+					Pointer: sourcePointer,
+				},
+			},
+			Overlay: requestimport.ActionOverlay{
+				SOAP: &dsl.SOAPActionConfig{
+					Action:    op.SOAPAction,
+					Operation: op.Name,
+					BodyMode:  "generated",
+				},
+			},
+			Findings:     reviewFindings,
+			Requirements: requirements,
+		})
 		if op.SOAPAction != "" {
 			result.Stats.SOAPActionsDetected = append(result.Stats.SOAPActionsDetected, op.SOAPAction)
 		}
-		actionIndex := len(result.Script.Actions)
-		result.Script.Actions = append(result.Script.Actions, action)
-		sourceMappings = append(sourceMappings, wsdlSourceMapping(sourceFileName, content, sourceLineIndex, op, fmt.Sprintf("actions[%d]", actionIndex), action.Name, "action", "converted", "WSDL operation was converted into a generated SOAP action."))
+		sourceMappings = append(sourceMappings, wsdlSourceMapping(sourceFileName, content, sourceLineIndex, op, actionPath, actionName, "action", "converted", "WSDL operation was converted into a generated SOAP action."))
 		result.Summary.Operations = append(result.Summary.Operations, op.Name)
 		result.Stats.ConvertedActions++
+	}
+	draft, err := requestimport.Project(result.Script, requests, requestimport.DefaultProjectOptions())
+	if err != nil {
+		return nil, fmt.Errorf("finalize WSDL requests: %w", err)
+	}
+	finalized, err := draft.Finalize(requestimport.FinalizeOptions{
+		UnresolvedBindings: len(projectedSecrets),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("finalize WSDL script: %w", err)
+	}
+	if len(finalized.ValidationIssues) > 0 {
+		return nil, fmt.Errorf("WSDL finalizer invariant failed: %s", strings.Join(finalized.ValidationIssues, "; "))
+	}
+	result.Script = finalized.Script
+	result.Findings = finalized.Findings
+	for index := range finalized.Requirements {
+		requirement := &finalized.Requirements[index]
+		if requirement.Value != "" {
+			projectedSecrets = append(projectedSecrets, wsdlProjectedSecret{
+				Requirement: *requirement,
+				SourceValues: uniqueNonEmptyStrings(
+					requirement.Value,
+					decodeWSDLXMLScalar(requirement.Value),
+				),
+			})
+		}
+		requirement.Value = ""
+		requirement.SourceValueAvailable = false
+	}
+	result.SecretRequirements = finalized.Requirements
+	result.Readiness = finalized.Readiness
+	result.Summary.BaseURL = result.Script.Config.BaseURL
+	result.Summary.Endpoint = scrub.ValueURL(result.Summary.Endpoint, scrub.Policy{})
+	for index := range result.Summary.BindingAlternatives {
+		result.Summary.BindingAlternatives[index].Endpoint = scrub.ValueURL(
+			result.Summary.BindingAlternatives[index].Endpoint,
+			scrub.Policy{},
+		)
+	}
+	for _, item := range finalized.Diagnostics {
+		diagnostics.Add(item.Severity, item.Element, item.Location, item.Detail)
 	}
 	sort.Strings(result.Stats.SOAPActionsDetected)
 	sort.Strings(result.Summary.Operations)
@@ -659,7 +806,7 @@ func Convert(req ImportRequest) (*ConvertResult, error) {
 	if len(sourceFiles) == 0 {
 		sourceFiles = map[string]string{sourceFileName: content}
 	}
-	result.SourceReview = sourceview.Build(sourceFiles, sourceMappings)
+	result.SourceReview = sourceview.Build(redactWSDLProjectedSecrets(sourceFiles, projectedSecrets), sourceMappings)
 	return result, nil
 }
 
@@ -688,14 +835,15 @@ func wsdlOperationLine(content string, lineIndex sourceview.LineIndex, operation
 }
 
 type operationInfo struct {
-	Name          string
-	SOAPAction    string
-	InputMessage  string
-	Style         string
-	BodyUse       string
-	BodyNamespace string
-	BodyParts     []string
-	Headers       []soapHeaderBinding
+	Name                     string
+	SOAPAction               string
+	InputMessage             string
+	Style                    string
+	BodyUse                  string
+	BodyNamespace            string
+	BodyParts                []string
+	Headers                  []soapHeaderBinding
+	BindingOperationResolved bool
 }
 
 type bindingChoice struct {
@@ -852,6 +1000,7 @@ func collectBindingOperations(doc definitions, b binding, filter []string, defau
 			info.InputMessage = strings.TrimSpace(ptOp.Input.Message)
 		}
 		if bindingOp, ok := bindingOps[name]; ok {
+			info.BindingOperationResolved = true
 			for _, soapOp := range bindingOp.SOAPOperations {
 				if version := soapVersionFromXMLName(soapOp.XMLName); version == "1.2" {
 					// SOAP version is binding-level in the summary; operation-level
@@ -1034,7 +1183,10 @@ func soapActionTarget(baseURL string) string {
 		return baseURL
 	}
 	if baseURL == "" {
-		return "/"
+		// Keep endpoint-less conversions structurally valid without accidentally
+		// targeting the controller or another caller-provided base URL. A durable
+		// review gate is attached to the action until a real endpoint is supplied.
+		return "https://wsdl.invalid/"
 	}
 	return baseURL
 }
@@ -1158,6 +1310,9 @@ func renderMessagePart(doc definitions, part messagePart, diagnostics *diag.Coll
 	if part.Type != "" {
 		if fields, ok := xsdFieldsForType(doc, localName(part.Type)); ok {
 			return renderXMLElement(doc, bodyName, fields, diagnostics, location, depth)
+		}
+		if isKnownXSDSimpleType(part.Type) || hasNamedXSDSimpleType(doc, part.Type) {
+			return renderPlaceholderElement(bodyName, placeholderForXSDType(doc, part.Type, bodyName), depth)
 		}
 	}
 	diagnostics.Add(diag.Warning, "WSDL XSD element", location, "message part "+bodyName+" has no inlined XSD element/type; generated a placeholder SOAP body")
@@ -1427,6 +1582,39 @@ const maxSimpleTypeDepth = 32
 
 func placeholderForXSDType(doc definitions, typeName string, fieldName string) string {
 	return placeholderForXSDTypeDepth(doc, typeName, fieldName, 0)
+}
+
+func isKnownXSDSimpleType(typeName string) bool {
+	switch strings.ToLower(localName(typeName)) {
+	case "string", "normalizedstring", "token", "language", "name", "ncname",
+		"id", "idref", "idrefs", "entity", "entities", "nmtoken", "nmtokens",
+		"anyuri", "qname", "notation", "base64binary", "hexbinary",
+		"byte", "unsignedbyte", "int", "unsignedint", "integer",
+		"positiveinteger", "negativeinteger", "nonpositiveinteger", "nonnegativeinteger",
+		"long", "unsignedlong", "short", "unsignedshort", "decimal", "double", "float",
+		"boolean", "datetime", "date", "time", "duration", "gyearmonth", "gyear",
+		"gmonthday", "gday", "gmonth":
+		return true
+	default:
+		return false
+	}
+}
+
+func hasNamedXSDSimpleType(doc definitions, typeName string) bool {
+	name := localName(typeName)
+	if name == "" {
+		return false
+	}
+	for _, t := range doc.Types {
+		for _, schema := range t.Schemas {
+			for _, simple := range schema.SimpleTypes {
+				if simple.Name == name {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func placeholderForXSDTypeDepth(doc definitions, typeName string, fieldName string, depth int) string {

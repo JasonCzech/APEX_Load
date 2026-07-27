@@ -180,7 +180,7 @@ func TestValidateScriptTreatsNativeMappedSourceRuntimeAttributesAsExecuted(t *te
 		Protocol: "http",
 		Config: dsl.ScriptConfig{
 			HTTP: dsl.HTTPConfig{
-				TLS: dsl.TLSConfig{MinVersion: "1.2"},
+				TLS: dsl.TLSConfig{MinVersion: "1.2", MaxVersion: "1.2"},
 			},
 			WebRuntime: dsl.WebRuntimeConfig{
 				AdditionalAttributes: map[string]string{
@@ -371,6 +371,85 @@ func TestScriptValidationIncludesRuntimeSettingParityForImportedDraftsAndStoredS
 				t.Fatalf("migration_readiness.policy = %#v, want partial + compatibility_only", readiness.Policy)
 			}
 		})
+	}
+}
+
+func TestValidationPreservesImportRuntimeFindingsWhilePolicyRelaxationUnblocksReadiness(t *testing.T) {
+	scriptWithPolicy := func(blockStatuses []enterprisearchive.RuntimeSettingStatus) *dsl.Script {
+		return &dsl.Script{
+			Name:     "Imported runtime review",
+			Version:  "1.0.0",
+			Protocol: "http",
+			Config: dsl.ScriptConfig{
+				BaseURL: "https://example.test",
+				ThinkTime: dsl.ThinkTimeConfig{
+					Type:       "recorded",
+					Multiplier: 1,
+				},
+			},
+			Actions: []dsl.Action{{Name: "request", Type: "request", Method: http.MethodGet, Target: "/"}},
+			Metadata: &dsl.ScriptMetadata{Import: &dsl.ImportMetadata{
+				Source: "enterprise_script_archive",
+				Preserved: map[string]any{
+					"runtime_settings_parity": []enterprisearchive.RuntimeSettingParityEntry{
+						{
+							ID:           "think_time",
+							Area:         "Think Time",
+							Concept:      "Replay recorded think time",
+							Status:       enterprisearchive.RuntimeSettingStatusPartial,
+							Notes:        "Source RANDOM percentage mode has no exact destination equivalent; recorded at 100% pending review.",
+							RuntimeFiles: []string{"profiles/default.cfg"},
+						},
+						{
+							ID:           "unmapped_source_settings",
+							Area:         "Source Runtime",
+							Concept:      "Preserved source-only setting",
+							Status:       enterprisearchive.RuntimeSettingStatusPartial,
+							Notes:        "Raw option FutureControl=enabled is preserved for review.",
+							RuntimeFiles: []string{"profiles/default.cfg"},
+						},
+					},
+					"runtime_settings_migration_readiness": &enterprisearchive.RuntimeSettingMigrationReadiness{
+						Policy: enterprisearchive.RuntimeSettingMigrationPolicy{BlockStatuses: blockStatuses},
+					},
+				},
+			}},
+		}
+	}
+
+	strict := buildScriptValidationResponse("strict", scriptWithPolicy([]enterprisearchive.RuntimeSettingStatus{
+		enterprisearchive.RuntimeSettingStatusPartial,
+	}))
+	if len(strict.RuntimeSettingsParity) != 2 {
+		t.Fatalf("strict parity = %#v, want matched partial plus preserved-only finding", strict.RuntimeSettingsParity)
+	}
+	if got := strict.RuntimeSettingsParity[0]; got.ID != "think_time" ||
+		got.Status != enterprisearchive.RuntimeSettingStatusPartial ||
+		got.Notes == "" ||
+		!reflect.DeepEqual(got.RuntimeFiles, []string{"profiles/default.cfg"}) {
+		t.Fatalf("matched import finding = %#v, want partial status and source evidence", got)
+	}
+	if got := strict.RuntimeSettingsParity[1]; got.ID != "unmapped_source_settings" ||
+		got.Status != enterprisearchive.RuntimeSettingStatusPartial ||
+		got.Notes == "" ||
+		!reflect.DeepEqual(got.RuntimeFiles, []string{"profiles/default.cfg"}) {
+		t.Fatalf("preserved-only finding = %#v, want intact source evidence", got)
+	}
+	if strict.MigrationReadiness == nil || !strict.MigrationReadiness.Blocked ||
+		len(strict.MigrationReadiness.BlockingSettings) != 2 {
+		t.Fatalf("strict readiness = %#v, want both partial findings blocked", strict.MigrationReadiness)
+	}
+
+	relaxed := buildScriptValidationResponse("relaxed", scriptWithPolicy([]enterprisearchive.RuntimeSettingStatus{
+		enterprisearchive.RuntimeSettingStatusBlocked,
+	}))
+	if relaxed.MigrationReadiness == nil || relaxed.MigrationReadiness.Blocked {
+		t.Fatalf("relaxed readiness = %#v, want policy relaxation to unblock", relaxed.MigrationReadiness)
+	}
+	if len(relaxed.RuntimeSettingsParity) != 2 ||
+		relaxed.RuntimeSettingsStatusCounts[string(enterprisearchive.RuntimeSettingStatusPartial)] != 2 {
+		t.Fatalf("relaxed parity/counts = %#v / %#v, want evidence retained after relaxation",
+			relaxed.RuntimeSettingsParity, relaxed.RuntimeSettingsStatusCounts)
 	}
 }
 

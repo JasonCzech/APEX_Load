@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"go/ast"
+	"net/http"
 	"os"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
@@ -66,6 +68,76 @@ func TestGenerateOpenAPIYAMLAcceptsRoutingPackageDirectory(t *testing.T) {
 	}
 	if !bytes.Equal(fromDirectory, fromFile) {
 		t.Fatal("directory-anchored route discovery differs from server.go-anchored discovery")
+	}
+}
+
+func TestBrunoInspectOpenAPIRequestBodyDocumentsAllSupportedUploads(t *testing.T) {
+	body := requestBodyForRoute(http.MethodPost, "/api/v1/scripts/import/bruno/inspect")
+	if body == nil || !body.Required {
+		t.Fatalf("Bruno inspect request body = %#v", body)
+	}
+	for _, mediaType := range []string{"application/json", "multipart/form-data", "application/octet-stream"} {
+		if _, ok := body.Content[mediaType]; !ok {
+			t.Errorf("Bruno inspect request body is missing %s", mediaType)
+		}
+	}
+	if schema := body.Content["application/octet-stream"].Schema; schema.Type != "string" || schema.Format != "binary" {
+		t.Fatalf("octet-stream schema = %#v", schema)
+	}
+	if schema := body.Content["multipart/form-data"].Schema; schema.Type != "object" {
+		t.Fatalf("multipart schema = %#v", schema)
+	}
+}
+
+func TestBrunoOpenAPIContractsDescribeNativeModesAndRecovery(t *testing.T) {
+	inspectRoute := discoveredRoute{
+		Method: http.MethodPost,
+		Path:   "/api/v1/scripts/import/bruno/inspect",
+	}
+	outputMode := queryParameterSchema(inspectRoute, "output_mode", false)
+	if !reflect.DeepEqual(outputMode.Enum, []string{"canonical", "native_requests"}) {
+		t.Fatalf("Bruno output_mode enum = %v", outputMode.Enum)
+	}
+
+	schemas := brunoOpenAPIComponentSchemas()
+	preflight := schemas["BrunoExecutionPreflight"]
+	if len(preflight.OneOf) != 2 {
+		t.Fatalf("Bruno execution preflight variants = %#v", preflight.OneOf)
+	}
+	nativePreflight := schemas["BrunoNativeExecutionPreflight"]
+	if blockers := nativePreflight.Properties["blockers"]; blockers.Type != "integer" {
+		t.Fatalf("native preflight blockers schema = %#v, want integer count", blockers)
+	}
+	if candidates := nativePreflight.Properties["candidates"]; candidates.Items == nil ||
+		candidates.Items.Ref != "#/components/schemas/BrunoNativeCandidateExecutionPreflight" {
+		t.Fatalf("native preflight candidates schema = %#v", candidates)
+	}
+
+	recovery := schemas["BrunoCommitErrorResponse"]
+	for _, field := range []string{
+		"requirements", "findings", "session_retained", "manual_retry_safe",
+		"idempotency_session_id", "committed_names", "remaining_names",
+	} {
+		if _, ok := recovery.Properties[field]; !ok {
+			t.Errorf("Bruno commit recovery schema is missing %q", field)
+		}
+	}
+
+	responses := map[string]oasResponse{
+		"201": {Description: "created"},
+		"409": {Description: "conflict"},
+		"503": {Description: "unavailable"},
+	}
+	responses = responseSchemasForRoute(
+		http.MethodPost,
+		"/api/v1/scripts/import/bruno/commit",
+		responses,
+	)
+	for _, status := range []string{"409", "503"} {
+		got := responses[status].Content["application/json"].Schema.Ref
+		if got != "#/components/schemas/BrunoCommitErrorResponse" {
+			t.Errorf("Bruno commit %s response schema = %q", status, got)
+		}
 	}
 }
 
@@ -522,6 +594,80 @@ func TestGeneratedSwaggerIncludesInferredHandlerContracts(t *testing.T) {
 	websocket := spec.Paths["/api/v1/ws"]["get"]
 	if _, ok := websocket.Responses["101"]; !ok {
 		t.Error("global WebSocket route is missing the 101 protocol-switch response")
+	}
+}
+
+func TestSharedImportCommitSchemasIncludeOptionalProtectedCandidateFields(t *testing.T) {
+	data, err := GenerateOpenAPIYAML("server.go")
+	if err != nil {
+		t.Fatalf("GenerateOpenAPIYAML: %v", err)
+	}
+	var spec struct {
+		Paths map[string]map[string]oasOperation `yaml:"paths"`
+	}
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		t.Fatalf("generated spec is not valid YAML: %v", err)
+	}
+
+	paths := []string{
+		"/api/v1/scripts/import/openapi/commit",
+		"/api/v1/scripts/import/postman/save",
+		"/api/v1/scripts/import/asyncapi/commit",
+	}
+	fieldTypes := map[string]string{
+		"script":                        "object",
+		"import_session_id":             "string",
+		"project_id":                    "string",
+		"name":                          "string",
+		"folder_id":                     "string",
+		"mode":                          "string",
+		"target_script_id":              "string",
+		"replace_mode":                  "string",
+		"dry_run":                       "boolean",
+		"secret_bindings":               "object",
+		"parameterization_selected_ids": "array",
+	}
+	// 429 is emitted when protected import session capacity is exhausted. It is
+	// a transient, retryable condition with a Retry-After hint, distinct from the
+	// 500 it used to be reported as.
+	wantStatuses := []string{"200", "201", "400", "401", "403", "404", "409", "429", "500", "default"}
+
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			operation, ok := spec.Paths[path]["post"]
+			if !ok {
+				t.Fatalf("generated spec is missing POST %s", path)
+			}
+			if operation.RequestBody == nil || !operation.RequestBody.Required {
+				t.Fatalf("request body = %#v, want required JSON document", operation.RequestBody)
+			}
+			schema := operation.RequestBody.Content["application/json"].Schema
+			for name, wantType := range fieldTypes {
+				field, exists := schema.Properties[name]
+				if !exists {
+					t.Errorf("request schema is missing %q", name)
+					continue
+				}
+				if field.Type != wantType {
+					t.Errorf("%s type = %q, want %q", name, field.Type, wantType)
+				}
+			}
+			if got := schema.Properties["parameterization_selected_ids"]; got.Items == nil || got.Items.Type != "string" {
+				t.Errorf("parameterization_selected_ids = %#v, want string array", got)
+			}
+			if len(schema.Required) != 0 {
+				t.Errorf("request fields unexpectedly became required: %v", schema.Required)
+			}
+
+			gotStatuses := make([]string, 0, len(operation.Responses))
+			for status := range operation.Responses {
+				gotStatuses = append(gotStatuses, status)
+			}
+			sort.Strings(gotStatuses)
+			if !reflect.DeepEqual(gotStatuses, wantStatuses) {
+				t.Errorf("response statuses = %v, want %v", gotStatuses, wantStatuses)
+			}
+		})
 	}
 }
 

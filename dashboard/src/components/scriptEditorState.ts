@@ -40,6 +40,7 @@ export interface CandidateOccurrence {
   actionIdx: number
   field: 'target' | 'body' | 'header'
   headerKey?: string
+  headerIndex?: number
 }
 
 export interface ParameterCandidate {

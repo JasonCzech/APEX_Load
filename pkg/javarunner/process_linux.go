@@ -584,7 +584,7 @@ func killProcessTree(cmd *exec.Cmd) error {
 		// Never signal the numeric process group after Wait: the kernel may have
 		// reused that PGID. Managed executions were terminated through cgroup
 		// ownership or identity-bound pidfds above.
-		if !owned && (cmd.ProcessState == nil || !cmd.ProcessState.Exited()) {
+		if !owned {
 			directErr := cmd.Process.Kill()
 			if directErr != nil && !errors.Is(directErr, os.ErrProcessDone) {
 				return directErr
@@ -592,7 +592,11 @@ func killProcessTree(cmd *exec.Cmd) error {
 		}
 		return nil
 	}
-	if cmd.ProcessState != nil && cmd.ProcessState.Exited() {
+	// os.Process serializes Kill against Wait. Use that exact process handle as
+	// the liveness gate instead of racing on exec.Cmd.ProcessState before any
+	// numeric process-group fallback.
+	directErr := cmd.Process.Kill()
+	if errors.Is(directErr, os.ErrProcessDone) {
 		return nil
 	}
 	// Compatibility fallback for a command that was configured but not started
@@ -602,8 +606,7 @@ func killProcessTree(cmd *exec.Cmd) error {
 	if groupErr == nil || errors.Is(groupErr, os.ErrProcessDone) || errors.Is(groupErr, syscall.ESRCH) {
 		return nil
 	}
-	directErr := cmd.Process.Kill()
-	if directErr == nil || errors.Is(directErr, os.ErrProcessDone) {
+	if directErr == nil {
 		return nil
 	}
 	return errors.Join(groupErr, directErr)

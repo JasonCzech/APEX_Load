@@ -9,6 +9,7 @@ import (
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/convert/srcparse"
 	"github.com/jasonczech/apexload/pkg/dsl"
 	"gopkg.in/yaml.v3"
 )
@@ -227,6 +228,12 @@ func ramlMethodBody(method map[string]any) (string, string, bool) {
 // parseRAMLDocument parses RAML content into a generic map, resolving any
 // !include directives against the supplied file set (e.g. a zip upload).
 func parseRAMLDocument(content string, files map[string][]byte) (map[string]any, error) {
+	// Reject the mapping ambiguities that let the converter and a reviewer read
+	// the same spec differently. Merge keys stay tolerated: RAML resource types
+	// and traits are anchor-heavy by design.
+	if _, err := srcparse.ValidateYAMLMappingKeys([]byte(content), srcparse.SpecYAMLPolicy(), srcparse.Limits{}); err != nil {
+		return nil, fmt.Errorf("parse RAML: %w", err)
+	}
 	var root yaml.Node
 	if err := yaml.Unmarshal([]byte(content), &root); err != nil {
 		return nil, fmt.Errorf("parse RAML: %w", err)

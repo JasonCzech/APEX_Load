@@ -758,6 +758,11 @@
   border-radius: 6px;
   background: var(--surface-alt, var(--surface));
 }
+.java-classpath-resolver-row.drag-over {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+.java-classpath-file-input { display: none; }
 .java-classpath-resolver-row .entry-path {
   flex: 1 1 240px;
   min-width: 0;

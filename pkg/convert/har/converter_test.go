@@ -1,6 +1,8 @@
 package har
 
 import (
+	"bytes"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -195,8 +197,11 @@ func TestConvertHARCorrelatesRawBeforeScrub(t *testing.T) {
 	if len(result.Correlations) != 1 {
 		t.Fatalf("correlations = %#v, want one raw token correlation", result.Correlations)
 	}
-	if result.Correlations[0].SampleValue == "[REDACTED]" {
-		t.Fatalf("correlation was detected from scrubbed token: %#v", result.Correlations[0])
+	if result.Correlations[0].Value != "tok-secret-abcdef123456" {
+		t.Fatalf("internal correlation value = %q, want raw value used before disclosure scrub", result.Correlations[0].Value)
+	}
+	if result.Correlations[0].SampleValue != "[REDACTED]" {
+		t.Fatalf("public correlation sample = %q, want disclosure redaction", result.Correlations[0].SampleValue)
 	}
 	if !strings.Contains(result.Script.Actions[1].Target, "{{var.corr_access_token}}") {
 		t.Fatalf("second action target = %q, want raw token parameterized", result.Script.Actions[1].Target)
@@ -207,6 +212,13 @@ func TestConvertHARCorrelatesRawBeforeScrub(t *testing.T) {
 	source := result.SourceReview.SourceFiles[0].Content
 	if strings.Contains(source, "tok-secret-abcdef123456") {
 		t.Fatalf("source review leaked raw token: %s", source)
+	}
+	payload, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if bytes.Contains(payload, []byte("tok-secret-abcdef123456")) {
+		t.Fatalf("serialized conversion leaked the internal correlation value: %s", payload)
 	}
 }
 
@@ -293,6 +305,40 @@ func TestDiffClassifiesDynamicHARCorrelationsWithShiftedEntryCount(t *testing.T)
 	}
 }
 
+func TestDiffDoesNotExposeCredentialCorrelationValues(t *testing.T) {
+	baselineToken := "baseline-secret-token-123456"
+	comparisonToken := "comparison-secret-token-654321"
+	report, err := Diff(
+		[]byte(credentialCorrelationHAR(baselineToken)),
+		[]byte(credentialCorrelationHAR(comparisonToken)),
+		ConvertOptions{
+			ScriptName:        "Credential Pair",
+			RedactSensitive:   boolPtr(false),
+			SanitizeSensitive: boolPtr(false),
+		},
+	)
+	if err != nil {
+		t.Fatalf("Diff: %v", err)
+	}
+	if report.DynamicCandidates != 1 {
+		t.Fatalf("dynamic candidates = %d, want raw internal values to classify one dynamic correlation", report.DynamicCandidates)
+	}
+	payload, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	for _, canary := range []string{baselineToken, comparisonToken} {
+		if bytes.Contains(payload, []byte(canary)) {
+			t.Fatalf("serialized diff leaked credential correlation %q: %s", canary, payload)
+		}
+	}
+	if len(report.Classifications) != 1 ||
+		report.Classifications[0].BaselineValue != "[REDACTED]" ||
+		report.Classifications[0].ComparisonValue != "[REDACTED]" {
+		t.Fatalf("classification values = %#v, want disclosure-safe placeholders", report.Classifications)
+	}
+}
+
 func boolPtr(value bool) *bool {
 	return &value
 }
@@ -312,6 +358,31 @@ func dynamicHAR(cartID string) string {
         "time": 50,
         "request": {"method": "POST", "url": "https://shop.example.test/cart/` + cartID + `/checkout", "headers": []},
         "response": {"status": 200, "content": {"mimeType": "application/json", "text": "{\"ok\":true}"}}
+      }
+    ]
+  }
+}`
+}
+
+func credentialCorrelationHAR(token string) string {
+	return `{
+  "log": {
+    "entries": [
+      {
+        "request": {"method": "POST", "url": "https://api.example.test/login", "headers": []},
+        "response": {
+          "status": 200,
+          "headers": [{"name": "Content-Type", "value": "application/json"}],
+          "content": {"text": "{\"access_token\":\"` + token + `\"}"}
+        }
+      },
+      {
+        "request": {
+          "method": "GET",
+          "url": "https://api.example.test/orders?access_token=` + token + `",
+          "headers": []
+        },
+        "response": {"status": 200, "content": {"text": "{\"ok\":true}"}}
       }
     ]
   }

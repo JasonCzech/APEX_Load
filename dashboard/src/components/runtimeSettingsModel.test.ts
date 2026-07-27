@@ -5,6 +5,8 @@ import {
   formatBrowserEmulation,
   formatEffectiveRuntimeField,
   formatErrorHandling,
+  formatHTTP,
+  formatHTTPVersion,
   formatJavaVuserSummary,
   formatPacing,
   formatThinkTime,
@@ -121,18 +123,30 @@ describe('runtimeSettingsModel', () => {
 
   it('formats pacing variants', () => {
     expect(formatPacing({ type: 'none' })).toBe('None')
-    expect(formatPacing({ type: 'fixed_delay', delay_ms: 250 })).toBe('Fixed delay · 250ms')
-    expect(formatPacing({ type: 'fixed_interval', interval_ms: 1000 })).toBe('Fixed interval · 1000ms')
+    expect(formatPacing({ type: 'fixed_delay', delay_ms: 250 })).toBe('Fixed delay · 0.25 seconds')
+    expect(formatPacing({ type: 'fixed_interval', interval_ms: 1000 })).toBe('Fixed interval · 1 second')
+    expect(formatPacing({ type: 'random_delay', min_delay_ms: 100, max_delay_ms: 300 })).toBe('Random delay · 0.1–0.3 seconds')
+    expect(formatPacing({ type: 'random_interval', min_interval_ms: 500, max_interval_ms: 900 })).toBe('Random interval · 0.5–0.9 seconds')
     expect(formatPacing({ type: 'tps', tps: 50 })).toBe('Target TPS · 50')
     expect(formatPacing(undefined)).toBeNull()
   })
 
   it('formats think time, auto-transactions, and error handling', () => {
     expect(formatThinkTime({ type: 'fixed', mean_ms: 500 })).toBe('fixed · 500ms')
+    expect(formatThinkTime({ type: 'recorded', mean_ms: 0, multiplier: 1 })).toBe('Replay recorded think time')
     expect(formatThinkTime({ type: 'fixed', mean_ms: 500, ignore: true })).toBe('Disabled')
     expect(formatAutoTransactions('per_action')).toBe('per action')
     expect(formatErrorHandling({ continue_on_error: true, snapshot_on_error: false })).toBe('Continue on error · No snapshot')
     expect(formatErrorHandling(undefined)).toBeNull()
+  })
+
+  it('formats HTTP version selection as auto-negotiated or exact', () => {
+    expect(formatHTTPVersion()).toBe('Auto-negotiate (HTTP/2 or HTTP/1.1)')
+    expect(formatHTTPVersion('')).toBe('Auto-negotiate (HTTP/2 or HTTP/1.1)')
+    expect(formatHTTPVersion('1.1')).toBe('HTTP/1.1 required')
+    expect(formatHTTPVersion('2')).toBe('HTTP/2 required (no fallback)')
+    expect(formatHTTPVersion('1.0')).toBe('Unsupported HTTP version 1.0')
+    expect(formatHTTP({ version: '2', request_timeout_ms: 5000 })).toBe('HTTP/2 required (no fallback) · 5000ms timeout')
   })
 
   it('formats the effective field value with the resolved source', () => {
@@ -178,7 +192,7 @@ describe('runtimeSettingsModel', () => {
     })
 
     // No group, no scenario → the script's actual config value is shown (not a placeholder).
-    expect(formatEffectiveRuntimeField('pacing', undefined, undefined, scriptDefault)).toEqual({ value: 'Fixed delay · 500ms', source: 'script' })
+    expect(formatEffectiveRuntimeField('pacing', undefined, undefined, scriptDefault)).toEqual({ value: 'Fixed delay · 0.5 seconds', source: 'script' })
     expect(formatEffectiveRuntimeField('think_time', undefined, undefined, scriptDefault)).toEqual({ value: 'fixed · 750ms', source: 'script' })
     expect(formatEffectiveRuntimeField('iterations', undefined, undefined, scriptDefault)).toEqual({ value: '12', source: 'script' })
     expect(formatEffectiveRuntimeField('auto_transactions', undefined, undefined, scriptDefault)).toEqual({ value: 'per action', source: 'script' })

@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -596,6 +597,130 @@ func TestConvertWSDLZipResolvesLocalXSDInclude(t *testing.T) {
 	if containsWSDLDiagnostic(result, "referenced XSD include") {
 		t.Fatalf("diagnostics = %#v, include should have been resolved", result.Unsupported)
 	}
+}
+
+func TestFilesFromZipRejectsUnsafeArchiveEntries(t *testing.T) {
+	tests := []struct {
+		name       string
+		entryNames []string
+		symlink    bool
+	}{
+		{name: "traversal", entryNames: []string{"../service.wsdl"}},
+		{name: "absolute", entryNames: []string{"/service.wsdl"}},
+		{name: "separator collision", entryNames: []string{`svc\service.wsdl`, "svc/service.wsdl"}},
+		{name: "case collision", entryNames: []string{"svc/service.wsdl", "SVC/SERVICE.WSDL"}},
+		{name: "symlink", entryNames: []string{"service.wsdl"}, symlink: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var archive bytes.Buffer
+			writer := zip.NewWriter(&archive)
+			for _, name := range test.entryNames {
+				header := &zip.FileHeader{Name: name}
+				if test.symlink {
+					header.SetMode(fs.ModeSymlink | 0o777)
+				}
+				entry, err := writer.CreateHeader(header)
+				if err != nil {
+					t.Fatalf("CreateHeader: %v", err)
+				}
+				_, _ = entry.Write([]byte("<definitions/>"))
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+			if _, _, err := FilesFromZip(archive.Bytes()); err == nil {
+				t.Fatal("FilesFromZip accepted unsafe archive")
+			}
+		})
+	}
+}
+
+func TestConvertRejectsUnsafeDirectFilePathsDeterministically(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name  string
+		files map[string]string
+	}{
+		{
+			name: "cleaning alias",
+			files: map[string]string{
+				"service.wsdl":      "<definitions/>",
+				"a/../service.wsdl": "<definitions/>",
+			},
+		},
+		{
+			name: "traversal",
+			files: map[string]string{
+				"../../x.wsdl": "<definitions/>",
+			},
+		},
+		{
+			name: "separator collision",
+			files: map[string]string{
+				`svc\service.wsdl`: "<definitions/>",
+				"svc/service.wsdl": "<definitions/>",
+			},
+		},
+		{
+			name: "case collision",
+			files: map[string]string{
+				"svc/service.wsdl": "<definitions/>",
+				"SVC/SERVICE.WSDL": "<definitions/>",
+			},
+		},
+	}
+	for _, test := range tests {
+		test := test
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			firstError := ""
+			for iteration := 0; iteration < 25; iteration++ {
+				_, err := Convert(ImportRequest{Files: test.files})
+				if err == nil {
+					t.Fatalf("Convert accepted unsafe direct files: %#v", test.files)
+				}
+				if firstError == "" {
+					firstError = err.Error()
+				} else if err.Error() != firstError {
+					t.Fatalf("nondeterministic error: first %q, iteration %d %q", firstError, iteration, err)
+				}
+			}
+		})
+	}
+}
+
+func TestConvertRejectsUnsafeDirectRootFile(t *testing.T) {
+	t.Parallel()
+	if _, err := Convert(ImportRequest{
+		Content:  "<definitions/>",
+		RootFile: "../../service.wsdl",
+	}); err == nil {
+		t.Fatal("Convert accepted traversal root_file")
+	}
+}
+
+func TestConvertBoundsDirectContentAndRootOverride(t *testing.T) {
+	t.Run("direct content", func(t *testing.T) {
+		_, err := Convert(ImportRequest{Content: strings.Repeat(" ", maxWSDLBundleBytes+1)})
+		if err == nil || !strings.Contains(err.Error(), "maximum size") {
+			t.Fatalf("Convert() error = %v, want direct content size rejection", err)
+		}
+	})
+
+	t.Run("root override contributes to bundle total", func(t *testing.T) {
+		_, err := Convert(ImportRequest{
+			RootFile: "service.wsdl",
+			Content:  strings.Repeat("x", maxWSDLBundleBytes/2+1),
+			Files: map[string]string{
+				"service.wsdl": "<definitions/>",
+				"schema.xsd":   strings.Repeat("y", maxWSDLBundleBytes/2),
+			},
+		})
+		if err == nil || !strings.Contains(err.Error(), "maximum total size") {
+			t.Fatalf("Convert() error = %v, want root override bundle size rejection", err)
+		}
+	})
 }
 
 func TestConvertWSDLReplayRoundTripUsesSingleEndpointPath(t *testing.T) {

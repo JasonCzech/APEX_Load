@@ -547,6 +547,11 @@ func startAuthorizationActor(test *ManagedTest, actor testCreationActor) (string
 // test to PENDING) when a quota block applies, or an error when a gate rejects the
 // start outright. The caller must hold tr.mu and have already validated startability.
 func (tr *TestRunner) evaluateStartGatesLocked(id string, test *ManagedTest, opts StartTestOptions) (bool, error) {
+	for index, group := range test.groupSpecs {
+		if issues := launchReviewGateIssues(group.Script); len(issues) > 0 {
+			return false, fmt.Errorf("group[%d]: %s", index, strings.Join(issues, "; "))
+		}
+	}
 	tr.refreshCapacityAdvisoryLocked(test)
 	effectiveOpts := startOptionsWithAuthorization(test, opts)
 	if err := buildStartGovernanceError(id, test.CapacityAdvisory, effectiveOpts); err != nil {

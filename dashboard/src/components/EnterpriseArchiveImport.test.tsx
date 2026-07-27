@@ -5,7 +5,7 @@ import { createRoot, Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { ApiError } from '../hooks/apiClient'
-import EnterpriseArchiveImport from './EnterpriseArchiveImport'
+import EnterpriseArchiveImport, { containsExecutableRedaction } from './EnterpriseArchiveImport'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -36,6 +36,50 @@ vi.mock('./LinkedCodePane', () => ({
     <pre aria-label={ariaLabel}>{value}</pre>
   ),
 }))
+
+describe('enterprise archive executable redaction guard', () => {
+  it('exempts only known action provenance fields and still scans executable metadata', () => {
+    const safeProvenance = {
+      name: 'Imported request',
+      type: 'http_request',
+      metadata: {
+        original_url: 'https://example.test/[REDACTED]',
+        source_transaction: '[REDACTED]',
+        source_path: '[REDACTED]',
+        source_step_id: '[REDACTED]',
+        source_profile: '[REDACTED]',
+        source_uid: '[REDACTED]',
+        asyncapi_operation: '[REDACTED]',
+        ' SOURCE_PATH ': '[REDACTED]',
+      },
+    }
+    expect(containsExecutableRedaction({
+      name: 'Imported',
+      actions: [safeProvenance],
+    })).toBe(false)
+    expect(containsExecutableRedaction({
+      name: 'Imported',
+      actions: [{
+        ...safeProvenance,
+        metadata: {
+          ...safeProvenance.metadata,
+          wire_property: '[REDACTED]',
+        },
+      }],
+    })).toBe(true)
+    expect(containsExecutableRedaction({
+      name: 'Imported',
+      metadata: {
+        import: {
+          preserved: {
+            recorded_resource_urls: ['https://example.test/[REDACTED]'],
+          },
+        },
+      },
+      actions: [safeProvenance],
+    })).toBe(true)
+  })
+})
 
 const sourceReviewFixture = {
   source_files: [
@@ -533,7 +577,7 @@ describe('EnterpriseArchiveImport', () => {
     })
 
     await act(async () => {
-      root.render(<EnterpriseArchiveImport onImported={onImported} />)
+      root.render(<EnterpriseArchiveImport folderId="folder-9" onImported={onImported} />)
     })
 
     await flushPromises()
@@ -709,7 +753,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Demo Enterprise Script Archive',
       protocol: 'http',
-    }), undefined)
+    }), undefined, 'folder-9')
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({
       scripts: [expect.objectContaining({
         name: 'Demo Enterprise Script Archive',
@@ -800,7 +844,7 @@ describe('EnterpriseArchiveImport', () => {
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Parameterized Enterprise Script',
       actions: [expect.objectContaining({ target: '/orders?customer_id={{var.customer_id}}' })],
-    }), 'project-1')
+    }), 'project-1', undefined)
   })
 
   it('stages a conversion with redacted credentials until its secret binding is applied', async () => {
@@ -901,12 +945,12 @@ describe('EnterpriseArchiveImport', () => {
       bindings: [{ requirement_id: 'login-password', secret_name: 'LOGIN_PASSWORD' }],
     })
     expect(container.textContent).toContain('{{secret.LOGIN_PASSWORD}}')
-    expect(container.textContent).toContain('Secret bindings applied across the generated archive. Every script contains governed secret references only.')
+    expect(container.textContent).toContain('Secret bindings applied to Redacted Enterprise Login. Other generated scripts remain independent.')
     expect(container.textContent).not.toContain('Resolve every redacted credential binding before saving this script.')
     expect(apiMock.createScript).toHaveBeenCalledTimes(1)
     expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
       actions: [expect.objectContaining({ body: 'password={{secret.LOGIN_PASSWORD}}' })],
-    }), 'project-1')
+    }), 'project-1', undefined)
     expect(findButton(container, 'Saving...')?.disabled).toBe(true)
     await act(async () => {
       resolveSave?.({
@@ -917,7 +961,7 @@ describe('EnterpriseArchiveImport', () => {
     })
   })
 
-  it('reviews and migrates credentials for every generated script in one archive-wide commit', async () => {
+  it('reviews bindings for the selected script while migrating the archive-wide source session', async () => {
     const first = {
       name: 'Archive Web', version: '1.0.0', protocol: 'http', config: { base_url: '' },
       actions: [{ name: 'Login', type: 'request', method: 'POST', target: '/login', body: 'token=[REDACTED]' }],
@@ -944,10 +988,6 @@ describe('EnterpriseArchiveImport', () => {
         script: { ...first, actions: [{ ...first.actions[0], body: 'token={{secret.CREDENTIAL}}' }] },
         secret_binding_requirements: [],
       })
-      .mockResolvedValueOnce({
-        script: { ...second, config: { ...second.config, database: { dsn: '{{secret.CREDENTIAL_2}}' } } },
-        secret_binding_requirements: [],
-      })
 
     await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
     await flushPromises()
@@ -959,10 +999,9 @@ describe('EnterpriseArchiveImport', () => {
     await clickImportAction(container, 'Validate Only')
     await clickButton(findButton(container, 'Convert Enterprise Script Archive')!)
 
-    expect(container.textContent).toContain('Credentials (2)')
+    expect(container.textContent).toContain('Credentials (1)')
     expect(Array.from(container.querySelectorAll<HTMLInputElement>('.secret-binding-review input[type="text"]')).map(input => input.value)).toEqual([
       'CREDENTIAL',
-      'CREDENTIAL_2',
     ])
     const migrate = container.querySelector<HTMLInputElement>('.credentials-source-migration input')!
     await act(async () => migrate.click())
@@ -984,12 +1023,44 @@ describe('EnterpriseArchiveImport', () => {
       script_index: 0,
       bindings: [{ requirement_id: 'web-token', secret_name: 'CREDENTIAL' }],
     })
+    expect(apiMock.applySecretBindings).toHaveBeenCalledTimes(1)
+    expect(apiMock.discardImportSecretSession).not.toHaveBeenCalled()
+
+    const secondTab = Array.from(container.querySelectorAll<HTMLButtonElement>('button')).find(
+      button => button.getAttribute('aria-label') === `Review generated script ${second.name}`,
+    )!
+    await act(async () => secondTab.click())
+    expect(Array.from(container.querySelectorAll<HTMLInputElement>('.secret-binding-review input[type="text"]')).map(input => input.value)).toEqual([
+      'CREDENTIAL_2',
+    ])
+
+    apiMock.applySecretBindings.mockRejectedValueOnce(new ApiError(
+      'secret binding requirements changed',
+      409,
+      {
+        code: 'secret_binding_requirements_changed',
+        secret_binding_requirements: [{
+          id: 'database-dsn',
+          path: '/config/database/dsn',
+          label: 'Database DSN',
+          context: 'Database credential',
+          suggested_name: 'CREDENTIAL',
+          script_index: 1,
+          script_name: second.name,
+        }],
+      },
+    ))
+    await clickButton(findButton(container, 'Save with 1 secret to configure')!)
+    await flushPromises()
+
     expect(apiMock.applySecretBindings).toHaveBeenNthCalledWith(2, {
       script: second,
       script_index: 1,
       bindings: [{ requirement_id: 'database-dsn', secret_name: 'CREDENTIAL_2' }],
     })
-    expect(apiMock.discardImportSecretSession).not.toHaveBeenCalled()
+    expect(Array.from(container.querySelectorAll<HTMLInputElement>('.secret-binding-review input[type="text"]')).map(input => input.value)).toEqual([
+      'CREDENTIAL_2',
+    ])
   })
 
   it('does not publish a late credential result after the selected generated script changes', async () => {
@@ -1655,6 +1726,373 @@ describe('EnterpriseArchiveImport', () => {
       draft: blockedJavaDraft,
     }))
     expect(container.textContent).toContain('Combined Java Vuser review artifact saved as authoring session')
+  })
+
+  // Shared by the required-files attachment tests below: a Java Vuser validation
+  // response blocked on an unresolved superclass, which is what drives the
+  // "Required Files To Resolve Fidelity Blockers" panel.
+  const mockBlockedJavaSuperclassValidation = () => {
+    const unresolvedSuperclassBlocker = 'Java runner class Action extends unresolved superclass BasicClient; upload the exact superclass source so construction and lifecycle semantics can be verified before promotion.'
+    const blockedJavaDraft = {
+      name: 'Blocked Combined Java Vuser',
+      version: '1.0.0',
+      protocol: 'java_vuser',
+      actions: [{ name: 'Java action', type: 'java_vuser_run', params: { method: 'action' } }],
+      metadata: {
+        import: {
+          source: 'enterprise_script_archive',
+          preserved: {
+            fidelity_report: {
+              promotion_status: 'blocked',
+              blockers: [unresolvedSuperclassBlocker],
+            },
+          },
+        },
+      },
+    }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue({
+      script: blockedJavaDraft,
+      scripts: [blockedJavaDraft],
+      detected_protocol: {
+        canonical_source_protocol: 'java_vuser',
+        apexload_protocol: 'java_vuser',
+        display_name: 'LoadRunner Java Vuser',
+        import_mode: 'external_runner_required',
+        confidence: 'high',
+        runner_requirement: 'java_vuser_jvm_runner',
+      },
+      review_artifact: {
+        id: 'java-blocked-review',
+        title: 'Blocked combined Java Vuser review',
+        status: 'external_runner_required',
+        protocol: {
+          canonical_source_protocol: 'java_vuser',
+          apexload_protocol: 'java_vuser',
+          import_mode: 'external_runner_required',
+          confidence: 'high',
+          runner_requirement: 'java_vuser_jvm_runner',
+        },
+        summary: 'Resolve the selected lifecycle blocker.',
+      },
+      fidelity_report: {
+        promotion_status: 'blocked',
+        blockers: [unresolvedSuperclassBlocker],
+      },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      summary: {
+        import_mode: 'external_runner_required',
+        fidelity_report: {
+          promotion_status: 'blocked',
+          blockers: [unresolvedSuperclassBlocker],
+        },
+        migration_readiness: {
+          score_pct: 50,
+          blocked: false,
+          summary: 'Review required',
+          policy: { block_statuses: ['blocked', 'partial', 'compatibility_only'] },
+        },
+      },
+      stats: { total_functions: 1, converted_actions: 1, extractors: 0, think_times: 0, transactions: 0, skipped: 0 },
+    })
+  }
+
+  it('renames Java sources attached as .txt so they resolve the blocked superclass', async () => {
+    // Corporate mail gateways strip .java attachments, so operators send the
+    // superclass as BasicClient.java.txt. The archive importer performs the
+    // authoritative rename server-side; the picker mirrors it so the required
+    // files panel reflects the resolved name before re-validation.
+    mockBlockedJavaSuperclassValidation()
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const zipFile = new File(['zip-content'], 'blocked-java.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [zipFile] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+    expect(container.textContent).toContain('BasicClient (BasicClient.java) - missing')
+
+    const supplementalInput = container.querySelector('input[accept*=".java"]') as HTMLInputElement
+    const textFile = new File(['public class BasicClient {}'], 'BasicClient.java.txt', { type: 'text/plain' })
+    await act(async () => {
+      Object.defineProperty(supplementalInput, 'files', { configurable: true, value: [textFile] })
+      supplementalInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+
+    await clickImportAction(container, 'Validate Only')
+    const validationCalls = apiMock.validateEnterpriseArchiveImport.mock.calls
+    expect(validationCalls[validationCalls.length - 1]?.[1]).toEqual(expect.objectContaining({
+      supplemental_files: [expect.objectContaining({ name: 'BasicClient.java' })],
+    }))
+    expect(container.textContent).toContain('BasicClient (BasicClient.java) - attached')
+  })
+
+  it('bounds how much of a .txt attachment it sniffs for Java', async () => {
+    // The 256 KiB sniff cap is load-bearing, not cosmetic: the block-comment
+    // masking pass is quadratic on input carrying many `/*` with no closing
+    // `*/`, so an uncapped multi-megabyte attachment blocks the main thread for
+    // tens of seconds. This pins the resulting boundary — a declaration sitting
+    // past the cap is deliberately not detected — and matches the identical cap
+    // in pkg/convert/enterprisearchive. Deleting the cap makes this fail.
+    mockBlockedJavaSuperclassValidation()
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const zipFile = new File(['zip-content'], 'blocked-java.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [zipFile] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    const beyondCap = '/* license */\n'.repeat(25000) + 'public class BasicClient extends Object {}'
+    expect(beyondCap.length).toBeGreaterThan(256 * 1024)
+    const supplementalInput = container.querySelector('input[accept*=".java"]') as HTMLInputElement
+    await act(async () => {
+      Object.defineProperty(supplementalInput, 'files', {
+        configurable: true,
+        value: [new File([beyondCap], 'BasicClient.java.txt', { type: 'text/plain' })],
+      })
+      supplementalInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+
+    await clickImportAction(container, 'Validate Only')
+    const validationCalls = apiMock.validateEnterpriseArchiveImport.mock.calls
+    expect(validationCalls[validationCalls.length - 1]?.[1]).toEqual(expect.objectContaining({
+      supplemental_files: [expect.objectContaining({ name: 'BasicClient.java.txt' })],
+    }))
+  })
+
+  it.each([
+    ['prose naming a class', 'notes.txt', 'Handover notes\nThe class Actions {see listing} uses lrapi helpers.'],
+    ['a C enum', 'helper.txt', 'enum Status { OK, FAIL };'],
+    ['a javascript class', 'app.txt', 'class Foo extends Bar {\n  run() {}\n}\n'],
+    ['a css rule', 'style.txt', '.class Foo { color: red; }'],
+    // Pins the client first-line gate: the quoted listing matches the
+    // modifier-qualified declaration regex, so only the file-must-begin-like-
+    // Java rule stops it. Because the client renames BEFORE upload and the
+    // server trusts .java names without re-sniffing, a client-only miss here
+    // smuggles prose past every server-side protection.
+    ['a note quoting a class listing', 'handover.txt', 'Handover notes for the payments harness.\n\nThe runner class is shown below for reference:\n\npublic class Actions extends BasicClient {\n  public int action() { return 0; }\n}\n\nContact the perf team before changing it.'],
+  ])('does not rename %s to .java', async (_label, fileName, content) => {
+    // A bare `class <Ident> {` is not evidence of Java. Accepting it renamed
+    // prose and data files, which on the backend polluted the immutable source
+    // manifest the approval evidence binds to.
+    mockBlockedJavaSuperclassValidation()
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const zipFile = new File(['zip-content'], 'blocked-java.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [zipFile] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    const supplementalInput = container.querySelector('input[accept*=".java"]') as HTMLInputElement
+    await act(async () => {
+      Object.defineProperty(supplementalInput, 'files', {
+        configurable: true,
+        value: [new File([content], fileName, { type: 'text/plain' })],
+      })
+      supplementalInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+
+    await clickImportAction(container, 'Validate Only')
+    const validationCalls = apiMock.validateEnterpriseArchiveImport.mock.calls
+    expect(validationCalls[validationCalls.length - 1]?.[1]).toEqual(expect.objectContaining({
+      supplemental_files: [expect.objectContaining({ name: fileName })],
+    }))
+  })
+
+  it('does not rename a .txt attachment on a non-Java import', async () => {
+    // The rename must be scoped to Java imports, mirroring the server's
+    // archiveHasJavaSourceSignal. Renaming unconditionally hands the server a
+    // file already named .java, which by itself satisfies that server gate and
+    // diverts a non-Java archive into the Java converter with its recorded
+    // workload discarded.
+    const httpDraft = {
+      name: 'Recorded Web Flow',
+      version: '1.0.0',
+      protocol: 'http',
+      actions: [{ name: 'GET home', type: 'http_request', target: 'https://example.com/' }],
+    }
+    apiMock.validateEnterpriseArchiveImport.mockResolvedValue({
+      script: httpDraft,
+      scripts: [httpDraft],
+      detected_protocol: {
+        canonical_source_protocol: 'web_http_html',
+        apexload_protocol: 'http',
+        display_name: 'LoadRunner Web (HTTP/HTML)',
+        import_mode: 'executable',
+        confidence: 'high',
+      },
+      fidelity_report: { promotion_status: 'promotable', blockers: [] },
+      warnings: [],
+      unsupported_elements: [],
+      assumptions: [],
+      review_sections: [],
+      repair_suggestions: [],
+      summary: { import_mode: 'executable' },
+      stats: { total_functions: 1, converted_actions: 1, extractors: 0, think_times: 0, transactions: 0, skipped: 0 },
+    })
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const zipFile = new File(['zip-content'], 'web-archive.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [zipFile] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    // Content that WOULD be renamed inside a Java import.
+    const note = new File(
+      ['package com.acme;\n\npublic class Actions {\n  public int action() { return 0; }\n}\n'],
+      'Actions.txt',
+      { type: 'text/plain' },
+    )
+    const supplementalInput = container.querySelector('input[accept*=".java"]') as HTMLInputElement
+    await act(async () => {
+      Object.defineProperty(supplementalInput, 'files', { configurable: true, value: [note] })
+      supplementalInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+
+    await clickImportAction(container, 'Validate Only')
+    const validationCalls = apiMock.validateEnterpriseArchiveImport.mock.calls
+    expect(validationCalls[validationCalls.length - 1]?.[1]).toEqual(expect.objectContaining({
+      supplemental_files: [expect.objectContaining({ name: 'Actions.txt' })],
+    }))
+  })
+
+  it('preserves the original bytes when renaming a .txt source', async () => {
+    // The rename must change only the NAME. Rebuilding the upload from
+    // file.text() re-encodes a UTF-8-with-replacement decode, silently
+    // corrupting every non-UTF-8 byte — and windows-1252 was the default
+    // encoding for Windows-authored LoadRunner Java sources (0xE9 for é).
+    mockBlockedJavaSuperclassValidation()
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const zipFile = new File(['zip-content'], 'blocked-java.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [zipFile] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    // ASCII Java that passes the sniff, with one windows-1252 byte (0xE9, é)
+    // inside a string literal.
+    const ascii = 'public class BasicClient {\n  String label = "caf';
+    const tail = '";\n}\n'
+    const bytes = new Uint8Array(ascii.length + 1 + tail.length)
+    for (let i = 0; i < ascii.length; i++) bytes[i] = ascii.charCodeAt(i)
+    bytes[ascii.length] = 0xe9
+    for (let i = 0; i < tail.length; i++) bytes[ascii.length + 1 + i] = tail.charCodeAt(i)
+
+    const supplementalInput = container.querySelector('input[accept*=".java"]') as HTMLInputElement
+    await act(async () => {
+      Object.defineProperty(supplementalInput, 'files', {
+        configurable: true,
+        value: [new File([bytes], 'BasicClient.java.txt', { type: 'text/plain' })],
+      })
+      supplementalInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+
+    await clickImportAction(container, 'Validate Only')
+    const validationCalls = apiMock.validateEnterpriseArchiveImport.mock.calls
+    const sent = (validationCalls[validationCalls.length - 1]?.[1]?.supplemental_files as File[])?.[0]
+    expect(sent?.name).toBe('BasicClient.java')
+    const sentBytes = new Uint8Array(await sent.arrayBuffer())
+    // The renamed upload must carry the raw 0xE9, not the UTF-8 replacement
+    // sequence EF BF BD a text round-trip would produce.
+    expect(sentBytes[ascii.length]).toBe(0xe9)
+    expect(sentBytes.length).toBe(bytes.length)
+  })
+
+  it('still attaches the batch when one file cannot be read', async () => {
+    // An unguarded Promise.all rejected the whole batch on a single unreadable
+    // file: nothing was attached and no error was shown.
+    mockBlockedJavaSuperclassValidation()
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const zipFile = new File(['zip-content'], 'blocked-java.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [zipFile] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    const unreadable = new File(['x'], 'Broken.java.txt', { type: 'text/plain' })
+    Object.defineProperty(unreadable, 'text', {
+      value: () => Promise.reject(new Error('NotReadableError')),
+    })
+    const good = new File(['public class BasicClient {}'], 'BasicClient.java', { type: 'text/plain' })
+
+    const supplementalInput = container.querySelector('input[accept*=".java"]') as HTMLInputElement
+    await act(async () => {
+      Object.defineProperty(supplementalInput, 'files', { configurable: true, value: [unreadable, good] })
+      supplementalInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+
+    await clickImportAction(container, 'Validate Only')
+    const validationCalls = apiMock.validateEnterpriseArchiveImport.mock.calls
+    const sent = validationCalls[validationCalls.length - 1]?.[1]?.supplemental_files as File[] | undefined
+    // Both files survive; the unreadable one keeps its original name.
+    expect(sent?.map(file => file.name).sort()).toEqual(['BasicClient.java', 'Broken.java.txt'])
+  })
+
+  it('leaves non-Java .txt attachments named as they were', async () => {
+    mockBlockedJavaSuperclassValidation()
+
+    await act(async () => root.render(<EnterpriseArchiveImport projectId="project-1" />))
+    await flushPromises()
+
+    const fileInput = container.querySelector('input[type="file"]') as HTMLInputElement
+    const zipFile = new File(['zip-content'], 'blocked-java.zip', { type: 'application/zip' })
+    await act(async () => {
+      Object.defineProperty(fileInput, 'files', { configurable: true, value: [zipFile] })
+      fileInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await clickImportAction(container, 'Validate Only')
+
+    const supplementalInput = container.querySelector('input[accept*=".java"]') as HTMLInputElement
+    const parameterFile = new File(['account,region\n1001,east\n'], 'accounts.txt', { type: 'text/plain' })
+    await act(async () => {
+      Object.defineProperty(supplementalInput, 'files', { configurable: true, value: [parameterFile] })
+      supplementalInput.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await flushPromises()
+
+    await clickImportAction(container, 'Validate Only')
+    const validationCalls = apiMock.validateEnterpriseArchiveImport.mock.calls
+    expect(validationCalls[validationCalls.length - 1]?.[1]).toEqual(expect.objectContaining({
+      supplemental_files: [expect.objectContaining({ name: 'accounts.txt' })],
+    }))
   })
 
   it('lets users attach required files from fidelity blockers and sends them on re-validation', async () => {
@@ -4422,7 +4860,7 @@ describe('EnterpriseArchiveImport', () => {
       expect(apiMock.createScript).toHaveBeenCalledWith(expect.objectContaining({
         name: 'Imported TruClient Mobile Web',
         protocol: 'browser',
-      }), 'project-1')
+      }), 'project-1', undefined)
       const savedScript = apiMock.createScript.mock.calls[0][0]
       const promotionReview = savedScript.metadata?.import?.preserved?.trueclient2_promotion_review
       expect(promotionReview).toMatchObject({

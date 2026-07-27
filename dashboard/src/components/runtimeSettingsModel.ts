@@ -9,8 +9,11 @@
 import { type RuntimeBrowserSettings, type RuntimeJavaVuserSettings, type RuntimeSettingsOverride, type ScenarioRuntimeSettingsDraft } from '../types'
 import { type ScriptConfig } from '../types/scripts'
 import { formatBrowserRuntimeSummary } from './browserRuntimeSummary'
+import { formatHTTPVersion } from './httpVersionModel'
+import { formatPacingTiming } from './runtimeTiming'
 
 export { formatBrowserRuntimeSummary }
+export { formatHTTPVersion, HTTP_VERSION_OPTIONS } from './httpVersionModel'
 
 /** The layer an effective runtime value resolves to, most specific first. */
 export type RuntimeFieldSource = 'group' | 'scenario' | 'script' | 'engine'
@@ -72,18 +75,14 @@ export function resolveRuntimeFieldSource(
 }
 
 export function formatPacing(pacing?: RuntimeSettingsOverride['pacing']): string | null {
-  if (!pacing?.type) return null
-  if (pacing.type === 'none') return 'None'
-  if (pacing.type === 'fixed_delay') return `Fixed delay · ${pacing.delay_ms || 0}ms`
-  if (pacing.type === 'fixed_interval') return `Fixed interval · ${pacing.interval_ms || 0}ms`
-  if (pacing.type === 'tps') return `Target TPS · ${pacing.tps || 0}`
-  return pacing.type.replace(/_/g, ' ')
+  return formatPacingTiming(pacing)
 }
 
 export function formatThinkTime(thinkTime?: RuntimeSettingsOverride['think_time']): string | null {
   if (!thinkTime) return null
   if (thinkTime.ignore) return 'Disabled'
   if (thinkTime.type === 'none' || (!thinkTime.type && !thinkTime.mean_ms)) return 'None'
+  if (thinkTime.type === 'recorded') return 'Replay recorded think time'
   return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
 }
 
@@ -326,7 +325,7 @@ export function formatRunLogic(runLogic?: RuntimeSettingsOverride['run_logic']):
 export function formatHTTP(http?: RuntimeSettingsOverride['http']): string | null {
   if (!http) return null
   const parts: string[] = []
-  if (http.version) parts.push(`HTTP/${http.version}`)
+  if (http.version) parts.push(formatHTTPVersion(http.version))
   if (http.tls?.min_version) parts.push(`TLS ${http.tls.min_version}`)
   if (http.proxy_mode && http.proxy_mode !== 'none') parts.push('proxy')
   if (http.request_timeout_ms) parts.push(`${http.request_timeout_ms}ms timeout`)

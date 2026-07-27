@@ -27,7 +27,7 @@ export function nativeImportTargetForFileName(fileName: string): NativeImportTar
   return { launcher: 'openapi' }
 }
 
-function hasBrunoSourceMarkers(content: string): boolean {
+export function hasBrunoSourceMarkers(content: string): boolean {
   const aliases = ['http', 'graphql', 'graphql-request', 'grpc', 'grpc-request', 'ws', 'ws-request', 'websocket', 'websocket-request', 'app', 'bruno-app']
   if (/^\s*opencollection\s*:/im.test(content)) return true
   if (/^\s*info\s*:/im.test(content) &&
@@ -43,6 +43,25 @@ function hasBrunoSourceMarkers(content: string): boolean {
   }
 }
 
+export function isOpenCollectionFileName(file: File): boolean {
+  return /(^|\/)opencollection\.ya?ml$/i.test(file.webkitRelativePath || file.name)
+}
+
+export async function filesContainNativeBrunoSource(files: File[]): Promise<boolean> {
+  const usable = files.filter(Boolean)
+  if (usable.some(isOpenCollectionFileName)) return true
+  const matches = await Promise.all(usable.map(async file => {
+    const name = file.name.toLowerCase()
+    if (!name.endsWith('.yaml') && !name.endsWith('.yml') && !name.endsWith('.json')) return false
+    try {
+      return hasBrunoSourceMarkers(await file.slice(0, 128 * 1024).text())
+    } catch {
+      return false
+    }
+  }))
+  return matches.some(Boolean)
+}
+
 function hasOpenAPISourceMarkers(content: string): boolean {
   if (/^\s*(openapi|swagger)\s*:/im.test(content) || /^\s*paths\s*:/im.test(content)) return true
   try {
@@ -55,6 +74,7 @@ function hasOpenAPISourceMarkers(content: string): boolean {
 
 export async function nativeImportTargetForFile(file: File): Promise<NativeImportTarget> {
   const name = file.name.toLowerCase()
+  if (isOpenCollectionFileName(file)) return { launcher: 'bruno', mode: 'native_requests' }
   const namedTarget = nativeImportTargetForFileName(name)
   const inspectContent = (name.endsWith('.yaml') || name.endsWith('.yml') || name.endsWith('.json')) &&
     !name.endsWith('.postman_collection.json') &&
@@ -63,7 +83,7 @@ export async function nativeImportTargetForFile(file: File): Promise<NativeImpor
     !name.endsWith('.openapi.json')
   if (!inspectContent) return namedTarget
   const content = await file.slice(0, 128 * 1024).text()
-  if (hasBrunoSourceMarkers(content)) return { launcher: 'bruno' }
+  if (hasBrunoSourceMarkers(content)) return { launcher: 'bruno', mode: 'native_requests' }
   if (hasOpenAPISourceMarkers(content)) return { launcher: 'openapi' }
   return name.endsWith('.yaml') || name.endsWith('.yml') ? { launcher: 'yaml_chooser' } : namedTarget
 }
@@ -75,12 +95,16 @@ export async function resolveNativeImportRequest(
 ): Promise<NativeImportRequest | null> {
   const usable = files.filter(Boolean)
   if (usable.length === 0) return null
-  let target: NativeImportTarget
-  try {
-    target = await nativeImportTargetForFile(usable[0])
-  } catch {
-    target = nativeImportTargetForFileName(usable[0].name)
-  }
+  const targets = await Promise.all(usable.map(async file => {
+    try {
+      return await nativeImportTargetForFile(file)
+    } catch {
+      return nativeImportTargetForFileName(file.name)
+    }
+  }))
   if (!isCurrent(requestID)) return null
+  const target = targets.find(candidate => candidate.launcher === 'bruno' && candidate.mode === 'native_requests')
+    || targets.find(candidate => candidate.launcher === 'bruno')
+    || targets[0]
   return { id: requestID, files: usable, ...target }
 }

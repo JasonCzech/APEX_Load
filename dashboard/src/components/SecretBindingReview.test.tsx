@@ -396,6 +396,56 @@ describe('SecretBindingReview', () => {
     expect(container.textContent).toContain('Detected credential migration could not be confirmed')
   })
 
+  it('keeps a provider-confirmed retained source session available for retry', async () => {
+    apiMock.migrateImportSecrets
+      .mockRejectedValueOnce(new ApiError(
+        'provider write failed',
+        502,
+        {
+          partial: true,
+          session_retained: true,
+          source_secret_session_consumed: false,
+          committed_names: ['FIRST_TOKEN'],
+          remaining_names: ['ORDER_API_TOKEN'],
+        },
+      ))
+      .mockResolvedValueOnce({ project_id: 'project-1', secrets: [], count: 1 })
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    const reviewRef = { current: null as SecretBindingReviewHandle | null }
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          ref={reviewRef}
+          projectId="project-1"
+          requirements={[{ ...requirements[0], source_value_available: true }]}
+          sourceSecretSessionId="retained-session"
+          sourceMigrationAllowed
+          onApply={onApply}
+        />,
+      )
+      await Promise.resolve()
+    })
+    const migrationToggle = container.querySelector<HTMLInputElement>('.credentials-source-migration input')!
+    act(() => migrationToggle.click())
+
+    await act(async () => {
+      expect(await reviewRef.current?.commit()).toBe(false)
+    })
+
+    expect(apiMock.discardImportSecretSession).not.toHaveBeenCalled()
+    expect(migrationToggle.checked).toBe(true)
+    expect(migrationToggle.disabled).toBe(false)
+    expect(container.textContent).toContain('protected import session was retained')
+    expect(container.textContent).toContain('Retained credentials: FIRST_TOKEN')
+    expect(onApply).not.toHaveBeenCalled()
+
+    await act(async () => {
+      expect(await reviewRef.current?.commit()).toBe(true)
+    })
+    expect(apiMock.migrateImportSecrets).toHaveBeenCalledTimes(2)
+    expect(onApply).toHaveBeenCalledTimes(1)
+  })
+
   it('emits only non-sensitive preparation metadata and clears values after success', async () => {
     const onPreparedChange = vi.fn()
     const onApply = vi.fn().mockResolvedValue(undefined)
@@ -905,5 +955,96 @@ describe('SecretBindingReview', () => {
       { requirement_id: 'migrate', secret_name: 'MIGRATED_TOKEN' },
       { requirement_id: 'unavailable', secret_name: 'UNAVAILABLE_TOKEN' },
     ])
+  })
+
+  it('migrates archive-wide source values while applying only the active script bindings', async () => {
+    const active = { ...requirements[0], id: 'active', suggested_name: 'ACTIVE_TOKEN', source_value_available: true, script_index: 0 }
+    const other = { ...requirements[1], id: 'other', suggested_name: 'OTHER_TOKEN', source_value_available: true, script_index: 1 }
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          projectId="project-1"
+          requirements={[active]}
+          sourceMigrationRequirements={[active, other]}
+          sourceSecretSessionId="archive-session"
+          sourceMigrationAllowed
+          onApply={onApply}
+        />,
+      )
+      await Promise.resolve()
+    })
+    act(() => container.querySelector<HTMLInputElement>('.credentials-source-migration input')?.click())
+    const applyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Continue with credentials'))
+    await act(async () => applyButton?.click())
+
+    expect(apiMock.migrateImportSecrets).toHaveBeenCalledWith({
+      project_id: 'project-1',
+      source_secret_session_id: 'archive-session',
+      secrets: [
+        { requirement_id: 'active', secret_name: 'ACTIVE_TOKEN' },
+        { requirement_id: 'other', secret_name: 'OTHER_TOKEN' },
+      ],
+    })
+    expect(onApply).toHaveBeenCalledWith([
+      { requirement_id: 'active', secret_name: 'ACTIVE_TOKEN' },
+    ])
+  })
+
+  it('settles a successful archive migration after a generated-script switch', async () => {
+    let resolveMigration: ((value: unknown) => void) | undefined
+    apiMock.migrateImportSecrets.mockReturnValueOnce(new Promise(resolve => {
+      resolveMigration = resolve
+    }))
+    const active = { ...requirements[0], id: 'active', suggested_name: 'DUPLICATE', source_value_available: true, script_index: 0 }
+    const other = { ...requirements[1], id: 'other', suggested_name: 'DUPLICATE', source_value_available: true, script_index: 1 }
+    const onApply = vi.fn().mockResolvedValue(undefined)
+    const onSettled = vi.fn()
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          reviewGeneration="script-0"
+          projectId="project-1"
+          requirements={[active]}
+          sourceMigrationRequirements={[active, other]}
+          sourceSecretSessionId="archive-session"
+          sourceMigrationAllowed
+          onApply={onApply}
+          onSourceSessionSettled={onSettled}
+        />,
+      )
+      await Promise.resolve()
+    })
+    act(() => container.querySelector<HTMLInputElement>('.credentials-source-migration input')?.click())
+    const applyButton = Array.from(container.querySelectorAll<HTMLButtonElement>('button'))
+      .find(button => button.textContent?.includes('Continue with credentials'))
+    act(() => applyButton?.click())
+
+    await act(async () => {
+      root.render(
+        <SecretBindingReview
+          reviewGeneration="script-1"
+          projectId="project-1"
+          requirements={[other]}
+          sourceMigrationRequirements={[active, other]}
+          sourceSecretSessionId="archive-session"
+          sourceMigrationAllowed
+          onApply={onApply}
+          onSourceSessionSettled={onSettled}
+        />,
+      )
+      await Promise.resolve()
+    })
+    await act(async () => {
+      resolveMigration?.({ project_id: 'project-1', secrets: [], count: 2 })
+      await Promise.resolve()
+    })
+
+    expect(onSettled).toHaveBeenCalledWith('archive-session', [
+      { requirement_id: 'active', secret_name: 'DUPLICATE' },
+      { requirement_id: 'other', secret_name: 'DUPLICATE_2' },
+    ])
+    expect(onApply).not.toHaveBeenCalled()
   })
 })

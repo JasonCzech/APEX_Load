@@ -3,6 +3,8 @@ package paramize
 import (
 	"regexp"
 	"strings"
+
+	"github.com/jasonczech/apexload/pkg/credential"
 )
 
 // LooksDynamicValue reports whether a key/value pair looks like a dynamic
@@ -37,56 +39,15 @@ func LooksParameterName(key string) bool {
 	return false
 }
 
-// sensitiveHeaderKeys mirrors the sample importer's sanitization allow-list:
-// header names whose values are credentials and must never ship hardcoded.
-var sensitiveHeaderKeys = map[string]bool{
-	"authorization":       true,
-	"proxy-authorization": true,
-	"cookie":              true,
-	"set-cookie":          true,
-	"x-api-key":           true,
-	"api-key":             true,
-}
-
 // SensitiveHeaderKey reports whether a header carries credentials.
 func SensitiveHeaderKey(key string) bool {
-	lower := strings.ToLower(strings.TrimSpace(key))
-	if sensitiveHeaderKeys[lower] {
-		return true
-	}
-	if strings.Contains(lower, "authorization") ||
-		strings.Contains(lower, "api-key") ||
-		strings.Contains(lower, "apikey") ||
-		strings.Contains(lower, "token") ||
-		strings.Contains(lower, "secret") ||
-		strings.Contains(lower, "credential") ||
-		strings.Contains(lower, "csrf") ||
-		lower == "key" ||
-		strings.HasSuffix(lower, "-key") ||
-		strings.HasSuffix(lower, "_key") {
-		return true
-	}
-	for _, part := range strings.FieldsFunc(lower, func(r rune) bool {
-		return r == '-' || r == '_' || r == '.' || r == ' '
-	}) {
-		if part == "auth" || part == "key" {
-			return true
-		}
-	}
-	return false
+	return credential.SensitiveHeader(key)
 }
-
-var envKeyInvalidChars = regexp.MustCompile(`[^A-Z0-9_]+`)
 
 // EnvKey converts a field or header name into the UPPER_SNAKE environment
 // variable key used in {{env.KEY}} replacements.
 func EnvKey(name string) string {
-	key := envKeyInvalidChars.ReplaceAllString(strings.ToUpper(strings.TrimSpace(name)), "_")
-	key = strings.Trim(key, "_")
-	if key == "" {
-		return "SECRET"
-	}
-	return key
+	return credential.EnvKey(name)
 }
 
 var selectorTokenPattern = regexp.MustCompile(`[A-Za-z][A-Za-z0-9_\-]*`)

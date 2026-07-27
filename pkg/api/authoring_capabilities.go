@@ -78,7 +78,7 @@ func buildStoredScriptAuthoringHealth(script *dsl.Script) *AuthoringHealth {
 	return &health
 }
 
-func buildAuthoringHealth(issues []string, warnings []string, parityCounts map[string]int, dataSourceFit *DataSourceFitReport, aiGuardrails *AIGuardrailReport, scriptHasProvenance bool) AuthoringHealth {
+func buildAuthoringHealth(issues []string, warnings []string, parityCounts map[string]int, dataSourceFit *DataSourceFitReport, aiGuardrails *AIGuardrailReport, scriptHasProvenance bool, replayBlockers ...string) AuthoringHealth {
 	score := 100
 	inputs := []AuthoringHealthItem{
 		{Key: "validation_issues", Status: "pass", Count: len(issues), Summary: "Script validation passed."},
@@ -97,6 +97,10 @@ func buildAuthoringHealth(issues []string, warnings []string, parityCounts map[s
 	if len(warnings) > 0 {
 		score -= minInt(15, len(warnings)*5)
 		inputs[1] = AuthoringHealthItem{Key: "warnings", Status: "warning", Count: len(warnings), Summary: "Validation warnings need review before promotion."}
+	}
+	if len(replayBlockers) > 0 {
+		score -= 45
+		inputs[5] = AuthoringHealthItem{Key: "replay_readiness", Status: "blocker", Count: len(replayBlockers), Summary: "Replay is blocked until review gates and execution blockers are resolved."}
 	}
 	parityPenalty := runtimeParityHealthPenalty(parityCounts)
 	if parityPenalty > 0 {
@@ -132,7 +136,7 @@ func buildAuthoringHealth(issues []string, warnings []string, parityCounts map[s
 		score = 0
 	}
 	status := "ready"
-	if score < 60 || len(issues) > 0 || (dataSourceFit != nil && dataSourceFit.StatusCounts["blocked"] > 0) || (aiGuardrails != nil && aiGuardrails.StatusCounts["blocked"] > 0) {
+	if score < 60 || len(issues) > 0 || len(replayBlockers) > 0 || (dataSourceFit != nil && dataSourceFit.StatusCounts["blocked"] > 0) || (aiGuardrails != nil && aiGuardrails.StatusCounts["blocked"] > 0) {
 		status = "blocked"
 	} else if score < 85 || len(warnings) > 0 || parityPenalty > 0 || (dataSourceFit != nil && dataSourceFit.StatusCounts["needs_review"] > 0) || (aiGuardrails != nil && aiGuardrails.StatusCounts["needs_review"] > 0) {
 		status = "needs_review"

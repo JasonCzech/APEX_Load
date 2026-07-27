@@ -1,11 +1,34 @@
 package openapi
 
 import (
+	"crypto/sha256"
+	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/jasonczech/apexload/pkg/convert/credentialpolicy"
+	"github.com/jasonczech/apexload/pkg/convert/requestimport"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
+
+func TestOpenAPIEffectiveBodyDecodesBase64DSLRepresentation(t *testing.T) {
+	wireBody := []byte(`{"password":"source-value","note":"unchanged"}`)
+	body, err := openAPIEffectiveBody(dsl.Action{
+		Body:         base64.StdEncoding.EncodeToString(wireBody),
+		BodyEncoding: "base64",
+		Headers:      map[string]string{"Content-Type": "application/json"},
+	}, credentialpolicy.SourceRef{Format: "openapi", Path: "fixture.yaml"})
+	if err != nil {
+		t.Fatalf("openAPIEffectiveBody: %v", err)
+	}
+	if string(body.Payload) != string(wireBody) ||
+		body.Encoding != requestimport.BodyEncodingBase64 ||
+		body.Kind != requestimport.BodyJSON {
+		t.Fatalf("effective body = %#v, want decoded JSON wire bytes", body)
+	}
+}
 
 func TestConvertOpenAPIJSONBuildsExecutableHTTPScript(t *testing.T) {
 	result, err := Convert(ImportRequest{
@@ -434,7 +457,7 @@ func TestConvertOpenAPIResolvesRefsAndReportsUnsupportedConstructs(t *testing.T)
 	if create.Headers["X-Tenant"] != "{{data.openapi.x_tenant}}" {
 		t.Fatalf("header parameter = %q", create.Headers["X-Tenant"])
 	}
-	if create.Headers["Cookie"] != "session_id={{data.openapi.session_id}}" {
+	if create.Headers["Cookie"] != "session_id={{secret.OPENAPI_SESSION_ID}}" {
 		t.Fatalf("cookie parameter = %q", create.Headers["Cookie"])
 	}
 	upload := openAPIAction(result, "uploadDocument")
@@ -645,9 +668,9 @@ func TestConvertOpenAPIFormURLEncodedAndVariantSchemas(t *testing.T) {
 	if session.Headers["Content-Type"] != "application/x-www-form-urlencoded" {
 		t.Fatalf("form content type = %q", session.Headers["Content-Type"])
 	}
-	if !strings.Contains(session.Body, "password={{data.openapi.password}}") ||
+	if !strings.Contains(session.Body, "password={{secret.OPENAPI_PASSWORD}}") ||
 		!strings.Contains(session.Body, "username={{data.openapi.username}}") {
-		t.Fatalf("form body = %q, want raw data placeholders", session.Body)
+		t.Fatalf("form body = %q, want governed password and ordinary data placeholders", session.Body)
 	}
 
 	variant := openAPIAction(result, "createVariant")
@@ -880,6 +903,48 @@ func TestConvertOpenAPIOAuthClientCredentialsGeneratesTokenInit(t *testing.T) {
 	}
 }
 
+func TestConvertOpenAPIOAuthTokenInitUnionsScopesAcrossOperations(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"OAuth scope union","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "components":{"securitySchemes":{"oauth2":{
+    "type":"oauth2",
+    "flows":{"clientCredentials":{
+      "tokenUrl":"/oauth/token",
+      "scopes":{"orders:read":"Read orders","orders:write":"Write orders"}
+    }}
+  }}},
+  "paths":{
+    "/orders/read":{"get":{
+      "operationId":"readOrders",
+      "security":[{"oauth2":["orders:read"]}],
+      "responses":{"200":{"description":"ok"}}
+    }},
+    "/orders/write":{"post":{
+      "operationId":"writeOrders",
+      "security":[{"oauth2":["orders:write"]}],
+      "responses":{"204":{"description":"ok"}}
+    }}
+  }
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	if len(result.Script.Init) != 1 {
+		t.Fatalf("init actions = %#v, want one shared OAuth token init", result.Script.Init)
+	}
+	if got := result.Script.Init[0].Params["scope"]; got != "orders:read orders:write" {
+		t.Fatalf("OAuth scope = %#v, want union of every consuming operation", got)
+	}
+	for _, name := range []string{"readOrders", "writeOrders"} {
+		action := openAPIActionFull(result, name)
+		if action.Auth == nil || action.Auth.Token != "{{var.access_token}}" {
+			t.Fatalf("%s auth = %#v, want shared token variable", name, action.Auth)
+		}
+	}
+}
+
 func TestConvertOpenAPIOAuthPasswordGrantIsOptIn(t *testing.T) {
 	content := `{
   "openapi": "3.0.3",
@@ -994,9 +1059,829 @@ func TestOpenAPISupportMatrixDocumentsReplayReadiness(t *testing.T) {
 	}
 }
 
+func TestConvertOpenAPISecuritySelectsFirstFullySupportedORAndAppliesWholeAND(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Security alternatives","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "components":{"securitySchemes":{
+    "legacy":{"type":"http","scheme":"ntlm"},
+    "basic":{"type":"http","scheme":"basic"},
+    "headerKey":{"type":"apiKey","in":"header","name":"X-API-Key"},
+    "queryKey":{"type":"apiKey","in":"query","name":"api_key"}
+  }},
+  "paths":{"/orders":{"get":{
+    "operationId":"listOrders",
+    "security":[{"legacy":[]},{"queryKey":[],"basic":[],"headerKey":[]}],
+    "responses":{"200":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := openAPIActionFull(result, "listOrders")
+	if action.Auth == nil || action.Auth.Type != "basic" {
+		t.Fatalf("auth = %#v, want basic from second supported OR alternative", action.Auth)
+	}
+	if action.Headers["X-API-Key"] != "{{secret.OPENAPI_HEADERKEY_API_KEY}}" {
+		t.Fatalf("headers = %#v, want header API key from selected AND requirement", action.Headers)
+	}
+	if !strings.Contains(action.Target, "api_key={{secret.OPENAPI_QUERYKEY_API_KEY}}") {
+		t.Fatalf("target = %q, want query API key from selected AND requirement", action.Target)
+	}
+	if action.Metadata["execution_blocker"] != nil {
+		t.Fatalf("metadata = %#v, supported alternative must not be gated", action.Metadata)
+	}
+}
+
+func TestConvertOpenAPISecurityConflictCreatesDurableBlockedDraft(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Conflict","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "components":{"securitySchemes":{
+    "basic":{"type":"http","scheme":"basic"},
+    "bearer":{"type":"http","scheme":"bearer"}
+  }},
+  "paths":{"/orders":{"get":{
+    "operationId":"listOrders",
+    "security":[{"bearer":[],"basic":[]}],
+    "responses":{"200":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := openAPIActionFull(result, "listOrders")
+	if action.Auth != nil {
+		t.Fatalf("auth = %#v, conflicting schemes must not be partially applied", action.Auth)
+	}
+	if got := action.Metadata["execution_blocker"]; got != "import_review_required" {
+		t.Fatalf("execution blocker = %#v", got)
+	}
+	review, ok := action.Metadata["import_review"].(map[string]any)
+	if !ok || review["source"] != "openapi" || review["resolution"] != "replace_behavior_and_remove_gate" {
+		t.Fatalf("import review = %#v", action.Metadata["import_review"])
+	}
+	codes, ok := review["reason_codes"].([]string)
+	if !ok || !containsString(codes, "conflicting_security_schemes") {
+		t.Fatalf("reason codes = %#v", review["reason_codes"])
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("blocked draft validation issues = %v", issues)
+	}
+}
+
+func TestConvertOpenAPIProjectsAuthoredCredentialExamplesWithoutTypeCorruption(t *testing.T) {
+	const canary = "openapi-canary-secret-9B4F"
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Examples","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/sessions":{"post":{
+    "operationId":"createSession",
+    "parameters":[
+      {"name":"X-API-Key","in":"header","schema":{"type":"string","example":"` + canary + `"}},
+      {"name":"access_token","in":"query","schema":{"type":"string","default":"` + canary + `"}},
+      {"name":"page","in":"query","schema":{"type":"integer","default":7}}
+    ],
+    "requestBody":{"content":{"application/json":{"example":{
+      "username":"alice",
+      "password":"` + canary + `",
+      "client_secret":"` + canary + `",
+      "count":3
+    }}}},
+    "responses":{"200":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := openAPIActionFull(result, "createSession")
+	if action.Headers["X-API-Key"] != "{{secret.OPENAPI_X_API_KEY}}" {
+		t.Fatalf("credential header = %q", action.Headers["X-API-Key"])
+	}
+	if !strings.Contains(action.Target, "access_token={{secret.OPENAPI_ACCESS_TOKEN}}") {
+		t.Fatalf("target = %q, want governed query credential", action.Target)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(action.Body), &body); err != nil {
+		t.Fatalf("body is not valid JSON: %v\n%s", err, action.Body)
+	}
+	if body["password"] != "{{secret.OPENAPI_PASSWORD}}" || body["client_secret"] != "{{secret.OPENAPI_CLIENT_SECRET}}" {
+		t.Fatalf("credential body projection = %#v", body)
+	}
+	if count, ok := body["count"].(float64); !ok || count != 3 {
+		t.Fatalf("ordinary count changed: %#v", body["count"])
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal result: %v", err)
+	}
+	if strings.Contains(string(encoded), canary) {
+		t.Fatalf("credential canary leaked in conversion result: %s", encoded)
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("validation issues = %v", issues)
+	}
+	if len(result.Script.DataSources) == 0 || !strings.Contains(result.Script.DataSources[0].InlineData, "\n7\n") {
+		t.Fatalf("nonsensitive authored default was not preserved in data source: %#v", result.Script.DataSources)
+	}
+}
+
+func TestConvertOpenAPIFormatPasswordIsGovernedWithoutSensitiveFieldName(t *testing.T) {
+	const canary = "openapi-format-password-canary-74B2"
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Schema credential annotation","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/sessions":{"post":{
+    "operationId":"createPinSession",
+    "requestBody":{"content":{"application/json":{
+      "schema":{"type":"object","properties":{
+        "pin":{"type":"string","format":"password"},
+        "note":{"type":"string"}
+      }},
+      "example":{"pin":"` + canary + `","note":"unchanged"}
+    }}},
+    "responses":{"204":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	requirements := result.ProtectedRequirements.Take()
+	defer clearOpenAPIProtectedValues(requirements)
+	action := openAPIActionFull(result, "createPinSession")
+	var body map[string]any
+	if err := json.Unmarshal([]byte(action.Body), &body); err != nil {
+		t.Fatalf("body is not valid JSON: %v\n%s", err, action.Body)
+	}
+	if body["pin"] != "{{secret.OPENAPI_PIN}}" || body["note"] != "unchanged" {
+		t.Fatalf("body = %#v, want governed pin and unchanged note", body)
+	}
+	if len(requirements) != 1 || requirements[0].Value != canary {
+		t.Fatalf("protected requirements = %#v, want authored format-password value", requirements)
+	}
+	publicJSON, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(publicJSON), canary) {
+		t.Fatal("format-password canary leaked in the public conversion result")
+	}
+	if result.SourceReview == nil {
+		t.Fatal("source review is missing")
+	}
+	sourceJSON, err := json.Marshal(result.SourceReview)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(sourceJSON), canary) {
+		t.Fatal("format-password canary leaked in source review")
+	}
+}
+
+func TestConvertOpenAPIAuthoredMultipartExampleUsesWireEncodingAndCredentialProjection(t *testing.T) {
+	const canary = "openapi-multipart-canary-89C1"
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Authored multipart","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/sessions":{"post":{
+    "operationId":"createMultipartSession",
+    "requestBody":{"content":{"multipart/form-data":{
+      "schema":{"type":"object","properties":{
+        "pin":{"type":"string","format":"password"},
+        "note":{"type":"string"},
+        "metadata":{"type":"object"}
+      }},
+      "example":{
+        "pin":"` + canary + `",
+        "note":"unchanged",
+        "metadata":{"count":1}
+      }
+    }}},
+    "responses":{"204":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	requirements := result.ProtectedRequirements.Take()
+	defer clearOpenAPIProtectedValues(requirements)
+	action := openAPIActionFull(result, "createMultipartSession")
+	if !strings.Contains(action.Headers["Content-Type"], "multipart/form-data; boundary=----apexload-openapi-boundary") ||
+		!strings.Contains(action.Body, "Content-Disposition: form-data; name=\"pin\"") ||
+		!strings.Contains(action.Body, "{{secret.OPENAPI_PIN}}") ||
+		!strings.Contains(action.Body, "{\"count\":1}") ||
+		!strings.Contains(action.Body, "\r\n\r\nunchanged\r\n") {
+		t.Fatalf("authored multipart action = %#v", action)
+	}
+	if strings.Contains(action.Body, canary) {
+		t.Fatal("authored multipart credential remained in the script")
+	}
+	if len(requirements) != 1 || requirements[0].Value != canary {
+		t.Fatalf("protected requirements = %#v", requirements)
+	}
+	review, ok := action.Metadata["import_review"].(map[string]any)
+	if !ok {
+		t.Fatalf("import review = %#v, want complex multipart encoding gate", action.Metadata["import_review"])
+	}
+	codes, ok := review["reason_codes"].([]string)
+	if !ok || !containsString(codes, "unsupported_multipart_complex_encoding") {
+		t.Fatalf("reason codes = %#v", review["reason_codes"])
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("validation issues = %v", issues)
+	}
+}
+
+func TestConvertOpenAPIMediaTypeExamplesSelectFirstSourceEntry(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{
+			name: "json",
+			content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Ordered JSON examples","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/orders":{"post":{
+    "operationId":"createOrder",
+    "requestBody":{"content":{"application/json":{
+      "examples":{
+        "z_first":{"summary":"authored first","value":{"selection":"first"}},
+        "a_second":{"value":{"selection":"second"}}
+      }
+    }}},
+    "responses":{"204":{"description":"ok"}}
+  }}}
+}`,
+		},
+		{
+			name: "yaml",
+			content: `openapi: 3.0.3
+info:
+  title: Ordered YAML examples
+  version: "1"
+servers:
+  - url: https://api.example.test
+paths:
+  /orders:
+    post:
+      operationId: createOrder
+      requestBody:
+        content:
+          application/json:
+            examples:
+              z_first:
+                summary: authored first
+                value:
+                  selection: first
+              a_second:
+                value:
+                  selection: second
+      responses:
+        "204":
+          description: ok
+`,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			result, err := Convert(ImportRequest{Content: test.content})
+			if err != nil {
+				t.Fatalf("Convert returned error: %v", err)
+			}
+			action := openAPIActionFull(result, "createOrder")
+			var body map[string]any
+			if err := json.Unmarshal([]byte(action.Body), &body); err != nil {
+				t.Fatalf("body is not valid JSON: %v\n%s", err, action.Body)
+			}
+			if body["selection"] != "first" {
+				t.Fatalf("body = %#v, want first source-ordered example", body)
+			}
+			if action.Metadata["execution_blocker"] != nil {
+				t.Fatalf("metadata = %#v, source-ordered local value should be executable", action.Metadata)
+			}
+		})
+	}
+}
+
+func TestConvertOpenAPISingularMediaTypeExampleRetainsPrecedence(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Singular example precedence","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/orders":{"post":{
+    "operationId":"createOrder",
+    "requestBody":{"content":{"application/json":{
+      "example":{"selection":"singular"},
+      "examples":{"first":{"value":{"selection":"plural"}}}
+    }}},
+    "responses":{"204":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := openAPIActionFull(result, "createOrder")
+	var body map[string]any
+	if err := json.Unmarshal([]byte(action.Body), &body); err != nil {
+		t.Fatalf("body is not valid JSON: %v\n%s", err, action.Body)
+	}
+	if body["selection"] != "singular" {
+		t.Fatalf("body = %#v, want existing singular example behavior", body)
+	}
+}
+
+func TestConvertOpenAPIMediaTypeExamplesProjectSelectedCredentialsAndScrubAllAlternatives(t *testing.T) {
+	const selectedCanary = "openapi-plural-selected-canary-71A9"
+	const unselectedCanary = "openapi-plural-unselected-canary-84D2"
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Plural credential examples","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/sessions":{"post":{
+    "operationId":"createSession",
+    "requestBody":{"content":{"application/json":{
+      "examples":{
+        "selected":{"value":{"username":"alice","password":"` + selectedCanary + `"}},
+        "unselected":{"value":{"username":"bob","password":"` + unselectedCanary + `"}}
+      }
+    }}},
+    "responses":{"204":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	requirements := result.ProtectedRequirements.Take()
+	defer clearOpenAPIProtectedValues(requirements)
+	action := openAPIActionFull(result, "createSession")
+	var body map[string]any
+	if err := json.Unmarshal([]byte(action.Body), &body); err != nil {
+		t.Fatalf("body is not valid JSON: %v\n%s", err, action.Body)
+	}
+	if body["username"] != "alice" || body["password"] != "{{secret.OPENAPI_PASSWORD}}" {
+		t.Fatalf("body = %#v, want selected example with governed credential", body)
+	}
+	if len(requirements) != 1 || requirements[0].Value != selectedCanary {
+		t.Fatalf("protected requirements = %#v, want only the selected example credential", requirements)
+	}
+	publicJSON, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(publicJSON), selectedCanary) || strings.Contains(string(publicJSON), unselectedCanary) {
+		t.Fatal("plural example credential leaked in the public conversion result or source review")
+	}
+}
+
+func TestConvertOpenAPIExternalMediaTypeExampleCreatesBlockedDraft(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"External example","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/orders":{"post":{
+    "operationId":"createOrder",
+    "requestBody":{"content":{"application/json":{
+      "examples":{"remote":{"externalValue":"https://examples.invalid/order.json"}}
+    }}},
+    "responses":{"204":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := openAPIActionFull(result, "createOrder")
+	if action.Body != "" {
+		t.Fatalf("body = %q, external example must not be treated as an inline value", action.Body)
+	}
+	review, ok := action.Metadata["import_review"].(map[string]any)
+	if !ok {
+		t.Fatalf("import review = %#v, want durable external-example gate", action.Metadata["import_review"])
+	}
+	codes, ok := review["reason_codes"].([]string)
+	if !ok || !containsString(codes, "unsupported_media_example_external_value") {
+		t.Fatalf("reason codes = %#v", review["reason_codes"])
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("blocked draft validation issues = %v", issues)
+	}
+}
+
+func TestConvertOpenAPIAuthoredMultipartBinaryUsesFileBindingAndBlocksReplay(t *testing.T) {
+	const authoredFileValue = "this-is-not-a-safe-file-binding"
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Authored binary multipart","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/documents":{"post":{
+    "operationId":"createDocument",
+    "requestBody":{"content":{"multipart/form-data":{
+      "schema":{"type":"object","properties":{
+        "document":{"type":"string","format":"binary"}
+      }},
+      "example":{"document":"` + authoredFileValue + `"}
+    }}},
+    "responses":{"204":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := openAPIActionFull(result, "createDocument")
+	if strings.Contains(action.Body, authoredFileValue) ||
+		!strings.Contains(action.Body, `filename="document.bin"`) ||
+		!strings.Contains(action.Body, "{{file.document}}") {
+		t.Fatalf("authored binary multipart body = %q", action.Body)
+	}
+	review, ok := action.Metadata["import_review"].(map[string]any)
+	if !ok {
+		t.Fatalf("import review = %#v, want binary binding gate", action.Metadata["import_review"])
+	}
+	codes, ok := review["reason_codes"].([]string)
+	if !ok || !containsString(codes, "multipart_binary_binding_required") {
+		t.Fatalf("reason codes = %#v", review["reason_codes"])
+	}
+	missing, ok := action.Metadata["missing_file_bindings"].([]string)
+	if !ok || len(missing) != 1 || missing[0] != "document" {
+		t.Fatalf("missing file bindings = %#v", action.Metadata["missing_file_bindings"])
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("blocked draft validation issues = %v", issues)
+	}
+}
+
+func TestConvertOpenAPISchemaMultipartBinaryAndComplexValuesRequireReview(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Schema multipart semantics","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/documents":{"post":{
+    "operationId":"createDocument",
+    "requestBody":{"content":{"multipart/form-data":{
+      "schema":{"type":"object","properties":{
+        "document":{"type":"string","format":"binary"},
+        "metadata":{"type":"object","properties":{"revision":{"type":"integer"}}}
+      }}
+    }}},
+    "responses":{"204":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := openAPIActionFull(result, "createDocument")
+	if !strings.Contains(action.Body, "{{file.document}}") ||
+		!strings.Contains(action.Body, "{{data.openapi.metadata}}") {
+		t.Fatalf("schema multipart body = %q", action.Body)
+	}
+	review, ok := action.Metadata["import_review"].(map[string]any)
+	if !ok {
+		t.Fatalf("import review = %#v, want binary/complex gates", action.Metadata["import_review"])
+	}
+	codes, ok := review["reason_codes"].([]string)
+	if !ok ||
+		!containsString(codes, "multipart_binary_binding_required") ||
+		!containsString(codes, "unsupported_multipart_complex_encoding") {
+		t.Fatalf("reason codes = %#v", review["reason_codes"])
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("blocked draft validation issues = %v", issues)
+	}
+}
+
+func TestConvertOpenAPISchemaMultipartSanitizesAndGatesInvalidFieldName(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Unsafe multipart schema","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/documents":{"post":{
+    "operationId":"createDocument",
+    "requestBody":{"content":{"multipart/form-data":{
+      "schema":{"type":"object","properties":{
+        "label\r\nX-Injected: yes":{"type":"string"}
+      }}
+    }}},
+    "responses":{"204":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := openAPIActionFull(result, "createDocument")
+	if strings.Contains(action.Body, "\r\nX-Injected: yes") {
+		t.Fatalf("schema property injected a multipart header: %q", action.Body)
+	}
+	if !strings.Contains(action.Body, `Content-Disposition: form-data; name="blocked_field_1"`) {
+		t.Fatalf("sanitized multipart draft = %q", action.Body)
+	}
+	if action.Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("execution blocker = %#v", action.Metadata["execution_blocker"])
+	}
+	review, ok := action.Metadata["import_review"].(map[string]any)
+	if !ok {
+		t.Fatalf("import review = %#v", action.Metadata["import_review"])
+	}
+	reasons, ok := review["reason_codes"].([]string)
+	if !ok || !containsString(reasons, "invalid_multipart_schema_field_name") {
+		t.Fatalf("reason codes = %#v", review["reason_codes"])
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("blocked multipart draft has validation issues: %v", issues)
+	}
+}
+
+func TestConvertOpenAPIMultipartEncodingRequiresReview(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Multipart encoding","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/documents":{"post":{
+    "operationId":"createEncodedDocument",
+    "requestBody":{"content":{"multipart/form-data":{
+      "schema":{"type":"object","properties":{"document":{"type":"object"}}},
+      "encoding":{"document":{
+        "contentType":"application/vnd.example.document+json",
+        "headers":{"X-Part-ID":{"schema":{"type":"string"}}}
+      }}
+    }}},
+    "responses":{"204":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := openAPIActionFull(result, "createEncodedDocument")
+	if action.Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("metadata = %#v, want durable review gate", action.Metadata)
+	}
+	review, ok := action.Metadata["import_review"].(map[string]any)
+	if !ok {
+		t.Fatalf("import review = %#v", action.Metadata["import_review"])
+	}
+	codes, ok := review["reason_codes"].([]string)
+	if !ok || !containsString(codes, "unsupported_multipart_encoding") {
+		t.Fatalf("reason codes = %#v", review["reason_codes"])
+	}
+	if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+		t.Fatalf("blocked draft validation issues = %v", issues)
+	}
+}
+
+func TestConvertOpenAPIComposedCookieDoesNotDisableBodyCredentialProjection(t *testing.T) {
+	const canary = "openapi-independent-body-canary-81D4"
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Composed cookie credential","version":"1"},
+  "components":{"securitySchemes":{
+    "cookieAuth":{"type":"apiKey","in":"cookie","name":"session_signature"}
+  }},
+  "paths":{"/sessions":{"post":{
+    "operationId":"createComposedCookieSession",
+    "security":[{"cookieAuth":[]}],
+    "parameters":[
+      {"name":"locale","in":"cookie","schema":{"type":"string"}}
+    ],
+    "requestBody":{"content":{"application/json":{"example":{
+      "username":"alice",
+      "password":"` + canary + `"
+    }}}},
+    "responses":{"204":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requirements := result.ProtectedRequirements.Take()
+	defer clearOpenAPIProtectedValues(requirements)
+
+	action := openAPIActionFull(result, "createComposedCookieSession")
+	wantCookie := "locale={{data.openapi.locale}}; session_signature={{secret.OPENAPI_COOKIEAUTH_API_KEY}}"
+	if action.Headers["Cookie"] != wantCookie {
+		t.Fatalf("composed Cookie = %q, want %q", action.Headers["Cookie"], wantCookie)
+	}
+	var body map[string]any
+	if err := json.Unmarshal([]byte(action.Body), &body); err != nil {
+		t.Fatalf("body is not valid JSON: %v\n%s", err, action.Body)
+	}
+	if body["password"] != "{{secret.OPENAPI_PASSWORD}}" {
+		t.Fatalf("independent body credential was not projected: %#v", body)
+	}
+	if len(requirements) != 1 || requirements[0].Value != canary {
+		t.Fatalf("protected requirements = %#v, want body credential only", requirements)
+	}
+	if action.Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("missing-base-url review gate was not preserved: %#v", action.Metadata)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), canary) {
+		t.Fatal("conversion result disclosed independent body credential")
+	}
+}
+
+func TestConvertOpenAPIDoesNotTrustAuthoredComposedCredentialHeader(t *testing.T) {
+	const canary = "openapi-authored-header-canary-4E92"
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Authored composed credential","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/session":{"get":{
+    "operationId":"authoredComposedCredential",
+    "parameters":[{
+      "name":"Authorization",
+      "in":"header",
+      "schema":{"type":"string","example":"Bearer ` + canary + `-{{secret.EXTRA}}"}
+    }],
+    "responses":{"200":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatal(err)
+	}
+	requirements := result.ProtectedRequirements.Take()
+	defer clearOpenAPIProtectedValues(requirements)
+
+	action := openAPIActionFull(result, "authoredComposedCredential")
+	if strings.Contains(action.Headers["Authorization"], canary) ||
+		!strings.Contains(action.Headers["Authorization"], "{{secret.") {
+		t.Fatalf("authored composed Authorization was not governed as one value: %q", action.Headers["Authorization"])
+	}
+	if len(requirements) != 1 || !strings.Contains(requirements[0].Value, canary) {
+		t.Fatalf("protected requirements = %#v, want authored header credential", requirements)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), canary) {
+		t.Fatal("conversion result disclosed authored composed credential")
+	}
+}
+
+func TestConvertOpenAPIBlocksSensitiveNonStringExampleAndPreservesJSONType(t *testing.T) {
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Typed secret","version":"1"},
+  "paths":{"/typed":{"post":{
+    "operationId":"typedSecret",
+    "requestBody":{"content":{"application/json":{"example":{
+      "password":12345,
+      "ordinary":12345
+    }}}},
+    "responses":{"200":{"description":"ok"}}
+  }}}
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	action := openAPIActionFull(result, "typedSecret")
+	var body map[string]any
+	if err := json.Unmarshal([]byte(action.Body), &body); err != nil {
+		t.Fatalf("body is not valid JSON: %v", err)
+	}
+	if _, ok := body["password"].(float64); !ok || body["password"] != float64(0) {
+		t.Fatalf("sensitive number = %#v, want disclosure-safe numeric zero", body["password"])
+	}
+	if body["ordinary"] != float64(12345) {
+		t.Fatalf("ordinary numeric value changed: %#v", body["ordinary"])
+	}
+	if action.Metadata["execution_blocker"] != "import_review_required" {
+		t.Fatalf("metadata = %#v, want durable import review gate", action.Metadata)
+	}
+}
+
+func TestConvertOpenAPISharedFinalizerIsDeterministicAndDisclosureSafe(t *testing.T) {
+	const canary = "openapi-shared-finalizer-canary-7F3C"
+	content := `{
+  "openapi":"3.0.3",
+  "info":{"title":"Shared finalizer","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{"/sessions":{"post":{
+    "operationId":"createSession",
+    "parameters":[
+      {"name":"X-API-Key","in":"header","schema":{"type":"string","example":"` + canary + `"}},
+      {"name":"access_token","in":"query","schema":{"type":"string","default":"` + canary + `"}}
+    ],
+    "requestBody":{"content":{"application/json":{"example":{
+      "username":"alice",
+      "password":"` + canary + `"
+    }}}},
+    "responses":{"201":{"description":"created"}}
+  }}}
+}`
+
+	var expected [sha256.Size]byte
+	for run := 0; run < 25; run++ {
+		result, err := Convert(ImportRequest{Content: content})
+		if err != nil {
+			t.Fatalf("run %d: Convert returned error: %v", run, err)
+		}
+		if issues := dsl.ValidateScriptIssues(result.Script); len(issues) != 0 {
+			t.Fatalf("run %d: validation issues = %v", run, issues)
+		}
+		action := openAPIActionFull(result, "createSession")
+		if len(action.HeaderList) != len(action.Headers) {
+			t.Fatalf("run %d: header_list = %#v, headers = %#v", run, action.HeaderList, action.Headers)
+		}
+		headerNames := make([]string, 0, len(action.HeaderList))
+		for _, header := range action.HeaderList {
+			headerNames = append(headerNames, header.Name)
+			if action.Headers[header.Name] != header.Value {
+				t.Fatalf("run %d: header occurrence %#v does not match compatibility map", run, header)
+			}
+		}
+		if got := strings.Join(headerNames, ","); got != "Accept,Content-Type,X-API-Key" {
+			t.Fatalf("run %d: header order = %q, want deterministic synthesized order", run, got)
+		}
+		if !containsOpenAPIDiagnostic(result, "source_order_unavailable") {
+			t.Fatalf("run %d: diagnostics = %#v, want source_order_unavailable", run, result.Unsupported)
+		}
+		if !strings.Contains(action.Target, "access_token={{secret.OPENAPI_ACCESS_TOKEN}}") {
+			t.Fatalf("run %d: target = %q", run, action.Target)
+		}
+		result.Script.CreatedAt = time.Time{}
+		encoded, err := json.Marshal(result)
+		if err != nil {
+			t.Fatalf("run %d: marshal result: %v", run, err)
+		}
+		if strings.Contains(string(encoded), canary) {
+			t.Fatalf("run %d: credential canary leaked in conversion result", run)
+		}
+		digest := sha256.Sum256(encoded)
+		if run == 0 {
+			expected = digest
+		} else if digest != expected {
+			t.Fatalf("run %d: normalized conversion digest changed: %x != %x", run, digest, expected)
+		}
+	}
+}
+
+func TestConvertOpenAPISharedFinalizerProjectsFormAndXMLExamples(t *testing.T) {
+	const canary = "openapi-structured-canary-D219"
+	result, err := Convert(ImportRequest{Content: `{
+  "openapi":"3.0.3",
+  "info":{"title":"Structured credentials","version":"1"},
+  "servers":[{"url":"https://api.example.test"}],
+  "paths":{
+    "/form":{"post":{
+      "operationId":"formLogin",
+      "requestBody":{"content":{"application/x-www-form-urlencoded":{"example":{
+        "password":"` + canary + `",
+        "username":"alice"
+      }}}},
+      "responses":{"204":{"description":"ok"}}
+    }},
+    "/xml":{"post":{
+      "operationId":"xmlLogin",
+      "requestBody":{"content":{"application/xml":{"example":
+        "<login xmlns=\"urn:test\"><password>` + canary + `</password><username>alice</username></login>"
+      }}},
+      "responses":{"204":{"description":"ok"}}
+    }}
+  }
+}`})
+	if err != nil {
+		t.Fatalf("Convert returned error: %v", err)
+	}
+	form := openAPIActionFull(result, "formLogin")
+	if form.Body != "password={{secret.OPENAPI_PASSWORD}}&username=alice" {
+		t.Fatalf("form body = %q", form.Body)
+	}
+	xml := openAPIActionFull(result, "xmlLogin")
+	const xmlPrefix = `<login xmlns="urn:test"><password>{{secret.OPENAPI_PASSWORD`
+	const xmlSuffix = `}}</password><username>alice</username></login>`
+	if !strings.HasPrefix(xml.Body, xmlPrefix) || !strings.HasSuffix(xml.Body, xmlSuffix) {
+		t.Fatalf("XML body = %q, want byte-preserving envelope with a governed password", xml.Body)
+	}
+	encoded, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), canary) {
+		t.Fatalf("structured credential canary leaked in conversion result")
+	}
+}
+
 func openAPISupportMatrixContains(entries []SupportMatrixEntry, id string) bool {
 	for _, entry := range entries {
 		if entry.ID == id && entry.Area != "" && entry.Status != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
 			return true
 		}
 	}

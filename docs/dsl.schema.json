@@ -31,8 +31,12 @@
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
+              "header_list": {
+                "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
+                "type": "array"
+              },
               "headers": {
-                "description": "Request headers merged over config.http.default_headers.",
+                "description": "Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative.",
                 "type": "object"
               },
               "method": {
@@ -85,8 +89,12 @@
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
+              "header_list": {
+                "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
+                "type": "array"
+              },
               "headers": {
-                "description": "Request headers merged over config.http.default_headers.",
+                "description": "Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative.",
                 "type": "object"
               },
               "method": {
@@ -139,8 +147,12 @@
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
+              "header_list": {
+                "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
+                "type": "array"
+              },
               "headers": {
-                "description": "Request headers merged over config.http.default_headers.",
+                "description": "Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative.",
                 "type": "object"
               },
               "method": {
@@ -193,8 +205,12 @@
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
+              "header_list": {
+                "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
+                "type": "array"
+              },
               "headers": {
-                "description": "Request headers merged over config.http.default_headers.",
+                "description": "Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative.",
                 "type": "object"
               },
               "method": {
@@ -247,8 +263,12 @@
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
+              "header_list": {
+                "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
+                "type": "array"
+              },
               "headers": {
-                "description": "Request headers merged over config.http.default_headers.",
+                "description": "Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative.",
                 "type": "object"
               },
               "method": {
@@ -301,8 +321,12 @@
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
+              "header_list": {
+                "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
+                "type": "array"
+              },
               "headers": {
-                "description": "Request headers merged over config.http.default_headers.",
+                "description": "Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative.",
                 "type": "object"
               },
               "method": {
@@ -355,8 +379,12 @@
                 "description": "Local file containing the request body. Resolved by ParseFile relative to the script directory, confined to that directory, then stored as inline body. Not accepted by API uploads; use body there.",
                 "type": "string"
               },
+              "header_list": {
+                "description": "Ordered logical header occurrences. The DSL retains casing, order, and ordinary duplicates; the HTTP transport may normalize casing/order or combine protocol-compatible values. Transport-owned, connection-specific, or duplicate singleton headers that cannot preserve semantics must be omitted behind a durable import review gate.",
+                "type": "array"
+              },
               "headers": {
-                "description": "Request headers merged over config.http.default_headers.",
+                "description": "Legacy single-value compatibility map merged over config.http.default_headers. Names must be unique case-insensitively; when header_list contains the same name, header_list is authoritative.",
                 "type": "object"
               },
               "method": {
@@ -3482,7 +3510,7 @@
               "params": {
                 "properties": {
                   "requests": {
-                    "description": "Child requests: {name, method (or type), target, headers, body}. At least one required.",
+                    "description": "Child requests: {name, method (or type), target, headers, header_list, body}. Header occurrence and transport-normalization rules match top-level requests. At least one required.",
                     "type": "array"
                   }
                 },
@@ -7316,6 +7344,11 @@
           "type": "string"
         },
         "version": {
+          "enum": [
+            "",
+            "1.1",
+            "2"
+          ],
           "type": "string"
         }
       },
@@ -8390,8 +8423,8 @@
           "type": "number"
         },
         "multiplier": {
+          "exclusiveMinimum": 0,
           "maximum": 100,
-          "minimum": 0,
           "type": "number"
         },
         "std_ms": {

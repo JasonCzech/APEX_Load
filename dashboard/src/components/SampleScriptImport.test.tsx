@@ -184,6 +184,20 @@ describe('SampleScriptImport', () => {
 
     expect(container.textContent).toContain('SOAP-shaped raw HTTP, curl, REST JSON, and HAR request samples can now be promoted into SOAP scripts')
     expect(container.textContent).toContain('Mixed sample sets still stay on the HTTP protocol surface')
+    const pacingSelect = Array.from(container.querySelectorAll('label'))
+      .find(label => label.textContent?.includes('Pacing'))
+      ?.querySelector('select')
+    const pacingDelay = Array.from(container.querySelectorAll('label'))
+      .find(label => label.textContent?.includes('Pacing Delay (seconds)'))
+      ?.querySelector('input')
+    expect(pacingSelect).toBeTruthy()
+    expect(pacingDelay).toBeTruthy()
+    if (!pacingSelect || !pacingDelay) return
+    await act(async () => {
+      setControlValue(pacingSelect, 'fixed_delay')
+      setControlValue(pacingDelay, '2.5')
+    })
+    expect(pacingDelay.value).toBe('2.5')
 
     const convertButton = Array.from(container.querySelectorAll('button')).find(button => button.textContent?.includes('Convert Sample'))
     expect(convertButton).toBeDefined()
@@ -243,6 +257,7 @@ describe('SampleScriptImport', () => {
       }),
       config: expect.objectContaining({
         base_url: 'https://api.example.com',
+        pacing: { type: 'fixed_delay', delay_ms: 2500 },
       }),
     }), undefined)
     expect(onImported).toHaveBeenCalledWith(expect.objectContaining({

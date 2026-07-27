@@ -3,6 +3,7 @@ package engine
 // vuser_resolve.go — split from vuser.go (same package, behavior-preserving).
 
 import (
+	"encoding/base64"
 	"fmt"
 	"io"
 	"log/slog"
@@ -192,7 +193,7 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 	value, redactedValue := vu.interpolateWithSecrets(action.Value)
 	headers, redactedHeaders := vu.interpolateMapWithSecrets(action.Headers)
 	headerList, redactedHeaderList := vu.interpolateHeaderListWithSecrets(action.HeaderList)
-	body, redactedBody := vu.interpolateWithSecrets(action.Body)
+	body, redactedBody := vu.interpolateActionBody(action.Body, action.BodyEncoding)
 	auth, redactedAuth := toProtocolAuthConfig(action.Auth, vu)
 	soapAction, redactedSOAPAction := toProtocolSOAPActions(action.SOAP, vu)
 	params, redactedParams := vu.interpolateAnyMapWithSecrets(action.Params)
@@ -226,8 +227,8 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		Sync:                         toProtocolBrowserSyncPolicy(action.Sync, vu),
 		Capture:                      toProtocolCaptureOptions(action.Capture),
 		Metadata:                     vu.interpolateAnyMap(action.Metadata),
-		Extractors:                   toProtocolExtractors(action.Extractors),
-		Assertions:                   toProtocolAssertions(action.Assertions),
+		Extractors:                   toProtocolExtractors(action.Extractors, vu),
+		Assertions:                   toProtocolAssertions(action.Assertions, vu),
 		Auth:                         auth,
 		RedactedAuth:                 redactedAuth,
 		TimeoutMs:                    action.TimeoutMs,
@@ -236,6 +237,19 @@ func (vu *VUser) resolveAction(action dsl.Action) *protocol.Action {
 		RedactedSOAP:                 redactedSOAPAction,
 		DiscardResponseBodyOnSuccess: discardSuccessfulResponseBody,
 	}
+}
+
+func (vu *VUser) interpolateActionBody(body, encoding string) (string, string) {
+	decoded, encoded, err := dsl.DecodeBodyEncoding(body, encoding, 0)
+	if !encoded || err != nil {
+		// Preserve the established full-body-template behavior. A value such as
+		// {{secret.BASE64_PAYLOAD}} is itself resolved into encoded data and is
+		// therefore intentionally not decodable until after interpolation.
+		return vu.interpolateWithSecrets(body)
+	}
+	resolved, redacted := vu.interpolateWithSecrets(string(decoded))
+	return base64.StdEncoding.EncodeToString([]byte(resolved)),
+		base64.StdEncoding.EncodeToString([]byte(redacted))
 }
 
 // javaVuserSkipsParameterEvaluation reports the script-level "skip automatic
@@ -748,14 +762,18 @@ func indexOf(s, substr string) int {
 	return -1
 }
 
-func toProtocolExtractors(exts []dsl.Extractor) []protocol.Extractor {
+func toProtocolExtractors(exts []dsl.Extractor, vu *VUser) []protocol.Extractor {
 	out := make([]protocol.Extractor, len(exts))
 	for i, e := range exts {
+		expression := e.Expression
+		if vu != nil {
+			expression, _ = vu.interpolateWithSecrets(expression)
+		}
 		out[i] = protocol.Extractor{
 			Name:       e.Name,
 			Source:     e.Source,
 			Type:       e.Type,
-			Expression: e.Expression,
+			Expression: expression,
 			OnMiss:     e.OnMiss,
 			Mode:       e.Mode,
 			SaveOffset: e.SaveOffset,
@@ -766,13 +784,19 @@ func toProtocolExtractors(exts []dsl.Extractor) []protocol.Extractor {
 	return out
 }
 
-func toProtocolAssertions(asserts []dsl.Assertion) []protocol.Assertion {
+func toProtocolAssertions(asserts []dsl.Assertion, vu *VUser) []protocol.Assertion {
 	out := make([]protocol.Assertion, len(asserts))
 	for i, a := range asserts {
+		expected := a.Expected
+		value := a.Value
+		if vu != nil {
+			expected, _ = vu.interpolateAnyWithSecrets(expected)
+			value, _ = vu.interpolateWithSecrets(value)
+		}
 		out[i] = protocol.Assertion{
 			Type:     a.Type,
-			Expected: a.Expected,
-			Value:    a.Value,
+			Expected: expected,
+			Value:    value,
 			Min:      a.Min,
 			Max:      a.Max,
 		}

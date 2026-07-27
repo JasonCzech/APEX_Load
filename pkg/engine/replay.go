@@ -59,6 +59,7 @@ const (
 	replayBreak
 	replayContinue
 	replayStop
+	replayExitIteration
 )
 
 // leafReplayFlow maps a leaf's (shouldContinue, abort) result onto the replayFlow
@@ -270,6 +271,9 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	if script == nil {
 		return nil, fmt.Errorf("script is required")
 	}
+	if err := importExecutionGateError(script, "replay"); err != nil {
+		return nil, err
+	}
 
 	groupName := opts.GroupName
 	if groupName == "" {
@@ -394,8 +398,10 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 		shouldContinue = runReplayPhase(ctx, vu, script.Actions, "action", continueOnError, opts.IgnoreThinkTime, globalThinkCfg, report, opts.OnProgress, opts.DebugController)
 	}
 	teardownCtx, teardownCancel := teardownContext()
-	runReplayPhase(teardownCtx, vu, script.Teardown, "teardown", true, true, globalThinkCfg, report, opts.OnProgress, opts.DebugController)
+	runReplayPhase(teardownCtx, vu, script.Teardown, "teardown", true, opts.IgnoreThinkTime, globalThinkCfg, report, opts.OnProgress, opts.DebugController)
 	teardownCancel()
+	finalizedSourceTransactions := vu.finalizeOpenSourceTransactions("source transaction ended without a matching end marker during replay")
+	appendReplaySourceTransactionFinalizations(report, finalizedSourceTransactions, vu.RedactionConfig, opts.OnProgress)
 
 	report.CompletedAt = time.Now()
 	report.FinalVariables = scrubReplayFinalVariables(vu.Variables, vu.RedactionConfig)
@@ -416,6 +422,90 @@ func ReplayScript(ctx context.Context, script *dsl.Script, opts ReplayOptions) (
 	})
 
 	return report, nil
+}
+
+// appendReplaySourceTransactionFinalizations exposes the same failed logical
+// transactions that the load path records when replay reaches the end with an
+// unmatched source start marker. Without a replay event, the report could
+// otherwise claim success while its transaction metric recorded a failure.
+func appendReplaySourceTransactionFinalizations(
+	report *ReplayReport,
+	results []*protocol.Result,
+	redactionConfig *RedactionConfig,
+	onProgress func(ReplayProgressEvent),
+) {
+	if report == nil || len(results) == 0 {
+		return
+	}
+	report.Success = false
+	if report.Error == "" {
+		if len(results) == 1 {
+			report.Error = fmt.Sprintf("source transaction %q ended without a matching end marker", results[0].ActionName)
+		} else {
+			report.Error = fmt.Sprintf("%d source transactions ended without matching end markers", len(results))
+		}
+	}
+	report.Error = scrubSensitiveTextWithConfig(report.Error, redactionConfig)
+
+	for _, result := range results {
+		if result == nil {
+			continue
+		}
+		eventIndex := len(report.Events)
+		eventID := replayActionEventID(report.ReplaySessionID, "finalize", -1, eventIndex)
+		completedAt := result.StartTime.Add(result.Duration)
+		if completedAt.IsZero() || completedAt.Before(result.StartTime) {
+			completedAt = time.Now()
+		}
+		event := ReplayActionEvent{
+			EventID:           eventID,
+			ActionIndex:       -1,
+			EventIndex:        eventIndex,
+			Phase:             "finalize",
+			ActionName:        result.ActionName,
+			ActionType:        "source_transaction",
+			StartedAt:         result.StartTime,
+			CompletedAt:       completedAt,
+			DurationMs:        float64(result.Duration.Microseconds()) / 1000,
+			Success:           false,
+			ErrorMessage:      result.ErrorMessage,
+			SourceStepID:      result.SourceStepID,
+			SourceStepIndex:   result.SourceStepIndex,
+			SourceAction:      result.SourceAction,
+			SourceActionName:  result.SourceActionName,
+			SourceTransaction: firstEngineValue(result.ActionName, result.SourceTransaction),
+			SourceProfile:     result.SourceProfile,
+		}
+		attachReplayDiagnosis(&event)
+		scrubReplayActionEvent(&event, redactionConfig)
+		report.Events = append(report.Events, event)
+
+		debugAction := &ReplayDebugAction{
+			EventID:     event.EventID,
+			Phase:       event.Phase,
+			ActionIndex: event.ActionIndex,
+			EventIndex:  event.EventIndex,
+			ActionName:  event.ActionName,
+			ActionType:  event.ActionType,
+		}
+		publishReplayProgress(onProgress, ReplayProgressEvent{
+			Type:       ReplayProgressActionFailed,
+			EventID:    event.EventID,
+			SessionID:  report.ReplaySessionID,
+			Timestamp:  event.CompletedAt,
+			EventIndex: event.EventIndex,
+			Action:     debugAction,
+			Event:      cloneReplayActionEvent(event),
+		})
+		publishReplayProgress(onProgress, ReplayProgressEvent{
+			Type:       ReplayProgressEventRun,
+			EventID:    event.EventID,
+			SessionID:  report.ReplaySessionID,
+			Timestamp:  event.CompletedAt,
+			EventIndex: event.EventIndex,
+			Event:      cloneReplayActionEvent(event),
+		})
+	}
 }
 
 // replayUnit is one thing the debugger stops at: a leaf action plus its identity
@@ -453,6 +543,9 @@ func runReplayPhase(
 			return false
 		}
 		if flow == replayStop && !continueOnError {
+			return false
+		}
+		if flow == replayExitIteration {
 			return false
 		}
 		// A break/continue that escaped to the phase level (no enclosing loop) is
@@ -498,13 +591,45 @@ func expandReplayAction(
 	onProgress func(ReplayProgressEvent),
 	debugController ReplayDebugController,
 ) (replayFlow, bool) {
+	if ctx != nil && ctx.Err() != nil {
+		report.Success = false
+		if report.Error == "" {
+			report.Error = ctx.Err().Error()
+		}
+		return replayStop, true
+	}
+	if exitsIteration, _ := sourceMainIterationExit(action); exitsIteration {
+		unit := replayUnit{action: action, phase: phase, actionIndex: actionIndex, stepPath: stepPath, iterationPath: iterationPath}
+		_, _, abort := runReplayUnit(ctx, vu, unit, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+		if abort {
+			return replayStop, true
+		}
+		return replayExitIteration, false
+	}
+	if vu.sourceTransactionCompletionWillExecute(action) {
+		// Transaction completion reports a business-transaction status; LR_FAIL,
+		// LR_STOP, or LR_AUTO resolving to failure does not itself transfer source
+		// control. Malformed/unmatched end calls do not enter this lane and honor
+		// the ordinary replay failure policy.
+		// Keep the failed replay event/report signal produced by runReplayUnit,
+		// but always execute the following source statements so an exact
+		// error-message/lr_exit branch is not skipped when ContinueOnError is off.
+		unit := replayUnit{action: action, phase: phase, actionIndex: actionIndex, stepPath: stepPath, iterationPath: iterationPath}
+		_, _, abort := runReplayUnit(ctx, vu, unit, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+		if abort {
+			return replayStop, true
+		}
+		return replayNext, false
+	}
+
 	switch strings.ToLower(strings.TrimSpace(action.Type)) {
 	case "control_break", "control_continue":
 		// Loop-control transfer: emit the leaf event (so it shows in the timeline
 		// and honors breakpoints), then return the flow so the enclosing
-		// control_loop can consume it. handleEngineAction treats these as no-ops.
+		// control_loop can consume it. Live load/lifecycle execution transfers
+		// immediately, so suppress leaf think time here for timing parity.
 		unit := replayUnit{action: action, phase: phase, actionIndex: actionIndex, stepPath: stepPath, iterationPath: iterationPath}
-		_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+		_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, continueOnError, true, globalThinkCfg, report, onProgress, debugController)
 		if abort {
 			return replayStop, true
 		}
@@ -522,8 +647,17 @@ func expandReplayAction(
 		children, err := httpSequenceChildActions(action)
 		if err != nil {
 			unit := replayUnit{action: action, phase: phase, actionIndex: actionIndex, parentName: action.Name, stepPath: stepPath, iterationPath: iterationPath, synthErr: err}
-			_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
-			return leafReplayFlow(shouldContinue, abort)
+			_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+			flow, abort := leafReplayFlow(shouldContinue, abort)
+			// The live path represents a malformed sequence as a failed container
+			// result, then retains the container's action-local wait when error
+			// handling continues. Preserve the same source ordering in replay.
+			if !abort && flow == replayStop && continueOnError {
+				if !applyReplayContainerThinkTime(ctx, vu, action, ignoreThinkTime, globalThinkCfg, report) {
+					return replayStop, true
+				}
+			}
+			return flow, abort
 		}
 		for childIndex, child := range children {
 			idx := childIndex
@@ -538,13 +672,16 @@ func expandReplayAction(
 				requestIndex:  &idx,
 				requestCount:  count,
 			}
-			_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+			_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
 			if abort {
 				return replayStop, true
 			}
 			if !shouldContinue && !continueOnError {
 				return replayStop, false
 			}
+		}
+		if !applyReplayContainerThinkTime(ctx, vu, action, ignoreThinkTime, globalThinkCfg, report) {
+			return replayStop, true
 		}
 		return replayNext, false
 	case "control_if":
@@ -571,11 +708,14 @@ func expandReplayAction(
 				if !continueOnError {
 					return replayStop, false
 				}
-			case replayBreak, replayContinue:
+			case replayBreak, replayContinue, replayExitIteration:
 				// Propagate the transfer up to the enclosing loop; stop running
 				// the rest of this branch.
 				return flow, false
 			}
+		}
+		if !applyReplayContainerThinkTime(ctx, vu, action, ignoreThinkTime, globalThinkCfg, report) {
+			return replayStop, true
 		}
 		return replayNext, false
 	case "control_loop":
@@ -608,7 +748,7 @@ func expandReplayAction(
 					if !continueOnError {
 						return replayStop, false
 					}
-				case replayBreak, replayContinue:
+				case replayBreak, replayContinue, replayExitIteration:
 					return flow, false
 				}
 			}
@@ -646,7 +786,13 @@ func expandReplayAction(
 				if flow == replayBreak {
 					break
 				}
+				if flow == replayExitIteration {
+					return replayExitIteration, false
+				}
 				// replayContinue / replayNext: advance to the next row.
+			}
+			if !applyReplayContainerThinkTime(ctx, vu, action, ignoreThinkTime, globalThinkCfg, report) {
+				return replayStop, true
 			}
 			return replayNext, false
 		}
@@ -689,12 +835,18 @@ func expandReplayAction(
 			if flow == replayBreak {
 				break
 			}
+			if flow == replayExitIteration {
+				return replayExitIteration, false
+			}
 			// replayContinue / replayNext: advance to the next pass.
+		}
+		if !applyReplayContainerThinkTime(ctx, vu, action, ignoreThinkTime, globalThinkCfg, report) {
+			return replayStop, true
 		}
 		return replayNext, false
 	default:
 		unit := replayUnit{action: action, phase: phase, actionIndex: actionIndex, stepPath: stepPath, iterationPath: iterationPath}
-		_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
+		_, shouldContinue, abort := runReplayUnit(ctx, vu, unit, leafCounter, continueOnError, ignoreThinkTime, globalThinkCfg, report, onProgress, debugController)
 		return leafReplayFlow(shouldContinue, abort)
 	}
 }
@@ -744,6 +896,7 @@ func runReplayUnit(
 	vu *VUser,
 	unit replayUnit,
 	leafCounter *int,
+	continueOnError bool,
 	ignoreThinkTime bool,
 	globalThinkCfg protocol.ThinkTimeConfig,
 	report *ReplayReport,
@@ -799,7 +952,7 @@ func runReplayUnit(
 		attachReplayDiagnosis(&event)
 	} else {
 		_, captureCorrelationEvidence := debugController.(ReplayDebugControllerCorrelationObserver)
-		event, shouldContinue = runReplayAction(ctx, vu, unit.action, unit.phase, unit.actionIndex, eventIndex, eventID, ignoreThinkTime, globalThinkCfg, report, captureCorrelationEvidence)
+		event, shouldContinue = runReplayAction(ctx, vu, unit.action, unit.phase, unit.actionIndex, eventIndex, eventID, continueOnError, ignoreThinkTime, globalThinkCfg, report, captureCorrelationEvidence)
 	}
 	applyReplayUnitIdentityEvent(&event, unit)
 	if observer, ok := debugController.(ReplayDebugControllerCorrelationObserver); ok {
@@ -844,6 +997,13 @@ func runReplayUnit(
 		if report.Error == "" {
 			report.Error = event.ErrorMessage
 		}
+	}
+	if ctx != nil && ctx.Err() != nil {
+		report.Success = false
+		if report.Error == "" {
+			report.Error = ctx.Err().Error()
+		}
+		return event, false, true
 	}
 	return event, shouldContinue, false
 }
@@ -918,6 +1078,7 @@ func runReplayAction(
 	actionIndex int,
 	eventIndex int,
 	eventID string,
+	continueOnError bool,
 	ignoreThinkTime bool,
 	globalThinkCfg protocol.ThinkTimeConfig,
 	report *ReplayReport,
@@ -925,27 +1086,68 @@ func runReplayAction(
 ) (ReplayActionEvent, bool) {
 	if handled, err := vu.handleEngineAction(ctx, action); handled {
 		now := time.Now()
+		success := err == nil
+		errorMessage := ""
+		if err != nil {
+			if dsl.CanonicalActionType(action.Type) != "source_transaction" {
+				vu.noteSourceTransactionResult(action, false)
+			}
+			errorMessage = scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig)
+		}
+		if err == nil {
+			if ended, name, transactionSuccess := vu.sourceTransactionActionOutcome(action); ended && !transactionSuccess {
+				success = false
+				errorMessage = fmt.Sprintf("source transaction %q ended with failure", name)
+			}
+			if exitsIteration, failed := sourceMainIterationExit(action); exitsIteration && failed {
+				success = false
+				errorMessage = "source iteration exited with LR_FAIL"
+			}
+		}
 		event := ReplayActionEvent{
-			EventID:     eventID,
-			ActionIndex: actionIndex,
-			EventIndex:  eventIndex,
-			Phase:       phase,
-			ActionName:  action.Name,
-			ActionType:  action.Type,
-			StartedAt:   now,
-			CompletedAt: now,
-			Success:     err == nil,
+			EventID:      eventID,
+			ActionIndex:  actionIndex,
+			EventIndex:   eventIndex,
+			Phase:        phase,
+			ActionName:   action.Name,
+			ActionType:   action.Type,
+			StartedAt:    now,
+			CompletedAt:  now,
+			Success:      success,
+			ErrorMessage: errorMessage,
 		}
 		applyReplaySourceMetadata(&event, action.Metadata)
-		if err != nil {
-			event.ErrorMessage = scrubSensitiveTextWithConfig(err.Error(), vu.RedactionConfig)
+		if !event.Success {
 			attachReplayDiagnosis(&event)
 		}
-		return event, err == nil
+		exitsIteration, _ := sourceMainIterationExit(action)
+		if !exitsIteration && (err == nil || continueOnError) && ctx.Err() == nil {
+			// The event's completed timestamp is captured before the wait so
+			// response/action duration excludes think time, while the next replay
+			// event still observes the source-ordered delay.
+			if !applyReplayActionThinkTime(ctx, vu, action, ignoreThinkTime, globalThinkCfg) {
+				event.Success = false
+				event.ErrorMessage = replayThinkTimeCancellationError(ctx)
+				attachReplayDiagnosis(&event)
+			}
+		}
+		return event, event.Success
 	}
 	resolved := vu.resolveAction(action)
 	start := time.Now()
-	result, err := vu.executeWithRetry(ctx, resolved, vu.Script.Config.ErrorHandling)
+	var streamedChildFailure *protocol.Result
+	result, err := vu.executeWithRetryStream(ctx, resolved, vu.Script.Config.ErrorHandling, func(child *protocol.Result) error {
+		if child == nil {
+			return nil
+		}
+		vu.recordResult(child, vu.Script.Config.ErrorHandling, vu.Script.Config.Log)
+		vu.noteSourceTransactionResult(action, child.Success)
+		if !child.Success && streamedChildFailure == nil {
+			failure := *child
+			streamedChildFailure = &failure
+		}
+		return nil
+	})
 	completedAt := time.Now()
 
 	event := ReplayActionEvent{
@@ -968,6 +1170,7 @@ func runReplayAction(
 	applyReplaySourceMetadata(&event, action.Metadata)
 
 	if err != nil {
+		vu.noteSourceTransactionResult(action, false)
 		event.CorrelationEvidence = replayCorrelationEvidence(resolved, result, action, captureCorrelationEvidence)
 		discardCorrelationEvidence(result)
 		event.Success = false
@@ -984,14 +1187,21 @@ func runReplayAction(
 			DependencyType: inferReplayDependencyType(resolved),
 		})
 		attachReplayDiagnosis(&event)
+		if continueOnError && ctx.Err() == nil {
+			_ = applyReplayActionThinkTime(ctx, vu, action, ignoreThinkTime, globalThinkCfg)
+		}
 		return event, false
 	}
 
 	if result == nil {
+		vu.noteSourceTransactionResult(action, false)
 		event.CorrelationEvidence = replayCorrelationEvidence(resolved, nil, action, captureCorrelationEvidence)
 		event.Success = false
 		event.ErrorMessage = fmt.Sprintf("%s %q returned no result", phase, action.Name)
 		attachReplayDiagnosis(&event)
+		if continueOnError && ctx.Err() == nil {
+			_ = applyReplayActionThinkTime(ctx, vu, action, ignoreThinkTime, globalThinkCfg)
+		}
 		return event, false
 	}
 
@@ -1002,6 +1212,7 @@ func runReplayAction(
 	event.CorrelationEvidence = replayCorrelationEvidence(resolved, result, action, captureCorrelationEvidence)
 	discardCorrelationEvidence(result)
 	vu.recordResult(result, vu.Script.Config.ErrorHandling, vu.Script.Config.Log)
+	vu.noteSourceTransactionResult(action, result.Success)
 	event.StatusCode = result.StatusCode
 	event.Success = result.Success
 	event.ErrorMessage = result.ErrorMessage
@@ -1019,6 +1230,17 @@ func runReplayAction(
 		event.ProtocolEvidence = protocol.BuildProtocolEvidence(resolved, result)
 	}
 	event.Snapshot = result.Snapshot
+	if streamedChildFailure != nil {
+		event.Success = false
+		event.ErrorMessage = streamedChildFailure.ErrorMessage
+		if event.ErrorMessage == "" {
+			event.ErrorMessage = fmt.Sprintf("streamed child %q failed", streamedChildFailure.ActionName)
+		}
+		event.ProtocolEvidence = protocol.BuildProtocolEvidence(resolved, streamedChildFailure)
+		if streamedChildFailure.Snapshot != nil {
+			event.Snapshot = streamedChildFailure.Snapshot
+		}
+	}
 	if !result.Success && result.Snapshot != nil && vu.SnapshotStore != nil {
 		if retained := vu.SnapshotStore.Snapshots(); len(retained) > 0 {
 			// Reuse the store's detached bounded copy so ReplayReport.Events and
@@ -1031,43 +1253,101 @@ func runReplayAction(
 		event.DurationMs = float64(result.Duration.Microseconds()) / 1000
 	}
 
-	if !result.Success {
+	if !event.Success {
 		if event.ErrorMessage == "" {
 			event.ErrorMessage = fmt.Sprintf("status %d", result.StatusCode)
 		}
 		attachReplayDiagnosis(&event)
+		if continueOnError {
+			_ = applyReplayActionThinkTime(ctx, vu, action, ignoreThinkTime, globalThinkCfg)
+		}
 		return event, false
 	}
 
 	attachSelfHealSuggestion(&event)
-
-	if !ignoreThinkTime && action.ThinkTimeAfter {
-		thinkCfg := globalThinkCfg
-		if action.ThinkTime.Type != "" {
-			thinkCfg = protocol.ThinkTimeConfig{
-				Type:       action.ThinkTime.Type,
-				MeanMs:     action.ThinkTime.MeanMs,
-				StdMs:      action.ThinkTime.StdMs,
-				MinMs:      action.ThinkTime.MinMs,
-				MaxMs:      action.ThinkTime.MaxMs,
-				Multiplier: action.ThinkTime.Multiplier,
-				LimitMs:    action.ThinkTime.LimitMs,
-				Ignore:     action.ThinkTime.Ignore,
-			}
-			if thinkCfg.Multiplier == 0 {
-				thinkCfg.Multiplier = globalThinkCfg.Multiplier
-			}
-			if thinkCfg.LimitMs == 0 {
-				thinkCfg.LimitMs = globalThinkCfg.LimitMs
-			}
-			if globalThinkCfg.Ignore {
-				thinkCfg.Ignore = true
-			}
-		}
-		applyThinkTime(thinkCfg)
+	if !applyReplayActionThinkTime(ctx, vu, action, ignoreThinkTime, globalThinkCfg) {
+		event.Success = false
+		event.ErrorMessage = replayThinkTimeCancellationError(ctx)
+		attachReplayDiagnosis(&event)
+		return event, false
 	}
 
 	return event, true
+}
+
+func applyReplayActionThinkTime(
+	ctx context.Context,
+	vu *VUser,
+	action dsl.Action,
+	ignoreThinkTime bool,
+	globalThinkCfg protocol.ThinkTimeConfig,
+) bool {
+	if ignoreThinkTime || !action.ThinkTimeAfter {
+		// No wait was attempted, so an already-expired action/teardown context
+		// must not be misreported as cancellation during think time.
+		return true
+	}
+	thinkCfg := globalThinkCfg
+	if action.ThinkTime.Type != "" {
+		thinkCfg = protocol.ThinkTimeConfig{
+			Type:       action.ThinkTime.Type,
+			MeanMs:     action.ThinkTime.MeanMs,
+			StdMs:      action.ThinkTime.StdMs,
+			MinMs:      action.ThinkTime.MinMs,
+			MaxMs:      action.ThinkTime.MaxMs,
+			Multiplier: action.ThinkTime.Multiplier,
+			LimitMs:    action.ThinkTime.LimitMs,
+			Ignore:     action.ThinkTime.Ignore,
+		}
+		if thinkCfg.Multiplier == 0 {
+			thinkCfg.Multiplier = globalThinkCfg.Multiplier
+		}
+		if thinkCfg.LimitMs == 0 {
+			thinkCfg.LimitMs = globalThinkCfg.LimitMs
+		}
+		if globalThinkCfg.Ignore {
+			thinkCfg.Ignore = true
+		}
+	}
+	delay := computeThinkTime(thinkCfg)
+	elapsed, completed := sleepReplayThinkTime(ctx, delay)
+	vu.noteSourceTransactionThinkTime(elapsed)
+	// sleepReplayThinkTime owns the distinction between a completed wait and a
+	// cancellation that interrupted one. Do not fold ambient context state back
+	// in here: a configured wait that resolves to zero never started and must not
+	// be mislabeled as "canceled during think time".
+	return completed
+}
+
+func applyReplayContainerThinkTime(
+	ctx context.Context,
+	vu *VUser,
+	action dsl.Action,
+	ignoreThinkTime bool,
+	globalThinkCfg protocol.ThinkTimeConfig,
+	report *ReplayReport,
+) bool {
+	if applyReplayActionThinkTime(ctx, vu, action, ignoreThinkTime, globalThinkCfg) {
+		return true
+	}
+	if report != nil {
+		report.Success = false
+		if report.Error == "" {
+			report.Error = replayThinkTimeCancellationError(ctx)
+		}
+	}
+	return false
+}
+
+func sleepReplayThinkTime(ctx context.Context, delay time.Duration) (time.Duration, bool) {
+	return sleepCtxElapsed(ctx, delay)
+}
+
+func replayThinkTimeCancellationError(ctx context.Context) string {
+	if ctx != nil && ctx.Err() != nil {
+		return "replay canceled during think time: " + ctx.Err().Error()
+	}
+	return "replay canceled during think time"
 }
 
 func scrubReplayFinalVariables(values map[string]string, config *RedactionConfig) map[string]string {

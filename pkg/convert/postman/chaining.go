@@ -136,6 +136,35 @@ func detectPostmanExtractors(events []event) []detectedExtractor {
 	return out
 }
 
+// postmanCorrelationScriptFullyTranslated proves that every executable token
+// in one test event belongs to the deliberately narrow response-capture
+// grammar above. A recognized substring is insufficient: any residual comment,
+// call, operator, or control-flow token keeps the durable review gate.
+func postmanCorrelationScriptFullyTranslated(ev event) bool {
+	if !strings.EqualFold(strings.TrimSpace(ev.Listen), "test") ||
+		len(detectPostmanExtractors([]event{ev})) == 0 {
+		return false
+	}
+	remaining := strings.Join(ev.Script.Exec, "\n")
+	for _, pattern := range []*regexp.Regexp{
+		postmanJSONAliasPattern,
+		postmanSetJSONPattern,
+		postmanSetAliasPattern,
+		postmanSetHeaderPattern,
+	} {
+		remaining = pattern.ReplaceAllString(remaining, "")
+	}
+	remaining = strings.Map(func(value rune) rune {
+		switch value {
+		case ' ', '\t', '\r', '\n', ';':
+			return -1
+		default:
+			return value
+		}
+	}, remaining)
+	return remaining == ""
+}
+
 func jsonPathFromDotPath(dotPath string) string {
 	dotPath = strings.TrimSpace(dotPath)
 	if dotPath == "" {

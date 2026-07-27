@@ -33,6 +33,45 @@ func attachImportReplayPreflight(script *dsl.Script, source string, preflight *R
 	preserved["replay_preflight"] = cloneReplayPreflight(preflight)
 }
 
+// buildAndAttachImportPreflight is the single-script form every import handler
+// uses: compute the replay preflight, persist it on the draft's import
+// provenance so a later save keeps it, and return it for the response envelope.
+// Callers pass the validation issues and warnings they already collected.
+func buildAndAttachImportPreflight(script *dsl.Script, source string, issues, warnings []string) *ReplayPreflight {
+	if script == nil {
+		return nil
+	}
+	preflight := buildReplayPreflight(script, nil, issues, warnings)
+	attachImportReplayPreflight(script, source, preflight)
+	return preflight
+}
+
+// buildAndAttachMultiScriptImportPreflight is the multi-script form. Each
+// produced script carries its own preflight, because each is saved and replayed
+// independently; the aggregate's preflight is returned for the response
+// envelope, matching how multi-script parameterization already reports.
+func buildAndAttachMultiScriptImportPreflight(aggregate *dsl.Script, scripts []*dsl.Script, source string, issues, warnings []string) *ReplayPreflight {
+	seen := make(map[*dsl.Script]struct{}, len(scripts)+1)
+	for _, script := range scripts {
+		if script == nil {
+			continue
+		}
+		seen[script] = struct{}{}
+		buildAndAttachImportPreflight(script, source, issues, warnings)
+	}
+	if aggregate == nil {
+		return nil
+	}
+	if _, done := seen[aggregate]; done {
+		if aggregate.Metadata != nil && aggregate.Metadata.Import != nil {
+			if preflight, ok := aggregate.Metadata.Import.Preserved["replay_preflight"].(*ReplayPreflight); ok {
+				return preflight
+			}
+		}
+	}
+	return buildAndAttachImportPreflight(aggregate, source, issues, warnings)
+}
+
 func (s *Server) handleAuthoringCapabilities(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, authoringCapabilityResponse())
 }

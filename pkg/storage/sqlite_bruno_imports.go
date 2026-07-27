@@ -221,36 +221,42 @@ func normalizeBrunoArtifact(artifact *BrunoSourceArtifact, projectID, kind strin
 }
 
 func saveBrunoArtifactTx(tx *storeTx, artifact *BrunoSourceArtifact) (*BrunoSourceArtifact, error) {
-	var existingID string
-	err := tx.QueryRow(`SELECT id FROM bruno_source_artifacts WHERE project_id = ? AND artifact_kind = ? AND sha256 = ?`,
-		artifact.ProjectID, artifact.ArtifactKind, artifact.SHA256).Scan(&existingID)
-	if err == nil {
-		existing, err := getBrunoSourceArtifactTx(tx, existingID, artifact.ProjectID)
-		if err != nil {
-			return nil, err
-		}
-		if existing.SizeBytes != artifact.SizeBytes || existing.BackendKey != artifact.BackendKey {
-			return nil, errors.New("Bruno content-addressed artifact metadata conflicts with an existing object")
-		}
-		return existing, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return nil, err
-	}
 	encryptionJSON, err := marshalStorageJSON(artifact.EncryptionMetadata)
 	if err != nil {
 		return nil, fmt.Errorf("marshal Bruno artifact encryption metadata: %w", err)
 	}
-	if _, err := tx.Exec(`INSERT INTO bruno_source_artifacts (
+	result, err := tx.Exec(`INSERT INTO bruno_source_artifacts (
 		id, project_id, artifact_kind, backend_key, sha256, size_bytes, manifest_sha256,
 		source_format, encryption_json, lifecycle_state, created_at
-	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+	) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(project_id, artifact_kind, sha256) DO NOTHING`,
 		artifact.ID, artifact.ProjectID, artifact.ArtifactKind, artifact.BackendKey, artifact.SHA256,
 		artifact.SizeBytes, nullableString(artifact.ManifestSHA256), nullableString(artifact.SourceFormat),
-		encryptionJSON, artifact.LifecycleState, artifact.CreatedAt); err != nil {
+		encryptionJSON, artifact.LifecycleState, artifact.CreatedAt)
+	if err != nil {
 		return nil, err
 	}
-	return cloneBrunoArtifact(artifact), nil
+	inserted, err := result.RowsAffected()
+	if err != nil {
+		return nil, err
+	}
+	if inserted == 1 {
+		return cloneBrunoArtifact(artifact), nil
+	}
+
+	var existingID string
+	if err := tx.QueryRow(`SELECT id FROM bruno_source_artifacts WHERE project_id = ? AND artifact_kind = ? AND sha256 = ?`,
+		artifact.ProjectID, artifact.ArtifactKind, artifact.SHA256).Scan(&existingID); err != nil {
+		return nil, err
+	}
+	existing, err := getBrunoSourceArtifactTx(tx, existingID, artifact.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	if existing.SizeBytes != artifact.SizeBytes || existing.BackendKey != artifact.BackendKey {
+		return nil, errors.New("Bruno content-addressed artifact metadata conflicts with an existing object")
+	}
+	return existing, nil
 }
 
 func (s *SQLiteStore) GetBrunoSourceArtifact(id string, projectID string) (*BrunoSourceArtifact, error) {
@@ -258,6 +264,10 @@ func (s *SQLiteStore) GetBrunoSourceArtifact(id string, projectID string) (*Brun
 }
 
 func (s *SQLiteStore) IsBrunoArtifactBackendKeyReferenced(backendKey string) (bool, error) {
+	return s.IsImportArtifactBackendKeyReferenced(backendKey)
+}
+
+func (s *SQLiteStore) IsImportArtifactBackendKeyReferenced(backendKey string) (bool, error) {
 	var count int
 	err := s.db.QueryRow(`SELECT COUNT(*) FROM bruno_source_artifacts WHERE backend_key = ?`, strings.TrimSpace(backendKey)).Scan(&count)
 	return count > 0, err

@@ -7,6 +7,9 @@ import (
 )
 
 const DefaultHarnessMain = "Harness"
+const enforcedDisableAttachMechanism = "-XX:+DisableAttachMechanism"
+const enforcedDisableOpenJ9Attach = "-Dcom.ibm.tools.attach.enable=no"
+const enforcedDisableHeapDumpOnOOM = "-XX:-HeapDumpOnOutOfMemoryError"
 
 // CommandSpec describes the operator- and script-owned portions of a direct
 // Java harness launch. VMParameters are already exact argv tokens; no quoting
@@ -58,6 +61,17 @@ func BuildCommand(spec CommandSpec) (CommandPlan, error) {
 	plan := CommandPlan{
 		Args: append([]string(nil), spec.VMParameters...),
 	}
+	// Every VUser JVM in a sidecar shares an OS identity and working directory.
+	// Enforce both HotSpot and OpenJ9 attach isolation, plus vendor-compatible
+	// OOM heap-dump suppression, after all caller-owned VM tokens so
+	// last-option precedence cannot reopen a sibling-memory or heap-artifact
+	// disclosure path.
+	plan.Args = append(
+		plan.Args,
+		enforcedDisableAttachMechanism,
+		enforcedDisableOpenJ9Attach,
+		enforcedDisableHeapDumpOnOOM,
+	)
 	if spec.DedicatedClassLoader {
 		if harnessJar == "" {
 			return CommandPlan{}, fmt.Errorf("dedicated Java class loader requires an operator harness jar")

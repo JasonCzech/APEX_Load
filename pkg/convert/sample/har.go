@@ -19,7 +19,9 @@ import (
 
 	"github.com/andybalholm/brotli"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	"github.com/jasonczech/apexload/pkg/scrub"
 )
 
 const maxHARDecodedContentBytes = 10 << 20
@@ -152,6 +154,7 @@ func parseHARItem(item map[string]any, diagnostics *diag.Collector, index int) (
 	ex := exchange{
 		Method:       strings.ToUpper(stringValue(requestData["method"])),
 		URL:          stringValue(requestData["url"]),
+		HTTPVersion:  stringValue(requestData["httpVersion"]),
 		Body:         body,
 		BodyEncoding: bodyEncoding,
 		FileAssets:   fileAssets,
@@ -209,18 +212,47 @@ func harEntryMetadata(item map[string]any, requestData map[string]any, responseD
 		metadata["har.cache"] = metadataMap(item["cache"])
 	}
 	if queryString, ok := itemListMetadata(requestData["queryString"]); ok {
-		metadata["har.request.query_string"] = queryString
+		metadata["har.request.query_string"] = disclosureSafeHARQueryMetadata(queryString)
 	}
 	if responseData != nil {
 		addStringMetadata(metadata, "har.response.http_version", stringValue(responseData["httpVersion"]))
 		if cookies, ok := itemListMetadata(responseData["cookies"]); ok {
-			metadata["har.response.cookies"] = cookies
+			metadata["har.response.cookies"] = disclosureSafeHARCookieMetadata(cookies)
 		}
 	}
 	if len(metadata) == 0 {
 		return nil
 	}
 	return metadata
+}
+
+func disclosureSafeHARQueryMetadata(items []map[string]any) []map[string]any {
+	out := make([]map[string]any, len(items))
+	for index, item := range items {
+		out[index] = metadataMap(item)
+		value, ok := out[index]["value"].(string)
+		if !ok || value == "" {
+			continue
+		}
+		name, _ := out[index]["name"].(string)
+		if credential.SensitiveName(name) {
+			out[index]["value"] = scrub.Redacted
+			continue
+		}
+		out[index]["value"] = scrub.Value(value, scrub.Policy{})
+	}
+	return out
+}
+
+func disclosureSafeHARCookieMetadata(items []map[string]any) []map[string]any {
+	out := make([]map[string]any, len(items))
+	for index, item := range items {
+		out[index] = metadataMap(item)
+		if _, exists := out[index]["value"]; exists {
+			out[index]["value"] = scrub.Redacted
+		}
+	}
+	return out
 }
 
 func addStringMetadata(metadata map[string]any, key string, value string) {

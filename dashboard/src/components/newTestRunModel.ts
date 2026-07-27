@@ -1,6 +1,8 @@
 import { GeneratorAssignmentSettings, RuntimeSettingsOverride, StoredScenario, SystemInventoryGenerator } from '../types'
 import { parseDurationToSeconds } from '../utils/timeUtils'
 import { normalizeRequiredLabels } from './assignmentLabels'
+import { canonicalThinkTimeType } from './thinkTimeConfig'
+import { formatMillisecondsAsSecondsValue, formatPacingTiming } from './runtimeTiming'
 
 export type RunDefaultKey =
   | 'duration'
@@ -141,12 +143,7 @@ export function groupOverrideCount(overrides: Record<string, GroupRunOverride>) 
 }
 
 function formatRuntimePacingConfig(pacing?: RuntimeSettingsOverride['pacing'] | null) {
-  if (!pacing?.type) return 'Script default'
-  if (pacing.type === 'none') return 'None'
-  if (pacing.type === 'fixed_delay') return `Fixed delay · ${pacing.delay_ms || 0}ms`
-  if (pacing.type === 'fixed_interval') return `Fixed interval · ${pacing.interval_ms || 0}ms`
-  if (pacing.type === 'tps') return `Target TPS · ${pacing.tps || 0}`
-  return pacing.type.replace(/_/g, ' ')
+  return formatPacingTiming(pacing) || 'Script default'
 }
 
 function formatRuntimePacingTableValue(pacing?: RuntimeSettingsOverride['pacing'] | null) {
@@ -161,6 +158,7 @@ function formatRuntimePacing(scenario?: StoredScenario | null) {
 function formatRuntimeThinkTimeConfig(thinkTime?: RuntimeSettingsOverride['think_time'] | null) {
   if (!thinkTime) return 'Script default'
   if (thinkTime.ignore) return 'Disabled'
+  if (thinkTime.type === 'recorded') return 'Replay recorded think time'
   return `${thinkTime.type || 'fixed'} · ${thinkTime.mean_ms || 0}ms`
 }
 
@@ -608,9 +606,9 @@ export function buildRunDefaultEditDraft(key: RunDefaultKey, scenario: StoredSce
   if (key === 'pacing') {
     const pacing = effectiveRuntime.pacing
     const amount = pacing?.type === 'fixed_delay'
-      ? pacing.delay_ms
+      ? formatMillisecondsAsSecondsValue(pacing.delay_ms, 0, true)
       : pacing?.type === 'fixed_interval'
-        ? pacing.interval_ms
+        ? formatMillisecondsAsSecondsValue(pacing.interval_ms, 0, true)
         : pacing?.type === 'tps'
           ? pacing.tps
           : ''
@@ -627,7 +625,9 @@ export function buildRunDefaultEditDraft(key: RunDefaultKey, scenario: StoredSce
       ...base,
       value: thinkTime?.ignore ? '' : (thinkTime?.mean_ms === undefined ? '' : String(thinkTime.mean_ms)),
       thinkIgnore: Boolean(thinkTime?.ignore),
-      thinkTimeConfig: thinkTime ? { ...thinkTime } : undefined,
+      thinkTimeConfig: thinkTime
+        ? { ...thinkTime, type: canonicalThinkTimeType(thinkTime.type) }
+        : undefined,
     }
   }
   if (key === 'continue_on_error') {
@@ -779,8 +779,8 @@ export function emptyGroupEditDraft(): GroupEditDraft {
 }
 
 function runtimePacingAmount(pacing?: RuntimeSettingsOverride['pacing']) {
-  if (pacing?.type === 'fixed_delay') return pacing.delay_ms
-  if (pacing?.type === 'fixed_interval') return pacing.interval_ms
+  if (pacing?.type === 'fixed_delay') return formatMillisecondsAsSecondsValue(pacing.delay_ms, 0, true)
+  if (pacing?.type === 'fixed_interval') return formatMillisecondsAsSecondsValue(pacing.interval_ms, 0, true)
   if (pacing?.type === 'tps') return pacing.tps
   return ''
 }
@@ -812,7 +812,9 @@ function buildRuntimeGroupEditDraftValues(runtime: ReturnType<typeof effectiveGr
     pacingConfig: runtime.pacing ? { ...runtime.pacing } : undefined,
     thinkTimeMs: runtime.think_time?.mean_ms === undefined ? '' : String(runtime.think_time.mean_ms),
     thinkIgnore: Boolean(runtime.think_time?.ignore),
-    thinkTimeConfig: runtime.think_time ? { ...runtime.think_time } : undefined,
+    thinkTimeConfig: runtime.think_time
+      ? { ...runtime.think_time, type: canonicalThinkTimeType(runtime.think_time.type) }
+      : undefined,
     continue_on_error: String(Boolean(runtime.continue_on_error)),
     snapshot_on_error: String(Boolean(runtime.snapshot_on_error)),
     browser_device_profile: runtime.browser?.device_profile || '',

@@ -94,7 +94,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(badges.filter(b => b === 'Group override').length).toBe(2)
     expect(text).toContain('Not applicable for http protocol')
     // The overridden values are surfaced.
-    expect(text).toContain('Fixed delay · 250ms')
+    expect(text).toContain('Fixed delay · 0.25 seconds')
     expect(text).toContain('extended')
   })
 
@@ -126,7 +126,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     })
     const text = container.textContent || ''
     // The real script values are surfaced in the Effective value column...
-    expect(text).toContain('Fixed delay · 500ms')
+    expect(text).toContain('Fixed delay · 0.5 seconds')
     expect(text).toContain('fixed · 750ms')
     expect(text).toContain('9')
     // ...attributed to the Script default source.
@@ -216,11 +216,10 @@ describe('RuntimeSettingsGroupEditor', () => {
     expect(tabLabels()).toContain('Java Env')
 
     clickTab('Java Env')
-    // The imported VM parameter is offered in the picker dropdown.
-    const importSelect = Array.from(container.querySelectorAll('select')).find(select =>
-      Array.from(select.options).some(option => option.value === '-Xss2m'),
-    )
-    expect(importSelect).toBeTruthy()
+    // Imported VM parameters are listed together so they can be compared,
+    // rather than hidden one at a time behind a single-select picker.
+    const importedParameters = container.querySelector('[aria-label="Imported VM parameters"]')
+    expect(importedParameters?.textContent).toContain('-Xss2m')
 
     // Toggling the skip-parameter-evaluation checkbox emits a java_vuser override.
     const skip = Array.from(container.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')).find(input =>
@@ -265,7 +264,7 @@ describe('RuntimeSettingsGroupEditor', () => {
     const text = container.textContent || ''
     // Group 0 is http: http applies (shows the override), browser_config does not.
     expect(text).toContain('HTTP transport')
-    expect(text).toContain('HTTP/2')
+    expect(text).toContain('HTTP/2 required (no fallback)')
     expect(text).toContain('Logging')
     expect(text).toContain('Not applicable for http protocol') // Browser config row
   })
@@ -658,6 +657,87 @@ describe('RuntimeSettingsGroupEditor', () => {
     act(() => setSelectValue(distSelect, 'fixed'))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1][1]
     expect(last.think_time).toEqual(expect.objectContaining({ type: 'fixed', mean_ms: 500 }))
+
+    act(() => setSelectValue(distSelect, 'recorded'))
+    const recorded = onChange.mock.calls[onChange.mock.calls.length - 1][1]
+    expect(recorded.think_time).toEqual({ type: 'recorded' })
+  })
+
+  it('shows inherited Gaussian and Uniform controls from the effective think-time type', () => {
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          scenarioDefault={{
+            think_time: {
+              type: 'gaussian',
+              mean_ms: 500,
+              std_ms: 125,
+              min_ms: 100,
+              max_ms: 900,
+            },
+          }}
+          overrides={[undefined, undefined]}
+          onChange={() => {}}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('Think Time')
+    expect(findLabeledControl<HTMLInputElement>('Std dev (ms)', 'input').placeholder).toBe('125')
+    expect(findLabeledControl<HTMLInputElement>('Min (ms)', 'input').placeholder).toBe('100')
+    expect(findLabeledControl<HTMLInputElement>('Max (ms)', 'input').placeholder).toBe('900')
+
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          scenarioDefault={{ think_time: { type: 'uniform', min_ms: 250, max_ms: 1750 } }}
+          overrides={[undefined, undefined]}
+          onChange={() => {}}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    expect(container.textContent).not.toContain('Std dev (ms)')
+    expect(findLabeledControl<HTMLInputElement>('Min (ms)', 'input').placeholder).toBe('250')
+    expect(findLabeledControl<HTMLInputElement>('Max (ms)', 'input').placeholder).toBe('1750')
+  })
+
+  it('does not author a zero think-time multiplier', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[{ think_time: { type: 'recorded', multiplier: 1 }, log_level: '', auto_transactions: '' }, undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('Think Time')
+    const multiplier = findLabeledControl<HTMLInputElement>('Multiplier', 'input')
+    expect(multiplier.min).toBe('0')
+    expect(multiplier.max).toBe('100')
+    expect(multiplier.step).toBe('any')
+    act(() => multiplier.focus())
+    act(() => setInputValue(multiplier, '0'))
+    expect(multiplier.value).toBe('0')
+    expect(onChange).not.toHaveBeenCalled()
+    act(() => multiplier.blur())
+    const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(last.think_time).toEqual({ type: 'recorded' })
+    act(() => multiplier.focus())
+    act(() => setInputValue(multiplier, '0.05'))
+    const positive = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(positive.think_time).toEqual({ type: 'recorded', multiplier: 0.05 })
   })
 
   it('exposes random-delay pacing min/max fields', () => {
@@ -674,12 +754,36 @@ describe('RuntimeSettingsGroupEditor', () => {
       )
     })
     clickTab('Iteration Pacing')
-    expect(container.textContent || '').toContain('Min delay (ms)')
-    expect(container.textContent || '').toContain('Max delay (ms)')
+    expect(container.textContent || '').toContain('Min delay (seconds)')
+    expect(container.textContent || '').toContain('Max delay (seconds)')
     const pacingSelect = Array.from(container.querySelectorAll('select')).find(s =>
       Array.from(s.options).some(o => o.value === 'random_delay') && Array.from(s.options).some(o => o.value === 'random_interval'),
     ) as HTMLSelectElement
     expect(pacingSelect.value).toBe('random_delay')
+  })
+
+  it('edits pacing in decimal seconds while retaining milliseconds in the override', () => {
+    const onChange = vi.fn()
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={GROUPS}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          overrides={[{ pacing: { type: 'fixed_interval', interval_ms: 5000 }, log_level: '', auto_transactions: '' }, undefined]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    clickTab('Iteration Pacing')
+    const interval = findLabeledControl<HTMLInputElement>('Pacing interval (seconds)', 'input')
+    expect(interval.value).toBe('5')
+    expect(interval.step).toBe('0.001')
+
+    act(() => setInputValue(interval, '2.5'))
+    const updated = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(updated.pacing).toEqual({ type: 'fixed_interval', interval_ms: 2500 })
   })
 
   it('edits the run_logic action sequence (comma-separated → array)', () => {
@@ -838,7 +942,34 @@ describe('RuntimeSettingsGroupEditor', () => {
     const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
     expect(last.think_time).toEqual({
       type: 'uniform',
-      mean_ms: 300,
+      min_ms: 300,
+      max_ms: 600,
+      ignore: false,
+    })
+    expect(last.think_time).not.toHaveProperty('mean_ms')
+
+    act(() => {
+      root.render(
+        <RuntimeSettingsGroupEditor
+          groups={groups}
+          focusedIndex={0}
+          onFocusChange={() => {}}
+          engineDefaults={{ base_url: '', think_time: { type: 'fixed', mean_ms: 100, multiplier: 1.5, limit_ms: 900, ignore: true } }}
+          scenarioDefault={{ think_time: { type: 'gaussian', mean_ms: 300, max_ms: 600, ignore: false } }}
+          overrides={[last]}
+          onChange={onChange}
+          onApplyToGroups={() => {}}
+        />,
+      )
+    })
+    expect(container.textContent).not.toContain('Mean (ms)')
+
+    const minimum = findLabeledControl<HTMLInputElement>('Min (ms)', 'input')
+    act(() => setInputValue(minimum, '350'))
+    const edited = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
+    expect(edited.think_time).toEqual({
+      type: 'uniform',
+      min_ms: 350,
       max_ms: 600,
       ignore: false,
     })
@@ -1027,6 +1158,13 @@ describe('RuntimeSettingsGroupEditor', () => {
     clickTab('HTTP Transport')
     clickTab('Connection')
     const version = findLabeledControl<HTMLSelectElement>('HTTP version', 'select')
+    expect(Array.from(version.options).map(option => option.textContent)).toEqual([
+      'Inherit',
+      'Require HTTP/1.1',
+      'Require HTTP/2 (no fallback)',
+    ])
+    expect(version.querySelector('option[value="1.0"]')).toBeNull()
+    expect(container.textContent).toContain('required HTTP/2 never falls back to HTTP/1.1')
     act(() => setSelectValue(version, '2'))
     const last = onChange.mock.calls[onChange.mock.calls.length - 1]?.[1]
     expect(last.http).toEqual({

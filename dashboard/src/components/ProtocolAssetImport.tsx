@@ -18,6 +18,11 @@ import { withFallbackPersistedScript } from './importSaveUtils'
 import { salesforceApiSurfaceBreakdown, salesforceEndpointTotal } from './salesforceReviewSummary'
 import { buildReplayStartPayload, createReplaySessionId, isDefiniteReplayStartRejection } from './scriptEditorUtils'
 import { refreshedSecretBindingRequirements, replaceSecretBindingRequirementsForScript, secretBindingRequirementsForScript } from './secretBindingUtils'
+import {
+  activeProtectedImportSessionId,
+  invalidateProtectedImportCandidate,
+  mergeProtectedParameterizationSelectionIds,
+} from './protectedImportSession'
 import { type ImportedSaveResult } from './useScriptsAuthoringState'
 import './SampleScriptImport.css'
 
@@ -162,6 +167,12 @@ function validatePostmanEnvironmentFile(file: File): string | null {
 
 type ProtocolImportResult = DevWebImportResult | HARImportResult | SalesforceImportResult | BrowserRecordingImportResult | OpenAPIImportResult | RAMLImportResult | PostmanImportResult | WSDLImportResult | AsyncAPIImportResult | K6ImportResult | EventHubsCaptureImportResult | BrokerConfigImportResult
 type SourceImportSupportEntry = DevWebSupportMatrixEntry | OpenAPISupportMatrixEntry | RAMLSupportMatrixEntry | PostmanSupportMatrixEntry | AsyncAPISupportMatrixEntry | K6SupportMatrixEntry | EventHubsCaptureSupportMatrixEntry | BrokerConfigSupportMatrixEntry
+
+type ProtectedImportCommitOverrides = {
+  sessionId: string
+  secretBindings: Record<string, string>
+  parameterizationSelectedIds: string[]
+}
 
 type SourceImportSupportState = {
   entries: SourceImportSupportEntry[]
@@ -574,6 +585,11 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const saveTask = useAsyncTask<StoredScript>()
   const result = convertTask.value
   const latestResultRef = useRef<ProtocolImportResult | null>(result || null)
+  const protectedCommitOverridesRef = useRef<ProtectedImportCommitOverrides>({
+    sessionId: '',
+    secretBindings: {},
+    parameterizationSelectedIds: [],
+  })
   const credentialReviewRef = useRef<SecretBindingReviewHandle | null>(null)
   const reviewGenerationRef = useRef(0)
   const [reviewGeneration, setReviewGeneration] = useState(0)
@@ -630,6 +646,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const [asyncAPISchemaID, setAsyncAPISchemaID] = useState('')
   const [asyncAPISubject, setAsyncAPISubject] = useState('')
   const [selectedScriptIndex, setSelectedScriptIndex] = useState(0)
+  const [conversionScope, setConversionScope] = useState(0)
   const selectedScriptIndexRef = useRef(selectedScriptIndex)
   selectedScriptIndexRef.current = selectedScriptIndex
   const [secondaryHARFile, setSecondaryHARFile] = useState<File | null>(null)
@@ -677,6 +694,14 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
 
   useEffect(() => {
     latestResultRef.current = result || null
+    const sessionId = activeProtectedImportSessionId(result) || ''
+    if (protectedCommitOverridesRef.current.sessionId !== sessionId) {
+      protectedCommitOverridesRef.current = {
+        sessionId,
+        secretBindings: {},
+        parameterizationSelectedIds: [],
+      }
+    }
   }, [result])
   const [postmanSaveMode, setPostmanSaveMode] = useState<'create' | 'replace'>('create')
   const [postmanReplaceScriptId, setPostmanReplaceScriptId] = useState('')
@@ -686,6 +711,11 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   const resetSaveTask = saveTask.reset
   const invalidateConversionSource = useCallback(() => {
     void credentialReviewRef.current?.discardSourceSession()
+    protectedCommitOverridesRef.current = {
+      sessionId: '',
+      secretBindings: {},
+      parameterizationSelectedIds: [],
+    }
     advanceReviewGeneration()
     recorderReplaySessionIdRef.current = ''
     recorderReplayStatusRef.current = 'idle'
@@ -818,6 +848,8 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   useEffect(() => {
     if (kind !== 'openapi') return
     let cancelled = false
+    setOpenAPIScripts([])
+    setOpenAPIReplaceScriptId('')
     api.listScripts(projectId)
       .then(response => {
         if (!cancelled) setOpenAPIScripts(response.scripts || [])
@@ -831,6 +863,8 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
   useEffect(() => {
     if (kind !== 'postman') return
     let cancelled = false
+    setPostmanScripts([])
+    setPostmanReplaceScriptId('')
     api.listScripts(projectId)
       .then(response => {
         if (!cancelled) setPostmanScripts(response.scripts || [])
@@ -870,6 +904,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           if (!requestIsCurrent()) {
             throw new Error('The import source changed while conversion was running. Review the current input and try again.')
           }
+          setConversionScope(sourceGeneration)
           return response
         }
         const options = {
@@ -1074,9 +1109,27 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     setRecorderDraftNotice(message)
   }
 
-  const commitReviewMutation = (nextResult: ProtocolImportResult, recorderDraftNotice?: string) => {
-    latestResultRef.current = nextResult
-    convertTask.setValue(nextResult)
+  const commitReviewMutation = (
+    nextResult: ProtocolImportResult,
+    recorderDraftNotice?: string,
+    options?: { preserveProtectedCandidate?: boolean },
+  ) => {
+    const sessionId = activeProtectedImportSessionId(nextResult)
+    const preserveProtectedCandidate = options?.preserveProtectedCandidate === true
+      && (kind === 'openapi' || kind === 'postman')
+      && !!sessionId
+    const compatibilityResult = preserveProtectedCandidate
+      ? nextResult
+      : invalidateProtectedImportCandidate(nextResult)
+    if (!preserveProtectedCandidate) {
+      protectedCommitOverridesRef.current = {
+        sessionId: '',
+        secretBindings: {},
+        parameterizationSelectedIds: [],
+      }
+    }
+    latestResultRef.current = compatibilityResult
+    convertTask.setValue(compatibilityResult)
     if (kind === 'recorder-export' && recorderDraftNotice) {
       markRecorderDraftChanged(recorderDraftNotice)
     }
@@ -1178,12 +1231,27 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           return
         }
         const savedScript = await saveTask.run(async () => {
-          const response = await api.commitOpenAPIImport({
+          const importSessionId = activeProtectedImportSessionId(currentResult)
+          const protectedOverrides = importSessionId && protectedCommitOverridesRef.current.sessionId === importSessionId
+            ? protectedCommitOverridesRef.current
+            : null
+          const payload = {
             script: currentReviewedScript,
+            import_session_id: importSessionId,
+            secret_bindings: protectedOverrides && Object.keys(protectedOverrides.secretBindings).length > 0
+              ? { ...protectedOverrides.secretBindings }
+              : undefined,
+            parameterization_selected_ids: protectedOverrides?.parameterizationSelectedIds.length
+              ? [...protectedOverrides.parameterizationSelectedIds]
+              : undefined,
+            project_id: sourceProjectId,
+            name: currentReviewedScript.name,
+            folder_id: currentReviewedScript.folder_id ?? null,
             mode: openAPISaveMode,
             target_script_id: openAPISaveMode === 'replace' ? openAPIReplaceScriptId : undefined,
             replace_mode: openAPISaveMode === 'replace' ? openAPIReplaceMode : undefined,
-          })
+          }
+          const response = await api.commitOpenAPIImport(payload)
           const storedScript = response.stored_script || response.scripts?.[0]
           if (!storedScript) throw new Error('OpenAPI import commit did not return a stored script')
           return storedScript
@@ -1197,11 +1265,26 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           return
         }
         const savedScript = await saveTask.run(async () => {
-          const response = await api.savePostmanImport({
+          const importSessionId = activeProtectedImportSessionId(currentResult)
+          const protectedOverrides = importSessionId && protectedCommitOverridesRef.current.sessionId === importSessionId
+            ? protectedCommitOverridesRef.current
+            : null
+          const payload = {
             script: currentReviewedScript,
+            import_session_id: importSessionId,
+            secret_bindings: protectedOverrides && Object.keys(protectedOverrides.secretBindings).length > 0
+              ? { ...protectedOverrides.secretBindings }
+              : undefined,
+            parameterization_selected_ids: protectedOverrides?.parameterizationSelectedIds.length
+              ? [...protectedOverrides.parameterizationSelectedIds]
+              : undefined,
+            project_id: sourceProjectId,
+            name: currentReviewedScript.name,
+            folder_id: currentReviewedScript.folder_id ?? null,
             mode: postmanSaveMode,
             target_script_id: postmanSaveMode === 'replace' ? postmanReplaceScriptId : undefined,
-          })
+          }
+          const response = await api.savePostmanImport(payload)
           const storedScript = response.stored_script || response.scripts?.[0]
           if (!storedScript) throw new Error('Postman import save did not return a stored script')
           return storedScript
@@ -1238,7 +1321,17 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
         ? [currentResult.script]
         : []
     const currentScript = currentScripts[selectedScriptIndex] || currentScripts[0]
-    if (currentScript) onEdit?.(currentScript)
+    if (currentScript && currentResult) {
+      const compatibilityResult = invalidateProtectedImportCandidate(currentResult)
+      protectedCommitOverridesRef.current = {
+        sessionId: '',
+        secretBindings: {},
+        parameterizationSelectedIds: [],
+      }
+      latestResultRef.current = compatibilityResult
+      convertTask.setValue(compatibilityResult)
+      onEdit?.(currentScript)
+    }
   }
 
   const handleSaveAllAsyncAPIScripts = async () => {
@@ -1307,12 +1400,34 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
     }
   }
 
-  const handleParameterizationApplied = (parameterizedScript: ScriptDefinition) => {
+  const handleParameterizationApplied = (
+    parameterizedScript: ScriptDefinition,
+    _diffs: unknown[],
+    selectedIds: string[],
+  ) => {
     if (!result) return
     advanceReviewGeneration()
     const nextScripts = generatedScripts.length ? generatedScripts.map((script, index) => index === selectedScriptIndex ? parameterizedScript : script) : [parameterizedScript]
     const nextResult = { ...result, script: nextScripts[0], scripts: nextScripts } as ProtocolImportResult
-    commitReviewMutation(nextResult, 'Parameterization updated the draft. Run replay validation again before saving normally.')
+    const sessionId = activeProtectedImportSessionId(result)
+    const preserveProtectedCandidate = (kind === 'openapi' || kind === 'postman') && !!sessionId
+    if (preserveProtectedCandidate && sessionId) {
+      const current = protectedCommitOverridesRef.current.sessionId === sessionId
+        ? protectedCommitOverridesRef.current
+        : { sessionId, secretBindings: {}, parameterizationSelectedIds: [] }
+      protectedCommitOverridesRef.current = {
+        ...current,
+        parameterizationSelectedIds: mergeProtectedParameterizationSelectionIds(
+          current.parameterizationSelectedIds,
+          selectedIds,
+        ),
+      }
+    }
+    commitReviewMutation(
+      nextResult,
+      'Parameterization updated the draft. Run replay validation again before saving normally.',
+      { preserveProtectedCandidate },
+    )
   }
 
   const handleSecretBindingsApply = async (bindings: SecretBindingSelection[]) => {
@@ -1407,7 +1522,25 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
           resolved.secret_binding_requirements,
         ),
       } as ProtocolImportResult
-      commitReviewMutation(nextResult, 'Credential bindings updated the draft. Run replay validation again before saving normally.')
+      const sessionId = activeProtectedImportSessionId(result)
+      const preserveProtectedCandidate = (kind === 'openapi' || kind === 'postman') && !!sessionId
+      if (preserveProtectedCandidate && sessionId) {
+        const current = protectedCommitOverridesRef.current.sessionId === sessionId
+          ? protectedCommitOverridesRef.current
+          : { sessionId, secretBindings: {}, parameterizationSelectedIds: [] }
+        const secretBindings = { ...current.secretBindings }
+        for (const binding of bindings) {
+          const requirementId = binding.requirement_id.trim()
+          const secretName = binding.secret_name.trim()
+          if (requirementId && secretName) secretBindings[requirementId] = secretName
+        }
+        protectedCommitOverridesRef.current = { ...current, secretBindings }
+      }
+      commitReviewMutation(
+        nextResult,
+        'Credential bindings updated the draft. Run replay validation again before saving normally.',
+        { preserveProtectedCandidate },
+      )
     } catch (error: unknown) {
       if (!requestIsCurrent()) throw error
       const refreshed = refreshedSecretBindingRequirements(error)
@@ -1621,6 +1754,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
             sourceSecretSessionId={result.source_secret_session_id}
             sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
             sourceSecretMigrationAllowed={result.source_secret_migration_allowed}
+            protectedImportSessionExpiresAt={result.import_session_id ? result.expires_at : undefined}
             credentialReviewRef={credentialReviewRef}
             onCredentialsPreparedChange={handleCredentialsPreparedChange}
             onReviewBusyChange={handleInternalReviewBusyChange}
@@ -1673,7 +1807,7 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                 </div>
               ))}
             </div>
-            {(kind === 'har' || kind === 'openapi' || kind === 'asyncapi' || kind === 'recorder-export') && replayPreflight && (
+            {replayPreflight && (
               <div className="sample-import-preflight">
                 <ReplayPreflightCard preflight={replayPreflight} />
               </div>
@@ -1824,7 +1958,12 @@ export default function ProtocolAssetImport({ kind, initialFile, initialMode, pr
                 </div>
               </div>
             )}
-            <ImportRuntimeOptions script={reviewedScript} onChange={handleRuntimeOptionsChanged} disabled={saveTask.pending} />
+            <ImportRuntimeOptions
+              draftScope={`${projectId || ''}:${kind}:${conversionScope}:${selectedScriptIndex}`}
+              script={reviewedScript}
+              onChange={handleRuntimeOptionsChanged}
+              disabled={saveTask.pending}
+            />
             {kind === 'har' && harSummary && (
               <div className="sample-import-review-block">
                 <h4>HAR Artifact Review</h4>

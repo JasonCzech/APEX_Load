@@ -9,6 +9,7 @@ import (
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
 	"github.com/jasonczech/apexload/pkg/convert/diag"
 	"github.com/jasonczech/apexload/pkg/dsl"
+	httpprotocol "github.com/jasonczech/apexload/pkg/protocol/http"
 )
 
 func parseAuthManager(node *xmlNode, diagnostics *diag.Collector) []jmeterAuth {
@@ -24,10 +25,11 @@ func parseAuthManager(node *xmlNode, diagnostics *diag.Collector) []jmeterAuth {
 			Password:  password,
 			Domain:    convertVariablesWithDiagnostics(convertutil.FirstNonEmpty(prop(element, "Authorization.domain"), prop(element, "domain")), diagnostics, location),
 			Mechanism: mechanism,
+			SourceRef: location,
 		}
 		auth.Config = authConfigFromJMeterAuth(auth, diagnostics, location)
-		if auth.Config.Type == "" {
-			continue
+		if capability := authCapabilityFromJMeterMechanism(auth.Mechanism); capability.Support != httpprotocol.AuthExecutable {
+			auth.ReviewCode = "unsupported_auth_scheme"
 		}
 		auths = append(auths, auth)
 	}
@@ -40,37 +42,65 @@ func authConfigFromJMeterAuth(auth jmeterAuth, diagnostics *diag.Collector, loca
 	case strings.Contains(mechanism, "bearer") || strings.Contains(mechanism, "token"):
 		return dsl.AuthConfig{Type: "bearer", Token: convertutil.FirstNonEmpty(auth.Password, auth.Username, "{{env.API_TOKEN}}")}
 	case strings.Contains(mechanism, "digest"):
-		// Digest cannot be executed by the HTTP engine (validateAuthType fails
-		// closed on it), so emitting Type:"digest" would break replay. Drop it
-		// with a warning rather than producing an unrunnable script.
-		if diagnostics != nil {
-			diagnostics.Add(diag.Warning, "JMeter AuthManager", location, "Digest auth cannot be executed at HTTP replay (fails closed); configure native auth before replay")
-		}
-		return dsl.AuthConfig{}
-	case mechanism == "" || strings.Contains(mechanism, "basic") || strings.Contains(mechanism, "kerberos"):
-		if strings.Contains(mechanism, "kerberos") && diagnostics != nil {
-			diagnostics.Add(diag.Warning, "JMeter AuthManager", location, "Kerberos auth was approximated as basic credentials; configure native auth before replay")
-		}
+		return dsl.AuthConfig{Type: "digest", Username: convertutil.FirstNonEmpty(auth.Username, "{{env.API_USERNAME}}"), Password: convertutil.FirstNonEmpty(auth.Password, "{{env.API_PASSWORD}}")}
+	case mechanism == "" || strings.Contains(mechanism, "basic"):
 		return dsl.AuthConfig{Type: "basic", Username: convertutil.FirstNonEmpty(auth.Username, "{{env.API_USERNAME}}"), Password: convertutil.FirstNonEmpty(auth.Password, "{{env.API_PASSWORD}}")}
 	default:
 		if diagnostics != nil {
-			diagnostics.Add(diag.Warning, "JMeter AuthManager", location, "auth mechanism "+auth.Mechanism+" was not converted")
+			diagnostics.Add(diag.Warning, "JMeter AuthManager", location, "auth mechanism "+auth.Mechanism+" requires review and was not converted to executable HTTP auth")
 		}
 		return dsl.AuthConfig{}
 	}
 }
 
+func authCapabilityFromJMeterMechanism(mechanism string) httpprotocol.AuthCapability {
+	mode := strings.ToLower(strings.TrimSpace(mechanism))
+	switch {
+	case strings.Contains(mode, "bearer") || strings.Contains(mode, "token"):
+		mode = httpprotocol.AuthTypeBearer
+	case strings.Contains(mode, "digest"):
+		mode = httpprotocol.AuthTypeDigest
+	case mode == "" || strings.Contains(mode, "basic"):
+		mode = httpprotocol.AuthTypeBasic
+	case strings.Contains(mode, "kerberos"):
+		mode = httpprotocol.AuthTypeKerberos
+	case strings.Contains(mode, "negotiate"):
+		mode = httpprotocol.AuthTypeNegotiate
+	case strings.Contains(mode, "ntlm"):
+		mode = httpprotocol.AuthTypeNTLM
+	}
+	return httpprotocol.LookupAuthCapability(mode)
+}
+
 func authForSampler(auths []jmeterAuth, absoluteURL string, rawPath string) (dsl.AuthConfig, bool) {
+	auth, ok := matchingSamplerAuth(auths, absoluteURL, rawPath)
+	if !ok || auth.Config.Type == "" || strings.TrimSpace(auth.URL) == "" {
+		return dsl.AuthConfig{}, false
+	}
+	return auth.Config, true
+}
+
+func reviewAuthForSampler(auths []jmeterAuth, absoluteURL string, rawPath string) (jmeterAuth, bool) {
+	auth, ok := matchingSamplerAuth(auths, absoluteURL, rawPath)
+	if !ok || auth.ReviewCode == "" {
+		return jmeterAuth{}, false
+	}
+	return auth, true
+}
+
+func matchingSamplerAuth(auths []jmeterAuth, absoluteURL string, rawPath string) (jmeterAuth, bool) {
 	for _, auth := range auths {
-		if auth.Config.Type == "" || strings.TrimSpace(auth.URL) == "" {
-			continue
-		}
-		if authMatchesURL(auth.URL, absoluteURL) || authMatchesURL(auth.URL, rawPath) {
-			config := auth.Config
-			return config, true
+		if strings.TrimSpace(auth.URL) != "" &&
+			(authMatchesURL(auth.URL, absoluteURL) || authMatchesURL(auth.URL, rawPath)) {
+			return auth, true
 		}
 	}
-	return dsl.AuthConfig{}, false
+	for _, auth := range auths {
+		if strings.TrimSpace(auth.URL) == "" {
+			return auth, true
+		}
+	}
+	return jmeterAuth{}, false
 }
 
 func authMatchesURL(authURL string, candidate string) bool {

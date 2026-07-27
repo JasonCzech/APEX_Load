@@ -3,7 +3,7 @@ import type { ScriptActionDefinition, ScriptAssertionDefinition, ScriptParameter
 import type { ActionEditorParameterDraft } from './scriptEditorState'
 import type { ActionEditorSelectionState } from './scriptEditorJsonModel'
 import { sanitizeVarName } from './scriptEditorUtils'
-import { asString, httpSequenceRequests, isControlAction, isReviewGatedJavaScriptAction, actionRequiresReview, actionSelectorFallbackCount } from './scriptActionHelpers'
+import { asString, httpSequenceRequests, isControlAction, isReviewGatedJavaScriptAction, actionExecutionBlockers, actionRequiresReview, actionSelectorFallbackCount } from './scriptActionHelpers'
 import { appendActionStep, moveActionStep, removeActionStep, updateActionStepField, actionTransactionName, setActionTransactionName } from './scriptEditorWorkbench'
 import { dslActionUsesSelector, dslActionUsesValue } from './dslActionCatalog'
 import { BrowserActionFields, DatabaseActionFields, GrpcActionFields, HttpActionFields, JmsActionFields, NetworkActionFields, WebSocketActionFields } from './scriptActionFields'
@@ -226,7 +226,14 @@ function HTTPSequenceFields({ action, index, onUpdate }: HTTPSequenceFieldsProps
   const uniqueSubtransactions = [...new Set(subtransactions)]
   const extractorCount = requests.reduce((count, request) => count + (request.extractors?.length || 0), 0)
   const assertionCount = requests.reduce((count, request) => count + (request.assertions?.length || 0), 0)
-  const headerCount = requests.reduce((count, request) => count + Object.keys(request.headers || {}).length, 0)
+  const headerCount = requests.reduce((count, request) => {
+    const headerList = request.header_list || []
+    const orderedNames = new Set(headerList.map(header => header.name.trim().toLowerCase()).filter(Boolean))
+    const compatibilityOnlyCount = Object.keys(request.headers || {})
+      .filter(name => !orderedNames.has(name.trim().toLowerCase()))
+      .length
+    return count + headerList.length + compatibilityOnlyCount
+  }, 0)
   return (
     <>
       <div className="form-grid">
@@ -264,15 +271,19 @@ function ActionEditorHeader({ action, issues, methodColor }: ActionEditorHeaderP
   const badgeLabel = action.type === 'http_sequence' ? 'SEQ' : action.type
   const fallbackCount = actionSelectorFallbackCount(action)
   const reviewGated = actionRequiresReview(action)
+  const executionBlockers = actionExecutionBlockers(action)
+  const executionBlocked = executionBlockers.length > 0
   return (
     <>
       <div className="action-editor-top">
         <span className="action-badge" style={{ background: methodColor(action.type), color: '#fff' }}>{badgeLabel}</span>
         <h3>{action.name || 'Unnamed Action'}</h3>
-        {(isControlAction(action) || reviewGated || fallbackCount > 0) && (
+        {(isControlAction(action) || reviewGated || executionBlocked || fallbackCount > 0) && (
           <div className="action-editor-issue-pills">
             {isControlAction(action) && <span className="action-signal-pill control">control</span>}
-            {reviewGated && <span className="action-signal-pill warning">review</span>}
+            {executionBlocked
+              ? <span className="action-signal-pill error" title={`Execution blocked: ${executionBlockers.join(', ')}`}>blocked</span>
+              : reviewGated && <span className="action-signal-pill warning">review</span>}
             {isReviewGatedJavaScriptAction(action) && <span className="action-signal-pill warning">js</span>}
             {fallbackCount > 0 && <span className="action-signal-pill selector">fallbacks {fallbackCount}</span>}
           </div>

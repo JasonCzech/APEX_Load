@@ -2,83 +2,20 @@ package scrub
 
 import (
 	"fmt"
-	"net/url"
 	"reflect"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf8"
-)
 
-// sensitiveNames is the single normalized vocabulary used by body, URL,
-// structured-value, runtime projection, and archive scrubbers. Names are
-// normalized by percent-decoding and removing separators, so client_secret,
-// client-secret, clientSecret, and client%5Fsecret have the same meaning.
-// Entries are exact: a non-secret name such as "author" does not match "auth".
-var sensitiveNames = map[string]struct{}{
-	"accesskey": {}, "accesskeyid": {}, "accesstoken": {}, "accountkey": {}, "acktoken": {}, "apikey": {},
-	"auth": {}, "authentication": {}, "authorization": {}, "basicauth": {},
-	"clientsecret": {}, "connectionstring": {}, "cookie": {}, "csrf": {},
-	"csrftoken": {}, "deliverytag": {}, "dsn": {}, "idsecret": {},
-	"idtoken": {}, "jmssettlementtoken": {}, "locktoken": {}, "password": {},
-	"passwd": {}, "privatekey": {}, "proxyauthorization": {}, "receipthandle": {},
-	"refreshtoken": {}, "sas": {}, "saskey": {}, "sassignature": {}, "secret": {},
-	"secretaccesskey": {}, "sharedaccesskey": {}, "sharedaccesssignature": {},
-	"session": {}, "sessionid": {}, "sessiontoken": {}, "sid": {},
-	"settlementtoken": {}, "signature": {}, "token": {}, "xsrf": {},
-	"xsrftoken": {},
-}
+	"github.com/jasonczech/apexload/pkg/credential"
+)
 
 // SensitiveName reports whether name denotes credential material. It accepts
 // common structured notations (for example credentials[client_secret] and
 // auth.private_key), including percent-encoded names, while deliberately using
 // exact normalized components to avoid substring false positives.
 func SensitiveName(name string) bool {
-	name = decodeName(name)
-	if name == "" {
-		return false
-	}
-	if _, ok := sensitiveNames[normalizeName(name)]; ok {
-		return true
-	}
-	parts := strings.FieldsFunc(name, func(r rune) bool {
-		return !(unicode.IsLetter(r) || unicode.IsDigit(r))
-	})
-	for start := range parts {
-		var combined string
-		for end := start; end < len(parts) && end < start+4; end++ {
-			combined += normalizeName(parts[end])
-			if _, ok := sensitiveNames[combined]; ok {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func decodeName(name string) string {
-	name = strings.TrimSpace(name)
-	// A small fixed number handles double-encoded form keys without allowing an
-	// attacker to turn decoding into an unbounded loop.
-	for range 3 {
-		decoded, err := url.QueryUnescape(name)
-		if err != nil || decoded == name {
-			break
-		}
-		name = decoded
-	}
-	return strings.TrimSpace(name)
-}
-
-func normalizeName(name string) string {
-	name = decodeName(name)
-	var b strings.Builder
-	for _, r := range name {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			b.WriteRune(unicode.ToLower(r))
-		}
-	}
-	return b.String()
+	return credential.SensitiveName(name)
 }
 
 // NamedValue scrubs a value with awareness of its field name. A recognized
@@ -135,9 +72,13 @@ func scrubReflectValue(value reflect.Value, name string, policy Policy, budget *
 	if budget == nil || budget.entries <= 0 || depth > maxStructuredScrubDepth || !value.IsValid() {
 		return nil, false
 	}
+	// Charge every visited node, including empty containers. Charging only
+	// primitive leaves lets a map or nested slice containing empty containers
+	// traverse arbitrarily many attacker-controlled entries without consuming
+	// the advertised budget.
+	budget.entries--
 	for value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer {
 		if value.IsNil() {
-			budget.entries--
 			return nil, true
 		}
 		if value.Kind() == reflect.Pointer {
@@ -151,33 +92,25 @@ func scrubReflectValue(value reflect.Value, name string, policy Policy, budget *
 		value = value.Elem()
 	}
 	if SensitiveName(name) {
-		budget.entries--
 		return Redacted, true
 	}
 	if value.Type() == reflect.TypeOf(time.Time{}) {
-		budget.entries--
 		return value.Interface().(time.Time).UTC().Format(time.RFC3339Nano), true
 	}
 	switch value.Kind() {
 	case reflect.String:
-		budget.entries--
 		raw := truncateStructuredString(value.String(), maxStructuredStringBytes)
 		return Value(raw, policy), true
 	case reflect.Bool:
-		budget.entries--
 		return value.Bool(), true
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		budget.entries--
 		return value.Int(), true
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		budget.entries--
 		return value.Uint(), true
 	case reflect.Float32, reflect.Float64:
-		budget.entries--
 		return value.Float(), true
 	case reflect.Map:
 		if value.IsNil() {
-			budget.entries--
 			return nil, true
 		}
 		out := make(map[string]any, min(value.Len(), budget.entries))
@@ -197,7 +130,6 @@ func scrubReflectValue(value reflect.Value, name string, policy Policy, budget *
 		return out, true
 	case reflect.Slice, reflect.Array:
 		if value.Kind() == reflect.Slice && value.IsNil() {
-			budget.entries--
 			return nil, true
 		}
 		if value.Kind() == reflect.Slice && value.Pointer() != 0 {
@@ -214,7 +146,6 @@ func scrubReflectValue(value reflect.Value, name string, policy Policy, budget *
 			for index := range limit {
 				data[index] = byte(value.Index(index).Uint())
 			}
-			budget.entries--
 			return Value(string(data), policy), true
 		}
 		limit := min(value.Len(), budget.entries)
@@ -245,7 +176,6 @@ func scrubReflectValue(value reflect.Value, name string, policy Policy, budget *
 		}
 		return out, true
 	default:
-		budget.entries--
 		return Value(fmt.Sprint(value.Interface()), policy), true
 	}
 }

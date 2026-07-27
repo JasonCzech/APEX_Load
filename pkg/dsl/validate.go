@@ -53,6 +53,10 @@ func ValidateScriptIssues(script *Script) []string {
 	for i, action := range script.Teardown {
 		issues = append(issues, validateActionForProtocolAtPath(script.Protocol, fmt.Sprintf("teardown[%d]", i), i, action)...)
 	}
+	// Pacing, run-logic, and think-time limits are protocol-independent. Running
+	// this only from messaging validators left HTTP/SOAP/browser scripts—and the
+	// enterprise archive importer—without public runtime validation.
+	issues = append(issues, validateExecutionResourceIssues(script)...)
 
 	// Messaging protocols have additional configuration and action semantics,
 	// but they still participate in the common init/action/teardown and shared
@@ -62,13 +66,10 @@ func ValidateScriptIssues(script *Script) []string {
 	switch ProtocolFamily(script.Protocol) {
 	case "jms":
 		issues = append(issues, validateJMSScriptIssues(script)...)
-		issues = append(issues, validateExecutionResourceIssues(script)...)
 	case "kafka":
 		issues = append(issues, validateKafkaScriptIssues(script)...)
-		issues = append(issues, validateExecutionResourceIssues(script)...)
 	case "eventhubs":
 		issues = append(issues, validateEventHubsScriptIssues(script)...)
-		issues = append(issues, validateExecutionResourceIssues(script)...)
 	}
 
 	if script.Protocol == "soap" {
@@ -90,7 +91,6 @@ func ValidateScriptIssues(script *Script) []string {
 		issues = append(issues, validateSAPGUIScriptIssues(script)...)
 	}
 
-	issues = append(issues, validateParameterIssues(script)...)
 	issues = append(issues, validateDataSourceIssues(script)...)
 	issues = append(issues, fileDataSourceIssues...)
 	issues = append(issues, validateFileReferenceIssues(script)...)
@@ -99,7 +99,7 @@ func ValidateScriptIssues(script *Script) []string {
 	issues = append(issues, validateWebSocketConfigIssues(script)...)
 	issues = append(issues, validateGRPCConfigIssues(script)...)
 	issues = append(issues, validateWebRuntimeIssues(script)...)
-	issues = append(issues, ValidateWorkloadSettingsIssues(script.Config.RunLogic, script.Config.Pacing)...)
+	issues = append(issues, validateHTTPHeaderContractIssues(script)...)
 	issues = append(issues, validateGoalConfigIssues(script.GoalConfig)...)
 	if script.Protocol == "bruno" {
 		issues = append(issues, validateBrunoConfigIssues(script.Config.Bruno)...)
@@ -145,7 +145,7 @@ func validateScriptStructureIssues(script *Script) []string {
 			return []string{fmt.Sprintf("script action tree nesting depth must not exceed %d", MaxScriptActionDepth)}
 		}
 
-		if current.action.Type == "http_sequence" {
+		if strings.EqualFold(strings.TrimSpace(current.action.Type), "http_sequence") {
 			requests := current.action.Params["requests"]
 			switch typed := requests.(type) {
 			case []any:
@@ -289,8 +289,8 @@ func validatePacingResourceIssues(pacing PacingConfig) []string {
 
 func validateThinkTimeResourceIssues(label string, think ThinkTimeConfig) []string {
 	var issues []string
-	if think.Type != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(think.Type)), "none", "fixed", "gaussian", "normal", "uniform") {
-		issues = append(issues, fmt.Sprintf("%s.type must be none, fixed, gaussian, normal, or uniform", label))
+	if think.Type != "" && !isAllowedValue(strings.ToLower(strings.TrimSpace(think.Type)), "none", "fixed", "recorded", "gaussian", "normal", "uniform") {
+		issues = append(issues, fmt.Sprintf("%s.type must be none, fixed, recorded, gaussian, normal, or uniform", label))
 	}
 	for _, field := range []struct {
 		name  string
@@ -302,11 +302,17 @@ func validateThinkTimeResourceIssues(label string, think ThinkTimeConfig) []stri
 		{name: "min_ms", value: think.MinMs, max: MaxConfiguredProtocolTimeoutMS},
 		{name: "max_ms", value: think.MaxMs, max: MaxConfiguredProtocolTimeoutMS},
 		{name: "limit_ms", value: think.LimitMs, max: MaxConfiguredProtocolTimeoutMS},
-		{name: "multiplier", value: think.Multiplier, max: MaxThinkTimeMultiplier},
 	} {
 		if math.IsNaN(field.value) || math.IsInf(field.value, 0) || field.value < 0 || field.value > field.max {
 			issues = append(issues, fmt.Sprintf("%s.%s must be finite and between 0 and %.0f", label, field.name, field.max))
 		}
+	}
+	// A zero Go value is indistinguishable from an omitted JSON field and is
+	// retained as the compatibility sentinel for inherit/default 1. Authoring
+	// contracts use exclusiveMinimum=0, so every explicit multiplier is positive.
+	if math.IsNaN(think.Multiplier) || math.IsInf(think.Multiplier, 0) ||
+		think.Multiplier < 0 || think.Multiplier > MaxThinkTimeMultiplier {
+		issues = append(issues, fmt.Sprintf("%s.multiplier must be omitted (defaults/inherits 1) or finite, greater than 0, and at most %d", label, MaxThinkTimeMultiplier))
 	}
 	if think.MaxMs > 0 && think.MinMs > think.MaxMs {
 		issues = append(issues, fmt.Sprintf("%s.min_ms must not exceed max_ms", label))
@@ -451,7 +457,7 @@ func validateActionForProtocolAtPath(protocol string, path string, index int, ac
 	case "java_vuser":
 		return append(issues, rebased(validateJavaVuserActionIssues(index, action))...)
 	}
-	if action.Type == "http_sequence" {
+	if strings.EqualFold(strings.TrimSpace(action.Type), "http_sequence") {
 		return append(issues, rebased(validateHTTPSequenceActionIssues(index, action))...)
 	}
 	if CanonicalActionType(action.Type) == "http_oauth2_token" {
@@ -470,7 +476,7 @@ func validateBase64BodyEncodingIssues(path string, action Action) []string {
 	label := actionLabel(path, action)
 	body := strings.TrimSpace(action.Body)
 	if strings.Contains(body, "{{") || strings.Contains(body, "}}") {
-		if isTrustedFullBodyBase64Template(body) {
+		if IsTrustedFullBodyBase64Template(body) {
 			return nil
 		}
 		return []string{fmt.Sprintf("%s: body_encoding base64 cannot contain partial or untrusted templates; use literal base64 or a full-body {{env.*}}/{{secret.*}} template", label)}
@@ -479,21 +485,6 @@ func validateBase64BodyEncodingIssues(path string, action Action) []string {
 		return []string{fmt.Sprintf("%s: body_encoding base64 body must be valid standard base64: %v", label, err)}
 	}
 	return nil
-}
-
-func isTrustedFullBodyBase64Template(body string) bool {
-	if !strings.HasPrefix(body, "{{") || !strings.HasSuffix(body, "}}") {
-		return false
-	}
-	expr := strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(body, "{{"), "}}"))
-	// Reject composite templates like {{env.X}}<arbitrary>{{secret.Y}}: stripping
-	// only the outer braces leaves an inner expr that still starts with env./secret.
-	// but smuggles untrusted content (or extra template spans) into the base64
-	// payload. A trusted full-body template must be a single {{...}} span.
-	if strings.Contains(expr, "{{") || strings.Contains(expr, "}}") {
-		return false
-	}
-	return strings.HasPrefix(expr, "env.") || strings.HasPrefix(expr, "secret.")
 }
 
 func validateBodyFileIssues(path string, action Action) []string {
@@ -1105,10 +1096,11 @@ func validateParameterIssues(script *Script) []string {
 		if name == "" {
 			issues = append(issues, fmt.Sprintf("%s: name is required", label))
 		} else {
-			if _, ok := seen[name]; ok {
+			normalized := strings.ToLower(name)
+			if _, ok := seen[normalized]; ok {
 				issues = append(issues, fmt.Sprintf("%s %q: duplicate name", label, name))
 			}
-			seen[name] = struct{}{}
+			seen[normalized] = struct{}{}
 		}
 
 		paramType := CanonicalParameterType(param.Type)
@@ -1371,8 +1363,8 @@ func validateWebRuntimeIssues(script *Script) []string {
 	}
 
 	httpCfg := script.Config.HTTP
-	if httpCfg.Version != "" && !isAllowedValue(httpCfg.Version, "1.0", "1.1", "2") {
-		issues = append(issues, "config.http.version must be 1.0, 1.1, or 2")
+	if err := httpprotocol.ValidateVersion(httpCfg.Version); err != nil {
+		issues = append(issues, fmt.Sprintf("config.http.version: %v", err))
 	}
 	if httpCfg.MaxConnsPerHost < 0 || httpCfg.MaxConnsPerHost > httpprotocol.MaxConfiguredConnsPerHost {
 		issues = append(issues, fmt.Sprintf("config.http.max_conns_per_host must be between 0 and %d", httpprotocol.MaxConfiguredConnsPerHost))
@@ -1380,7 +1372,8 @@ func validateWebRuntimeIssues(script *Script) []string {
 	if httpCfg.MaxIdleConns < 0 || httpCfg.MaxIdleConns > httpprotocol.MaxConfiguredIdleConns {
 		issues = append(issues, fmt.Sprintf("config.http.max_idle_conns must be between 0 and %d", httpprotocol.MaxConfiguredIdleConns))
 	}
-	maxHTTPTimeoutMillis := int(httpprotocol.MaxConfiguredTimeout / time.Millisecond)
+	httpCapabilities := httpprotocol.Capabilities()
+	maxHTTPTimeoutMillis := httpCapabilities.MaxTimeoutMS
 	for _, timeout := range []struct {
 		name  string
 		value int
@@ -1390,12 +1383,15 @@ func validateWebRuntimeIssues(script *Script) []string {
 		{name: "tls_timeout_ms", value: httpCfg.TLSTimeoutMs},
 		{name: "idle_timeout_ms", value: httpCfg.IdleTimeoutMs},
 	} {
-		if timeout.value < 0 || timeout.value > maxHTTPTimeoutMillis {
+		if err := httpprotocol.ValidateTimeoutMS(timeout.value); err != nil {
 			issues = append(issues, fmt.Sprintf("config.http.%s must be between 0 and %d", timeout.name, maxHTTPTimeoutMillis))
 		}
 	}
-	if httpCfg.MaxRedirects != nil && (*httpCfg.MaxRedirects < -1 || *httpCfg.MaxRedirects > httpprotocol.MaxConfiguredRedirects) {
-		issues = append(issues, fmt.Sprintf("config.http.max_redirects must be between -1 and %d", httpprotocol.MaxConfiguredRedirects))
+	if err := httpprotocol.ValidateMaxRedirects(httpCfg.MaxRedirects); err != nil {
+		issues = append(issues, fmt.Sprintf("config.http.max_redirects must be between -1 and %d", httpCapabilities.MaxRedirects))
+	}
+	if err := httpprotocol.ValidateAuthType(httpCfg.Auth.Type); err != nil {
+		issues = append(issues, fmt.Sprintf("config.http.auth.type: %v", err))
 	}
 	if httpCfg.TLS.MinVersion != "" && !isAllowedValue(httpCfg.TLS.MinVersion, "1.0", "1.1", "1.2", "1.3") {
 		issues = append(issues, "config.http.tls.min_version must be 1.0, 1.1, 1.2, or 1.3")

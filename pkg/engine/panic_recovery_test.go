@@ -2,6 +2,8 @@ package engine
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -157,6 +159,38 @@ func (p lifecycleInitPanicValueProtocol) Init(context.Context, map[string]any) e
 type lifecycleHealthPanicValueProtocol struct{ value string }
 
 func (p lifecycleHealthPanicValueProtocol) HealthCheck(context.Context) error { panic(p.value) }
+
+type lifecycleContextErrorProtocol struct{ err error }
+
+func (p lifecycleContextErrorProtocol) Init(context.Context, map[string]any) error {
+	return p.err
+}
+
+func (p lifecycleContextErrorProtocol) HealthCheck(context.Context) error {
+	return p.err
+}
+
+func TestProtocolLifecycleErrorPreservesSafeContextClassification(t *testing.T) {
+	const secret = "lifecycle-context-secret"
+	config := WithSecretValueRedaction(nil, []string{secret})
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+		t.Run(cause.Error(), func(t *testing.T) {
+			raw := fmt.Errorf("adapter echoed %s: %w", secret, cause)
+			proto := lifecycleContextErrorProtocol{err: raw}
+			for name, got := range map[string]error{
+				"init":   callProtocolInit(context.Background(), proto, nil, config),
+				"health": callProtocolHealthCheck(context.Background(), proto, config),
+			} {
+				if got == nil || !errors.Is(got, cause) {
+					t.Fatalf("%s error = %v, want errors.Is(..., %v)", name, got, cause)
+				}
+				if strings.Contains(got.Error(), secret) || !strings.Contains(got.Error(), redactedPayloadValue) {
+					t.Fatalf("%s error = %q, want exact-redacted message", name, got)
+				}
+			}
+		})
+	}
+}
 
 type teardownPanicValueProtocol struct{ value string }
 

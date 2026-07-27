@@ -29,6 +29,8 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 		writeError(w, http.StatusUnprocessableEntity, "conversion failed: "+err.Error())
 		return
 	}
+	protectedRequirements := result.ProtectedRequirements.Take()
+	defer clearCredentialRequirementValues(protectedRequirements)
 	if result.Script != nil {
 		result.Script.ProjectID = normalizeProjectID(importReq.ProjectID)
 	}
@@ -53,17 +55,18 @@ func (s *Server) handleImportSalesforce(w http.ResponseWriter, r *http.Request) 
 	}
 
 	writeJSON(w, http.StatusOK, s.newScriptImportResponseWithSourceSecrets(r, scriptImportResponseOptions{
-		Result:              result,
-		Script:              augmented.Script,
-		Warnings:            result.Warnings,
-		Stats:               result.Stats,
-		Correlations:        augmented.Correlations,
-		UnsupportedElements: result.Unsupported.Strings(),
-		ReviewSections:      augmented.ReviewSections,
-		SourceReview:        result.SourceReview,
-		Summary:             augmented.Summary,
-		Parameterization:    buildImportParameterization(augmented.Script, preApplied),
-		Preflight:           preflight,
+		Result:                result,
+		Script:                augmented.Script,
+		Warnings:              result.Warnings,
+		Stats:                 result.Stats,
+		Correlations:          augmented.Correlations,
+		UnsupportedElements:   result.Unsupported.Strings(),
+		ReviewSections:        augmented.ReviewSections,
+		SourceReview:          result.SourceReview,
+		Summary:               augmented.Summary,
+		Parameterization:      buildImportParameterization(augmented.Script, preApplied),
+		Preflight:             preflight,
+		ProtectedRequirements: protectedRequirements,
 	}))
 }
 

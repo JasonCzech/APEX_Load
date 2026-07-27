@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/jasonczech/apexload/pkg/convert/convertutil"
+	"github.com/jasonczech/apexload/pkg/convert/importreview"
+	"github.com/jasonczech/apexload/pkg/credential"
 	"github.com/jasonczech/apexload/pkg/dsl"
 )
 
@@ -12,14 +14,30 @@ func appendSourceAction(result *ConvertResult, fn ParsedFunction, action dsl.Act
 	if result == nil || result.Script == nil {
 		return
 	}
-	tagSourceFlowMetadata(result, fn, &action)
+	flowFn := fn
+	effectiveMode := mode
+	if sourceFunctionHasUnsupportedTransactionDependency(fn) {
+		effectiveMode = SourceFunctionSupportReviewOnly
+		makeEmbeddedTransactionConsumerDisclosureSafe(&action, fn, effectiveMode)
+		gateEmbeddedUnsupportedTransactionConsumer(&action, fn)
+		flowFn = disclosureSafeSourceFlow(fn)
+	} else if sourceSupportModeRequiresDisclosureSafePlaceholder(mode) {
+		makeSourceReviewActionDisclosureSafe(&action, fn, mode)
+		flowFn = disclosureSafeSourceFlow(fn)
+	}
+	tagSourceFlowMetadata(result, flowFn, &action)
 	actionIndex := actionCountForPhase(result.Script, fn.Phase)
-	mapping := sourceReviewMappingForFunction(fn, sourceReviewActionPath(fn.Phase, actionIndex), action.Name, "action", statusForSupportMode(mode), notes)
-	mapping.SupportMode = string(mode)
+	mapping := sourceReviewMappingForFunction(fn, sourceReviewActionPath(fn.Phase, actionIndex), action.Name, "action", statusForSupportMode(effectiveMode), notes)
+	mapping.SupportMode = string(effectiveMode)
 	appendSourceReviewMapping(result, mapping)
 	appendActionForPhase(result.Script, fn.Phase, action)
 	result.Stats.ConvertedActions++
-	recordSourceFunctionSupport(result, mode)
+	recordSourceFunctionSupport(result, effectiveMode)
+}
+
+func sourceFunctionHasUnsupportedTransactionDependency(fn ParsedFunction) bool {
+	return fn.containsUnsupportedTransactionCall ||
+		fn.dependsOnUnsupportedTransactionFlow
 }
 
 // actionPathByName returns the source-review TargetPath of the first top-level
@@ -191,6 +209,143 @@ func convertSourceFunctionAction(fn ParsedFunction) (dsl.Action, SourceFunctionS
 	}
 }
 
+func nativeSourceTransactionOwnershipUnsupported(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "lr_start_cross_vuser_transaction", "lr_end_cross_vuser_transaction",
+		"lr_start_transaction_instance", "lr_end_transaction_instance",
+		"lr_stop_transaction_instance", "lr_resume_transaction_instance",
+		"lr_set_transaction_instance_status",
+		"lr_get_trans_instance_duration", "lr_get_trans_instance_status",
+		"lr_get_trans_instance_think_time", "lr_get_trans_instance_wasted_time":
+		return true
+	default:
+		return false
+	}
+}
+
+const unsupportedSourceTransactionOwnershipCode = "source_transaction_ownership_unsupported"
+
+func gateUnsupportedSourceTransactionOwnership(action *dsl.Action, fn ParsedFunction, detail string) {
+	gateUnsupportedSourceTransactionAction(
+		action,
+		fn,
+		unsupportedSourceTransactionOwnershipCode,
+		detail,
+		"replace_with_single_vuser_transaction_semantics_and_remove_gate",
+	)
+}
+
+func nativeSourceTransactionValueUnsupported(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "lr_get_transaction_duration", "lr_get_transaction_status",
+		"lr_get_transaction_think_time", "lr_get_transaction_wasted_time",
+		"lr_wasted_time":
+		return true
+	default:
+		return false
+	}
+}
+
+func nativeSourceTransactionReviewUnsupported(name string) bool {
+	return nativeSourceTransactionOwnershipUnsupported(name) ||
+		nativeSourceTransactionValueUnsupported(name)
+}
+
+const unsupportedNativeSourceTransactionValueCode = "source_transaction_native_value_unsupported"
+
+func gateUnsupportedNativeSourceTransactionValue(action *dsl.Action, fn ParsedFunction, detail string) {
+	gateUnsupportedSourceTransactionAction(
+		action,
+		fn,
+		unsupportedNativeSourceTransactionValueCode,
+		detail,
+		"replace_the_return_value_or_wasted_time_dependency_and_remove_gate",
+	)
+}
+
+const unsupportedNativeSourceTransactionCallCode = "source_transaction_native_call_unsupported"
+
+func gateUnsupportedNativeSourceTransactionCall(action *dsl.Action, fn ParsedFunction, detail string) {
+	gateUnsupportedSourceTransactionAction(
+		action,
+		fn,
+		unsupportedNativeSourceTransactionCallCode,
+		detail,
+		"replace_the_unsupported_transaction_call_and_remove_gate",
+	)
+}
+
+const unsupportedEmbeddedSourceTransactionConsumerCode = "source_transaction_embedded_consumer_unsupported"
+
+func gateEmbeddedUnsupportedTransactionConsumer(action *dsl.Action, fn ParsedFunction) {
+	if action == nil {
+		return
+	}
+	sourceRef := strings.TrimSpace(fn.Filename)
+	if fn.LineNumber > 0 {
+		if fn.EndLine > fn.LineNumber {
+			sourceRef = fmt.Sprintf("%s:%d-%d", sourceRef, fn.LineNumber, fn.EndLine)
+		} else {
+			sourceRef = fmt.Sprintf("%s:%d", sourceRef, fn.LineNumber)
+		}
+	}
+	detail := "This source call consumes an unsupported native transaction return value; its original semantics cannot be executed safely."
+	resolution := "replace_the_embedded_transaction_value_dependency_and_remove_gate"
+	if fn.dependsOnUnsupportedTransactionFlow {
+		detail = "This source call is controlled by an unsupported native transaction return value; its branch or loop semantics cannot be executed safely."
+		resolution = "replace_the_transaction_dependent_control_flow_and_remove_gate"
+	}
+	importreview.ApplyToAction(action, []importreview.Finding{{
+		Code:       unsupportedEmbeddedSourceTransactionConsumerCode,
+		Element:    fn.Name,
+		Detail:     detail,
+		Location:   sourceRef,
+		Source:     "enterprise_script_archive",
+		ReasonCode: unsupportedEmbeddedSourceTransactionConsumerCode,
+		SourceRef:  sourceRef,
+		Resolution: resolution,
+		Gate:       importreview.GateExecution,
+	}})
+}
+
+func gateUnsupportedSourceTransactionAction(
+	action *dsl.Action,
+	fn ParsedFunction,
+	code string,
+	detail string,
+	resolution string,
+) {
+	if action == nil {
+		return
+	}
+	action.Type = "source_review"
+	if action.Params == nil {
+		action.Params = make(map[string]any)
+	}
+	action.Params["support_mode"] = string(SourceFunctionSupportReviewOnly)
+	makeSourceReviewActionDisclosureSafe(action, fn, SourceFunctionSupportReviewOnly)
+
+	sourceRef := strings.TrimSpace(fn.Filename)
+	if fn.LineNumber > 0 {
+		if fn.EndLine > fn.LineNumber {
+			sourceRef = fmt.Sprintf("%s:%d-%d", sourceRef, fn.LineNumber, fn.EndLine)
+		} else {
+			sourceRef = fmt.Sprintf("%s:%d", sourceRef, fn.LineNumber)
+		}
+	}
+	importreview.ApplyToAction(action, []importreview.Finding{{
+		Code:       code,
+		Element:    fn.Name,
+		Detail:     detail,
+		Location:   sourceRef,
+		Source:     "enterprise_script_archive",
+		ReasonCode: code,
+		SourceRef:  sourceRef,
+		Resolution: resolution,
+		Gate:       importreview.GateExecution,
+	}})
+}
+
 func convertSourceMessageAction(fn ParsedFunction, def SourceFunctionDefinition) dsl.Action {
 	if fn.Name == "lr_error_message" {
 		action := convertLRErrorMessageAction(fn)
@@ -281,11 +436,27 @@ func convertGenericSourceAction(fn ParsedFunction, actionType string, def Source
 		action.Params["call_args"] = sourceStructuredCallArgs(fn.CallArgs)
 	}
 	annotateSourceAction(&action, fn, def)
+	if sourceSupportModeRequiresDisclosureSafePlaceholder(def.SupportMode) {
+		makeSourceReviewActionDisclosureSafe(&action, fn, def.SupportMode)
+	}
+	return action
+}
+
+// labelSourceTransactionMarker gives the executable start/end markers distinct
+// display names without changing the source transaction identity stored in
+// params.args[0]. In particular, this keeps a compacted http_sequence free to
+// retain the original LoadRunner transaction name.
+func labelSourceTransactionMarker(action dsl.Action, fn ParsedFunction, verb string) dsl.Action {
+	transaction := sourceControlArgAt(fn, 0)
+	if transaction == "" {
+		transaction = convertutil.FirstNonEmpty(fn.StepName, "transaction")
+	}
+	action.Name = sanitizeName(fmt.Sprintf("%s %s transaction", verb, transaction))
 	return action
 }
 
 func convertCustomCallAction(fn ParsedFunction) dsl.Action {
-	return dsl.Action{
+	action := dsl.Action{
 		Name:     sourceActionName(fn),
 		Type:     "custom_call",
 		Metadata: sourceFunctionMetadata(fn),
@@ -296,6 +467,220 @@ func convertCustomCallAction(fn ParsedFunction) dsl.Action {
 			"call_args":    sourceStructuredCallArgs(fn.CallArgs),
 		},
 	}
+	makeSourceReviewActionDisclosureSafe(&action, fn, SourceFunctionSupportCustomReview)
+	return action
+}
+
+func sourceSupportModeRequiresDisclosureSafePlaceholder(mode SourceFunctionSupportMode) bool {
+	switch mode {
+	case SourceFunctionSupportReviewOnly, SourceFunctionSupportExternalRequired, SourceFunctionSupportCustomReview:
+		return true
+	default:
+		return false
+	}
+}
+
+// makeSourceReviewActionDisclosureSafe keeps only value-free source
+// provenance on behavior that cannot execute. Review placeholders are durable
+// script/API/receipt surfaces, so carrying RawBlock, StepName, or source
+// argument values here would disclose arbitrary literals even though replay is
+// blocked.
+func makeSourceReviewActionDisclosureSafe(action *dsl.Action, fn ParsedFunction, mode SourceFunctionSupportMode) {
+	if action == nil {
+		return
+	}
+	previousMetadata := action.Metadata
+	action.Name = disclosureSafeSourceReviewActionName(fn)
+	action.Target = ""
+	action.Value = ""
+	action.Body = ""
+	action.BodyFile = ""
+	action.Headers = nil
+	action.HeaderList = nil
+	action.Auth = nil
+
+	params := map[string]any{
+		"function":     fn.Name,
+		"support_mode": string(mode),
+	}
+	if def, ok := lookupSourceFunction(fn.Name); ok && strings.TrimSpace(def.Family) != "" {
+		params["family"] = def.Family
+	}
+	if args := disclosureSafeSourceReviewArgs(fn); len(args) > 0 {
+		params["args"] = args
+	}
+	if args := disclosureSafeStructuredCallArgs(fn.CallArgs); len(args) > 0 {
+		params["call_args"] = args
+	}
+	action.Params = params
+	action.Metadata = sourceFunctionMetadata(fn)
+	action.Metadata["support_mode"] = string(mode)
+	action.Metadata["source_argument_count"] = sourceFunctionArgumentCount(fn)
+	action.Metadata["source_call_shape"] = disclosureSafeSourceCallShape(fn)
+	for _, key := range []string{
+		"execution_blocker",
+		"execution_blockers",
+		"import_review",
+		"promotion_blocker",
+		"review_gate",
+		"review_reason",
+		"review_reasons",
+		"review_required",
+		"runner_requirement",
+		"source",
+		"source_protocol",
+	} {
+		if value, ok := previousMetadata[key]; ok {
+			action.Metadata[key] = value
+		}
+	}
+}
+
+func makeEmbeddedTransactionConsumerDisclosureSafe(
+	action *dsl.Action,
+	fn ParsedFunction,
+	mode SourceFunctionSupportMode,
+) {
+	if action == nil {
+		return
+	}
+	sourceConsumerType := strings.TrimSpace(action.Type)
+	action.Name = disclosureSafeSourceReviewActionName(fn)
+	action.Type = "source_review"
+	action.Method = ""
+	action.Target = ""
+	action.Selector = ""
+	action.ObjectRef = ""
+	action.Value = ""
+	action.Body = ""
+	action.BodyFile = ""
+	action.BodyEncoding = ""
+	action.Headers = nil
+	action.HeaderList = nil
+	action.Auth = nil
+	action.WaitFor = nil
+	action.Sync = nil
+	action.Capture = nil
+	action.Extractors = nil
+	action.Assertions = nil
+	action.ThinkTime = dsl.ThinkTimeConfig{}
+	action.ThinkTimeAfter = false
+	action.Control = nil
+	action.TimeoutMs = 0
+	action.MaxRedirects = nil
+	action.SOAP = nil
+	action.Params = map[string]any{
+		"function":     fn.Name,
+		"support_mode": string(mode),
+	}
+	if def, ok := lookupSourceFunction(fn.Name); ok && strings.TrimSpace(def.Family) != "" {
+		action.Params["family"] = def.Family
+	}
+	if args := disclosureSafeSourceReviewArgs(fn); len(args) > 0 {
+		action.Params["args"] = args
+	}
+	if args := disclosureSafeStructuredCallArgs(fn.CallArgs); len(args) > 0 {
+		action.Params["call_args"] = args
+	}
+	action.Metadata = sourceFunctionMetadata(fn)
+	action.Metadata["support_mode"] = string(mode)
+	if sourceConsumerType != "" {
+		action.Metadata["source_consumer_type"] = sourceConsumerType
+	}
+	if fn.containsUnsupportedTransactionCall {
+		action.Metadata["embedded_unsupported_transaction_call"] = true
+	}
+	if fn.dependsOnUnsupportedTransactionFlow {
+		action.Metadata["unsupported_transaction_flow_dependency"] = true
+	}
+	action.Metadata["source_argument_count"] = sourceFunctionArgumentCount(fn)
+	action.Metadata["source_call_shape"] = disclosureSafeSourceCallShape(fn)
+}
+
+func disclosureSafeSourceFlow(fn ParsedFunction) ParsedFunction {
+	out := fn
+	out.Conditions = make([]string, len(fn.Conditions))
+	for index := range out.Conditions {
+		id := ""
+		if index < len(fn.ConditionIDs) {
+			id = strings.TrimSpace(fn.ConditionIDs[index])
+		}
+		if id == "" {
+			id = fmt.Sprintf("%d", index+1)
+		}
+		out.Conditions[index] = "condition@" + id
+	}
+	out.Loops = make([]string, len(fn.Loops))
+	for index := range out.Loops {
+		id := ""
+		if index < len(fn.LoopIDs) {
+			id = strings.TrimSpace(fn.LoopIDs[index])
+		}
+		if id == "" {
+			id = fmt.Sprintf("%d", index+1)
+		}
+		out.Loops[index] = "loop@" + id
+	}
+	return out
+}
+
+func sourceFunctionArgumentCount(fn ParsedFunction) int {
+	if len(fn.CallArgs) > 0 {
+		return len(fn.CallArgs)
+	}
+	return len(sourceControlArgs(fn))
+}
+
+func disclosureSafeSourceCallShape(fn ParsedFunction) string {
+	count := sourceFunctionArgumentCount(fn)
+	args := make([]string, count)
+	for index := range args {
+		args[index] = credential.Redacted
+	}
+	return strings.TrimSpace(fn.Name) + "(" + strings.Join(args, ", ") + ")"
+}
+
+func disclosureSafeSourceReviewActionName(fn ParsedFunction) string {
+	name := sanitizeName(convertutil.FirstNonEmpty(fn.Name, "source_review"))
+	if name == "" {
+		name = "source_review"
+	}
+	if fn.LineNumber > 0 {
+		return fmt.Sprintf("%s_%d", name, fn.LineNumber)
+	}
+	return name
+}
+
+func disclosureSafeSourceReviewArgs(fn ParsedFunction) []any {
+	count := len(sourceControlArgs(fn))
+	if count == 0 {
+		return nil
+	}
+	args := make([]any, count)
+	for index := range args {
+		args[index] = credential.Redacted
+	}
+	return args
+}
+
+func disclosureSafeStructuredCallArgs(args []ParsedArgument) []map[string]any {
+	if len(args) == 0 {
+		return nil
+	}
+	out := make([]map[string]any, len(args))
+	for index, arg := range args {
+		kind := strings.ToLower(strings.TrimSpace(arg.Kind))
+		switch kind {
+		case "string", "key_value", "number", "identifier", "macro", "nested_call", "expression":
+		default:
+			kind = "expression"
+		}
+		out[index] = map[string]any{
+			"kind":  kind,
+			"value": credential.Redacted,
+		}
+	}
+	return out
 }
 
 func convertSourceRendezvousAction(fn ParsedFunction) dsl.Action {

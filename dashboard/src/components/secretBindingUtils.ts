@@ -1,4 +1,4 @@
-import { type SecretBindingRequirement } from '../types/scriptImports'
+import { type SecretBindingRequirement, type SecretBindingSelection } from '../types/scriptImports'
 import { type ScriptDefinition } from '../types/scripts'
 
 export const MAX_SECRET_BINDING_NAME_LENGTH = 249
@@ -60,11 +60,42 @@ export function replaceSecretBindingRequirementsForScript(
   script: ScriptDefinition,
   replacements: SecretBindingRequirement[],
 ): SecretBindingRequirement[] {
-  const untouched = (requirements ?? []).filter(requirement => !belongsToScript(requirement, scriptIndex, script))
-  const scopedReplacements = replacements.map(requirement => ({
-    ...requirement,
-    script_index: requirement.script_index ?? scriptIndex,
-    script_name: requirement.script_name || script.name,
-  }))
+  const existing = requirements ?? []
+  const untouched = existing.filter(requirement => !belongsToScript(requirement, scriptIndex, script))
+  // The apply endpoint re-discovers one script in isolation. Its refreshed
+  // suggestions therefore cannot reproduce suffixes allocated across the
+  // complete archive (for example API_TOKEN_2). Once a requirement has an
+  // archive-scoped or user-selected logical name, retain that name while its
+  // opaque requirement ID remains stable. A genuinely new requirement ID still
+  // receives the server's current suggestion.
+  const priorNamesByID = new Map(existing
+    .filter(requirement => belongsToScript(requirement, scriptIndex, script))
+    .map(requirement => [requirement.id, requirement.suggested_name]))
+  const scopedReplacements = replacements.map(requirement => {
+    const priorName = priorNamesByID.get(requirement.id)?.trim()
+    return {
+      ...requirement,
+      ...(priorName ? { suggested_name: priorName } : {}),
+      script_index: requirement.script_index ?? scriptIndex,
+      script_name: requirement.script_name || script.name,
+    }
+  })
   return [...untouched, ...scopedReplacements]
+}
+
+export function updateSecretBindingRequirementNames(
+  requirements: SecretBindingRequirement[] | undefined,
+  selections: readonly SecretBindingSelection[],
+): SecretBindingRequirement[] {
+  const namesByRequirement = new Map(
+    selections.map(selection => [selection.requirement_id, selection.secret_name.trim()]),
+  )
+  return (requirements ?? []).map(requirement => {
+    const migratedName = namesByRequirement.get(requirement.id)
+    if (!migratedName || migratedName === requirement.suggested_name) return requirement
+    return {
+      ...requirement,
+      suggested_name: migratedName,
+    }
+  })
 }

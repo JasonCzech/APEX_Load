@@ -611,6 +611,7 @@ func TestValidateScriptIssues_WebRuntimeValidation(t *testing.T) {
 				TLS:              TLSConfig{MinVersion: "1.3", MaxVersion: "1.2"},
 				MaxRedirects:     &tooManyRedirects,
 				ProxyMode:        "corp",
+				Auth:             AuthConfig{Type: "hawk"},
 			},
 			Browser: BrowserConfig{
 				DownloadResources: "css_only",
@@ -659,7 +660,7 @@ func TestValidateScriptIssues_WebRuntimeValidation(t *testing.T) {
 	assertIssue(t, issues, "config.run_logic.block_scheduling must be sequential, random, or percentage")
 	assertIssue(t, issues, "config.run_logic.action_sequence[1] must be init, action, teardown, vuser_init, or vuser_end")
 	assertIssue(t, issues, "config.log.extended_options[1] must be parameter_substitution, data_returned, or advanced_trace")
-	assertIssue(t, issues, "config.http.version must be 1.0, 1.1, or 2")
+	assertIssue(t, issues, `config.http.version: unsupported HTTP version "3"`)
 	assertIssue(t, issues, "config.http.max_conns_per_host must be between 0 and 256")
 	assertIssue(t, issues, "config.http.max_idle_conns must be between 0 and 32")
 	assertIssue(t, issues, "config.http.connect_timeout_ms must be between 0 and 3600000")
@@ -667,6 +668,7 @@ func TestValidateScriptIssues_WebRuntimeValidation(t *testing.T) {
 	assertIssue(t, issues, "config.http.tls_timeout_ms must be between 0 and 3600000")
 	assertIssue(t, issues, "config.http.idle_timeout_ms must be between 0 and 3600000")
 	assertIssue(t, issues, "config.http.max_redirects must be between -1 and 50")
+	assertIssue(t, issues, `config.http.auth.type: unsupported HTTP auth type "hawk"`)
 	assertIssue(t, issues, "config.http.tls.max_version must not be lower than min_version")
 	assertIssue(t, issues, "config.http.proxy_mode must be none, system, or custom")
 	assertIssue(t, issues, "config.browser.download_resources must be none, recorded, or all")

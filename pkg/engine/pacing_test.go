@@ -17,6 +17,35 @@ func TestComputeThinkTime_Fixed(t *testing.T) {
 	}
 }
 
+func TestWaitForDelayOrCancellationFailsClosedWhenBothAreReady(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for iteration := 0; iteration < 1000; iteration++ {
+		timer := make(chan time.Time, 1)
+		timer <- time.Now()
+		if _, completed := waitForDelayOrCancellation(ctx, time.Second, time.Now(), timer); completed {
+			t.Fatalf("iteration %d reported a completed delay after cancellation", iteration)
+		}
+	}
+
+	timer := make(chan time.Time, 1)
+	timer <- time.Now()
+	if elapsed, completed := waitForDelayOrCancellation(context.Background(), time.Second, time.Now(), timer); !completed || elapsed != time.Second {
+		t.Fatalf("uncanceled ready timer = (%s, %v), want (1s, true)", elapsed, completed)
+	}
+}
+
+func TestComputeThinkTimePreservesFractionalMilliseconds(t *testing.T) {
+	for _, thinkType := range []string{"fixed", "recorded"} {
+		t.Run(thinkType, func(t *testing.T) {
+			got := computeThinkTime(protocol.ThinkTimeConfig{Type: thinkType, MeanMs: 1.5})
+			if got != 1500*time.Microsecond {
+				t.Fatalf("fractional %s think time = %s, want 1.5ms", thinkType, got)
+			}
+		})
+	}
+}
+
 func TestTimingTypesMatchCaseInsensitiveValidation(t *testing.T) {
 	if got := computeThinkTime(protocol.ThinkTimeConfig{Type: " Fixed ", MeanMs: 7}); got != 7*time.Millisecond {
 		t.Fatalf("mixed-case fixed think time = %s, want 7ms", got)
@@ -79,6 +108,13 @@ func TestComputeThinkTime_Multiplier(t *testing.T) {
 	d := computeThinkTime(protocol.ThinkTimeConfig{Type: "fixed", MeanMs: 1000, Multiplier: 0.5})
 	if d != 500*time.Millisecond {
 		t.Errorf("got %v, want 500ms (0.5x multiplier)", d)
+	}
+}
+
+func TestComputeThinkTime_ZeroMultiplierUsesInheritedDefault(t *testing.T) {
+	d := computeThinkTime(protocol.ThinkTimeConfig{Type: "recorded", MeanMs: 250})
+	if d != 250*time.Millisecond {
+		t.Errorf("got %v, want 250ms (omitted multiplier inherits 1x)", d)
 	}
 }
 

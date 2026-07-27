@@ -165,6 +165,8 @@ type AuthoringSessionsResponse = {
 
 type CreateAuthoringSessionRequest = {
   project_id?: string
+  /** Keeps the draft in the folder the author was working in; validated on create and again on approve. */
+  folder_id?: string | null
   source: string
   name: string
   status?: string
@@ -1164,6 +1166,7 @@ export function useScriptApi() {
       files: File[],
       options: {
         project_id: string
+        output_mode?: 'canonical' | 'native_requests'
         name?: string
         sandbox?: 'safe' | 'developer'
         sync_script_id?: string
@@ -1190,7 +1193,11 @@ export function useScriptApi() {
       if (options.name) formData.append('name', options.name)
       if (options.sandbox) formData.append('sandbox', options.sandbox)
       if (options.sync_script_id) formData.append('sync_script_id', options.sync_script_id)
-      if (options.run_options) formData.append('options', JSON.stringify(options.run_options))
+      const inspectOptions = {
+        ...(options.run_options || {}),
+        ...(options.output_mode ? { output_mode: options.output_mode } : {}),
+      }
+      if (Object.keys(inspectOptions).length > 0) formData.append('options', JSON.stringify(inspectOptions))
       const directoryUpload = files.length > 1 || files.some(file => Boolean(file.webkitRelativePath))
       files.forEach(file => {
         const relative = file.webkitRelativePath || file.name
@@ -1209,8 +1216,26 @@ export function useScriptApi() {
   )
 
   const commitBrunoImport = useCallback(
-    (payload: CommitBrunoImportRequest) =>
-      request<CommitBrunoImportResponse>('/scripts/import/bruno/commit', { method: 'POST', body: JSON.stringify(payload) }),
+    async (payload: CommitBrunoImportRequest): Promise<CommitBrunoImportResponse> => {
+      const response = await apiFetch('/scripts/import/bruno/commit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!response.ok) {
+        const errorPayload = await response.json().catch(() => ({ error: response.statusText }))
+        const message = typeof errorPayload?.error === 'string' ? errorPayload.error : response.statusText
+        throw new ApiError(message, response.status, errorPayload)
+      }
+      const result = await response.json() as CommitBrunoImportResponse
+      if (!result || typeof result !== 'object') {
+        throw new Error('Bruno commit response must be a JSON object.')
+      }
+      return {
+        ...result,
+        _http_status: response.status,
+      } as CommitBrunoImportResponse
+    },
     [],
   )
 

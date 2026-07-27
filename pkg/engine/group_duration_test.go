@@ -21,15 +21,24 @@ var (
 type scaleInitFailureProtocol struct{}
 
 type gracefulBoundaryTestState struct {
-	firstStarted  chan struct{}
-	firstReturned chan struct{}
-	releaseFirst  chan struct{}
-	actions       chan string
-	firstOnce     sync.Once
-	returnedOnce  sync.Once
+	firstStarted     chan struct{}
+	firstReturned    chan struct{}
+	releaseFirst     chan struct{}
+	actions          chan string
+	firstOnce        sync.Once
+	returnedOnce     sync.Once
+	adapterTeardowns atomic.Int64
 }
 
 type gracefulBoundaryTestProtocol struct {
+	state *gracefulBoundaryTestState
+}
+
+type goalAfterInitBoundaryProtocol struct {
+	state *gracefulBoundaryTestState
+}
+
+type contextIgnoringLifecycleInitProtocol struct {
 	state *gracefulBoundaryTestState
 }
 
@@ -74,12 +83,68 @@ func (p *gracefulBoundaryTestProtocol) Execute(ctx context.Context, action *prot
 func (*gracefulBoundaryTestProtocol) Teardown(context.Context) error    { return nil }
 func (*gracefulBoundaryTestProtocol) HealthCheck(context.Context) error { return nil }
 
+func (*goalAfterInitBoundaryProtocol) Name() string { return "goal-after-init-boundary-test" }
+func (*goalAfterInitBoundaryProtocol) Init(context.Context, map[string]any) error {
+	return nil
+}
+func (p *goalAfterInitBoundaryProtocol) Execute(ctx context.Context, action *protocol.Action) (*protocol.Result, error) {
+	if p.state != nil {
+		select {
+		case <-p.state.firstStarted:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	return &protocol.Result{
+		ActionName:          action.Name,
+		BusinessTransaction: true,
+		Success:             true,
+		Duration:            time.Millisecond,
+	}, nil
+}
+func (*goalAfterInitBoundaryProtocol) Teardown(context.Context) error    { return nil }
+func (*goalAfterInitBoundaryProtocol) HealthCheck(context.Context) error { return nil }
+
+func (*contextIgnoringLifecycleInitProtocol) Name() string {
+	return "context-ignoring-lifecycle-init-test"
+}
+func (p *contextIgnoringLifecycleInitProtocol) Init(context.Context, map[string]any) error {
+	if p.state != nil {
+		p.state.firstOnce.Do(func() { close(p.state.firstStarted) })
+		<-p.state.releaseFirst
+	}
+	return nil
+}
+func (p *contextIgnoringLifecycleInitProtocol) Execute(_ context.Context, action *protocol.Action) (*protocol.Result, error) {
+	if p.state != nil && p.state.actions != nil {
+		p.state.actions <- action.Name
+	}
+	return &protocol.Result{ActionName: action.Name, Success: true}, nil
+}
+func (p *contextIgnoringLifecycleInitProtocol) Teardown(context.Context) error {
+	if p.state != nil {
+		p.state.adapterTeardowns.Add(1)
+	}
+	return nil
+}
+func (*contextIgnoringLifecycleInitProtocol) HealthCheck(context.Context) error { return nil }
+
 func init() {
 	protocol.Register("scale-init-failure-test", func() protocol.Protocol { return &scaleInitFailureProtocol{} })
 	protocol.Register("graceful-boundary-test", func() protocol.Protocol {
 		gracefulBoundaryStateMu.Lock()
 		defer gracefulBoundaryStateMu.Unlock()
 		return &gracefulBoundaryTestProtocol{state: gracefulBoundaryState}
+	})
+	protocol.Register("goal-after-init-boundary-test", func() protocol.Protocol {
+		gracefulBoundaryStateMu.Lock()
+		defer gracefulBoundaryStateMu.Unlock()
+		return &goalAfterInitBoundaryProtocol{state: gracefulBoundaryState}
+	})
+	protocol.Register("context-ignoring-lifecycle-init-test", func() protocol.Protocol {
+		gracefulBoundaryStateMu.Lock()
+		defer gracefulBoundaryStateMu.Unlock()
+		return &contextIgnoringLifecycleInitProtocol{state: gracefulBoundaryState}
 	})
 }
 
@@ -371,6 +436,335 @@ func TestSharedGoalExhaustionDoesNotTruncateReservedIteration(t *testing.T) {
 	}
 	if got := boundaryActionNames(state); len(got) != 2 || got[0] != "first" || got[1] != "second" {
 		t.Fatalf("executed actions = %v, want complete reserved iteration [first second]", got)
+	}
+}
+
+func TestMultiGroupAtOnceInitGracefulStopFinishesOnlyCurrentAction(t *testing.T) {
+	state := installGracefulBoundaryState(t)
+	script := &dsl.Script{
+		Name: "at-once-graceful-boundary", Protocol: "graceful-boundary-test",
+		Init: []dsl.Action{
+			{Name: "first", Type: "request", Target: "/first"},
+			{Name: "second", Type: "request", Target: "/second"},
+		},
+		Actions: []dsl.Action{{Name: "main", Type: "request", Target: "/main"}},
+	}
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{{
+			Name: "at-once", Script: script, VUsers: 1, InitStrategy: "at_once",
+		}},
+		Duration: 10 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, runErr := mge.Run(context.Background())
+		done <- runErr
+	}()
+	select {
+	case <-state.firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("at-once first init action did not start")
+	}
+
+	mge.GracefulStop()
+	select {
+	case runErr := <-done:
+		t.Fatalf("graceful stop interrupted the current at-once init action: %v", runErr)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(state.releaseFirst)
+	select {
+	case runErr := <-done:
+		if runErr != nil {
+			t.Fatalf("Run: %v", runErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("at-once graceful stop did not finish after the current action")
+	}
+	if got := boundaryActionNames(state); len(got) != 1 || got[0] != "first" {
+		t.Fatalf("at-once init actions = %v, want only first", got)
+	}
+}
+
+func TestMultiGroupAtOnceInitStopsAfterEarlierGroupGoal(t *testing.T) {
+	state := installGracefulBoundaryState(t)
+	goalScript := &dsl.Script{
+		Name: "goal-owner", Protocol: "goal-after-init-boundary-test",
+		Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{
+			Iterations:      1,
+			MaxTransactions: 1,
+		}},
+		Actions: []dsl.Action{{
+			Name:     "goal transaction",
+			Type:     "java_vuser_run",
+			Metadata: map[string]any{"emits_business_transactions": true},
+		}},
+	}
+	atOnceScript := &dsl.Script{
+		Name: "later-at-once", Protocol: "graceful-boundary-test",
+		Init: []dsl.Action{
+			{Name: "first", Type: "request", Target: "/first"},
+			{Name: "second", Type: "request", Target: "/second"},
+		},
+		Actions: []dsl.Action{{Name: "main", Type: "request", Target: "/main"}},
+	}
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{
+			{Name: "goal", Script: goalScript, VUsers: 1},
+			{Name: "at-once", Script: atOnceScript, VUsers: 1, InitStrategy: "at_once"},
+		},
+		Duration: 10 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, runErr := mge.Run(context.Background())
+		done <- runErr
+	}()
+	select {
+	case <-state.firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("later at-once init action did not start")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		mge.mu.Lock()
+		goalStoppedRun := mge.loopCtx != nil && mge.loopCtx.Err() != nil
+		mge.mu.Unlock()
+		if goalStoppedRun {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("earlier group did not satisfy its exact goal")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case runErr := <-done:
+		t.Fatalf("goal cancellation interrupted the current at-once action: %v", runErr)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(state.releaseFirst)
+	select {
+	case runErr := <-done:
+		if runErr != nil {
+			t.Fatalf("Run: %v", runErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("run did not finish after the current at-once init action")
+	}
+	if got := boundaryActionNames(state); len(got) != 1 || got[0] != "first" {
+		t.Fatalf("at-once init actions = %v, want only first after peer goal", got)
+	}
+}
+
+func TestMultiGroupAtOnceDoesNotRunUserTeardownWhenAdapterInitReturnsAfterStop(t *testing.T) {
+	state := installGracefulBoundaryState(t)
+	goalScript := &dsl.Script{
+		Name: "goal owner", Protocol: "goal-after-init-boundary-test",
+		Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{
+			Iterations:      1,
+			MaxTransactions: 1,
+		}},
+		Actions: []dsl.Action{{
+			Name:     "goal transaction",
+			Type:     "java_vuser_run",
+			Metadata: map[string]any{"emits_business_transactions": true},
+		}},
+	}
+	atOnceScript := &dsl.Script{
+		Name:     "stopped during adapter init",
+		Protocol: "context-ignoring-lifecycle-init-test",
+		Init:     []dsl.Action{{Name: "user init", Type: "request", Target: "/init"}},
+		Actions:  []dsl.Action{{Name: "user main", Type: "request", Target: "/main"}},
+		Teardown: []dsl.Action{{Name: "user teardown", Type: "request", Target: "/teardown"}},
+	}
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{
+			{Name: "goal", Script: goalScript, VUsers: 1},
+			{Name: "at-once", Script: atOnceScript, VUsers: 1, InitStrategy: "at_once"},
+		},
+		Duration: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, runErr := mge.Run(context.Background())
+		done <- runErr
+	}()
+	select {
+	case <-state.firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("context-ignoring lifecycle adapter did not enter Init")
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		mge.mu.Lock()
+		stopped := mge.loopCtx != nil && mge.loopCtx.Err() != nil
+		mge.mu.Unlock()
+		if stopped {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("goal owner did not stop the shared loop")
+		}
+		time.Sleep(time.Millisecond)
+	}
+	close(state.releaseFirst)
+	select {
+	case runErr := <-done:
+		if runErr != nil {
+			t.Fatalf("Run: %v", runErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("run did not finish after the context-ignoring Init returned")
+	}
+	close(state.actions)
+	var userActions []string
+	for action := range state.actions {
+		userActions = append(userActions, action)
+	}
+	if len(userActions) != 0 {
+		t.Fatalf("user lifecycle actions = %v, want none after adapter-only Init", userActions)
+	}
+	if got := state.adapterTeardowns.Load(); got != 1 {
+		t.Fatalf("adapter teardown calls = %d, want exactly the initialized adapter cleanup", got)
+	}
+}
+
+func TestAtOnceSourceTransactionsRejectNonlinearPaths(t *testing.T) {
+	script := &dsl.Script{
+		Name: "nonlinear source transaction", Protocol: "stub",
+		Init: []dsl.Action{{
+			Name: "branch", Type: "control_if",
+			Control: &dsl.ControlFlow{
+				Condition: &dsl.Condition{Expr: "true"},
+				Steps:     []dsl.Action{sourceTransactionAction("lr_start_transaction", "")},
+				Else:      []dsl.Action{sourceTransactionAction("lr_end_transaction", "LR_PASS")},
+			},
+		}},
+		Actions: []dsl.Action{{Name: "main", Type: "request", Target: "/"}},
+	}
+	_, err := NewMultiGroup(MultiGroupConfig{
+		Groups:   []GroupConfig{{Name: "at-once", Script: script, VUsers: 1, InitStrategy: "at_once"}},
+		Duration: time.Second,
+	})
+	if err == nil || !strings.Contains(err.Error(), "source transaction") {
+		t.Fatalf("NewMultiGroup error = %v, want nonlinear at-once source transaction rejection", err)
+	}
+}
+
+func TestAtOnceLifecycleFinalizesOpenSourceTransactionBeforeDiscard(t *testing.T) {
+	installTeardownGoalDenialState(t)
+	sink := &sequenceCaptureSink{}
+	script := &dsl.Script{
+		Name:     "phase-local incomplete source transaction",
+		Protocol: "teardown-goal-denial-test",
+		Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{
+			Iterations:      1,
+			MaxTransactions: 1,
+		}},
+		Init: []dsl.Action{
+			sourceTransactionAction("lr_start_transaction", ""),
+			{
+				Name:     "stream transaction",
+				Type:     "request",
+				Target:   "/stream",
+				Metadata: map[string]any{"emits_business_transactions": true},
+			},
+			sourceTransactionAction("lr_end_transaction", "LR_PASS"),
+		},
+		Actions: []dsl.Action{{Name: "main", Type: "request", Target: "/main"}},
+	}
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{{
+			Name: "at-once", Script: script, VUsers: 1, InitStrategy: "at_once", ResultSink: sink,
+		}},
+		Duration: time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+	if _, err := mge.Run(context.Background()); err == nil {
+		t.Fatal("at-once init unexpectedly succeeded after its nested transaction claim was denied")
+	}
+	if len(sink.transactions) != 1 {
+		t.Fatalf("transactions = %#v, want one finalized phase-local source transaction", sink.transactions)
+	}
+	if sink.transactions[0].Success || sink.transactions[0].ErrorMessage == "" {
+		t.Fatalf("finalized source transaction = %#v, want failed incomplete evidence", sink.transactions[0])
+	}
+}
+
+func TestMultiGroupExactGoalCancelsUnentitledPeerPacing(t *testing.T) {
+	state := installGracefulBoundaryState(t)
+	peerScript := &dsl.Script{
+		Name: "unentitled-peer", Protocol: "graceful-boundary-test",
+		Config: dsl.ScriptConfig{Pacing: dsl.PacingConfig{
+			Type: "fixed_delay", DelayMs: 3000,
+		}},
+		Actions: []dsl.Action{{Name: "peer", Type: "request", Target: "/peer"}},
+	}
+	goalScript := &dsl.Script{
+		Name: "goal-owner", Protocol: "graceful-boundary-test",
+		Config: dsl.ScriptConfig{RunLogic: dsl.RunLogicConfig{
+			Iterations:      1,
+			MaxTransactions: 1,
+		}},
+		Init:    []dsl.Action{{Name: "first", Type: "request", Target: "/gate"}},
+		Actions: []dsl.Action{{Name: "bounded", Type: "request", Target: "/bounded"}},
+	}
+	mge, err := NewMultiGroup(MultiGroupConfig{
+		Groups: []GroupConfig{
+			{Name: "peer", Script: peerScript, VUsers: 1},
+			{Name: "goal", Script: goalScript, VUsers: 1},
+		},
+		Duration: 5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewMultiGroup: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, runErr := mge.Run(context.Background())
+		done <- runErr
+	}()
+	select {
+	case <-state.firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("goal owner did not enter its init gate")
+	}
+	peerRan := false
+	deadline := time.After(time.Second)
+	for !peerRan {
+		select {
+		case name := <-state.actions:
+			peerRan = name == "peer"
+		case <-deadline:
+			t.Fatal("unbounded peer did not complete its first iteration")
+		}
+	}
+	// Let the peer enter its long second-iteration pacing wait.
+	time.Sleep(20 * time.Millisecond)
+	releasedAt := time.Now()
+	close(state.releaseFirst)
+	select {
+	case runErr := <-done:
+		if runErr != nil {
+			t.Fatalf("Run: %v", runErr)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("exact goal waited through the unentitled peer's pacing delay")
+	}
+	if elapsed := time.Since(releasedAt); elapsed >= time.Second {
+		t.Fatalf("goal stop elapsed = %s, want prompt peer pacing cancellation", elapsed)
 	}
 }
 

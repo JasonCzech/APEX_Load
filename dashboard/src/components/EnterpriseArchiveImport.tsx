@@ -21,7 +21,12 @@ import { type SecretBindingReviewHandle } from './SecretBindingReview'
 import SourceMappingReview from './SourceMappingReview'
 import { withFallbackPersistedScript } from './importSaveUtils'
 import { salesforceApiSurfaceSummary } from './salesforceReviewSummary'
-import { refreshedSecretBindingRequirements, replaceSecretBindingRequirementsForScript, secretBindingRequirementsForScript } from './secretBindingUtils'
+import {
+  refreshedSecretBindingRequirements,
+  replaceSecretBindingRequirementsForScript,
+  secretBindingRequirementsForScript,
+  updateSecretBindingRequirementNames,
+} from './secretBindingUtils'
 import { type DraftEditorFocus, type ImportedSaveResult } from './useScriptsAuthoringState'
 import './EnterpriseArchiveImport.css'
 
@@ -50,6 +55,53 @@ function isBrowserImport(script: ScriptDefinition | null): boolean {
   return script?.protocol === 'browser'
 }
 
+const NON_EXECUTABLE_ACTION_METADATA_KEYS = new Set([
+  'original_url',
+  'source_transaction',
+  'source_path',
+  'source_step_id',
+  'source_profile',
+  'source_uid',
+])
+
+function actionMetadataKeyIsProvenance(key: string): boolean {
+  const normalized = key.trim().toLowerCase()
+  return NON_EXECUTABLE_ACTION_METADATA_KEYS.has(normalized) || normalized.startsWith('asyncapi_')
+}
+
+// Preserved source review intentionally contains scrubbed evidence. Only a
+// sentinel in executable script state should block opening/saving the draft.
+export function containsExecutableRedaction(
+  value: unknown,
+  depth = 0,
+  actionMetadata = false,
+): boolean {
+  if (typeof value === 'string') return value.includes('[REDACTED]')
+  if (Array.isArray(value)) return value.some(child => containsExecutableRedaction(child, depth + 1, false))
+  if (!value || typeof value !== 'object') return false
+  const record = value as Record<string, unknown>
+  return Object.entries(record).some(([key, child]) => {
+    if (actionMetadata && actionMetadataKeyIsProvenance(key)) return false
+    // Only root script metadata is non-executable preserved evidence. Action
+    // metadata is executable for protocols such as Kafka and JMS, which copy it
+    // onto wire headers/properties. The converter provenance fields above and
+    // AsyncAPI import metadata are evidence-only, but every other action
+    // metadata key remains governed.
+    if (depth === 0 && key === 'metadata') return containsRecordedResourceRedaction(child)
+    const childIsActionMetadata = key === 'metadata' && typeof record.type === 'string'
+    return containsExecutableRedaction(child, depth + 1, childIsActionMetadata)
+  })
+}
+
+function containsRecordedResourceRedaction(metadata: unknown): boolean {
+  if (!metadata || typeof metadata !== 'object') return false
+  const imported = (metadata as Record<string, unknown>).import
+  if (!imported || typeof imported !== 'object') return false
+  const preserved = (imported as Record<string, unknown>).preserved
+  if (!preserved || typeof preserved !== 'object') return false
+  return containsExecutableRedaction((preserved as Record<string, unknown>).recorded_resource_urls, 1)
+}
+
 function isEnterpriseArchiveZipFile(file: File) {
   const lowerName = file.name.toLowerCase()
   return lowerName.endsWith('.zip') || file.type === 'application/zip' || file.type === 'application/x-zip-compressed'
@@ -68,6 +120,93 @@ function javaSimpleClassName(className: string) {
 
 function javaClassToSuggestedSourcePath(className: string) {
   return `${className.trim().replace(/\./g, '/').replace(/\$/g, '/')}.java`
+}
+
+// Matches maxJavaSourceSniffBytes in pkg/convert/enterprisearchive. A package,
+// import, or type declaration always appears well within this prefix, and the
+// cap is load-bearing rather than cosmetic: the block-comment pass below is
+// quadratic on input containing many `/*` with no closing `*/`, so an uncapped
+// 4 MB attachment blocks the main thread for ~47s. Supplemental uploads are
+// allowed up to 64 MiB, and a plain text file can hit that shape without being
+// malicious.
+const MAX_JAVA_SOURCE_SNIFF_BYTES = 256 * 1024
+
+// A type declaration only counts when a Java ACCESS/CLASS MODIFIER precedes it.
+// A bare `class <Ident> {` is not evidence of Java: it matches English prose
+// ("the class Actions {see listing}"), a C enum, a JavaScript class, and CSS.
+// Keep this in step with javaSourceTypeRe in pkg/convert/enterprisearchive.
+const JAVA_MODIFIER = '(?:public|protected|private|abstract|final|static|sealed|strictfp)'
+const JAVA_TYPE_DECLARATION_RE = new RegExp(
+  `\\b${JAVA_MODIFIER}(?:[ \\t]+${JAVA_MODIFIER})*[ \\t]+(?:(?:class|interface|enum|record)|@[ \\t]*interface)[ \\t]+[A-Za-z_$][\\w$]*`,
+)
+// The shapes a compilable Java file can legally open with — mirrors
+// javaSourceFileStartRe in pkg/convert/enterprisearchive.
+const JAVA_FILE_START_RE = new RegExp(
+  `^(?:package[ \\t]|import[ \\t]|@[A-Za-z_$]|${JAVA_MODIFIER}[ \\t]|class[ \\t]|interface[ \\t]|enum[ \\t]|record[ \\t])`,
+)
+
+// Mirrors looksLikeJavaSourceText in pkg/convert/enterprisearchive. Comments and
+// string literals are masked first so a recording log that merely quotes Java is
+// not renamed.
+//
+// The first-meaningful-line gate below is NOT optional mirroring: because this
+// function renames the file to .java BEFORE upload, and the server trusts any
+// .java name without re-sniffing, any input this accepts and the server would
+// reject is smuggled straight past the server's protections. A prose note that
+// quotes a full class listing is exactly such an input — the quoted declaration
+// matches JAVA_TYPE_DECLARATION_RE, and only the file-must-begin-like-Java rule
+// stops it.
+function looksLikeJavaSource(text: string): boolean {
+  const code = (text.length > MAX_JAVA_SOURCE_SNIFF_BYTES ? text.slice(0, MAX_JAVA_SOURCE_SNIFF_BYTES) : text)
+    .replace(/\/\*[^]*?\*\//g, ' ')
+    .replace(/\/\/.*$/gm, ' ')
+    .replace(/"(?:\\.|[^"\\])*"/g, '""')
+    .replace(/'(?:\\.|[^'\\])*'/g, "''")
+  const firstMeaningfulLine = code.split('\n').map(line => line.trim()).find(line => line !== '') ?? ''
+  if (!JAVA_FILE_START_RE.test(firstMeaningfulLine)) return false
+  if (JAVA_TYPE_DECLARATION_RE.test(code)) return true
+  const hasDeclaration = /^[ \t]*package[ \t]+[A-Za-z_$][\w$]*(?:[ \t]*\.[ \t]*[A-Za-z_$][\w$]*)*[ \t]*;/m.test(code)
+    || /^[ \t]*import[ \t]+(?:static[ \t]+)?[A-Za-z_$][\w$]*(?:[ \t]*\.[ \t]*(?:[A-Za-z_$][\w$]*|\*))*[ \t]*;/m.test(code)
+  return hasDeclaration && code.includes('{')
+}
+
+// Java sources are routinely renamed to .txt so corporate mail gateways let them
+// through. The archive importer performs the authoritative rename server-side,
+// so API clients get the same behavior; doing it here as well keeps the required
+// files list showing the resolved .java name while the user is still attaching.
+//
+// javaContext is REQUIRED and must reflect the archive actually being a Java
+// import, mirroring archiveHasJavaSourceSignal on the server. Renaming
+// unconditionally defeats that server gate: the file arrives already named
+// .java, which by itself satisfies the gate, and a non-Java archive is then
+// diverted to the Java converter with its recorded workload discarded. It also
+// lets a client-renamed name slip past the server's rename-collision guard.
+async function normalizeJavaSourceSupplementalFile(file: File, javaContext: boolean): Promise<File> {
+  if (!javaContext) return file
+  const name = file.name.trim()
+  const lowerName = name.toLowerCase()
+  if (lowerName.endsWith('.java') || !lowerName.endsWith('.txt')) return file
+
+  const sourceText = await file.text()
+  if (!looksLikeJavaSource(sourceText)) return file
+
+  const javaName = lowerName.endsWith('.java.txt')
+    ? name.replace(/\.txt$/i, '')
+    : name.replace(/\.txt$/i, '.java')
+  // Reject names whose whole base is the extension; renaming those yields a
+  // dotfile, not a class.
+  if (javaName.split(/[\\/]/).pop()!.length <= '.java'.length) return file
+
+  // Rebuild from the ORIGINAL blob, never from sourceText: file.text() decodes
+  // as UTF-8 with U+FFFD replacement, so re-encoding that string silently
+  // corrupts every non-UTF-8 byte. Windows-authored LoadRunner Java sources are
+  // routinely windows-1252, where a literal like "café" would come back as
+  // "caf�" — wrong bytes in the source manifest and the compiled runner,
+  // with no error anywhere. Only the NAME changes here; the bytes must not.
+  return new File([file], javaName, {
+    type: file.type || 'text/x-java-source',
+    lastModified: file.lastModified,
+  })
 }
 
 type RequiredFileCandidate = {
@@ -280,6 +419,10 @@ function buildReviewArtifactDraft(
 interface Props {
   initialFiles?: File[] | null
   projectId?: string
+  // folderId is the destination folder for scripts saved from this import,
+  // matching ScriptEditor's prop. The server binds it on create and re-validates
+  // it when a review session is approved, so omitting it saves to project root.
+  folderId?: string | null
   onImported?: (result: ImportedSaveResult) => void
   onEdit?: (script: ScriptDefinition, focus?: DraftEditorFocus) => void
   onClose?: () => void
@@ -610,7 +753,7 @@ function findUnsupportedRepairSuggestion(repairSuggestions: ImportRepairSuggesti
   }) || null
 }
 
-export default function EnterpriseArchiveImport({ initialFiles, projectId, onImported, onEdit, onClose }: Props) {
+export default function EnterpriseArchiveImport({ initialFiles, projectId, folderId, onImported, onEdit, onClose }: Props) {
   const api = useApi()
   const fileRef = useRef<HTMLInputElement>(null)
   const harFileRef = useRef<HTMLInputElement>(null)
@@ -682,6 +825,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   )
   const importItemsRef = useRef(importItems)
   importItemsRef.current = importItems
+  const settledSourceSecretSelectionsRef = useRef(new Map<string, SecretBindingSelection[]>())
   const selectedItemIdRef = useRef(selectedItem?.id || '')
   selectedItemIdRef.current = selectedItem?.id || ''
   const selectedResultScriptIndexRef = useRef(selectedResultScriptIndex)
@@ -803,10 +947,13 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     setReviewArtifactSaving(Boolean(activeSave))
   }, [activeResultScriptIndex, projectId, reviewScope, selectedItem?.id, selectedItem?.reviewGeneration])
   const importedScript = resultScripts[activeResultScriptIndex] ?? null
-  // Source-secret sessions are archive-wide and single-use. Review every
-  // generated script in one credentials card so migration and binding happen
-  // once for the complete archive, regardless of the preview tab.
-  const secretBindingRequirements = result?.secret_binding_requirements || []
+  // Source-secret sessions may be archive-wide and single-use, but requirements
+  // and editor/save readiness are script-specific. A credential needed by one
+  // generated lane must not block an unrelated lane.
+  const archiveSecretBindingRequirements = result?.secret_binding_requirements || []
+  const secretBindingRequirements = importedScript
+    ? secretBindingRequirementsForScript(archiveSecretBindingRequirements, activeResultScriptIndex, importedScript)
+    : []
   const latestPreparedReviewRef = useRef({
     itemId: selectedItem?.id || '',
     generation: selectedItem?.reviewGeneration ?? -1,
@@ -848,6 +995,15 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
         .map(candidate => candidate.className.toLowerCase()),
     )
   }, [requiredFileCandidates, selectedSupplementalFiles])
+  // Scope for the client-side .txt -> .java rename, mirroring the server's
+  // archiveHasJavaSourceSignal. Renaming outside a Java import would hand the
+  // server a .java file that satisfies its own scope gate, diverting a non-Java
+  // archive into the Java converter.
+  const supplementalRenameHasJavaContext = Boolean(
+    detectedProtocol?.apexload_protocol === 'java_vuser' ||
+    detectedProtocol?.canonical_source_protocol === 'java_vuser' ||
+    requiredFileCandidates.length > 0,
+  )
   const executableImport = !detectedProtocol || detectedProtocol.import_mode === 'executable'
   const importMetadata = getImportMetadata(importedScript || undefined)
   const trueClient2CompatReport = getTrueClient2CompatReport(result, importMetadata)
@@ -1074,7 +1230,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     const preparedReview = latestPreparedReviewRef.current
     if (!preparedReview.importedScript) return null
     if (preparedReview.secretBindingRequirements.length === 0) {
-      if (JSON.stringify(preparedReview.importedScript).includes('[REDACTED]')) {
+      if (containsExecutableRedaction(preparedReview.importedScript)) {
         setError('This draft still contains a redacted credential sentinel and cannot be opened as executable script. Configure a governed secret reference first.')
         return null
       }
@@ -1107,7 +1263,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       if (!committed || !requestIsCurrent()) return null
       const currentReview = latestPreparedReviewRef.current
       if (currentReview.secretBindingRequirements.length > 0) return null
-      if (currentReview.importedScript && JSON.stringify(currentReview.importedScript).includes('[REDACTED]')) {
+      if (currentReview.importedScript && containsExecutableRedaction(currentReview.importedScript)) {
         setError('This draft still contains a redacted credential sentinel and cannot be opened as executable script. Configure a governed secret reference first.')
         return null
       }
@@ -1131,7 +1287,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     void (async () => {
       const preparedScript = await prepareImportedScriptForEditor()
       if (!preparedScript) return
-      if (JSON.stringify(salesforceNativeScript).includes('[REDACTED]')) {
+      if (containsExecutableRedaction(salesforceNativeScript)) {
         setError('The native preview still contains a redacted credential sentinel. Open the exact replay draft after configuring its secret reference instead.')
         return
       }
@@ -1616,16 +1772,25 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
   // Attaching, removing, or clearing supplemental sources changes what the
   // backend will convert, so each handler invalidates the current review and
   // returns the item to 'queued' for a fresh validate/convert run.
-  const resetSelectedItemForSupplementalChange = (patch: Partial<EnterpriseArchiveImportQueueItem>) => {
+  // The patch may be derived from the item so a caller that had to await (for
+  // example reading an attached file's text) merges against the item as it
+  // stands when the update runs, not against a stale render-time snapshot.
+  const resetSelectedItemForSupplementalChange = (
+    patch:
+      | Partial<EnterpriseArchiveImportQueueItem>
+      | ((item: EnterpriseArchiveImportQueueItem) => Partial<EnterpriseArchiveImportQueueItem>),
+  ) => {
     if (!selectedItem) return
-    invalidateOperationScopes([selectedItem.id])
-    updateImportItem(selectedItem.id, {
-      ...patch,
+    const itemId = selectedItem.id
+    invalidateOperationScopes([itemId])
+    setImportItems(items => items.map(item => item.id !== itemId ? item : {
+      ...item,
+      ...(typeof patch === 'function' ? patch(item) : patch),
       status: 'queued',
       result: null,
       reviewMode: null,
       reviewOptionsIdentity: '',
-      reviewGeneration: selectedItem.reviewGeneration + 1,
+      reviewGeneration: item.reviewGeneration + 1,
       replayValidationLoading: false,
       replayValidationError: '',
       replayValidationWarnings: [],
@@ -1635,24 +1800,42 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       replayProjectId: '',
       error: '',
       notice: '',
-    })
+    }))
   }
 
-  const handleSupplementalFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSupplementalFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const incomingFiles = Array.from(e.target.files || [])
     e.target.value = ''
     if (!selectedItem || incomingFiles.length === 0) return
 
-    // Same-named re-attachments replace the previous file rather than duplicate it.
-    const deduped = new Map<string, File>()
-    ;(selectedItem.supplementalFiles || []).forEach((file) => {
-      deduped.set(file.name.toLowerCase(), file)
-    })
-    incomingFiles.forEach((file) => {
-      deduped.set(file.name.toLowerCase(), file)
-    })
+    // Java sources renamed to .txt to survive a mail gateway are restored to
+    // their .java name here, matching the authoritative rename the archive
+    // importer performs server-side.
+    //
+    // Reading a file can reject (permissions, a file removed or truncated after
+    // the picker closed). Renaming is a convenience, so one unreadable entry
+    // must not reject the batch: attach it under its original name and let the
+    // server decide, rather than dropping every file with an unhandled rejection
+    // and no visible error.
+    const normalizedFiles = await Promise.all(incomingFiles.map(async (file) => {
+      try {
+        return await normalizeJavaSourceSupplementalFile(file, supplementalRenameHasJavaContext)
+      } catch {
+        return file
+      }
+    }))
 
-    resetSelectedItemForSupplementalChange({ supplementalFiles: Array.from(deduped.values()) })
+    resetSelectedItemForSupplementalChange(item => {
+      // Same-named re-attachments replace the previous file rather than duplicate it.
+      const deduped = new Map<string, File>()
+      ;(item.supplementalFiles || []).forEach((file) => {
+        deduped.set(file.name.toLowerCase(), file)
+      })
+      normalizedFiles.forEach((file) => {
+        deduped.set(file.name.toLowerCase(), file)
+      })
+      return { supplementalFiles: Array.from(deduped.values()) }
+    })
   }
 
   const removeSelectedSupplementalFile = (fileName: string) => {
@@ -1897,7 +2080,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
               importWarnings: conversionResult.warnings || [],
             })
             : script
-          const savedScript = await api.createScript(scriptToSave, sourceProjectId)
+          const savedScript = await api.createScript(scriptToSave, sourceProjectId, folderId)
           itemSavedScripts.push(withFallbackPersistedScript(savedScript, scriptToSave))
         }
 
@@ -2151,7 +2334,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
         }
       }
       setScriptSaveInProgress(true)
-      const savedScript = await api.createScript(scriptToSave, sourceProjectId)
+      const savedScript = await api.createScript(scriptToSave, sourceProjectId, folderId)
       if (!requestIsCurrent()) return
       onImported?.({ scripts: [withFallbackPersistedScript(savedScript, scriptToSave)] })
     } catch (error: unknown) {
@@ -2169,16 +2352,26 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
     const sourceItemId = selectedItem.id
     const sourceGeneration = selectedItem.reviewGeneration
     const sourceProjectId = reviewProjectIdRef.current
+    const sourceScriptIndex = selectedResultScriptIndexRef.current
     const requestIsCurrent = () => {
       const currentItem = importItemsRef.current.find(item => item.id === sourceItemId)
       return selectedItemIdRef.current === sourceItemId
         && currentItem?.reviewGeneration === sourceGeneration
         && reviewProjectIdRef.current === sourceProjectId
+        && selectedResultScriptIndexRef.current === sourceScriptIndex
     }
     const assertCurrent = () => {
       if (!requestIsCurrent()) throw new Error('The import result changed while credentials were being prepared. Review the current draft and try again.')
     }
-    let resolvedResult = result
+    let resolvedResult = {
+      ...result,
+      secret_binding_requirements: updateSecretBindingRequirementNames(
+        result.secret_binding_requirements,
+        result.source_secret_session_id
+          ? (settledSourceSecretSelectionsRef.current.get(result.source_secret_session_id) ?? [])
+          : [],
+      ),
+    }
     for (let scriptIndex = 0; scriptIndex < resultScripts.length; scriptIndex += 1) {
       const script = resolvedResult.scripts?.[scriptIndex] || (scriptIndex === 0 ? resolvedResult.script : undefined)
       if (!script) continue
@@ -2238,7 +2431,13 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       optionsIdentity: selectedItem.reviewOptionsIdentity || '',
       importedScript: nextScripts[previewIndex] || null,
       result: resolvedResult,
-      secretBindingRequirements: resolvedResult.secret_binding_requirements || [],
+      secretBindingRequirements: nextScripts[previewIndex]
+        ? secretBindingRequirementsForScript(
+            resolvedResult.secret_binding_requirements,
+            previewIndex,
+            nextScripts[previewIndex],
+          )
+        : [],
     }
     nextRequestToken(replayRequestTokensRef.current, selectedItem.id)
     updateImportItem(selectedItem.id, {
@@ -2251,7 +2450,29 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       replayScriptIndex: -1,
       replayProjectId: '',
       error: '',
-      notice: 'Secret bindings applied across the generated archive. Every script contains governed secret references only.',
+      notice: `Secret bindings applied to ${nextScripts[previewIndex]?.name || 'the selected script'}. Other generated scripts remain independent.`,
+    })
+  }
+
+  const handleSourceSecretSessionSettled = (
+    sessionId: string,
+    migrationSelections: SecretBindingSelection[],
+  ) => {
+    if (!selectedItem) return
+    settledSourceSecretSelectionsRef.current.set(sessionId, migrationSelections)
+    const current = importItemsRef.current.find(item => item.id === selectedItem.id)
+    if (current?.result?.source_secret_session_id !== sessionId) return
+    updateImportItem(selectedItem.id, {
+      result: {
+        ...current.result,
+        secret_binding_requirements: updateSecretBindingRequirementNames(
+          current.result.secret_binding_requirements,
+          migrationSelections,
+        ),
+        source_secret_session_id: undefined,
+        source_secret_session_expires_at: undefined,
+        source_secret_migration_allowed: false,
+      },
     })
   }
 
@@ -2355,6 +2576,7 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
       )
       const session = await api.createAuthoringSession({
         project_id: saveScope.projectId,
+        folder_id: folderId,
         source: 'source_review_artifact',
         name: currentReviewArtifact.title || currentDetectedProtocol?.display_name || 'enterprise script archive protocol review',
         status: 'reviewing',
@@ -2885,11 +3107,14 @@ export default function EnterpriseArchiveImport({ initialFiles, projectId, onImp
             parameterization={result.parameterization}
             onParameterizationApplied={handleParameterizationApplied}
             secretBindingRequirements={secretBindingRequirements}
+            sourceMigrationRequirements={archiveSecretBindingRequirements}
+            preserveSourceSessionAfterApply={archiveSecretBindingRequirements.length > secretBindingRequirements.length}
             onSecretBindingsApply={handleSecretBindingsApply}
             projectId={projectId}
             sourceSecretSessionId={result.source_secret_session_id}
             sourceSecretSessionExpiresAt={result.source_secret_session_expires_at}
             sourceSecretMigrationAllowed={result.source_secret_migration_allowed}
+            onSourceSecretSessionSettled={handleSourceSecretSessionSettled}
             credentialReviewRef={credentialReviewRef}
             saving={saveBlockedByProtocolGate ? reviewArtifactSaving : workingMode === 'convert' || scriptSaveInProgress}
             reviewBusy={!reviewMatchesCurrentOptions || editorActionPreparing || scriptSaveInProgress}

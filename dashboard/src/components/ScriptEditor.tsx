@@ -133,7 +133,8 @@ import {
   type ScriptActionPhase,
   type ScriptPhaseActionRow,
 } from './scriptEditorWorkbench'
-import { actionRequestCount, actionExtractorCount, isControlAction, isReviewGatedJavaScriptAction, actionRequiresReview, actionSelectorFallbackCount, actionTypeSummary, actionRowLabel } from './scriptActionHelpers'
+import { actionRequestCount, actionExtractorCount, isControlAction, isReviewGatedJavaScriptAction, actionExecutionBlockers, actionRequiresReview, actionSelectorFallbackCount, actionTypeSummary, actionRowLabel, headerListToCompatibilityMap } from './scriptActionHelpers'
+import { authoringSessionIdempotencyKey, scriptRequiresJavaVuserAuthoringApproval } from './javaVuserApprovalGate'
 import { ActionEditor, ValidationEvidencePanel } from './ScriptEditorActionEditor'
 import { isBuiltinParameterType, applyParameterTypeDefaults } from './scriptParameterFormat'
 import {
@@ -1239,6 +1240,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
   const saveRequestRef = useRef(0)
   const saveInFlightScopeRef = useRef<object | null>(null)
   const editorResourceScopeRef = useRef({ projectId, folderId, scriptId, initialScript })
+  const editorResourceScopeVersionRef = useRef(0)
   if (
     editorResourceScopeRef.current.projectId !== projectId
     || editorResourceScopeRef.current.folderId !== folderId
@@ -1246,6 +1248,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     || editorResourceScopeRef.current.initialScript !== initialScript
   ) {
     editorResourceScopeRef.current = { projectId, folderId, scriptId, initialScript }
+    editorResourceScopeVersionRef.current += 1
   }
   const validationDocumentKey = useMemo(
     () => jsonParseMessage ? null : formatScriptJson(currentDraftScript),
@@ -1539,9 +1542,24 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
         }
       }
 
-      Object.entries(action.headers || {}).forEach(([headerKey, headerValue]) => {
-        add(String(headerValue || ''), headerKey, { actionIdx, field: 'header', headerKey })
-      })
+      const orderedHeaderNames = new Set(
+        (action.header_list || []).map(header => header.name.trim().toLowerCase()).filter(Boolean),
+      )
+      if (action.header_list?.length) {
+        action.header_list.forEach((header, headerIndex) => {
+          add(String(header.value || ''), header.name || `header_${headerIndex + 1}`, {
+            actionIdx,
+            field: 'header',
+            headerKey: header.name,
+            headerIndex,
+          })
+        })
+      }
+      Object.entries(action.headers || {})
+        .filter(([headerKey]) => !orderedHeaderNames.has(headerKey.trim().toLowerCase()))
+        .forEach(([headerKey, headerValue]) => {
+          add(String(headerValue || ''), headerKey, { actionIdx, field: 'header', headerKey })
+        })
 
       const body = action.body || ''
       if (body) {
@@ -2442,6 +2460,29 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     setValidationReplayPreflight(null)
     try {
       const currentScript = resolveCurrentScript()
+      // A new Java Vuser script with executable runner actions cannot be created
+      // through POST /scripts — the backend answers 409 and requires governed
+      // review. Save it as an authoring session and stop there; approval is a
+      // separate, explicit act, the same way the archive importer treats Java
+      // drafts.
+      if (!scriptId && scriptRequiresJavaVuserAuthoringApproval(currentScript)) {
+        const session = await api.createAuthoringSession({
+          project_id: projectId,
+          folder_id: folderId,
+          source: 'manual',
+          name: currentScript.name || 'Java Vuser Draft',
+          status: 'reviewing',
+          draft: currentScript,
+          idempotency_key: authoringSessionIdempotencyKey('script-editor-java-vuser', currentScript),
+        })
+        if (!requestIsCurrent()) return true
+        commitJsonDraft(currentScript)
+        // Deliberately not markBaseline/setInitialSaveRequired(false): no library
+        // script exists yet, so the editor must keep treating this as unsaved
+        // work and keep guarding navigation until an approval creates one.
+        setSuccess(`Java Vuser draft "${session.name}" queued for approval. Approve it from Scripts to add it to the library.`)
+        return true
+      }
       let savedScript: StoredScript
       if (scriptId) {
         savedScript = await api.updateScript(scriptId, currentScript)
@@ -4184,7 +4225,11 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
     setScript(prev => {
       const next = JSON.parse(JSON.stringify(prev)) as ScriptData
       next.actions = next.actions.map((action, actionIdx) => {
-        const updated = { ...action, headers: { ...(action.headers || {}) } }
+        const updated = {
+          ...action,
+          headers: { ...(action.headers || {}) },
+          header_list: action.header_list?.map(header => ({ ...header })),
+        }
         selected.forEach(candidate => {
           candidate.occurrences
             .filter(occ => occ.actionIdx === actionIdx)
@@ -4194,11 +4239,22 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                 updated.target = updated.target.split(candidate.value).join(token)
               } else if (occ.field === 'body' && typeof updated.body === 'string') {
                 updated.body = updated.body.split(candidate.value).join(token)
+              } else if (
+                occ.field === 'header'
+                && typeof occ.headerIndex === 'number'
+                && updated.header_list?.[occ.headerIndex]
+              ) {
+                updated.header_list[occ.headerIndex].value = updated.header_list[occ.headerIndex].value
+                  .split(candidate.value)
+                  .join(token)
               } else if (occ.field === 'header' && occ.headerKey && updated.headers && updated.headers[occ.headerKey]) {
                 updated.headers[occ.headerKey] = updated.headers[occ.headerKey].split(candidate.value).join(token)
               }
             })
         })
+        if (updated.header_list?.length) {
+          updated.headers = headerListToCompatibilityMap(updated.header_list, updated.headers)
+        }
         return updated
       })
 
@@ -5627,6 +5683,7 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                 activeHTTPTransportTab={activeHTTPTransportTab}
                 activeSection={activeRuntimeSettingsSection}
                 canEditProtocol={canEditProtocol}
+                draftScope={`script-editor:${editorResourceScopeVersionRef.current}`}
                 onSave={handleSave}
                 onSelectHTTPTransportTab={setActiveHTTPTransportTab}
                 onSelectSection={selectRuntimeSettingsSection}
@@ -5932,6 +5989,8 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                         // already marked by its pill, so a one-row band is just noise.
                         const txnBand = txnBandCell && !(txnBandCell.first && txnBandCell.last) ? txnBandCell : undefined
                         const reviewGated = actionRequiresReview(a)
+                        const executionBlockers = actionExecutionBlockers(a)
+                        const executionBlocked = executionBlockers.length > 0
                         const controlAction = isControlAction(a)
                         const rowIssues = actionIssueBuckets[phase]?.[i] || []
                         const rowBlockKey = debugSequenceKey(phase, i)
@@ -6012,14 +6071,16 @@ export default function ScriptEditor({ scriptId, initialScript, initiallyDirty =
                               )}
                             </div>
                             <div className="action-cell action-item-signals">
-                              {(reviewGated || isReviewGatedJavaScriptAction(a)) && (
+                              {(executionBlocked || reviewGated || isReviewGatedJavaScriptAction(a)) && (
                                 <span
-                                  className="action-signal-pill warning"
-                                  title={isReviewGatedJavaScriptAction(a)
-                                    ? 'JavaScript review gate — must be reviewed before this script can replay'
-                                    : 'Review gate — must be reviewed before this script can replay'}
+                                  className={`action-signal-pill ${executionBlocked ? 'error' : 'warning'}`}
+                                  title={executionBlocked
+                                    ? `Execution blocked: ${executionBlockers.join(', ')}`
+                                    : isReviewGatedJavaScriptAction(a)
+                                      ? 'JavaScript review gate — must be reviewed before this script can replay'
+                                      : 'Review gate — must be reviewed before this script can replay'}
                                 >
-                                  Review
+                                  {executionBlocked ? 'Blocked' : 'Review'}
                                 </span>
                               )}
                               {rowIssues.length > 0 && (
