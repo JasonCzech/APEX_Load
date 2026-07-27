@@ -390,6 +390,16 @@ func schemaCreateTableStatements() []string {
 			scripts_json TEXT NOT NULL DEFAULT '[]',
 			created_by TEXT,
 			created_at DATETIME NOT NULL,
+			-- Deliberately omits source_profile. It reads like a bug waiting for a
+			-- second profile to register -- two formats picking the same key would
+			-- collide instead of coexisting -- but the collision is unreachable:
+			-- every caller sets idempotency_key to a protected import session id,
+			-- which is a UUID, so no two profiles can choose the same string.
+			-- Adding source_profile here would mean a full table rebuild in SQLite
+			-- (a UNIQUE table constraint cannot be altered) on the table that holds
+			-- commit receipts, which is the guard against a retry creating
+			-- duplicate scripts. Verified 2026-07-27: real risk, no real benefit.
+			-- Revisit only if some profile starts deriving keys from client input.
 			UNIQUE(project_id, idempotency_key)
 		)`,
 		`CREATE TABLE IF NOT EXISTS tests (

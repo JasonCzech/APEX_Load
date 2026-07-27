@@ -991,8 +991,18 @@ func decodeAuthoringSessionJSON(session *AuthoringSession, draftJSON string, rev
 // script delete silently remove artifacts a live import batch still points at —
 // the failure would surface much later as an unreadable source or a failed
 // rollback, with nothing tying it back to the delete. Any new table that
-// references import_source_artifacts must be added to this UNION, and
-// TestScriptDeleteKeepsArtifactsReferencedByAnImportBatch covers it.
+// references import_source_artifacts must be added to this UNION.
+// TestScriptDeleteKeepsArtifactsReferencedByAnImportBatch covers the behavior,
+// and TestArtifactSweepCoversEveryArtifactReference enforces the rule itself by
+// deriving the referencing columns from the schema, so forgetting a table fails
+// the build rather than depending on someone having read this paragraph.
+//
+// This statement never joins scripts. Its referrers are revisions and receipts
+// only, and every delete path removes a script's revisions before sweeping, so
+// whether the sweep runs before or after that path's DELETE FROM scripts does
+// not change the outcome. The two call sites order it differently and both are
+// correct; verified 2026-07-27. Do not "fix" the inconsistency on the assumption
+// that one of them leaks.
 const deleteUnreferencedImportArtifactsSQL = `DELETE FROM import_source_artifacts WHERE id NOT IN (
 	SELECT raw_artifact_id FROM import_source_revisions
 	UNION SELECT sanitized_artifact_id FROM import_source_revisions
