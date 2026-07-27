@@ -175,3 +175,62 @@ func brunoNativeImportCommitFixture(idempotencyKey, requestSHA string) *BrunoNat
 		},
 	}
 }
+
+// TestScriptDeleteKeepsArtifactsReferencedByAnImportBatch pins the invariant
+// deleteUnreferencedImportArtifactsSQL exists to protect.
+//
+// Both script-delete paths sweep encrypted source artifacts that no longer have
+// a referrer. That sweep must consider import batches, not just source
+// revisions — otherwise deleting any one script drops the artifacts a live
+// batch still points at, and the damage only surfaces later as an unreadable
+// source or a failed rollback, with nothing tying it back to the delete. Both
+// paths are covered because they are separate call sites.
+func TestScriptDeleteKeepsArtifactsReferencedByAnImportBatch(t *testing.T) {
+	artifactsPresent := func(t *testing.T, store *SQLiteStore) int {
+		t.Helper()
+		var count int
+		if err := store.db.QueryRow(
+			`SELECT COUNT(*) FROM bruno_source_artifacts WHERE id IN ('native-raw','native-sanitized')`,
+		).Scan(&count); err != nil {
+			t.Fatalf("count artifacts: %v", err)
+		}
+		return count
+	}
+
+	t.Run("DeleteScript", func(t *testing.T) {
+		store := newBrunoImportTestStore(t)
+		result, err := store.CommitBrunoNativeImport(
+			brunoNativeImportCommitFixture("native-session-delete", "request-sha-delete"))
+		if err != nil {
+			t.Fatalf("CommitBrunoNativeImport: %v", err)
+		}
+		if got := artifactsPresent(t, store); got != 2 {
+			t.Fatalf("artifacts before delete = %d, want 2", got)
+		}
+		if err := store.DeleteScript(result.Scripts[0].ID); err != nil {
+			t.Fatalf("DeleteScript: %v", err)
+		}
+		if got := artifactsPresent(t, store); got != 2 {
+			t.Fatalf("artifacts after delete = %d, want both retained for the live batch", got)
+		}
+	})
+
+	t.Run("DeleteScriptIfUnchanged", func(t *testing.T) {
+		store := newBrunoImportTestStore(t)
+		result, err := store.CommitBrunoNativeImport(
+			brunoNativeImportCommitFixture("native-session-unchanged", "request-sha-unchanged"))
+		if err != nil {
+			t.Fatalf("CommitBrunoNativeImport: %v", err)
+		}
+		stored, err := store.GetScript(result.Scripts[0].ID)
+		if err != nil {
+			t.Fatalf("GetScript: %v", err)
+		}
+		if _, err := store.DeleteScriptIfUnchanged(stored.ID, stored.UpdatedAt); err != nil {
+			t.Fatalf("DeleteScriptIfUnchanged: %v", err)
+		}
+		if got := artifactsPresent(t, store); got != 2 {
+			t.Fatalf("artifacts after delete = %d, want both retained for the live batch", got)
+		}
+	})
+}

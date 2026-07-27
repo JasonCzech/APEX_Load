@@ -397,12 +397,7 @@ func (s *SQLiteStore) DeleteScriptIfUnchanged(id string, expectedUpdatedAt time.
 	if err != nil || rows != 1 {
 		return false, err
 	}
-	if _, err := tx.Exec(`DELETE FROM bruno_source_artifacts WHERE id NOT IN (
-		SELECT raw_artifact_id FROM bruno_source_revisions
-		UNION SELECT sanitized_artifact_id FROM bruno_source_revisions
-		UNION SELECT raw_artifact_id FROM bruno_native_import_batches
-		UNION SELECT sanitized_artifact_id FROM bruno_native_import_batches
-	)`); err != nil {
+	if _, err := tx.Exec(deleteUnreferencedImportArtifactsSQL); err != nil {
 		return false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -551,15 +546,7 @@ func (s *SQLiteStore) DeleteScript(id string) error {
 		{query: `DELETE FROM github_script_links WHERE script_id = ?`, args: []any{id}},
 		{query: `DELETE FROM script_recordings WHERE script_id = ?`, args: []any{id}},
 		{query: `DELETE FROM bruno_source_revisions WHERE script_id = ?`, args: []any{id}},
-		{query: `DELETE FROM bruno_source_artifacts WHERE id NOT IN (
-			SELECT raw_artifact_id FROM bruno_source_revisions
-			UNION
-			SELECT sanitized_artifact_id FROM bruno_source_revisions
-			UNION
-			SELECT raw_artifact_id FROM bruno_native_import_batches
-			UNION
-			SELECT sanitized_artifact_id FROM bruno_native_import_batches
-		)`},
+		{query: deleteUnreferencedImportArtifactsSQL},
 		{query: `DELETE FROM scripts WHERE id = ?`, args: []any{id}},
 	} {
 		if _, err := tx.Exec(deletion.query, deletion.args...); err != nil {
@@ -995,3 +982,20 @@ func decodeAuthoringSessionJSON(session *AuthoringSession, draftJSON string, rev
 	}
 	return nil
 }
+
+// deleteUnreferencedImportArtifactsSQL removes encrypted source artifacts that
+// no longer have a referrer, and is shared by every script-delete path.
+//
+// It is a single constant on purpose. The statement used to be written out at
+// each delete site, so a table added to one copy and not the other would let a
+// script delete silently remove artifacts a live import batch still points at —
+// the failure would surface much later as an unreadable source or a failed
+// rollback, with nothing tying it back to the delete. Any new table that
+// references bruno_source_artifacts must be added to this UNION, and
+// TestScriptDeleteKeepsArtifactsReferencedByAnImportBatch covers it.
+const deleteUnreferencedImportArtifactsSQL = `DELETE FROM bruno_source_artifacts WHERE id NOT IN (
+	SELECT raw_artifact_id FROM bruno_source_revisions
+	UNION SELECT sanitized_artifact_id FROM bruno_source_revisions
+	UNION SELECT raw_artifact_id FROM bruno_native_import_batches
+	UNION SELECT sanitized_artifact_id FROM bruno_native_import_batches
+)`

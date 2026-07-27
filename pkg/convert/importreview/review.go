@@ -398,44 +398,19 @@ func firstString(values []string) string {
 	return values[0]
 }
 
+// metadataBool, metadataString and metadataStringSlice adapt the shared
+// dslwalk extractors to this package's semantics: findings preserve the case an
+// importer wrote, and lists are sorted so review output is stable.
 func metadataBool(metadata map[string]any, key string) bool {
-	if metadata == nil {
-		return false
-	}
-	switch value := metadata[key].(type) {
-	case bool:
-		return value
-	case string:
-		return strings.EqualFold(strings.TrimSpace(value), "true")
-	default:
-		return false
-	}
+	return dslwalk.MetadataBool(metadata, key)
 }
 
 func metadataString(metadata map[string]any, key string) string {
-	if metadata == nil {
-		return ""
-	}
-	value, _ := metadata[key].(string)
-	return strings.TrimSpace(value)
+	return dslwalk.MetadataString(metadata, key)
 }
 
 func metadataStringSlice(metadata map[string]any, key string) []string {
-	if metadata == nil {
-		return nil
-	}
-	var out []string
-	switch values := metadata[key].(type) {
-	case []string:
-		out = append(out, values...)
-	case []any:
-		for _, value := range values {
-			if text, ok := value.(string); ok {
-				out = append(out, text)
-			}
-		}
-	}
-	return uniqueSorted(out)
+	return uniqueSorted(dslwalk.MetadataStrings(metadata, key))
 }
 
 func uniqueSorted(values []string) []string {

@@ -4,8 +4,13 @@ package brunoartifact
 
 import "errors"
 
+// errDirectorySyncUnsupported is deliberately format-neutral. This store began
+// as Bruno-only, but it now backs the protected import sessions of every format
+// that uses the shared commit service — OpenAPI and Postman included — so an
+// operator importing a Postman collection on Windows must not be told that
+// something about "Bruno" failed.
 var errDirectorySyncUnsupported = errors.New(
-	"durable Bruno artifact directory synchronization is unsupported on Windows",
+	"durable protected-import-artifact directory synchronization is unsupported on Windows",
 )
 
 // Windows exposes directory handles, but FlushFileBuffers is documented for
