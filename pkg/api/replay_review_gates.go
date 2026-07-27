@@ -164,53 +164,24 @@ func nativeBrunoReviewRequiredAction(action dsl.Action) bool {
 			reviewRequiredAction(action))
 }
 
+// metadataBool, metadataString and metadataStringSlice adapt the shared
+// dslwalk extractors to this package's comparison semantics: gate names are
+// lowercased because they are matched against fixed literals, and blocker lists
+// keep source order while dropping duplicates so a review message reads the way
+// the importer wrote it.
 func metadataBool(metadata map[string]any, key string) bool {
-	if metadata == nil {
-		return false
-	}
-	switch value := metadata[key].(type) {
-	case bool:
-		return value
-	case string:
-		return strings.EqualFold(strings.TrimSpace(value), "true")
-	default:
-		return false
-	}
+	return dslwalk.MetadataBool(metadata, key)
 }
 
 func metadataString(metadata map[string]any, key string) string {
-	if metadata == nil {
-		return ""
-	}
-	value, ok := metadata[key].(string)
-	if !ok {
-		return ""
-	}
-	return strings.ToLower(strings.TrimSpace(value))
+	return strings.ToLower(dslwalk.MetadataString(metadata, key))
 }
 
 func metadataStringSlice(metadata map[string]any, key string) []string {
-	if metadata == nil {
-		return nil
-	}
-	var values []string
-	switch raw := metadata[key].(type) {
-	case []string:
-		values = append(values, raw...)
-	case []any:
-		for _, item := range raw {
-			if value, ok := item.(string); ok {
-				values = append(values, value)
-			}
-		}
-	}
+	values := dslwalk.MetadataStrings(metadata, key)
 	out := make([]string, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
 		if _, exists := seen[value]; exists {
 			continue
 		}
