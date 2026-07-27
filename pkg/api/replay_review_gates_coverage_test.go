@@ -178,3 +178,109 @@ func TestReplayManagersEnforceGateAndReleaseExecutionSlot(t *testing.T) {
 		}
 	})
 }
+
+// TestDurableReviewGateRegistryScope pins which importers get a durable,
+// policy-unoverridable gate — and, more importantly, which do not.
+//
+// The registry replaced a hard-coded strings.HasPrefix(gate, "bruno_"). The
+// obvious "cleanup" is to treat any non-empty review_gate as durable, and that
+// would be a regression: TrueClient writes review_gate="javascript" and every
+// converter going through importreview.ApplyToAction writes the first review
+// finding's code. Those are review markers an operator can knowingly override
+// under config.browser.review_policy. Hardening them would retroactively make
+// existing TrueClient and enterprise-archive imports unrunnable with no way to
+// clear the block.
+func TestDurableReviewGateRegistryScope(t *testing.T) {
+	tests := []struct {
+		name     string
+		metadata map[string]any
+		durable  bool
+	}{
+		// Registered: Bruno native.
+		{
+			name:     "bruno gate prefix",
+			metadata: map[string]any{"review_gate": "bruno_javascript"},
+			durable:  true,
+		},
+		{
+			name:     "bruno auth gate",
+			metadata: map[string]any{"review_gate": "bruno_auth"},
+			durable:  true,
+		},
+		{
+			name:     "bruno native profile with review_required",
+			metadata: map[string]any{"source_profile": "bruno_native", "review_required": true},
+			durable:  true,
+		},
+		{
+			name:     "bruno native profile with promotion_blocker",
+			metadata: map[string]any{"source_profile": "bruno_native", "promotion_blocker": true},
+			durable:  true,
+		},
+
+		// Not registered: these must stay policy-overridable.
+		{
+			name:     "trueclient javascript gate",
+			metadata: map[string]any{"review_gate": "javascript"},
+		},
+		{
+			name:     "importreview finding code as gate",
+			metadata: map[string]any{"review_gate": "import_review_required"},
+		},
+		{
+			name:     "credential redaction gate",
+			metadata: map[string]any{"review_gate": "credential_parameter_source_redacted"},
+		},
+		{
+			name:     "plain review_required with no profile",
+			metadata: map[string]any{"review_required": true},
+		},
+		{
+			name:     "unregistered profile with review_required",
+			metadata: map[string]any{"source_profile": "postman", "review_required": true},
+		},
+		{
+			name:     "bruno native profile without any review flag",
+			metadata: map[string]any{"source_profile": "bruno_native"},
+		},
+		{name: "no metadata"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			action := dsl.Action{Name: "request", Type: "GET", Metadata: test.metadata}
+			if got := durableImportReviewGateAction(action); got != test.durable {
+				t.Fatalf("durableImportReviewGateAction = %v, want %v", got, test.durable)
+			}
+		})
+	}
+}
+
+// TestDurableReviewGateRegistryIsTheOnlyHardeningSwitch proves the registry is
+// actually the extension point: an importer becomes durable by adding an entry,
+// and nothing else in the file needs to change.
+func TestDurableReviewGateRegistryIsTheOnlyHardeningSwitch(t *testing.T) {
+	action := dsl.Action{
+		Name:     "request",
+		Type:     "GET",
+		Metadata: map[string]any{"review_gate": "postman_unsupported_auth"},
+	}
+	if durableImportReviewGateAction(action) {
+		t.Fatal("an unregistered gate prefix is already durable")
+	}
+
+	original := durableReviewGateSources
+	t.Cleanup(func() { durableReviewGateSources = original })
+	durableReviewGateSources = append(append([]durableReviewGateSource(nil), original...),
+		durableReviewGateSource{gatePrefix: "postman_"})
+
+	if !durableImportReviewGateAction(action) {
+		t.Fatal("registering a gate prefix did not make it durable")
+	}
+	// Registering one importer must not harden another's markers.
+	trueclient := dsl.Action{Name: "js", Type: "browser_evaluate_js",
+		Metadata: map[string]any{"review_gate": "javascript"}}
+	if durableImportReviewGateAction(trueclient) {
+		t.Fatal("registering postman hardened TrueClient's gate")
+	}
+}
